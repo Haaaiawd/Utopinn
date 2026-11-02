@@ -1,0 +1,237 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 FunnyCups (https://github.com/funnycups)
+
+name: Build Desktop Client
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  # The version an installer carries comes from the root manifest, so a tag that
+  # disagrees with it would publish assets nobody can match to the release. The
+  # check runs before any of the platform jobs starts building.
+  version:
+    if: github.repository == 'funnycups/Luker'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tag matches app version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [[ "${TAG_VERSION}" != "${PKG_VERSION}" ]]; then
+            echo "Tag version (${TAG_VERSION}) does not match package.json version (${PKG_VERSION})." >&2
+            exit 1
+          fi
+
+  build-macos:
+    if: github.repository == 'funnycups/Luker'
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install server dependencies
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop-app
+        run: npm install --ignore-scripts=false
+
+      - name: Build mac artifacts
+        working-directory: desktop-app
+        run: node scripts/build-desktop.mjs mac
+
+      - name: Upload the Apple Silicon disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-macos-arm64-dmg
+          path: desktop-app/dist/Luker-*-mac-arm64.dmg
+          if-no-files-found: error
+
+      - name: Upload the Apple Silicon archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-macos-arm64-zip
+          path: desktop-app/dist/Luker-*-mac-arm64.zip
+          if-no-files-found: error
+
+      - name: Upload the Intel disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-macos-x64-dmg
+          path: desktop-app/dist/Luker-*-mac-x64.dmg
+          if-no-files-found: error
+
+      - name: Upload the Intel archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-macos-x64-zip
+          path: desktop-app/dist/Luker-*-mac-x64.zip
+          if-no-files-found: error
+
+  build-windows:
+    if: github.repository == 'funnycups/Luker'
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install server dependencies
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop-app
+        run: npm install --ignore-scripts=false
+
+      - name: Build Windows artifacts
+        working-directory: desktop-app
+        run: node scripts/build-desktop.mjs win
+
+      - name: Upload the Intel installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-windows-x64-exe
+          path: desktop-app/dist/Luker-*-win-x64.exe
+          if-no-files-found: error
+
+      - name: Upload the Intel archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-windows-x64-zip
+          path: desktop-app/dist/Luker-*-win-x64.zip
+          if-no-files-found: error
+
+      - name: Upload the Arm installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-windows-arm64-exe
+          path: desktop-app/dist/Luker-*-win-arm64.exe
+          if-no-files-found: error
+
+      - name: Upload the Arm archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-windows-arm64-zip
+          path: desktop-app/dist/Luker-*-win-arm64.zip
+          if-no-files-found: error
+
+  build-linux:
+    if: github.repository == 'funnycups/Luker'
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install server dependencies
+        run: npm ci
+
+      - name: Install desktop dependencies
+        working-directory: desktop-app
+        run: npm install --ignore-scripts=false
+
+      - name: Build Linux artifacts
+        working-directory: desktop-app
+        run: node scripts/build-desktop.mjs linux
+
+      - name: Upload the Intel AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-x64-appimage
+          path: desktop-app/dist/Luker-*-linux-x86_64.AppImage
+          if-no-files-found: error
+
+      - name: Upload the Intel deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-x64-deb
+          path: desktop-app/dist/Luker-*-linux-amd64.deb
+          if-no-files-found: error
+
+      - name: Upload the Intel rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-x64-rpm
+          path: desktop-app/dist/Luker-*-linux-x86_64.rpm
+          if-no-files-found: error
+
+      - name: Upload the Arm AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-arm64-appimage
+          path: desktop-app/dist/Luker-*-linux-arm64.AppImage
+          if-no-files-found: error
+
+      - name: Upload the Arm deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-arm64-deb
+          path: desktop-app/dist/Luker-*-linux-arm64.deb
+          if-no-files-found: error
+
+      - name: Upload the Arm rpm
+        uses: actions/upload-artifact@v4
+        with:
+          name: luker-desktop-linux-arm64-rpm
+          path: desktop-app/dist/Luker-*-linux-aarch64.rpm
+          if-no-files-found: error
+
+  # One job publishes, so the release is created once and the generated notes
+  # are written once. Every file arrives here through the artifacts above, which
+  # is what keeps the globs off the other platform's output.
+  publish:
+    if: github.repository == 'funnycups/Luker' && startsWith(github.ref, 'refs/tags/')
+    needs:
+      - build-macos
+      - build-windows
+      - build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download the built installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: luker-desktop-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: release-assets/*

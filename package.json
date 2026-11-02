@@ -1,0 +1,20 @@
+{
+    "name": "uberge",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">= 24"
+    },
+    "scripts": {
+        "server": "pnpm --filter @uberge/server start",
+        "mobile": "pnpm --filter @uberge/mobile start",
+        "web": "pnpm --filter @uberge/web dev",
+        "typecheck": "pnpm -r --if-present typecheck",
+        "lint": "pnpm -r --if-present lint",
+        "test": "pnpm -r --if-present test"
+    },
+    "devDependencies": {
+        "typescript": "^5.9.3"
+    }
+}

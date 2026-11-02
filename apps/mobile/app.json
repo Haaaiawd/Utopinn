@@ -1,0 +1,17 @@
+{
+    "expo": {
+        "name": "Uberge",
+        "slug": "uberge",
+        "version": "0.0.0",
+        "orientation": "portrait",
+        "userInterfaceStyle": "automatic",
+        "scheme": "uberge",
+        "ios": {
+            "supportsTablet": true,
+            "bundleIdentifier": "moe.uberge.app"
+        },
+        "android": {
+            "package": "moe.uberge.app"
+        }
+    }
+}

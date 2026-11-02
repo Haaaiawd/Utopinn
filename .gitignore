@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+.expo/
+ios/
+android/
+*.log
+.DS_Store
+Thumbs.db
+
+# User data & secrets
+apps/server/data/
+apps/server/backups/
+apps/server/config.yaml
+*.local
+.env
+.env.*
+
+# pnpm
+.pnpm-store/
+
+# Native build artifacts
+apps/server/nodejs-mobile-*.zip
+
+# Reference codebases (third-party, kept local only)
+ref/

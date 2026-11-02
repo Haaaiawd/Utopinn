@@ -1,0 +1,2303 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Request Inspector — per-user ring buffer for generation request diagnostics.
+
+import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { getConfigValue } from './util.js';
+import { ByteBudgetLedger } from './util/byte-budget.js';
+import { joinReasoningDetailsText, mergeReasoningDetails } from '../public/scripts/util/reasoning-details.js';
+
+const RING_BUFFER_SIZE = 200;
+// Completed records are diagnostic snapshots, not durable data — 2h covers
+// "look back at what happened this session" without holding full message
+// bodies (which can be megabytes) in the heap all day.
+const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
+// Sweep cadence. Coarser than the TTL on purpose: expiry is lazy, so a
+// stale record survives at most TTL + interval past its deadline.
+const DEFAULT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+const MIN_CLEANUP_INTERVAL_MS = 10 * 1000;
+const MIN_TTL_MS = 10 * 1000;
+// Running requests can legitimately span hours (long generations, stalled
+// streams waiting on the client). Expire them on a separate, much longer
+// clock so an in-flight record is never swept before its completion
+// callback runs.
+const ACTIVE_ENTRY_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Read a numeric tuning value from config.yaml (or its env override via
+ * getConfigValue). Values below `minimum` fall back to the default so a
+ * mistyped `0` / negative can't turn the sweeper into a hot loop.
+ * @param {string} key config.yaml key
+ * @param {number} fallback default when unset or invalid
+ * @param {number} minimum smallest accepted value
+ * @returns {number}
+ */
+function readTuningNumber(key, fallback, minimum) {
+    const value = Number(getConfigValue(key, fallback, 'number'));
+    if (!Number.isFinite(value) || value < minimum) return fallback;
+    return Math.floor(value);
+}
+
+const REQUEST_INSPECTOR_TTL_MS = readTuningNumber(
+    'requestInspector.ttlMs',
+    DEFAULT_TTL_MS,
+    MIN_TTL_MS,
+);
+const REQUEST_INSPECTOR_CLEANUP_INTERVAL_MS = readTuningNumber(
+    'requestInspector.cleanupIntervalMs',
+    DEFAULT_CLEANUP_INTERVAL_MS,
+    MIN_CLEANUP_INTERVAL_MS,
+);
+// Byte budget across every user's ring buffers. Entry count and TTL bound
+// records, not memory: entries carry full request/response bodies, and
+// image-bearing chats clone those bytes twice (fullMessages + wireRequest),
+// so 200 records can retain gigabytes. 256 MB ≈ 6% of Node's ~4 GB default
+// old-space keeps a full debugging session intact while capping retention.
+const DEFAULT_BYTE_BUDGET_BYTES = 256 * 1024 * 1024;
+const MIN_BYTE_BUDGET_BYTES = 16 * 1024 * 1024;
+const REQUEST_INSPECTOR_BYTE_BUDGET_BYTES = readTuningNumber(
+    'requestInspector.byteBudgetBytes',
+    DEFAULT_BYTE_BUDGET_BYTES,
+    MIN_BYTE_BUDGET_BYTES,
+);
+const inspectorLedger = new ByteBudgetLedger(REQUEST_INSPECTOR_BYTE_BUDGET_BYTES);
+
+/** @type {Map<string, InspectorEntry[]>} handle -> entries */
+const buffers = new Map();
+
+/**
+ * AbortControllers for request types that do not run through the generation
+ * job runner (embedding / rerank). Chat, text and image requests carry a
+ * `generationJobId` and are aborted through the job's own controller.
+ *
+ * Keyed by inspector entry id. Entries are removed on completion, failure,
+ * eviction, or abort so a long-lived server never accumulates controllers.
+ *
+ * @type {Map<string, AbortController>}
+ */
+const inspectionAbortControllers = new Map();
+
+function getBuffer(handle) {
+    if (!buffers.has(handle)) {
+        buffers.set(handle, []);
+    }
+    return buffers.get(handle);
+}
+
+/**
+ * Return a copy of the inspector ring buffer for a given user handle. Used by
+ * the debug-export endpoint to bundle every captured request — full
+ * `fullMessages` / `responseText` / `wireRequest`, no truncation. Caller owns
+ * the returned array (it's a shallow clone) but the entries themselves still
+ * point at the live objects, so don't mutate them.
+ *
+ * @param {string} handle
+ * @returns {object[]}
+ */
+export function getBufferForHandle(handle) {
+    const h = String(handle || '');
+    if (!h || !buffers.has(h)) return [];
+    return buffers.get(h).slice();
+}
+
+function pushEntry(handle, entry) {
+    const buf = getBuffer(handle);
+    buf.push(entry);
+    inspectorLedger.track(entry);
+    if (buf.length > RING_BUFFER_SIZE) {
+        inspectorLedger.untrack(buf[0]);
+        buf.shift();
+    }
+    enforceByteBudget();
+}
+
+function removeEntry(handle, entry) {
+    const buffer = buffers.get(handle);
+    if (!buffer) return false;
+
+    const index = buffer.indexOf(entry);
+    if (index === -1) return false;
+
+    buffer.splice(index, 1);
+    inspectorLedger.untrack(entry);
+    releaseInspectionAbortController(entry);
+    if (buffer.length === 0) buffers.delete(handle);
+    return true;
+}
+
+/**
+ * Drop the per-entry AbortController. If the entry is still running when it
+ * is evicted (TTL / byte budget), abort the controller first so the upstream
+ * request does not keep running with no record left to stop it.
+ *
+ * @param {object} entry
+ */
+function releaseInspectionAbortController(entry) {
+    const id = String(entry?.id || '');
+    if (!id) return;
+    const controller = inspectionAbortControllers.get(id);
+    if (!controller) return;
+    inspectionAbortControllers.delete(id);
+    if (entry.status === 'running' && !controller.signal.aborted) {
+        try { controller.abort('inspection entry evicted'); } catch { /* ignore */ }
+    }
+}
+
+/**
+ * Drop the oldest evictable records until the ledger is back under the byte
+ * budget. Running records are exempt — an in-flight request must survive
+ * until its completion callback runs, same principle as ACTIVE_ENTRY_MAX_AGE
+ * — and the single newest record always survives so a record larger than the
+ * whole budget is still captured instead of silently dropped.
+ */
+function enforceByteBudget() {
+    if (!inspectorLedger.isOver()) return;
+
+    const candidates = [];
+    for (const [handle, buffer] of buffers) {
+        for (const entry of buffer) {
+            if (entry.status === 'running') continue;
+            candidates.push({ handle, entry });
+        }
+    }
+    candidates.sort((a, b) => a.entry.timestamp - b.entry.timestamp);
+
+    // `length - 1` keeps the newest evictable record.
+    for (let i = 0; i < candidates.length - 1 && inspectorLedger.isOver(); i++) {
+        removeEntry(candidates[i].handle, candidates[i].entry);
+    }
+}
+
+/**
+ * 清理已过期的请求记录。正在运行的请求保留更长时间，避免响应完成前被移除。
+ * @param {number} [now]
+ * @returns {number} 本次清理的记录数量
+ */
+export function cleanupExpiredEntries(now = Date.now()) {
+    let removed = 0;
+
+    for (const [handle, buffer] of buffers) {
+        for (const entry of [...buffer]) {
+            const age = now - Number(entry.timestamp);
+            const isRunning = entry.status === 'running';
+            const isExpired = isRunning
+                ? age >= Math.max(REQUEST_INSPECTOR_TTL_MS, ACTIVE_ENTRY_MAX_AGE_MS)
+                : age >= REQUEST_INSPECTOR_TTL_MS;
+
+            if (isExpired && removeEntry(handle, entry)) removed++;
+        }
+        // Empty buffers (e.g. every record expired, or the /list route
+        // re-created one for a user with no live records) hold no data —
+        // drop the Map key so idle users don't leave entries behind.
+        if (buffer.length === 0) {
+            buffers.delete(handle);
+        }
+    }
+
+    return removed;
+}
+
+const cleanupTimer = setInterval(cleanupExpiredEntries, REQUEST_INSPECTOR_CLEANUP_INTERVAL_MS);
+cleanupTimer.unref?.();
+
+/**
+ * Produce a redacted fingerprint of an API key suitable for the Inspector UI.
+ * Plaintext keys never enter the ring buffer — only a prefix/suffix preview
+ * plus the original length, so a user can tell which credential was used
+ * without leaking it via JSON export or screenshots.
+ *
+ * @param {string} apiKey
+ * @returns {string}
+ */
+export function fingerprintApiKey(apiKey) {
+    const key = String(apiKey ?? '');
+    if (!key) return '';
+    const len = key.length;
+    if (len <= 8) return `${'*'.repeat(len)} (${len} chars)`;
+    return `${key.slice(0, 4)}...${key.slice(-4)} (${len} chars)`;
+}
+
+/**
+ * Resolve the credential that actually goes on the wire when provider headers
+ * merge user-supplied overrides (e.g. `custom_include_headers`) on top of the
+ * resolved API key. Scans `headers` case-insensitively for the first of
+ * `preferredHeaderNames` that is present; a present header wins over the
+ * fallback even when its value is empty, because that is what the wire
+ * carries. Strips a leading `Bearer ` (case-insensitive) from the value.
+ *
+ * @param {object} [headers] final outgoing request headers
+ * @param {string} fallbackKey credential resolved from secrets or proxy password
+ * @param {string[]} [preferredHeaderNames] candidate header names in priority order
+ * @returns {string}
+ */
+export function resolveEffectiveApiKey(headers, fallbackKey, preferredHeaderNames = ['authorization', 'x-api-key', 'api-key']) {
+    if (headers && typeof headers === 'object') {
+        const entries = Object.entries(headers);
+        for (const preferred of preferredHeaderNames) {
+            const match = entries.find(([name]) => String(name).toLowerCase() === preferred);
+            if (match) {
+                const value = match[1];
+                if (value == null) continue;
+                return String(value).replace(/^Bearer\s+/i, '');
+            }
+        }
+    }
+    return String(fallbackKey ?? '');
+}
+
+const REDACT_QUERY_KEYS = new Set(['key', 'api_key', 'apikey', 'access_token', 'token']);
+
+function sanitizeEndpointUrl(endpoint) {
+    const raw = String(endpoint || '');
+    if (!raw) return '';
+    try {
+        const url = new URL(raw);
+        for (const name of [...url.searchParams.keys()]) {
+            if (REDACT_QUERY_KEYS.has(name.toLowerCase())) {
+                url.searchParams.set(name, '***');
+            }
+        }
+        return url.toString();
+    } catch {
+        return raw;
+    }
+}
+
+/**
+ * Attach the resolved upstream endpoint and a redacted key fingerprint to the
+ * current inspection entry. Call this right before fetching the upstream
+ * provider from any send*Request function.
+ *
+ * If `wirePayload` is provided, a deep-cloned snapshot of the outbound request
+ * body is recorded as `entry.wireRequest` so the Inspector UI can show what
+ * actually went on the wire after post-processing and provider-specific
+ * conversion (e.g. Claude `system:` extraction). The `fullMessages` snapshot
+ * captured by `startInspection` is the pre-conversion input; this snapshot is
+ * the post-conversion output.
+ *
+ * @param {import('express').Request} request
+ * @param {string|URL} endpoint Full URL that the server is about to hit
+ * @param {string} apiKey Plaintext API key (never stored)
+ * @param {object} [wirePayload] Optional outbound request body to snapshot.
+ */
+export function attachInspectionEndpoint(request, endpoint, apiKey, wirePayload) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    entry.endpoint = sanitizeEndpointUrl(endpoint);
+    entry.apiKeyFingerprint = fingerprintApiKey(apiKey);
+    if (wirePayload && typeof wirePayload === 'object') {
+        try {
+            entry.wireRequest = typeof structuredClone === 'function'
+                ? structuredClone(wirePayload)
+                : JSON.parse(JSON.stringify(wirePayload));
+        } catch {
+            try { entry.wireRequest = JSON.parse(JSON.stringify(wirePayload)); } catch { /* skip */ }
+        }
+    }
+    // wireRequest can dwarf the rest of the record (full bodies, inlined
+    // images) — re-estimate and evict before returning.
+    inspectorLedger.retouch(entry);
+    enforceByteBudget();
+}
+
+/**
+ * Start tracking a generation request. Call at the top of /generate.
+ * Attaches `request.__inspectorId` for later completion.
+ * @param {import('express').Request} request
+ */
+export function startInspection(request) {
+    const handle = String(request?.user?.profile?.handle || '');
+    if (!handle) return;
+
+    const body = request.body || {};
+    const messages = Array.isArray(body.messages) ? body.messages : [];
+
+    const entry = {
+        id: randomUUID(),
+        type: 'chat',
+        handle,
+        timestamp: Date.now(),
+        // Set by the runner before dispatch starts. The inspector abort
+        // endpoint uses it to cancel the generation job (and its upstream
+        // fetch) without accepting an arbitrary job id from the client.
+        generationJobId: String(request?.lukerGenerationJob?.id || ''),
+        source: String(body.chat_completion_source || body.api_type || 'unknown'),
+        model: String(body.model || ''),
+        stream: Boolean(body.stream),
+        endpoint: '',
+        apiKeyFingerprint: '',
+        messageCount: messages.length,
+        messageRoles: messages.map(m => String(m?.role || '?')),
+        promptCharLength: messages.reduce((sum, m) => {
+            const content = m?.content;
+            if (typeof content === 'string') return sum + content.length;
+            if (Array.isArray(content)) {
+                return sum + content.reduce((s, part) => {
+                    if (typeof part === 'string') return s + part.length;
+                    if (part?.text) return s + String(part.text).length;
+                    if (part?.type === 'image_url' || part?.type === 'image') return s + 100;
+                    return s;
+                }, 0);
+            }
+            return sum;
+        }, 0),
+        maxTokens: body.max_tokens ?? body.max_completion_tokens ?? null,
+        // Deep-clone snapshot of the messages array as the client posted it.
+        // Downstream send paths mutate request.body.messages in place to fit
+        // the upstream provider's schema, so a live reference would expose
+        // post-mutation intermediate state at export time.
+        fullMessages: (() => {
+            try {
+                return typeof structuredClone === 'function'
+                    ? structuredClone(messages)
+                    : JSON.parse(JSON.stringify(messages));
+            } catch {
+                return JSON.parse(JSON.stringify(messages));
+            }
+        })(),
+        responseText: '',
+        responseParts: [],
+        usage: {
+            prompt_tokens: null,
+            completion_tokens: null,
+            total_tokens: null,
+            cache_read: null,
+            cache_write: null,
+        },
+        durationMs: null,
+        status: 'running',
+        httpStatus: null,
+        error: '',
+        // Normalized OpenAI-shape stop reason (stop/length/tool_calls/content_filter/…).
+        // For native providers we translate their vocabulary into OAI's on capture so
+        // list-scan filters and cross-provider stats stay comparable. `null` = never
+        // received (still running / failed before response / provider silent).
+        finishReason: null,
+        // Provider-original stop-reason string, verbatim, before any normalization.
+        // Claude=`stop_reason` (end_turn/max_tokens/tool_use/…), Gemini=`finishReason`
+        // (STOP/MAX_TOKENS/SAFETY/…), OpenRouter=`native_finish_reason` (upstream
+        // provider's string when OR proxies e.g. Groq/Together). Kept separate from
+        // `finishReason` because the raw value carries diagnostic info the OAI
+        // vocabulary erases (e.g. Gemini SAFETY → OAI `content_filter` loses which
+        // safety category tripped; Claude `pause_turn` has no OAI equivalent).
+        nativeFinishReason: null,
+    };
+
+    pushEntry(handle, entry);
+    request.__inspectorId = entry.id;
+    request.__inspectorTimestamp = entry.timestamp;
+}
+
+/**
+ * Find the entry for a request.
+ * @param {import('express').Request} request
+ * @returns {object|null}
+ */
+export function findEntry(request) {
+    const handle = String(request?.user?.profile?.handle || '');
+    const id = request?.__inspectorId;
+    if (!handle || !id) return null;
+    const buf = buffers.get(handle);
+    if (!buf) return null;
+    for (let i = buf.length - 1; i >= 0; i--) {
+        if (buf[i].id === id) return buf[i];
+    }
+    return null;
+}
+
+/**
+ * Abort signal for the current inspector entry, if the request type uses a
+ * per-entry controller (embedding / rerank). Chat, text and image requests
+ * return null — they are aborted through their generation job instead.
+ *
+ * @param {import('express').Request} request
+ * @returns {AbortSignal|null}
+ */
+export function getInspectionAbortSignal(request) {
+    const signal = request?.__inspectorAbortController?.signal;
+    return signal || null;
+}
+
+/**
+ * Mark a running entry as aborted. Keeps the original start timestamp so the
+ * duration reflects the time the request actually ran before the abort.
+ *
+ * @param {object} entry
+ * @param {string} reason
+ * @returns {boolean}
+ */
+function markEntryAborted(entry, reason) {
+    if (!entry || entry.status !== 'running') return false;
+    entry.status = 'aborted';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.error = String(reason || '');
+    return true;
+}
+
+/**
+ * Abort the inspector entry that belongs to a generation job. Called by the
+ * generation-control abort endpoint after it has verified job ownership.
+ *
+ * @param {string} handle
+ * @param {string} jobId
+ * @param {string} [reason]
+ * @returns {object|null} the aborted entry, or null when no running entry matches
+ */
+export function abortInspectionByJobId(handle, jobId, reason = 'Aborted from request inspector') {
+    const h = String(handle || '');
+    const id = String(jobId || '');
+    if (!h || !id) return null;
+    const buf = buffers.get(h);
+    if (!buf) return null;
+    for (let i = buf.length - 1; i >= 0; i--) {
+        const entry = buf[i];
+        if (entry.generationJobId === id && markEntryAborted(entry, reason)) {
+            return entry;
+        }
+    }
+    return null;
+}
+
+/**
+ * Abort a non-job inspector entry (embedding / rerank) through its own
+ * AbortController. The pending HTTP request then fails with an AbortError,
+ * which the route translates into a 499 response.
+ *
+ * @param {string} handle
+ * @param {string} entryId
+ * @param {string} [reason]
+ * @returns {object|null} the aborted entry, or null when not abortable
+ */
+export function abortInspectionEntry(handle, entryId, reason = 'Aborted from request inspector') {
+    const h = String(handle || '');
+    const id = String(entryId || '');
+    if (!h || !id) return null;
+    const buf = buffers.get(h);
+    if (!buf) return null;
+    const entry = buf.find(e => e.id === id);
+    if (!entry || entry.status !== 'running') return null;
+    const controller = inspectionAbortControllers.get(id);
+    if (!controller) return null;
+    if (!markEntryAborted(entry, reason)) return null;
+    inspectionAbortControllers.delete(id);
+    try { controller.abort(reason); } catch { /* already aborted */ }
+    return entry;
+}
+
+/**
+ * How the inspector UI should abort this entry:
+ *   - 'job'     — cancel the generation job (chat / text / image)
+ *   - 'request' — abort the entry's own controller (embedding / rerank)
+ *   - ''        — not abortable
+ *
+ * @param {object} entry
+ * @returns {'job'|'request'|''}
+ */
+export function getAbortKind(entry) {
+    if (!entry || entry.status !== 'running') return '';
+    if (entry.generationJobId) return 'job';
+    if (inspectionAbortControllers.has(entry.id)) return 'request';
+    return '';
+}
+
+// ---- Usage extraction helpers ----
+
+/**
+ * SSE events come in two shapes depending on the caller:
+ *   - inspector stream tap pushes plain strings (the SSE data line)
+ *   - luker-generation jobs push { seq, data, ts } objects
+ * Normalize to the string data line.
+ */
+function normalizeEvent(e) {
+    let raw = '';
+    if (typeof e === 'string') raw = e;
+    else if (e && typeof e.data === 'string') raw = e.data;
+    if (!raw) return '';
+    if (raw.startsWith('data:')) {
+        raw = raw.slice(5).replace(/^\s+/, '');
+    }
+    return raw;
+}
+
+// ---- Provider-error detection ----
+//
+// Some upstream providers return HTTP 200 with a body that carries an `error`
+// field instead of the usual choices/candidates payload — OpenAI-compatible
+// APIs sometimes surface rate-limit or context-length failures this way, and
+// SSE streams can inject `data: {"error":{...}}` frames mid-stream. Luker's
+// makersuite dispatch also constructs `{error:{message}}` payloads on its own
+// for Gemini's blocked-prompt / blocked-output branches so the client's
+// `data.error` handler fires with a descriptive message.
+//
+// These paths hit `completeInspection*` (dispatch signals "the fetch itself
+// succeeded, hand the payload to the inspector"), so without an `error`
+// field check they'd be marked status='success' with an empty response body
+// — a silent classification bug. The three helpers below are pure structural
+// checks: `error != null` and nothing else, no heuristics.
+
+/**
+ * True when a non-streaming payload carries a top-level `error` field. Handles
+ * both `error: 'string'` and `error: { message | code | type | ... }` shapes.
+ * @param {*} payload
+ * @returns {boolean}
+ */
+function hasProviderError(payload) {
+    return payload != null
+ && typeof payload === 'object'
+ && payload.error != null;
+}
+
+/**
+ * Scan SSE events (tail-first, since the terminal frame is where providers
+ * inject an `error` payload) and return the first frame's parsed `error`
+ * value if any. Returns `null` when no error frame is present.
+ * @param {Array<string|{data:string}>} events
+ * @returns {*|null}
+ */
+function findErrorFrameInStreamEvents(events) {
+    if (!Array.isArray(events) || events.length === 0) return null;
+    for (let i = events.length - 1; i >= 0; i--) {
+        const raw = normalizeEvent(events[i]);
+        if (!raw || raw === '[DONE]') continue;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        if (parsed?.luker) continue;
+        if (parsed?.error != null) return parsed.error;
+    }
+    return null;
+}
+
+/**
+ * Coerce a provider-error value into a display string. Prefers `.message`,
+ * falls back to `.code` / `.type`, then to `String(...)` for plain strings,
+ * finally `JSON.stringify(...)` for opaque objects. Never returns empty
+ * (falls back to `'error'` when the input is `{}`).
+ * @param {*} err
+ * @returns {string}
+ */
+function extractProviderErrorMessage(err) {
+    if (err == null) return 'error';
+    if (typeof err === 'string') return err;
+    if (typeof err !== 'object') return String(err);
+    if (typeof err.message === 'string' && err.message) return err.message;
+    if (typeof err.code === 'string' && err.code) return err.code;
+    if (typeof err.type === 'string' && err.type) return err.type;
+    try {
+        const s = JSON.stringify(err);
+        return s && s !== '{}' ? s : 'error';
+    } catch {
+        return 'error';
+    }
+}
+
+function extractUsageFromOAI(payload) {
+    const usage = payload?.usage;
+    if (!usage || typeof usage !== 'object') return {};
+    const inputDetails = usage.prompt_tokens_details
+        ?? usage.prompt_token_details
+        ?? usage.input_tokens_details
+        ?? usage.input_token_details;
+    return {
+        prompt_tokens: usage.prompt_tokens ?? null,
+        completion_tokens: usage.completion_tokens ?? null,
+        total_tokens: usage.total_tokens ?? null,
+        cache_read: inputDetails?.cached_tokens
+            ?? inputDetails?.cache_read_input_tokens
+            ?? usage.cache_read_input_tokens
+            ?? usage.prompt_cache_hit_tokens
+            ?? usage.cached_tokens
+            ?? usage.cachedContentTokenCount
+            ?? payload?.usageMetadata?.cachedContentTokenCount
+            ?? null,
+        cache_write: inputDetails?.cache_creation_tokens
+            ?? inputDetails?.cache_creation_input_tokens
+            ?? usage.cache_creation_input_tokens
+            ?? usage.prompt_cache_miss_tokens
+            ?? usage.cache_write
+            ?? null,
+    };
+}
+
+function extractUsageFromClaude(payload) {
+    const usage = payload?.usage;
+    if (!usage || typeof usage !== 'object') return {};
+    return {
+        prompt_tokens: usage.input_tokens ?? null,
+        completion_tokens: usage.output_tokens ?? null,
+        total_tokens: (usage.input_tokens ?? 0) + (usage.output_tokens ?? 0) || null,
+        cache_read: usage.cache_read_input_tokens ?? null,
+        cache_write: usage.cache_creation_input_tokens ?? null,
+    };
+}
+
+function extractUsageFromGemini(payload) {
+    const meta = payload?.usageMetadata;
+    if (!meta || typeof meta !== 'object') return {};
+    return {
+        prompt_tokens: meta.promptTokenCount ?? null,
+        completion_tokens: meta.candidatesTokenCount ?? null,
+        total_tokens: meta.totalTokenCount ?? null,
+        cache_read: meta.cachedContentTokenCount ?? null,
+        cache_write: null,
+    };
+}
+
+function extractUsageFromResponses(payload) {
+    const usage = payload?.usage;
+    if (!usage || typeof usage !== 'object') return {};
+    const promptTokens = usage.input_tokens ?? usage.prompt_tokens ?? null;
+    const completionTokens = usage.output_tokens ?? usage.completion_tokens ?? null;
+    let totalTokens = usage.total_tokens ?? null;
+    if (totalTokens == null && (promptTokens != null || completionTokens != null)) {
+        totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0);
+    }
+    const inputDetails = usage.input_tokens_details
+        ?? usage.input_token_details
+        ?? usage.prompt_tokens_details
+        ?? usage.prompt_token_details;
+    const cacheRead = inputDetails?.cached_tokens
+        ?? inputDetails?.cache_read_input_tokens
+        ?? inputDetails?.cache_read_tokens
+        ?? usage.cache_read_input_tokens
+        ?? usage.cache_read_tokens
+        ?? usage.prompt_cache_hit_tokens
+        ?? usage.cached_tokens
+        ?? usage.cachedContentTokenCount
+        ?? payload?.usageMetadata?.cachedContentTokenCount
+        ?? null;
+    const cacheWrite = inputDetails?.cache_creation_tokens
+        ?? inputDetails?.cache_creation_input_tokens
+        ?? inputDetails?.cache_write_tokens
+        ?? usage.cache_creation_input_tokens
+        ?? usage.cache_creation_tokens
+        ?? usage.cache_write_input_tokens
+        ?? usage.cache_write_tokens
+        ?? usage.cache_write
+        ?? usage.prompt_cache_miss_tokens
+        ?? null;
+    return {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: totalTokens,
+        cache_read: cacheRead,
+        cache_write: cacheWrite,
+    };
+}
+
+// ---- Finish-reason extraction helpers ----
+
+// Claude stop_reason → OAI finish_reason. Kept in sync with the mapping used
+// on the response-normalization path (src/endpoints/backends/chat-completions.js
+// CLAUDE_STOP_REASON_TO_OAI) so inspector-normalized values match what the
+// client saw in `choices[0].finish_reason`. `pause_turn` and `refusal` have
+// no OAI vocabulary equivalent; leave them null on the normalized field and
+// rely on `nativeFinishReason` to carry the truth.
+const CLAUDE_STOP_TO_OAI = {
+    end_turn: 'stop',
+    stop_sequence: 'stop',
+    max_tokens: 'length',
+    tool_use: 'tool_calls',
+};
+
+// Gemini candidates[0].finishReason → OAI. Mirrors
+// GEMINI_FINISH_REASON_TO_OAI in the response normalizer. `OTHER`,
+// `MALFORMED_FUNCTION_CALL`, and `IMAGE_*` variants deliberately fall
+// through to null so the raw value is the sole source of truth for those.
+const GEMINI_FINISH_TO_OAI = {
+    STOP: 'stop',
+    MAX_TOKENS: 'length',
+    SAFETY: 'content_filter',
+    RECITATION: 'content_filter',
+    BLOCKLIST: 'content_filter',
+    PROHIBITED_CONTENT: 'content_filter',
+    SPII: 'content_filter',
+    LANGUAGE: 'content_filter',
+};
+
+// Cohere finish_reason → OAI. Mirrors COHERE_FINISH_REASON_TO_OAI.
+const COHERE_FINISH_TO_OAI = {
+    COMPLETE: 'stop',
+    STOP_SEQUENCE: 'stop',
+    MAX_TOKENS: 'length',
+    TOOL_CALL: 'tool_calls',
+    ERROR: null,
+};
+
+/**
+ * Pull finish/stop reason from a non-streaming response.
+ * Returns `{ finishReason, nativeFinishReason }` — either or both may be null
+ * when the provider didn't send one (rare) or the payload shape doesn't
+ * match the source. `nativeFinishReason` is preserved verbatim (Gemini's
+ * SAFETY casing matters; OpenRouter passes through arbitrary upstream tags).
+ *
+ * @param {object} payload OAI-normalized reply
+ * @param {object} [rawApiResponse] provider-native body (Claude/Gemini/Cohere)
+ * @param {string} source backend id from body.chat_completion_source
+ * @returns {{finishReason: string|null, nativeFinishReason: string|null}}
+ */
+function extractFinishReasonFromPayload(payload, rawApiResponse, source) {
+    let nativeFinishReason = null;
+    let finishReason = null;
+
+    if (source === 'claude' && rawApiResponse?.stop_reason) {
+        nativeFinishReason = String(rawApiResponse.stop_reason);
+        finishReason = CLAUDE_STOP_TO_OAI[nativeFinishReason] ?? null;
+    } else if ((source === 'makersuite' || source === 'vertexai') && Array.isArray(rawApiResponse?.candidates)) {
+        const raw = rawApiResponse.candidates[0]?.finishReason;
+        if (raw) {
+            nativeFinishReason = String(raw);
+            finishReason = GEMINI_FINISH_TO_OAI[nativeFinishReason] ?? null;
+        }
+    } else if (source === 'cohere' && rawApiResponse?.finish_reason) {
+        nativeFinishReason = String(rawApiResponse.finish_reason);
+        finishReason = COHERE_FINISH_TO_OAI[nativeFinishReason] ?? null;
+    }
+
+    const respObj = (source === 'openai_responses' && rawApiResponse) ? rawApiResponse : payload;
+    if (source === 'openai_responses' || Array.isArray(respObj?.output)) {
+        const hasToolCall = Array.isArray(respObj?.output) && respObj.output.some(item => item?.type === 'function_call');
+        const status = respObj?.status ? String(respObj.status) : null;
+        const incompleteReason = respObj?.incomplete_details?.reason ? String(respObj.incomplete_details.reason) : null;
+        nativeFinishReason = status;
+        finishReason = hasToolCall
+            ? 'tool_calls'
+            : (status === 'completed'
+                ? 'stop'
+                : (status === 'incomplete'
+                    ? (incompleteReason === 'content_filter' ? 'content_filter' : 'length')
+                    : (status ?? null)));
+    }
+
+    // Fall back / augment from the OAI-shaped choices array. This is the
+    // primary path for OpenAI, DeepSeek, Mistral, xAI, AIMLAPI, OpenRouter,
+    // Azure, MiniMax, Chutes, ElectronHub, AI21, and any other OAI-compatible
+    // upstream that goes through the runner catch-all. OpenRouter also
+    // surfaces `native_finish_reason` on the choice — that's the upstream
+    // provider's original string (e.g. Groq's `length`, Together's `eos`),
+    // which is exactly what "native" means here even though the runner didn't
+    // see a separate raw body.
+    const choice = payload?.choices?.[0];
+    if (choice) {
+        if (!finishReason && choice.finish_reason) {
+            finishReason = String(choice.finish_reason);
+        }
+        if (!nativeFinishReason && choice.native_finish_reason) {
+            nativeFinishReason = String(choice.native_finish_reason);
+        } else if (!nativeFinishReason && choice.finish_reason) {
+            // For plain-OAI providers, native == normalized. Copy so the UI
+            // always has something to show when a reason exists at all.
+            nativeFinishReason = String(choice.finish_reason);
+        }
+    }
+
+    return { finishReason, nativeFinishReason };
+}
+
+/**
+ * Pull finish reason from SSE events. Walks in reverse — the finish-carrying
+ * frame is always at the tail of a well-formed stream (Claude message_delta,
+ * Gemini final candidates chunk, OAI final delta with finish_reason set).
+ *
+ * @param {Array<string|{data:string}>} events
+ * @param {string} source
+ * @returns {{finishReason: string|null, nativeFinishReason: string|null}}
+ */
+export function extractFinishReasonFromStreamEvents(events, source) {
+    if (!Array.isArray(events) || events.length === 0) {
+        return { finishReason: null, nativeFinishReason: null };
+    }
+
+    for (let i = events.length - 1; i >= 0; i--) {
+        const raw = normalizeEvent(events[i]);
+        if (!raw || raw === '[DONE]') continue;
+
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        if (parsed?.luker) continue;
+
+        if (source === 'claude') {
+            // Anthropic streaming emits message_delta with the terminal
+            // stop_reason once the model releases the turn. Nothing else on
+            // the stream carries it.
+            if (parsed?.type === 'message_delta' && parsed?.delta?.stop_reason) {
+                const native = String(parsed.delta.stop_reason);
+                return { finishReason: CLAUDE_STOP_TO_OAI[native] ?? null, nativeFinishReason: native };
+            }
+            continue;
+        }
+
+        if (source === 'makersuite' || source === 'vertexai') {
+            const raw2 = parsed?.candidates?.[0]?.finishReason;
+            if (raw2) {
+                const native = String(raw2);
+                return { finishReason: GEMINI_FINISH_TO_OAI[native] ?? null, nativeFinishReason: native };
+            }
+            continue;
+        }
+
+        if (source === 'openai_responses' || parsed?.type === 'response.completed' || parsed?.type === 'response.incomplete') {
+            const resp = parsed?.response || parsed;
+            const status = resp?.status ? String(resp.status) : (parsed?.type === 'response.completed' ? 'completed' : 'incomplete');
+            const hasToolCalls = events.some(ev => {
+                const evRaw = normalizeEvent(ev);
+                if (!evRaw || evRaw === '[DONE]') return false;
+                let evParsed;
+                try { evParsed = JSON.parse(evRaw); } catch { return false; }
+                if (evParsed?.type === 'response.output_item.added') {
+                    return evParsed?.item?.type === 'function_call';
+                }
+                return evParsed?.type === 'response.function_call_arguments.delta';
+            });
+            const incompleteReason = resp?.incomplete_details?.reason ? String(resp.incomplete_details.reason) : null;
+            const norm = hasToolCalls
+                ? 'tool_calls'
+                : (status === 'completed'
+                    ? 'stop'
+                    : (status === 'incomplete'
+                        ? (incompleteReason === 'content_filter' ? 'content_filter' : 'length')
+                        : status));
+            return { finishReason: norm, nativeFinishReason: status };
+        }
+
+        // OpenAI / OpenAI-compatible. finish_reason on the choice (either
+        // in delta or on the choice itself for providers that fold it in).
+        // Also pick up OpenRouter's `native_finish_reason` when present.
+        const choice = parsed?.choices?.[0];
+        if (!choice) continue;
+        const norm = choice.finish_reason ?? choice.delta?.finish_reason;
+        const nat = choice.native_finish_reason ?? choice.delta?.native_finish_reason;
+        if (norm || nat) {
+            return {
+                finishReason: norm ? String(norm) : null,
+                nativeFinishReason: nat ? String(nat) : (norm ? String(norm) : null),
+            };
+        }
+    }
+
+    return { finishReason: null, nativeFinishReason: null };
+}
+
+/**
+ * Extract usage from SSE stream events.
+ * @param {string[]} events
+ * @param {string} source
+ * @returns {object}
+ */
+export function extractUsageFromStreamEvents(events, source) {
+    if (!Array.isArray(events) || events.length === 0) return {};
+
+    for (let i = events.length - 1; i >= 0; i--) {
+        const raw = normalizeEvent(events[i]);
+        if (!raw || raw === '[DONE]') continue;
+
+        let parsed;
+        try {
+            parsed = JSON.parse(raw);
+        } catch {
+            continue;
+        }
+
+        if (parsed?.luker) continue;
+
+        if (source === 'claude') {
+            if (parsed?.type === 'message_delta' && parsed?.usage) {
+                return extractUsageFromClaude({ usage: parsed.usage });
+            }
+            if (parsed?.type === 'message_start' && parsed?.message?.usage) {
+                return extractUsageFromClaude({ usage: parsed.message.usage });
+            }
+        }
+
+        if (source === 'makersuite' || source === 'vertexai') {
+            if (parsed?.usageMetadata) {
+                return extractUsageFromGemini(parsed);
+            }
+        }
+
+        if (source === 'openai_responses' || parsed?.type === 'response.completed' || parsed?.type === 'response.incomplete') {
+            const usageObj = parsed?.response?.usage || parsed?.usage;
+            if (usageObj) {
+                return extractUsageFromResponses({ usage: usageObj });
+            }
+        }
+
+        if (parsed?.usage) {
+            const oai = extractUsageFromOAI(parsed);
+            if (oai.prompt_tokens != null) return oai;
+            const respUsage = extractUsageFromResponses(parsed);
+            if (respUsage.prompt_tokens != null) return respUsage;
+        }
+    }
+
+    return {};
+}
+
+/**
+ * Extract response text from SSE stream events as a fallback when the caller
+ * didn't accumulate text itself.
+ * @param {string[]} events
+ * @param {string} source
+ * @returns {string}
+ */
+function extractTextFromStreamEvents(events, source) {
+    if (!Array.isArray(events) || events.length === 0) return '';
+    const out = [];
+    for (const ev of events) {
+        const raw = normalizeEvent(ev);
+        if (!raw || raw === '[DONE]') continue;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        if (parsed?.luker) continue;
+
+        if (source === 'claude') {
+            if (parsed?.type === 'content_block_delta' && parsed?.delta?.type === 'text_delta') {
+                out.push(parsed.delta.text || '');
+            }
+            continue;
+        }
+        if (source === 'makersuite' || source === 'vertexai') {
+            const parts = parsed?.candidates?.[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+                for (const p of parts) if (typeof p?.text === 'string') out.push(p.text);
+            }
+            continue;
+        }
+        if (source === 'openai_responses' || parsed?.type?.startsWith?.('response.')) {
+            if (parsed?.type === 'response.output_text.delta' && typeof parsed.delta === 'string') {
+                out.push(parsed.delta);
+            }
+            continue;
+        }
+        // OpenAI / generic
+        const delta = parsed?.choices?.[0]?.delta?.content
+ ?? parsed?.choices?.[0]?.text
+ ?? parsed?.choices?.[0]?.message?.content;
+        if (typeof delta === 'string') out.push(delta);
+        else if (Array.isArray(delta)) {
+            for (const p of delta) if (p?.type === 'text' && typeof p.text === 'string') out.push(p.text);
+        }
+    }
+    return out.join('');
+}
+
+/**
+ * Extract ordered response parts from SSE stream events.
+ * Each part is either {type:'text', text} or
+ * {type:'tool_call', id, name, args}.
+ *
+ * Handles three streaming dialects:
+ *   - Claude: content_block_start / content_block_delta with index-keyed
+ *     blocks of either text_delta or input_json_delta
+ *   - Gemini: candidates[0].content.parts containing text or functionCall
+ *   - OpenAI (and OpenAI-compatible): delta.content text + index-keyed
+ *     delta.tool_calls increments whose function.arguments is appended as
+ *     a JSON string
+ */
+function extractPartsFromStreamEvents(events, source) {
+    if (!Array.isArray(events) || events.length === 0) return [];
+
+    if (source === 'claude') {
+        /** @type {Map<number, {type:string,text:string,name:string,id:string,inputJson:string,thinking:string,signature:string,data:string}>} */
+        const blocks = new Map();
+        const order = [];
+        const ensureBlock = (idx) => {
+            let b = blocks.get(idx);
+            if (!b) {
+                b = { type: 'text', text: '', name: '', id: '', inputJson: '', thinking: '', signature: '', data: '' };
+                blocks.set(idx, b);
+                order.push(idx);
+            }
+            return b;
+        };
+        for (const ev of events) {
+            const raw = normalizeEvent(ev);
+            if (!raw || raw === '[DONE]') continue;
+            let parsed;
+            try { parsed = JSON.parse(raw); } catch { continue; }
+            if (parsed?.luker) continue;
+
+            if (parsed?.type === 'content_block_start') {
+                const idx = parsed.index ?? 0;
+                const cb = parsed.content_block || {};
+                const b = ensureBlock(idx);
+                b.type = cb.type || 'text';
+                if (cb.type === 'text' && typeof cb.text === 'string') b.text = cb.text;
+                if (cb.type === 'thinking' && typeof cb.thinking === 'string') b.thinking = cb.thinking;
+                if (cb.type === 'thinking' && typeof cb.signature === 'string') b.signature = cb.signature;
+                if (cb.type === 'redacted_thinking' && typeof cb.data === 'string') b.data = cb.data;
+                if (cb.name) b.name = cb.name;
+                if (cb.id) b.id = cb.id;
+            } else if (parsed?.type === 'content_block_delta') {
+                const idx = parsed.index ?? 0;
+                const b = ensureBlock(idx);
+                const d = parsed.delta;
+                if (d?.type === 'text_delta' && typeof d.text === 'string') b.text += d.text;
+                else if (d?.type === 'input_json_delta' && typeof d.partial_json === 'string') b.inputJson += d.partial_json;
+                else if (d?.type === 'thinking_delta' && typeof d.thinking === 'string') b.thinking += d.thinking;
+                else if (d?.type === 'signature_delta' && typeof d.signature === 'string') b.signature += d.signature;
+            }
+        }
+
+        const parts = [];
+        for (const idx of order) {
+            const b = blocks.get(idx);
+            if (!b) continue;
+            if (b.type === 'text') {
+                if (b.text) parts.push({ type: 'text', text: b.text });
+            } else if (b.type === 'tool_use') {
+                parts.push({ type: 'tool_call', id: b.id, name: b.name, args: coerceToolArgs(b.inputJson) });
+            } else if (b.type === 'thinking') {
+                parts.push({ type: 'reasoning', kind: 'thinking', text: b.thinking, signature: b.signature });
+            } else if (b.type === 'redacted_thinking') {
+                parts.push({ type: 'reasoning', kind: 'redacted_thinking', data: b.data });
+            }
+        }
+        return parts;
+    }
+
+    if (source === 'makersuite' || source === 'vertexai') {
+        const parts = [];
+        let textAccum = '';
+        const flushText = () => {
+            if (textAccum) { parts.push({ type: 'text', text: textAccum }); textAccum = ''; }
+        };
+        for (const ev of events) {
+            const raw = normalizeEvent(ev);
+            if (!raw || raw === '[DONE]') continue;
+            let parsed;
+            try { parsed = JSON.parse(raw); } catch { continue; }
+            if (parsed?.luker) continue;
+            const geminiParts = parsed?.candidates?.[0]?.content?.parts;
+            if (!Array.isArray(geminiParts)) continue;
+            for (const p of geminiParts) {
+                if (typeof p?.text === 'string') {
+                    textAccum += p.text;
+                } else if (p?.functionCall) {
+                    flushText();
+                    parts.push({ type: 'tool_call', id: '', name: p.functionCall.name || '', args: p.functionCall.args ?? {} });
+                } else if (p?.inlineData) {
+                    // Gemini streams image output as inlineData parts.
+                    flushText();
+                    parts.push({ type: 'image', mime: p.inlineData.mimeType || '', data: p.inlineData.data || '' });
+                }
+            }
+        }
+        flushText();
+        return parts;
+    }
+
+    if (source === 'openai_responses') {
+        const parts = [];
+        let textAccum = '';
+        let reasoningAccum = '';
+        /** @type {Map<number, {id: string, name: string, argsStr: string}>} */
+        const toolCalls = new Map();
+        const toolOrder = [];
+
+        const flushText = () => {
+            if (textAccum) { parts.push({ type: 'text', text: textAccum }); textAccum = ''; }
+        };
+        const flushReasoning = () => {
+            if (reasoningAccum) { parts.push({ type: 'reasoning', kind: 'text', text: reasoningAccum }); reasoningAccum = ''; }
+        };
+
+        for (const ev of events) {
+            const raw = normalizeEvent(ev);
+            if (!raw || raw === '[DONE]') continue;
+            let parsed;
+            try { parsed = JSON.parse(raw); } catch { continue; }
+            if (parsed?.luker) continue;
+
+            const type = parsed?.type;
+            if (type === 'response.output_text.delta' && typeof parsed.delta === 'string') {
+                flushReasoning();
+                textAccum += parsed.delta;
+            } else if ((type === 'response.reasoning_text.delta' || type === 'response.reasoning_summary_text.delta') && typeof parsed.delta === 'string') {
+                flushText();
+                reasoningAccum += parsed.delta;
+            } else if (type === 'response.output_item.added') {
+                const item = parsed.item;
+                if (item?.type === 'function_call') {
+                    const idx = Number(parsed.output_index ?? toolOrder.length);
+                    toolCalls.set(idx, {
+                        id: String(item.call_id || item.id || ''),
+                        name: String(item.name || ''),
+                        argsStr: '',
+                    });
+                    if (!toolOrder.includes(idx)) toolOrder.push(idx);
+                }
+            } else if (type === 'response.function_call_arguments.delta') {
+                const idx = Number(parsed.output_index ?? 0);
+                const tc = toolCalls.get(idx);
+                if (tc && typeof parsed.delta === 'string') {
+                    tc.argsStr += parsed.delta;
+                }
+            }
+        }
+        flushReasoning();
+        flushText();
+        for (const idx of toolOrder) {
+            const tc = toolCalls.get(idx);
+            if (tc) {
+                parts.push({
+                    type: 'tool_call',
+                    id: tc.id,
+                    name: tc.name,
+                    args: coerceToolArgs(tc.argsStr),
+                });
+            }
+        }
+        return parts;
+    }
+
+    // OpenAI / OpenAI-compatible
+    let textAccum = '';
+    let reasoningTextAccum = '';
+    /** @type {object[]} reasoning_details merged with the provider's stream semantics */
+    const reasoningDetails = [];
+    /** @type {Map<number, {id:string,name:string,argsStr:string}>} */
+    const toolCalls = new Map();
+    const toolOrder = [];
+    const ensureToolCall = (idx) => {
+        let t = toolCalls.get(idx);
+        if (!t) {
+            t = { id: '', name: '', argsStr: '' };
+            toolCalls.set(idx, t);
+            toolOrder.push(idx);
+        }
+        return t;
+    };
+    const ingestReasoningDetails = (arr) => mergeReasoningDetails(reasoningDetails, arr);
+    for (const ev of events) {
+        const raw = normalizeEvent(ev);
+        if (!raw || raw === '[DONE]') continue;
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch { continue; }
+        if (parsed?.luker) continue;
+        const delta = parsed?.choices?.[0]?.delta;
+        if (!delta) continue;
+        const content = delta.content;
+        if (typeof content === 'string') textAccum += content;
+        else if (Array.isArray(content)) {
+            for (const p of content) if (p?.type === 'text' && typeof p.text === 'string') textAccum += p.text;
+        }
+        if (typeof delta.reasoning_content === 'string') reasoningTextAccum += delta.reasoning_content;
+        if (typeof delta.reasoning === 'string') reasoningTextAccum += delta.reasoning;
+        if (Array.isArray(delta.reasoning_details)) ingestReasoningDetails(delta.reasoning_details);
+        if (Array.isArray(delta.tool_calls)) {
+            for (const tc of delta.tool_calls) {
+                const idx = tc?.index ?? 0;
+                const t = ensureToolCall(idx);
+                if (tc?.id) t.id = tc.id;
+                if (tc?.function?.name) t.name = tc.function.name;
+                if (typeof tc?.function?.arguments === 'string') t.argsStr += tc.function.arguments;
+            }
+        }
+    }
+
+    const parts = [];
+    // Dual-channel streams deliver the same thinking as both `reasoning` and
+    // `reasoning_details`. Keep one copy — the structured entries.
+    const detailsText = joinReasoningDetailsText(reasoningDetails);
+    const reasoningIsDuplicated = reasoningTextAccum && detailsText && reasoningTextAccum === detailsText;
+    if (reasoningTextAccum && !reasoningIsDuplicated) parts.push({ type: 'reasoning', kind: 'text', text: reasoningTextAccum });
+    if (reasoningDetails.length) {
+        parts.push({ type: 'reasoning', kind: 'details', details: reasoningDetails });
+    }
+    if (textAccum) parts.push({ type: 'text', text: textAccum });
+    for (const idx of toolOrder) {
+        const t = toolCalls.get(idx);
+        parts.push({ type: 'tool_call', id: t.id, name: t.name, args: coerceToolArgs(t.argsStr) });
+    }
+    return parts;
+}
+
+/**
+ * Extract response text from a non-streaming payload.
+ * @param {object} payload OpenAI-shaped payload (post-conversion in chat-completions)
+ * @param {string} source backend identifier
+ * @param {object} [rawApiResponse] native API response (pre-conversion), if available
+ * @returns {string}
+ */
+function extractTextFromPayload(payload, source, rawApiResponse) {
+    if (rawApiResponse) {
+        if (source === 'claude' && Array.isArray(rawApiResponse.content)) {
+            return rawApiResponse.content
+                .filter(p => p?.type === 'text' && typeof p.text === 'string')
+                .map(p => p.text)
+                .join('');
+        }
+        if ((source === 'makersuite' || source === 'vertexai') && Array.isArray(rawApiResponse.candidates)) {
+            const parts = rawApiResponse.candidates[0]?.content?.parts;
+            if (Array.isArray(parts)) {
+                return parts.filter(p => typeof p?.text === 'string').map(p => p.text).join('');
+            }
+        }
+    }
+    const respObj = (source === 'openai_responses' && rawApiResponse) ? rawApiResponse : payload;
+    if (source === 'openai_responses' || Array.isArray(respObj?.output)) {
+        const out = [];
+        for (const item of Array.isArray(respObj?.output) ? respObj.output : []) {
+            if (item?.type === 'message' && Array.isArray(item.content)) {
+                for (const part of item.content) {
+                    if (part?.type === 'output_text' && typeof part.text === 'string') {
+                        out.push(part.text);
+                    }
+                }
+            }
+        }
+        if (out.length > 0) return out.join('');
+    }
+    const choice = payload?.choices?.[0];
+    const msgContent = choice?.message?.content ?? choice?.text;
+    if (typeof msgContent === 'string') return msgContent;
+    if (Array.isArray(msgContent)) {
+        return msgContent
+            .filter(p => p?.type === 'text' && typeof p.text === 'string')
+            .map(p => p.text)
+            .join('');
+    }
+    return '';
+}
+
+/**
+ * Coerce a tool-call args field into a plain object (parsing JSON strings).
+ * Falls back to the original value if parsing fails.
+ */
+function coerceToolArgs(raw) {
+    if (raw == null) return {};
+    if (typeof raw === 'string') {
+        try { return JSON.parse(raw); } catch { return raw; }
+    }
+    return raw;
+}
+
+/**
+ * Extract ordered response parts from a non-streaming payload.
+ * Each part is either {type:'text', text} or
+ * {type:'tool_call', id, name, args}.
+ */
+function extractPartsFromPayload(payload, source, rawApiResponse) {
+    const parts = [];
+
+    if (rawApiResponse) {
+        if (source === 'claude' && Array.isArray(rawApiResponse.content)) {
+            for (const p of rawApiResponse.content) {
+                if (p?.type === 'text' && typeof p.text === 'string') {
+                    if (p.text) parts.push({ type: 'text', text: p.text });
+                } else if (p?.type === 'tool_use') {
+                    parts.push({ type: 'tool_call', id: p.id || '', name: p.name || '', args: p.input ?? {} });
+                } else if (p?.type === 'thinking') {
+                    parts.push({
+                        type: 'reasoning',
+                        kind: 'thinking',
+                        text: typeof p.thinking === 'string' ? p.thinking : '',
+                        signature: typeof p.signature === 'string' ? p.signature : '',
+                    });
+                } else if (p?.type === 'redacted_thinking') {
+                    parts.push({
+                        type: 'reasoning',
+                        kind: 'redacted_thinking',
+                        data: typeof p.data === 'string' ? p.data : '',
+                    });
+                }
+            }
+            return parts;
+        }
+        if ((source === 'makersuite' || source === 'vertexai') && Array.isArray(rawApiResponse.candidates)) {
+            const geminiParts = rawApiResponse.candidates[0]?.content?.parts;
+            if (Array.isArray(geminiParts)) {
+                for (const p of geminiParts) {
+                    if (typeof p?.text === 'string') {
+                        if (p.text) parts.push({ type: 'text', text: p.text });
+                    } else if (p?.functionCall) {
+                        parts.push({ type: 'tool_call', id: '', name: p.functionCall.name || '', args: p.functionCall.args ?? {} });
+                    } else if (p?.inlineData) {
+                        // Gemini image output — keep the bytes so the Inspector
+                        // can render the actual image instead of dropping it.
+                        parts.push({ type: 'image', mime: p.inlineData.mimeType || '', data: p.inlineData.data || '' });
+                    }
+                }
+                return parts;
+            }
+        }
+    }
+
+    const respObj = (source === 'openai_responses' && rawApiResponse) ? rawApiResponse : payload;
+    if (source === 'openai_responses' || Array.isArray(respObj?.output)) {
+        for (const item of Array.isArray(respObj?.output) ? respObj.output : []) {
+            if (item?.type === 'message' && Array.isArray(item.content)) {
+                for (const p of item.content) {
+                    if (p?.type === 'output_text' && typeof p.text === 'string' && p.text) {
+                        parts.push({ type: 'text', text: p.text });
+                    }
+                }
+            } else if (item?.type === 'reasoning') {
+                for (const summary of Array.isArray(item.summary) ? item.summary : []) {
+                    if (summary?.type === 'summary_text' && typeof summary.text === 'string' && summary.text) {
+                        parts.push({ type: 'reasoning', kind: 'thinking', text: summary.text });
+                    }
+                }
+                if (typeof item.text === 'string' && item.text) {
+                    parts.push({ type: 'reasoning', kind: 'thinking', text: item.text });
+                }
+            } else if (item?.type === 'function_call') {
+                parts.push({
+                    type: 'tool_call',
+                    id: String(item.call_id || item.id || ''),
+                    name: String(item.name || ''),
+                    args: coerceToolArgs(item.arguments),
+                });
+            }
+        }
+        return parts;
+    }
+
+    const choice = payload?.choices?.[0];
+    if (choice) {
+        const msg = choice?.message || {};
+        const msgDetails = Array.isArray(msg.reasoning_details) && msg.reasoning_details.length
+            ? msg.reasoning_details
+            : null;
+        const msgReasoningText = (typeof msg.reasoning_content === 'string' && msg.reasoning_content)
+            ? msg.reasoning_content
+            : (typeof msg.reasoning === 'string' && msg.reasoning ? msg.reasoning : '');
+        // Dual-channel payloads carry the same thinking twice; keep the
+        // structured entries and drop the duplicated plain string.
+        const msgDetailsText = msgDetails ? joinReasoningDetailsText(msgDetails) : '';
+        if (msgReasoningText && !(msgDetailsText && msgReasoningText === msgDetailsText)) {
+            parts.push({ type: 'reasoning', kind: 'text', text: msgReasoningText });
+        }
+        if (msgDetails) {
+            parts.push({ type: 'reasoning', kind: 'details', details: msgDetails });
+        }
+        if (Array.isArray(msg.reasoning_blocks) && msg.reasoning_blocks.length) {
+            for (const b of msg.reasoning_blocks) {
+                if (b?.type === 'thinking') {
+                    parts.push({
+                        type: 'reasoning',
+                        kind: 'thinking',
+                        text: typeof b.thinking === 'string' ? b.thinking : '',
+                        signature: typeof b.signature === 'string' ? b.signature : '',
+                    });
+                } else if (b?.type === 'redacted_thinking') {
+                    parts.push({
+                        type: 'reasoning',
+                        kind: 'redacted_thinking',
+                        data: typeof b.data === 'string' ? b.data : '',
+                    });
+                }
+            }
+        }
+        const msgContent = msg.content ?? choice?.text;
+        if (typeof msgContent === 'string' && msgContent) {
+            parts.push({ type: 'text', text: msgContent });
+        } else if (Array.isArray(msgContent)) {
+            for (const p of msgContent) {
+                if (p?.type === 'text' && typeof p.text === 'string' && p.text) {
+                    parts.push({ type: 'text', text: p.text });
+                }
+            }
+        }
+        const tcs = msg.tool_calls;
+        if (Array.isArray(tcs)) {
+            for (const tc of tcs) {
+                parts.push({
+                    type: 'tool_call',
+                    id: tc?.id || '',
+                    name: tc?.function?.name || tc?.name || '',
+                    args: coerceToolArgs(tc?.function?.arguments ?? tc?.arguments),
+                });
+            }
+        }
+        const fc = msg.function_call;
+        if (fc) {
+            parts.push({ type: 'tool_call', id: '', name: fc.name || '', args: coerceToolArgs(fc.arguments) });
+        }
+    }
+    return parts;
+}
+
+/**
+ * Complete an inspection with success + usage data from a non-streaming response.
+ * @param {import('express').Request} request
+ * @param {object} payload
+ * @param {object} [rawApiResponse]
+ */
+export function completeInspection(request, payload, rawApiResponse) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    // An inspector abort may race the dispatch's completion callback. The
+    // abort wins: never overwrite an explicit user-visible abort with success.
+    if (entry.status === 'aborted') return;
+
+    entry.status = 'success';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = 200;
+
+    const source = entry.source;
+    let usage = {};
+
+    if (rawApiResponse) {
+        if (source === 'claude') {
+            usage = extractUsageFromClaude(rawApiResponse);
+        } else if (source === 'makersuite' || source === 'vertexai') {
+            usage = extractUsageFromGemini(rawApiResponse);
+        } else if (source === 'openai_responses') {
+            usage = extractUsageFromResponses(rawApiResponse);
+        }
+    }
+
+    if (!usage.prompt_tokens) {
+        if (source === 'openai_responses' || payload?.usage?.input_tokens != null || Array.isArray(payload?.output)) {
+            const respUsage = extractUsageFromResponses(payload);
+            if (respUsage.prompt_tokens != null) {
+                usage = respUsage;
+            }
+        }
+    }
+
+    if (!usage.prompt_tokens) {
+        const oaiUsage = extractUsageFromOAI(payload);
+        if (oaiUsage.prompt_tokens) {
+            usage = oaiUsage;
+        }
+    }
+
+    Object.assign(entry.usage, usage);
+    entry.responseText = extractTextFromPayload(payload, source, rawApiResponse);
+    entry.responseParts = extractPartsFromPayload(payload, source, rawApiResponse);
+
+    const fr = extractFinishReasonFromPayload(payload, rawApiResponse, source);
+    entry.finishReason = fr.finishReason;
+    entry.nativeFinishReason = fr.nativeFinishReason;
+
+    // HTTP 200 but body carries `{ error: {...} }` — provider signalled failure
+    // through the payload instead of a non-2xx status. Reclassify from success
+    // to error and surface the message; `httpStatus` stays 200 (truthful) so
+    // the UI shows the "HTTP OK, body was an error" case explicitly.
+    if (hasProviderError(payload)) {
+        entry.status = 'error';
+        entry.error = extractProviderErrorMessage(payload.error);
+    }
+
+    // responseText / responseParts can carry megabytes — re-estimate the
+    // record and evict older ones if the budget no longer holds.
+    inspectorLedger.retouch(entry);
+    enforceByteBudget();
+}
+
+/**
+ * Complete an inspection from streaming events.
+ * @param {import('express').Request} request
+ * @param {string[]} events
+ * @param {string} [accumulatedText] caller-side accumulated text (preferred over re-parsing events)
+ */
+export function completeInspectionFromStream(request, events, accumulatedText) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+
+    entry.status = 'success';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = 200;
+
+    const usage = extractUsageFromStreamEvents(events, entry.source);
+    Object.assign(entry.usage, usage);
+
+    entry.responseParts = extractPartsFromStreamEvents(events, entry.source);
+
+    if (typeof accumulatedText === 'string' && accumulatedText.length) {
+        entry.responseText = accumulatedText;
+    } else {
+        entry.responseText = entry.responseParts
+            .filter(p => p.type === 'text')
+            .map(p => p.text)
+            .join('') || extractTextFromStreamEvents(events, entry.source);
+    }
+
+    const fr = extractFinishReasonFromStreamEvents(events, entry.source);
+    entry.finishReason = fr.finishReason;
+    entry.nativeFinishReason = fr.nativeFinishReason;
+
+    // SSE stream carried a `data: {"error":{...}}` frame — provider aborted
+    // mid-stream (rate limit, context length, policy trigger, upstream cut).
+    // Reclassify from success to error and surface the message; already
+    // accumulated deltas stay in responseText / responseParts so the user can
+    // see how far the model got before the stream broke.
+    const providerError = findErrorFrameInStreamEvents(events);
+    if (providerError != null) {
+        entry.status = 'error';
+        entry.error = extractProviderErrorMessage(providerError);
+    }
+
+    inspectorLedger.retouch(entry);
+    enforceByteBudget();
+}
+
+/**
+ * Mark an inspection as failed.
+ * @param {import('express').Request} request
+ * @param {string} errorMessage
+ * @param {number} [httpStatus]
+ */
+export function failInspection(request, errorMessage, httpStatus) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+
+    entry.status = 'error';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = httpStatus ?? null;
+    entry.error = String(errorMessage || 'Unknown error');
+
+    // error strings are bounded but can still carry a whole provider body.
+    inspectorLedger.retouch(entry);
+    enforceByteBudget();
+}
+
+/**
+ * Mark an inspection as aborted.
+ * @param {import('express').Request} request
+ */
+export function abortInspection(request) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    markEntryAborted(entry, 'Aborted');
+}
+
+// ---- ComfyUI Workflow Parsing ----
+
+/**
+ * Best-effort extraction of generation parameters from a ComfyUI workflow JSON.
+ * @param {string|object} promptData - The workflow (body.prompt is a JSON string)
+ * @returns {object}
+ */
+function parseComfyWorkflow(promptData) {
+    const result = { prompt: '', negativePrompt: '', model: '', width: null, height: null, steps: null, cfgScale: null, seed: null, sampler: null };
+    let workflow;
+    try {
+        workflow = typeof promptData === 'string' ? JSON.parse(promptData) : promptData;
+    } catch {
+        return result;
+    }
+    if (!workflow || typeof workflow !== 'object') return result;
+
+    // The client posts `body.prompt` verbatim to ComfyUI's /prompt route, so
+    // the node graph is nested under `prompt` (with an optional client_id
+    // sibling). Accept a bare node graph as well.
+    if (workflow.prompt && typeof workflow.prompt === 'object' && !Array.isArray(workflow.prompt)) {
+        workflow = workflow.prompt;
+    }
+
+    const textByNodeId = new Map();
+    let samplerInputs = null;
+
+    for (const [nodeId, node] of Object.entries(workflow)) {
+        const cls = node?.class_type;
+        const inputs = node?.inputs;
+        if (!cls || !inputs) continue;
+
+        if (cls === 'KSampler' || cls === 'KSamplerAdvanced') {
+            result.steps = inputs.steps ?? result.steps;
+            result.cfgScale = inputs.cfg ?? result.cfgScale;
+            result.seed = inputs.seed ?? inputs.noise_seed ?? result.seed;
+            result.sampler = inputs.sampler_name ?? result.sampler;
+            if (!samplerInputs && inputs.positive && inputs.negative) samplerInputs = inputs;
+        } else if (cls === 'CLIPTextEncode' || cls === 'CLIPTextEncodeSDXL') {
+            const text = typeof inputs.text === 'string'
+                ? inputs.text
+                : (typeof inputs.text_g === 'string' ? inputs.text_g : '');
+            if (text) textByNodeId.set(String(nodeId), text);
+        } else if (cls === 'CheckpointLoaderSimple' || cls === 'CheckpointLoader') {
+            result.model = inputs.ckpt_name ?? result.model;
+        } else if (cls === 'EmptyLatentImage') {
+            result.width = inputs.width ?? result.width;
+            result.height = inputs.height ?? result.height;
+        }
+    }
+
+    const linkedText = (link) => {
+        if (!Array.isArray(link)) return '';
+        return textByNodeId.get(String(link[0])) ?? '';
+    };
+
+    if (samplerInputs) {
+        result.prompt = linkedText(samplerInputs.positive);
+        result.negativePrompt = linkedText(samplerInputs.negative);
+    }
+
+    // Fallback for workflows whose sampler does not link straight to text
+    // nodes: first remaining text is the prompt, a shorter one is negative.
+    if (!result.prompt || !result.negativePrompt) {
+        const remaining = [...textByNodeId.values()].filter(text => text !== result.prompt);
+        if (!result.prompt) result.prompt = remaining.shift() ?? '';
+        if (!result.negativePrompt && remaining.length) {
+            result.negativePrompt = remaining.find(text => text.length < result.prompt.length) ?? remaining[0];
+        }
+    }
+
+    return result;
+}
+
+// ---- Image Inspection ----
+
+/**
+ * Parse a `WxH` size string into numeric dimensions.
+ * @param {*} size
+ * @returns {{width: number, height: number}|null}
+ */
+function parseSizeDimensions(size) {
+    if (typeof size !== 'string') return null;
+    const [width, height] = size.toLowerCase().split('x').map(Number);
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+    return { width, height };
+}
+
+/**
+ * Extract normalized image generation metadata from various backend request bodies.
+ * @param {string} source - Backend identifier
+ * @param {object} body - request.body
+ * @returns {object} Normalized meta
+ */
+export function extractImageMeta(source, body) {
+    const meta = {
+        source,
+        prompt: '',
+        negativePrompt: '',
+        model: '',
+        width: null,
+        height: null,
+        steps: null,
+        cfgScale: null,
+        seed: null,
+        sampler: null,
+    };
+
+    switch (source) {
+        case 'comfyui':
+        case 'comfyui_runpod': {
+            const parsed = parseComfyWorkflow(body.prompt);
+            Object.assign(meta, parsed);
+            break;
+        }
+        case 'sd_webui':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.override_settings?.sd_model_checkpoint || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.cfg_scale ?? null;
+            meta.seed = body.seed ?? null;
+            meta.sampler = body.sampler_name || null;
+            break;
+        case 'sd_cpp':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.cfg_scale ?? null;
+            meta.seed = body.seed ?? null;
+            meta.sampler = body.sampler_name || null;
+            break;
+        case 'drawthings':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.cfg_scale ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'together':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'pollinations':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'stability':
+            meta.prompt = body.payload?.prompt || '';
+            meta.negativePrompt = body.payload?.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.seed = body.payload?.seed ?? null;
+            break;
+        case 'electronhub': {
+            meta.prompt = body.prompt || '';
+            meta.model = body.model || '';
+            const dims = parseSizeDimensions(body.size);
+            if (dims) { meta.width = dims.width; meta.height = dims.height; }
+            break;
+        }
+        case 'chutes':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.guidance_scale ?? body.guidance ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'bfl':
+            meta.prompt = body.prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.guidance ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'falai':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.guidance ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'nanogpt':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.num_steps ?? null;
+            meta.cfgScale = body.scale ?? null;
+            break;
+        case 'aimlapi': {
+            meta.prompt = body.prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.guidance ?? null;
+            meta.seed = body.seed ?? null;
+            const dims = parseSizeDimensions(body.size);
+            if (dims) { meta.width = dims.width; meta.height = dims.height; }
+            break;
+        }
+        case 'workersai':
+            meta.prompt = body.prompt || '';
+            meta.negativePrompt = body.negative_prompt || '';
+            meta.model = body.model || '';
+            meta.width = body.width ?? null;
+            meta.height = body.height ?? null;
+            meta.steps = body.steps ?? null;
+            meta.cfgScale = body.scale ?? null;
+            meta.seed = body.seed ?? null;
+            break;
+        case 'zai': {
+            meta.prompt = body.prompt || '';
+            meta.model = body.model || '';
+            const dims = parseSizeDimensions(body.size);
+            if (dims) { meta.width = dims.width; meta.height = dims.height; }
+            break;
+        }
+        default:
+            // huggingface, xai, and any future backends
+            meta.prompt = body.prompt || body.inputs || '';
+            meta.model = body.model || '';
+            break;
+    }
+
+    return meta;
+}
+
+/**
+ * Mime type for an image file extension captured from the upstream output.
+ * @param {string|null} format
+ * @returns {string}
+ */
+function imageMimeFromFormat(format) {
+    const f = String(format || '').toLowerCase();
+    if (!f) return '';
+    return f === 'jpg' ? 'image/jpeg' : `image/${f}`;
+}
+
+/**
+ * Start tracking an image generation request.
+ * @param {import('express').Request} request
+ * @param {object} meta - from extractImageMeta()
+ */
+export function startImageInspection(request, meta) {
+    const handle = String(request?.user?.profile?.handle || '');
+    if (!handle) return;
+
+    const entry = {
+        id: randomUUID(),
+        type: 'image',
+        handle,
+        timestamp: Date.now(),
+        generationJobId: String(request?.lukerGenerationJob?.id || ''),
+        source: String(meta.source || 'unknown'),
+        prompt: String(meta.prompt || ''),
+        negativePrompt: String(meta.negativePrompt || ''),
+        model: String(meta.model || ''),
+        endpoint: '',
+        apiKeyFingerprint: '',
+        width: meta.width ?? null,
+        height: meta.height ?? null,
+        steps: meta.steps ?? null,
+        cfgScale: meta.cfgScale ?? null,
+        seed: meta.seed ?? null,
+        sampler: meta.sampler || null,
+        durationMs: null,
+        status: 'running',
+        httpStatus: null,
+        error: '',
+        outputFormat: null,
+        outputSizeBytes: null,
+        outputImage: null,
+    };
+
+    pushEntry(handle, entry);
+    request.__inspectorId = entry.id;
+    request.__inspectorTimestamp = entry.timestamp;
+}
+
+/**
+ * Complete an image inspection with success.
+ * @param {import('express').Request} request
+ * @param {object} [resultMeta] - { format, sizeBytes, data, mime }
+ */
+export function completeImageInspection(request, resultMeta) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+
+    entry.status = 'success';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = 200;
+    if (resultMeta) {
+        const data = typeof resultMeta.data === 'string' ? resultMeta.data : '';
+        entry.outputFormat = resultMeta.format || null;
+        entry.outputSizeBytes = resultMeta.sizeBytes
+            ?? (data ? Buffer.byteLength(data, 'base64') : null);
+        if (data) {
+            entry.outputImage = {
+                type: 'image',
+                mime: String(resultMeta.mime || imageMimeFromFormat(entry.outputFormat)),
+                data,
+            };
+        }
+    }
+
+    // The generated image can be several megabytes — re-estimate and evict
+    // before returning.
+    inspectorLedger.retouch(entry);
+    enforceByteBudget();
+}
+
+/**
+ * Mark an image inspection as failed.
+ * @param {import('express').Request} request
+ * @param {string} errorMessage
+ * @param {number} [httpStatus]
+ */
+export function failImageInspection(request, errorMessage, httpStatus) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+
+    entry.status = 'error';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = httpStatus ?? null;
+    entry.error = String(errorMessage || 'Unknown error');
+}
+
+// ---- Embedding / Rerank Inspection ----
+
+/**
+ * Deep-clone a text list into per-item records suitable for `inputTexts`.
+ * Inspector never truncates AI-facing content (matches how chat `fullMessages`
+ * and `wireRequest` snapshots preserve the entire request verbatim), so this
+ * intentionally keeps the full string. Ring-buffer growth is bounded by
+ * `RING_BUFFER_SIZE` at the entry level — see the top of this file.
+ *
+ * @param {string[]} texts
+ * @returns {{index:number, text:string}[]}
+ */
+function snapshotTexts(texts) {
+    if (!Array.isArray(texts)) return [];
+    return texts.map((t, i) => ({ index: i, text: String(t ?? '') }));
+}
+
+/**
+ * Extract normalized embedding / rerank metadata from a vectors router body
+ * or the kobold /embed body. `routeKind` disambiguates the body shape:
+ *   - 'insert' / 'query' / 'query-multi' / 'rerank': /api/vector/* bodies
+ *   - 'kobold-embed': /api/backends/kobold/embed body
+ *
+ * @param {string} routeKind
+ * @param {object} body
+ * @returns {object}
+ */
+export function extractEmbeddingMeta(routeKind, body = {}) {
+    const meta = {
+        routeKind,
+        operation: routeKind === 'rerank' ? 'rerank' : 'embed',
+        source: '',
+        model: '',
+        collectionId: null,
+        collectionIds: null,
+        inputCount: 0,
+        inputCharTotal: 0,
+        inputTexts: [],
+        query: '',
+        topK: null,
+        threshold: null,
+    };
+
+    switch (routeKind) {
+        case 'insert': {
+            meta.source = String(body.source || 'unknown');
+            meta.model = String(body.model || '');
+            meta.collectionId = body.collectionId != null ? String(body.collectionId) : null;
+            const items = Array.isArray(body.items) ? body.items : [];
+            const texts = items.map(it => String(it?.text ?? ''));
+            meta.inputCount = texts.length;
+            meta.inputCharTotal = texts.reduce((s, t) => s + t.length, 0);
+            meta.inputTexts = snapshotTexts(texts);
+            break;
+        }
+        case 'query': {
+            meta.source = String(body.source || 'unknown');
+            meta.model = String(body.model || '');
+            meta.collectionId = body.collectionId != null ? String(body.collectionId) : null;
+            const searchText = String(body.searchText ?? '');
+            meta.inputCount = 1;
+            meta.inputCharTotal = searchText.length;
+            meta.inputTexts = snapshotTexts([searchText]);
+            meta.topK = Number(body.topK) || null;
+            meta.threshold = Number(body.threshold) || 0;
+            break;
+        }
+        case 'query-multi': {
+            meta.source = String(body.source || 'unknown');
+            meta.model = String(body.model || '');
+            meta.collectionIds = Array.isArray(body.collectionIds)
+                ? body.collectionIds.map(String)
+                : null;
+            const searchText = String(body.searchText ?? '');
+            meta.inputCount = 1;
+            meta.inputCharTotal = searchText.length;
+            meta.inputTexts = snapshotTexts([searchText]);
+            meta.topK = Number(body.topK) || null;
+            meta.threshold = Number(body.threshold) || 0;
+            break;
+        }
+        case 'rerank': {
+            meta.source = String(body.source || 'unknown');
+            meta.model = String(body.model || '');
+            meta.query = String(body.query ?? '');
+            const documents = Array.isArray(body.documents) ? body.documents : [];
+            const docTexts = documents.map(d => (typeof d === 'string' ? d : String(d?.text ?? '')));
+            meta.inputCount = docTexts.length;
+            meta.inputCharTotal = docTexts.reduce((s, t) => s + t.length, 0);
+            meta.inputTexts = snapshotTexts(docTexts);
+            meta.topK = Number(body.topK) || null;
+            break;
+        }
+        case 'kobold-embed': {
+            meta.source = 'koboldcpp';
+            meta.model = '';
+            const items = Array.isArray(body.items) ? body.items.map(String) : [];
+            meta.inputCount = items.length;
+            meta.inputCharTotal = items.reduce((s, t) => s + t.length, 0);
+            meta.inputTexts = snapshotTexts(items);
+            break;
+        }
+        default:
+            meta.source = String(body.source || 'unknown');
+            meta.model = String(body.model || '');
+            break;
+    }
+
+    return meta;
+}
+
+/**
+ * Start tracking an embedding / rerank request. Attaches
+ * `request.__inspectorId` so provider layers can call
+ * `attachInspectionEndpoint` before their upstream `fetch`.
+ *
+ * @param {import('express').Request} request
+ * @param {object} meta from extractEmbeddingMeta()
+ */
+export function startEmbeddingInspection(request, meta) {
+    const handle = String(request?.user?.profile?.handle || '');
+    if (!handle) return;
+
+    const entry = {
+        id: randomUUID(),
+        type: 'embedding',
+        handle,
+        timestamp: Date.now(),
+        generationJobId: '',
+        source: String(meta.source || 'unknown'),
+        operation: meta.operation === 'rerank' ? 'rerank' : 'embed',
+        routeKind: String(meta.routeKind || ''),
+        model: String(meta.model || ''),
+        endpoint: '',
+        apiKeyFingerprint: '',
+        collectionId: meta.collectionId ?? null,
+        collectionIds: Array.isArray(meta.collectionIds) ? meta.collectionIds.slice() : null,
+        inputCount: Number.isFinite(meta.inputCount) ? meta.inputCount : 0,
+        inputCharTotal: Number.isFinite(meta.inputCharTotal) ? meta.inputCharTotal : 0,
+        inputTexts: Array.isArray(meta.inputTexts) ? meta.inputTexts : [],
+        query: String(meta.query || ''),
+        topK: meta.topK ?? null,
+        threshold: meta.threshold ?? null,
+        wireRequest: null,
+        durationMs: null,
+        status: 'running',
+        httpStatus: null,
+        error: '',
+        resultCount: null,
+        vectorDim: null,
+        hits: null,
+    };
+
+    pushEntry(handle, entry);
+    const abortController = new AbortController();
+    inspectionAbortControllers.set(entry.id, abortController);
+    request.__inspectorAbortController = abortController;
+    request.__inspectorId = entry.id;
+    request.__inspectorTimestamp = entry.timestamp;
+}
+
+/**
+ * Complete an embedding / rerank inspection with success.
+ *
+ * `resultMeta` fields (all optional):
+ *   - `resultCount` — number of vectors / hits / reranked docs returned
+ *   - `vectorDim`   — dimensionality of the first returned vector (embed only)
+ *   - `hits`        — full list of returned hits (query / rerank);
+ *                     [{hash, score, text}], never truncated
+ *
+ * @param {import('express').Request} request
+ * @param {object} [resultMeta]
+ */
+export function completeEmbeddingInspection(request, resultMeta) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+    releaseInspectionAbortController(entry);
+
+    entry.status = 'success';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = 200;
+    if (resultMeta) {
+        if (Number.isFinite(resultMeta.resultCount)) entry.resultCount = resultMeta.resultCount;
+        if (Number.isFinite(resultMeta.vectorDim)) entry.vectorDim = resultMeta.vectorDim;
+        if (Array.isArray(resultMeta.hits)) entry.hits = resultMeta.hits;
+    }
+}
+
+/**
+ * Mark an embedding / rerank inspection as failed.
+ * @param {import('express').Request} request
+ * @param {string} errorMessage
+ * @param {number} [httpStatus]
+ */
+export function failEmbeddingInspection(request, errorMessage, httpStatus) {
+    const entry = findEntry(request);
+    if (!entry) return;
+    if (entry.status === 'aborted') return;
+    releaseInspectionAbortController(entry);
+
+    entry.status = 'error';
+    entry.durationMs = Date.now() - entry.timestamp;
+    entry.httpStatus = httpStatus ?? null;
+    entry.error = String(errorMessage || 'Unknown error');
+}
+
+// ---- Express Router ----
+
+export const router = express.Router();
+
+function buildSearchSnippet(entry) {
+    if (entry.type === 'image') {
+        return [entry.source, entry.model, entry.prompt, entry.negativePrompt, entry.error].filter(Boolean).join(' ');
+    }
+    if (entry.type === 'embedding') {
+        const inputText = Array.isArray(entry.inputTexts)
+            ? entry.inputTexts.map(s => s?.text || '').join(' ')
+            : '';
+        const hitsText = Array.isArray(entry.hits)
+            ? entry.hits.map(h => String(h?.text ?? '')).join(' ')
+            : '';
+        const combined = [
+            entry.source,
+            entry.model,
+            entry.operation,
+            entry.collectionId,
+            Array.isArray(entry.collectionIds) ? entry.collectionIds.join(' ') : '',
+            entry.query,
+            inputText,
+            hitsText,
+            entry.error,
+        ].filter(Boolean).join(' ');
+        return combined.length > 8192 ? combined.slice(0, 8192) : combined;
+    }
+    const messageText = Array.isArray(entry.fullMessages)
+        ? entry.fullMessages.map(m => {
+            const c = m?.content;
+            if (typeof c === 'string') return c;
+            if (Array.isArray(c)) return c.map(p => (typeof p === 'string' ? p : (p?.text || ''))).join(' ');
+            return '';
+        }).join(' ')
+        : '';
+    const combined = [entry.source, entry.model, entry.error, messageText, entry.responseText || ''].filter(Boolean).join(' ');
+    return combined.length > 8192 ? combined.slice(0, 8192) : combined;
+}
+
+router.get('/list', (req, res) => {
+    const handle = String(req?.user?.profile?.handle || '');
+    if (!handle) return res.status(401).send({ error: 'Unauthorized' });
+
+    const buf = getBuffer(handle);
+    const summaries = buf.map(e => {
+        const base = {
+            id: e.id,
+            type: e.type || 'chat',
+            timestamp: e.timestamp,
+            source: e.source,
+            model: e.model,
+            durationMs: e.durationMs,
+            status: e.status,
+            httpStatus: e.httpStatus,
+            error: e.error,
+            generationJobId: e.generationJobId || '',
+            abortKind: getAbortKind(e),
+            searchText: buildSearchSnippet(e),
+        };
+        if (e.type === 'image') {
+            base.prompt = (e.prompt || '').slice(0, 80);
+            base.width = e.width;
+            base.height = e.height;
+            base.outputFormat = e.outputFormat;
+            base.outputSizeBytes = e.outputSizeBytes;
+        } else if (e.type === 'embedding') {
+            base.operation = e.operation;
+            base.routeKind = e.routeKind;
+            base.collectionId = e.collectionId;
+            base.inputCount = e.inputCount;
+            base.inputCharTotal = e.inputCharTotal;
+            base.query = (e.query || '').slice(0, 80);
+            base.topK = e.topK;
+            base.resultCount = e.resultCount;
+            base.vectorDim = e.vectorDim;
+        } else {
+            base.stream = e.stream;
+            base.messageCount = e.messageCount;
+            base.promptCharLength = e.promptCharLength;
+            base.maxTokens = e.maxTokens;
+            base.usage = e.usage;
+            base.responseChars = (e.responseText || '').length;
+        }
+        return base;
+    });
+
+    summaries.reverse();
+    return res.json(summaries);
+});
+
+router.post('/:id/abort', (req, res) => {
+    const handle = String(req?.user?.profile?.handle || '');
+    if (!handle) return res.status(401).send({ error: 'Unauthorized' });
+
+    const buf = getBuffer(handle);
+    const entry = buf.find(e => e.id === req.params.id);
+    if (!entry) return res.status(404).send({ error: 'Not found' });
+    if (entry.status !== 'running') {
+        return res.status(409).json({ aborted: false, error: 'not_running' });
+    }
+    if (entry.generationJobId) {
+        // Job-backed entries are aborted through the generation-control
+        // endpoint so the job's AbortController and WS terminal frame are
+        // handled in one place.
+        return res.status(409).json({ aborted: false, error: 'use_generation_abort' });
+    }
+
+    const aborted = abortInspectionEntry(handle, entry.id, 'Aborted from request inspector');
+    if (!aborted) {
+        return res.status(409).json({ aborted: false, error: 'not_abortable' });
+    }
+    return res.json({ aborted: true });
+});
+
+router.get('/:id', (req, res) => {
+    const handle = String(req?.user?.profile?.handle || '');
+    if (!handle) return res.status(401).send({ error: 'Unauthorized' });
+
+    const buf = getBuffer(handle);
+    const entry = buf.find(e => e.id === req.params.id);
+    if (!entry) return res.status(404).send({ error: 'Not found' });
+
+    return res.json({ ...entry, abortKind: getAbortKind(entry) });
+});
+
+router.get('/:id/export', (req, res) => {
+    const handle = String(req?.user?.profile?.handle || '');
+    if (!handle) return res.status(401).send({ error: 'Unauthorized' });
+
+    const buf = getBuffer(handle);
+    const entry = buf.find(e => e.id === req.params.id);
+    if (!entry) return res.status(404).send({ error: 'Not found' });
+
+    // Re-compute schema snapshot at export time so caller can compare with
+    // `messageSchemaAtCapture`. If the two disagree, something downstream
+    // mutated `body.messages` in place after `startInspection`.
+    const exportMessages = Array.isArray(entry.fullMessages) ? entry.fullMessages : [];
+    const messageSchemaAtExport = exportMessages.map(m => {
+        const content = m?.content;
+        const ctype = typeof content === 'string'
+            ? 'string'
+            : (Array.isArray(content) ? 'array' : (content === null ? 'null' : typeof content));
+        let clen = 0;
+        let chead = '';
+        if (typeof content === 'string') {
+            clen = content.length;
+            chead = content.slice(0, 60);
+        } else if (Array.isArray(content)) {
+            clen = content.reduce((s, p) => {
+                if (typeof p === 'string') return s + p.length;
+                if (p && typeof p.text === 'string') return s + p.text.length;
+                return s;
+            }, 0);
+            chead = content.map(p => (typeof p === 'string' ? p : (p?.text || `<${p?.type || '?'}>`))).join('|').slice(0, 60);
+        } else if (content !== null && content !== undefined) {
+            try { chead = JSON.stringify(content).slice(0, 60); clen = chead.length; } catch { /* ignore */ }
+        }
+        return {
+            role: String(m?.role || ''),
+            contentType: ctype,
+            contentLen: clen,
+            contentHead: chead,
+            hasToolCalls: Array.isArray(m?.tool_calls) && m.tool_calls.length > 0,
+            toolCallId: m?.tool_call_id ? String(m.tool_call_id).slice(0, 24) : '',
+        };
+    });
+
+    const filename = `request-${entry.id.slice(0, 8)}-${entry.timestamp}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(JSON.stringify({ ...entry, messageSchemaAtExport }, null, 2));
+});
