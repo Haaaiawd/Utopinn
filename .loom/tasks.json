@@ -9,17 +9,17 @@
         {
           "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
           "verify_by": "pnpm --filter @uberge/server install",
-          "evidence": ""
+          "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
         },
         {
           "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
           "verify_by": "cd apps/server && node server.js,然后 curl http://127.0.0.1:8000",
-          "evidence": ""
+          "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
         },
         {
           "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
           "verify_by": "启动日志查 storage/engine 输出;登录后检查 data/<user>/ 产生文件",
-          "evidence": ""
+          "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
         }
       ],
       "done_when": [],
@@ -43,15 +43,38 @@
       "covers": [
         "DLV-001"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [],
-        "current": "",
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "pnpm --filter @uberge/server install 成功;pnpm-workspace.yaml 增 onlyBuiltDependencies:[better-sqlite3] 后 rebuild 产出 build/Release/better_sqlite3.node",
+        "node server.js(WSL2 node v22.22.2,引擎告警 >=24 但基线可跑):首跑创建 config.yaml,Repo 层播种 ~200 内容文件,webpack 编译 lib 12.7s,监听 127.0.0.1:8000,ws-delivery 有连接",
+        "GET / -> 200,785KB,<title>Luker</title> 主界面 HTML(注意:需绕过环境里的 HTTP_PROXY)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
+              "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
+            },
+            {
+              "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
+              "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
+            },
+            {
+              "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
+              "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
+            }
+          ],
+          "at": "2026-11-02T09:12:00.605Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.133Z",
-      "updated_at": "2026-11-02T08:50:32.133Z"
+      "updated_at": "2026-11-02T09:12:00.605Z",
+      "completed_at": "2026-11-02T09:12:00.605Z"
     },
     {
       "id": "TASK-002",
@@ -61,12 +84,12 @@
         {
           "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
           "verify_by": "pnpm --filter @uberge/protocol typecheck",
-          "evidence": ""
+          "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
         },
         {
           "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
           "verify_by": "对照 .loom/design/generation-api.md 逐字段 review",
-          "evidence": ""
+          "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
         }
       ],
       "done_when": [],
@@ -79,7 +102,7 @@
         ".loom/design/mobile-panels.md"
       ],
       "touches": [
-        "packages/protocol/src/**"
+        "packages/protocol/src"
       ],
       "implements": ".loom/design/generation-api.md#Interfaces and dependencies",
       "design_exemption": "",
@@ -89,15 +112,32 @@
       "covers": [
         "DLV-002"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [],
-        "current": "",
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "packages/protocol/src: common.ts(ResourceRef/ApiError/UserProfile/CSRF)+resources.ts(CharacterCardData/WorldBook/Preset/Chat/ChatState/FloorState)+generation.ts(GenerateRequest/Job/事件流)+panels.ts(CardApp 桥契约),纯类型零依赖",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
+              "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
+            },
+            {
+              "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
+              "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
+            }
+          ],
+          "at": "2026-11-02T09:13:46.772Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-02T09:13:46.772Z",
+      "completed_at": "2026-11-02T09:13:46.772Z"
     },
     {
       "id": "TASK-003",
@@ -123,8 +163,8 @@
         "apps/server/src/png/encode.js"
       ],
       "touches": [
-        "packages/formats/src/**",
-        "packages/formats/tests/**"
+        "packages/formats/src",
+        "packages/formats/tests"
       ],
       "implements": "",
       "design_exemption": "faithful port of existing code; covered by compat-golden-diff verification design",
@@ -173,8 +213,8 @@
         "apps/server/src/request-inspector.js"
       ],
       "touches": [
-        "tests/corpus/**",
-        "tests/golden-diff/**"
+        "tests/corpus",
+        "tests/golden-diff"
       ],
       "implements": ".loom/design/compat-golden-diff.md",
       "design_exemption": "",
@@ -237,7 +277,7 @@
         "apps/server/public/scripts/macros.js"
       ],
       "touches": [
-        "packages/core/src/**"
+        "packages/core/src"
       ],
       "implements": ".loom/design/core-engine.md",
       "design_exemption": "",
@@ -286,7 +326,7 @@
         "apps/server/public/scripts/PromptManager.js"
       ],
       "touches": [
-        "packages/core/src/**"
+        "packages/core/src"
       ],
       "implements": ".loom/design/core-engine.md",
       "design_exemption": "",
@@ -342,8 +382,8 @@
         "apps/server/src/ws-delivery.js"
       ],
       "touches": [
-        "apps/server/src/**",
-        "packages/api-client/src/**"
+        "apps/server/src",
+        "packages/api-client/src"
       ],
       "implements": ".loom/design/generation-api.md",
       "design_exemption": "",
@@ -394,7 +434,7 @@
         "apps/mobile/App.tsx"
       ],
       "touches": [
-        "apps/mobile/**"
+        "apps/mobile"
       ],
       "implements": "",
       "design_exemption": "thin-client app shell; covered by mobile-panels and generation-api designs",
@@ -464,7 +504,7 @@
         "apps/server/docs/development/card-developers.md"
       ],
       "touches": [
-        "apps/mobile/**"
+        "apps/mobile"
       ],
       "implements": ".loom/design/mobile-panels.md",
       "design_exemption": "",
@@ -532,7 +572,7 @@
         "AGENTS.md"
       ],
       "touches": [
-        "apps/web/**"
+        "apps/web"
       ],
       "implements": "",
       "design_exemption": "web SPA direction in loom record assumptions; dedicated design doc deferred",
