@@ -1,0 +1,20 @@
+{
+    "resolved": [
+        { "id": "Q-002", "status": "resolved" },
+        { "id": "Q-003", "status": "resolved" }
+    ],
+    "decisions": [
+        {
+            "title": "Golden-diff 验收阈值",
+            "decision": "通过线 = LLM 消息序列相等 + WI 注入轨迹等价 + regex 应用记录一致;容忍白名单:时间戳、gen_id、同优先级条目排序。diff 分级:致命(消息序列)/重要(WI 增删位置)/可忍(白名单内)。",
+            "rationale": "逐字节相等不可达(含随机与时间);轨迹等价已能抓住一切真实行为分叉;白名单外出现系统差异时阈值升级而非放宽。",
+            "affects": [".loom/design/compat-golden-diff.md", ".loom/capabilities/st-engine-compat/capability.md"]
+        },
+        {
+            "title": "保留 Luker 服务端插件与 skills/orchestrator 功能",
+            "decision": "不剥离。服务端插件、skills、orchestrator 保留在 apps/server 原样继承。",
+            "rationale": "它们纯服务端运行,不影响移动端兼容目标;剥离是纯成本且无收益;若以后成为维护负担再单独决策。",
+            "affects": ["apps/server"]
+        }
+    ]
+}

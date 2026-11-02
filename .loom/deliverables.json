@@ -1,0 +1,116 @@
+{
+  "schema_version": 2,
+  "deliverables": [
+    {
+      "id": "DLV-001",
+      "slug": "server-baseline",
+      "title": "apps/server 依赖安装+启动+登录+旧UI可用",
+      "kind": "operational",
+      "notes": "",
+      "covered_by": [
+        "TASK-001"
+      ],
+      "created_at": "2026-11-02T08:49:54.907Z"
+    },
+    {
+      "id": "DLV-002",
+      "slug": "protocol-contract",
+      "title": "packages/protocol 线协议schema",
+      "kind": "interface",
+      "notes": "",
+      "covered_by": [
+        "TASK-002"
+      ],
+      "created_at": "2026-11-02T08:49:55.075Z"
+    },
+    {
+      "id": "DLV-003",
+      "slug": "core-engine",
+      "title": "packages/core 服务端大脑移植",
+      "kind": "module",
+      "notes": "",
+      "covered_by": [
+        "TASK-005",
+        "TASK-006"
+      ],
+      "created_at": "2026-11-02T08:49:55.213Z"
+    },
+    {
+      "id": "DLV-004",
+      "slug": "formats-codecs",
+      "title": "packages/formats 卡面/世界书编解码",
+      "kind": "module",
+      "notes": "",
+      "covered_by": [
+        "TASK-003"
+      ],
+      "created_at": "2026-11-02T08:49:55.368Z"
+    },
+    {
+      "id": "DLV-005",
+      "slug": "api-client",
+      "title": "packages/api-client 客户端SDK",
+      "kind": "module",
+      "notes": "",
+      "covered_by": [
+        "TASK-007"
+      ],
+      "created_at": "2026-11-02T08:49:55.518Z"
+    },
+    {
+      "id": "DLV-006",
+      "slug": "generation-api",
+      "title": "/api/generate + WS流式投递",
+      "kind": "interface",
+      "notes": "",
+      "covered_by": [
+        "TASK-007"
+      ],
+      "created_at": "2026-11-02T08:49:55.697Z"
+    },
+    {
+      "id": "DLV-007",
+      "slug": "mobile-shell",
+      "title": "Expo App:登录+角色列表+聊天流式",
+      "kind": "feature",
+      "notes": "",
+      "covered_by": [
+        "TASK-008"
+      ],
+      "created_at": "2026-11-02T08:49:55.872Z"
+    },
+    {
+      "id": "DLV-008",
+      "slug": "mobile-panels",
+      "title": "面板页:CardApp WebView沙箱+ctx桥",
+      "kind": "feature",
+      "notes": "",
+      "covered_by": [
+        "TASK-009"
+      ],
+      "created_at": "2026-11-02T08:49:56.018Z"
+    },
+    {
+      "id": "DLV-009",
+      "slug": "compat-corpus",
+      "title": "golden-diff语料验证harness",
+      "kind": "verification",
+      "notes": "",
+      "covered_by": [
+        "TASK-004"
+      ],
+      "created_at": "2026-11-02T08:49:56.191Z"
+    },
+    {
+      "id": "DLV-010",
+      "slug": "web-spa",
+      "title": "新Web管理端SPA",
+      "kind": "feature",
+      "notes": "",
+      "covered_by": [
+        "TASK-010"
+      ],
+      "created_at": "2026-11-02T08:49:56.420Z"
+    }
+  ]
+}
