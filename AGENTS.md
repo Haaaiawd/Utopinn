@@ -1,0 +1,58 @@
+# Uberge
+
+重构 SillyTavern:服务端大脑 + 薄客户端。Web 管理端(全功能)+ RN/Expo 手机端(精简 UI + 重 UI 专属页)。
+
+## 架构决定(2026-11-02 拍板)
+
+- **基底**:`ref/Luker`(SillyTavern 激进 fork,已含存储引擎层/多设备同步/服务端生成任务/CardApp 体系)。上游 `ref/SillyTavern` 作行为对照。
+- **大脑在服务端**:prompt 组装、世界书引擎、正则管线、宏/STscript 全部跑在 server(`packages/core`)。理由:API 调用必然联网,无离线场景;ChatGPT/Claude 均为原生薄客户端、零共享大脑。
+- **手机端**:React Native + Expo,薄客户端。只消费 `@uberge/protocol`(类型)+ `@uberge/formats`(导入导出)+ `@uberge/api-client`。
+- **重 UI = CardApp/状态栏面板**:卡里预设的 HTML 应用(背包/任务卡/状态面板)。移动端用底导航"面板"专属页承载,`react-native-webview` 沙箱渲染,ctx API 经 postMessage 桥接到 api-client。状态存服务端 chat_state sidecar(Luker 已有)。
+
+## 布局
+
+```
+apps/server     Luker 剥出的后端(Express + 存储引擎 + LLM 代理;public/ 是旧 jQuery UI,暂留作参考/过渡管理端)
+apps/mobile     Expo 薄客户端(骨架)
+apps/web        新 SPA 管理端(未建,占位)
+packages/core   大脑:从 apps/server/public/scripts/* 移植去 jQuery/DOM 化的纯 TS
+packages/formats  卡面/世界书/JSONL 编解码(PNG tEXt、charx、byaf),无 fs,双端可用
+packages/protocol  线协议:API 类型、WS/SSE 事件、资源 schema,三端唯一事实源
+packages/api-client  TS 客户端,WS ticket 流式优先(RN 里 SSE 不稳)
+tests/corpus    兼容语料:真实卡样本 + golden 组装结果 diff
+ref/            参考代码(Luker 原 fork、SillyTavern 上游、GuiXu 等参考卡)
+```
+
+## 兼容策略(世界书/卡面/故事卡)
+
+1. **格式层**:复用 Luker 服务端解析器(`src/{charx,byaf,character-card-parser}.js`、`src/png/`、`validator/TavernCardValidator.js`)移植进 `@uberge/formats`,fixture 测试钉死。
+2. **行为层**:golden-diff 测试——同一卡+聊天,原版 ST 前端引擎产出的组装结果 vs `core` 产出,逐字段 diff。语料在 `tests/corpus/cards/`(丢 .png/.json/.charx)。
+3. **HTML/JS 面板**:WebView 沙箱 + 兼容 shim;老式正则状态栏里戳 ST 内部全局(`getContext()` 等)的 JS 会退化,接受并降级处理。
+4. **第三方扩展**(`public/scripts/extensions/third-party`):不兼容,接受。
+5. 世界书 `{entries:{}}` 文件格式不动;charx 内嵌书、角色主/辅书、聊天绑定书、全局书五层来源模型保留(Luker `ctx.getWorldBooks` 语义)。
+
+## core 移植清单(工作量最大的部分)
+
+从 `apps/server/public/scripts/` 抠纯逻辑、去 jQuery/DOM:
+
+| 源文件 | 职责 | 行数级 |
+|---|---|---|
+| `openai.js` | chat 补全 prompt 组装 | ~7.4k |
+| `world-info.js` | 世界书扫描/注入/预算 | ~6.4k |
+| `PromptManager.js` | prompt 项编排 | ~2.1k |
+| `macros.js` `slash-commands/` | 宏与 STscript | 大 |
+| `instruct-mode.js` `textgen-settings.js` | 文本补全格式化 | 中 |
+| `reasoning.js` `variables.js` `regex`(extensions) | 推理/变量/正则管线 | 中 |
+
+参考:`public/scripts/generate-task.js`、`lukerContext.js` 已开始把 context 接口化,顺它抠。
+
+## 命令
+
+```bash
+pnpm install
+pnpm server        # apps/server(node server.js,需 Node>=24)
+pnpm mobile        # apps/mobile(expo start)
+pnpm typecheck
+```
+
+注意:`apps/server` 自带 package-lock(npm 习惯);workspace 安装用 pnpm 即可,原生依赖 better-sqlite3 需编译环境。

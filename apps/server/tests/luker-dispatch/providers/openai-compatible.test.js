@@ -1,0 +1,1199 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+import { jest } from '@jest/globals';
+import { dispatchOpenAICompatible } from '../../../src/luker-dispatch/providers/chat-completions/openai-compatible.js';
+import { CHAT_COMPLETION_SOURCES } from '../../../src/constants.js';
+
+/**
+ * Build a fake DispatchContext matching src/luker-dispatch/context.js shape.
+ * Mirrors azure-openai.test.js.
+ */
+function fakeCtx({ body = {}, onFetch, secretMap = {}, signal } = {}) {
+    const emitted = [];
+    const ac = new AbortController();
+    const attachedInspections = [];
+    const attachCalls = [];
+    return {
+        body: {
+            model: 'gpt-4o',
+            messages: [{ role: 'user', content: 'hi' }],
+            stream: false,
+            max_tokens: 128,
+            temperature: 0.7,
+            top_p: 1,
+            chat_completion_source: CHAT_COMPLETION_SOURCES.OPENAI,
+            ...body,
+        },
+        user: { handle: 'alice', directories: {}, profile: { handle: 'alice' } },
+        signal: signal || ac.signal,
+        fetch: onFetch || jest.fn(async () => new Response(JSON.stringify({
+            id: 'oc-1',
+            choices: [{ index: 0, message: { role: 'assistant', content: 'hello back' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })),
+        secrets: {
+            read: jest.fn((key /*, opts */) => secretMap[key] ?? ''),
+        },
+        generation: {
+            startJob: jest.fn(() => null),
+            appendEvent: jest.fn(),
+            hasActiveKeepAliveJob: jest.fn(() => false),
+        },
+        inspection: {
+            start: jest.fn(),
+            attach: jest.fn((...args) => {
+                attachedInspections.push(args[0]);
+                attachCalls.push(args);
+            }),
+            fail: jest.fn(),
+        },
+        emit: {
+            head: (h) => emitted.push({ kind: 'head', data: h }),
+            chunk: (b) => emitted.push({ kind: 'chunk', data: b }),
+            end: () => emitted.push({ kind: 'end' }),
+            error: (e) => emitted.push({ kind: 'error', error: e }),
+        },
+        _emitted: emitted,
+        _abortController: ac,
+        _attachedInspections: attachedInspections,
+        _attachCalls: attachCalls,
+    };
+}
+
+describe('OpenRouter Gemini history cache wire requests', () => {
+    function geminiCtx(overrides = {}) {
+        const messages = [{ role: 'system', content: 'Rules' }, { role: 'assistant', content: '<summary>Old history</summary>' }];
+        for (let i = 0; i < 5; i++) messages.push({ role: 'user', content: `User ${i}` }, { role: 'assistant', content: `Assistant ${i}` });
+        messages.push({ role: 'user', content: 'Latest' });
+        const onFetch = jest.fn(async url => {
+            if (String(url).endsWith('/models')) {
+                if (overrides.__modelsFail) return new Response('upstream unavailable', { status: 503 });
+                return new Response(JSON.stringify({ data: [{ id: 'google/gemini-cache-test', pricing: { input_cache_write: '0' } }] }), { status: 200 });
+            }
+            return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'Reply' } }] }), { status: 200 });
+        });
+        return fakeCtx({
+            secretMap: { api_key_openrouter: 'or-test-key' }, onFetch,
+            body: {
+                chat_completion_source: CHAT_COMPLETION_SOURCES.OPENROUTER,
+                model: 'google/gemini-cache-test', messages,
+                gemini_enable_history_cache: true, gemini_enable_system_prompt_cache: true,
+                gemini_cache_keep_recent_turns: 2, gemini_cache_session: 'private-chat-name',
+                tools: [{ type: 'function', function: { name: 'lookup', parameters: { type: 'object' } } }],
+                ...overrides,
+            },
+        });
+    }
+    function wire(ctx) {
+        const call = ctx.fetch.mock.calls.find(([url]) => String(url).endsWith('/chat/completions'));
+        return call ? JSON.parse(call[1].body) : null;
+    }
+
+    test('marks history after summaries once, preserves tools, and keeps local controls off the wire', async () => {
+        const ctx = geminiCtx();
+        await dispatchOpenAICompatible(ctx);
+        const request = wire(ctx);
+        expect(request.messages[7].content[0].cache_control).toEqual({ type: 'ephemeral' });
+        expect(request.messages[0].content).toBe('Rules');
+        expect(request.messages[1].content).toBe('<summary>Old history</summary>');
+        expect(JSON.stringify(request).match(/cache_control/g)).toHaveLength(1);
+        expect(request.tools).toEqual(ctx.body.tools);
+        expect(JSON.stringify(request)).not.toContain('private-chat-name');
+        expect(request.gemini_enable_history_cache).toBeUndefined();
+        expect(ctx._emitted.filter(event => event.kind === 'error')).toHaveLength(0);
+    });
+
+    test('disabled history mode preserves existing system-only behavior', async () => {
+        const ctx = geminiCtx({ gemini_enable_history_cache: false });
+        await dispatchOpenAICompatible(ctx);
+        expect(wire(ctx).messages[0].content[0].cache_control).toEqual({ type: 'ephemeral' });
+        expect(wire(ctx).messages[9].content).toBe('Assistant 3');
+    });
+
+    test('short requests use the separately selected system-cache fallback', async () => {
+        const ctx = geminiCtx({ messages: [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Question' }] });
+        await dispatchOpenAICompatible(ctx);
+        expect(wire(ctx).messages[0].content[0].cache_control).toEqual({ type: 'ephemeral' });
+    });
+
+    test('invalid policy and models known to lack cache support fail before sending a generation', async () => {
+        for (const overrides of [{ gemini_cache_keep_recent_turns: 0 }, { model: 'google/gemini-unsupported' }]) {
+            const ctx = geminiCtx(overrides);
+            await dispatchOpenAICompatible(ctx);
+            expect(wire(ctx)).toBeNull();
+            expect(ctx._emitted.some(event => event.kind === 'error')).toBe(true);
+        }
+    });
+
+    test('unreachable models API degrades to an unmarked request instead of failing the generation', async () => {
+        const ctx = geminiCtx({
+            model: 'google/gemini-unreachable-check',
+            __modelsFail: true,
+        });
+        await dispatchOpenAICompatible(ctx);
+        const request = wire(ctx);
+        expect(request).not.toBeNull();
+        expect(JSON.stringify(request)).not.toContain('cache_control');
+        expect(ctx._emitted.filter(event => event.kind === 'error')).toHaveLength(0);
+    });
+
+    test('other OpenRouter models ignore Gemini history settings', async () => {
+        const ctx = geminiCtx({ model: 'openai/gpt-test' });
+        await dispatchOpenAICompatible(ctx);
+        expect(JSON.stringify(wire(ctx))).not.toContain('cache_control');
+    });
+});
+
+describe('dispatchOpenAICompatible', () => {
+    describe('resolveOpenAI', () => {
+        test('default URL + Bearer + POST /chat/completions', async () => {
+            const ctx = fakeCtx({ secretMap: { api_key_openai: 'oa-key' } });
+            await dispatchOpenAICompatible(ctx);
+
+            expect(ctx.fetch).toHaveBeenCalledTimes(1);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.openai.com/v1/chat/completions');
+            expect(init.method).toBe('POST');
+            expect(init.headers['Authorization']).toBe('Bearer oa-key');
+            expect(init.headers['Content-Type']).toBe('application/json');
+            expect(init.signal).toBe(ctx.signal);
+        });
+
+        test('reverse_proxy overrides base URL, proxy_password overrides secret', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    reverse_proxy: 'https://proxy.example.com/v1',
+                    proxy_password: 'proxy-pw',
+                },
+                secretMap: { api_key_openai: 'oa-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://proxy.example.com/v1/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer proxy-pw');
+        });
+    });
+
+    describe('resolveWorkersai', () => {
+        test('constructs per-account URL, missing account_id emits error', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.WORKERS_AI,
+                    workers_ai_account_id: 'acct-123',
+                },
+                secretMap: { api_key_workers_ai: 'wai-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.cloudflare.com/client/v4/accounts/acct-123/ai/v1/chat/completions');
+
+            const ctx2 = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.WORKERS_AI,
+                    workers_ai_account_id: '',
+                },
+                secretMap: { api_key_workers_ai: 'wai-key' },
+            });
+            await dispatchOpenAICompatible(ctx2);
+            const errs = ctx2._emitted.filter(e => e.kind === 'error');
+            expect(errs.length).toBeGreaterThan(0);
+            expect(errs[0].error.message).toContain('Cloudflare Workers AI Account ID is missing');
+            expect(ctx2.fetch).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('resolveCustom', () => {
+        test('honors custom_url + merges custom_include_body/headers', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://localhost:5001/v1',
+                    custom_include_body: 'foo: bar\n',
+                    custom_include_headers: 'X-Custom: yes\n',
+                },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('http://localhost:5001/v1/chat/completions');
+            expect(init.headers['X-Custom']).toBe('yes');
+            const parsed = JSON.parse(init.body);
+            expect(parsed.foo).toBe('bar');
+            expect(init.headers['Authorization']).toBe('Bearer c-key');
+        });
+
+        test('CUSTOM without API key still dispatches (local server exemption)', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://localhost:5001/v1',
+                },
+                secretMap: {},
+            });
+            await dispatchOpenAICompatible(ctx);
+            expect(ctx.fetch).toHaveBeenCalledTimes(1);
+            const errs = ctx._emitted.filter(e => e.kind === 'error');
+            expect(errs).toHaveLength(0);
+        });
+
+        test('inspector fingerprint reflects Authorization overridden by custom_include_headers', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://localhost:5001/v1',
+                    custom_include_headers: 'Authorization: Bearer plugin-proxy-key\n',
+                },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+
+            const [, init] = ctx.fetch.mock.calls[0];
+            expect(init.headers['Authorization']).toBe('Bearer plugin-proxy-key');
+
+            expect(ctx._attachCalls).toHaveLength(1);
+            const [, attachedKey] = ctx._attachCalls[0];
+            expect(attachedKey).toBe('plugin-proxy-key');
+        });
+    });
+
+    describe('reasoning effort forwarding', () => {
+        function wireBody(ctx) {
+            return JSON.parse(ctx.fetch.mock.calls[0][1].body);
+        }
+
+        test('CUSTOM maps off to none and forwards canonical levels', async () => {
+            const off = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM, custom_url: 'http://127.0.0.1:8317/v1', model: 'x', reasoning_effort: 'off' },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const high = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM, custom_url: 'http://127.0.0.1:8317/v1', model: 'x', reasoning_effort: 'xhigh' },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('xhigh');
+        });
+
+        test('OPENAI maps off to none and xhigh per model', async () => {
+            const off = fakeCtx({ body: { model: 'gpt-5.4', reasoning_effort: 'off' }, secretMap: { api_key_openai: 'oa-key' } });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const xhigh = fakeCtx({ body: { model: 'gpt-5.4', reasoning_effort: 'xhigh' }, secretMap: { api_key_openai: 'oa-key' } });
+            await dispatchOpenAICompatible(xhigh);
+            expect(wireBody(xhigh).reasoning_effort).toBe('xhigh');
+        });
+
+        test('CUSTOM forwards resolved effort for non-OpenAI model names', async () => {
+            for (const effort of ['minimal', 'low', 'medium', 'high']) {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                        custom_url: 'http://127.0.0.1:8317/v1',
+                        model: 'gemini-3.8-flash-high',
+                        reasoning_effort: effort,
+                    },
+                    secretMap: { api_key_custom: 'c-key' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                expect(wireBody(ctx).reasoning_effort).toBe(effort);
+            }
+
+            const kobold = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://127.0.0.1:5001/v1',
+                    model: 'koboldcpp/local',
+                    reasoning_effort: 'minimal',
+                },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(kobold);
+            expect(wireBody(kobold).reasoning_effort).toBe('minimal');
+        });
+
+        test('CUSTOM omits reasoning_effort when the client did not set one', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://127.0.0.1:8317/v1',
+                    model: 'gemini-3.8-flash-high',
+                },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            expect(wireBody(ctx).reasoning_effort).toBeUndefined();
+        });
+
+        test('OPENAI still drops effort for models outside the allowlist', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    model: 'gemini-3.8-flash-high',
+                    reasoning_effort: 'low',
+                },
+                secretMap: { api_key_openai: 'oa-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            expect(wireBody(ctx).reasoning_effort).toBeUndefined();
+        });
+
+        test('OPENAI still maps allowlisted models', async () => {
+            const mapped = fakeCtx({
+                body: {
+                    model: 'gpt-5',
+                    reasoning_effort: 'min',
+                },
+                secretMap: { api_key_openai: 'oa-key' },
+            });
+            await dispatchOpenAICompatible(mapped);
+            expect(wireBody(mapped).reasoning_effort).toBe('minimal');
+
+            const fixed = fakeCtx({
+                body: {
+                    model: 'gpt-5.3-chat-latest',
+                    reasoning_effort: 'high',
+                },
+                secretMap: { api_key_openai: 'oa-key' },
+            });
+            await dispatchOpenAICompatible(fixed);
+            expect(wireBody(fixed).reasoning_effort).toBe('medium');
+        });
+
+        test('CUSTOM custom_exclude_body can still remove reasoning_effort', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.CUSTOM,
+                    custom_url: 'http://127.0.0.1:8317/v1',
+                    model: 'gemini-3.8-flash-high',
+                    reasoning_effort: 'high',
+                    custom_exclude_body: 'reasoning_effort: true\n',
+                },
+                secretMap: { api_key_custom: 'c-key' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            expect(wireBody(ctx).reasoning_effort).toBeUndefined();
+        });
+    });
+
+    describe('passthrough aggregator reasoning mapping', () => {
+        function wireBody(ctx) {
+            return JSON.parse(ctx.fetch.mock.calls[0][1].body);
+        }
+        function providerCtx(source, secretMap, extra = {}) {
+            return fakeCtx({ body: { chat_completion_source: source, ...extra }, secretMap });
+        }
+
+        test('PERPLEXITY off→none, high→high, auto omitted', async () => {
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.PERPLEXITY, { api_key_perplexity: 'pk' }, { reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.PERPLEXITY, { api_key_perplexity: 'pk' }, { reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('high');
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.PERPLEXITY, { api_key_perplexity: 'pk' }, { reasoning_effort: 'auto' });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning_effort).toBeUndefined();
+        });
+
+        test('FIREWORKS off→none, high→high, auto omitted', async () => {
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.FIREWORKS, { api_key_fireworks: 'fk' }, { reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.FIREWORKS, { api_key_fireworks: 'fk' }, { reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('high');
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.FIREWORKS, { api_key_fireworks: 'fk' }, { reasoning_effort: 'auto' });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning_effort).toBeUndefined();
+        });
+
+        test('NANOGPT maps effort and include_reasoning to the reasoning object', async () => {
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.NANOGPT, { api_key_nanogpt: 'nk' }, { reasoning_effort: 'off', include_reasoning: true });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning).toEqual({ effort: 'none' });
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.NANOGPT, { api_key_nanogpt: 'nk' }, { reasoning_effort: 'high', include_reasoning: true });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning).toEqual({ effort: 'high' });
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.NANOGPT, { api_key_nanogpt: 'nk' }, { reasoning_effort: 'auto', include_reasoning: true });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning).toBeUndefined();
+
+            const excluded = providerCtx(CHAT_COMPLETION_SOURCES.NANOGPT, { api_key_nanogpt: 'nk' }, { reasoning_effort: 'high', include_reasoning: false });
+            await dispatchOpenAICompatible(excluded);
+            expect(wireBody(excluded).reasoning.exclude).toBe(true);
+        });
+
+        test('POLLINATIONS off→none, high→high, auto omitted (authenticated branch)', async () => {
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.POLLINATIONS, { api_key_pollinations: 'pk' }, { reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.POLLINATIONS, { api_key_pollinations: 'pk' }, { reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('high');
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.POLLINATIONS, { api_key_pollinations: 'pk' }, { reasoning_effort: 'auto' });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning_effort).toBeUndefined();
+        });
+
+        test('WORKERS_AI off→none, high→high, auto omitted', async () => {
+            const base = { workers_ai_account_id: 'acct-1' };
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.WORKERS_AI, { api_key_workers_ai: 'wk' }, { ...base, reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_effort).toBe('none');
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.WORKERS_AI, { api_key_workers_ai: 'wk' }, { ...base, reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('high');
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.WORKERS_AI, { api_key_workers_ai: 'wk' }, { ...base, reasoning_effort: 'auto' });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning_effort).toBeUndefined();
+        });
+
+        test('GROQ off→reasoning_format hidden, high→reasoning_effort, auto omitted', async () => {
+            const off = providerCtx(CHAT_COMPLETION_SOURCES.GROQ, { api_key_groq: 'gk' }, { reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(off);
+            expect(wireBody(off).reasoning_format).toBe('hidden');
+            expect(wireBody(off).reasoning_effort).toBeUndefined();
+
+            const high = providerCtx(CHAT_COMPLETION_SOURCES.GROQ, { api_key_groq: 'gk' }, { model: 'qwen/qwen3-32b', reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(high);
+            expect(wireBody(high).reasoning_effort).toBe('high');
+            expect(wireBody(high).reasoning_format).toBeUndefined();
+
+            const auto = providerCtx(CHAT_COMPLETION_SOURCES.GROQ, { api_key_groq: 'gk' }, { reasoning_effort: 'auto' });
+            await dispatchOpenAICompatible(auto);
+            expect(wireBody(auto).reasoning_effort).toBeUndefined();
+            expect(wireBody(auto).reasoning_format).toBeUndefined();
+        });
+
+        test('GROQ drops reasoning params on models outside the Qwen3 / GPT-OSS families', async () => {
+            const llama = providerCtx(CHAT_COMPLETION_SOURCES.GROQ, { api_key_groq: 'gk' }, { model: 'llama-3.3-70b-versatile', reasoning_effort: 'high' });
+            await dispatchOpenAICompatible(llama);
+            expect(wireBody(llama).reasoning_effort).toBeUndefined();
+
+            const gptOss = providerCtx(CHAT_COMPLETION_SOURCES.GROQ, { api_key_groq: 'gk' }, { model: 'openai/gpt-oss-120b', reasoning_effort: 'off' });
+            await dispatchOpenAICompatible(gptOss);
+            expect(wireBody(gptOss).reasoning_format).toBeUndefined();
+            expect(wireBody(gptOss).reasoning_effort).toBeUndefined();
+        });
+    });
+
+    test('non-streaming: emits chunk with JSON body then end', async () => {
+        const ctx = fakeCtx({ secretMap: { api_key_openai: 'oa-key' } });
+        await dispatchOpenAICompatible(ctx);
+        const kinds = ctx._emitted.map(e => e.kind);
+        expect(kinds).toContain('chunk');
+        expect(kinds[kinds.length - 1]).toBe('end');
+        const chunks = ctx._emitted.filter(e => e.kind === 'chunk');
+        expect(chunks).toHaveLength(1);
+        const parsed = JSON.parse(Buffer.from(chunks[0].data).toString('utf8'));
+        expect(parsed.choices[0].message.content).toBe('hello back');
+    });
+
+    test('streaming: forwards SSE chunks verbatim then end', async () => {
+        const sseBody =
+            'data: {"choices":[{"delta":{"content":"he"}}]}\n\n' +
+            'data: {"choices":[{"delta":{"content":"llo"}}]}\n\n' +
+            'data: [DONE]\n\n';
+        const ctx = fakeCtx({
+            body: { stream: true },
+            secretMap: { api_key_openai: 'oa-key' },
+            onFetch: jest.fn(async () => new Response(sseBody, {
+                status: 200, headers: { 'content-type': 'text/event-stream' },
+            })),
+        });
+        await dispatchOpenAICompatible(ctx);
+        const chunks = ctx._emitted.filter(e => e.kind === 'chunk');
+        expect(chunks.length).toBeGreaterThan(0);
+        const decoded = chunks.map(c => Buffer.from(c.data).toString('utf8')).join('');
+        expect(decoded).toContain('"content":"he"');
+        expect(decoded).toContain('[DONE]');
+        expect(ctx._emitted[ctx._emitted.length - 1].kind).toBe('end');
+    });
+
+    test('upstream non-2xx: surfaces status+body via head+chunk+end (no emit.error)', async () => {
+        const ctx = fakeCtx({
+            secretMap: { api_key_openai: 'oa-key' },
+            onFetch: jest.fn(async () => new Response('{"error":{"message":"bad key"}}', {
+                status: 401, headers: { 'content-type': 'application/json' },
+            })),
+        });
+        await dispatchOpenAICompatible(ctx);
+
+        const errs = ctx._emitted.filter(e => e.kind === 'error');
+        expect(errs).toHaveLength(0);
+
+        const heads = ctx._emitted.filter(e => e.kind === 'head');
+        expect(heads).toHaveLength(1);
+        expect(heads[0].data.status).toBe(401);
+
+        const chunks = ctx._emitted.filter(e => e.kind === 'chunk');
+        expect(chunks).toHaveLength(1);
+        expect(new TextDecoder().decode(chunks[0].data)).toBe('{"error":{"message":"bad key"}}');
+
+        expect(ctx._emitted.filter(e => e.kind === 'end')).toHaveLength(1);
+        expect(ctx.inspection.fail).toHaveBeenCalled();
+    });
+
+    test('missing apiKey (OPENAI, no proxy/base): emits error, no fetch', async () => {
+        const ctx = fakeCtx({ secretMap: {} });
+        await dispatchOpenAICompatible(ctx);
+        const errs = ctx._emitted.filter(e => e.kind === 'error');
+        expect(errs.length).toBeGreaterThan(0);
+        expect(errs[0].error.message).toContain('OpenAI API key is missing');
+        expect(ctx.fetch).not.toHaveBeenCalled();
+        expect(ctx.inspection.fail).toHaveBeenCalled();
+    });
+
+    test('ctx.signal abort: emits error, no chunk', async () => {
+        const ac = new AbortController();
+        const ctx = fakeCtx({
+            signal: ac.signal,
+            secretMap: { api_key_openai: 'oa-key' },
+            onFetch: jest.fn((url, init) => new Promise((_, reject) => {
+                init.signal.addEventListener('abort', () => {
+                    const err = new Error('The user aborted a request.');
+                    err.name = 'AbortError';
+                    reject(err);
+                });
+            })),
+        });
+        const p = dispatchOpenAICompatible(ctx);
+        setImmediate(() => ac.abort());
+        await p;
+        expect(ctx._emitted.filter(e => e.kind === 'chunk')).toHaveLength(0);
+        expect(ctx._emitted.filter(e => e.kind === 'error').length).toBeGreaterThan(0);
+    });
+
+    test('unsupported source: emits error, no fetch', async () => {
+        const ctx = fakeCtx({ body: { chat_completion_source: 'not-a-real-source' } });
+        await dispatchOpenAICompatible(ctx);
+        const errs = ctx._emitted.filter(e => e.kind === 'error');
+        expect(errs.length).toBeGreaterThan(0);
+        expect(errs[0].error.message).toContain('unsupported source');
+        expect(ctx.fetch).not.toHaveBeenCalled();
+    });
+
+    // Per-provider URL/key smoke tests.
+    describe('per-provider URL/key smoke', () => {
+        test('PERPLEXITY', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.PERPLEXITY },
+                secretMap: { api_key_perplexity: 'pk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.perplexity.ai/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer pk');
+        });
+
+        test('GROQ', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.GROQ },
+                secretMap: { api_key_groq: 'gk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.groq.com/openai/v1/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer gk');
+        });
+
+        test('FIREWORKS', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.FIREWORKS },
+                secretMap: { api_key_fireworks: 'fk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.fireworks.ai/inference/v1/chat/completions');
+        });
+
+        test('NANOGPT + custom headers (X-Provider, X-Billing-Mode)', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.NANOGPT,
+                    nanogpt_provider: 'anthropic',
+                    nanogpt_payg_override: true,
+                },
+                secretMap: { api_key_nanogpt: 'nk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://nano-gpt.com/api/v1/chat/completions');
+            expect(init.headers['X-Provider']).toBe('anthropic');
+            expect(init.headers['X-Billing-Mode']).toBe('paygo');
+            const parsed = JSON.parse(init.body);
+            expect(parsed.billing_mode).toBe('paygo');
+        });
+
+        test('POLLINATIONS (uses readSecret with secret_id)', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.POLLINATIONS,
+                    secret_id: 'user-scoped-id',
+                },
+                secretMap: { api_key_pollinations: 'pk-secret' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://gen.pollinations.ai/v1/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer pk-secret');
+            // Verify secret_id was forwarded to secrets.read.
+            expect(ctx.secrets.read).toHaveBeenCalledWith(
+                expect.any(String),
+                expect.objectContaining({ secretId: 'user-scoped-id' }),
+            );
+        });
+
+        test('MOONSHOT (reverse_proxy honored)', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                    reverse_proxy: 'https://moonshot-proxy.example.com/v1',
+                },
+                secretMap: { api_key_moonshot: 'mk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toContain('moonshot-proxy.example.com');
+            expect(String(url)).toContain('/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer mk');
+        });
+
+        test('MOONSHOT renames assistant `reasoning` to `reasoning_content` on wire', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                    model: 'kimi-k2.6',
+                    messages: [
+                        { role: 'user', content: 'q1' },
+                        { role: 'assistant', content: 'a1', reasoning: 'think about q1' },
+                        { role: 'user', content: 'q2' },
+                    ],
+                },
+                secretMap: { api_key_moonshot: 'mk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [, init] = ctx.fetch.mock.calls[0];
+            const wireBody = JSON.parse(init.body);
+            const assistantMsg = wireBody.messages.find(m => m.role === 'assistant');
+            expect(assistantMsg.reasoning_content).toBe('think about q1');
+            expect(assistantMsg).not.toHaveProperty('reasoning');
+        });
+
+        test('MOONSHOT preserves pre-existing reasoning_content unchanged', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                    model: 'kimi-k2.6',
+                    messages: [
+                        { role: 'user', content: 'q' },
+                        { role: 'assistant', content: 'a', reasoning: 'stray', reasoning_content: 'authoritative' },
+                    ],
+                },
+                secretMap: { api_key_moonshot: 'mk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [, init] = ctx.fetch.mock.calls[0];
+            const wireBody = JSON.parse(init.body);
+            const assistantMsg = wireBody.messages.find(m => m.role === 'assistant');
+            expect(assistantMsg.reasoning_content).toBe('authoritative');
+            expect(assistantMsg.reasoning).toBe('stray');
+        });
+
+        test('MOONSHOT does not add reasoning_content when reasoning is absent or empty', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                    model: 'kimi-k2.6',
+                    messages: [
+                        { role: 'user', content: 'q1' },
+                        { role: 'assistant', content: 'no thinking here' },
+                        { role: 'user', content: 'q2' },
+                        { role: 'assistant', content: 'empty string reasoning', reasoning: '' },
+                    ],
+                },
+                secretMap: { api_key_moonshot: 'mk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [, init] = ctx.fetch.mock.calls[0];
+            const wireBody = JSON.parse(init.body);
+            for (const m of wireBody.messages.filter(x => x.role === 'assistant')) {
+                expect(m).not.toHaveProperty('reasoning_content');
+            }
+        });
+
+        describe('moonshot partial prefill', () => {
+            test('appends assistant partial message with name when last message is not assistant', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                        ],
+                        kimi_partial: true,
+                        kimi_partial_content: 'Her reply begins thus:',
+                        kimi_partial_name: 'Seraphina',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                expect(wireBody.messages).toHaveLength(3);
+                expect(wireBody.messages[1].role).toBe('user');
+                expect(wireBody.messages[2]).toEqual({
+                    role: 'assistant',
+                    content: 'Her reply begins thus:',
+                    partial: true,
+                    name: 'Seraphina',
+                });
+            });
+
+            test('appends assistant partial with empty content and no name when name omitted', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                        ],
+                        kimi_partial: true,
+                        kimi_partial_content: '',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                const last = wireBody.messages[wireBody.messages.length - 1];
+                expect(last.content).toBe('');
+                expect(last.partial).toBe(true);
+                expect(last).not.toHaveProperty('name');
+            });
+
+            test('merges prefix into trailing assistant and drops name', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                            { role: 'assistant', content: 'Once upon' },
+                        ],
+                        kimi_partial: true,
+                        kimi_partial_content: ' a time',
+                        kimi_partial_name: 'ignored',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                expect(wireBody.messages).toHaveLength(3);
+                const last = wireBody.messages[wireBody.messages.length - 1];
+                expect(last.content).toBe('Once upon a time');
+                expect(last.partial).toBe(true);
+                expect(last).not.toHaveProperty('name');
+            });
+
+            test('merges prefix into trailing assistant with null content', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'user', content: 'u' },
+                            { role: 'assistant', content: null },
+                        ],
+                        kimi_partial: true,
+                        kimi_partial_content: 'goes on',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                const last = wireBody.messages[wireBody.messages.length - 1];
+                expect(last.content).toBe('goes on');
+                expect(last.partial).toBe(true);
+            });
+
+            test('leaves messages untouched when tools are involved', async () => {
+                const toolCallsMessages = [
+                    { role: 'user', content: 'u' },
+                    {
+                        role: 'assistant',
+                        content: '',
+                        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+                    },
+                ];
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: toolCallsMessages,
+                        kimi_partial: true,
+                        kimi_partial_content: 'Her reply begins thus:',
+                        kimi_partial_name: 'Seraphina',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                expect(wireBody.messages).toEqual([
+                    { role: 'user', content: 'u' },
+                    {
+                        role: 'assistant',
+                        content: '',
+                        tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }],
+                    },
+                ]);
+
+                const toolRoleMessages = [
+                    { role: 'user', content: 'u' },
+                    { role: 'assistant', content: 'a', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'f', arguments: '{}' } }] },
+                    { role: 'tool', tool_call_id: 'c1', content: 'r' },
+                ];
+                const ctx2 = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: toolRoleMessages,
+                        kimi_partial: true,
+                        kimi_partial_content: 'Her reply begins thus:',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx2);
+                const [, init2] = ctx2.fetch.mock.calls[0];
+                const wireBody2 = JSON.parse(init2.body);
+                expect(wireBody2.messages).toHaveLength(3);
+                expect(wireBody2.messages.some(m => 'partial' in m)).toBe(false);
+            });
+
+            test('json_schema takes priority over kimi_partial', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                        ],
+                        json_schema: {
+                            value: { type: 'object', properties: { answer: { type: 'string' } }, required: ['answer'] },
+                            name: 'answer',
+                            strict: true,
+                        },
+                        kimi_partial: true,
+                        kimi_partial_content: 'Her reply begins thus:',
+                        kimi_partial_name: 'Seraphina',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                expect(wireBody.response_format).toEqual({ type: 'json_object' });
+                expect(wireBody.messages).toHaveLength(3);
+                const last = wireBody.messages[wireBody.messages.length - 1];
+                expect(last.role).toBe('user');
+                expect(last.content).toContain('JSON schema for the response:');
+                expect(wireBody.messages.some(m => 'partial' in m)).toBe(false);
+            });
+
+            test('falls back to legacy addAssistantPrefix when kimi_partial is absent or false', async () => {
+                const ctx = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'user', content: 'u' },
+                            { role: 'assistant', content: 'a' },
+                        ],
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx);
+                const [, init] = ctx.fetch.mock.calls[0];
+                const wireBody = JSON.parse(init.body);
+                expect(wireBody.messages).toHaveLength(2);
+                expect(wireBody.messages[1].partial).toBe(true);
+
+                const ctx2 = fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        model: 'kimi-k2.6',
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                        ],
+                        kimi_partial: false,
+                        kimi_partial_content: 'Her reply begins thus:',
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+                await dispatchOpenAICompatible(ctx2);
+                const [, init2] = ctx2.fetch.mock.calls[0];
+                const wireBody2 = JSON.parse(init2.body);
+                expect(wireBody2.messages).toHaveLength(2);
+                expect(wireBody2.messages.some(m => m.role === 'assistant')).toBe(false);
+            });
+        });
+
+        describe('moonshot reasoning params by model', () => {
+            function moonshotCtx(overrides = {}) {
+                return fakeCtx({
+                    body: {
+                        chat_completion_source: CHAT_COMPLETION_SOURCES.MOONSHOT,
+                        messages: [
+                            { role: 'system', content: 's' },
+                            { role: 'user', content: 'u' },
+                        ],
+                        ...overrides,
+                    },
+                    secretMap: { api_key_moonshot: 'mk' },
+                });
+            }
+            function wireBody(ctx) {
+                const [url, init] = ctx.fetch.mock.calls[0];
+                expect(String(url)).toContain('api.moonshot.ai');
+                return JSON.parse(init.body);
+            }
+
+            test('kimi-k3 forwards reasoning_effort as top-level field, no thinking object', async () => {
+                const ctx = moonshotCtx({ model: 'kimi-k3', reasoning_effort: 'low' });
+                await dispatchOpenAICompatible(ctx);
+                const body = wireBody(ctx);
+                expect(body.reasoning_effort).toBe('low');
+                expect(body.thinking).toBeUndefined();
+            });
+
+            test('vendor-prefixed model ids resolve to the same Kimi family', async () => {
+                for (const model of ['moonshotai/kimi-k3', 'moonshot/kimi-k3']) {
+                    const ctx = moonshotCtx({ model, reasoning_effort: 'low' });
+                    await dispatchOpenAICompatible(ctx);
+                    const body = wireBody(ctx);
+                    expect(body.reasoning_effort).toBe('low');
+                    expect(body.thinking).toBeUndefined();
+                }
+
+                const k26Ctx = moonshotCtx({ model: 'moonshotai/kimi-k2.6', reasoning_effort: 'high' });
+                await dispatchOpenAICompatible(k26Ctx);
+                expect(wireBody(k26Ctx).thinking).toEqual({ type: 'enabled', keep: 'all' });
+
+                const k27Ctx = moonshotCtx({ model: 'moonshot/kimi-k2.7-code-highspeed' });
+                await dispatchOpenAICompatible(k27Ctx);
+                expect(wireBody(k27Ctx).thinking).toEqual({ type: 'enabled' });
+            });
+
+            test('kimi-k3 maps canonical efforts: minimal/low→low, medium/high/xhigh→high, max→max, off/auto omitted', async () => {
+                for (const [effort, expected] of [
+                    ['minimal', 'low'], ['low', 'low'],
+                    ['medium', 'high'], ['high', 'high'],
+                    ['xhigh', 'high'], ['max', 'max'],
+                ]) {
+                    const ctx = moonshotCtx({ model: 'kimi-k3', reasoning_effort: effort });
+                    await dispatchOpenAICompatible(ctx);
+                    expect(wireBody(ctx).reasoning_effort).toBe(expected);
+                }
+                for (const effort of ['auto', 'off']) {
+                    const ctx = moonshotCtx({ model: 'kimi-k3', reasoning_effort: effort });
+                    await dispatchOpenAICompatible(ctx);
+                    expect(wireBody(ctx).reasoning_effort).toBeUndefined();
+                }
+            });
+
+            test('kimi-k2.6 maps off→disabled, other efforts→enabled, absent/auto→enabled', async () => {
+                const disabledCtx = moonshotCtx({ model: 'kimi-k2.6', reasoning_effort: 'off' });
+                await dispatchOpenAICompatible(disabledCtx);
+                expect(wireBody(disabledCtx).thinking).toEqual({ type: 'disabled', keep: 'all' });
+
+                for (const effort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+                    const enabledCtx = moonshotCtx({ model: 'kimi-k2.6', reasoning_effort: effort });
+                    await dispatchOpenAICompatible(enabledCtx);
+                    expect(wireBody(enabledCtx).thinking).toEqual({ type: 'enabled', keep: 'all' });
+                }
+
+                const autoCtx = moonshotCtx({ model: 'kimi-k2.6', reasoning_effort: 'auto' });
+                await dispatchOpenAICompatible(autoCtx);
+                expect(wireBody(autoCtx).thinking).toEqual({ type: 'enabled', keep: 'all' });
+
+                const absentCtx = moonshotCtx({ model: 'kimi-k2.6' });
+                await dispatchOpenAICompatible(absentCtx);
+                expect(wireBody(absentCtx).thinking).toEqual({ type: 'enabled', keep: 'all' });
+            });
+
+            test('kimi-k2.7-code sends thinking enabled for auto/levels, nothing for off', async () => {
+                for (const effort of ['auto', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']) {
+                    const withEffort = moonshotCtx({ model: 'kimi-k2.7-code', reasoning_effort: effort });
+                    await dispatchOpenAICompatible(withEffort);
+                    expect(wireBody(withEffort).thinking).toEqual({ type: 'enabled' });
+                }
+
+                const withoutEffort = moonshotCtx({ model: 'kimi-k2.7-code' });
+                await dispatchOpenAICompatible(withoutEffort);
+                expect(wireBody(withoutEffort).thinking).toEqual({ type: 'enabled' });
+
+                const offCtx = moonshotCtx({ model: 'kimi-k2.7-code', reasoning_effort: 'off' });
+                await dispatchOpenAICompatible(offCtx);
+                expect(wireBody(offCtx).thinking).toBeUndefined();
+            });
+
+            test('unknown/non-kimi-thinking model gets no reasoning params', async () => {
+                const ctx = moonshotCtx({ model: 'kimi-latest', reasoning_effort: 'high' });
+                await dispatchOpenAICompatible(ctx);
+                const body = wireBody(ctx);
+                expect(body.reasoning_effort).toBeUndefined();
+                expect(body.thinking).toBeUndefined();
+            });
+        });
+
+        test('COMETAPI (temporarily disabled: emits error, no fetch)', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.COMETAPI },
+                secretMap: { api_key_cometapi: 'ck' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const errs = ctx._emitted.filter(e => e.kind === 'error');
+            expect(errs.length).toBeGreaterThan(0);
+            expect(errs[0].error.message).toContain('temporarily disabled');
+            expect(ctx.fetch).not.toHaveBeenCalled();
+        });
+
+        test('ZAI (adds Accept-Language, chooses common URL by default)', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toContain('api.z.ai/api/paas/v4');
+            expect(init.headers['Accept-Language']).toBe('en-US,en');
+            expect(init.headers['Authorization']).toBe('Bearer zk');
+        });
+
+        test('SILICONFLOW (default endpoint = COM, CN endpoint honored)', async () => {
+            const ctx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.SILICONFLOW },
+                secretMap: { api_key_siliconflow: 'sk' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://api.siliconflow.com/v1/chat/completions');
+
+            const ctx2 = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.SILICONFLOW,
+                    siliconflow_endpoint: 'cn',
+                },
+                secretMap: { api_key_siliconflow: 'sk' },
+            });
+            await dispatchOpenAICompatible(ctx2);
+            const [url2] = ctx2.fetch.mock.calls[0];
+            expect(String(url2)).toBe('https://api.siliconflow.cn/v1/chat/completions');
+        });
+
+        test('ZAI reasoning_effort toggles thinking and forwards the level, auto omitted', async () => {
+            const offCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI, reasoning_effort: 'off' },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(offCtx);
+            const offBody = JSON.parse(offCtx.fetch.mock.calls[0][1].body);
+            expect(offBody.thinking).toEqual({ type: 'disabled' });
+            expect(offBody.reasoning_effort).toBeUndefined();
+
+            const highCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI, reasoning_effort: 'high' },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(highCtx);
+            const highBody = JSON.parse(highCtx.fetch.mock.calls[0][1].body);
+            expect(highBody.thinking).toEqual({ type: 'enabled' });
+            expect(highBody.reasoning_effort).toBe('high');
+
+            const lowCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI, reasoning_effort: 'low' },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(lowCtx);
+            expect(JSON.parse(lowCtx.fetch.mock.calls[0][1].body).reasoning_effort).toBe('low');
+
+            const maxCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI, reasoning_effort: 'max' },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(maxCtx);
+            expect(JSON.parse(maxCtx.fetch.mock.calls[0][1].body).reasoning_effort).toBe('max');
+
+            const autoCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.ZAI, reasoning_effort: 'auto' },
+                secretMap: { api_key_zai: 'zk' },
+            });
+            await dispatchOpenAICompatible(autoCtx);
+            const autoBody = JSON.parse(autoCtx.fetch.mock.calls[0][1].body);
+            expect(autoBody.thinking).toBeUndefined();
+            expect(autoBody.reasoning_effort).toBeUndefined();
+        });
+
+        test('SILICONFLOW reasoning_effort toggles enable_thinking, auto omitted', async () => {
+            const offCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.SILICONFLOW, reasoning_effort: 'off' },
+                secretMap: { api_key_siliconflow: 'sk' },
+            });
+            await dispatchOpenAICompatible(offCtx);
+            expect(JSON.parse(offCtx.fetch.mock.calls[0][1].body).enable_thinking).toBe(false);
+
+            const highCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.SILICONFLOW, reasoning_effort: 'high' },
+                secretMap: { api_key_siliconflow: 'sk' },
+            });
+            await dispatchOpenAICompatible(highCtx);
+            expect(JSON.parse(highCtx.fetch.mock.calls[0][1].body).enable_thinking).toBe(true);
+
+            const autoCtx = fakeCtx({
+                body: { chat_completion_source: CHAT_COMPLETION_SOURCES.SILICONFLOW, reasoning_effort: 'auto' },
+                secretMap: { api_key_siliconflow: 'sk' },
+            });
+            await dispatchOpenAICompatible(autoCtx);
+            expect(JSON.parse(autoCtx.fetch.mock.calls[0][1].body).enable_thinking).toBeUndefined();
+        });
+
+        test('OPENROUTER (URL, OPENROUTER_HEADERS present, transforms honored)', async () => {
+            const ctx = fakeCtx({
+                body: {
+                    chat_completion_source: CHAT_COMPLETION_SOURCES.OPENROUTER,
+                    model: 'openai/gpt-4o',
+                    middleout: 'off',
+                },
+                secretMap: { api_key_openrouter: 'ok' },
+            });
+            await dispatchOpenAICompatible(ctx);
+            const [url, init] = ctx.fetch.mock.calls[0];
+            expect(String(url)).toBe('https://openrouter.ai/api/v1/chat/completions');
+            expect(init.headers['Authorization']).toBe('Bearer ok');
+            // OPENROUTER_HEADERS include HTTP-Referer / X-Title.
+            expect(init.headers['HTTP-Referer'] || init.headers['X-Title']).toBeDefined();
+            const parsed = JSON.parse(init.body);
+            expect(parsed.transforms).toEqual([]);
+        });
+    });
+});
