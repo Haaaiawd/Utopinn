@@ -46,3 +46,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: apps/server
 - Recorded: 2026-11-02T08:57:13.115Z
+
+## D-006: 面板 shim 双面策略
+
+- Current decision: 沙箱 shim 提供两个 API 面:Luker CardApp ctx(card_app 声明时)+ TavernHelper 兼容全局(默认);共享同一 nonce 白名单桥,协议白名单按 TavernHelper 清单扩展
+- Rationale: 最大化'绝大多数卡'覆盖率:CardApp 卡走原生面,面向酒馆助手写的卡(占社区大头)走兼容面,均不满足降级静态 HTML
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/mobile-panels.md, .loom/capabilities/sandboxed-card-apps/capability.md, packages/protocol/src/panels.ts
+- Recorded: 2026-11-02T09:18:53.743Z
