@@ -235,7 +235,7 @@
       "covers": [
         "DLV-009"
       ],
-      "status": "open",
+      "status": "active",
       "progress": {
         "completed": [],
         "current": "",
@@ -243,7 +243,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-02T13:15:34.634Z"
     },
     {
       "id": "TASK-005",
