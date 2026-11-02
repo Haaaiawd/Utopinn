@@ -1,0 +1,155 @@
+{
+  "schema_version": 2,
+  "project": {
+    "name": "Uberge",
+    "status": "build_ready",
+    "created_at": "2026-11-02T08:47:52.367Z",
+    "updated_at": "2026-11-02T09:02:49.625Z"
+  },
+  "understanding": {
+    "confirmed": [
+      {
+        "id": "F-001",
+        "text": "Project goal: refactor SillyTavern into server-side brain + thin clients (web SPA admin surface + React Native mobile app).",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-002",
+        "text": "Codebase base: ref/Luker (aggressive SillyTavern fork) — already has storage Engine/Repo layer (fs/sqlite/mysql/postgres), multi-device sync, server-side generation jobs + WS ticket delivery, CardApp in-card app system. Copied to apps/server (minus .git and android/ios/harmony/desktop shells).",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-003",
+        "text": "The 'brain' (prompt assembly, world-info engine, regex pipeline, macros/STscript, instruct mode) currently lives entirely in the frontend (apps/server/public/scripts/, ~30k+ lines jQuery). Backend is storage + LLM proxy + secrets.",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-004",
+        "text": "Human confirmed: brain moves fully server-side; no offline requirement since LLM API calls need network anyway ('全部上云').",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-005",
+        "text": "Mobile app: React Native + Expo thin client. Advanced features stay web-only or hidden; heavy UIs get dedicated pages not mixed into chat.",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-006",
+        "text": "'重UI' = card-embedded HTML apps (inventory/quest/status panels, 状态栏, CardApp in Luker terms). Mobile hosts them in a dedicated bottom-nav '面板' page via react-native-webview sandbox + postMessage ctx bridge.",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-007",
+        "text": "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @uberge/core output on real cards).",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-008",
+        "text": "Third-party frontend extensions (public/scripts/extensions/third-party) will NOT be compatible; accepted.",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-009",
+        "text": "Local on-device storage of cards/world books is dropped as a v1 requirement; mobile keeps read cache + file import/export only.",
+        "source": "conversation",
+        "at": "2026-11-02T08:48:37.671Z"
+      }
+    ],
+    "assumptions": [
+      {
+        "id": "A-001",
+        "text": "WS ticket delivery (Luker ws-delivery.js) is the primary generation streaming channel for RN clients; SSE fetch chunking is unreliable in React Native.",
+        "status": "active",
+        "source": "agent",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "A-002",
+        "text": "Luker's legacy jQuery public/ UI is kept in apps/server as the interim management surface until apps/web SPA is built.",
+        "status": "active",
+        "source": "agent",
+        "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "A-003",
+        "text": "apps/web SPA will use React (aligns with RN reuse + ecosystem); not yet confirmed by human.",
+        "status": "active",
+        "source": "agent",
+        "at": "2026-11-02T08:48:37.671Z"
+      }
+    ],
+    "unresolved": [
+      {
+        "id": "Q-001",
+        "question": "Mobile '面板' page information architecture: per-chat aggregate page vs global panels list?",
+        "impact": "medium",
+        "status": "resolved",
+        "at": "2026-11-02T08:48:37.671Z",
+        "resolution": "面板页=当前聊天的 CardApp 聚合页(见 design/mobile-panels.md);全局列表否决:跨会话面板无明确归属",
+        "resolved_at": "2026-11-02T09:01:05.796Z"
+      },
+      {
+        "id": "Q-002",
+        "question": "Golden-diff acceptance threshold for engine compat (exact prompt equality vs tolerated diffs)?",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-02T08:48:37.671Z",
+        "resolution": "见 DECISIONS.md D-004:通过线=消息序列相等+WI轨迹等价+regex记录一致,白名单=时间戳/gen_id/同优先级排序",
+        "resolved_at": "2026-11-02T08:57:13.113Z"
+      },
+      {
+        "id": "Q-003",
+        "question": "Do we keep Luker's server-plugin system and skills/orchestrator features, or strip them from apps/server?",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-02T08:48:37.671Z",
+        "resolution": "见 DECISIONS.md D-005:保留服务端插件/skills/orchestrator,不剥离",
+        "resolved_at": "2026-11-02T08:57:13.114Z"
+      }
+    ]
+  },
+  "keeper": {
+    "status": "passed",
+    "attempts": [
+      {
+        "run_id": "3d7f91c4-6a2b-4e08-b5d9-8c1a4f6e2b73",
+        "prepared_digest": "a34d0e99125d2c76afbb052a1c7d1ff8e58656e2193bd8ebb8f8896c35fb429a",
+        "verdict": "passed",
+        "summary": "All 8 minor gaps from attempt 1 verified closed across two revision passes; stale tasks-001.json draft deleted; canonical tasks.json consistent; TASK-001 executable.",
+        "evidence": [
+          "compat-golden-diff.md:45 cites D-004; all designs Status=frozen",
+          "state.json Q-001/002/003 resolved with populated resolutions",
+          "tasks.json:20 storage criterion, :232 TASK-003 dep, :493 C3 hook; tasks-001.json deleted",
+          ".gitignore:27 tests/corpus-private/; AGENTS.md:72-75 ops notes",
+          "TASK-001 executability: pnpm-workspace.yaml apps/*, config.yaml:83 port 8000, login.html present, node>=24"
+        ],
+        "gaps": [],
+        "review": {
+          "mode": "independent",
+          "reviewer_id": "keeper-crux-vela-01",
+          "evidence": "Fresh agent with no shaping-conversation access; reviewed only on-disk .loom artifacts across 3 verification passes (initial review + 2 closure checks)."
+        },
+        "can_auto_pass": false,
+        "at": "2026-11-02T09:02:49.625Z",
+        "closure_results": []
+      }
+    ],
+    "prepared_digest": "a34d0e99125d2c76afbb052a1c7d1ff8e58656e2193bd8ebb8f8896c35fb429a",
+    "prepared_attempt": 1
+  },
+  "decision_ids": [
+    "D-001",
+    "D-002",
+    "D-003",
+    "D-004",
+    "D-005"
+  ]
+}

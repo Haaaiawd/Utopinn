@@ -1,0 +1,61 @@
+{
+    "confirmed": [
+        "Project goal: refactor SillyTavern into server-side brain + thin clients (web SPA admin surface + React Native mobile app).",
+        "Codebase base: ref/Luker (aggressive SillyTavern fork) — already has storage Engine/Repo layer (fs/sqlite/mysql/postgres), multi-device sync, server-side generation jobs + WS ticket delivery, CardApp in-card app system. Copied to apps/server (minus .git and android/ios/harmony/desktop shells).",
+        "The 'brain' (prompt assembly, world-info engine, regex pipeline, macros/STscript, instruct mode) currently lives entirely in the frontend (apps/server/public/scripts/, ~30k+ lines jQuery). Backend is storage + LLM proxy + secrets.",
+        "Human confirmed: brain moves fully server-side; no offline requirement since LLM API calls need network anyway ('全部上云').",
+        "Mobile app: React Native + Expo thin client. Advanced features stay web-only or hidden; heavy UIs get dedicated pages not mixed into chat.",
+        "'重UI' = card-embedded HTML apps (inventory/quest/status panels, 状态栏, CardApp in Luker terms). Mobile hosts them in a dedicated bottom-nav '面板' page via react-native-webview sandbox + postMessage ctx bridge.",
+        "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @uberge/core output on real cards).",
+        "Third-party frontend extensions (public/scripts/extensions/third-party) will NOT be compatible; accepted.",
+        "Local on-device storage of cards/world books is dropped as a v1 requirement; mobile keeps read cache + file import/export only."
+    ],
+    "assumptions": [
+        {
+            "text": "WS ticket delivery (Luker ws-delivery.js) is the primary generation streaming channel for RN clients; SSE fetch chunking is unreliable in React Native.",
+            "source": "agent"
+        },
+        {
+            "text": "Luker's legacy jQuery public/ UI is kept in apps/server as the interim management surface until apps/web SPA is built.",
+            "source": "agent"
+        },
+        {
+            "text": "apps/web SPA will use React (aligns with RN reuse + ecosystem); not yet confirmed by human.",
+            "source": "agent"
+        }
+    ],
+    "unresolved": [
+        {
+            "question": "Mobile '面板' page information architecture: per-chat aggregate page vs global panels list?",
+            "impact": "medium"
+        },
+        {
+            "question": "Golden-diff acceptance threshold for engine compat (exact prompt equality vs tolerated diffs)?",
+            "impact": "high"
+        },
+        {
+            "question": "Do we keep Luker's server-plugin system and skills/orchestrator features, or strip them from apps/server?",
+            "impact": "high"
+        }
+    ],
+    "decisions": [
+        {
+            "title": "All-cloud thin-client architecture",
+            "decision": "Brain (prompt assembly, WI engine, regex, macros) ports to packages/core consumed only by apps/server. Mobile/web are thin clients; shared packages limited to protocol + formats + api-client.",
+            "rationale": "No offline scenario (LLM calls need network); matches ChatGPT/Claude native thin-client model; single source of truth on server simplifies sync.",
+            "affects": ["AGENTS.md", "packages/core", "apps/mobile", "apps/web"]
+        },
+        {
+            "title": "Luker as codebase base",
+            "decision": "apps/server starts from ref/Luker, not upstream SillyTavern.",
+            "rationale": "Storage Engine/Repo abstraction, sync service, generation jobs + WS delivery, CardApp state system already built; porting them to vanilla ST would redo hard work.",
+            "affects": ["apps/server"]
+        },
+        {
+            "title": "Heavy UI as dedicated mobile pages via WebView sandbox",
+            "decision": "CardApp/status-bar HTML renders in a dedicated '面板' bottom-nav page inside react-native-webview; ctx API bridged over postMessage to api-client; state in server chat_state sidecars.",
+            "rationale": "Byte-level compat with existing card HTML/JS; dedicated pages match user's UX ask (not mixed into chat); state system already exists server-side.",
+            "affects": ["apps/mobile"]
+        }
+    ]
+}

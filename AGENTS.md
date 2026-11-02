@@ -56,3 +56,20 @@ pnpm typecheck
 ```
 
 注意:`apps/server` 自带 package-lock(npm 习惯);workspace 安装用 pnpm 即可,原生依赖 better-sqlite3 需编译环境。
+
+<!-- loom:v2 -->
+## LOOM
+
+This project uses LOOM as Agent-only continuity infrastructure. Run `loom context` when entering the
+project, after a context reset, before substantial work, and when the human gives feedback or a direction
+change. When a Task is active, the command restores its execution protocol, exact state, and declared
+context; rerun it before editing after any interruption. Keep project truth, design documents, professional
+capability dossiers, and Tasks current through the CLI, and never ask the human to operate LOOM. Do not
+rerun LOOM before every tool call: persist and restore at meaningful work boundaries. The installed
+`loom` command is the stable project-local invocation. If it is not on PATH in a source checkout, use
+the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative path from this project.
+
+## 运维备忘
+
+- better-sqlite3 等原生依赖在 pnpm 10+ 下默认不编译：首次 pnpm install 后需 pnpm approve-builds，或在 pnpm-workspace.yaml 配 onlyBuiltDependencies。
+- 兼容语料：tests/corpus/cards/ 进 git（公开卡）；tests/corpus-private/ 已 gitignore（用户私有卡，由用户提供）；ref/cards/GuiXu 为本地参考样本。
