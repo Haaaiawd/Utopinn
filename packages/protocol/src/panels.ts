@@ -2,7 +2,7 @@
 // (RN WebView / web iframe) and sandboxed card code. Nonce + allowlist +
 // request-id correlation per mount. See .loom/design/mobile-panels.md.
 
-/** Methods a mounted CardApp may invoke through the bridge. */
+/** Methods a mounted CardApp may invoke through the bridge (Luker CardApp ctx face). */
 export const PANEL_METHODS = [
     'ctx.sendMessage',
     'ctx.swipe',
@@ -22,13 +22,49 @@ export const PANEL_METHODS = [
 ] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];
 
+/**
+ * TavernHelper-compatible face (JS-Slash-Runner API surface, re-implemented —
+ * its PolyForm NC license forbids vendoring code). Cards without a `card_app`
+ * declaration get these globals; they route over the same nonce bridge.
+ * See .loom/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md
+ */
+export const PANEL_METHODS_TH = [
+    'th.eventOn',
+    'th.eventEmit',
+    'th.eventEmitAndWait',
+    'th.eventOnce',
+    'th.eventRemoveListener',
+    'th.getVariables',
+    'th.replaceVariables',
+    'th.insertOrAssignVariables',
+    'th.deleteVariable',
+    'th.getChatMessages',
+    'th.setChatMessage',
+    'th.createChatMessages',
+    'th.deleteChatMessages',
+    'th.getCharacter',
+    'th.getCurrentCharacterName',
+    'th.getLorebook',
+    'th.getLorebookEntries',
+    'th.setLorebookEntries',
+    'th.triggerSlash',
+    'th.generate',
+    'th.stopGeneration',
+    'th.formatAsDisplayedMessage',
+] as const;
+export type PanelMethodTH = (typeof PANEL_METHODS_TH)[number];
+
+/** Union of both faces — the bridge allowlist is face-aware per mount. */
+export const ALL_PANEL_METHODS = [...PANEL_METHODS, ...PANEL_METHODS_TH] as const;
+export type AnyPanelMethod = PanelMethod | PanelMethodTH;
+
 /** Card → host request. Nonce minted per mount; host drops mismatches. */
 export interface PanelRequest {
     channel: 'uberge-panel';
     direction: 'request';
     nonce: string;
     requestId: string;
-    method: PanelMethod;
+    method: AnyPanelMethod;
     args?: Record<string, unknown>;
 }
 
@@ -59,6 +95,8 @@ export interface PanelBootstrap {
     channel: 'uberge-panel';
     direction: 'bootstrap';
     nonce: string;
+    /** Which API face the shim injected: 'ctx' (CardApp) or 'th' (TavernHelper compat). */
+    face: 'ctx' | 'th';
     /** Namespaces the app is permitted to read/write. */
     stateNamespaces: string[];
     /** Entry resource URLs (host-routed, CSP-allowed). */
@@ -66,8 +104,8 @@ export interface PanelBootstrap {
     theme?: 'dark' | 'light';
 }
 
-export function isPanelMethod(v: unknown): v is PanelMethod {
-    return typeof v === 'string' && (PANEL_METHODS as readonly string[]).includes(v);
+export function isPanelMethod(v: unknown): v is AnyPanelMethod {
+    return typeof v === 'string' && (ALL_PANEL_METHODS as readonly string[]).includes(v);
 }
 
 export function isPanelRequest(v: unknown): v is PanelRequest {

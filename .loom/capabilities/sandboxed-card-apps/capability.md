@@ -54,7 +54,7 @@
 - decide_by: 老卡 JS 依赖 ST 全局的普遍度——普遍,需 shim;shim 兜不住时静态渲染仍可读
 - source: research/webview-bridge-security.md + .loom/design/mobile-panels.md
 - counterexample: 卡内 JS 若直接改写宿主 DOM——沙箱内无碍,无需更高 shim
-- output: shim 层 + 静态降级路径 + 错误上报
+- output: shim 层 + 静态降级路径 + 错误上报;shim 双面:Luker CardApp ctx(card_app 声明时)+ TavernHelper 兼容全局(默认面,见 research/tavern-helper-api-surface.md;PolyForm NC 许可不并入代码,只再实现 API 面),同 nonce 桥,白名单补 variables/getChatMessages/lorebook/triggerSlash 系列
 
 ### C5: 资产缓存与版本
 

@@ -2,9 +2,9 @@
   "schema_version": 2,
   "project": {
     "name": "Uberge",
-    "status": "build_ready",
+    "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-02T09:02:49.625Z"
+    "updated_at": "2026-11-02T09:18:53.746Z"
   },
   "understanding": {
     "confirmed": [
@@ -150,6 +150,7 @@
     "D-002",
     "D-003",
     "D-004",
-    "D-005"
+    "D-005",
+    "D-006"
   ]
 }
