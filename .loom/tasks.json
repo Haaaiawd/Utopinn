@@ -401,11 +401,21 @@
       "covers": [
         "DLV-003"
       ],
-      "status": "active",
-      "progress": "引擎主体已移植+promptBuilder server provider;getPromptCollection 原版语义已补(enabled/trigger/preparePrompt)。余:depthInjection 宿主接线(TASK-007 侧)、instruct/textgen 路径、golden-diff 语料判卷",
+      "status": "done",
+      "progress": {
+        "completed": [
+          "prompt 组装全链(collection/messages/injections/tokens/assemble)",
+          "instruct+regex 引擎(17+19 测试)",
+          "golden 判卷 5 卡零实质差异",
+          "WI_SPLIT/EMPTY_EXTRA 按 golden 修复",
+          "promptBuilder seam+真 tiktoken"
+        ],
+        "current": "done",
+        "next": ""
+      },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:36:05.129Z"
+      "updated_at": "2026-11-03T09:55:17.594Z"
     },
     {
       "id": "TASK-007",
@@ -450,20 +460,23 @@
         "DLV-005",
         "DLV-006"
       ],
-      "status": "open",
+      "status": "active",
       "progress": {
         "completed": [
-          "TASK-007a(79be656):/api/uberge/generate + /preview——generate-context 四repo→五源WI(mergeLoreSources)→checkWorldInfo→promptBuilder→runLukerDispatch;node:test 5/5 绿"
+          "/api/uberge/generate+preview 端点",
+          "存储→WI→prompt 全链",
+          "派发体 oai_settings/preset/body 三层合并+连接键排除",
+          "e2e 全绿(HTTP→组装→mock派发→job→persist→JSONL)"
         ],
-        "current": "WS ticket 投递面确认 + mock LLM e2e + depthInjection 宿主接线 + group chat + 旧端点并存验证",
-        "next": ""
+        "current": "WS ticket 投递确认 + group chat",
+        "next": "TASK-018 库管理 API 解锁薄客户端"
       },
       "evidence": [
         "79be656",
         "apps/server/tests/uberge-generate-context.test.mjs"
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:33:54.144Z"
+      "updated_at": "2026-11-03T09:55:17.594Z"
     },
     {
       "id": "TASK-008",
@@ -960,15 +973,20 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "待开始",
+        "completed": [
+          "协议类型进 packages/protocol/renderers.ts",
+          "registry seam 签名(conversation-renderers.md §4)",
+          "R1-R5 收账(§7):论坛=纯皮/galgame=宿主插件/沙箱渲染器排除/bubble 细节/流式边界",
+          "形态判定 §6(输入划界)"
+        ],
+        "current": "done",
         "next": ""
       },
       "evidence": [],
       "created_at": "2026-11-03T07:57:01.010Z",
-      "updated_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-03T09:52:13.053Z",
       "integrity_version": 1,
       "id": "TASK-015",
       "title": "conversationRenderer seam:契约定稿+形态调研(galgame/论坛体)",
@@ -1149,6 +1167,115 @@
           "must_produce": "降级徽标+可操作说明"
         }
       ]
+    },
+    {
+      "acceptance": [],
+      "done_when": [],
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T09:52:13.053Z",
+      "integrity_version": 1,
+      "id": "TASK-018",
+      "title": "薄客户端库/管理 REST API 面",
+      "outcome": "角色卡(列表/详情/导入导出复用 formats)、会话(列表/加载/删除/分支)、预设与世界书(列表/get/save)、人设、settings get/patch——为 web/mobile 供干净 JSON 协议面,不依赖旧 SPA 形接口",
+      "depends_on": [
+        "TASK-007"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": [],
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T09:52:13.053Z",
+      "integrity_version": 1,
+      "id": "TASK-019",
+      "title": "STscript/QuickReply 服务端引擎",
+      "outcome": "slash 命令解释器服务端移植(QR 按钮/卡内嵌脚本/聊天内 slash);script_injects 生产侧补齐(生成后 ephemeral injects 的消费/删除语义对齐原版);输出正则 AI_OUTPUT/display 车道应用面定稿",
+      "depends_on": [
+        "TASK-007"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": [],
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T09:52:13.053Z",
+      "integrity_version": 1,
+      "id": "TASK-020",
+      "title": "textgen/instruct 派发路径",
+      "outcome": "instruct 引擎接入生成管线(textgen 系后端 story-string/instruct 模板组装)+ kobold/horde/llamacpp/aphrodite 等 provider 派发面盘点与实现",
+      "depends_on": [
+        "TASK-006",
+        "TASK-007"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": [],
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T09:52:13.053Z",
+      "integrity_version": 1,
+      "id": "TASK-021",
+      "title": "插件管理 API",
+      "outcome": "内核(TASK-011)之上的管理端点:插件列表/启用禁用/config 读写(schemastery 校验)/degraded 状态暴露/日志尾部;为 IA 插件域与 dev-diagnostics 供数据",
+      "depends_on": [
+        "TASK-011"
+      ],
+      "implements": "",
+      "capability_hooks": []
     }
   ]
 }
