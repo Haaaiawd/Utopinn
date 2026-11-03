@@ -30,7 +30,7 @@ export default defineConfig({
     server: {
         port: 5173,
         proxy: {
-            '/api': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            '/api': { target: SERVER_ORIGIN, changeOrigin: true, ws: true, configure: (proxy) => proxy.on('error', upstreamError) },
             '/csrf-token': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
         },
     },

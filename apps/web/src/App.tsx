@@ -91,6 +91,7 @@ function Shell() {
                             onRunPreview={runPreview}
                             onTogglePanel={() => setPanelHidden((v) => !v)}
                             onHint={showHint}
+                            live={serverStatus === 'online'}
                         />
                     )}
                     {view === 'settings' && <SettingsView />}
