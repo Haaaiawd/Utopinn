@@ -1,0 +1,132 @@
+// panel-shim runtime tests — run the IIFE in a vm sandbox with a fake
+// window/postMessage env and verify transport marshaling + API semantics.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import vm from 'node:vm';
+
+const RUNTIME = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'runtime.js'), 'utf8');
+
+function makeEnv(bootstrap = {}) {
+    const sent = [];
+    const listeners = {};
+    const win = {
+        __UBERGE_PANEL_NONCE__: 'nonce-1',
+        __UBERGE_PANEL_BOOTSTRAP__: { nonce: 'nonce-1', face: 'th', stateNamespaces: [], assets: {}, ...bootstrap },
+        __ubergePanelPost: (msg) => sent.push(msg),
+        addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); },
+        console,
+        setTimeout,
+        Date,
+        JSON,
+        Promise,
+        Object,
+        Array,
+        Error,
+        Math,
+        String,
+        Number,
+        Boolean,
+    };
+    win.window = win;
+    vm.createContext(win);
+    vm.runInContext(RUNTIME, win);
+    const lastRequest = () => sent[sent.length - 1];
+    const respond = (requestId, result, ok = true) => {
+        win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'response', nonce: 'nonce-1', requestId, ok, result });
+    };
+    return { win, sent, listeners, lastRequest, respond };
+}
+
+test('shim installs TavernHelper + bare globals + event constants', () => {
+    const { win } = makeEnv();
+    assert.equal(typeof win.TavernHelper, 'object');
+    for (const name of ['getVariables', 'replaceVariables', 'insertOrAssignVariables', 'insertVariables',
+        'updateVariablesWith', 'deleteVariable', 'eventOn', 'eventOnce', 'eventEmit', 'eventEmitAndWait',
+        'eventRemoveListener', 'getChatMessages', 'getLastMessageId', 'getCurrentMessageId',
+        'injectPrompts', 'uninjectPrompts', 'waitGlobalInitialized', 'initializeGlobal',
+        'getCharacter', 'getCurrentCharacterName']) {
+        assert.equal(typeof win[name], 'function', `missing bare global ${name}`);
+    }
+    assert.equal(win.tavern_events.MESSAGE_RECEIVED, 'message_received');
+    assert.equal(win.iframe_events.GENERATION_ENDED, 'GENERATION_ENDED');
+});
+
+test('getVariables marshals scope args into a bridge request', async () => {
+    const { win, lastRequest, respond } = makeEnv();
+    const p = win.getVariables({ type: 'chat' });
+    const req = lastRequest();
+    assert.deepEqual(JSON.parse(JSON.stringify(req)),{channel:"uberge-panel",direction:"request",nonce:"nonce-1",requestId:req.requestId,method:"th.getVariables",args:{type:"chat"}});
+    respond(req.requestId, { hp: 10 });
+    assert.deepEqual(JSON.parse(JSON.stringify(await p)),{hp:10});
+});
+
+test('updateVariablesWith evaluates updater locally then ships result', async () => {
+    const { win, lastRequest, respond } = makeEnv();
+    const p = win.updateVariablesWith((vars) => ({ ...vars, hp: vars.hp + 5 }), { type: 'chat' });
+    respond(lastRequest().requestId, { hp: 10 }); // getVariables
+    await new Promise(r => setTimeout(r, 0)); // flush chained request
+    const req = lastRequest();
+    assert.equal(req.method,"th.updateVariablesWith");
+    assert.deepEqual(JSON.parse(JSON.stringify(req.args.result)),{hp:15});
+    respond(req.requestId, null);
+    await p;
+});
+
+test('eventOn registers locally + notifies host; pushed th.event dispatches', async () => {
+    const { win, lastRequest, respond } = makeEnv();
+    let got = null;
+    win.eventOn('message_received', (a) => { got = a; });
+    const req = lastRequest();
+    assert.equal(req.method, 'th.eventOn');
+    respond(req.requestId, { subscribed: 'message_received' });
+    win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'message_received', args: [{ id: 3 }] } });
+    assert.deepEqual(JSON.parse(JSON.stringify(got)),{id:3});
+});
+
+test('eventOnce fires once then unregisters', () => {
+    const { win } = makeEnv();
+    let count = 0;
+    win.eventOnce('x', () => { count++; });
+    const push = () => win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'x', args: [] } });
+    push(); push();
+    assert.equal(count, 1);
+});
+
+test('eventEmit dispatches locally AND notifies host', async () => {
+    const { win, lastRequest, respond } = makeEnv();
+    let local = null;
+    win.eventOn('ping', (v) => { local = v; });
+    respond(lastRequest().requestId, {});
+    const p = win.eventEmit('ping', 42);
+    const req = lastRequest();
+    assert.equal(req.method, 'th.eventEmit');
+    assert.deepEqual(JSON.parse(JSON.stringify(req.args)),{event:"ping",args:[42]});
+    assert.equal(local, 42);
+    respond(req.requestId, null);
+    await p;
+});
+
+test('waitGlobalInitialized resolves when global appears in-window', async () => {
+    const { win } = makeEnv();
+    const p = win.waitGlobalInitialized('Mvu');
+    win.Mvu = { marker: true };
+    const g = await p;
+    assert.equal(g.marker, true);
+});
+
+test('getCurrentMessageId uses bootstrap messageId without a round-trip', async () => {
+    const { win, sent } = makeEnv({ messageId: 0 });
+    assert.equal(await win.getCurrentMessageId(), 0);
+    assert.equal(sent.length, 0);
+});
+
+test('responses reject on ok:false', async () => {
+    const { win, lastRequest, respond } = makeEnv();
+    const p = win.getVariables({});
+    respond(lastRequest().requestId, undefined, false);
+    await assert.rejects(p);
+});
