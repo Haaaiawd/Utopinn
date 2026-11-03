@@ -567,6 +567,10 @@ importers:
         version: 5.9.3
 
   packages/formats:
+    dependencies:
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
     devDependencies:
       typescript:
         specifier: ^5.9.3
