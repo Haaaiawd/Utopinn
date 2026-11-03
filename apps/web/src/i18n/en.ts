@@ -19,7 +19,6 @@ export const en: Dict = {
     'nav.stories': 'Stories',
     'nav.rules': 'Rules',
     'nav.extensions': 'Extensions',
-    'nav.diagnostics': 'Diagnostics',
     'nav.settings': 'Settings',
 
     'sidebar.newChat': 'New chat',
@@ -36,7 +35,6 @@ export const en: Dict = {
     'sidebar.empty.stories': 'No stories yet. Drop a PNG card anywhere, or use import.',
     'sidebar.empty.rules': 'No world books yet. Rules ride with stories, or stay global.',
     'sidebar.empty.extensions': 'Plugins, regex, quick replies and prompt injections live here.',
-    'sidebar.empty.diagnostics': 'Run a generation and the last full prompt + WI trace lands here.',
     'sidebar.empty.settings': 'Connect → preset → prompts — one chain and you are chatting.',
 
     'chat.tabs.conversation': 'Conversation',
@@ -134,8 +132,6 @@ export const en: Dict = {
     'view.rules.desc': 'World books are rules — card-bound ones are specific, global ones are macro. The three-pane editor (books/entries/entry) lives here.',
     'view.extensions.title': 'Extensions',
     'view.extensions.desc': 'Plugins, regex scripts, quick replies, prompt injections, card assets — one domain, several categories. DSH-style plugin management lands here.',
-    'view.diagnostics.title': 'Diagnostics',
-    'view.diagnostics.desc': 'Dev tools are first-class: last full prompt (request inspector), WI activation trace, token counts, generation jobs, golden-diff, degraded plugins. The chat right-panel Diagnostics tab already calls /api/uberge/preview.',
     'view.placeholder.import': 'Drop a PNG / paste a URL — every page accepts it',
     'view.placeholder.candidate': 'Reserved for',
 };

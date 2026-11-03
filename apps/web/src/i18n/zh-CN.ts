@@ -20,7 +20,6 @@ export const zhCN: Dict = {
     'nav.stories': '故事',
     'nav.rules': '规则',
     'nav.extensions': '扩展',
-    'nav.diagnostics': '诊断',
     'nav.settings': '设置',
 
     'sidebar.newChat': '新会话',
@@ -37,7 +36,6 @@ export const zhCN: Dict = {
     'sidebar.empty.stories': '还没有故事。把 PNG 卡拖进来,或点上方导入。',
     'sidebar.empty.rules': '还没有世界书。规则跟着故事走,也可以是全局设定。',
     'sidebar.empty.extensions': '插件、正则、快捷回复、注入提示词会出现在这里。',
-    'sidebar.empty.diagnostics': '生成一次,这里就有上一轮 prompt 全文与 WI 轨迹。',
     'sidebar.empty.settings': '连接 → 预设 → 提示词,一条链走完就能开聊。',
 
     'chat.tabs.conversation': '对话',
@@ -135,8 +133,6 @@ export const zhCN: Dict = {
     'view.rules.desc': '世界书 = 规则。卡内绑定的是专属规则,全局的是宏观规则。三栏编辑器(书列表/条目列表/条目编辑)落在这里。',
     'view.extensions.title': '扩展',
     'view.extensions.desc': '插件、正则脚本、快捷回复、注入提示词、卡资产 —— 同域不同类别。DSH 式插件管理(安装/启禁/日志/degraded 诊断)落在这里。',
-    'view.diagnostics.title': '诊断',
-    'view.diagnostics.desc': '开发者工具是一等公民:上轮 prompt 全文(request inspector)、WI 激活轨迹、token 计数、生成任务监视、golden-diff、插件 degraded。聊天页右面板的「诊断」tab 已接 /api/uberge/preview。',
     'view.placeholder.import': '拖 PNG / 贴 URL —— 任何页面都接得住',
     'view.placeholder.candidate': '这里以后是',
 };

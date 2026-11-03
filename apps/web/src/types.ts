@@ -3,7 +3,7 @@
 // re-declare server contracts).
 
 /** Primary navigation domains — IA v3 (web-ia.md §13/§14). */
-export const VIEW_IDS = ['chat', 'stories', 'rules', 'extensions', 'diagnostics', 'settings'] as const;
+export const VIEW_IDS = ['chat', 'stories', 'rules', 'extensions', 'settings'] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
 
 /** Sidebar chat entry. `charDir`/`chatName` are the /api/uberge/* call params. */

@@ -18,14 +18,12 @@ const NAV: { id: ViewId; icon: IconName }[] = [
     { id: 'stories', icon: 'stories' },
     { id: 'rules', icon: 'rules' },
     { id: 'extensions', icon: 'extensions' },
-    { id: 'diagnostics', icon: 'diagnostics' },
 ];
 
 const VIEW_LIST: Record<Exclude<ViewId, 'chat' | 'settings'>, { items: string[]; emptyKey: string }> = {
     stories: { items: [], emptyKey: 'sidebar.empty.stories' },
     rules: { items: [], emptyKey: 'sidebar.empty.rules' },
     extensions: { items: ['plugins', 'regex', 'quick-replies', 'injections', 'card-assets'], emptyKey: 'sidebar.empty.extensions' },
-    diagnostics: { items: ['prompt-inspector', 'wi-trace', 'gen-jobs', 'storage', 'golden-diff'], emptyKey: 'sidebar.empty.diagnostics' },
 };
 
 function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
