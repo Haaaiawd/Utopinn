@@ -20,8 +20,10 @@ textgen(kobold/llamacpp/ooba 系)与 instruct-mode 是另一条组装线,
   `data/<handle>/instruct/<preset>.json` + `context/<preset>.json`(repo
   `instructRepo`/`contextRepo` 已有 `listWithDocs`)
 - 端点在 dispatchBody 前判源:chat 源走现路;textgen 源产出
-  `{prompt, ...sampling}` 直接进 `runLukerDispatch` 的 textgen 后端
-  (Luker `textgen-settings.js` 的服务端面已有,照抄 prompt 拼装顺序)
+  `{prompt, ...sampling}` 进 `backends/text-completions.js` 的
+  `/generate`(已实证挂在 `runLukerDispatch`,`/status` `/props` 同文件)
+- 参照:`ref/Luker/public/scripts/textgen-settings.js` +
+  `instruct-mode.js`(prompt 拼装顺序照抄,不做简化版)
 - instruct preset 的 `system_prompt`/`wrap`/`names_behavior` 等位按 ST
   `formatInstruct` 语义,不做简化版
 
