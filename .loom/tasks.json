@@ -401,8 +401,8 @@
       "covers": [
         "DLV-003"
       ],
-      "status": "in_progress",
-      "progress": "引擎主体已移植(assemble/messages/injections/collection/tokens)+promptBuilder server provider;特征化9测全绿。余:预设→promptOrder解析入参(TASK-007 request-building 侧)、depthInjection 宿主接线、instruct/textgen 路径、golden-diff 语料判卷",
+      "status": "active",
+      "progress": "引擎主体已移植+promptBuilder server provider;getPromptCollection 原版语义已补(enabled/trigger/preparePrompt)。余:depthInjection 宿主接线(TASK-007 侧)、instruct/textgen 路径、golden-diff 语料判卷",
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T06:36:05.129Z"
@@ -452,11 +452,16 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
+        "completed": [
+          "TASK-007a(79be656):/api/uberge/generate + /preview——generate-context 四repo→五源WI(mergeLoreSources)→checkWorldInfo→promptBuilder→runLukerDispatch;node:test 5/5 绿"
+        ],
+        "current": "WS ticket 投递面确认 + mock LLM e2e + depthInjection 宿主接线 + group chat + 旧端点并存验证",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "79be656",
+        "apps/server/tests/uberge-generate-context.test.mjs"
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T06:33:54.144Z"
     },
