@@ -51,6 +51,14 @@
 - 纯 ESM TS,strict;禁 any-heavy 移植——宁可分阶段移植并维持行为测试
 - 行为兼容优先于代码优雅:与原版有出入处按原版为准(golden 说了算)
 - 不引入新数据格式;一切读写走现有文件格式
+- **缓存稳定不变式(DSH 调研后新增)**:prompt 组装的稳定段顺序恒定——
+  卡字段/系统提示/WI 常量条目固定在前,易变段(深度注入/最近消息)在后;
+  同卡同聊天重复生成的前缀应逐字节一致(provider prompt cache 命中的前提,
+  golden 可断言)
+- **消息结算管线(DSH 分步模式的服务端对应)**:`<UpdateVariable>` 块在
+  persist 前由服务端解析 → stat_data 写 chat 变量;状态栏模板 × 变量可
+  服务端渲染为 display-only 内容(状态栏固化,模型不再重输 HTML)。
+  v1 先做单阶段 settle,stage 序列(stream→settle→candidates)接口留位
 
 ## Verification strategy
 
