@@ -1320,15 +1320,19 @@
       "touches": [],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "active",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "Sidebar 真聊天列表",
+          "新建聊天入口",
+          "swipe_id RFC6902 持久化"
+        ],
+        "current": "三件套入库,typecheck/build 绿",
+        "next": "rename/delete UI、chat 分支、group 面(降级)"
       },
       "evidence": [],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-03T11:19:00.114Z",
+      "updated_at": "2026-11-03T11:43:37.559Z",
       "integrity_version": 1,
       "id": "TASK-023",
       "title": "聊天生命周期:列表/新建/重命名/删除/swipe持久化",
