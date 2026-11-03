@@ -7,24 +7,30 @@ STscript 是 ST 的命令管线语言(`/send`、`/setvar`、`/if`、`| pipe`),Qu
 与宏(substituteParams,已移植)的关系:宏是**值内插**,STscript 是**命令执行**;
 STscript 内部仍走宏替换做参数求值。
 
-## 参照源
+## 参照源(已实证)
 
-- `ref/Luker/public/scripts/slash-commands/`(解析器+命令注册表,~大)
-- `ref/Luker/public/scripts/extensions/quick-reply`(QR 集存储/按钮面)
-- dsh-tavern 的 QR 实现可作行为对照(它服务端的 QR 已跑通)
+- `ref/Luker/public/scripts/slash-commands/`——**27 个类文件**,核心是
+  `SlashCommandParser`(类)+ `SlashCommandExecutor`(类),不是散函数;
+  移植=把这两个类+命令表去 DOM 化
+- `ref/Luker/public/scripts/extensions/quick-reply/`——`QuickReplySet`/
+  `QuickReplySettings`/`QuickReplyApi`;存储实证:**两路并存**——
+  `extension_settings.quickReplyV2`(settings.json)与
+  `data/<handle>/QuickReplies/*.json`(服务端文件,e2e scratch 实证存在),
+  新模型优先走服务端文件,settings 路径作兼容读
 
 ## 分层
 
 ```
 packages/core/src/stscript/
-  parser.ts     命令行解析:引号/转义/管道/嵌套 {{}}
+  parser.ts     SlashCommandParser 移植(类;引号/转义/管道/嵌套)
+  executor.ts   SlashCommandExecutor 移植(作用域帧/管道值流/abort)
   registry.ts   命令注册表(命令名 → handler(ctx,args)),宿主无关
-  runtime.ts    执行器:作用域(局部变量帧)、管道值流、error 收集
   builtins/     按面分批:/send /setvar /getvar /if /else /echo /return …
 ```
 
 server 侧 `services/stscript-runner.js` 提供 ctx 绑定(变量仓储/发送消息/
-触发生成);QR 集存 `data/<handle>/QuickReplies/`(沿用 ST 文件名约定)。
+触发生成);QR CRUD 走 `data/<handle>/QuickReplies/` 文件面 + 兼容读
+`extension_settings.quickReplyV2`。
 
 ## 端点
 
