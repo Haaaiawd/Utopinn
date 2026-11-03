@@ -67,6 +67,50 @@ export async function getChat(charDir: string, chatName: string): Promise<{ head
  * Append one user message to the chat file, then the caller typically fires
  * /api/uberge/generate. Mirrors the old client's /api/chats/append call.
  */
+/** Sidebar list: every character's chats flattened to ChatSummary. */
+export async function listAllChats(): Promise<import('../types').ChatSummary[]> {
+    const { items: chars } = await apiGet<{ items: { charDir: string; name: string; readable: boolean }[] }>('/api/uberge/characters');
+    const out: import('../types').ChatSummary[] = [];
+    for (const c of chars.filter((x) => x.readable !== false)) {
+        try {
+            const { items: chats } = await apiGet<{ items: { name: string; messageCount: number; updatedAt: string }[] }>(
+                `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats`,
+            );
+            for (const ch of chats) {
+                out.push({
+                    id: `${c.charDir}/${ch.name}`,
+                    title: ch.name,
+                    charDir: c.charDir,
+                    chatName: ch.name,
+                    group: c.name,
+                    updatedAt: ch.updatedAt,
+                });
+            }
+        } catch { /* per-char chat list failure doesn't kill the sidebar */ }
+    }
+    return out;
+}
+
+/** Create a chat file (server saves header + the seed system message). */
+export async function createChat(charDir: string, chatName: string): Promise<void> {
+    await apiPost('/api/chats/append', {
+        avatar_url: `${charDir}.png`,
+        file_name: `${chatName}.jsonl`,
+        chat_metadata: {},
+        message: { name: '', is_user: false, is_system: true, mes: '', send_date: Date.now(), extra: {} },
+    });
+}
+
+/** Persist the active swipe of floor `index` (RFC6902 on the message array). */
+export async function patchSwipe(charDir: string, chatName: string, index: number, swipeId: number): Promise<void> {
+    await apiPost('/api/chats/patch', {
+        avatar_url: `${charDir}.png`,
+        file_name: `${chatName}.jsonl`,
+        force: true,
+        operations: [{ op: 'replace', path: `/${index}/swipe_id`, value: swipeId }],
+    });
+}
+
 export async function appendUserMessage(charDir: string, chatName: string, name: string, text: string): Promise<void> {
     await apiPost('/api/chats/append', {
         avatar_url: `${charDir}.png`,
