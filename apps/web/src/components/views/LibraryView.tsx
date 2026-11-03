@@ -32,7 +32,7 @@ function CardTile({ card, chatCount, onOpen }: { card: CardItem; chatCount: numb
                 </div>
             </div>
             <span className="lib-acts" onClick={(e) => e.stopPropagation()}>
-                <IconButton size="icon-sm" label="…" icon={<Icon name="more" size={14} />} />
+                <IconButton size="icon-sm" label="…" icon={<Icon name="more" size={12} />} />
             </span>
         </div>
     );
@@ -79,16 +79,16 @@ export function LibraryView({ chats, onOpenCard, onHint }: {
                 <h1>{t('lib.title')}</h1>
                 {mock && <Badge variant="warning">{t('common.mockData')}</Badge>}
                 <span className="grow" />
-                <IconButton label={t('lib.viewToggle')} icon={<Icon name={grid ? 'list' : 'grid'} size={15} />}
+                <IconButton label={t('lib.viewToggle')} icon={<Icon name={grid ? 'list' : 'grid'} size={16} />}
                     onClick={() => setGrid((v) => !v)} />
                 <div className="relative">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                        <Icon name="search" size={13} />
+                        <Icon name="search" size={12} />
                     </span>
                     <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                         placeholder={t('lib.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                <IconButton label={t('lib.new')} icon={<Icon name="plus" size={15} />}
+                <IconButton label={t('lib.new')} icon={<Icon name="plus" size={16} />}
                     onClick={() => onHint(t('lib.importSoon'))} />
             </div>
 

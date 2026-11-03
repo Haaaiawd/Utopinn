@@ -205,12 +205,12 @@ export function ChatView({
                         <TabsTrigger value="preview">{t('chat.tabs.preview')}</TabsTrigger>
                     </TabsList>
                 </Tabs>
-                <IconButton label={t('chat.preview')} icon={<Icon name="eye" size={15} />}
+                <IconButton label={t('chat.preview')} icon={<Icon name="eye" size={16} />}
                     disabled={previewLoading} onClick={onRunPreview} />
                 <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
-                    icon={<Icon name="panelRight" size={15} />} />
+                    icon={<Icon name="panelRight" size={16} />} />
                 <IconButton label={t('menu.view.immersive')} onClick={onImmersive}
-                    icon={<Icon name="focus" size={15} />} />
+                    icon={<Icon name="focus" size={16} />} />
             </div>
 
             <div className="read-zone">

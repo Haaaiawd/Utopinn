@@ -65,8 +65,9 @@
     --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", serif;
     --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
 
-    /* 字号阶梯:caption(仅 statusbar 级)< ui < ui-lg < title < reading */
+    /* 字号阶梯:caption(辅助/计数)< ui-sm(设置/诊断/表格)< ui < ui-lg < title < reading */
     --fs-caption: 12px;
+    --fs-ui-sm: 13px;
     --fs-ui: 14px;
     --fs-ui-lg: 15px;
     --fs-title: 16px;

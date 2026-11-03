@@ -37,9 +37,9 @@ function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
             {c.unread && <span className="ind" />}
             <span className="sb-item-title">{c.title}</span>
             <span className="row-acts">
-                <IconButton size="icon-sm" label={t('chat.rename')} icon={<Icon name="edit" size={13} />}
+                <IconButton size="icon-sm" label={t('chat.rename')} icon={<Icon name="edit" size={12} />}
                     onClick={(e) => { e.stopPropagation(); onRename(); }} />
-                <IconButton size="icon-sm" label={t('chat.delete')} icon={<Icon name="x" size={13} />}
+                <IconButton size="icon-sm" label={t('chat.delete')} icon={<Icon name="x" size={12} />}
                     className="hover:text-destructive"
                     onClick={(e) => { e.stopPropagation(); onDelete(); }} />
             </span>
@@ -113,7 +113,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                         label={t(`nav.${it.id}`)}
                         tooltipSide="right"
                         className={`rail-btn ${view === it.id ? 'on' : ''}`}
-                        icon={<Icon name={it.icon} size={19} />}
+                        icon={<Icon name={it.icon} size={20} />}
                         onClick={() => onSelectView(it.id)}
                     />
                 ))}
@@ -122,11 +122,11 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     label={t('nav.settings')}
                     tooltipSide="right"
                     className={`rail-btn ${view === 'settings' ? 'on' : ''}`}
-                    icon={<Icon name="settings" size={18} />}
+                    icon={<Icon name="settings" size={20} />}
                     onClick={() => onSelectView('settings')}
                 />
                 <IconButton label={t('menu.view.toggleTheme')} tooltipSide="right" className="rail-btn"
-                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />} onClick={toggle} />
+                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />} onClick={toggle} />
             </nav>
 
             {/* ——— 内容栏;折叠时 rail 仍在(域轨是常设导航) ——— */}
@@ -134,15 +134,15 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
             <aside className="sidebar" style={{ width }}>
                 <div className="sb-head">
                     <span className="ws">{t('app.name')}</span>
-                    <Icon name="chevronDown" size={13} className="mut" />
+                    <Icon name="chevronDown" size={12} className="mut" />
                     <span className="grow" />
-                    <IconButton label={t('menu.view.toggleSidebar')} icon={<Icon name="sidebarLeft" size={15} />}
+                    <IconButton label={t('menu.view.toggleSidebar')} icon={<Icon name="sidebarLeft" size={16} />}
                         onClick={onToggleCollapsed} />
                 </div>
 
                 {view === 'chat' && (
                     <button type="button" className="sb-new" onClick={onNewChat}>
-                        <Icon name="plus" size={15} />
+                        <Icon name="plus" size={16} />
                         <span>{t('sidebar.newChat')}</span>
                     </button>
                 )}
@@ -151,7 +151,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     <div className="sb-search">
                         <div className="relative">
                             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                                <Icon name="search" size={13} />
+                                <Icon name="search" size={12} />
                             </span>
                             <Input
                                 className="h-8 rounded-full border-transparent bg-bubble pl-8 text-[13px]"

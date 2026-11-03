@@ -53,12 +53,12 @@ export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
                 <span className="grow" />
                 <div className="relative">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                        <Icon name="search" size={13} />
+                        <Icon name="search" size={12} />
                     </span>
                     <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                         placeholder={t('rules.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                <IconButton label={t('rules.new')} icon={<Icon name="plus" size={15} />}
+                <IconButton label={t('rules.new')} icon={<Icon name="plus" size={16} />}
                     onClick={() => onHint(t('lib.importSoon'))} />
             </div>
 
@@ -80,12 +80,12 @@ export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
             <div className="lib-tiles">
                 {visible.map((w) => (
                     <div key={w.name} className="lib-tile" onClick={() => onHint(w.name)}>
-                        <span className="lib-tile-glyph"><Icon name="book" size={17} /></span>
+                        <span className="lib-tile-glyph"><Icon name="book" size={16} /></span>
                         <span className="lib-tile-text">
                             <span className="lib-tile-name">{w.displayName}</span>
                             <span className="lib-tile-sub mut">{w.name}</span>
                         </span>
-                        <span className="lib-tile-check"><Icon name="check" size={15} /></span>
+                        <span className="lib-tile-check"><Icon name="check" size={12} /></span>
                     </div>
                 ))}
                 {visible.length === 0 && <div className="lib-empty">{t('rules.empty')}</div>}
