@@ -185,7 +185,7 @@ function Shell() {
 export default function App() {
     return (
         <I18nProvider>
-            <TooltipProvider delayDuration={350}>
+            <TooltipProvider delayDuration={400}>
                 <Shell />
             </TooltipProvider>
         </I18nProvider>

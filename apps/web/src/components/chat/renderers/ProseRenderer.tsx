@@ -70,14 +70,14 @@ function Message({ msg, actions }: { msg: MessageViewModel; actions: Conversatio
                         disabled={active <= 0}
                         onClick={() => actions.swipe(msg.id, active - 1)}
                         aria-label="prev"
-                    ><Icon name="chevronLeft" size={11} /></button>
+                    ><Icon name="chevronLeft" size={12} /></button>
                     <span>{active + 1}/{swipes.length}</span>
                     <button
                         type="button"
                         disabled={active >= swipes.length - 1}
                         onClick={() => actions.swipe(msg.id, active + 1)}
                         aria-label="next"
-                    ><Icon name="chevronRight" size={11} /></button>
+                    ><Icon name="chevronRight" size={12} /></button>
                 </span>
             )}
             <div className="acts">

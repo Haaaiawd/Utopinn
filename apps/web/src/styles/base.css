@@ -43,16 +43,17 @@ details.fold {
     background: var(--raised); margin-bottom: 8px;
 }
 details.fold > summary {
-    padding: 9px 12px; cursor: pointer; font-size: 12.5px; font-weight: 500;
+    padding: 9px 12px; cursor: pointer; font-size: var(--fs-ui-sm); font-weight: 500;
     list-style: none; display: flex; align-items: center; gap: 8px;
 }
-details.fold > summary::before { content: "▸"; color: var(--ink3); transition: .2s; font-size: 10px; }
+details.fold > summary::before { content: "▸"; color: var(--ink3); transition: .2s; font-size: var(--fs-caption); }
 details.fold[open] > summary::before { rotate: 90deg; }
 details.fold .fold-body { padding: 2px 12px 12px; }
 
 .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; }
+/* caps 段标 = 管理/设置页专用;聊天列表区段用 .sb-sect(非 caps)。 */
 .sect-title { font-size: 11px; font-weight: 600; color: var(--ink3); letter-spacing: .08em; margin: 16px 0 8px; text-transform: uppercase; }
-.kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: center; font-size: 12.5px; }
+.kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: center; font-size: var(--fs-ui-sm); }
 .kv label { color: var(--ink2); font-size: var(--fs-caption); }
 .warn { background: #e8a13c18; border: 1px solid #e8a13c55; color: var(--warn); border-radius: 9px; padding: 9px 12px; font-size: var(--fs-caption); }
 .err { background: var(--err-soft, #d0715f18); border: 1px solid #d0715f55; color: var(--err); border-radius: 9px; padding: 9px 12px; font-size: var(--fs-caption); }

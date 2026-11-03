@@ -49,7 +49,7 @@ export function Composer({ onSend, disabled }: { onSend: (text: string) => void;
                                 <button type="button" className="preset-pick">
                                     <Icon name="zap" size={12} />
                                     <span>default</span>
-                                    <Icon name="chevronDown" size={11} />
+                                    <Icon name="chevronDown" size={12} />
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent side="top" align="start">
@@ -70,7 +70,7 @@ export function Composer({ onSend, disabled }: { onSend: (text: string) => void;
                             disabled={disabled || !text.trim()}
                             onClick={submit}
                         >
-                            <Icon name="send" size={14} />
+                            <Icon name="send" size={16} />
                         </Button>
                     </div>
                 </div>

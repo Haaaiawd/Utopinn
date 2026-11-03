@@ -19,7 +19,7 @@
 .ub-prose .msg .ava {
     position: absolute; left: 0; top: 3px; width: 34px; height: 34px;
     border-radius: 50%; overflow: hidden; display: grid; place-items: center;
-    font-family: var(--font-ui); font-size: 13px; color: #fff; font-weight: 600;
+    font-family: var(--font-ui); font-size: var(--fs-ui-sm); color: #fff; font-weight: 600;
     box-shadow: inset 0 0 0 1px #ffffff22; background: var(--raised);
 }
 .ub-prose .msg .ava img { width: 100%; height: 100%; object-fit: cover; }
@@ -46,7 +46,8 @@
 }
 .ub-prose .msg .swipe {
     display: inline-flex; gap: 5px; align-items: center;
-    font-size: 10.5px; color: var(--ink3); font-family: var(--font-ui); margin-top: 4px;
+    font-size: var(--fs-caption); color: var(--ink3); font-family: var(--font-ui);
+    margin-top: 4px; font-variant-numeric: tabular-nums;
 }
 .ub-prose .msg .swipe button { padding: 1px 5px; border-radius: 5px; color: var(--ink3); }
 .ub-prose .msg .swipe button:hover:not(:disabled) { background: var(--bubble); color: var(--ink); }
@@ -67,11 +68,11 @@
 .ub-prose .vreceipt .vr-head .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .ub-prose .vreceipt .vr-body {
     border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px;
-    background: var(--bubble); padding: 7px 13px; font-size: 11.5px; font-family: var(--font-ui);
+    background: var(--bubble); padding: 7px 13px; font-size: var(--fs-caption); font-family: var(--font-ui);
 }
 .ub-prose .vreceipt .op { padding: 5px 0; border-bottom: 1px dashed var(--line); }
 .ub-prose .vreceipt .op:last-child { border: 0; }
-.ub-prose .vreceipt .path { color: var(--acc2); font-family: var(--font-mono); font-size: 10.5px; }
+.ub-prose .vreceipt .path { color: var(--acc2); font-family: var(--font-mono); font-size: var(--fs-caption); }
 .ub-prose .vreceipt .old { color: var(--ink3); text-decoration: line-through; }
 
 /* --- composer (host chrome, shared by all renderers) — DSH 式大圆角悬浮盒 --- */
@@ -99,13 +100,13 @@
 /* 发送钮 = Button default(琥珀)+ 圆形尺寸覆写 —— 全界面仅有的琥珀块之一。 */
 .composer-send { width: 32px; height: 32px; border-radius: 50%; }
 
-/* --- diagnostics (right panel + preview mode) — 信息为主,字号对齐 fs-ui --- */
+/* --- diagnostics (right panel + preview mode) — 表格/kv 走 fs-ui-sm 档 --- */
 .diag-src { font-size: var(--fs-caption); color: var(--ink2); background: var(--bubble); padding: 2px 8px; border-radius: var(--radius-xs); white-space: nowrap; }
-.diag-table { width: 100%; border-collapse: collapse; font-size: var(--fs-ui); }
+.diag-table { width: 100%; border-collapse: collapse; font-size: var(--fs-ui-sm); }
 .diag-table th { text-align: left; color: var(--ink3); font-weight: 500; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .diag-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--ink2); font-variant-numeric: tabular-nums; }
-.diag-table td:first-child { font-family: var(--font-mono); font-size: 12.5px; }
-.diag-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: var(--fs-ui); }
+.diag-table td:first-child { font-family: var(--font-mono); font-size: var(--fs-ui-sm); }
+.diag-kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: var(--fs-ui-sm); }
 .diag-kv dt { color: var(--ink3); }
 .diag-kv dd { color: var(--ink); font-variant-numeric: tabular-nums; }
 

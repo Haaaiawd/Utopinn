@@ -46,7 +46,7 @@ export function RightPanel({ preview, hidden, charDir, chatName }: { preview: Pr
                         <div className="sp-card">
                             <h4>{t('panel.panels')}</h4>
                             <p className="mut" style={{ lineHeight: 1.7 }}>
-                                <Icon name="layout" size={14} /> {t('panel.panels.empty')}
+                                <Icon name="layout" size={12} /> {t('panel.panels.empty')}
                             </p>
                         </div>
                     )
