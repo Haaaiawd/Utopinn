@@ -319,8 +319,8 @@ export function formatInstructModeStoryString(
  * 注意:这里读 ctx.name1/ctx.name2(全局等价),与 formatInstructModeExamples
  * 的参数无关——原版里两者本来就是同一个全局,保持一致。
  */
-// 内部实现(不导出:与 prompt/assemble.ts 权威版本同义异名,
-// index.ts export * 会撞名;外部消费走 assemble 侧导出)
+// 内部实现。与 prompt/assemble.ts 权威版本同义异名,index.ts export *
+// 会撞名 → 以别名导出,消费方用 parseInstructExampleIntoIndividual。
 function parseExampleIntoIndividual(
     messageExampleString: string,
     appendNamesForGroup: boolean,
@@ -611,3 +611,5 @@ export function createInstructEngine(ctx: InstructEngineContext): InstructEngine
             autoSelectInstructPreset(modelId, ctx),
     };
 }
+
+export { parseExampleIntoIndividual as parseInstructExampleIntoIndividual };

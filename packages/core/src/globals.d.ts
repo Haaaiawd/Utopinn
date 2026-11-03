@@ -8,6 +8,11 @@ declare const console: {
     warn: (...args: unknown[]) => void;
     error: (...args: unknown[]) => void;
     info: (...args: unknown[]) => void;
+    trace: (...args: unknown[]) => void;
 };
 
 declare function structuredClone<T>(value: T): T;
+
+declare function setTimeout(handler: () => void, timeout?: number): unknown;
+
+declare const crypto: { randomUUID?: () => string } | undefined;

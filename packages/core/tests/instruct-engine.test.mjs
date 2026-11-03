@@ -12,14 +12,12 @@ import {
     formatInstructModeSystemPrompt,
     getInstructStoppingSequences,
     autoSelectInstructPreset,
-    parseExampleIntoIndividual,
     migrateInstructModeSettings,
-    regexFromString,
     createInstructEngine,
     names_behavior_types,
     force_output_sequence,
 } from '../dist/instruct/engine.js';
-import { substituteParams } from '../dist/index.js';
+import { substituteParams, parseInstructExampleIntoIndividual as parseExampleIntoIndividual, regexFromString } from '../dist/index.js';
 
 const FIRST = force_output_sequence.FIRST;
 const LAST = force_output_sequence.LAST;
