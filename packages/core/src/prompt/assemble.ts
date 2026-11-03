@@ -191,11 +191,23 @@ export function formatWorldInfo(value: string, wiFormat?: string): string {
     return format.includes('{0}') ? format.replace('{0}', value) : `${format}\n${value}`;
 }
 
+/**
+ * 原版 getWorldInfoMessageContents + formatSplitWorldInfoEntries(openai.js:1434-1458):
+ * 每条 WI 各成一条消息;wi_format 恰含一个 {0} 时 prefix/suffix 分到首末条,
+ * 占位符数≠1 才 join 成单条;空/默认格式('{0}')原样逐条。
+ */
 export function getWorldInfoMessageContents(entries: string[] | undefined, wiFormat?: string): string[] {
     const normalized = (entries ?? []).filter((x) => typeof x === 'string' && x.trim().length);
     if (!normalized.length) return [];
-    // 原版:formatWorldInfo 包装整条串(join '\n' 后整体入 format)
-    return [formatWorldInfo(normalized.join('\n'), wiFormat)];
+    const format = String(wiFormat ?? '').trim();
+    if (!format || format === '{0}') return [...normalized];
+    const placeholderCount = (format.match(/\{0\}/g) || []).length;
+    if (placeholderCount !== 1) {
+        return [formatWorldInfo(normalized.join('\n'), wiFormat)];
+    }
+    const [prefix, suffix] = format.split('{0}');
+    const lastIndex = normalized.length - 1;
+    return normalized.map((entry, index) => `${index === 0 ? prefix : ''}${entry}${index === lastIndex ? suffix : ''}`);
 }
 
 function getPromptPosition(position: number | undefined): 'start' | 'end' | false {
@@ -792,8 +804,10 @@ export async function buildPromptMessages(
         await chatCompletion.squashSystemMessages();
     }
 
+    // 原版 MessageCollection.getChat()(openai.js:5693-5704):
+    // content 为空(falsy)且无 tool_calls 的消息不上 wire——空 nsfw/jailbreak/空卡字段占位
     const flat = chatCompletion.messages.flatten();
-    const finalMessages = flat.map((m) => {
+    const finalMessages = flat.filter((m) => m.content || m.tool_calls).map((m) => {
         const out: Record<string, unknown> & { role: string } = { role: m.role, content: m.content };
         if (m.name) out.name = m.name;
         if (m.tool_calls) out.tool_calls = m.tool_calls;
