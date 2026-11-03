@@ -4,27 +4,46 @@
 import type { ReactNode } from 'react';
 
 const PATHS = {
+    /* L1 主 tab 标 — 复合剪影:每个都是「主体+细节」两三层,比通用线稿丰富 */
     chat: (
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        <>
+            <path d="M19 4.5H6A3.5 3.5 0 0 0 2.5 8v5.5A3.5 3.5 0 0 0 6 17h1.6l-1.4 3.4c-.4.9.5 1.8 1.4 1.3L12.6 19H19a3.5 3.5 0 0 0 3.5-3.5V8A3.5 3.5 0 0 0 19 4.5z" transform="translate(-.8 -.5)" />
+            <path d="M7.2 9.2h9.6" />
+            <path d="M7.2 12.6h5.8" />
+            <circle cx="16.4" cy="12.6" r=".9" fill="currentColor" stroke="none" />
+        </>
     ),
     stories: (
         <>
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
-            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            <rect x="3" y="4.5" width="12.5" height="16.5" rx="2.5" />
+            <path d="M18 7 20.6 7.8a1.2 1.2 0 0 1 .8 1.2v10.5a1.7 1.7 0 0 1-1.7 1.7H18" />
+            <circle cx="8" cy="9.5" r="1.9" />
+            <path d="M6 15.4c1.1-1.2 2.9-1.2 4 0" />
+            <path d="M6.2 18.4h5.6" />
         </>
     ),
     rules: (
         <>
-            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            <path d="M9 7h6M9 11h4" />
+            <path d="M6.5 3.5h11A2.8 2.8 0 0 1 20.3 6.3V8" />
+            <path d="M6.5 3.5A2.8 2.8 0 0 0 3.7 6.3v11.4a2.8 2.8 0 0 0 2.8 2.8h11a2.8 2.8 0 0 0 2.8-2.8V8" />
+            <path d="M6.5 3.5a2.8 2.8 0 0 1 2.8 2.8V8" />
+            <circle cx="12" cy="12.6" r="3.4" />
+            <path d="M12 15.2a2.6 2.6 0 0 1-2.6-2.6" opacity=".55" />
+            <path d="M18.8 8l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z" fill="currentColor" stroke="none" />
         </>
     ),
     extensions: (
-        <path d="M14 7V5a2 2 0 0 0-4 0v2H7a2 2 0 0 0-2 2v3h2a2 2 0 1 1 0 4H5v3a2 2 0 0 0 2 2h3v-2a2 2 0 1 1 4 0v2h3a2 2 0 0 0 2-2v-4h-2a2 2 0 1 1 0-4h2V9a2 2 0 0 0-2-2z" />
+        <>
+            <path d="M9.5 6.8V5a2.4 2.4 0 0 1 4.8 0v1.8H17a2 2 0 0 1 2 2v2.6h1.8a2.4 2.4 0 0 1 0 4.8H19V19a2 2 0 0 1-2 2h-2.6v1.6a2.4 2.4 0 0 1-4.8 0V21H7a2 2 0 0 1-2-2v-2.6H3.4a2.4 2.4 0 0 1 0-4.8H5V9a2 2 0 0 1 2-2z" transform="translate(-.5 -1.2) scale(.92)" />
+            <circle cx="12" cy="13" r="1.5" />
+        </>
     ),
     diagnostics: (
-        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        <>
+            <path d="M2.5 13h4l2.3-6.3 4.2 12.6 2.2-6.3H20" />
+            <circle cx="20.5" cy="13" r="1.7" />
+            <path d="M3 5.5c1.5 0 1.5 0 3 0" opacity=".5" />
+        </>
     ),
     settings: (
         <>
@@ -121,3 +140,6 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
         </svg>
     );
 }
+
+/* L1 = 各主 tab 的轨标(上面 PATHS 前六个):复合剪影、多元素、有性格。
+   L2 = 次级操作 icon,L3 = 行内小 icon,都是朴素线稿。 */

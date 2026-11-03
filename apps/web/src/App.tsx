@@ -7,10 +7,7 @@ import { MOCK_CHATS } from './api/mock';
 import { postPreviewWithFallback } from './api/preview';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from './types';
-import { ActivityRail } from './components/shell/ActivityRail';
 import { Sidebar } from './components/shell/Sidebar';
-import { StatusBar } from './components/shell/StatusBar';
-import { TitleBar } from './components/shell/TitleBar';
 import { RightPanel } from './components/shell/RightPanel';
 import { ChatView } from './components/chat/ChatView';
 import { PlaceholderView } from './components/views/PlaceholderView';
@@ -125,58 +122,43 @@ function Shell() {
             .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
 
-    const tokens = preview?.data?.trace
-        ? { used: preview.data.trace.tokenBudget - preview.data.trace.remainingBudget, budget: preview.data.trace.tokenBudget }
-        : null;
-
     const placeholder = PLACEHOLDER_VIEWS[view];
 
+    /* DSH AppFrame 三栏:sidebar | main | rightbar。无 menubar/activity rail/
+       statusbar —— 导航在侧栏内,右栏是挂在右缘的 track。 */
     return (
-        <div className="app">
-            <TitleBar
-                onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
-                onTogglePanel={() => setPanelHidden((v) => !v)}
+        <div className="frame">
+            <Sidebar
+                view={view}
+                chats={chats}
+                activeChat={activeChat}
+                onSelectView={setView}
+                onSelectChat={(id) => { setActiveChat(id); setView('chat'); }}
                 onNewChat={onNewChat}
-                onHint={showHint}
+                onRenameChat={onRenameChat}
+                onDeleteChat={onDeleteChat}
+                collapsed={sidebarCollapsed}
             />
-            <div className="shell">
-                <ActivityRail view={view} onSelect={setView} />
-                <Sidebar
-                    view={view}
-                    chats={chats}
-                    activeChat={activeChat}
-                    onSelectChat={(id) => { setActiveChat(id); setView('chat'); }}
-                    onNewChat={onNewChat}
-                    onRenameChat={onRenameChat}
-                    onDeleteChat={onDeleteChat}
-                    collapsed={sidebarCollapsed}
-                />
-                <main className="main">
-                    {view === 'chat' && chat && (
-                        <ChatView
-                            chat={chat}
-                            preview={preview}
-                            previewLoading={previewLoading}
-                            onRunPreview={runPreview}
-                            onTogglePanel={() => setPanelHidden((v) => !v)}
-                            onHint={showHint}
-                            live={serverStatus === 'online'}
-                        />
-                    )}
-                    {view === 'settings' && <SettingsView />}
-                    {placeholder && (
-                        <PlaceholderView icon={placeholder.icon} titleKey={placeholder.titleKey} descKey={placeholder.descKey} />
-                    )}
-                </main>
-                {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} charDir={chat?.charDir} chatName={chat?.chatName} />}
-            </div>
-            <StatusBar
-                server={serverStatus}
-                chat={chat}
-                tokens={tokens}
-                rendererId="uberge.prose"
-                hint={hint}
-            />
+            <main className="main">
+                {view === 'chat' && chat && (
+                    <ChatView
+                        chat={chat}
+                        preview={preview}
+                        previewLoading={previewLoading}
+                        onRunPreview={runPreview}
+                        onTogglePanel={() => setPanelHidden((v) => !v)}
+                        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
+                        onHint={showHint}
+                        live={serverStatus === 'online'}
+                    />
+                )}
+                {view === 'settings' && <SettingsView />}
+                {placeholder && (
+                    <PlaceholderView icon={placeholder.icon} titleKey={placeholder.titleKey} descKey={placeholder.descKey} />
+                )}
+            </main>
+            {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} charDir={chat?.charDir} chatName={chat?.chatName} />}
+            {hint && <div className="hint-pill">{hint}</div>}
         </div>
     );
 }
