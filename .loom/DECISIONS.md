@@ -73,3 +73,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: .loom/design/plugin-architecture.md
 - Recorded: 2026-11-03T05:59:40.659Z
+
+## D-009: 内核引入真 cordis,V1=聊天+完整管理端,预设=数据无损+生成等价
+
+- Current decision: 四项产品决议:(1)内核用 npm 真 cordis(MIT,Koishi底座),只用 Context/events/effects/registry core,loader/profile/patch 层自写;骨架任务先验证,立不住退回自写但保持 cordis 语义接口;(2)V1 边界=聊天核心+完整web管理端,要能做酒馆完全替代;图片/TTS/群聊/向量库走插件位不占V1;(3)预设=导入导出字段无损+生成行为等价(golden裁判),UI呈现重设计不复刻;(4)用户模型=个人云为主,Luker已有user handle/多用户目录隔离保留不深化。
+- Rationale: cordis 语义深读后发现细节坑多(waterfall outermost-first/bail判定/effect依赖通知),自写易抄形丢神,真包久经考验且MIT;V1对齐DSH初版'开发者好开发+用户没负担';预设拆三层后两硬指标+UI自由是最优解;ST生态主体是个人自部署。
+- Source: conversation
+- Supersedes: D-010 部分:自写内核改为真 cordis
+- Affects: project-wide or not yet classified
+- Recorded: 2026-11-03T06:15:17.296Z
