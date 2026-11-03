@@ -1,0 +1,33 @@
+/* Design tokens — mirrors .loom/design/web-ui-mockup.html :root blocks.
+   Theme is switched via [data-theme] on <html>; dark is the default (IA §14). */
+:root {
+    --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", serif;
+    --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
+    --read-size: 17px;
+    --read-leading: 1.9;
+    --read-width: 680px;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --ease: cubic-bezier(.23, 1, .32, 1);
+}
+
+[data-theme="dark"] {
+    --bg: #17181b; --bg2: #1e1f23; --bg3: #25272c; --raised: #232529; --panel: #1c1d21;
+    --ink: #e6e8ec; --ink2: #a8aeb9; --ink3: #6d7480;
+    --line: #ffffff10; --line2: #ffffff20;
+    --acc: #e8736a; --acc-soft: #e8736a1f; --acc2: #7aa2f7;
+    --bubble: #26282e; --quote: #e8a87c;
+    --ok: #4caf7d; --warn: #e8a13c; --err: #e8736a;
+    --shadow: 0 1px 3px #0008, 0 10px 34px -12px #000c;
+}
+
+[data-theme="light"] {
+    --bg: #f5f3ee; --bg2: #faf9f6; --bg3: #efede6; --raised: #fff; --panel: #faf9f6;
+    --ink: #1c1e24; --ink2: #5d6470; --ink3: #9aa1ad;
+    --line: #e4e0d8; --line2: #d6d1c6;
+    --acc: #c0392b; --acc-soft: #c0392b14; --acc2: #4176e6;
+    --bubble: #ede9e0; --quote: #b3541e;
+    --ok: #2e8b57; --warn: #b07a1e; --err: #c0392b;
+    --shadow: 0 1px 3px #00000012, 0 10px 34px -12px #00000028;
+}

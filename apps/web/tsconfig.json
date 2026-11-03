@@ -1,0 +1,20 @@
+{
+    "$schema": "https://json.schemastore.org/tsconfig",
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "lib": ["ES2022", "DOM", "DOM.Iterable"],
+        "jsx": "react-jsx",
+        "types": ["vite/client"],
+        "noEmit": true,
+        "declaration": false,
+        "declarationMap": false,
+        "sourceMap": false,
+        // Resolve workspace types from source so `pnpm --filter @uberge/web
+        // typecheck` works before @uberge/protocol has been built.
+        "paths": {
+            "@uberge/protocol": ["../../packages/protocol/src/index.ts"],
+            "@uberge/protocol/*": ["../../packages/protocol/src/*"]
+        }
+    },
+    "include": ["src", "vite.config.ts"]
+}
