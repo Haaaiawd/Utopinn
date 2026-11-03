@@ -5,17 +5,29 @@
  */
 import type { PromptLike } from './types.js';
 
+export interface PromptOrderEntry {
+    identifier: string;
+    enabled?: boolean;
+}
+
 export class PromptCollection {
     /**
      * 序位对齐的稀疏数组:orderIndex 列出的 identifier 占固定位,未列序追加。
      * 遍历必须用 items() 或跳过空洞的数组方法(find/filter/some/map 均跳,
      * for...of / findIndex 不跳)。
+     * 原版语义:enabled/disabled 记在**序条目**上(getPromptOrderForCharacter),
+     * 不在 prompt 本体 —— isPromptDisabledForActiveCharacter 查序条目。
      */
     collection: PromptLike[] = [];
     private orderIndex = new Map<string, number>();
+    private orderEnabled = new Map<string, boolean>();
 
-    constructor(prompts: PromptLike[] = [], promptOrder: string[] = []) {
-        promptOrder.forEach((id, i) => this.orderIndex.set(id, i));
+    constructor(prompts: PromptLike[] = [], promptOrder: (PromptOrderEntry | string)[] = []) {
+        promptOrder.forEach((entry, i) => {
+            const id = typeof entry === 'string' ? entry : entry.identifier;
+            this.orderIndex.set(id, i);
+            if (typeof entry === 'object' && entry?.enabled === false) this.orderEnabled.set(id, false);
+        });
         this.collection.length = promptOrder.length;
         for (const p of prompts) {
             const slot = this.orderIndex.get(p.identifier);
@@ -59,6 +71,6 @@ export class PromptCollection {
     }
 
     isPromptDisabledForActiveCharacter(identifier: string): boolean {
-        return this.get(identifier)?.disabledForChar === true;
+        return this.orderEnabled.get(identifier) === false;
     }
 }
