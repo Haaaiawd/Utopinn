@@ -24,6 +24,8 @@ export interface PromptLike {
     attach_side?: string;
     /** 由调用方标记:本卡禁用该 prompt(isPromptDisabledForActiveCharacter) */
     disabledForChar?: boolean;
+    /** 生成类型触发器(shouldTrigger:空/缺省=全放行,否则须含当前 type) */
+    injection_trigger?: string[];
     /** extension prompt 原始 position(extension_prompt_types 数值) */
     rawPosition?: number;
 }

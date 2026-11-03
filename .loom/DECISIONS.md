@@ -145,3 +145,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: TASK-011/013/015 及包 license 边界
 - Recorded: 2026-11-03T07:40:00.000Z
+
+## D-019: Agent 能力口子——Pi 式极简 agent,不回 DSH
+
+- Current decision: RP 产品不排除 agent 能力;若需要(工具循环/自动化),按 Pi(pi-mono)极简 agent 形状做成 provider/插件,注册进 seam 体系(provider 级),不作为内核骨架。DSH 的 agent-loop/MCP/subagent 机制不进入 Tavern core(D-017 已决);Pi 的 provider 抽象形状同时参考于 ctx.generation。
+- Rationale: 用户明示"角色扮演不代表我们不需要Agent"。Pi 是单文件级极简 loop,与"薄内核+seam"路线同构;能力挂在 provider 位上,内核不背 agent 语义。
+- Source: conversation(用户指示)
+- Supersedes: none
+- Affects: plugin-kernel C-node、ctx.generation seam 设计、后续 agent 类任务
+- Recorded: 2026-11-03T09:05:00.000Z

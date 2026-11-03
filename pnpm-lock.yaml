@@ -216,6 +216,9 @@ importers:
       '@popperjs/core':
         specifier: ^2.11.8
         version: 2.11.8
+      '@uberge/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@uberge/panel-shim':
         specifier: workspace:*
         version: link:../../packages/panel-shim
