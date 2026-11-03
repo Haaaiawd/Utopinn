@@ -9,13 +9,44 @@
  *
  * 入参/出参契约即 packages/core/src/prompt/types.ts 的
  * PromptBuildRequest / BuiltPrompt —— 客户端永远只见 BuiltPrompt。
+ *
+ * Perf:计时包在 server 包裹层,不动 core 签名。
+ * - tokenMs:encoder.encode 累计耗时,AsyncLocalStorage 按 build 作用域归账
+ *   (token counter 是模块级单例,ALS 保证并发 build 互不串账)。
+ * - collectionMs/populateMs:以"首次 encode"为界——buildPromptMessages 前半段
+ *   (preparePrompts/setOpenAIMessages/示例解析)是零 encode 的纯准备,
+ *   首个 Message.fromPromptAsync/createManyAsync 计数即进入 populate 段。
  */
 import {
     buildPromptMessages,
     setTokenCounter,
     createOpenAITokenCounter,
 } from '@uberge/core';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { performance } from 'node:perf_hooks';
 import { createTiktokenTokenizer } from '../tiktoken-adapter.js';
+
+/** @type {AsyncLocalStorage<{tokenMs:number, firstEncodeAt:number}>} */
+const buildPerfScope = new AsyncLocalStorage();
+
+/**
+ * 包一层 encode 计时:无 build 作用域时零开销直通。
+ * @param {{encode:(t:string)=>ArrayLike<number>, decode?:(t:ArrayLike<number>)=>Uint8Array}} encoder
+ */
+function timedEncoder(encoder) {
+    return {
+        encode(text) {
+            const store = buildPerfScope.getStore();
+            if (!store) return encoder.encode(text);
+            const t0 = performance.now();
+            const out = encoder.encode(text);
+            store.tokenMs += performance.now() - t0;
+            if (!store.firstEncodeAt) store.firstEncodeAt = t0;
+            return out;
+        },
+        decode: encoder.decode ? (tokens) => encoder.decode(tokens) : undefined,
+    };
+}
 
 /** 模型→tiktoken 解析(自缓存,不带 endpoints 的 express/config 传递依赖),失败回退 gpt-4o */
 const tokenizerCache = new Map();
@@ -23,9 +54,9 @@ function resolveTokenizer(model) {
     const key = model || 'gpt-4o';
     if (!tokenizerCache.has(key)) {
         try {
-            tokenizerCache.set(key, createTiktokenTokenizer(key));
+            tokenizerCache.set(key, timedEncoder(createTiktokenTokenizer(key)));
         } catch {
-            tokenizerCache.set(key, createTiktokenTokenizer('gpt-4o'));
+            tokenizerCache.set(key, timedEncoder(createTiktokenTokenizer('gpt-4o')));
         }
     }
     return tokenizerCache.get(key);
@@ -54,6 +85,18 @@ export function createPromptBuilder(opts = {}) {
             depthInjection: deps.depthInjection ?? opts.depthInjection ?? (async () => ''),
             warn: deps.warn ?? opts.warn ?? ((m) => console.warn(m)),
         };
-        return buildPromptMessages(req, mergedDeps);
+        const perf = { tokenMs: 0, firstEncodeAt: 0 };
+        const t0 = performance.now();
+        const built = await buildPerfScope.run(perf, () => buildPromptMessages(req, mergedDeps));
+        const assembleMs = performance.now() - t0;
+        // 首次 encode 前 = collection 构建段;零 encode 的 build 全记 collection。
+        const collectionMs = (perf.firstEncodeAt || (t0 + assembleMs)) - t0;
+        built.perf = {
+            assembleMs,
+            collectionMs,
+            populateMs: Math.max(0, assembleMs - collectionMs),
+            tokenMs: perf.tokenMs,
+        };
+        return built;
     };
 }
