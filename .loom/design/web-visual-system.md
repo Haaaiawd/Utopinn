@@ -16,11 +16,12 @@
 ## IA(已定,DSH/GPT 混合)
 
 ```
-rail(52px,常设) | 内容栏(240-460 可拖) | 主区(域视图) | 右面板(track)
+rail(48px,常设) | 内容栏(240-460 可拖) | 主区(域视图) | 右面板(track)
 rail = 品牌标 + 域标 + 底部 settings/theme
 内容栏 = 品牌行 → 醒目新会话 → 搜索 → 分组嵌套列表 → 用户脚
 域视图:chat=阅读流+预览;stories=卡格库;rules/extensions=管理页;
-       diagnostics=诊断页;settings=设置页
+       settings=设置页。诊断域已砍(用户决定 2026-11-03)——trace
+       只留在聊天右面板 tab,不再做独立页。
 沉浸模式 = 内容栏+右面板同收,只留 rail+阅读列(ctbar focus 钮)
 ```
 

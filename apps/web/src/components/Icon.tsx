@@ -38,13 +38,6 @@ const PATHS = {
             <circle cx="12" cy="13" r="1.5" />
         </>
     ),
-    diagnostics: (
-        <>
-            <path d="M2.5 13h4l2.3-6.3 4.2 12.6 2.2-6.3H20" />
-            <circle cx="20.5" cy="13" r="1.7" />
-            <path d="M3 5.5c1.5 0 1.5 0 3 0" opacity=".5" />
-        </>
-    ),
     settings: (
         <>
             <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />

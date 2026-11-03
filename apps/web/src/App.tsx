@@ -19,7 +19,6 @@ import type { IconName } from './components/Icon';
 
 const PLACEHOLDER_VIEWS: Partial<Record<ViewId, { icon: IconName; titleKey: string; descKey: string }>> = {
     extensions: { icon: 'extensions', titleKey: 'view.extensions.title', descKey: 'view.extensions.desc' },
-    diagnostics: { icon: 'diagnostics', titleKey: 'view.diagnostics.title', descKey: 'view.diagnostics.desc' },
 };
 
 function Shell() {
