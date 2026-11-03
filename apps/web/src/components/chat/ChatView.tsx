@@ -44,6 +44,7 @@ export interface ChatViewProps {
     previewLoading: boolean;
     onRunPreview: () => void;
     onTogglePanel: () => void;
+    onToggleSidebar: () => void;
     /** Status-bar hint for unwired actions. */
     onHint: (msg: string) => void;
     /** True when the server is reachable — enables real load/send. */
@@ -57,6 +58,7 @@ export function ChatView({
     previewLoading,
     onRunPreview,
     onTogglePanel,
+    onToggleSidebar,
     onHint,
     live,
 }: ChatViewProps) {
@@ -186,8 +188,11 @@ export function ChatView({
     return (
         <>
             <div className="ctbar">
+                <button type="button" className="ibtn" title={t('menu.view.toggleSidebar')}
+                    onClick={onToggleSidebar}>
+                    <Icon name="sidebarLeft" size={16} />
+                </button>
                 <h1>{chat.title}</h1>
-                <span className="sub">{chat.charDir} · {chat.chatName}.jsonl</span>
                 {preview?.mock && <span className="chip warn">{t('chat.preview.mock')}</span>}
                 <span className="grow" />
                 <div className="vtabs" role="tablist">

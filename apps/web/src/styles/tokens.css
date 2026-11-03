@@ -1,33 +1,79 @@
-/* Design tokens — mirrors .loom/design/web-ui-mockup.html :root blocks.
-   Theme is switched via [data-theme] on <html>; dark is the default (IA §14). */
+/* Design tokens — DSH-informed scale.
+   原则(主人视觉要求):半径是结构语言(控件 pill / 卡片 12-14 / 容器 16-20);
+   字号即布局(UI 13.5-14 基准,阅读 17);主次靠布局+字级+颜色+icon 位,
+   不靠满地边框;中密度(GPT/DSH 对齐)。
+
+   Theme via [data-theme] on <html>; dark default (IA §14). */
+
 :root {
     --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
     --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", serif;
     --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
-    --read-size: 17px;
+
+    /* 字号阶梯:caption(仅 statusbar 级)< ui < ui-lg < title < reading */
+    --fs-caption: 11.5px;
+    --fs-ui: 14px;
+    --fs-ui-lg: 15px;
+    --fs-title: 16px;
+    --read-size: 17.5px;
     --read-leading: 1.9;
-    --read-width: 680px;
-    --radius: 8px;
-    --radius-lg: 12px;
+    --read-width: 720px;
+
+    /* 半径阶梯:tag/小控件 → 行/输入 → 卡片 → 大容器(输入区) → 全圆 */
+    --radius-xs: 6px;
+    --radius: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 22px;
+    --radius-pill: 999px;
+
     --ease: cubic-bezier(.23, 1, .32, 1);
 }
 
 [data-theme="dark"] {
-    --bg: #17181b; --bg2: #1e1f23; --bg3: #25272c; --raised: #232529; --panel: #1c1d21;
-    --ink: #e6e8ec; --ink2: #a8aeb9; --ink3: #6d7480;
-    --line: #ffffff10; --line2: #ffffff20;
-    --acc: #e8736a; --acc-soft: #e8736a1f; --acc2: #7aa2f7;
-    --bubble: #26282e; --quote: #e8a87c;
-    --ok: #4caf7d; --warn: #e8a13c; --err: #e8736a;
-    --shadow: 0 1px 3px #0008, 0 10px 34px -12px #000c;
+    /* 两级表面:bg 底 / raised 卡片;/ hairline 线;hover 用 ink 透明度 */
+    --bg: #16171c;
+    --bg2: #1b1d23;
+    --bg3: #22242b;
+    --raised: #1f2128;
+    --panel: #191b20;
+    --ink: #e8eaf0;
+    --ink2: #9aa1af;
+    --ink3: #6a7180;
+    --line: #ffffff0d;   /* hairline */
+    --line2: #ffffff1c;
+    --bubble: #2a2d36;   /* hover/active 填充 */
+    --acc: #9a9dfb;      /* 柔蓝紫(DSH 系) */
+    --acc-ink: #16171c;
+    --acc-soft: #9a9dfb26;
+    --acc2: #7aa2f7;
+    --quote: #e8a87c;
+    --ok: #4caf7d;
+    --warn: #e8a13c;
+    --err: #e8736a;
+    --shadow: 0 1px 2px #0006, 0 12px 32px -14px #000a;
+    --composer-shadow: 0 8px 30px -10px #000c;
 }
 
 [data-theme="light"] {
-    --bg: #f5f3ee; --bg2: #faf9f6; --bg3: #efede6; --raised: #fff; --panel: #faf9f6;
-    --ink: #1c1e24; --ink2: #5d6470; --ink3: #9aa1ad;
-    --line: #e4e0d8; --line2: #d6d1c6;
-    --acc: #c0392b; --acc-soft: #c0392b14; --acc2: #4176e6;
-    --bubble: #ede9e0; --quote: #b3541e;
-    --ok: #2e8b57; --warn: #b07a1e; --err: #c0392b;
-    --shadow: 0 1px 3px #00000012, 0 10px 34px -12px #00000028;
+    --bg: #f7f7f8;
+    --bg2: #efeff1;
+    --bg3: #e7e8ea;
+    --raised: #ffffff;
+    --panel: #fbfbfc;
+    --ink: #1d2027;
+    --ink2: #5c6370;
+    --ink3: #9aa1ad;
+    --line: #0000000f;
+    --line2: #0000001f;
+    --bubble: #eceef2;
+    --acc: #5b5fd6;
+    --acc-ink: #ffffff;
+    --acc-soft: #5b5fd614;
+    --acc2: #4176e6;
+    --quote: #b3541e;
+    --ok: #2e8b57;
+    --warn: #b07a1e;
+    --err: #c0392b;
+    --shadow: 0 1px 2px #0000000d, 0 12px 30px -14px #0000001f;
+    --composer-shadow: 0 8px 28px -12px #00000026;
 }

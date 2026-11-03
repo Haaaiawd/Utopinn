@@ -60,7 +60,6 @@ function Message({ msg, actions }: { msg: MessageViewModel; actions: Conversatio
             <Avatar name={msg.name} url={msg.avatar?.url} />
             <div className="who">
                 <span>{msg.name}</span>
-                <span className="role">{msg.role === 'system' ? t('chat.system') : msg.role}</span>
             </div>
             {paragraphs.map((p, i) => <p key={i}>{p}</p>)}
             {msg.streaming && <span className="caret" />}

@@ -8,7 +8,7 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
     const { t } = useI18n();
 
     if (!result || (!result.data && !result.error)) {
-        return <p className="mut" style={{ fontSize: 11.5, lineHeight: 1.7 }}>{t('panel.diag.noData')}</p>;
+        return <p className="mut" style={{ lineHeight: 1.7 }}>{t('panel.diag.noData')}</p>;
     }
     if (result.error) {
         return <div className="warn">{t('chat.preview.failed')}: {result.error}</div>;
@@ -81,7 +81,7 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
             <details className="fold">
                 <summary>{t('diag.raw')}</summary>
                 <div className="fold-body">
-                    <pre style={{ fontSize: 10.5, overflowX: 'auto', color: 'var(--ink2)', fontFamily: 'var(--font-mono)' }}>
+                    <pre style={{ fontSize: 12, overflowX: 'auto', color: 'var(--ink2)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
                         {JSON.stringify(data, null, 2)}
                     </pre>
                 </div>
