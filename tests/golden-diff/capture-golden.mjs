@@ -217,6 +217,7 @@ try {
 
     const golden = {
         card: { file: basename(cardPath), name: charName },
+        cardBook: card.data?.character_book ?? null,
         capturedAt: new Date().toISOString(),
         userTurn,
         wireRequests,
