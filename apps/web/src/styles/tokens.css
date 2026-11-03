@@ -30,50 +30,50 @@
 }
 
 [data-theme="dark"] {
-    /* 两级表面:bg 底 / raised 卡片;/ hairline 线;hover 用 ink 透明度 */
-    --bg: #16171c;
-    --bg2: #1b1d23;
-    --bg3: #22242b;
-    --raised: #1f2128;
-    --panel: #191b20;
-    --ink: #e8eaf0;
-    --ink2: #9aa1af;
-    --ink3: #6a7180;
-    --line: #ffffff0d;   /* hairline */
-    --line2: #ffffff1c;
-    --bubble: #2a2d36;   /* hover/active 填充 */
-    --acc: #9a9dfb;      /* 柔蓝紫(DSH 系) */
-    --acc-ink: #16171c;
-    --acc-soft: #9a9dfb26;
-    --acc2: #7aa2f7;
-    --quote: #e8a87c;
-    --ok: #4caf7d;
-    --warn: #e8a13c;
-    --err: #e8736a;
-    --shadow: 0 1px 2px #0006, 0 12px 32px -14px #000a;
-    --composer-shadow: 0 8px 30px -10px #000c;
+    /* 中性黑白灰面;唯一强调色 = 烛铜 */
+    --bg: #17181a;
+    --bg2: #1c1e21;
+    --bg3: #24272b;
+    --raised: #202327;
+    --panel: #191b1e;
+    --ink: #e9eaec;
+    --ink2: #a2a7ae;
+    --ink3: #6d7279;
+    --line: #ffffff0d;
+    --line2: #ffffff1d;
+    --bubble: #2a2d31;
+    --acc: #d4a05a;        /* 烛铜 — 全场唯一彩色 */
+    --acc-ink: #241a0e;
+    --acc-soft: #d4a05a26;
+    --acc2: #8fa3c7;
+    --quote: #c98d5e;
+    --ok: #6fae7e;
+    --warn: #d4a05a;
+    --err: #d0715f;
+    --shadow: 0 1px 2px #0007, 0 14px 34px -14px #000c;
+    --composer-shadow: 0 10px 34px -12px #000d;
 }
 
 [data-theme="light"] {
     --bg: #f7f7f8;
-    --bg2: #efeff1;
+    --bg2: #f0f0f2;
     --bg3: #e7e8ea;
     --raised: #ffffff;
-    --panel: #fbfbfc;
-    --ink: #1d2027;
-    --ink2: #5c6370;
-    --ink3: #9aa1ad;
-    --line: #0000000f;
-    --line2: #0000001f;
-    --bubble: #eceef2;
-    --acc: #5b5fd6;
+    --panel: #f1f1f2;
+    --ink: #1d1f23;
+    --ink2: #5b6068;
+    --ink3: #9a9fa7;
+    --line: #0000000e;
+    --line2: #00000020;
+    --bubble: #e9eaec;
+    --acc: #a5712a;        /* 黄铜压重保对比 */
     --acc-ink: #ffffff;
-    --acc-soft: #5b5fd614;
-    --acc2: #4176e6;
-    --quote: #b3541e;
-    --ok: #2e8b57;
-    --warn: #b07a1e;
-    --err: #c0392b;
-    --shadow: 0 1px 2px #0000000d, 0 12px 30px -14px #0000001f;
-    --composer-shadow: 0 8px 28px -12px #00000026;
+    --acc-soft: #a5712a1e;
+    --acc2: #5a739e;
+    --quote: #a05c2a;
+    --ok: #3d8453;
+    --warn: #a5712a;
+    --err: #b04a38;
+    --shadow: 0 1px 2px #00000010, 0 14px 32px -14px #00000022;
+    --composer-shadow: 0 10px 30px -12px #00000026;
 }
