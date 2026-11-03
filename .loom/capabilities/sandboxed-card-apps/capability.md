@@ -66,3 +66,12 @@
 - source: research/webview-bridge-security.md
 - counterexample: 调试期关闭缓存避免旧代码假象
 - output: ETag 缓存 + 手动清缓存入口
+
+### C6: 状态面板与渲染器沙箱复用
+
+- entry_when: MVU 状态板/社区对话渲染器落地
+- options:
+  - A: 状态板=服务端渲染产物,走面板列表(系统面板条目);第三方渲染器复用 CardApp 同沙箱通道(panelBridge)→ leads_to: 完成
+  - B: 渲染器/状态板直执客户端 JS → leads_to: 信任域混乱
+- source: capabilities/mvu-runtime#C3;design/conversation-renderers.md §4
+- output: 面板三类=卡应用/系统面板(状态板)/渲染器舞台;沙箱通道一处实现三处消费
