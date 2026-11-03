@@ -158,6 +158,7 @@ import { router as syncRouter } from './endpoints/sync.js';
 import { syncWriteGateMiddleware } from './sync/in-progress-gate.js';
 import { startSyncService } from './sync/sync-service.js';
 import { router as storageHealthRouter } from './endpoints/storage-health.js';
+import { cardRuntimePublicRouter } from './card-runtime/index.js';
 import { createRendererCaptureRouter } from './endpoints/renderer-capture.js';
 import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent } from './endpoints/content-manager.js';
@@ -501,6 +502,15 @@ app.use('/api/storage', storageHealthRouter);
 // the `/session/*` paths through basic auth; session routes check their
 // own token and offers their pairing credential.
 app.use('/api/sync/v1', syncRouter);
+
+// Card runtime public surface: serves untrusted card-embedded assets and the
+// mount-scoped CDN proxy to sandboxed WebViews/iframes. Mounted BEFORE
+// requireLoginMiddleware deliberately — authorization is the unguessable
+// mountId capability minted via POST /api/card-runtime/mounts (which IS
+// session+CSRF gated), so card code never needs nor receives user session
+// authority. GET-only surface, so CSRF does not apply; a session cookie that
+// reaches these routes anyway is ignored by every handler.
+app.use('/card-runtime', cardRuntimePublicRouter);
 
 // Everything below this line requires authentication
 app.use(requireLoginMiddleware);
