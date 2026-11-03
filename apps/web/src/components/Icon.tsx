@@ -61,7 +61,7 @@ const PATHS = {
         <><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>
     ),
     send: (
-        <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>
+        <><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></>
     ),
     refresh: (
         <>
@@ -119,11 +119,21 @@ const PATHS = {
         <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>
     ),
     layout: <><rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="9" y1="21" x2="9" y2="9" /></>,
+    grid: (
+        <><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></>
+    ),
+    check: <polyline points="20 6 9 17 4 12" />,
+    book: (
+        <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>
+    ),
+    focus: (
+        <><path d="M8 3H5a2 2 0 0 0-2 2v3" /><path d="M16 3h3a2 2 0 0 1 2 2v3" /><path d="M8 21H5a2 2 0 0 1-2-2v-3" /><path d="M16 21h3a2 2 0 0 0 2-2v-3" /></>
+    ),
 };
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
+export function Icon({ name, size = 17, className }: { name: IconName; size?: number; className?: string }) {
     return (
         <svg
             width={size}
@@ -134,6 +144,7 @@ export function Icon({ name, size = 17 }: { name: IconName; size?: number }) {
             strokeWidth={1.8}
             strokeLinecap="round"
             strokeLinejoin="round"
+            className={className}
             aria-hidden="true"
         >
             {PATHS[name]}

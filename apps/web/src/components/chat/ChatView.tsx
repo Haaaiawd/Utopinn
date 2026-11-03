@@ -49,6 +49,8 @@ export interface ChatViewProps {
     onToggleSidebar: () => void;
     /** Status-bar hint for unwired actions. */
     onHint: (msg: string, err?: boolean) => void;
+    /** 沉浸模式:同时收起内容栏与右面板,只留 rail+阅读列。 */
+    onImmersive: () => void;
     /** True when the server is reachable — enables real load/send. */
     live: boolean;
 }
@@ -62,6 +64,7 @@ export function ChatView({
     onTogglePanel,
     onToggleSidebar,
     onHint,
+    onImmersive,
     live,
 }: ChatViewProps) {
     const { t } = useI18n();
@@ -206,6 +209,8 @@ export function ChatView({
                     disabled={previewLoading} onClick={onRunPreview} />
                 <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
                     icon={<Icon name="panelRight" size={15} />} />
+                <IconButton label={t('menu.view.immersive')} onClick={onImmersive}
+                    icon={<Icon name="focus" size={15} />} />
             </div>
 
             <div className="read-zone">

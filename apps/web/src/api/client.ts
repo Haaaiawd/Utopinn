@@ -46,18 +46,31 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
     return res;
 }
 
+/**
+ * Shared !ok → ApiError mapping. Vite dev proxy marks unreachable upstreams
+ * with 502 + a header so the UI can fall back to labelled mock data
+ * (see vite.config.ts).
+ */
+export async function assertOk(res: Response): Promise<void> {
+    if (!res.ok) {
+        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
+        const text = await res.text().catch(() => '');
+        throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
+    }
+}
+
+export async function apiGet<T>(path: string): Promise<T> {
+    const res = await apiFetch(path);
+    await assertOk(res);
+    return (await res.json()) as T;
+}
+
 export async function apiPost<T>(path: string, body: unknown): Promise<T> {
     const res = await apiFetch(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
     });
-    if (!res.ok) {
-        // Vite dev proxy marks unreachable upstreams with 502 + a header so
-        // the UI can fall back to labelled mock data (see vite.config.ts).
-        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
-        const text = await res.text().catch(() => '');
-        throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
-    }
+    await assertOk(res);
     return (await res.json()) as T;
 }
