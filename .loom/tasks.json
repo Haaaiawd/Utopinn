@@ -650,7 +650,8 @@
     "TASK-015"
    ],
    "reads": [
-    "AGENTS.md"
+    "AGENTS.md",
+    ".loom/design/web-visual-system.md"
    ],
    "touches": [
     "apps/web"
@@ -693,7 +694,7 @@
    "progress": {
     "completed": [],
     "current": "send 真链接线:append→generate→WS resume 流式,typecheck/build 绿",
-    "next": "real chat list 挂载 Sidebar,swipe/receipt 持久化回显"
+    "next": "web-visual-system 调研回填 → 按规范重做侧栏/库页/管理页"
    },
    "evidence": [],
    "created_at": "2026-11-02T08:50:32.134Z",
