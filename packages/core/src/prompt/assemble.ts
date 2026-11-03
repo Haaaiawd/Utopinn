@@ -1,0 +1,648 @@
+/**
+ * prepareOpenAIMessages 的纯函数移植(chat completions 路径)。
+ * 序列严格对齐 openai.js 1895-2335 + PromptManager.preparePrompt。
+ * 注入依赖:substituteParams(core 已移植)、TokenCounter seam、可选 depthInjectionProvider。
+ */
+import type {
+    BuiltPrompt,
+    ChatMessageInput,
+    PromptBuildRequest,
+    PromptLike,
+    PromptMessage,
+} from './types.js';
+import { IGNORE_SYMBOL } from './types.js';
+import { PromptCollection } from './collection.js';
+import { ChatCompletion, Message, MessageCollection } from './messages.js';
+import {
+    applyAttachedPromptsToMessages,
+    applyPromptManagerOverrides,
+    getPromptInjectionGroups,
+    getRelativePromptById,
+    INJECTION_POSITION,
+    isPromptInjectionPosition,
+    populationInjectionPrompts,
+    type DepthInjectionProvider,
+} from './injections.js';
+import { substituteParams, type SubstituteContext } from '../macros/substitute.js';
+
+const SYSTEM_MESSAGE_TYPE_NARRATOR = 4; // system_message_types.NARRATOR
+const NAMES_NONE = 0;
+const NAMES_DEFAULT = 1;
+const NAMES_CONTENT = 2;
+const NAMES_COMPLETION = 3;
+
+// extension_prompt_types:BEFORE_PROMPT=0, IN_PROMPT=1, IN_CHAT=2
+const EXT_BEFORE_PROMPT = 0;
+const EXT_IN_PROMPT = 1;
+
+export interface AssembleDeps {
+    substCtx: SubstituteContext;
+    depthInjection?: DepthInjectionProvider;
+    maxDepth?: number;
+    group?: { selected?: string | null; botNames?: string[]; memberNames?: string[] };
+    warn?: (m: string) => void;
+}
+
+function isValidName(name: string): boolean {
+    return /^[a-zA-Z0-9_]{1,64}$/.test(name);
+}
+function sanitizeName(name: string): string {
+    return name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 64);
+}
+
+function sub(content: string | undefined, deps: AssembleDeps, original?: string): string {
+    const opts = original !== undefined ? { original } : undefined;
+    return substituteParams(content ?? '', deps.substCtx, opts as never) as string;
+}
+
+/** setOpenAIMessages 移植:chat[] → 最新在前 PromptMessage[] */
+export function setOpenAIMessages(
+    chat: ChatMessageInput[],
+    req: Pick<PromptBuildRequest, 'settings' | 'api' | 'model'> & { groupBotNames?: string[]; name1?: string; name2?: string },
+): PromptMessage[] {
+    const namesBehavior = req.settings.names_behavior ?? NAMES_NONE;
+    const messages: (PromptMessage | undefined)[] = [];
+    let j = 0;
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const c = chat[j]!;
+        let role = c.is_user ? 'user' : 'assistant';
+        let content = c.mes ?? '';
+        if (c.extra?.[IGNORE_SYMBOL]) {
+            j++;
+            continue;
+        }
+        if (c.extra?.type === SYSTEM_MESSAGE_TYPE_NARRATOR) role = 'system';
+
+        switch (namesBehavior) {
+            case NAMES_NONE:
+                break;
+            case NAMES_DEFAULT:
+                if ((req.groupBotNames?.length && c.name !== req.name1) ||
+                    (c.force_avatar && c.name !== req.name1 && c.extra?.type !== SYSTEM_MESSAGE_TYPE_NARRATOR)) {
+                    content = `${c.name}: ${content}`;
+                }
+                break;
+            case NAMES_CONTENT:
+                if (c.extra?.type !== SYSTEM_MESSAGE_TYPE_NARRATOR) content = `${c.name}: ${content}`;
+                break;
+            case NAMES_COMPLETION:
+                break;
+        }
+        content = content.replace(/\r/gm, '');
+
+        const isSameModel = c.extra?.api === req.api && c.extra?.model === req.model;
+        const isOtherGroupMember = Boolean(req.groupBotNames?.length) && c.name !== req.name2;
+        const signature = isSameModel && !isOtherGroupMember ? (c.extra?.reasoning_signature ?? null) : null;
+        const reasoning = isSameModel && !isOtherGroupMember ? String(c.extra?.reasoning ?? '') : '';
+        const reasoningBlocks = isSameModel && !isOtherGroupMember && Array.isArray(c.extra?.reasoning_blocks)
+            ? c.extra!.reasoning_blocks!
+            : null;
+        const reasoningDetails = isSameModel && !isOtherGroupMember && Array.isArray(c.extra?.reasoning_details)
+            ? c.extra!.reasoning_details!
+            : null;
+
+        let invocations = c.extra?.tool_invocations?.slice();
+        if (Array.isArray(invocations) && invocations.length && !isSameModel) {
+            invocations = (invocations as Record<string, unknown>[]).map((inv) => {
+                const clone = { ...inv };
+                delete clone.signature;
+                delete clone.reasoning;
+                return clone;
+            });
+        }
+
+        const prev = messages[i + 1];
+        const mergeSummary =
+            c.extra?.isSmallSys === true && Array.isArray(invocations) && invocations.length > 0 && prev?.role === 'assistant';
+        if (mergeSummary) {
+            prev!.invocations = Array.isArray(prev!.invocations) ? prev!.invocations!.concat(invocations!) : invocations;
+            j++;
+            continue;
+        }
+        const isUnmerged = c.extra?.isSmallSys === true && Array.isArray(invocations) && invocations.length > 0;
+        if (isUnmerged) content = '';
+
+        messages[i] = {
+            role,
+            content,
+            name: c.name,
+            media: c.extra?.media as unknown[] | undefined,
+            mediaDisplay: c.extra?.mediaDisplay as number | undefined,
+            mediaIndex: c.extra?.mediaIndex as number | undefined,
+            invocations,
+            signature,
+            reasoning,
+            reasoning_blocks: reasoningBlocks,
+            reasoning_details: reasoningDetails,
+        };
+        j++;
+    }
+    return messages.filter((m): m is PromptMessage => Boolean(m));
+}
+
+/** parseExampleIntoIndividual 移植 */
+export function parseExampleIntoIndividual(
+    mesExample: string,
+    deps: AssembleDeps & { name1: string; name2: string },
+): { role: string; content: string; name: string }[] {
+    const groupBotNames = (deps.group?.botNames ?? []).map((n) => `${n}:`);
+    const result: { role: string; content: string; name: string }[] = [];
+    const lines = mesExample.split('\n');
+    let cur: string[] = [];
+    let inUser = false;
+    let inBot = false;
+    let botName = deps.name2;
+    const appendNames = Boolean(deps.group?.selected);
+
+    const flush = (name: string, role: string, sysName: string) => {
+        let parsed = cur.join('\n').replace(name + ':', '').trim();
+        if (appendNames && ['example_user', 'example_assistant'].includes(sysName)) {
+            parsed = `${name}: ${parsed}`;
+        }
+        result.push({ role, content: parsed, name: sysName });
+        cur = [];
+    };
+
+    for (let i = 1; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (line.startsWith(deps.name1 + ':')) {
+            inUser = true;
+            if (inBot) flush(botName, 'system', 'example_assistant');
+            inBot = false;
+        } else if (line.startsWith(deps.name2 + ':') || groupBotNames.some((n) => line.startsWith(n))) {
+            if (!line.startsWith(deps.name2 + ':') && groupBotNames.length) {
+                botName = line.split(':')[0]!;
+            }
+            inBot = true;
+            if (inUser) flush(deps.name1, 'system', 'example_user');
+            inUser = false;
+        }
+        cur.push(line);
+    }
+    if (inUser) flush(deps.name1, 'system', 'example_user');
+    else if (inBot) flush(botName, 'system', 'example_assistant');
+    return result;
+}
+
+/** formatWorldInfo + getWorldInfoMessageContents */
+export function formatWorldInfo(value: string, wiFormat?: string): string {
+    if (!value) return '';
+    const format = wiFormat ?? 'World Information:\n{0}';
+    return format.includes('{0}') ? format.replace('{0}', value) : `${format}\n${value}`;
+}
+
+export function getWorldInfoMessageContents(entries: string[] | undefined, wiFormat?: string): string[] {
+    const normalized = (entries ?? []).filter((x) => typeof x === 'string' && x.trim().length);
+    if (!normalized.length) return [];
+    // 原版:formatWorldInfo 包装整条串(join '\n' 后整体入 format)
+    return [formatWorldInfo(normalized.join('\n'), wiFormat)];
+}
+
+function getPromptPosition(position: number | undefined): 'start' | 'end' | false {
+    if (position === EXT_BEFORE_PROMPT) return 'start';
+    if (position === EXT_IN_PROMPT) return 'end';
+    return false;
+}
+
+function getPromptRole(role: number | string | undefined): string {
+    switch (role) {
+        case 0:
+        case 'system':
+            return 'system';
+        case 1:
+        case 'user':
+            return 'user';
+        case 2:
+        case 'assistant':
+            return 'assistant';
+        default:
+            return 'system';
+    }
+}
+
+/** preparePromptsForChatCompletion:基础 prompt + extension prompts 并入集合 + 卡级 override */
+function preparePrompts(
+    req: PromptBuildRequest,
+    deps: AssembleDeps,
+): PromptCollection {
+    const s = req.settings;
+    const scenarioText = req.card.scenario && s.scenario_format ? sub(s.scenario_format, deps) : (req.card.scenario || '');
+    const personalityText = req.card.personality && s.personality_format ? sub(s.personality_format, deps) : (req.card.personality || '');
+    const groupNudge = sub(s.group_nudge_prompt, deps);
+    const impersonationPrompt = s.impersonation_prompt ? sub(s.impersonation_prompt, deps) : '';
+
+    const systemPrompts: PromptLike[] = [
+        { role: 'system', content: '', identifier: 'worldInfoBefore' },
+        { role: 'system', content: '', identifier: 'worldInfoAfter' },
+        { role: 'system', content: req.card.description, identifier: 'charDescription' },
+        { role: 'system', content: personalityText, identifier: 'charPersonality' },
+        { role: 'system', content: scenarioText, identifier: 'scenario' },
+        { role: 'system', content: impersonationPrompt, identifier: 'impersonate' },
+        { role: 'system', content: req.quietPrompt, identifier: 'quietPrompt' },
+        { role: 'system', content: groupNudge, identifier: 'groupNudge' },
+        { role: 'assistant', content: req.bias, identifier: 'bias' },
+    ];
+
+    const ext = req.extensionPrompts ?? {};
+    const authorsNote = ext['2_floating_prompt'];
+    if (authorsNote?.value) {
+        systemPrompts.push({
+            role: getPromptRole(authorsNote.role),
+            content: authorsNote.value,
+            identifier: 'authorsNote',
+            position: getPromptPosition(authorsNote.position) || undefined,
+        });
+    }
+    const vectorsMemory = ext['3_vectors'];
+    if (vectorsMemory?.value) {
+        systemPrompts.push({ role: 'system', content: vectorsMemory.value, identifier: 'vectorsMemory', position: getPromptPosition(vectorsMemory.position) || undefined });
+    }
+    const vectorsDataBank = ext['4_vectors_data_bank'];
+    if (vectorsDataBank?.value) {
+        systemPrompts.push({ role: getPromptRole(vectorsDataBank.role), content: vectorsDataBank.value, identifier: 'vectorsDataBank', position: getPromptPosition(vectorsDataBank.position) || undefined });
+    }
+    const smartContext = ext['chromadb'];
+    if (smartContext?.value) {
+        systemPrompts.push({ role: 'system', content: smartContext.value, identifier: 'smartContext', position: getPromptPosition(smartContext.position) || undefined });
+    }
+    if (req.user.description) {
+        systemPrompts.push({ role: 'system', content: req.user.description, identifier: 'personaDescription' });
+    }
+
+    const knownExtensionPrompts = [
+        '2_floating_prompt', '3_vectors', '4_vectors_data_bank',
+        'chromadb', 'PERSONA_DESCRIPTION', 'QUIET_PROMPT', 'DEPTH_PROMPT',
+    ];
+    for (const key of Object.keys(ext)) {
+        if (knownExtensionPrompts.includes(key)) continue;
+        const p = ext[key];
+        if (!p?.value) continue;
+        if (![EXT_BEFORE_PROMPT, EXT_IN_PROMPT].includes(p.position ?? -1)) continue;
+        systemPrompts.push({
+            identifier: key.replace(/\W/g, '_'),
+            position: getPromptPosition(p.position) || undefined,
+            role: getPromptRole(p.role),
+            content: p.value,
+            extension: true,
+        });
+    }
+
+    // WI 深度注入条目 → absolute prompts(WI 引擎已给出 depth/order/role)
+    for (const e of req.worldInfo.depthEntries ?? []) {
+        systemPrompts.push({ ...e, extension: e.extension ?? true });
+    }
+
+    const prompts = new PromptCollection(req.prompts, req.promptOrder);
+
+    // 合并 system prompts 进集合(应用 prompt-manager override + 宏替换)
+    for (const p of systemPrompts) {
+        applyPromptManagerOverrides(p, prompts.get(p.identifier));
+        const prepared: PromptLike = { ...p, content: sub(p.content, deps) };
+        const markerIndex = prompts.index(p.identifier);
+        if (markerIndex !== -1) prompts.collection[markerIndex] = prepared;
+        else prompts.add(prepared);
+    }
+
+    // 卡级 main/jailbreak override
+    const mainPrompt = prompts.get('main');
+    if (req.card.systemPromptOverride && mainPrompt && mainPrompt.forbid_overrides !== true && !prompts.isPromptDisabledForActiveCharacter('main')) {
+        const original = mainPrompt.content;
+        mainPrompt.content = req.card.systemPromptOverride;
+        const replacement = { ...mainPrompt, content: sub(mainPrompt.content, deps, original) };
+        prompts.override(replacement, prompts.index('main'));
+    }
+    const jailbreakPrompt = prompts.get('jailbreak');
+    if (req.card.jailbreakOverride && jailbreakPrompt && jailbreakPrompt.forbid_overrides !== true && !prompts.isPromptDisabledForActiveCharacter('jailbreak')) {
+        const original = jailbreakPrompt.content;
+        jailbreakPrompt.content = req.card.jailbreakOverride;
+        const replacement = { ...jailbreakPrompt, content: sub(jailbreakPrompt.content, deps, original) };
+        prompts.override(replacement, prompts.index('jailbreak'));
+    }
+
+    return prompts;
+}
+
+/** populateDialogueExamples */
+async function populateDialogueExamples(
+    prompts: PromptCollection,
+    chatCompletion: ChatCompletion,
+    messageExamples: { role: string; content: string; name?: string }[][],
+    req: PromptBuildRequest,
+    deps: AssembleDeps,
+): Promise<void> {
+    if (!prompts.has('dialogueExamples')) return;
+    chatCompletion.add(new MessageCollection('dialogueExamples'), prompts.index('dialogueExamples'));
+    if (!messageExamples?.length) return;
+    const newExampleChat = await Message.createAsync('system', sub(req.settings.new_example_chat_prompt, deps), 'newChat');
+    for (let d = 0; d < messageExamples.length; d++) {
+        const dialogue = messageExamples[d]!;
+        const chatMessages = await Message.createManyAsync(
+            dialogue.map((p, i) => ({
+                role: 'system',
+                content: p.content || '',
+                identifier: `dialogueExamples ${d}-${i}`,
+                name: p.name,
+            })),
+        );
+        if (!chatCompletion.canAffordAll([newExampleChat, ...chatMessages])) break;
+        chatCompletion.insert(newExampleChat, 'dialogueExamples');
+        for (const m of chatMessages) chatCompletion.insert(m, 'dialogueExamples');
+    }
+}
+
+/** populateChatHistory:预算装配心脏 */
+async function populateChatHistory(
+    messages: PromptMessage[],
+    prompts: PromptCollection,
+    chatCompletion: ChatCompletion,
+    req: PromptBuildRequest,
+    deps: AssembleDeps,
+): Promise<void> {
+    if (!prompts.has('chatHistory')) return;
+    const s = req.settings;
+    const type = req.type ?? 'normal';
+    const cyclePrompt = req.cyclePrompt ?? null;
+    const selectedGroup = deps.group?.selected;
+
+    chatCompletion.add(new MessageCollection('chatHistory'), prompts.index('chatHistory'));
+
+    const newChat = selectedGroup ? s.new_group_chat_prompt : s.new_chat_prompt;
+    const newChatMessage = await Message.createAsync('system', sub(newChat, deps), 'newMainChat');
+    chatCompletion.reserveBudget(newChatMessage);
+
+    let groupNudgeMessage: Message | null = null;
+    if (selectedGroup && prompts.has('groupNudge') && type !== 'impersonate') {
+        groupNudgeMessage = await Message.fromPromptAsync(prompts.get('groupNudge')!);
+        chatCompletion.reserveBudget(groupNudgeMessage);
+    }
+
+    let continueMessageCollection: MessageCollection | null = null;
+    if (type === 'continue' && cyclePrompt && !s.continue_prefill) {
+        continueMessageCollection = new MessageCollection('continueNudge');
+        let continueIdx = -1;
+        for (let k = messages.length - 1; k >= 0; k--) { if (!messages[k]!.injected) { continueIdx = k; break; } }
+        if (continueIdx >= 0) {
+            const continueMsg = messages.splice(continueIdx, 1)[0]!;
+            const chatMessage = await Message.createAsync(
+                continueMsg.role,
+                sub(continueMsg.content, deps),
+                `chatHistory-${continueIdx}`,
+                continueMsg.name && s.names_behavior === NAMES_COMPLETION
+                    ? (isValidName(continueMsg.name) ? continueMsg.name : sanitizeName(continueMsg.name))
+                    : undefined,
+            );
+            continueMessageCollection.add(chatMessage);
+        }
+        const nudgePrompt: PromptLike = {
+            identifier: 'continueNudge',
+            role: 'system',
+            content: sub(s.continue_nudge_prompt, deps),
+            system_prompt: true,
+        };
+        const nudgeMessage = await Message.fromPromptAsync(nudgePrompt);
+        continueMessageCollection.add(nudgeMessage);
+        chatCompletion.reserveBudget(continueMessageCollection);
+    }
+
+    const lastChatPrompt = messages[messages.length - 1];
+    const emptyMsg = await Message.createAsync('user', s.send_if_empty, 'emptyUserMessageReplacement');
+    if (lastChatPrompt && lastChatPrompt.role === 'assistant' && s.send_if_empty && chatCompletion.canAfford(emptyMsg)) {
+        chatCompletion.insert(emptyMsg, 'chatHistory');
+    }
+
+    // 预算循环:最新在前 → 逐条 prepend,装不下即断(丢最旧)
+    const chatPool = [...messages].reverse();
+    const batched = await Message.createManyAsync(
+        chatPool.map((chatPrompt, index) => ({
+            role: chatPrompt.role,
+            content: sub(chatPrompt.content, deps),
+            identifier: `chatHistory-${messages.length - index}`,
+            injected: chatPrompt.injected,
+            name:
+                s.names_behavior === NAMES_COMPLETION && chatPrompt.name
+                    ? isValidName(chatPrompt.name)
+                        ? chatPrompt.name
+                        : sanitizeName(chatPrompt.name)
+                    : undefined,
+        })),
+    );
+
+    for (const chatMessage of batched) {
+        if (chatCompletion.canAfford(chatMessage)) {
+            chatCompletion.insertAtStart(chatMessage, 'chatHistory');
+        } else {
+            break;
+        }
+    }
+
+    chatCompletion.freeBudget(newChatMessage);
+    chatCompletion.insertAtStart(newChatMessage, 'chatHistory');
+
+    if (selectedGroup && groupNudgeMessage) {
+        chatCompletion.freeBudget(groupNudgeMessage);
+        chatCompletion.insertAtEnd(groupNudgeMessage, 'chatHistory');
+    }
+
+    if (type === 'continue' && continueMessageCollection) {
+        chatCompletion.freeBudget(continueMessageCollection);
+        chatCompletion.add(continueMessageCollection, -1);
+    }
+}
+
+/** populateChatCompletion 主编排(原版 openai.js:1895) */
+async function populateChatCompletion(
+    prompts: PromptCollection,
+    chatCompletion: ChatCompletion,
+    req: PromptBuildRequest,
+    messages: PromptMessage[],
+    messageExamples: { role: string; content: string; name?: string }[][],
+    deps: AssembleDeps,
+): Promise<void> {
+    const type = req.type ?? 'normal';
+    const s = req.settings;
+
+    const addToChatCompletion = async (source: string, target: string | null = null): Promise<void> => {
+        if (!prompts.has(source)) return;
+        if (prompts.isPromptDisabledForActiveCharacter(source) && source !== 'main') return;
+        const prompt = prompts.get(source)!;
+        if (!isPromptInjectionPosition(prompt, INJECTION_POSITION.RELATIVE)) return;
+        const index = target ? prompts.index(target) : prompts.index(source);
+        const collection = new MessageCollection(source);
+        if (source === 'worldInfoBefore' || source === 'worldInfoAfter') {
+            const contents = getWorldInfoMessageContents(
+                source === 'worldInfoBefore' ? req.worldInfo.beforeEntries : req.worldInfo.afterEntries,
+                req.worldInfo.format ?? s.wi_format,
+            );
+            if (!contents.length) return;
+            const batched = await Message.createManyAsync(
+                contents.map((content, i) => ({ role: prompt.role, content, identifier: `${source}-${i + 1}` })),
+            );
+            for (const m of batched) collection.add(m);
+        } else {
+            collection.add(await Message.fromPromptAsync(prompt));
+        }
+        chatCompletion.add(collection, index);
+    };
+
+    chatCompletion.reserveBudget(3);
+    await addToChatCompletion('worldInfoBefore');
+    await addToChatCompletion('main');
+    await addToChatCompletion('worldInfoAfter');
+    await addToChatCompletion('charDescription');
+    await addToChatCompletion('charPersonality');
+    await addToChatCompletion('scenario');
+    await addToChatCompletion('personaDescription');
+
+    const controlPrompts = new MessageCollection('controlPrompts');
+    const impersonatePrompt = getRelativePromptById(prompts, 'impersonate');
+    const impersonateMessage = impersonatePrompt ? await Message.fromPromptAsync(impersonatePrompt) : null;
+    if (type === 'impersonate' && impersonateMessage) controlPrompts.add(impersonateMessage);
+
+    const quietPromptEntry = getRelativePromptById(prompts, 'quietPrompt');
+    const quietPromptMessage = quietPromptEntry ? await Message.fromPromptAsync(quietPromptEntry) : null;
+    if (quietPromptMessage?.content) controlPrompts.add(quietPromptMessage);
+    chatCompletion.reserveBudget(controlPrompts);
+
+    const systemPrompts = ['nsfw', 'jailbreak'];
+    const { userRelativePromptIds, absolutePrompts, attachedPrompts } = getPromptInjectionGroups(prompts);
+    for (const id of [...systemPrompts, ...userRelativePromptIds]) await addToChatCompletion(id);
+    if (prompts.has('enhanceDefinitions')) await addToChatCompletion('enhanceDefinitions');
+    if (req.bias?.trim().length) await addToChatCompletion('bias');
+
+    const injectToMain = async (prompt: PromptLike, position: string | number): Promise<void> => {
+        if (!isPromptInjectionPosition(prompt, INJECTION_POSITION.RELATIVE)) return;
+        if (chatCompletion.has('main')) {
+            const message = await Message.fromPromptAsync(prompt);
+            chatCompletion.insert(message, 'main', position);
+        } else {
+            const indexOfMain = absolutePrompts.findIndex((p) => p.identifier === 'main');
+            if (indexOfMain >= 0) {
+                const main = absolutePrompts[indexOfMain]!;
+                const copy: PromptLike = {
+                    ...prompt,
+                    role: main.role,
+                    injection_position: main.injection_position,
+                    injection_depth: main.injection_depth,
+                    injection_order: main.injection_order,
+                };
+                absolutePrompts.splice(position === 'end' ? indexOfMain + 1 : indexOfMain, 0, copy);
+            }
+        }
+    };
+
+    const knownPrompts = ['authorsNote', 'vectorsMemory', 'vectorsDataBank', 'smartContext'];
+    for (const key of knownPrompts) {
+        if (prompts.has(key)) {
+            const p = prompts.get(key)!;
+            if (p.position) await injectToMain(p, p.position);
+        }
+    }
+    for (const p of prompts.collection.filter((x) => x.extension && x.position)) {
+        await injectToMain(p, p.position!);
+    }
+
+    if (attachedPrompts.length) {
+        applyAttachedPromptsToMessages(attachedPrompts, messages, { warn: deps.warn });
+    }
+
+    if (type === 'continue' && s.continue_prefill && messages.length) {
+        const chatMessage = messages.shift()!;
+        const isAssistant = chatMessage.role === 'assistant';
+        const supportsPrefill = false; // V1:CLAUDE prefill 留 seam(source 相关)
+        const assistantPrefill = isAssistant && supportsPrefill ? sub(s.assistant_prefill, deps) : '';
+        const content = [assistantPrefill, chatMessage.content].filter((x) => x).join('\n\n');
+        const continueMessage = await Message.createAsync(
+            chatMessage.role,
+            content,
+            'continuePrefill',
+            chatMessage.name && s.names_behavior === NAMES_COMPLETION ? sanitizeName(chatMessage.name) : undefined,
+        );
+        controlPrompts.add(continueMessage);
+        chatCompletion.reserveBudget(continueMessage);
+    }
+
+    messages = await populationInjectionPrompts(absolutePrompts, messages, {
+        maxDepth: deps.maxDepth ?? 100,
+        getDepthInjection: deps.depthInjection,
+    });
+
+    if (s.pin_examples) {
+        await populateDialogueExamples(prompts, chatCompletion, messageExamples, req, deps);
+        await populateChatHistory(messages, prompts, chatCompletion, req, deps);
+    } else {
+        await populateChatHistory(messages, prompts, chatCompletion, req, deps);
+        await populateDialogueExamples(prompts, chatCompletion, messageExamples, req, deps);
+    }
+
+    chatCompletion.freeBudget(controlPrompts);
+    if (controlPrompts.collection.length) chatCompletion.add(controlPrompts);
+}
+
+/**
+ * promptBuilder seam 入口:PromptBuildRequest → BuiltPrompt(messages + trace)。
+ * 对应原版 prepareOpenAIMessages。
+ */
+export async function buildPromptMessages(
+    req: PromptBuildRequest,
+    deps: AssembleDeps,
+): Promise<BuiltPrompt> {
+    const chatCompletion = new ChatCompletion();
+    chatCompletion.setTokenBudget(req.contextTokens, req.responseTokens);
+
+    const prompts = preparePrompts(req, deps);
+
+    const messages = setOpenAIMessages(req.chat, {
+        settings: req.settings,
+        api: req.api,
+        model: req.model,
+        groupBotNames: deps.group?.botNames,
+        name1: req.user.name,
+        name2: req.card.name,
+    });
+
+    const chatCount = messages.length;
+
+    // 对话示例块(parseExample → 块数组)
+    const messageExamples: { role: string; content: string; name?: string }[][] = [];
+    if (req.card.mesExample) {
+        const blocks = req.card.mesExample.split(/<START>/i).map((b) => b.trim()).filter(Boolean);
+        for (const block of blocks) {
+            messageExamples.push(
+                parseExampleIntoIndividual(block, { ...deps, name1: req.user.name, name2: req.card.name }),
+            );
+        }
+    }
+
+    await populateChatCompletion(prompts, chatCompletion, req, messages, messageExamples, deps);
+
+    if (req.settings.squash_system_messages) {
+        await chatCompletion.squashSystemMessages();
+    }
+
+    const flat = chatCompletion.messages.flatten();
+    const finalMessages = flat.map((m) => {
+        const out: { role: string; content: string; name?: string } = { role: m.role, content: m.content };
+        if (m.name) out.name = m.name;
+        return out;
+    });
+
+    const collections = chatCompletion.messages.collection.map((c) =>
+        c instanceof MessageCollection
+            ? { identifier: c.identifier, tokens: c.getTokens(), count: c.flatten().length }
+            : { identifier: (c as Message).identifier, tokens: c.getTokens(), count: 1 },
+    );
+
+    const injectedCount = flat.filter((m) => m.injected).length;
+    const historyCount = flat.filter((m) => m.identifier.startsWith('chatHistory')).length;
+
+    return {
+        messages: finalMessages,
+        trace: {
+            collections,
+            tokenBudget: req.contextTokens - req.responseTokens,
+            remainingBudget: chatCompletion.tokenBudget,
+            droppedChatCount: Math.max(0, chatCount - historyCount),
+            injectedCount,
+        },
+    };
+}
