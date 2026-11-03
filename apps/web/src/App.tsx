@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import { MOCK_CHATS } from './api/mock';
 import { postPreviewWithFallback } from './api/preview';
-import { listAllChats, createChat } from './api/chats';
+import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from './types';
 import { ActivityRail } from './components/shell/ActivityRail';
 import { Sidebar } from './components/shell/Sidebar';
@@ -89,6 +89,42 @@ function Shell() {
             .catch((e) => showHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chat, refreshChats, showHint, t]);
 
+    /**
+     * Rename via legacy /api/chats/rename. The local summary is rewritten
+     * BEFORE refreshChats so its merge can't resurrect the old id as a ghost
+     * row (refresh keeps prev entries missing from the live list — meant for
+     * dev/mock chats — and the pre-rename id would linger forever).
+     */
+    const onRenameChat = useCallback((c: ChatSummary) => {
+        if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
+        const name = window.prompt(t('chat.rename'), c.chatName);
+        if (!name?.trim() || name.trim() === c.chatName) return; // cancel / no-op
+        void renameChat(c.charDir, c.chatName, name.trim())
+            .then((newName) => {
+                const id = `${c.charDir}/${newName}`;
+                setChats((prev) => prev.map((x) => (x.id === c.id ? { ...x, id, title: newName, chatName: newName } : x)));
+                if (activeChat === c.id) setActiveChat(id);
+            })
+            .then(() => refreshChats())
+            .catch((e) => showHint(t('chat.rename.failed') + ': ' + (e instanceof Error ? e.message : e)));
+    }, [serverStatus, activeChat, refreshChats, showHint, t]);
+
+    /**
+     * Delete via /api/uberge. If the deleted chat was open, the selection
+     * falls back to the first remaining row — never leaves ChatView pointed
+     * at a ghost. Same ghost-row purge as rename, applied after the merge.
+     */
+    const onDeleteChat = useCallback((c: ChatSummary) => {
+        if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
+        if (!window.confirm(`${t('chat.delete.confirm')}\n${c.chatName}`)) return;
+        const fallback = chats.filter((x) => x.id !== c.id)[0]?.id ?? '';
+        void deleteChat(c.charDir, c.chatName)
+            .then(() => refreshChats())
+            .then(() => setChats((prev) => prev.filter((x) => x.id !== c.id)))
+            .then(() => { if (activeChat === c.id) setActiveChat(fallback); })
+            .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
+    }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
+
     const tokens = preview?.data?.trace
         ? { used: preview.data.trace.tokenBudget - preview.data.trace.remainingBudget, budget: preview.data.trace.tokenBudget }
         : null;
@@ -111,6 +147,8 @@ function Shell() {
                     activeChat={activeChat}
                     onSelectChat={(id) => { setActiveChat(id); setView('chat'); }}
                     onNewChat={onNewChat}
+                    onRenameChat={onRenameChat}
+                    onDeleteChat={onDeleteChat}
                     collapsed={sidebarCollapsed}
                 />
                 <main className="main">

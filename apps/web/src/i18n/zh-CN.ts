@@ -57,6 +57,11 @@ export const zhCN: Dict = {
     'chat.action.unwired': '未接线',
     'chat.you': '我',
     'chat.system': '系统',
+    'chat.rename': '重命名会话',
+    'chat.rename.failed': '重命名失败',
+    'chat.delete': '删除会话',
+    'chat.delete.failed': '删除失败',
+    'chat.delete.confirm': '删除这个会话?此操作不可撤销。',
 
     'panel.session': '本局',
     'panel.diag': '诊断',
