@@ -29,9 +29,9 @@ const SEED_DATA = resolve(REPO_ROOT, 'data');
 // `default/config.yaml` is the tracked reference every install starts
 // from; specs that need a non-default value pass it via `extraConfig`.
 const SEED_CONFIG = resolve(REPO_ROOT, 'default/config.yaml');
-export const SCRATCH_ROOT = resolve(REPO_ROOT, 'tests/.e2e-scratch');
+export const SCRATCH_ROOT = resolve(process.env.E2E_SCRATCH_ROOT || resolve(REPO_ROOT, 'tests/.e2e-scratch'));
 
-const READY_TIMEOUT_MS = 60_000;
+const READY_TIMEOUT_MS = Number(process.env.E2E_READY_TIMEOUT_MS) || 60_000;
 const READY_POLL_MS = 250;
 
 mkdirSync(SCRATCH_ROOT, { recursive: true });

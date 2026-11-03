@@ -57,6 +57,11 @@ export function surfaceTags(card) {
     return [...tags].sort();
 }
 
+// CLI 主流程:仅直接执行时跑,被 capture-golden.mjs import 时跳过
+import { pathToFileURL } from 'node:url';
+if (import.meta.url !== pathToFileURL(process.argv[1] || '').href) {
+    // imported as library — no CLI side effects
+} else {
 const target = process.argv[2];
 if (!target) { console.error('usage: extract-card.mjs <dir|file.png>'); process.exit(1); }
 const files = statSync(target).isDirectory()
@@ -83,4 +88,5 @@ if (process.argv.includes('--manifest')) {
     const out = process.argv[process.argv.indexOf('--manifest') + 1];
     writeFileSync(out, JSON.stringify(manifest, null, 1));
     console.error('manifest -> ' + out);
+}
 }

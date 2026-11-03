@@ -25,3 +25,10 @@ apps/server/nodejs-mobile-*.zip
 # Reference codebases (third-party, kept local only)
 ref/
 tests/corpus-private/
+
+# Golden-diff 捕获产物:私有卡 golden 含卡面内容,不入库;
+# 公开语料 golden 应放 golden/(由 tests/corpus/ 捕获),golden-private/ 恒本地。
+tests/golden-diff/golden-private/
+
+# 用户投放的卡原件(已镜像进 tests/corpus-private/)
+assets/
