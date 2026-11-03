@@ -46,7 +46,7 @@ export interface ChatViewProps {
     onTogglePanel: () => void;
     onToggleSidebar: () => void;
     /** Status-bar hint for unwired actions. */
-    onHint: (msg: string) => void;
+    onHint: (msg: string, err?: boolean) => void;
     /** True when the server is reachable — enables real load/send. */
     live: boolean;
 }
@@ -99,7 +99,7 @@ export function ChatView({
             // floors carry the storage index as id → persist swipe_id.
             if (live) {
                 patchSwipe(chat.charDir, chat.chatName, Number(messageId), index)
-                    .catch((e) => onHint(`${t('chat.swipe')} ${t('chat.send.failed')}: ${e instanceof Error ? e.message : e}`));
+                    .catch((e) => onHint(`${t('chat.swipe')} ${t('chat.send.failed')}: ${e instanceof Error ? e.message : e}`, true));
             }
             setMessages((prev) => prev.map((m) => {
                 if (m.id !== messageId || !m.swipes?.[index]) return m;
@@ -177,11 +177,11 @@ export function ChatView({
                         })
                         .catch(() => { /* keep streamed text */ });
                 },
-                onError: (msg) => { setStreaming(false); onHint(t('chat.send.failed') + ': ' + msg); },
+                onError: (msg) => { setStreaming(false); onHint(t('chat.send.failed') + ': ' + msg, true); },
             });
         } catch (e) {
             setStreaming(false);
-            onHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : String(e)));
+            onHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : String(e)), true);
         }
     };
 
@@ -224,7 +224,7 @@ export function ChatView({
                     <div className="empty-hint">
                         <div className="glyph"><Icon name="eye" size={22} /></div>
                         {preview?.error
-                            ? <p>{t('chat.preview.failed')}: {preview.error}</p>
+                            ? <p className="err">{t('chat.preview.failed')}: {preview.error}</p>
                             : <p>{previewLoading ? '…' : t('chat.preview.empty')}</p>}
                     </div>
                 )}

@@ -57,7 +57,7 @@
     font-size: var(--fs-ui); color: var(--ink2); text-align: left;
 }
 .sb-nav-item:hover { background: var(--bubble); color: var(--ink); }
-.sb-nav-item.on { background: var(--acc-soft); color: var(--acc); font-weight: 600; }
+.sb-nav-item.on { background: var(--bubble); color: var(--ink); font-weight: 600; }
 
 .sb-foot {
     flex: none; border-top: 1px solid var(--line); padding: 10px 16px;
@@ -102,6 +102,7 @@
     font-size: var(--fs-ui); color: var(--ink2);
     animation: hint-in .18s var(--ease);
 }
+.hint-pill.err { border-color: #d0715f66; color: var(--err); }
 @keyframes hint-in { from { opacity: 0; translate: -50% 6px; } }
 
 /* ---- generic page body (placeholder/library pages) ---- */
