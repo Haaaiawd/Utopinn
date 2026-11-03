@@ -521,7 +521,7 @@
     {
       "id": "TASK-009",
       "title": "移动端面板页:CardApp WebView 沙箱 + ctx 桥",
-      "outcome": "底导航'面板'页承载当前聊天 CardApp;ctx 状态/变量/世界书 API 经 postMessage→api-client 落服务端;老状态栏 HTML 可渲染。",
+      "outcome": "底导航'面板'页承载当前聊天 CardApp;ctx 状态/变量/世界书 API 经 postMessage→api-client 落服务端;老状态栏 HTML 可渲染。 【D-013:面板页=应用列表→全屏WebView(多tab留v1.1);移动端无插件点,主题/设置随服务端同步】",
       "acceptance": [
         {
           "criterion": "一张 CardApp 卡在设备上面板页可交互且状态跨重启保留",
@@ -586,12 +586,12 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T06:32:46.892Z"
     },
     {
       "id": "TASK-010",
       "title": "新 Web 管理端 SPA(骨架)",
-      "outcome": "apps/web 选型定型并起步:卡/世界书/预设/设置管理面 + 聊天视图,消费 api-client。 【V1补充:含插件管理页(DSH plugin-manager简化:列表/安装/启禁)+i18n 中英双字典;V1优先级与移动端并行,不落后】",
+      "outcome": "apps/web 选型定型并起步:卡/世界书/预设/设置管理面 + 聊天视图,消费 api-client。 【V1补充:含插件管理页(DSH plugin-manager简化:列表/安装/启禁)+i18n 中英双字典;V1优先级与移动端并行,不落后】 【D-013:web=聊天+管理全量产品;含卡资产全量编辑器(TH脚本/正则/内嵌WI);先做 design/web-ia.md 信息架构重排(ST全部UI面:一级/次级/默认折叠)再动工;主题/设置服务端存、客户端缓存;登录URL+密码+web出QR码;TH深度=T0+T1】",
       "acceptance": [
         {
           "criterion": "SPA 可登录并对世界书做 CRUD",
@@ -649,7 +649,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:19:55.764Z"
+      "updated_at": "2026-11-03T06:32:46.891Z"
     },
     {
       "id": "TASK-011",

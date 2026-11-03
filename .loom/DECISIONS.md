@@ -91,3 +91,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: project-wide or not yet classified
 - Recorded: 2026-11-03T06:19:32.114Z
+
+## D-011: 端形态与生态收尾:web含完整聊天/客户端纯容器/主题设置服务端同步/卡资产全量编辑
+
+- Current decision: (1)web SPA=完整产品(聊天+管理),移动端是同协议另一壳;(2)插件全在服务端,客户端不留插件点;用户偏好(主题/字号/语言等)存服务端设置,客户端只缓存——天然多端同步;(3)移动端导航:先做完 design/web-ia.md(ST全部UI面信息架构重排:一级/次级/默认折叠)再定,web优先;(4)登录=URL+密码两端通用,web端出二维码供手机扫码连服务端;(5)移动端面板页=应用列表→全屏WebView(多tab留v1.1);(6)TH深度=T0+T1即目标,T2按需补;(7)卡内资产(TH脚本/正则/内嵌WI)web端全量编辑,对齐ST编辑能力,关注制卡工具导出兼容;(8)ST前端扩展不兼容,热门项(QR/表情等)官方插件重实现。
+- Rationale: 桌面聊天是ST主流场景,web必须含聊天;服务端权威下客户端插件点引入的是复杂度而非能力——主题/设置走服务端设置同步反而更贴合全云;面板列表→全屏是'重前端专属页'的最简实现;ST扩展热门官方重实现保住生态功能面。
+- Source: conversation
+- Supersedes: none
+- Affects: project-wide or not yet classified
+- Recorded: 2026-11-03T06:32:46.851Z
