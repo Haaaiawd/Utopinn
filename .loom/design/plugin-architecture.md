@@ -39,26 +39,29 @@ export function apply(ctx: Context, config: Config): void {
 export default class PromptBuilder extends Service { ... }
 ```
 
-**我们的一字不改契约**:
+**我们的契约(zread+vendor/cordis 双源校验后)**:插件三形态共享元数据——
+
 ```ts
-// packages/server-plugin 契约(对插件作者)
-export interface UbergePlugin {
-  name: string;
-  inject?: string[];           // 声明依赖的服务名;缺失→启动失败(显式)
-  optional?: string[];         // 可选依赖,ctx.get() 取用
-  Config?: ZodSchema;          // 配置 schema,uber.yaml 校验
-  apply(ctx: PluginContext, config: unknown): void | Promise<void>;
+// 三形态:function(ctx,config)=>void | class new(ctx,config) | {apply(ctx,config)}
+// 共享 Base 元数据(全部可选):
+interface PluginBase {
+  name?: string;               // 诊断/日志显示名
+  Config?: StandardSchemaV1;   // 配置校验器(不限 Zod——StandardSchema 任意实现)
+  inject?: string[];           // 必需服务,全齐才启动(装载序由依赖自然涌现)
+  provide?: string | string[]; // 本插件提供的服务名
+  intercept?: Dict<boolean>;   // 本插件消费其 intercept 配置的服务名
 }
 ```
 
 `PluginContext` 提供(对齐 cordis):
-- `ctx.effect(fn, label)` — 注册带 disposer 的副作用(HMR/卸载的核心)
-- `ctx.on(event, handler)` / `ctx.emit` — 事件总线
-- `ctx.<name>` — 已 inject 的服务代理;`ctx.get(name)` — 可选服务
+- `ctx.effect(fn, label)` — 注册带 disposer 的副作用(HMR/卸载的核心;服务注册本身也是 effect,卸载移除并通知依赖者)
+- `ctx.on/emit/waterfall/parallel/serial/bail` — 事件总线(§3b)
+- `ctx.<name>` — 已 inject 的服务代理;`ctx.get(name)` — 可选服务读
+- `ctx.extend(meta)` / `ctx.isolate(name, label)` / `ctx.intercept(name, config)` — 子上下文三操作,**父级永不被改**;`isolate` 同 label 汇合作用域(→每聊天独立 variableStore、每卡独立 state 的机制)
 - `ctx.route(prefix, router)` — HTTP 端点(等效 `app.use`)
 - `ctx.storage` — 插件数据命名空间(chat_state ns + 每插件目录)
-- `ctx.log` — 命名空间化日志
-- `ctx.config` — 校验过的插件配置
+- `ctx.log` — 命名空间化日志;`ctx.config` — 校验过的插件配置
+- 内建四个根服务混到 ctx 上:`events`/`logger`/`reflect`/`registry`(ctx.on→ctx.events.on 等)
 
 ## 3. 组合机制:config 行 + 补丁层(对齐 DSH,不只是插件列表)
 
@@ -85,7 +88,7 @@ plugins:
 - HMR:dev flag,默认重启生效(同 DSH `no-hmr` 语义)
 - `pnpm uberge --profile tavern --dump-config` 能 dump 出实际装载树(DSH 同款调试)
 
-## 3b. 事件三域 + dispatch 模式(架构上最容易做错的一层)
+## 3b. 事件三域 + dispatch 五模式(契约式,@mode 校验)
 
 DSH 事件按域分(architecture.md §Events),我们照搬:
 
@@ -95,14 +98,20 @@ DSH 事件按域分(architecture.md §Events),我们照搬:
 | **实时** | 生成中的拦截点,不持久 | `generation/preBuild`(**waterfall**)、`generation/stream`、`generation/preStep` |
 | **能力** | seam 策略/适配器,不进口子 | `cdn/request`、`panel/mount`、`fs/access` |
 
-**dispatch 模式必须显式**(cordis 语义):
-- **waterfall**:监听器签名 `(acc, next)`,必须 `next(acc)` 才传递——
-  `generation.preBuild`(prompt 组装链)、`settle`(变量结算链)
-- **serial**:按序执行无 next——`chat/messagePersisted` 副作用
-- **broadcast**:并行,无返回值语义——生命周期通知
+**dispatch 五模式,模式是事件契约的一部分**(zread 实证:声明时 `@mode`
+标注,codegen 校验全仓 dispatch 点,不匹配=构建错误;不是调用方选择):
 
-写错域或写错模式 = 架构 bug(persist 事件不能是 waterfall,
-preBuild 不能是 broadcast——第三方监听器改写 prompt 需要链式语义)。
+| 模式 | 语义 | 我们的用途 |
+|---|---|---|
+| `emit` | 同步广播,不 await,返回值忽略 | 生命周期/状态通知(`generation/stream` chunk、chat.changed) |
+| `waterfall` | 外层先注册先执行,`(...args,next)`,不调 next=否决链尾+内建默认 | **`generation.preBuild`**(prompt 组装链)、**`settle`**(变量结算链)——transform 语义 |
+| `parallel` | `allSettled` 并发,整体 await,拒绝→AggregateError | 多后端持久化(若上) |
+| `serial` | 按注册序 await,首个 `isBailed`(非null/false/undefined)值即返回 | 异步裁决(生成许可/策略) |
+| `bail` | serial 的同步版 | 同步查询/拦截(卡能力探测命中即返回) |
+
+写错域或写错模式 = 架构 bug(persist 不能是 waterfall,preBuild 不能是
+emit——第三方监听器改写 prompt 需要链式语义)。事件名按 `namespace/action`
+约定,声明合并(`interface Events`)进 protocol,`@mode` JSDoc 标注。
 
 ## 3c. "Model-visible means logged"(不变式)
 
@@ -121,12 +130,20 @@ DSH `ctx.sessionProjections`:注册 fold 单元,把持久事件折成视图。
 `chatState` seam 提供 `registerProjection(id, fold)` 供插件注册视图
 (MVU/状态栏模板/任务卡都是 projection)。
 
-## 4. 能力接缝(Capability Seam)三元组
+## 4. 服务四分角色 + 能力接缝(zread §15 实证)
 
-DSH 硬约定:Seam = Service Definition / Provider / Consumer,三个角色必须齐备。
-**我们的 seam 清单**(酒馆语义全在这里,内核零感知):
+**登记任何 `ctx.*` 前先归角色**(DSH 硬约定):
 
-| Seam | Definition(谁定契约) | Provider | Consumer |
+| 角色 | 可换? | 计数 | 我们的成员 |
+|---|---|---|---|
+| **core** | 否,单实现随声明走 | 1 owner,0 impls | `ctx.chats`、`ctx.users`、`ctx.settings`、`ctx.hmr` |
+| **seam** | 是,多实现竞争 | 1 owner,1+ impls | `ctx.promptBuilder`、`ctx.variableStore`、`ctx.cdnProxy`、`ctx.cardAssets` |
+| **bundle** | 是,profile 选一个具体插件 | 1 owner,0 impls | `ctx.generation`(编排器本体)、`ctx.panelBridge` |
+| **service** | 半,输出侧后端可变 | 1 owner,0-1 impls | `ctx.injectedPrompts`、`ctx.telemetry`(若上) |
+
+**Seam = Definition/Provider/Consumer 三角齐备**才是完整接缝,缺一不算:
+
+| Seam | Definition | Provider | Consumer |
 |---|---|---|---|
 | `promptBuilder` | protocol+tavern-core | tavern-core | generation 管线 |
 | `variableStore` | core | tavern-core | card-runtime/MVU settle |
@@ -136,6 +153,7 @@ DSH 硬约定:Seam = Service Definition / Provider / Consumer,三个角色必须
 | `cdnProxy` | card-runtime | card-runtime | panel WebView CSP |
 | `panelBridge` | protocol | card-runtime | RN/Web 宿主 |
 | `settle` | core | tavern-core(MVU 解析器) | generation persist |
+| `generation` | protocol | tavern-core(默认编排) | 客户端/API |
 
 **seam 的意义**:第三方插件可注册 Provider 替换实现(比如更好的 WI 引擎、
 新的 settle 步骤)——"插件生态强于我们本身"的机制位。
