@@ -1049,7 +1049,8 @@
       ],
       "reads": [
         ".loom/capabilities/import-export/capability.md",
-        "packages/formats/src/card.ts"
+        "packages/formats/src/card.ts",
+        ".loom/design/import-export-center.md"
       ],
       "touches": [
         "apps/server/src/endpoints",
@@ -1065,7 +1066,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-03T07:57:01.010Z",
-      "updated_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-03T11:26:03.625Z",
       "integrity_version": 1,
       "id": "TASK-016",
       "title": "导入导出中心:万能拖放/URL/预览/备份同步/ST迁移",
@@ -1200,7 +1201,9 @@
       "acceptance": [],
       "done_when": [],
       "boundaries": [],
-      "reads": [],
+      "reads": [
+        ".loom/design/stscript-engine.md"
+      ],
       "touches": [],
       "design_exemption": "",
       "covers": [],
@@ -1212,7 +1215,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-03T09:52:13.053Z",
-      "updated_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T11:26:03.619Z",
       "integrity_version": 1,
       "id": "TASK-019",
       "title": "STscript/QuickReply 服务端引擎",
@@ -1227,7 +1230,9 @@
       "acceptance": [],
       "done_when": [],
       "boundaries": [],
-      "reads": [],
+      "reads": [
+        ".loom/design/textgen-instruct.md"
+      ],
       "touches": [],
       "design_exemption": "",
       "covers": [],
@@ -1239,7 +1244,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-03T09:52:13.053Z",
-      "updated_at": "2026-11-03T09:52:13.053Z",
+      "updated_at": "2026-11-03T11:26:03.625Z",
       "integrity_version": 1,
       "id": "TASK-020",
       "title": "textgen/instruct 派发路径",
@@ -1282,7 +1287,9 @@
       "acceptance": [],
       "done_when": "真实卡 HTML 应用在 web 面板页渲染;ctx.getVariables/setVariables 走桥;CSP 生效",
       "boundaries": [],
-      "reads": [],
+      "reads": [
+        ".loom/design/cardapp-web-host.md"
+      ],
       "touches": [],
       "design_exemption": "",
       "covers": [],
@@ -1294,7 +1301,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-03T11:19:00.114Z",
+      "updated_at": "2026-11-03T11:26:03.625Z",
       "integrity_version": 1,
       "id": "TASK-022",
       "title": "CardApp web 宿主:iframe 沙箱 + postMessage 桥",
