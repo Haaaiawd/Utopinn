@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Uberge · Desktop UI Mockup v3</title>
+<style>
+/* ================= tokens: 明暗双色 ================= */
+:root{
+  --font-ui:"PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  --font-reading:"Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong",serif;
+  --read-size:17px; --read-leading:1.9; --read-width:680px;
+  --radius:8px; --radius-lg:12px; --ease:cubic-bezier(.23,1,.32,1);
+}
+[data-theme="dark"]{
+  --bg:#17181b; --bg2:#1e1f23; --bg3:#25272c; --raised:#232529; --panel:#1c1d21;
+  --ink:#e6e8ec; --ink2:#a8aeb9; --ink3:#6d7480;
+  --line:#ffffff10; --line2:#ffffff20;
+  --acc:#e8736a; --acc-soft:#e8736a1f; --acc2:#7aa2f7;
+  --bubble:#26282e; --quote:#e8a87c;
+  --shadow:0 1px 3px #0008,0 10px 34px -12px #000c;
+}
+[data-theme="light"]{
+  --bg:#f5f3ee; --bg2:#faf9f6; --bg3:#efede6; --raised:#fff; --panel:#faf9f6;
+  --ink:#1c1e24; --ink2:#5d6470; --ink3:#9aa1ad;
+  --line:#e4e0d8; --line2:#d6d1c6;
+  --acc:#c0392b; --acc-soft:#c0392b14; --acc2:#4176e6;
+  --bubble:#ede9e0; --quote:#b3541e;
+  --shadow:0 1px 3px #00000012,0 10px 34px -12px #00000028;
+}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font-family:var(--font-ui);font-size:12.5px;background:var(--bg);color:var(--ink);
+  overflow:hidden;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+.hidden{display:none!important}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:var(--line2);border-radius:9px;border:2px solid var(--bg)}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ================= titlebar(桌面感) ================= */
+#titlebar{height:38px;flex:none;display:flex;align-items:center;gap:2px;padding:0 10px 0 14px;
+  background:var(--bg2);border-bottom:1px solid var(--line);-webkit-app-region:drag;user-select:none}
+#titlebar .tb-menu{display:flex;gap:2px}
+#titlebar .tb-menu button{padding:4px 10px;border-radius:6px;font-size:12px;color:var(--ink2)}
+#titlebar .tb-menu button:hover{background:var(--bubble);color:var(--ink)}
+#titlebar .tb-ic{padding:4px 8px;border-radius:6px;color:var(--ink2)}
+#titlebar .tb-ic:hover{background:var(--bubble);color:var(--ink)}
+#titlebar .grow{flex:1}
+#titlebar .app-name{position:absolute;left:50%;translate:-50%;font-size:12px;color:var(--ink3);letter-spacing:.04em}
+.win-ctl{display:flex;gap:0}
+.win-ctl button{width:42px;height:38px;display:grid;place-items:center;color:var(--ink2);border-radius:0}
+.win-ctl button:hover{background:var(--bubble)}
+.win-ctl button.close:hover{background:#e81123;color:#fff}
+
+/* ================= shell ================= */
+#shell{flex:1;display:flex;min-height:0}
+.rail{width:46px;flex:none;background:var(--bg2);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px}
+.rail button{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:var(--ink2);position:relative}
+.rail button:hover{background:var(--bubble);color:var(--ink)}
+.rail button.on{background:var(--bubble);color:var(--ink)}
+.rail button.on::before{content:"";position:absolute;left:-7px;top:9px;bottom:9px;width:2.5px;border-radius:2px;background:var(--acc)}
+.rail .sp{flex:1}
+.rail .tip{position:absolute;left:48px;top:50%;translate:0 -50%;background:var(--ink);color:var(--bg);
+  padding:4px 8px;border-radius:6px;font-size:11px;white-space:nowrap;opacity:0;pointer-events:none;transition:.12s;z-index:60}
+.rail button:hover .tip{opacity:1}
+.rail .avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#8e2f24);
+  display:grid;place-items:center;color:#fff;font-size:12px;font-family:var(--font-reading)}
+
+/* ================= 二级侧栏 ================= */
+#sidebar{width:240px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;min-height:0}
+#sidebar.hide{display:none}
+.sb-head{padding:10px 12px;display:flex;align-items:center;gap:8px}
+.sb-head .ws{font-size:13.5px;font-weight:600}
+.sb-head .grow{flex:1}
+.sb-scroll{flex:1;overflow-y:auto;padding:0 6px 10px}
+.sb-sect{font-size:10.5px;color:var(--ink3);letter-spacing:.08em;padding:12px 8px 5px;text-transform:uppercase}
+.sb-item{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;
+  font-size:12.5px;color:var(--ink2);position:relative}
+.sb-item:hover{background:var(--bubble);color:var(--ink)}
+.sb-item.on{background:var(--bubble);color:var(--ink);font-weight:500}
+.sb-item .sub{font-size:10.5px;color:var(--ink3);margin-left:auto;flex:none}
+.sb-item .ind{width:6px;height:6px;border-radius:50%;background:var(--acc2);flex:none}
+.sb-foot{border-top:1px solid var(--line);padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink2)}
+
+/* ================= main ================= */
+#main{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.page{position:absolute;inset:0;display:none;flex-direction:column;min-height:0}
+.page.on{display:flex}
+.ctbar{flex:none;height:46px;display:flex;align-items:center;gap:10px;padding:0 14px;
+  border-bottom:1px solid var(--line);background:var(--bg)}
+.ctbar h1{font-size:13.5px;font-weight:600}
+.ctbar .sub{color:var(--ink3);font-size:11.5px}
+.ctbar .vtabs{display:flex;gap:2px;background:var(--bg2);border-radius:8px;padding:2px}
+.ctbar .vtabs button{padding:5px 12px;border-radius:6px;font-size:12px;color:var(--ink2)}
+.ctbar .vtabs button.on{background:var(--bg3);color:var(--ink);font-weight:500}
+
+/* controls */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:8px;
+  background:var(--raised);border:1px solid var(--line);font-size:12px;transition:.15s}
+.btn:hover{border-color:var(--line2);background:var(--bg3)}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn.primary:hover{filter:brightness(1.08);background:var(--acc)}
+.btn.ghost{border-color:transparent;background:none;color:var(--ink2)}
+.btn.ghost:hover{background:var(--bubble);color:var(--ink)}
+.ibtn{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--ink2);transition:.12s}
+.ibtn:hover{background:var(--bubble);color:var(--ink)}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;
+  background:var(--bubble);font-size:10.5px;color:var(--ink2)}
+.chip.acc{background:var(--acc-soft);color:var(--acc)}
+.card{background:var(--raised);border:1px solid var(--line);border-radius:var(--radius-lg);padding:14px}
+.mut{color:var(--ink3)} .mut2{color:var(--ink2)}
+.st-src{font-size:10px;color:var(--ink3);background:var(--bubble);padding:1px 6px;border-radius:4px;white-space:nowrap}
+.sect-title{font-size:11px;font-weight:600;color:var(--ink3);letter-spacing:.08em;margin:16px 0 8px;text-transform:uppercase}
+.fld{display:flex;flex-direction:column;gap:5px;margin-bottom:11px}
+.fld label{font-size:11.5px;color:var(--ink2)}
+.fld input,.fld select,.fld textarea{background:var(--bg2);border:1px solid var(--line);border-radius:7px;
+  padding:7px 9px;font-size:12.5px;outline:none}
+.fld input:focus,.fld select:focus,.fld textarea:focus{border-color:var(--acc2)}
+.row{display:flex;gap:9px;align-items:center}
+.slider{display:flex;align-items:center;gap:10px}
+.slider input{flex:1;accent-color:var(--acc)}
+.slider output{width:46px;text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2);font-size:11.5px}
+details.fold{border:1px solid var(--line);border-radius:9px;background:var(--raised);margin-bottom:8px}
+details.fold>summary{padding:9px 12px;cursor:pointer;font-size:12.5px;font-weight:500;list-style:none;display:flex;align-items:center;gap:8px}
+details.fold>summary::before{content:"▸";color:var(--ink3);transition:.2s;font-size:10px}
+details.fold[open]>summary::before{rotate:90deg}
+details.fold .fold-body{padding:2px 12px 12px}
+.sw{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.sw .sw-t{font-size:12.5px}.sw .sw-d{font-size:11px;color:var(--ink3);margin-top:2px}
+.tog{width:34px;height:19px;border-radius:99px;background:var(--line2);position:relative;transition:.2s;flex:none;cursor:pointer}
+.tog::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.2s var(--ease)}
+.tog.on{background:var(--acc)}.tog.on::after{left:17px}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:10px 14px;align-items:center;font-size:12.5px}
+.kv label{color:var(--ink2);font-size:11.5px}
+.listrow{display:flex;align-items:center;gap:11px;padding:11px 14px;border:1px solid var(--line);
+  border-radius:10px;background:var(--raised);margin-bottom:8px}
+.listrow .picon{width:32px;height:32px;border-radius:8px;background:var(--bubble);display:grid;place-items:center;flex:none;font-size:13px}
+.listrow .pname{font-size:12.5px;font-weight:600}
+.listrow .pdesc{font-size:11px;color:var(--ink3)}
+.warn{background:#e8a13c18;border:1px solid #e8a13c55;color:#e8a87c;border-radius:9px;padding:9px 12px;font-size:11.5px}
+.seg{display:inline-flex;background:var(--bg2);border-radius:8px;padding:2px}
+.seg button{padding:5px 13px;border-radius:6px;font-size:12px;color:var(--ink2)}
+.seg button.on{background:var(--bg3);color:var(--ink);font-weight:600}
+.search{display:flex;align-items:center;gap:7px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:8px;padding:6px 10px;min-width:200px}
+.search input{border:0;background:none;outline:none;flex:1;font-size:12px}
+
+/* ================= 聊天阅读区 ================= */
+.read-zone{flex:1;min-width:0;display:flex;flex-direction:column}
+.read-scroll{flex:1;overflow-y:auto;padding:26px 0 30px}
+.read-col{max-width:var(--read-width);margin:0 auto;padding:0 26px}
+.chapter{font-family:var(--font-reading);font-size:19px;font-weight:700;text-align:center;margin:6px 0 28px;letter-spacing:.08em}
+.msg{font-family:var(--font-reading);font-size:var(--read-size);line-height:var(--read-leading);
+  margin-bottom:1.35em;position:relative;padding-left:46px}
+.msg .ava{position:absolute;left:0;top:3px;width:32px;height:32px;border-radius:50%;overflow:hidden;
+  display:grid;place-items:center;font-family:var(--font-ui);font-size:13px;color:#fff;font-weight:600;
+  box-shadow:inset 0 0 0 1px #ffffff22}
+.msg .who{font-family:var(--font-ui);font-size:10.5px;color:var(--ink3);letter-spacing:.1em;margin-bottom:3px}
+.msg.user{color:var(--ink2)}
+.msg p{margin-bottom:.85em}
+.msg .say{color:var(--quote)}
+.msg .acts{position:absolute;right:-6px;top:2px;display:flex;gap:2px;opacity:0;transition:.15s}
+.msg:hover .acts{opacity:1}
+.msg .acts .ibtn{width:24px;height:24px;background:var(--raised);border:1px solid var(--line);border-radius:6px;font-size:11px}
+.msg .swipe{display:inline-flex;gap:4px;align-items:center;font-size:10.5px;color:var(--ink3);font-family:var(--font-ui);margin-top:2px}
+.vreceipt{max-width:var(--read-width);margin:0 auto 1.3em;padding:0 26px}
+.vreceipt .vr-head{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--ink2);
+  padding:7px 11px;background:var(--raised);border:1px solid var(--line);border-radius:8px;cursor:pointer}
+.vreceipt .vr-head .dot{width:6px;height:6px;border-radius:50%;background:#4caf7d}
+.vreceipt .vr-body{border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;background:var(--bg2);padding:7px 13px;font-size:11.5px;display:none}
+.vreceipt.open .vr-body{display:block}
+.vreceipt .op{padding:5px 0;border-bottom:1px dashed var(--line)}
+.vreceipt .op:last-child{border:0}
+.vreceipt .path{color:var(--acc2);font-family:ui-monospace,monospace;font-size:10.5px}
+.vreceipt .old{color:var(--ink3);text-decoration:line-through}
+.turn-foot{max-width:var(--read-width);margin:0 auto 22px;padding:0 26px;display:flex;gap:13px;font-size:10.5px;color:var(--ink3)}
+.cands{max-width:var(--read-width);margin:0 auto 18px;padding:0 26px}
+.cands .cand-head{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink2);
+  background:var(--raised);border:1px solid var(--line);border-radius:9px;padding:8px 13px;cursor:pointer}
+.composer{flex:none;padding:10px 0 14px}
+.composer-inner{max-width:var(--read-width);margin:0 auto;padding:0 26px}
+.composer-box{background:var(--raised);border:1px solid var(--line2);border-radius:14px;box-shadow:var(--shadow);padding:9px 11px 7px}
+.composer-box textarea{width:100%;border:0;background:none;resize:none;outline:none;font-size:13.5px;line-height:1.6;color:var(--ink);max-height:130px}
+.composer-bar{display:flex;align-items:center;gap:5px;margin-top:5px}
+.composer-bar .grow{flex:1}
+.preset-pick{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink2);padding:4px 9px;border-radius:7px;border:1px solid var(--line);background:var(--bg2)}
+.send{width:30px;height:30px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center}
+.send:hover{filter:brightness(1.1)}
+.gen-bar{display:flex;gap:7px;justify-content:center;margin-bottom:9px}
+
+/* 右侧本局面板 */
+#upanel{width:300px;flex:none;border-left:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;min-height:0}
+#upanel.hide{display:none}
+.sp-tabs{flex:none;display:flex;gap:2px;padding:7px;border-bottom:1px solid var(--line)}
+.sp-tabs button{flex:1;padding:6px;border-radius:7px;font-size:12px;color:var(--ink2)}
+.sp-tabs button.on{background:var(--bubble);color:var(--ink);font-weight:600}
+.sp-body{flex:1;overflow-y:auto;padding:12px}
+.sp-card{background:var(--raised);border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px}
+.sp-card h4{font-size:12.5px;margin-bottom:7px}
+.status-board{background:linear-gradient(160deg,#1e3a34,#12211c);color:#d8e6dd;border-radius:11px;padding:14px;font-family:var(--font-reading);margin-bottom:10px}
+.status-board .sb-title{font-size:14px;font-weight:700;text-align:center;letter-spacing:.2em;margin-bottom:10px}
+.status-board .sb-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #ffffff14;font-size:12px}
+.status-board .sb-row:last-child{border:0}
+.status-board .sb-k{color:#8fb8a3;font-size:10.5px}
+.status-board .sb-note{margin-top:9px;padding:7px 9px;background:#ffffff10;border-left:2px solid #d8b56b;border-radius:4px;font-size:11.5px}
+
+/* statusbar */
+#statusbar{height:24px;flex:none;display:flex;align-items:center;gap:14px;padding:0 12px;
+  background:var(--bg2);border-top:1px solid var(--line);font-size:10.5px;color:var(--ink3)}
+#statusbar .ok{color:#4caf7d}
+#statusbar .sbtn{padding:1px 7px;border-radius:5px}
+#statusbar .sbtn:hover{background:var(--bubble);color:var(--ink)}
+
+/* pages generic */
+.lib-wrap{flex:1;overflow-y:auto;padding:18px 26px}
+.lib-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.story-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px}
+.story{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:3/4.1;cursor:pointer;
+  border:1px solid var(--line);transition:.25s var(--ease)}
+.story:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.story .cover{position:absolute;inset:0}
+.story .info{position:absolute;left:0;right:0;bottom:0;padding:34px 12px 10px;background:linear-gradient(transparent,#000c 60%,#000d)}
+.story .info h4{color:#fff;font-size:13.5px;font-family:var(--font-reading);letter-spacing:.04em}
+.story .info p{color:#ffffffb0;font-size:10.5px;margin-top:3px}
+.story .tags{position:absolute;top:7px;left:7px;display:flex;gap:4px}
+.story .tags .chip{background:#0008;color:#fff;backdrop-filter:blur(4px)}
+.story-add{border:1.5px dashed var(--line2);border-radius:12px;aspect-ratio:3/4.1;display:flex;
+  flex-direction:column;align-items:center;justify-content:center;gap:7px;color:var(--ink3);cursor:pointer;transition:.2s;text-align:center;font-size:11.5px}
+.story-add:hover{border-color:var(--acc);color:var(--acc)}
+.editor{display:flex;flex:1;min-height:0}
+.ed-tabs{flex:none;width:120px;border-right:1px solid var(--line);padding:12px 6px;display:flex;flex-direction:column;gap:2px}
+.ed-tabs button{text-align:left;padding:8px 10px;border-radius:7px;font-size:12px;color:var(--ink2)}
+.ed-tabs button.on{background:var(--acc-soft);color:var(--acc);font-weight:600}
+.ed-tabs .st-src{display:block;margin-top:1px}
+.ed-body{flex:1;overflow-y:auto;padding:20px 28px}
+.ed-body .ed-page{max-width:780px}
+.ed-page{display:none}.ed-page.on{display:block}
+.wi-wrap{display:flex;flex:1;min-height:0}
+.wi-entries{width:270px;flex:none;border-right:1px solid var(--line);overflow-y:auto}
+.wi-entry{padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer;font-size:12px}
+.wi-entry:hover{background:var(--bubble)}
+.wi-entry.on{background:var(--acc-soft)}
+.wi-edit{flex:1;overflow-y:auto;padding:18px 26px}
+.set-layout{display:flex;flex:1;min-height:0}
+.set-nav{width:180px;flex:none;border-right:1px solid var(--line);padding:12px 7px;display:flex;flex-direction:column;gap:1px}
+.set-nav button{text-align:left;padding:8px 10px;border-radius:7px;font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:8px}
+.set-nav button.on{background:var(--acc-soft);color:var(--acc);font-weight:600}
+.set-body{flex:1;overflow-y:auto;padding:20px 30px}
+.set-page{display:none;max-width:680px}.set-page.on{display:block}
+.set-page h2{font-size:15.5px;margin-bottom:3px}
+.set-page .desc{color:var(--ink2);font-size:11.5px;margin-bottom:16px}
+.diag-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px;padding:18px 26px;overflow-y:auto}
+.map-table{width:100%;border-collapse:collapse;font-size:12px}
+.map-table th{text-align:left;padding:7px 11px;color:var(--ink3);font-weight:600;border-bottom:1px solid var(--line2);font-size:10.5px;letter-spacing:.06em}
+.map-table td{padding:8px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+.map-table tr:hover td{background:var(--bubble)}
+.map-table .arrow{color:var(--ink3)}
+
+/* palette */
+.pal{position:fixed;inset:0;z-index:90;display:none;place-items:start center;padding-top:13vh;background:#0006;backdrop-filter:blur(2px)}
+.pal.on{display:grid}
+.pal-box{width:540px;background:var(--raised);border:1px solid var(--line2);border-radius:14px;box-shadow:0 24px 80px -20px #000c;overflow:hidden}
+.pal-box input{width:100%;border:0;border-bottom:1px solid var(--line);background:none;padding:14px 16px;font-size:14px;outline:none}
+.pal-list{max-height:320px;overflow-y:auto;padding:7px}
+.pal-item{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:8px;cursor:pointer;font-size:12.5px}
+.pal-item.sel,.pal-item:hover{background:var(--acc-soft)}
+.pal-item .cat{font-size:10px;color:var(--ink3);background:var(--bubble);padding:2px 6px;border-radius:5px;margin-left:auto}
+.drop-hint{position:fixed;inset:0;z-index:100;display:none;place-items:center;background:#0007;backdrop-filter:blur(3px)}
+.drop-hint .box{border:2px dashed var(--acc);border-radius:18px;padding:44px 64px;background:var(--bg);font-size:15px;color:var(--acc)}
+.review-dot{position:fixed;width:20px;height:20px;border-radius:50%;background:#e8a13c;color:#fff;
+  display:grid;place-items:center;font-size:10px;font-weight:700;cursor:pointer;z-index:80;box-shadow:var(--shadow)}
+body.reviewing{cursor:crosshair}
+#reviewBar{position:fixed;bottom:34px;right:14px;z-index:80;display:flex;gap:8px}
+#reviewBar .btn{box-shadow:var(--shadow)}
+.review-pop{position:fixed;z-index:95;width:290px;background:var(--raised);border:1px solid var(--line2);border-radius:11px;box-shadow:var(--shadow);padding:11px}
+.review-pop textarea{width:100%;border:1px solid var(--line);border-radius:7px;padding:7px;font-size:11.5px;background:var(--bg2)}
+</style>
+</head>
+<body>
+<!-- ══════════ titlebar(桌面应用感) ══════════ -->
+<header id="titlebar">
+  <button class="tb-ic" title="返回">‹</button><button class="tb-ic" title="前进">›</button>
+  <button class="tb-ic" id="sbToggle" title="侧栏"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></svg></button>
+  <div class="tb-menu"><button>文件</button><button>编辑</button><button>视图</button><button>帮助</button></div>
+  <div class="grow"></div><span class="app-name">雨夜来信 — Uberge</span><div class="grow"></div>
+  <div class="win-ctl"><button title="最小化">─</button><button title="最大化">▢</button><button class="close" title="关闭">✕</button></div>
+</header>
+
+<div id="shell">
+<!-- ══════════ activity rail ══════════ -->
+<nav class="rail" id="rail">
+  <button data-page="chat" class="on"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/></svg><span class="tip">聊天</span></button>
+  <button data-page="stories"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4.5 5.5A2 2 0 0 1 6.5 3.5H19v15H6.5a2 2 0 0 0-2 2zM4.5 5.5v15"/></svg><span class="tip">故事</span></button>
+  <button data-page="rules"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.3 2.4 3.4 5.2 3.4 8.5s-1.1 6.1-3.4 8.5-1.1-6.1-3.4-8.5"/></svg><span class="tip">规则</span></button>
+  <button data-page="ext"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg><span class="tip">扩展(含插件)</span></button>
+  <button data-page="diag"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.2 15.2l4.8 4.8M10.5 8v5M8 10.5h5"/></svg><span class="tip">诊断</span></button>
+  <div class="sp"></div>
+  <button id="palBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.2 15.2l4.8 4.8"/></svg><span class="tip">⌘K</span></button>
+  <button id="themeBtn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11z"/></svg><span class="tip">明/暗</span></button>
+  <button data-page="settings"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="2.8"/><path d="M10.3 3.5h3.4l.5 2.3 1.6.9 2.2-.8 1.7 2.9-1.8 1.6v1.8l1.8 1.6-1.7 2.9-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-2.9 1.8-1.6v-1.8L4.3 8.8 6 5.9l2.2.8 1.6-.9z"/></svg><span class="tip">设置</span></button>
+  <button data-page="map"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M9 6.5h10.5M9 12h10.5M9 17.5h6.5M4.8 6.5h.01M4.8 12h.01M4.8 17.5h.01"/></svg><span class="tip">ST对照</span></button>
+  <button style="padding:0"><span class="avatar">邮</span><span class="tip">vela · 账号</span></button>
+</nav>
+
+<!-- ══════════ 二级侧栏(每域内容不同) ══════════ -->
+<aside id="sidebar">
+  <div class="sb-head"><span class="ws" id="sbTitle">聊天</span><div class="grow"></div>
+    <button class="ibtn" style="width:24px;height:24px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.5 17a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM15.2 15.2l4.8 4.8"/></svg></button></div>
+  <div class="sb-scroll" id="sbBody"></div>
+  <div class="sb-foot"><span class="ok" style="color:#4caf7d">●</span> 已连接 · OpenAI 兼容</div>
+</aside>
+
+<!-- ══════════ main ══════════ -->
+<main id="main">
+
+<!-- ─────── 聊天 ─────── -->
+<section class="page on" id="chat" data-sb="sb-chat">
+  <div class="ctbar">
+    <h1>雨夜来信</h1><span class="chip">故事</span>
+    <div class="vtabs"><button class="on">对话</button><button>画廊</button><button>上下文</button></div>
+    <div style="flex:1"></div>
+    <button class="ibtn" id="typeBtn" title="排版"><span style="font-family:var(--font-reading);font-weight:700;font-size:14px">Aa</span></button>
+    <button class="ibtn" id="immBtn" title="专注模式"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4.5 9V4.5H9M15 4.5h4.5V9M19.5 15v4.5H15M9 19.5H4.5V15"/></svg></button>
+    <button class="ibtn" id="panelBtn" title="本局面板"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M14.5 4.5v15"/></svg></button>
+    <div id="typePop" class="hidden" style="position:absolute;top:44px;right:60px;z-index:40;background:var(--raised);border:1px solid var(--line2);border-radius:12px;box-shadow:var(--shadow);padding:14px;width:240px">
+      <div class="fld"><label>字号 <span class="mut" id="fsOut">17px</span></label><input type="range" id="fsR" min="14" max="22" value="17"></div>
+      <div class="fld"><label>行距 <span class="mut" id="lhOut">1.9</span></label><input type="range" id="lhR" min="14" max="24" value="19"></div>
+      <div class="fld"><label>栏宽 <span class="mut" id="wOut">680px</span></label><input type="range" id="wR" min="560" max="860" step="20" value="680"></div>
+      <div class="fld"><label>阅读字体</label><select><option>思源宋体(默认)</option><option>思源黑体</option><option>系统字体</option></select></div>
+      <div class="mut" style="font-size:10.5px">存服务端 · 各端同步</div>
+    </div>
+  </div>
+  <div style="display:flex;flex:1;min-height:0">
+    <div class="read-zone">
+      <div class="read-scroll" id="readScroll">
+        <div class="read-col">
+          <div class="chapter">第二章 · 石板路上的灯</div>
+          <div class="msg"><div class="ava" style="background:linear-gradient(135deg,#3a6a7e,#1e3a4a)">澄</div><div class="who">林澄</div>
+            <p>你把旧地址簿摊在柜台上,一页页往后翻。纸页受了潮,边角微微卷起,墨迹却还清楚。翻到"花"字那一栏时,一张照片从夹页里滑了出来。</p>
+            <p>是灯塔开放日的合影。照片里的林澄比现在年轻几岁,站在灯塔门口;她身旁的中年女人围着帆布围裙,胸前别着一朵蓝色鸢尾花。</p>
+            <p><span class="say">"是周姨。"</span>林澄俯身看了一眼,声音轻了下来,<span class="say">"她以前在石板路尽头开花店。每年开放日,灯塔门口的花都是她送的。"</span></p>
+            <div class="acts"><button class="ibtn" title="编辑"><span style="font-size:12px">✎</span></button><button class="ibtn" title="重生成">↻</button><button class="ibtn">···</button></div>
+            <div class="swipe">◂ 2/3 ▸</div>
+          </div>
+          <div class="msg user"><div class="ava" style="background:linear-gradient(135deg,#7e5a3a,#4a321e)">邮</div><div class="who">我(新来的邮递员)</div>
+            <p>"周姨……"我把照片翻过来。背面用铅笔写着一行字,字迹已经有些淡了:"等灯亮起来,一起回家。"</p>
+            <p>我把照片递给林澄:"这个周姨,现在还住在镇上吗?"</p>
+            <div class="acts"><button class="ibtn">···</button></div>
+          </div>
+          <div class="msg"><div class="ava" style="background:linear-gradient(135deg,#3a6a7e,#1e3a4a)">澄</div><div class="who">林澄</div>
+            <p><span class="say">"花店关门快五年了。"</span>林澄把照片还给你,指尖在柜台上轻轻敲了两下,<span class="say">"不过周姨没离开镇子。听说她偶尔还会回店里,给窗台上的花浇水。"</span></p>
+            <p>窗外的雨渐渐停了,屋檐滴水的声音变得稀疏。你们沿着屋檐走到石板路尽头,码头的灯一盏接一盏亮起来,把湿漉漉的石板照成一条淡金色的线。</p>
+            <p>旧花店的门牌还在,橱窗落了一层灰,窗台上的花盆却长出了新芽——有人一直在照料它们。二楼的窗户透出一点暖黄的光。林澄收好伞,站在门口,等你决定要不要敲门。</p>
+            <div class="acts"><button class="ibtn">···</button></div>
+            <div class="swipe">◂ 1/3 ▸</div>
+          </div>
+        </div>
+        <div class="vreceipt">
+          <div class="vr-head" id="vrHead"><span class="dot"></span>变量已更新 · 4 项 <span class="mut" style="margin-left:auto">后台结算完成 ▸</span></div>
+          <div class="vr-body" id="vrBody">
+            <div class="op"><span class="path">/stat_data/时间与天气</span><br><span class="old">初秋·傍晚·小雨</span> → 初秋·傍晚·雨停</div>
+            <div class="op"><span class="path">/stat_data/当前位置</span><br><span class="old">灯塔镇邮局</span> → 旧花店门口</div>
+            <div class="op"><span class="path">/stat_data/随身物品</span><br><span class="old">邮差包、旧地址簿、未署名的信</span> → 邮差包、旧地址簿、未署名的信、开放日照片</div>
+            <div class="op"><span class="path">/stat_data/当前线索</span><br><span class="old">找出蓝色鸢尾花印章与旧花店的联系</span> → 开放日照片里的周姨可能认识收件人</div>
+            <div class="row" style="margin-top:7px"><button class="btn ghost" style="font-size:10.5px">重新结算变量</button><span class="mut" style="font-size:10.5px">服务端 settle</span></div>
+          </div>
+        </div>
+        <div class="turn-foot"><span>◔ 1,847 tok</span><span>⏱ 4.2s</span><span>19:57</span><span style="margin-left:auto">⌘←→ swipe</span></div>
+        <div class="cands"><div class="cand-head">接下来的行动 · 5 个 <span class="mut" style="margin-left:auto">后台候选 ▸</span></div></div>
+      </div>
+      <div class="composer"><div class="composer-inner">
+        <div class="gen-bar">
+          <button class="btn" style="font-size:11.5px">重新生成正文</button>
+          <button class="btn" style="font-size:11.5px">重新生成候选项</button>
+          <button class="btn ghost" style="font-size:11.5px">更多 ▾</button>
+        </div>
+        <div class="composer-box">
+          <textarea rows="2" placeholder="说点什么,或 / 指令 · @ 引用…"></textarea>
+          <div class="composer-bar">
+            <button class="ibtn" title="附件"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+            <button class="ibtn" title="快捷回复"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M13 3 5 13.5h5L9.5 21 19 10h-5.5z"/></svg></button>
+            <div class="grow"></div>
+            <button class="preset-pick">灯塔样例 ▾</button>
+            <button class="send"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 19V5.5M6 11.5l6-6 6 6"/></svg></button>
+          </div>
+        </div>
+        <div class="mut" style="text-align:center;font-size:10.5px;margin-top:7px">2 轮 2 步 · 0 tok/s</div>
+      </div></div>
+    </div>
+    <aside id="upanel">
+      <div class="sp-tabs"><button class="on">本局</button><button>状态</button><button>库</button></div>
+      <div class="sp-body">
+        <div class="sp-card">
+          <h4>灯塔小镇 · 雨夜来信 <span class="chip acc" style="float:right">MVU</span></h4>
+          <div class="mut" style="font-size:10.5px;margin-bottom:7px">公开样例 · 日常 · 轻悬疑</div>
+          <div class="row" style="gap:5px"><button class="btn" style="font-size:11px;flex:1">打开人物卡</button><button class="btn" style="font-size:11px;flex:1">专属规则</button></div>
+          <div class="mut" style="font-size:10.5px;margin-top:7px">● 后台结算已完成</div>
+        </div>
+        <div class="status-board">
+          <div class="sb-title">灯 塔 镇 值 班 簿</div>
+          <div class="sb-row"><span class="sb-k">时间与天气</span><span>初秋 · 傍晚 · 雨停</span></div>
+          <div class="sb-row"><span class="sb-k">当前位置</span><span>旧花店门口</span></div>
+          <div class="sb-row"><span class="sb-k">同行人物</span><span>林澄 · 灯塔管理员</span></div>
+          <div class="sb-row"><span class="sb-k">随身物品</span><span>邮差包 · 旧地址簿 · 信 · 照片</span></div>
+          <div class="sb-note">开放日照片里的周姨可能认识收件人。</div>
+        </div>
+        <div class="sp-card">
+          <h4>本局注入 <span class="chip" style="float:right">会话级</span></h4>
+          <details class="fold"><summary>Guide(文风引导)</summary><div class="fold-body"><textarea rows="2" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px;font-size:11.5px">节奏放慢一点,多写环境和人物的小动作;林澄每次开口不超过三句。</textarea><div class="mut" style="font-size:10px;margin-top:4px">注入前台正文+后台结算</div></div></details>
+          <details class="fold"><summary>作者注 Author's Note</summary><div class="fold-body"><textarea rows="2" style="width:100%;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px;font-size:11.5px"></textarea><div class="row" style="margin-top:5px"><input value="4" style="width:48px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:4px;font-size:11px"><span class="mut" style="font-size:10.5px">深度</span><input value="1" style="width:48px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:4px;font-size:11px"><span class="mut" style="font-size:10.5px">频率</span></div></div></details>
+          <details class="fold"><summary>CFG / Logprobs</summary><div class="fold-body"><div class="fld"><label>CFG 引导</label><input value="3.5" style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px"></div></div></details>
+        </div>
+        <div class="sp-card">
+          <h4>本局面板 <span class="chip" style="float:right">CardApp</span></h4>
+          <div class="mut2" style="font-size:11.5px;line-height:1.9">▸ 值班簿(状态板) — 上方渲染<br>▸ 背包(卡应用) → 全屏打开</div>
+        </div>
+        <details class="fold"><summary>会话管理</summary><div class="fold-body mut2" style="font-size:11.5px;line-height:1.9">重命名 · 分支 · 合并 · 导出 JSONL/PNG<br>搜索消息 · 统计 · 变量op日志</div></details>
+        <details class="fold"><summary>本局设置</summary><div class="fold-body"><div class="sw"><div><div class="sw-t">自动继续</div></div><div class="tog on"></div></div><div class="sw" style="border:0"><div><div class="sw-t">绑定世界书</div><div class="sw-d">灯塔小镇·专属规则</div></div><button class="btn" style="font-size:10.5px">更换</button></div></div></details>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<!-- ─────── 故事库 ─────── -->
+<section class="page" id="stories" data-sb="sb-stories">
+  <div class="ctbar"><h1>故事</h1><span class="sub">每张角色卡 = 一个可进入的故事</span>
+    <div style="flex:1"></div>
+    <button class="btn">导入卡 / 贴 URL</button><button class="btn primary">+ 新故事</button></div>
+  <div class="lib-wrap">
+    <div class="lib-head">
+      <div class="seg"><button class="on">故事 12</button><button>人设 3</button></div>
+      <div class="search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.2 15.2l4.8 4.8"/></svg><input placeholder="搜索故事、标签、作者…"></div>
+      <div style="flex:1"></div><span class="mut" style="font-size:11px">拖 PNG 到任意位置即可导入</span>
+    </div>
+    <div class="story-grid">
+      <div class="story" data-open="story-edit"><div class="cover" style="background:linear-gradient(160deg,#2b4a5e,#16222e 55%,#0d141d)"></div>
+        <div class="tags"><span class="chip">MVU</span><span class="chip">世界书</span></div>
+        <div class="info"><h4>灯塔小镇 · 雨夜来信</h4><p>林澄 · 海边小镇轻悬疑 · 专属规则 ×1</p></div></div>
+      <div class="story"><div class="cover" style="background:linear-gradient(160deg,#5e2b4a,#2e1622 55%,#1d0d14)"></div>
+        <div class="tags"><span class="chip">卡应用</span></div>
+        <div class="info"><h4>蔷薇回廊</h4><p>艾琳 · 维多利亚哥特 · 面板 ×2</p></div></div>
+      <div class="story"><div class="cover" style="background:linear-gradient(160deg,#3a5e2b,#1d2e16 55%,#111d0d)"></div>
+        <div class="info"><h4>山雾旅馆</h4><p>老板娘 · 日常治愈</p></div></div>
+      <div class="story"><div class="cover" style="background:linear-gradient(160deg,#5e522b,#2e2816 55%,#1d190d)"></div>
+        <div class="tags"><span class="chip">脚本</span></div>
+        <div class="info"><h4>星海货航</h4><p>AI 副官 · 科幻 · TH 脚本 ×3</p></div></div>
+      <div class="story"><div class="cover" style="background:linear-gradient(160deg,#2b5e55,#162e29 55%,#0d1d19)"></div>
+        <div class="info"><h4>林间诊疗所</h4><p>白医生 · 治愈 · 正则 ×2</p></div></div>
+      <div class="story-add"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>导入 PNG / charx / URL<br>或新建空白故事</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────── 故事编辑器 ─────── -->
+<section class="page" id="story-edit">
+  <div class="ctbar"><button class="btn ghost" data-open="stories" style="font-size:11.5px">‹ 故事库</button>
+    <h1>灯塔小镇 · 雨夜来信</h1><span class="chip">v2 卡</span><span class="chip acc">MVU</span>
+    <div style="flex:1"></div><button class="btn" style="font-size:11.5px">导出 PNG / charx</button><button class="btn primary" style="font-size:11.5px">保存</button></div>
+  <div class="editor">
+    <nav class="ed-tabs" id="edTabs">
+      <button class="on" data-ed="story">故事<span class="st-src">ST: 描述+开场白</span></button>
+      <button data-ed="rules">专属规则<span class="st-src">ST: 内嵌世界书</span></button>
+      <button data-ed="behave">行为<span class="st-src">ST: 正则/脚本/变量</span></button>
+      <button data-ed="media">媒体<span class="st-src">ST: Expressions/Gallery</span></button>
+      <button data-ed="meta">元数据<span class="st-src">ST: creator/tags</span></button>
+    </nav>
+    <div class="ed-body">
+      <div class="ed-page on" data-edpage="story">
+        <div class="fld"><label>故事名 / 主角</label><div class="row"><input value="灯塔小镇 · 雨夜来信"><input value="林澄" style="width:150px"></div></div>
+        <div class="fld"><label>描述(角色定义)</label><textarea rows="5">一段温暖、轻悬疑的海边小镇故事。玩家是新来的邮递员,和灯塔管理员林澄一起寻找一封未署名信件的收件人。林澄,28 岁,沉静、细心,熟悉潮汐与镇上的旧事。所有人物均为成年人。不要代替玩家发言或决定行动。</textarea></div>
+        <div class="fld"><label>性格</label><input value="温和、细致,有一点幽默感。"></div>
+        <div class="fld"><label>开场白 ×3 <span class="st-src">ST: alternate greetings</span></label>
+          <textarea rows="3">*雨下了一整夜。你推开灯塔值班室的门时,林澄正俯身整理一叠旧信……*</textarea>
+          <button class="btn ghost" style="font-size:11px;align-self:flex-start">+ 备选开场</button></div>
+        <div class="fld"><label>对话示例 / 场景 / 系统提示</label><textarea rows="3" placeholder="{{char}}: …"></textarea></div>
+        <div class="fld"><label>创作者注(卡级,区别于本局作者注)</label><textarea rows="2"></textarea></div>
+      </div>
+      <div class="ed-page" data-edpage="rules">
+        <p class="mut2" style="font-size:12px;margin-bottom:12px">这张卡的专属世界书——跟着故事走,不占全局。导出 PNG 内嵌,导入自动挂回。<span class="st-src">ST: embedded lorebook</span></p>
+        <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 5.5A2 2 0 0 1 6.5 3.5H19v15H6.5a2 2 0 0 0-2 2zM4.5 5.5v15"/></svg></div><div style="flex:1"><div class="pname">灯塔小镇·专属规则</div><div class="pdesc">15 条目 · 内嵌于卡 · 可拆分为独立规则书</div></div><button class="btn" style="font-size:11px" data-open="rules">就地编辑</button><button class="btn" style="font-size:11px">拆出</button></div>
+        <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 14.5 14.5 9.5M11 6.5l1.8-1.8a3.2 3.2 0 0 1 4.5 4.5L15.5 11M13 17.5l-1.8 1.8a3.2 3.2 0 0 1-4.5-4.5L8.5 13"/></svg></div><div style="flex:1"><div class="pname">关联全局规则</div><div class="pdesc">通用奇幻规则 · 现代日常常识(可选叠加)</div></div><button class="btn" style="font-size:11px">选择…</button></div>
+      </div>
+      <div class="ed-page" data-edpage="behave">
+        <p class="mut2" style="font-size:12px;margin-bottom:12px">脚本 / 正则 / 变量 / TavernHelper——卡的行为层。<span class="st-src">Luker: card scripts</span></p>
+        <div class="listrow"><div class="picon">Rx</div><div style="flex:1"><div class="pname">卡内正则 ×2</div><div class="pdesc">引号染色 · 折叠 think 块</div></div><button class="btn" style="font-size:11px" data-open="ext">在扩展域编辑</button></div>
+        <div class="listrow"><div class="picon">JS</div><div style="flex:1"><div class="pname">卡内脚本(TH)×3</div><div class="pdesc">triggerSlash · injectPrompts · eventEmit · stat_data</div></div><button class="btn" style="font-size:11px">查看</button></div>
+        <div class="listrow"><div class="picon">Σ</div><div style="flex:1"><div class="pname">MVU 变量模板</div><div class="pdesc">stat_data 初始态 + 状态栏模板(服务端渲染)</div></div><button class="btn" style="font-size:11px">编辑</button></div>
+      </div>
+      <div class="ed-page" data-edpage="media">
+        <p class="mut2" style="font-size:12px;margin-bottom:12px">表情差分 / 画廊 / 背景 / 语音。<span class="st-src">ST: Expressions+Gallery</span></p>
+        <div class="row" style="flex-wrap:wrap;gap:9px">
+          <div style="width:88px;height:88px;border-radius:9px;background:linear-gradient(135deg,#4a6a8e,#2a3a4e)"></div>
+          <div style="width:88px;height:88px;border-radius:9px;background:linear-gradient(135deg,#8e4a6a,#4e2a3a)"></div>
+          <div style="width:88px;height:88px;border-radius:9px;background:linear-gradient(135deg,#4a8e6a,#2a4e3a)"></div>
+          <div style="width:88px;height:88px;border:1.5px dashed var(--line2);border-radius:9px;display:grid;place-items:center;color:var(--ink3)">+</div>
+        </div>
+        <div class="mut" style="font-size:10.5px;margin-top:9px">28 个差分 · 3 张场景 · 卡内语音 ×2</div>
+      </div>
+      <div class="ed-page" data-edpage="meta">
+        <div class="kv">
+          <label>作者 / 来源</label><div class="row"><input value="flizzywine"><input value="chub.ai/xxx" style="flex:1"></div>
+          <label>标签</label><input value="公开样例, 日常, 轻悬疑, MVU">
+          <label>版本</label><div class="row"><input value="2.1" style="width:80px"><span class="mut" style="font-size:11px">spec: chara_card_v2</span></div>
+          <label>推荐设置</label><input value="灯塔样例 预设 · 开局默认(可覆盖)">
+          <label>面板入口</label><div class="mut2">值班簿(状态板) · 背包(CardApp) → 本局面板打开</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────── 规则(世界书) ─────── -->
+<section class="page" id="rules" data-sb="sb-rules">
+  <div class="ctbar"><h1>规则</h1><span class="sub">世界书:全局宏观 + 随卡专属</span>
+    <div style="flex:1"></div><button class="btn">导入 .json / .png</button><button class="btn primary">+ 新规则书</button></div>
+  <div class="wi-wrap">
+    <div class="wi-entries">
+      <div class="sb-head"><input placeholder="搜条目…" style="flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px 9px;font-size:11.5px"><button class="ibtn" style="width:24px;height:24px">+</button></div>
+      <div class="wi-entry"><b>蓝鸢尾花</b><div class="mut" style="font-size:10.5px">keys: 鸢尾, 蓝花 · 常驻</div></div>
+      <div class="wi-entry on"><b>灯塔开放日</b><div class="mut" style="font-size:10.5px">keys: 开放日, 灯塔节 · 深度4</div></div>
+      <div class="wi-entry"><b>周姨的花店</b><div class="mut" style="font-size:10.5px">keys: 周姨, 花店 · 触发中 ●</div></div>
+      <div class="wi-entry"><b>邮递员手册</b><div class="mut" style="font-size:10.5px">keys: 邮差, 送信 · 关闭</div></div>
+    </div>
+    <div class="wi-edit">
+      <div class="row" style="margin-bottom:14px"><h2 style="font-size:15px">灯塔开放日</h2><span class="chip acc">触发中</span><div style="flex:1"></div><button class="btn" style="font-size:11px">复制</button><button class="btn" style="font-size:11px">删除</button></div>
+      <div class="kv">
+        <label>关键词</label><input value="开放日, 灯塔节, lighthouse festival" style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px 9px">
+        <label>内容</label><textarea rows="5" style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px 9px">每年秋分后的第一个周末是灯塔开放日,镇上的人会带花来……</textarea>
+        <label>激活</label><div class="row"><select style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px"><option>关键词触发</option><option>常驻</option><option>向量化</option></select><input value="4" style="width:52px;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px"><span class="mut" style="font-size:10.5px">深度</span><input value="100" style="width:52px;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px"><span class="mut" style="font-size:10.5px">优先级</span></div>
+        <label>逻辑</label><div class="row"><span class="chip">AND任一</span><span class="chip">NOT可选</span><span class="mut" style="font-size:10.5px">递归 ✓ · 区分大小写 ✗</span></div>
+        <label>插入位置</label><select style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:6px"><option>角色定义后</option><option>作者注位置</option><option>@D 深度注入</option></select>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────── 扩展(插件已合并) ─────── -->
+<section class="page" id="ext" data-sb="sb-ext">
+  <div class="ctbar"><h1>扩展</h1><span class="sub">一切"给产品加能力"的面:插件 / 正则 / 快捷回复 / 注入 / 卡资产</span>
+    <div style="flex:1"></div><button class="btn">安装(文件 / URL / git)</button></div>
+  <div class="lib-wrap" style="max-width:820px">
+    <div class="sect-title" style="margin-top:0">插件(服务端执行 · 补丁行语义)</div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.8"/><path d="M10.3 3.5h3.4l.5 2.3 1.6.9 2.2-.8 1.7 2.9-1.8 1.6v1.8l1.8 1.6-1.7 2.9-2.2-.8-1.6.9-.5 2.3h-3.4l-.5-2.3-1.6-.9-2.2.8-1.7-2.9 1.8-1.6v-1.8L4.3 8.8 6 5.9l2.2.8 1.6-.9z"/></svg></div><div style="flex:1"><div class="pname">tavern-core <span class="chip">内置</span></div><div class="pdesc">WI引擎 · 宏 · 正则管线 · promptBuilder(seam)</div></div><div class="tog on"></div></div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/></svg></div><div style="flex:1"><div class="pname">card-runtime <span class="chip">内置</span></div><div class="pdesc">TH-shim T0/T1 · CDN代理 · 面板桥 · MVU settle</div></div><div class="tog on"></div></div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="14" rx="1.5"/><path d="M3.5 16l5-4.5 4 3.5 3-2.5 5 4.2M15.5 10.2a1.6 1.6 0 1 0 0-3.2 1.6 1.6 0 0 0 0 3.2z"/></svg></div><div style="flex:1"><div class="pname">image-gen-bridge</div><div class="pdesc">图片生成 · seam:imageGen · 自带设置卡</div></div><button class="btn" style="font-size:10.5px">设置卡</button><div class="tog on"></div></div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V3.5M15 7V3.5M7 7h10v4a5 5 0 0 1-10 0zM12 16v4.5"/></svg></div><div style="flex:1"><div class="pname">legacy-st-plugin-adapter</div><div class="pdesc">ST 旧插件 {info,init(router),exit} → ctx.route/effect</div></div><div class="tog on"></div></div>
+    <div class="warn">⚠ <b>some-plugin</b> degraded:inject 缺失 <code>llm</code> — 已停用其贡献。<button class="btn ghost" style="font-size:10.5px;color:inherit">查看诊断</button></div>
+    <div class="sect-title">正则脚本 <span class="chip">一个引擎 · 多作用域</span></div>
+    <div class="listrow"><div class="picon">Rx</div><div style="flex:1"><div class="pname">引号染色 <span class="chip acc">卡内</span></div><div class="pdesc">/"([^"]+)"/ → 说话句标橙 · 输出正则</div></div><div class="tog on"></div><button class="ibtn"><span style="font-size:12px">✎</span></button></div>
+    <div class="listrow"><div class="picon">Rx</div><div style="flex:1"><div class="pname">折叠思考块 <span class="chip">全局</span></div><div class="pdesc">&lt;think&gt;…&lt;/think&gt; → 可折叠块</div></div><div class="tog on"></div><button class="ibtn"><span style="font-size:12px">✎</span></button></div>
+    <div class="sect-title">快捷回复</div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5 13.5h5L9.5 21 19 10h-5.5z"/></svg></div><div style="flex:1"><div class="pname">继续 / 重来 / 换说法</div><div class="pdesc">输入栏 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3 5 13.5h5L9.5 21 19 10h-5.5z"/></svg> 弹层 · 可绑 slash</div></div><button class="btn" style="font-size:10.5px">编辑按钮组</button></div>
+    <div class="sect-title">注入提示词(全局)</div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4M7.5 8.5 12 4l4.5 4.5M5 14.5v4A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5v-4"/></svg></div><div style="flex:1"><div class="pname">写作风格基线</div><div class="pdesc">系统位 · 深度0 · 全局注入</div></div><div class="tog on"></div><button class="ibtn"><span style="font-size:12px">✎</span></button></div>
+    <div class="sect-title">卡资产</div>
+    <div class="listrow"><div class="picon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="8.5" y="8.5" width="7" height="7" rx="1.5"/></svg></div><div style="flex:1"><div class="pname">蔷薇回廊 · 面板×2 / 脚本×1 / 内嵌规则书</div><div class="pdesc">随卡资源浏览</div></div><button class="btn" style="font-size:10.5px">打开</button></div>
+  </div>
+</section>
+
+<!-- ─────── 诊断 ─────── -->
+<section class="page" id="diag" data-sb="sb-diag">
+  <div class="ctbar"><h1>诊断</h1><span class="sub">开发者一等公民 · model-visible means logged</span></div>
+  <div class="diag-grid">
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">Prompt 查看器</h3><p class="mut2" style="font-size:11.5px;margin-bottom:9px">上轮发给模型的完整 messages[]</p><div style="background:var(--bg2);border-radius:7px;padding:9px;font-family:ui-monospace,monospace;font-size:10.5px;line-height:1.8"><span style="color:var(--acc2)">system</span> · 2,341 tok<br><span style="color:var(--acc2)">user</span> · 角色定义+WI×3<br><span style="color:var(--acc2)">user</span> · 聊天历史 ×14</div></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">世界书激活轨迹</h3><div style="font-size:11.5px;line-height:1.9"><span style="color:#4caf7d">✓</span> 灯塔开放日 — key"开放日" depth4<br><span style="color:#4caf7d">✓</span> 周姨的花店 — key"周姨" 递归<br><span style="color:var(--ink3)">✗</span> 邮递员手册 — 未命中<br><span class="mut">预算:1,240/4,000 tok</span></div></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">变量与 op 日志</h3><div style="font-family:ui-monospace,monospace;font-size:10.5px;line-height:1.8;background:var(--bg2);border-radius:7px;padding:9px">stat_data.当前位置 = "旧花店门口"<br>ops: 4 项 @19:57</div></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">生成任务监视</h3><div style="font-size:11.5px;line-height:1.9"><span style="color:#4caf7d">●</span> 正文生成 4.2s ✓<br><span style="color:#4caf7d">●</span> 变量结算 0.8s ✓<br><span style="color:var(--acc2)">◌</span> 候选生成 进行中…</div></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">存储检查器</h3><p class="mut2" style="font-size:11.5px">数据目录 1.2GB · 聊天 342 · 缓存 86MB</p></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">golden-diff</h3><p class="mut2" style="font-size:11.5px">5 语料卡 · prompt 判卷 · KNOWN-GAP ×2</p></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">调试导出</h3><p class="mut2" style="font-size:11.5px">打包日志/性能采样/issue 附件</p></div>
+    <div class="card"><h3 style="font-size:13px;margin-bottom:5px">插件 degraded</h3><p class="mut2" style="font-size:11.5px">1 个降级:some-plugin(inject:llm 缺失)</p></div>
+  </div>
+</section>
+
+<!-- ─────── 设置 ─────── -->
+<section class="page" id="settings">
+  <div class="set-layout">
+    <nav class="set-nav" id="setNav">
+      <button class="on" data-set="conn">连接</button>
+      <button data-set="preset">生成预设</button>
+      <button data-set="prompt">提示词</button>
+      <button data-set="look">外观</button>
+      <button data-set="data">数据</button>
+      <button data-set="acct">账号</button>
+      <button data-set="adv">高级</button>
+    </nav>
+    <div class="set-body">
+      <div class="set-page on" data-setpage="conn">
+        <h2>连接</h2><p class="desc">API 源选一次,参数就地展开——消灭"互斥隐藏块"。<span class="st-src">ST: API Connection</span></p>
+        <div class="fld"><label>API 源类型</label><select><option>OpenAI 兼容(验证圈)</option><option>自定义端点</option></select></div>
+        <div class="fld"><label>端点 URL</label><input value="https://api.example.com/v1"></div>
+        <div class="fld"><label>API Key</label><input type="password" value="sk-············"></div>
+        <div class="fld"><label>模型</label><div class="row"><select style="flex:1"><option>deepseek-chat</option><option>gpt-4o-mini</option></select><button class="btn" style="font-size:11px">刷新列表</button></div></div>
+        <div class="row"><button class="btn primary">测试连接</button><span class="chip" style="color:#4caf7d">● 已连通 · 218ms</span></div>
+        <div class="sw" style="margin-top:12px"><div><div class="sw-t">流式输出</div><div class="sw-d">逐块渲染,不跳动</div></div><div class="tog on"></div></div>
+        <div class="sw"><div><div class="sw-t">请求代理</div><div class="sw-d">经服务端 CDN 代理 seam</div></div><div class="tog"></div></div>
+      </div>
+      <div class="set-page" data-setpage="preset">
+        <h2>生成预设</h2><p class="desc">预设=采样+格式配置,可绑定到故事。<span class="st-src">ST: AI Response Configuration</span></p>
+        <div class="row" style="margin-bottom:14px"><select style="flex:1;background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:7px"><option>灯塔样例(绑定:雨夜来信)</option><option>Creative-Max</option><option>精确-低随机</option></select><button class="btn" style="font-size:11px">导入</button><button class="btn" style="font-size:11px">导出</button><button class="btn" style="font-size:11px">另存</button></div>
+        <div class="sect-title" style="margin-top:0">采样</div>
+        <div class="fld slider"><label style="width:104px">temperature</label><input type="range" min="0" max="200" value="110"><output>1.10</output></div>
+        <div class="fld slider"><label style="width:104px">top_p</label><input type="range" min="0" max="100" value="92"><output>0.92</output></div>
+        <div class="fld slider"><label style="width:104px">top_k</label><input type="range" min="0" max="200" value="0"><output>0</output></div>
+        <div class="fld slider"><label style="width:104px">min_p</label><input type="range" min="0" max="100" value="5"><output>0.05</output></div>
+        <div class="fld slider"><label style="width:104px">rep. penalty</label><input type="range" min="100" max="200" value="105"><output>1.05</output></div>
+        <div class="fld slider"><label style="width:104px">max_tokens</label><input type="range" min="100" max="4096" step="100" value="1200"><output>1200</output></div>
+        <div class="sect-title">上下文</div>
+        <div class="fld slider"><label style="width:104px">上下文长度</label><input type="range" min="2048" max="131072" step="1024" value="32768"><output>32k</output></div>
+        <div class="fld slider"><label style="width:104px">WI 预算占比</label><input type="range" min="0" max="60" value="30"><output>30%</output></div>
+        <div class="sect-title">绑定与后处理</div>
+        <div class="sw"><div><div class="sw-t">绑定到当前故事</div><div class="sw-d">开此故事默认此预设(卡内可覆写)</div></div><div class="tog on"></div></div>
+        <div class="sw"><div><div class="sw-t">Prompt 后处理</div><div class="sw-d">merge / strict / semi-strict</div></div><select style="background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:5px"><option>merge</option></select></div>
+      </div>
+      <div class="set-page" data-setpage="prompt">
+        <h2>提示词</h2><p class="desc">模板 / Prompt Manager / instruct / 角色提示词。<span class="st-src">ST: Advanced Formatting + PM浮板</span></p>
+        <details class="fold" open><summary>提示词模板</summary><div class="fold-body"><div class="fld"><select><option>Default(中文优化)</option><option>ChatML</option><option>自定义…</option></select></div><div class="fld"><textarea rows="3">&lt;|im_start|&gt;{{role}}\n{{content}}&lt;|im_end|&gt;</textarea></div></div></details>
+        <details class="fold"><summary>Prompt Manager(顺序与钉选)</summary><div class="fold-body mut2" style="font-size:11.5px;line-height:1.9">main ⇅ · worldInfo(before/after) · personaDescription · charDescription · chatHistory · au:作者注 · jailbreak —— 拖拽排序,图钉锁定,可预览注入点</div></details>
+        <details class="fold"><summary>Instruct 模式</summary><div class="fold-body"><div class="sw"><div><div class="sw-t">启用</div><div class="sw-d">非 chat 模型的指令包裹</div></div><div class="tog"></div></div><div class="fld" style="margin-top:7px"><label>模板</label><select><option>ChatML</option><option>Alpaca</option><option>Llama3</option></select></div></div></details>
+        <details class="fold"><summary>角色提示词 / Jailbreak / 起始填充</summary><div class="fold-body"><div class="fld"><label>System prompt(覆盖卡)</label><textarea rows="2"></textarea></div><div class="fld"><label>Jailbreak</label><textarea rows="2"></textarea></div><div class="fld"><label>Assistant 起始填充(prefill)</label><input></div></div></details>
+        <details class="fold"><summary>QuickPrompts / Tokenizer</summary><div class="fold-body mut2" style="font-size:11.5px;line-height:1.9">快速提示词槽位 · tokenizer 选择(o200k/cl100k/估算)</div></details>
+      </div>
+      <div class="set-page" data-setpage="look">
+        <h2>外观</h2><p class="desc">主题 / 阅读排版 / 背景 / 语言。<span class="st-src">ST: User Settings+Backgrounds</span></p>
+        <div class="fld"><label>主题</label><div class="row"><div style="width:60px;height:36px;border-radius:7px;background:linear-gradient(135deg,#17181b,#25272c);border:2px solid var(--acc)"></div><div style="width:60px;height:36px;border-radius:7px;background:linear-gradient(135deg,#f5f3ee,#e8e4da);border:1px solid var(--line)"></div><div style="width:60px;height:36px;border-radius:7px;background:linear-gradient(135deg,#1a2332,#101823);border:1px solid var(--line)"></div><span class="mut" style="font-size:10.5px">深夜 / 纸面 / 墨蓝</span></div></div>
+        <div class="fld"><label>阅读字体(聊天正文)</label><select><option>思源宋体</option><option>思源黑体</option><option>自定义…</option></select></div>
+        <div class="fld"><label>UI 语言</label><select><option>简体中文</option><option>English</option></select></div>
+        <details class="fold"><summary>聊天背景(文件夹)</summary><div class="fold-body"><div class="row" style="flex-wrap:wrap;gap:7px"><div style="width:80px;height:50px;border-radius:7px;background:linear-gradient(135deg,#3a4a5e,#1d2836)"></div><div style="width:80px;height:50px;border-radius:7px;background:linear-gradient(135deg,#5e4a3a,#36281d)"></div><div style="width:80px;height:50px;border:1.5px dashed var(--line2);border-radius:7px;display:grid;place-items:center;color:var(--ink3)">+</div></div></div></details>
+        <details class="fold"><summary>Custom CSS</summary><div class="fold-body"><div class="fld"><textarea rows="3" style="font-family:ui-monospace,monospace;font-size:10.5px">/* .msg .say { color: ... } */</textarea></div></div></details>
+      </div>
+      <div class="set-page" data-setpage="data">
+        <h2>数据</h2><p class="desc">导入导出中心 + 备份 + 同步 + 存储。<span class="st-src">ST: 散落各处→一节</span></p>
+        <div class="sect-title" style="margin-top:0">导入导出中心</div>
+        <div class="row" style="flex-wrap:wrap;gap:7px;margin-bottom:12px">
+          <button class="btn">导入 卡/规则/预设/主题…</button><button class="btn">导出选中对象</button><button class="btn">全量备份 zip</button>
+        </div>
+        <div class="sw"><div><div class="sw-t">LAN 同步</div><div class="sw-d">局域网设备发现</div></div><div class="tog on"></div></div>
+        <div class="sw"><div><div class="sw-t">S3 同步</div><div class="sw-d">对象存储远程备份</div></div><div class="tog"></div></div>
+        <div class="sw"><div><div class="sw-t">自动备份</div><div class="sw-d">每日快照,保留 14 天</div></div><div class="tog on"></div></div>
+        <div class="sect-title">存储</div>
+        <div class="mut2" style="font-size:11.5px;line-height:1.9">数据目录 ~/.uberge/data · 聊天 342 · 卡 12 · 缓存 86MB<br><button class="btn ghost" style="font-size:10.5px">打开存储检查器 →</button></div>
+      </div>
+      <div class="set-page" data-setpage="acct">
+        <h2>账号</h2><p class="desc">登录 / 多用户 / 设备配对。<span class="st-src">ST: Admin+账号</span></p>
+        <div class="card" style="margin-bottom:12px"><div class="row"><div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--acc),#8e2f24);display:grid;place-items:center;color:#fff;font-family:var(--font-reading)">邮</div><div><b>vela</b><div class="mut" style="font-size:10.5px">管理员 · handle</div></div><div style="flex:1"></div><button class="btn" style="font-size:11px">登出</button></div></div>
+        <div class="card" style="margin-bottom:12px"><h4 style="font-size:12.5px;margin-bottom:7px">手机扫码连接</h4><div style="width:104px;height:104px;background:repeating-conic-gradient(var(--ink) 0 25%,transparent 0 50%) 0 0/11px 11px;border-radius:7px;opacity:.85"></div><div class="mut" style="font-size:10.5px;margin-top:7px">移动端扫码 → 自动填地址+配对</div></div>
+        <div class="sect-title">多用户(沿用 ST 模型)</div>
+        <div class="sw"><div><div><div class="sw-t">启用多用户</div><div class="sw-d">小圈子共享,数据目录隔离</div></div></div><div class="tog"></div></div>
+      </div>
+      <div class="set-page" data-setpage="adv">
+        <h2>高级</h2><p class="desc">实验开关与 debug。</p>
+        <div class="sw"><div><div class="sw-t">插件开发模式</div><div class="sw-d">HMR + verbose 日志</div></div><div class="tog"></div></div>
+        <div class="sw"><div><div class="sw-t">实验性并行结算</div><div class="sw-d">MVU settle 与候选生成并行</div></div><div class="tog"></div></div>
+        <div class="sw"><div><div class="sw-t">旧版 Luker UI(回退)</div><div class="sw-d">冻结保留,兼容对照组</div></div><button class="btn" style="font-size:10.5px">打开旧 UI</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────── ST 对照表 ─────── -->
+<section class="page" id="map">
+  <div class="ctbar"><h1>ST 对照表</h1><span class="sub">原酒馆组件 → 新位置(评审期页面)</span></div>
+  <div class="lib-wrap">
+    <table class="map-table"><thead><tr><th>ST / Luker 组件</th><th></th><th>新位置</th><th>说明</th></tr></thead><tbody>
+      <tr><td>AI Response Configuration</td><td class="arrow">→</td><td><b>设置·生成预设</b></td><td>采样+绑定+导入导出</td></tr>
+      <tr><td>API Connection(互斥隐藏块)</td><td class="arrow">→</td><td><b>设置·连接</b></td><td>源select→参数就地展开</td></tr>
+      <tr><td>Advanced Formatting</td><td class="arrow">→</td><td><b>设置·提示词</b></td><td>模板/instruct/QP/tokenizer</td></tr>
+      <tr><td>Prompt Manager 浮板</td><td class="arrow">→</td><td><b>设置·提示词·PM</b></td><td>顺序+钉选+注入点预览</td></tr>
+      <tr><td>World Info 抽屉</td><td class="arrow">→</td><td><b>规则 域</b></td><td>全局宏观/随卡专属</td></tr>
+      <tr><td>角色管理抽屉</td><td class="arrow">→</td><td><b>故事 域</b></td><td>卡=故事,封面网格+人设tab</td></tr>
+      <tr><td>Persona Management</td><td class="arrow">→</td><td><b>故事·人设 tab</b></td><td>+ 聊天顶栏快切</td></tr>
+      <tr><td>User Settings</td><td class="arrow">→</td><td><b>设置·外观</b></td><td>主题/排版/语言</td></tr>
+      <tr><td>Backgrounds(含文件夹)</td><td class="arrow">→</td><td><b>设置·外观·背景</b></td><td>按故事绑定或全局</td></tr>
+      <tr><td>Extensions 两列抽屉 + 插件</td><td class="arrow">→</td><td><b>扩展 域(合并)</b></td><td>正则/QR/注入/卡资产/插件</td></tr>
+      <tr><td>Author's Note / CFG / Logprobs 浮板(无入口)</td><td class="arrow">→</td><td><b>本局面板·本局注入</b></td><td>会话级注入统一收编</td></tr>
+      <tr><td>Guide(dsh-tavern)</td><td class="arrow">→</td><td><b>本局面板·本局注入</b></td><td>与作者注同族:注入×作用域</td></tr>
+      <tr><td>聊天工具(合并/分支/搜索/导出)</td><td class="arrow">→</td><td><b>本局面板·会话管理</b></td><td>Luker chat-file 工具</td></tr>
+      <tr><td>消息 14 动作图标</td><td class="arrow">→</td><td><b>消息 hover 二级</b></td><td>常态只剩 swipe</td></tr>
+      <tr><td>MVU 状态板</td><td class="arrow">→</td><td><b>本局面板·状态/面板</b></td><td>状态板=一种面板(系统面板)</td></tr>
+      <tr><td>变量 op 日志(mes_var_ops)</td><td class="arrow">→</td><td><b>聊天内变量回执+诊断</b></td><td>old→new 内联</td></tr>
+      <tr><td>Sync/备份(4 层深)</td><td class="arrow">→</td><td><b>设置·数据</b></td><td>1 击,LAN/S3/备份同节</td></tr>
+      <tr><td>Admin 多用户</td><td class="arrow">→</td><td><b>设置·账号</b></td><td>+ 扫码配对</td></tr>
+      <tr><td>request inspector / 存储检查器 / 生成任务 / 调试导出</td><td class="arrow">→</td><td><b>诊断 域</b></td><td>开发者一等公民</td></tr>
+      <tr><td>欢迎屏/引导</td><td class="arrow">→</td><td><b>首次启动三步向导</b></td><td>连源→导卡→开聊</td></tr>
+      <tr><td>沉浸模式</td><td class="arrow">→</td><td><b>聊天顶栏专注钮</b></td><td>收掉侧栏,只剩文字</td></tr>
+      <tr><td>CardApp / 面板</td><td class="arrow">→</td><td><b>本局面板→全屏</b></td><td>应用列表→沉浸容器</td></tr>
+      <tr><td>HotSwap 收藏</td><td class="arrow">→</td><td><b>侧栏会话/顶栏快换</b></td><td>1 击换卡</td></tr>
+      <tr><td>Slash 命令</td><td class="arrow">→</td><td><b>composer / + ⌘K</b></td><td>沿用+命令面板</td></tr>
+      <tr><td>预设选择(藏AI配置顶)</td><td class="arrow">→</td><td><b>composer 预设选择器</b></td><td>现场切换</td></tr>
+      <tr><td>候选行动(dsh-tavern)</td><td class="arrow">→</td><td><b>聊天流"接下来的行动"</b></td><td>后台生成可折叠</td></tr>
+      <tr><td>TTS/图生/向量库/群聊</td><td class="arrow">→</td><td><b>扩展域·插件位</b></td><td>自带设置卡/导航页</td></tr>
+      <tr><td>客户端 DOM 扩展(旧ST)</td><td class="arrow">→</td><td><b>不兼容</b></td><td>旧 Luker UI 内可用</td></tr>
+      <tr><td>服务端插件契约</td><td class="arrow">→</td><td><b>扩展·适配器</b></td><td>init→ctx.route · exit→effect</td></tr>
+      <tr><td>会话列表(dsh-tavern 游玩历史)</td><td class="arrow">→</td><td><b>二级侧栏·聊天域</b></td><td>项目分组+最近</td></tr>
+    </tbody></table>
+  </div>
+</section>
+</main>
+</div>
+
+<!-- ══════════ statusbar ══════════ -->
+<footer id="statusbar">
+  <span class="ok">● 已连接</span><span>deepseek-chat</span><span>灯塔样例</span><span>2,341 tok</span>
+  <span style="flex:1"></span>
+  <button class="sbtn">后台结算 ✓</button><button class="sbtn">degraded ×1</button><span>Uberge 0.1.0</span>
+</footer>
+
+<!-- palette -->
+<div class="pal" id="pal"><div class="pal-box">
+  <input id="palInput" placeholder="搜索页面、设置、动作…(⌘K)">
+  <div class="pal-list" id="palList"></div>
+</div></div>
+<div class="drop-hint" id="dropHint"><div class="box">松开导入:角色卡 / 世界书 / 预设 / 主题 —— 自动识别类型</div></div>
+<div id="reviewBar"><button class="btn" id="reviewBtn"><span style="font-size:12px">✎</span> 批注</button><button class="btn hidden" id="exportBtn">导出提示词</button></div>
+
+<!-- sidebar templates -->
+<template id="sb-chat">
+  <div style="padding:4px 6px"><button class="btn primary" style="width:100%;justify-content:flex-start"><span style="font-size:12px">✎</span> 新会话</button></div>
+  <div class="sb-sect">故事</div>
+  <div class="sb-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg> 灯塔小镇 <span class="sub">2</span></div>
+  <div class="sb-item on" style="padding-left:26px">雨夜来信<span class="sub">刚刚</span></div>
+  <div class="sb-item" style="padding-left:26px">花店留下的地址<span class="sub">10/10</span></div>
+  <div class="sb-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg> 蔷薇回廊 <span class="sub">1</span></div>
+  <div class="sb-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2h8A1.5 1.5 0 0 1 20.5 9v8.5A1.5 1.5 0 0 1 19 19H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg> 星海货航 <span class="sub">3</span></div>
+  <div class="sb-sect">最近</div>
+  <div class="sb-item">林间诊疗所·初诊<span class="sub">昨天</span></div>
+  <div class="sb-item">山雾旅馆·雨夜<span class="sub">10/08</span></div>
+</template>
+<template id="sb-stories">
+  <div style="padding:4px 6px"><button class="btn primary" style="width:100%;justify-content:flex-start">+ 导入 / 新建</button></div>
+  <div class="sb-sect">收藏</div>
+  <div class="sb-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> 灯塔小镇·雨夜来信</div>
+  <div class="sb-item"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.7l5.9-.9z"/></svg> 蔷薇回廊</div>
+  <div class="sb-sect">分组</div>
+  <div class="sb-item">全部 <span class="sub">12</span></div>
+  <div class="sb-item">轻悬疑 <span class="sub">3</span></div>
+  <div class="sb-item">日常 <span class="sub">5</span></div>
+  <div class="sb-item">人设 <span class="sub">3</span></div>
+</template>
+<template id="sb-rules">
+  <div style="padding:4px 6px"><button class="btn primary" style="width:100%;justify-content:flex-start">+ 新规则书</button></div>
+  <div class="sb-sect">全局宏观</div>
+  <div class="sb-item">通用奇幻规则 <span class="sub">42</span></div>
+  <div class="sb-item">现代日常常识 <span class="sub">18</span></div>
+  <div class="sb-sect">随卡专属</div>
+  <div class="sb-item on">灯塔小镇·专属 <span class="sub">15</span></div>
+  <div class="sb-item">蔷薇回廊·专属 <span class="sub">23</span></div>
+  <div class="sb-sect">全局设置</div>
+  <div class="mut2" style="font-size:10.5px;padding:0 9px;line-height:1.8">扫描深度 2 · 预算 30% · 递归 ✓<br><span class="st-src">ST: WI全局设置</span></div>
+</template>
+<template id="sb-ext">
+  <div style="padding:4px 6px"><button class="btn primary" style="width:100%;justify-content:flex-start">+ 安装扩展</button></div>
+  <div class="sb-sect">类别</div>
+  <div class="sb-item on">全部</div>
+  <div class="sb-item">插件 <span class="sub">4</span></div>
+  <div class="sb-item">正则 <span class="sub">7</span></div>
+  <div class="sb-item">快捷回复 <span class="sub">3</span></div>
+  <div class="sb-item">注入 <span class="sub">2</span></div>
+  <div class="sb-item">卡资产 <span class="sub">5</span></div>
+  <div class="sb-sect">状态</div>
+  <div class="sb-item"><span class="ind" style="background:#e8a13c"></span>degraded ×1</div>
+</template>
+<template id="sb-diag">
+  <div class="sb-sect">诊断项</div>
+  <div class="sb-item on">Prompt 查看器</div>
+  <div class="sb-item">WI 激活轨迹</div>
+  <div class="sb-item">变量与 op 日志</div>
+  <div class="sb-item">生成任务</div>
+  <div class="sb-item">存储</div>
+  <div class="sb-item">golden-diff</div>
+  <div class="sb-item">插件 degraded</div>
+</template>
+
+<script>
+const pages=[...document.querySelectorAll('.page')];
+const railBtns=[...document.querySelectorAll('#rail button[data-page]')];
+const sidebar=document.getElementById('sidebar'),sbBody=document.getElementById('sbBody'),sbTitle=document.getElementById('sbTitle');
+const SB_NAMES={chat:'聊天',stories:'故事',rules:'规则',ext:'扩展',diag:'诊断'};
+function go(id){pages.forEach(p=>p.classList.toggle('on',p.id===id));
+  railBtns.forEach(b=>b.classList.toggle('on',b.dataset.page===id));
+  const pg=document.getElementById(id),sbKey=pg?.dataset.sb;
+  if(sbKey){const t=document.getElementById(sbKey);sbBody.innerHTML=t?t.innerHTML:'';sbTitle.textContent=SB_NAMES[id]||'';sidebar.classList.remove('hide');}
+  else sidebar.classList.add('hide');
+  location.hash='#'+id;document.title='Uberge · '+id;}
+railBtns.forEach(b=>b.onclick=()=>go(b.dataset.page));
+document.getElementById('sbToggle').onclick=()=>sidebar.classList.toggle('hide');
+addEventListener('hashchange',()=>{const id=location.hash.slice(1);
+  if(id&&document.getElementById(id)&&!document.getElementById(id).classList.contains('on'))go(id);});
+const h=location.hash.slice(1);go(h&&document.getElementById(h)?h:'chat');
+
+document.getElementById('themeBtn').onclick=()=>{const b=document.documentElement;
+  b.dataset.theme=b.dataset.theme==='dark'?'light':'dark';};
+document.getElementById('immBtn').onclick=()=>{sidebar.classList.add('hide');document.getElementById('upanel').classList.toggle('hide');};
+document.getElementById('panelBtn').onclick=()=>document.getElementById('upanel').classList.toggle('hide');
+
+const tp=document.getElementById('typePop');
+document.getElementById('typeBtn').onclick=e=>{e.stopPropagation();tp.classList.toggle('hidden')};
+document.addEventListener('click',e=>{if(!tp.contains(e.target))tp.classList.add('hidden')});
+const root=document.documentElement.style;
+fsR.oninput=e=>{root.setProperty('--read-size',e.target.value+'px');fsOut.textContent=e.target.value+'px'};
+lhR.oninput=e=>{root.setProperty('--read-leading',e.target.value/10);lhOut.textContent=(e.target.value/10).toFixed(1)};
+wR.oninput=e=>{root.setProperty('--read-width',e.target.value+'px');wOut.textContent=e.target.value+'px'};
+vrHead.onclick=()=>vrHead.parentElement.classList.toggle('open');
+
+document.querySelectorAll('#setNav button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#setNav button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.set-page').forEach(p=>p.classList.toggle('on',p.dataset.setpage===b.dataset.set));});
+document.querySelectorAll('[data-open]').forEach(el=>el.onclick=e=>{e.stopPropagation();go(el.dataset.open);});
+document.querySelectorAll('#edTabs button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#edTabs button').forEach(x=>x.classList.toggle('on',x===b));
+  document.querySelectorAll('.ed-page').forEach(p=>p.classList.toggle('on',p.dataset.edpage===b.dataset.ed));});
+document.addEventListener('click',e=>{const t=e.target.closest('.tog');if(t)t.classList.toggle('on')});
+
+const ITEMS=[
+ {t:'去 聊天',c:'页面',go:'chat'},{t:'去 故事库',c:'页面',go:'stories'},{t:'去 规则',c:'页面',go:'rules'},
+ {t:'去 扩展',c:'页面',go:'ext'},{t:'去 诊断',c:'页面',go:'diag'},{t:'去 设置',c:'页面',go:'settings'},
+ {t:'导入角色卡',c:'动作',go:'stories'},{t:'新建会话',c:'动作',go:'chat'},{t:'切换预设:灯塔样例',c:'动作',go:'chat'},
+ {t:'重新生成正文',c:'动作',go:'chat'},{t:'专注模式',c:'动作',fn:()=>document.getElementById('immBtn').click()},
+ {t:'设置·连接',c:'设置',go:'settings'},{t:'设置·生成预设',c:'设置',go:'settings'},{t:'设置·提示词',c:'设置',go:'settings'},
+ {t:'设置·外观',c:'设置',go:'settings'},{t:'设置·数据',c:'设置',go:'settings'},{t:'ST 对照表',c:'评审',go:'map'},
+];
+const pal=document.getElementById('pal'),palInput=document.getElementById('palInput'),palList=document.getElementById('palList');
+let palSel=0;
+function palRender(q){const rows=ITEMS.filter(i=>!q||i.t.toLowerCase().includes(q.toLowerCase()));
+  palList.innerHTML=rows.map((i,n)=>`<div class="pal-item${n===palSel?' sel':''}" data-i="${ITEMS.indexOf(i)}"><span>${i.t}</span><span class="cat">${i.c}</span></div>`).join('')||'<div class="pal-item mut">无结果</div>';
+  palList.querySelectorAll('.pal-item[data-i]').forEach(el=>el.onclick=()=>palGo(+el.dataset.i));}
+function palGo(i){const it=ITEMS[i];if(!it)return;pal.classList.remove('on');if(it.fn)it.fn();if(it.go)go(it.go);}
+function palOpen(){pal.classList.add('on');palInput.value='';palSel=0;palRender('');palInput.focus();}
+document.getElementById('palBtn').onclick=palOpen;
+palInput.oninput=()=>{palSel=0;palRender(palInput.value)};
+palInput.onkeydown=e=>{const items=palList.querySelectorAll('.pal-item[data-i]');
+  if(e.key==='ArrowDown')palSel=Math.min(palSel+1,items.length-1);
+  else if(e.key==='ArrowUp')palSel=Math.max(palSel-1,0);
+  else if(e.key==='Enter'&&items[palSel]){palGo(+items[palSel].dataset.i);return}
+  else if(e.key==='Escape'){pal.classList.remove('on');return}else return;
+  e.preventDefault();items.forEach((el,n)=>el.classList.toggle('sel',n===palSel));};
+pal.onclick=e=>{if(e.target===pal)pal.classList.remove('on')};
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();pal.classList.contains('on')?pal.classList.remove('on'):palOpen()}
+  if(e.key==='Escape')pal.classList.remove('on');});
+
+['dragenter','dragover'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();dropHint.style.display='grid'}));
+['dragleave','drop'].forEach(ev=>document.addEventListener(ev,e=>{e.preventDefault();if(ev==='drop'||!e.relatedTarget)dropHint.style.display='none'}));
+
+let notes=[],rseq=0;
+const reviewBtn=document.getElementById('reviewBtn'),exportBtn=document.getElementById('exportBtn');
+reviewBtn.onclick=()=>{document.body.classList.toggle('reviewing');
+  reviewBtn.textContent=document.body.classList.contains('reviewing')?'<span style="font-size:12px">✎</span> 批注中(点页面)':'<span style="font-size:12px">✎</span> 批注';};
+document.addEventListener('click',e=>{
+  if(!document.body.classList.contains('reviewing'))return;
+  if(e.target.closest('#reviewBar,.review-pop,.pal'))return;
+  e.preventDefault();e.stopPropagation();
+  const page=document.querySelector('.page.on')?.id||'app';
+  const pop=document.createElement('div');pop.className='review-pop';
+  pop.style.left=Math.min(e.clientX,innerWidth-310)+'px';pop.style.top=e.clientY+'px';
+  pop.innerHTML='<div class="mut" style="font-size:10.5px;margin-bottom:5px">批注 · '+page+'</div><textarea rows="3" placeholder="这里哪里不对…"></textarea><div class="row" style="margin-top:7px;justify-content:flex-end"><button class="btn ghost" style="font-size:10.5px" data-x="1">取消</button><button class="btn primary" style="font-size:10.5px" data-x="2">记下</button></div>';
+  document.body.appendChild(pop);pop.querySelector('textarea').focus();
+  pop.onclick=ev=>ev.stopPropagation();
+  pop.querySelector('[data-x="1"]').onclick=()=>pop.remove();
+  pop.querySelector('[data-x="2"]').onclick=()=>{const txt=pop.querySelector('textarea').value.trim();if(!txt)return pop.remove();
+    notes.push({page,text:txt,x:e.clientX,y:e.clientY});
+    const d=document.createElement('div');d.className='review-dot';d.textContent='R'+(++rseq);
+    d.style.left=e.clientX-10+'px';d.style.top=e.clientY-10+'px';d.title=txt;
+    d.onclick=()=>{d.remove();notes=notes.filter(n=>n.x!==e.clientX||n.y!==e.clientY)};
+    document.body.appendChild(d);pop.remove();exportBtn.classList.remove('hidden');};
+},true);
+exportBtn.onclick=async()=>{const s='评审批注:\n'+notes.map((n,i)=>`${i+1}. [${n.page}] ${n.text}`).join('\n');
+  try{await navigator.clipboard.writeText(s);exportBtn.textContent='已复制 ✓';setTimeout(()=>exportBtn.textContent='导出提示词',1500)}catch(_){prompt('复制:',s)}};
+</script>
+</body>
+</html>
