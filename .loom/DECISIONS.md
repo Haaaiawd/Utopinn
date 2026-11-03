@@ -64,3 +64,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: .loom/design/plugin-architecture.md, .loom/design/core-engine.md, .loom/design/generation-api.md
 - Recorded: 2026-11-03T05:46:58.777Z
+
+## D-008: D-010 骨架直接仿 DSH/Cordis(修订 D-009 实现语义)
+
+- Current decision: 插件骨架一字不改仿 Cordis:函数插件命名导出 name/inject/Config/apply(ctx);服务插件 default-export Service 类;ctx.effect(fn,label) 全注册带 disposer;ctx.on/emit 事件;ctx.<name> 注入代理+ctx.get() 可选服务;profile 有序 plugins[] 装载;capability seam 三元组(Definition/Provider/Consumer)。内核几十行自写不引 cordis。第一约束:酒馆生态兼容凌驾一切架构选择。
+- Rationale: 用户拍板'骨架可以很直接地仿照 DSH,酒馆生态第一要位';DSH 源码实证契约(acp:inject 数组+apply(ctx,config)+ctx.effect disposer;DshManifest:bundles 有序 profile;能力接缝必须三角齐备)
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/plugin-architecture.md
+- Recorded: 2026-11-03T05:59:40.659Z
