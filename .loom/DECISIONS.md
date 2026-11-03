@@ -82,3 +82,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: D-010 部分:自写内核改为真 cordis
 - Affects: project-wide or not yet classified
 - Recorded: 2026-11-03T06:15:17.296Z
+
+## D-010: 生态细节拍板:MVU完整支持/TH T1进V1/群聊插件位/DSH式插件管理/中英双字典/旧插件适配器
+
+- Current decision: (1)LLM golden 验证圈=OpenAI兼容单面,其余provider靠不回归;(2)MVU 完整支持进V1:服务端解析UpdateVariable→stat_data投影持久化+状态栏模板渲染;(3)TH T1(消息写/triggerSlash/生成控制)V1内做,生成API后紧跟;(4)移动端=Expo dev build dogfood;(5)群聊=generation seam插件,V1不含;(6)插件管理=DSH plugin-manager简化版web页(安装/启禁/npm+git);(7)i18n=中英双字典起步,全部文案走locale字典;(8)写ST旧服务端插件适配器(init→ctx.route,exit→effect,info→manifest);客户端扩展JS不兼容,旧UI内仍可用;(9)默认:QR/图片/TTS插件位,online-first缓存只读,沿用fs存储,深色优先主题,URL导入V1支持,ST式账号密码。
+- Rationale: MVU是现代卡事实标准不做则生态破;群聊是生成编排变体恰是seam用例;插件管理是'插件生态强于本体'的产品门面;adapter成本几十行换生态延续性;i18n双字典起步避免后期重构。
+- Source: conversation
+- Supersedes: none
+- Affects: project-wide or not yet classified
+- Recorded: 2026-11-03T06:19:32.114Z

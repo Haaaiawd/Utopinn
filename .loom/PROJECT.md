@@ -2,7 +2,7 @@
 
 ## Intended result
 
-把 SillyTavern(以 Luker fork 为基底)重构为"服务端大脑 + 薄客户端"架构:浏览器端全新 SPA 管理端(全功能)+ React Native/Expo 手机端(精简 UI,重 UI 收进底导航专属页)。世界书/角色卡/预设等格式的导入导出与生成行为兼容绝大多数现有卡。
+把 SillyTavern(以 Luker fork 为基底)重构为 **DSH 式"全插件"产品**(D-010/D-011/D-012):内核=真 cordis(Context/events/effects/registry),酒馆语义全是插件(tavern-core/formats/card-runtime/presets),任何 seam 可被第三方 Provider 替换。浏览器端全新 SPA 管理端(全功能,含插件管理页)+ React Native/Expo 手机端(精简 UI,重 UI 收进底导航专属页)。**V1=聊天核心+完整管理端,做酒馆完全替代**;群聊/QR/图片/TTS/向量库归插件位。预设=数据无损+生成等价+UI重设计;MVU 完整支持(服务端 settle);TH T0/T1 进 V1;旧 ST 服务端插件走 adapter。
 
 ## People and operating reality
 
@@ -16,16 +16,20 @@
 
 - 大脑(prompt组装/WI/regex/宏)只在服务端;客户端零组装逻辑(已确认全云化)
 - 数据格式与磁盘约定不动(世界书 `{entries:{}}`、JSONL、PNG tEXt、sidecar)
-- 行为兼容以 golden-diff 为判据,不靠读后自信
-- 第三方前端扩展不兼容——已接受
+- 行为兼容以 golden-diff 为判据,不靠读后自信;LLM 验证圈=OpenAI 兼容单面
+- 第三方前端扩展不兼容——已接受;旧 ST 服务端插件走 adapter 插件
 - 卡片 HTML/JS 不可信——必须沙箱化运行
 - 高级功能不得挤占移动端主界面——藏进设置或仅 web 可见
+- 个人云为主,ST 式多用户隔离沿用不深化;online-first,客户端缓存只读
+- i18n=中英双字典起步(locale-owned 文案纪律);移动端=Expo dev build
 
 ## Design document map
 
+- `design/plugin-architecture.md`(system)— cordis 内核+profile/patch组合+事件五模式+服务四角色+seam 清单
 - `design/core-engine.md`(system)— 服务端大脑移植的责任、边界、副作用分层
 - `design/generation-api.md`(contract)— /api/generate + WS ticket 生成管线契约
 - `design/mobile-panels.md`(experience)— 移动端面板页与 CardApp 沙箱 UX
+- `design/perf-budget.md`(verification)— 渲染面分层+楼层WebView预算+性能预算数字
 - `design/compat-golden-diff.md`(verification)— 语料+golden 捕获+diff 分级机制
 
 ## Professional capability map

@@ -343,7 +343,7 @@
     {
       "id": "TASK-006",
       "title": "core 移植第二阶段:prompt 组装(chat completions 路径)",
-      "outcome": "消息数组编排:system/描述/性格/场景/示例对话/深度提示/AN/WI 注入位置语义与原版一致;token 预算截断。",
+      "outcome": "消息数组编排:system/描述/性格/场景/示例对话/深度提示/AN/WI 注入位置语义与原版一致;token 预算截断。 【V1补充:MVU 服务端 settle——UpdateVariable 解析为 chatState projection,状态栏模板渲染 seam】",
       "acceptance": [
         {
           "criterion": "语料卡 golden diff 消息序列一致(可忍差异除外)",
@@ -356,7 +356,8 @@
         "仅 chat-completions 源;text prompt/instruct 属后续阶段"
       ],
       "depends_on": [
-        "TASK-005"
+        "TASK-005",
+        "TASK-011"
       ],
       "reads": [
         "apps/server/public/scripts/openai.js",
@@ -392,12 +393,12 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T06:19:55.764Z"
     },
     {
       "id": "TASK-007",
       "title": "/api/generate 服务端生成管线 + WS 投递",
-      "outcome": "POST /api/generate 走 core.assemble → dispatch → job → WS ticket 流式/回放;旧端点不受影响。",
+      "outcome": "POST /api/generate 走 core.assemble → dispatch → job → WS ticket 流式/回放;旧端点不受影响。 【V1补充:TH T1 桥面——triggerSlash/消息写回/生成控制,依赖本任务的生成管线】",
       "acceptance": [
         {
           "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
@@ -445,7 +446,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T06:19:55.764Z"
     },
     {
       "id": "TASK-008",
@@ -590,7 +591,7 @@
     {
       "id": "TASK-010",
       "title": "新 Web 管理端 SPA(骨架)",
-      "outcome": "apps/web 选型定型并起步:卡/世界书/预设/设置管理面 + 聊天视图,消费 api-client。",
+      "outcome": "apps/web 选型定型并起步:卡/世界书/预设/设置管理面 + 聊天视图,消费 api-client。 【V1补充:含插件管理页(DSH plugin-manager简化:列表/安装/启禁)+i18n 中英双字典;V1优先级与移动端并行,不落后】",
       "acceptance": [
         {
           "criterion": "SPA 可登录并对世界书做 CRUD",
@@ -648,7 +649,60 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T06:19:55.764Z"
+    },
+    {
+      "id": "TASK-011",
+      "title": "cordis 内核骨架:PluginContext/loader/profile/hello 冒烟",
+      "outcome": "pnpm add cordis 验证;packages/kernel 提供 Context+事件五模式+effect+inject+profile.yaml 按序装载;hello 插件真实组合测试全绿(inject缺失失败/effect清理/waterfall语义/degraded诊断)。",
+      "acceptance": [
+        {
+          "criterion": "cordis 在 Express+pnpm workspace 下可用(Context/plugin/effect)",
+          "verify_by": "hello 插件冒烟测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "profile.yaml 按序装载+patch行替换",
+          "verify_by": "loader 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "inject 缺失显式失败,effect 卸载清理",
+          "verify_by": "loader 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只用 cordis core(Context/events/effects/registry),loader/profile/patch 自写",
+        "内核不得含 worldInfo/character 等酒馆符号"
+      ],
+      "depends_on": [
+        "TASK-002"
+      ],
+      "reads": [
+        ".loom/design/plugin-architecture.md",
+        "ref/deepseek-harness/docs/cordis-primer.md"
+      ],
+      "touches": [
+        "packages/kernel",
+        "apps/server"
+      ],
+      "implements": "design/plugin-architecture.md",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始:骨架按 §2 契约实现",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:19:55.764Z",
+      "updated_at": "2026-11-03T06:19:55.764Z"
     }
   ]
 }
