@@ -127,3 +127,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: 强化 D-010/D-016 立场(harness 自建)
 - Affects: project-wide;TASK-011 范围不变
 - Recorded: 2026-11-03T07:55:00.000Z
+
+## D-018: dsh-tavern 借用边界实证——解耦可搬/保姆只读
+
+- Current decision: dsh-tavern 资产按 ST 耦合度分级(grep getContext|SillyTavern|jQuery):(a)解耦可搬——gal-*全族(零命中,~500行)、lib/vendor/magvarupdate;(b)只读参考——helper-*/frame-*/session-*/host-*(全命中,是给嵌入ST前端当保姆的机制);(c)其"嵌ST前端frame"架构本身不采用。每个待搬文件先过判据。
+- Rationale: dsh-tavern 把 ST 恶果关进 frame 而非解决;我们要的是其现代外围资产,不是收容机制。判据客观可执行,防止移植时把 ST 遗留耦合顺进来。
+- Source: grep 实证 + conversation
+- Supersedes: none
+- Affects: TASK-013/015 及全部 dsh-tavern 移植点
+- Recorded: 2026-11-03T08:05:00.000Z

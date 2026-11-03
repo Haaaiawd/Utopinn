@@ -66,3 +66,12 @@ node -e 'const fs=require("fs");const t=JSON.parse(fs.readFileSync(".loom/tasks.
 const x=t.tasks.find(y=>y.id==="TASK-011");x.reads.push(".loom/capabilities/plugin-kernel/research/borrow-map.md","ref/deepseek-harness/vendor/cordis-rc11-upgrade-plan.md");
 const y=t.tasks.find(z=>z.id==="TASK-013");y.reads.push("ref/dsh-tavern/tavern-plugin/lib/vendor/magvarupdate");
 fs.writeFileSync(".loom/tasks.json",JSON.stringify(t,null,1)+"\n");console.log("ok");' && loom check 2>&1 | sed -n '/"errors"/,/]/p' | head -5
+## 耦合度分级(D-018 实证,grep getContext|SillyTavern|jQuery 判据)
+
+| 档 | 资产 | 处置 |
+|---|---|---|
+| 解耦可搬 |  全族零命中(~500行,DSH host原生码)、(MVU上游库) | 移植/改写成渲染器插件与MVU settle |
+| 只读参考 | 、、、(全命中,存在目的=伺候嵌入的ST前端) | 读语义(TH API面/shim行为),不搬码 |
+| 不采用 | dsh-tavern 架构本体(嵌ST前端frame) | 路线拒绝;我们=服务端引擎移植 |
+
+**移植前纪律**:每个 dsh-tavern 文件先过 grep 判据;命中 ST 内部 API 的一律只读。ST 恶果(jQuery/DOM引擎/前端组装)由 TASK-005/006 服务端移植+golden-diff 对冲,不靠借用解决。
