@@ -19,7 +19,7 @@ function Avatar({ name, url }: { name: string; url?: string }) {
         return <span className="ava"><img src={url} alt="" /></span>;
     }
     return (
-        <span className="ava" style={{ background: `hsl(${hueFor(name)} 32% 42%)` }}>
+        <span className="ava" style={{ background: `hsl(${hueFor(name)} 12% 36%)` }}>
             {name.slice(0, 1) || '?'}
         </span>
     );
