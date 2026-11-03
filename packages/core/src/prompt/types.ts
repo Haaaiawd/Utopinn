@@ -40,7 +40,7 @@ export interface ChatMessageInput {
         api?: string;
         model?: string;
         media?: unknown[];
-        mediaDisplay?: number;
+        mediaDisplay?: string; // MEDIA_DISPLAY: 'list' | 'gallery'
         mediaIndex?: number;
         reasoning?: string;
         reasoning_blocks?: unknown[];
@@ -61,7 +61,7 @@ export interface PromptMessage {
     name?: string;
     injected?: boolean;
     media?: unknown[];
-    mediaDisplay?: number;
+    mediaDisplay?: string; // 'list' | 'gallery'
     mediaIndex?: number;
     invocations?: unknown[];
     signature?: string | null;
@@ -86,9 +86,9 @@ export interface PromptBuildRequest {
     user: { name: string; description?: string };
     /** 聊天历史(原序,旧→新) */
     chat: ChatMessageInput[];
-    /** 预设解析后的 prompt 集合(含 marker)与顺序 */
+    /** 预设解析后的 prompt 集合(含 marker)与顺序(enabled 记在序条目上,原版语义) */
     prompts: PromptLike[];
-    promptOrder: string[];
+    promptOrder: ({ identifier: string; enabled?: boolean } | string)[];
     /** 预设/设置字段(oai_settings 的相关子集) */
     settings: {
         wi_format?: string;
@@ -134,11 +134,20 @@ export interface PromptBuildRequest {
     /** 当前 api/model(reasoning signature 判同) */
     api?: string;
     model?: string;
+    /** 工具调用面(ToolManager.isToolCallingSupported 等的服务端等价) */
+    tools?: {
+        canUse?: boolean;
+        includeSignature?: boolean;
+        /** tool_reasoning_modes:'disabled' | 'since_last_user' | 'active_chain' */
+        reasoningMode?: string;
+    };
+    /** 媒体内联开关(isImage/Video/AudioInliningSupported 等价)+ 宿主 MediaProvider 经 deps.setMediaProvider 绑 */
+    media?: { image?: boolean; video?: boolean; audio?: boolean };
 }
 
 /** 产出:messages + 诊断轨迹 */
 export interface BuiltPrompt {
-    messages: { role: string; content: string; name?: string }[];
+    messages: { role: string; content: unknown; name?: string }[];
     trace: {
         /** 每个 collection 的最终 token 数与消息数(prompt viewer 数据源) */
         collections: { identifier: string; tokens: number; count: number }[];

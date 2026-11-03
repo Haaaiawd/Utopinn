@@ -20,7 +20,7 @@ export interface OpenAICountOptions {
 
 export function createOpenAITokenCounter(
     encoderFor: (model?: string) => MessageEncoder,
-): TokenCounter & { countBatch(messages: { role: string; content: string; name?: string }[]): Promise<number> } {
+): TokenCounter & { countBatch(messages: (Record<string, unknown> & { role: string })[]): Promise<number> } {
     return {
         async count(message) {
             const model = undefined;
@@ -35,7 +35,7 @@ export function createOpenAITokenCounter(
 }
 
 export function openAIRawCount(
-    messages: { role: string; content: string; name?: string }[],
+    messages: (Record<string, unknown> & { role: string })[],
     queryModel = '',
     encoderFor: (model?: string) => MessageEncoder,
 ): { rawTotal: number } {

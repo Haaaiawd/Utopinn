@@ -12,7 +12,7 @@ import type {
 } from './types.js';
 import { IGNORE_SYMBOL } from './types.js';
 import { PromptCollection } from './collection.js';
-import { ChatCompletion, Message, MessageCollection } from './messages.js';
+import { ChatCompletion, Message, MessageCollection, type MediaAttachment, type ToolInvocation } from './messages.js';
 import {
     applyAttachedPromptsToMessages,
     applyPromptManagerOverrides,
@@ -127,7 +127,7 @@ export function setOpenAIMessages(
             content,
             name: c.name,
             media: c.extra?.media as unknown[] | undefined,
-            mediaDisplay: c.extra?.mediaDisplay as number | undefined,
+            mediaDisplay: c.extra?.mediaDisplay as string | undefined,
             mediaIndex: c.extra?.mediaIndex as number | undefined,
             invocations,
             signature,
@@ -410,24 +410,175 @@ async function populateChatHistory(
         chatCompletion.insert(emptyMsg, 'chatHistory');
     }
 
-    // 预算循环:最新在前 → 逐条 prepend,装不下即断(丢最旧)
+    // —— 以下逐段移植 openai.js:1601-1792 的池装填循环 ——
+    const tools = req.tools ?? {};
+    const media = req.media ?? {};
+    const toolReasoningMode = tools.reasoningMode ?? 'disabled';
+    const includeToolReasoning = toolReasoningMode !== 'disabled';
+    const includeSignature = tools.includeSignature ?? false;
+    const canUseTools = tools.canUse ?? false;
+    let lastUserIdx = -1;
+    for (let k = messages.length - 1; k >= 0; k--) {
+        if (messages[k]!.role === 'user') { lastUserIdx = k; break; }
+    }
+
     const chatPool = [...messages].reverse();
-    const batched = await Message.createManyAsync(
-        chatPool.map((chatPrompt, index) => ({
+    const chatEntries: {
+        chatPrompt: PromptMessage;
+        chatMessageIndex: number;
+        toolResultStartIndex: number;
+        toolResultCount: number;
+        postCountSignature: string | null;
+    }[] = [];
+    const batchedMessageDefinitions: (Record<string, unknown> & { role: string })[] = [];
+
+    for (let index = 0; index < chatPool.length; index++) {
+        const chatPrompt = chatPool[index]!;
+        const identifier = `chatHistory-${messages.length - index}`;
+        const messageName =
+            s.names_behavior === NAMES_COMPLETION && chatPrompt.name
+                ? isValidName(chatPrompt.name)
+                    ? chatPrompt.name
+                    : sanitizeName(chatPrompt.name)
+                : undefined;
+        const invocations = canUseTools && Array.isArray(chatPrompt.invocations)
+            ? (chatPrompt.invocations as ToolInvocation[])
+            : [];
+        const shouldCountSignature = invocations.length > 0 && includeSignature && Boolean(chatPrompt.signature);
+        const reasoning = typeof chatPrompt.reasoning === 'string' && chatPrompt.reasoning.length > 0
+            ? chatPrompt.reasoning
+            : null;
+        const reasoningBlocks = Array.isArray(chatPrompt.reasoning_blocks) && chatPrompt.reasoning_blocks.length > 0
+            ? chatPrompt.reasoning_blocks
+            : null;
+        const reasoningDetails = Array.isArray(chatPrompt.reasoning_details) && chatPrompt.reasoning_details.length > 0
+            ? chatPrompt.reasoning_details
+            : null;
+        const chatMessageDefinition: Record<string, unknown> & { role: string } = {
             role: chatPrompt.role,
             content: sub(chatPrompt.content, deps),
-            identifier: `chatHistory-${messages.length - index}`,
+            identifier,
             injected: chatPrompt.injected,
-            name:
-                s.names_behavior === NAMES_COMPLETION && chatPrompt.name
-                    ? isValidName(chatPrompt.name)
-                        ? chatPrompt.name
-                        : sanitizeName(chatPrompt.name)
-                    : undefined,
-        })),
-    );
+            ...(messageName ? { name: messageName } : {}),
+            ...(invocations.length > 0 ? { tool_calls: Message.formatToolCalls(invocations, includeSignature) } : {}),
+            ...(shouldCountSignature ? { signature: chatPrompt.signature } : {}),
+            ...(reasoning ? { reasoning } : {}),
+            ...(reasoningBlocks ? { reasoning_blocks: reasoningBlocks } : {}),
+            ...(reasoningDetails ? { reasoning_details: reasoningDetails } : {}),
+        };
+        const chatMessageIndex = batchedMessageDefinitions.length;
+        batchedMessageDefinitions.push(chatMessageDefinition);
 
-    for (const chatMessage of batched) {
+        const toolResultStartIndex = batchedMessageDefinitions.length;
+        if (invocations.length > 0) {
+            batchedMessageDefinitions.push(
+                ...invocations.slice().reverse().map((invocation) => ({
+                    role: 'tool',
+                    content: invocation.result || '[No content]',
+                    identifier: invocation.id,
+                })),
+            );
+        }
+
+        chatEntries.push({
+            chatPrompt,
+            chatMessageIndex,
+            toolResultStartIndex,
+            toolResultCount: invocations.length,
+            postCountSignature: !shouldCountSignature && includeSignature ? (chatPrompt.signature ?? null) : null,
+        });
+    }
+
+    const batched = await Message.createManyAsync(batchedMessageDefinitions);
+    for (const entry of chatEntries) {
+        const chatMessage = batched[entry.chatMessageIndex]!;
+
+        if (entry.postCountSignature) {
+            chatMessage.signature = entry.postCountSignature;
+        }
+
+        const inlineMediaAttachment = async (m: MediaAttachment): Promise<void> => {
+            if (!m || !m.url) return;
+            if (!m.type) m.type = 'image';
+            if (media.image && m.type === 'image') await chatMessage.addImage(m.url);
+            if (media.video && m.type === 'video') await chatMessage.addVideo(m.url);
+            if (media.audio && m.type === 'audio') await chatMessage.addAudio(m.url);
+        };
+
+        if (Array.isArray(entry.chatPrompt.media) && entry.chatPrompt.media.length) {
+            if (entry.chatPrompt.mediaDisplay === 'list') { // MEDIA_DISPLAY.LIST
+                for (const m of entry.chatPrompt.media as MediaAttachment[]) await inlineMediaAttachment(m);
+            }
+            if (entry.chatPrompt.mediaDisplay === 'gallery') { // MEDIA_DISPLAY.GALLERY
+                const m = (entry.chatPrompt.media as MediaAttachment[])[entry.chatPrompt.mediaIndex ?? 0];
+                if (m) await inlineMediaAttachment(m);
+            }
+        }
+
+        if (canUseTools && Array.isArray(entry.chatPrompt.invocations)) {
+            const promptIdx = messages.indexOf(entry.chatPrompt);
+            const reasoningIsEligible = toolReasoningMode !== 'disabled' && promptIdx > lastUserIdx;
+            let previousAssistantReasoning = '';
+            if (reasoningIsEligible) {
+                if (toolReasoningMode === 'active_chain') {
+                    for (let idx = promptIdx - 1; idx > lastUserIdx; idx--) {
+                        const candidate = messages[idx];
+                        if (candidate?.role === 'tool') continue;
+                        if (candidate?.role === 'assistant' && Array.isArray(candidate.invocations)) continue;
+                        const hasAssistantText = candidate?.role === 'assistant'
+                            && !Array.isArray(candidate.invocations)
+                            && typeof candidate.content === 'string'
+                            && candidate.content.trim().length > 0;
+                        if (hasAssistantText) {
+                            previousAssistantReasoning = String(candidate.reasoning ?? '');
+                        }
+                        break;
+                    }
+                } else if (toolReasoningMode === 'since_last_user') {
+                    for (let idx = promptIdx - 1; idx > lastUserIdx; idx--) {
+                        const candidate = messages[idx];
+                        const hasAssistantText = candidate?.role === 'assistant'
+                            && !Array.isArray(candidate.invocations)
+                            && typeof candidate.content === 'string'
+                            && candidate.content.trim().length > 0;
+                        if (!hasAssistantText) continue;
+                        const candidateReasoning = String(candidate.reasoning ?? '');
+                        if (candidateReasoning) {
+                            previousAssistantReasoning = candidateReasoning;
+                            break;
+                        }
+                    }
+                }
+            }
+            const invocations = (entry.chatPrompt.invocations as ToolInvocation[]).map((invocation) => {
+                const clone = structuredClone(invocation);
+                if (!reasoningIsEligible) {
+                    delete clone.reasoning;
+                } else if (previousAssistantReasoning && !clone.reasoning) {
+                    clone.reasoning = previousAssistantReasoning;
+                }
+                return clone;
+            });
+            const toolCallMessage = await Message.createAsync(chatMessage.role, undefined, 'toolCall-' + chatMessage.identifier);
+            const toolResultMessages = await Message.createManyAsync(
+                invocations.slice().reverse().map((invocation) => ({
+                    role: 'tool',
+                    content: invocation.result || '[No content]',
+                    identifier: invocation.id,
+                })),
+            );
+            await toolCallMessage.setToolCalls(invocations, includeSignature, includeToolReasoning);
+            if (chatCompletion.canAffordAll([toolCallMessage, ...toolResultMessages])) {
+                for (const resultMessage of toolResultMessages) {
+                    chatCompletion.insertAtStart(resultMessage, 'chatHistory');
+                }
+                chatCompletion.insertAtStart(chatMessage, 'chatHistory');
+            } else {
+                break;
+            }
+            continue;
+        }
+
         if (chatCompletion.canAfford(chatMessage)) {
             chatCompletion.insertAtStart(chatMessage, 'chatHistory');
         } else {
@@ -621,9 +772,14 @@ export async function buildPromptMessages(
 
     const flat = chatCompletion.messages.flatten();
     const finalMessages = flat.map((m) => {
-        const out: { role: string; content: string; name?: string } = { role: m.role, content: m.content };
+        const out: Record<string, unknown> & { role: string } = { role: m.role, content: m.content };
         if (m.name) out.name = m.name;
-        return out;
+        if (m.tool_calls) out.tool_calls = m.tool_calls;
+        if (m.signature) out.signature = m.signature;
+        if (m.reasoning) out.reasoning = m.reasoning;
+        if (m.reasoning_blocks) out.reasoning_blocks = m.reasoning_blocks;
+        if (m.reasoning_details) out.reasoning_details = m.reasoning_details;
+        return out as { role: string; content: unknown; name?: string };
     });
 
     const collections = chatCompletion.messages.collection.map((c) =>

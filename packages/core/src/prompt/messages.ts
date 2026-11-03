@@ -6,8 +6,8 @@
 import type { PromptLike } from './types.js';
 
 export interface TokenCounter {
-    /** 单条消息成本(含 role/name 开销),对应 ST countTokensOpenAIAsync(full=true) */
-    count(message: { role: string; content: string; name?: string }): Promise<number>;
+    /** 单条消息成本(含 role/name/tool_calls 开销),对应 ST countTokensOpenAIAsync(full=true) */
+    count(message: Record<string, unknown> & { role: string }): Promise<number>;
 }
 
 let counter: TokenCounter = { count: async (m) => Math.ceil(String(m.content ?? '').length / 4) };
@@ -18,26 +18,69 @@ export function getTokenCounter(): TokenCounter {
     return counter;
 }
 
+/** 工具调用载荷(openai.js ToolInvocation) */
+export interface ToolInvocation {
+    id: string;
+    name: string;
+    parameters?: unknown;
+    result?: string;
+    signature?: string;
+    reasoning?: string;
+    [key: string]: unknown;
+}
+
+/** 媒体附件(mediaDisplay LIST/GALLERY 时内联进消息) */
+export interface MediaAttachment {
+    url: string;
+    type?: string; // 'image' | 'video' | 'audio'
+    [key: string]: unknown;
+}
+
+/** 宿主注入的媒体能力(fetch/压缩/时长/质量),未给 = 内联关闭 */
+export interface MediaProvider {
+    fetchDataUrl(url: string): Promise<string | null>;
+    compressImage?(dataUrl: string): Promise<string>;
+    imageTokenCost?(dataUrl: string, quality: string): Promise<number>;
+    videoDuration?(dataUrl: string): Promise<number>;
+    audioDuration?(dataUrl: string): Promise<number>;
+    imageQuality?: string;
+}
+
+let mediaProvider: MediaProvider | null = null;
+export function setMediaProvider(p: MediaProvider | null): void {
+    mediaProvider = p;
+}
+export function getMediaProvider(): MediaProvider | null {
+    return mediaProvider;
+}
+
 export class Message {
+    static tokensPerImage = 85;
+
     role!: string;
-    content!: string;
+    content!: unknown; // string | multimodal parts[]
     name?: string;
     identifier!: string;
     tokens = 0;
     injected?: boolean;
+    tool_calls?: unknown[];
+    signature?: string | null;
+    reasoning?: string | null;
+    reasoning_blocks?: unknown[] | null;
+    reasoning_details?: unknown[] | null;
 
     static async createAsync(
         role: string,
-        content: string | undefined,
+        content: unknown,
         identifier: string,
         name?: string,
     ): Promise<Message> {
         const m = new Message();
-        m.role = role;
+        m.role = role || 'system';
         m.content = content ?? '';
         m.identifier = identifier;
         m.name = name;
-        m.tokens = await counter.count(m);
+        m.tokens = await counter.count(m.toTokenCountPayload());
         return m;
     }
 
@@ -47,15 +90,148 @@ export class Message {
     }
 
     static async createManyAsync(
-        defs: { role: string; content: string; identifier?: string; name?: string; injected?: boolean }[],
+        defs: ({
+            role: string;
+            content?: unknown;
+            identifier?: string;
+            name?: string;
+            injected?: boolean;
+        } & Record<string, unknown>)[],
     ): Promise<Message[]> {
         const out: Message[] = [];
         for (const d of defs) {
-            const m = await Message.createAsync(d.role, d.content, d.identifier ?? 'anon', d.name);
+            const m = new Message();
+            m.role = d.role || 'system';
+            m.content = d.content ?? '';
+            m.identifier = d.identifier ?? 'anon';
+            m.name = d.name;
+            for (const [k, v] of Object.entries(d)) {
+                if (!['role', 'content', 'identifier', 'name', 'injected'].includes(k)) {
+                    (m as unknown as Record<string, unknown>)[k] = v;
+                }
+            }
             m.injected = d.injected;
+            m.tokens = await counter.count(m.toTokenCountPayload());
             out.push(m);
         }
         return out;
+    }
+
+    static formatToolCalls(invocations: ToolInvocation[], includeSignature: boolean): unknown[] {
+        return invocations.map((i) => ({
+            id: i.id,
+            type: 'function',
+            function: {
+                arguments: i.parameters,
+                name: i.name,
+            },
+            ...(includeSignature && i.signature ? { signature: i.signature } : {}),
+        }));
+    }
+
+    async setToolCalls(invocations: ToolInvocation[], includeSignature: boolean, includeReasoning = false): Promise<void> {
+        this.tool_calls = Message.formatToolCalls(invocations, includeSignature);
+        const fallbackReasoning =
+            invocations.find((i) => typeof i.reasoning === 'string' && i.reasoning.length > 0)?.reasoning || null;
+        this.reasoning = includeReasoning ? fallbackReasoning : null;
+        this.tokens = await counter.count({
+            role: this.role,
+            tool_calls: JSON.stringify(this.tool_calls),
+            ...(this.reasoning ? { reasoning: this.reasoning } : {}),
+        });
+    }
+
+    async setName(name: string): Promise<void> {
+        this.name = name;
+        this.tokens = await counter.count(this.toTokenCountPayload());
+    }
+
+    hasTokenCountPayload(): boolean {
+        return (
+            (typeof this.content === 'string' && this.content.length > 0) ||
+            Array.isArray(this.content) ||
+            Array.isArray(this.tool_calls) ||
+            Boolean(this.name)
+        );
+    }
+
+    toTokenCountPayload(): Record<string, unknown> & { role: string } {
+        return {
+            role: this.role,
+            ...(Array.isArray(this.tool_calls) ? { tool_calls: JSON.stringify(this.tool_calls) } : {}),
+            ...(this.content !== undefined ? { content: this.content } : {}),
+            ...(this.name ? { name: this.name } : {}),
+            ...(this.signature ? { signature: this.signature } : {}),
+        };
+    }
+
+    ensureContentIsArray(): unknown[] {
+        const textContent = this.content;
+        if (!Array.isArray(this.content)) {
+            this.content = [];
+            if (typeof textContent === 'string') {
+                (this.content as unknown[]).push({ type: 'text', text: textContent });
+            }
+        }
+        return this.content as unknown[];
+    }
+
+    async addImage(image: string): Promise<void> {
+        this.ensureContentIsArray();
+        const provider = mediaProvider;
+        if (!provider) return;
+        if (!image.startsWith('data:')) {
+            const fetched = await provider.fetchDataUrl(image);
+            if (fetched === null) return;
+            image = fetched;
+        }
+        if (provider.compressImage) image = await provider.compressImage(image);
+        const quality = provider.imageQuality ?? 'auto';
+        (this.content as unknown[]).push({ type: 'image_url', image_url: { url: image, detail: quality } });
+        try {
+            this.tokens += provider.imageTokenCost
+                ? await provider.imageTokenCost(image, quality)
+                : Message.tokensPerImage;
+        } catch {
+            this.tokens += Message.tokensPerImage;
+        }
+    }
+
+    async addVideo(video: string): Promise<void> {
+        this.ensureContentIsArray();
+        const provider = mediaProvider;
+        if (!provider) return;
+        if (!video.startsWith('data:')) {
+            const fetched = await provider.fetchDataUrl(video);
+            if (fetched === null) return;
+            video = fetched;
+        }
+        const quality = provider.imageQuality ?? 'auto';
+        (this.content as unknown[]).push({ type: 'video_url', video_url: { url: video, detail: quality } });
+        try {
+            const duration = provider.videoDuration ? await provider.videoDuration(video) : 40;
+            this.tokens += 263 * Math.ceil(duration);
+        } catch {
+            this.tokens += 263 * 40;
+        }
+    }
+
+    async addAudio(audio: string): Promise<void> {
+        this.ensureContentIsArray();
+        const provider = mediaProvider;
+        if (!provider) return;
+        if (!audio.startsWith('data:')) {
+            const fetched = await provider.fetchDataUrl(audio);
+            if (fetched === null) return;
+            audio = fetched;
+        }
+        (this.content as unknown[]).push({ type: 'audio_url', audio_url: { url: audio } });
+        try {
+            const duration = provider.audioDuration ? await provider.audioDuration(audio) : 300;
+            this.tokens += 32 * Math.ceil(duration);
+        } catch {
+            this.tokens += 32 * 300;
+        }
     }
 
     getTokens(): number {
@@ -212,7 +388,7 @@ export class ChatCompletion {
             if (m.role === 'system' && !m.content) continue;
             if (shouldSquash(m) && last && shouldSquash(last)) {
                 last.content += '\n' + m.content;
-                last.tokens = await counter.count(last);
+                last.tokens = await counter.count(last.toTokenCountPayload());
             } else {
                 out.push(m);
                 last = m;
