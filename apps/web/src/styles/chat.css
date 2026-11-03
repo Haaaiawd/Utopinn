@@ -109,3 +109,5 @@
 .diag-kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 11.5px; }
 .diag-kv dt { color: var(--ink3); }
 .diag-kv dd { color: var(--ink2); font-variant-numeric: tabular-nums; }
+
+.cardapp-frame { width: 100%; height: 100%; min-height: 200px; border: 0; border-radius: var(--r-md, 8px); background: var(--bg-2, #14171c); }
