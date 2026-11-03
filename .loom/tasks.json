@@ -681,12 +681,8 @@
       "covers": [
         "DLV-010"
       ],
-      "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
-      },
+      "status": "active",
+      "progress": "SPA 骨架入库(shell+渲染器 seam+preview 真链,typecheck/build 绿);挂账:generate+WS 流",
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T06:33:54.144Z"
@@ -877,12 +873,8 @@
       ],
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "待开始",
-        "next": ""
-      },
+      "status": "active",
+      "progress": "settle 引擎+服务端管线入库(34/34,airline-mvu 真卡过);挂账:floor-0 自动初始化、edit/delete auto-resettle、CardApp JS 面板桥",
       "evidence": [],
       "created_at": "2026-11-03T06:33:54.144Z",
       "updated_at": "2026-11-03T06:34:14.239Z"
@@ -1177,12 +1169,8 @@
       "touches": [],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "待开始",
-        "next": ""
-      },
+      "status": "active",
+      "progress": "只读+delete+PATCH 面入库(11/11);挂账:导入导出、preset/world 保存、chat 分支",
       "evidence": [],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-03T09:52:13.053Z",
