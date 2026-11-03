@@ -5,6 +5,8 @@ import { useState } from 'react';
 import { useI18n } from '../../i18n';
 import type { PreviewResult } from '../../types';
 import { Icon } from '../Icon';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { ScrollArea } from '../ui/scroll-area';
 import { PreviewDebug } from '../chat/PreviewDebug';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
 
@@ -17,18 +19,14 @@ export function RightPanel({ preview, hidden, charDir, chatName }: { preview: Pr
 
     return (
         <aside className="upanel">
-            <div className="sp-tabs">
-                <button type="button" className={tab === 'session' ? 'on' : ''} onClick={() => setTab('session')}>
-                    {t('panel.session')}
-                </button>
-                <button type="button" className={tab === 'diag' ? 'on' : ''} onClick={() => setTab('diag')}>
-                    {t('panel.diag')}
-                </button>
-                <button type="button" className={tab === 'panels' ? 'on' : ''} onClick={() => setTab('panels')}>
-                    {t('panel.panels')}
-                </button>
-            </div>
-            <div className="sp-body">
+            <Tabs className="sp-tabs" value={tab} onValueChange={(v) => setTab(v as PanelTab)}>
+                <TabsList className="w-full">
+                    <TabsTrigger className="flex-1" value="session">{t('panel.session')}</TabsTrigger>
+                    <TabsTrigger className="flex-1" value="diag">{t('panel.diag')}</TabsTrigger>
+                    <TabsTrigger className="flex-1" value="panels">{t('panel.panels')}</TabsTrigger>
+                </TabsList>
+            </Tabs>
+            <ScrollArea className="sp-body">
                 {tab === 'session' && (
                     <div className="sp-card">
                         <h4>{t('panel.session')}</h4>
@@ -53,7 +51,7 @@ export function RightPanel({ preview, hidden, charDir, chatName }: { preview: Pr
                         </div>
                     )
                 )}
-            </div>
+            </ScrollArea>
         </aside>
     );
 }

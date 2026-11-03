@@ -1,33 +1,33 @@
-/* Base reset + shared controls (subset of the mockup control vocabulary). */
-* { box-sizing: border-box; margin: 0; }
-html, body, #root { height: 100%; }
-body {
-    font-family: var(--font-ui);
-    font-size: var(--fs-ui);
-    background: var(--bg);
-    color: var(--ink);
-    overflow: hidden;
-    -webkit-font-smoothing: antialiased;
-}
-button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
-input, select, textarea { font: inherit; color: inherit; }
-::-webkit-scrollbar { width: 9px; height: 9px; }
-::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 9px; border: 2px solid var(--bg); }
-::-webkit-scrollbar-track { background: transparent; }
+/* Base reset + shared bits — 重置段收进 @layer base(与 preflight 同层、
+   排在它后面,不挡 utilities;否则裸元素/通配规则会压死 ui/ 原语的 class)。
+   通用控件(btn/chip/seg/search/分段)已换成 src/components/ui/ 下的
+   shadcn 原语;这里只剩重置、渲染器残留类(.ibtn)和语义盒。 */
+@layer base {
+    * { box-sizing: border-box; margin: 0; }
+    html, body, #root { height: 100%; }
+    body {
+        font-family: var(--font-ui);
+        font-size: var(--fs-ui);
+        background: var(--bg);
+        color: var(--ink);
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+    input, select, textarea { font: inherit; color: inherit; }
+    ::placeholder { color: var(--ink3); opacity: 1; }
+    ::-webkit-scrollbar { width: 9px; height: 9px; }
+    ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 9px; border: 2px solid var(--bg); }
+    ::-webkit-scrollbar-track { background: transparent; }
 
-.btn {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 7px 14px; border-radius: var(--radius);
-    background: var(--raised); border: 1px solid var(--line);
-    font-size: var(--fs-ui); transition: .15s;
+    /* Radix ScrollArea viewport 的横向测量子是 display:table —— 纯纵向列表钉回 block。 */
+    [data-slot="scroll-area-viewport"] > div { display: block !important; }
 }
-.btn:hover { border-color: var(--line2); background: var(--bg3); }
-.btn.primary { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
-.btn.primary:hover { filter: brightness(1.08); background: var(--acc); }
-.btn.ghost { border-color: transparent; background: none; color: var(--ink2); }
-.btn.ghost:hover { background: var(--bubble); color: var(--ink); }
-.btn:disabled { opacity: .45; cursor: default; }
 
+/* 以下类不参与 utility 混排(渲染器外观/语义盒/布局辅助),保持非分层,
+   让它们在同元素上仍能盖住 utility —— 域外观本来就归手写。 */
+
+/* .ibtn 仅留给 .ub-prose 渲染器行内动作(渲染器外观属域内手写 CSS,不入 ui/)。 */
 .ibtn {
     width: 30px; height: 30px; border-radius: var(--radius-xs);
     display: grid; place-items: center; color: var(--ink2); transition: .12s;
@@ -35,27 +35,8 @@ input, select, textarea { font: inherit; color: inherit; }
 .ibtn:hover { background: var(--bubble); color: var(--ink); }
 .ibtn:disabled { opacity: .4; cursor: default; }
 
-.chip {
-    display: inline-flex; align-items: center; gap: 4px;
-    padding: 3px 10px; border-radius: var(--radius-pill);
-    background: var(--bubble); font-size: var(--fs-caption); color: var(--ink2);
-}
-.chip.acc { background: var(--acc-soft); color: var(--acc); }
-.chip.warn { background: #e8a13c1f; color: var(--warn); }
-
 .mut { color: var(--ink3); }
 .mut2 { color: var(--ink2); }
-
-.seg { display: inline-flex; background: var(--bg2); border-radius: var(--radius); padding: 3px; }
-.seg button { padding: 6px 14px; border-radius: var(--radius-xs); font-size: var(--fs-ui); color: var(--ink2); }
-.seg button.on { background: var(--raised); color: var(--ink); font-weight: 600; }
-
-.search {
-    display: flex; align-items: center; gap: 8px;
-    background: var(--bg2); border: 1px solid var(--line);
-    border-radius: var(--radius-pill); padding: 7px 12px;
-}
-.search input { border: 0; background: none; outline: none; flex: 1; font-size: var(--fs-ui); min-width: 0; }
 
 details.fold {
     border: 1px solid var(--line); border-radius: 9px;
@@ -72,7 +53,7 @@ details.fold .fold-body { padding: 2px 12px 12px; }
 .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; }
 .sect-title { font-size: 11px; font-weight: 600; color: var(--ink3); letter-spacing: .08em; margin: 16px 0 8px; text-transform: uppercase; }
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: center; font-size: 12.5px; }
-.kv label { color: var(--ink2); font-size: 11.5px; }
-.warn { background: #e8a13c18; border: 1px solid #e8a13c55; color: var(--warn); border-radius: 9px; padding: 9px 12px; font-size: 11.5px; }
-.err { background: var(--err-soft, #d0715f18); border: 1px solid #d0715f55; color: var(--err); border-radius: 9px; padding: 9px 12px; font-size: 11.5px; }
+.kv label { color: var(--ink2); font-size: var(--fs-caption); }
+.warn { background: #e8a13c18; border: 1px solid #e8a13c55; color: var(--warn); border-radius: 9px; padding: 9px 12px; font-size: var(--fs-caption); }
+.err { background: var(--err-soft, #d0715f18); border: 1px solid #d0715f55; color: var(--err); border-radius: 9px; padding: 9px 12px; font-size: var(--fs-caption); }
 [data-theme="light"] .err { background: #b04a3814; border-color: #b04a3844; }

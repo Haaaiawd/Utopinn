@@ -1,5 +1,7 @@
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 // Dev proxy target: apps/server (Luker-derived backend, `pnpm server`).
 // TASK-001 evidence: listens on 127.0.0.1:8000. The SPA is a thin client —
@@ -26,9 +28,15 @@ const upstreamError = (_err: unknown, _req: unknown, res: unknown) => {
 };
 
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+        // shadcn-style '@' alias (components.json → aliases).
+        alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    },
     server: {
         port: 5173,
+        // WSL over /mnt/d: inotify never fires for Windows-side writes.
+        watch: { usePolling: true, interval: 400 },
         proxy: {
             '/api': { target: SERVER_ORIGIN, changeOrigin: true, ws: true, configure: (proxy) => proxy.on('error', upstreamError) },
             '/csrf-token': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },

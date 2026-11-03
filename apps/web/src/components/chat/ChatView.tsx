@@ -14,6 +14,8 @@ import { getChat, appendUserMessage, patchSwipe } from '../../api/chats';
 import { postGenerate, streamJob } from '../../api/generate';
 import type { ChatSummary, PreviewResponse, PreviewResult } from '../../types';
 import { Icon } from '../Icon';
+import { IconButton } from '../ui/icon-button';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Composer } from './Composer';
 import { ProseRenderer } from './renderers/ProseRenderer';
 import type { ConversationRendererComponent } from './renderers/types';
@@ -188,31 +190,22 @@ export function ChatView({
     return (
         <>
             <div className="ctbar">
-                <button type="button" className="ibtn" title={t('menu.view.toggleSidebar')}
-                    onClick={onToggleSidebar}>
-                    <Icon name="sidebarLeft" size={16} />
-                </button>
+                <IconButton label={t('menu.view.toggleSidebar')} onClick={onToggleSidebar}
+                    icon={<Icon name="sidebarLeft" size={16} />} />
                 <h1>{chat.title}</h1>
-                {preview?.mock && <span className="chip warn">{t('chat.preview.mock')}</span>}
                 <span className="grow" />
-                <div className="vtabs" role="tablist">
-                    <button type="button" className={tab === 'conversation' ? 'on' : ''}
-                        onClick={() => setTab('conversation')}>
-                        {t('chat.tabs.conversation')}
-                    </button>
-                    <button type="button" className={tab === 'preview' ? 'on' : ''}
-                        onClick={() => setTab('preview')}>
-                        {t('chat.tabs.preview')}
-                    </button>
-                </div>
-                <button type="button" className="ibtn" title={t('chat.preview')}
-                    disabled={previewLoading} onClick={onRunPreview}>
-                    <Icon name="eye" size={15} />
-                </button>
-                <button type="button" className="ibtn" title={t('menu.view.togglePanel')}
-                    onClick={onTogglePanel}>
-                    <Icon name="panelRight" size={15} />
-                </button>
+                {/* mock 徽标只保留右栏诊断卡那一处 —— 它是数据可信度的本职位置,
+                    ctbar 只留标题 + tabs + 图标。 */}
+                <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+                    <TabsList>
+                        <TabsTrigger value="conversation">{t('chat.tabs.conversation')}</TabsTrigger>
+                        <TabsTrigger value="preview">{t('chat.tabs.preview')}</TabsTrigger>
+                    </TabsList>
+                </Tabs>
+                <IconButton label={t('chat.preview')} icon={<Icon name="eye" size={15} />}
+                    disabled={previewLoading} onClick={onRunPreview} />
+                <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
+                    icon={<Icon name="panelRight" size={15} />} />
             </div>
 
             <div className="read-zone">

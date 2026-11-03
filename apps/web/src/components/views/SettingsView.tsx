@@ -3,6 +3,7 @@
 // The full chain (connection → presets → prompts → …) is a later slice.
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 
 export function SettingsView() {
     const { t, locale, setLocale } = useI18n();
@@ -14,24 +15,24 @@ export function SettingsView() {
             <div className="card" style={{ marginBottom: 14 }}>
                 <div className="kv">
                     <label>{t('settings.theme')}</label>
-                    <span className="seg">
-                        <button type="button" className={theme === 'dark' ? 'on' : ''} onClick={() => theme !== 'dark' && toggle()}>
-                            {t('settings.theme.dark')}
-                        </button>
-                        <button type="button" className={theme === 'light' ? 'on' : ''} onClick={() => theme !== 'light' && toggle()}>
-                            {t('settings.theme.light')}
-                        </button>
-                    </span>
+                    <Tabs value={theme} onValueChange={() => toggle()}>
+                        <TabsList>
+                            <TabsTrigger value="dark">{t('settings.theme.dark')}</TabsTrigger>
+                            <TabsTrigger value="light">{t('settings.theme.light')}</TabsTrigger>
+                        </TabsList>
+                    </Tabs>
                     <label>{t('settings.locale')}</label>
-                    <span className="seg">
-                        <button type="button" className={locale === 'zh-CN' ? 'on' : ''} onClick={() => setLocale('zh-CN')}>中文</button>
-                        <button type="button" className={locale === 'en' ? 'on' : ''} onClick={() => setLocale('en')}>English</button>
-                    </span>
+                    <Tabs value={locale} onValueChange={(v) => setLocale(v as 'zh-CN' | 'en')}>
+                        <TabsList>
+                            <TabsTrigger value="zh-CN">中文</TabsTrigger>
+                            <TabsTrigger value="en">English</TabsTrigger>
+                        </TabsList>
+                    </Tabs>
                 </div>
             </div>
             <div className="card">
                 <div className="sect-title" style={{ marginTop: 0 }}>{t('settings.chain')}</div>
-                <p className="mut" style={{ fontSize: 11.5, lineHeight: 1.8 }}>{t('settings.chainNote')}</p>
+                <p className="mut" style={{ fontSize: 12, lineHeight: 1.8 }}>{t('settings.chainNote')}</p>
             </div>
         </div>
     );

@@ -13,7 +13,8 @@
         // typecheck` works before @uberge/protocol has been built.
         "paths": {
             "@uberge/protocol": ["../../packages/protocol/src/index.ts"],
-            "@uberge/protocol/*": ["../../packages/protocol/src/*"]
+            "@uberge/protocol/*": ["../../packages/protocol/src/*"],
+            "@/*": ["./src/*"]
         }
     },
     "include": ["src", "vite.config.ts"]

@@ -4,6 +4,14 @@
 import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
+import { Button } from '../ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 export function Composer({ onSend, disabled }: { onSend: (text: string) => void; disabled?: boolean }) {
     const { t } = useI18n();
@@ -36,21 +44,34 @@ export function Composer({ onSend, disabled }: { onSend: (text: string) => void;
                         }}
                     />
                     <div className="composer-bar">
-                        <span className="preset-pick">
-                            <Icon name="zap" size={12} />
-                            <span>default</span>
-                            <Icon name="chevronDown" size={11} />
-                        </span>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <button type="button" className="preset-pick">
+                                    <Icon name="zap" size={12} />
+                                    <span>default</span>
+                                    <Icon name="chevronDown" size={11} />
+                                </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent side="top" align="start">
+                                <DropdownMenuLabel>{t('diag.preset')}</DropdownMenuLabel>
+                                {/* 骨架期只有 default 一档;多预设接入时这里长出真列表。 */}
+                                <DropdownMenuItem disabled>
+                                    <Icon name="zap" size={12} />
+                                    default
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <span className="grow" />
-                        <button
+                        <Button
                             type="button"
-                            className="send"
+                            size="icon"
+                            className="composer-send"
                             title={t('chat.send')}
                             disabled={disabled || !text.trim()}
                             onClick={submit}
                         >
                             <Icon name="send" size={14} />
-                        </button>
+                        </Button>
                     </div>
                 </div>
             </div>
