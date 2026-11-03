@@ -19,3 +19,7 @@ export * from './prompt/messages.js';
 export * from './prompt/injections.js';
 export * from './prompt/tokens.js';
 export * from './prompt/assemble.js';
+export * from './instruct/engine.js';
+export * from './regex/types.js';
+export * from './regex/engine.js';
+export * from './regex/redos.js';
