@@ -12,6 +12,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync } from 
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import WebSocket from 'ws';
 import { startServer, tearDownServer } from './e2e/_lib/server.js';
 import { startMockLLM } from './e2e/_lib/mockLLM.js';
 import { markOnboarded, bootstrapCustomBackend, writeCharacter, writePreset } from './e2e/_lib/fixtures.js';
@@ -123,6 +124,37 @@ test('/api/uberge/generate e2e — assemble→dispatch→job→persist', async (
             // {{char}} 宏已被替换(服务端,不是前端)
             assert.ok(msgs.every((m) => !String(m.content ?? '').includes('{{char}}')),
                 'no raw {{char}} macro reaches upstream');
+        });
+
+        await t.test('WS delivery replays job events (ticket auth)', async () => {
+            const ticketRes = await post(server.baseURL, '/api/ws-ticket', session, {});
+            const { ticket } = await ticketRes.json();
+            assert.ok(ticket, 'ws-ticket minted');
+            const ws = new WebSocket(
+                `ws://127.0.0.1:${server.port}/api/ws-delivery`,
+                `luker-ws-ticket.${ticket}`,
+            );
+            const frames = [];
+            const done = new Promise((res, rej) => {
+                const to = setTimeout(() => rej(new Error('WS frames timeout')), 15000);
+                ws.on('message', (raw) => {
+                    const f = JSON.parse(String(raw));
+                    frames.push(f);
+                    if (f.type === 'end' || f.type === 'error') { clearTimeout(to); res(); }
+                });
+                ws.on('error', rej);
+            });
+            await new Promise((res) => ws.once('open', res));
+            // subscribe=只发增量;已完成 job 的回放走 resume+from_seq(恢复语义)
+            ws.send(JSON.stringify({ type: 'resume', request_id: jobId, from_seq: 1 }));
+            await done;
+            ws.close();
+            assert.ok(frames.some((f) => f.type === 'head'), 'head frame replayed');
+            assert.ok(frames.some((f) => f.type === 'chunk'), 'chunk frame replayed');
+            assert.ok(frames.some((f) => f.type === 'end'), 'end frame replayed');
+            const text = frames.filter((f) => f.type === 'chunk')
+                .map((f) => Buffer.from(String(f.data), 'base64').toString('utf8')).join('');
+            assert.match(text, /breakers|lantern|choices/, 'chunk payload carries upstream SSE bytes');
         });
 
         await t.test('assistant reply persisted to chat JSONL', () => {
