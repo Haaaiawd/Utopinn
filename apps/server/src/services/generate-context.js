@@ -11,6 +11,7 @@
  */
 import {
     checkWorldInfo,
+    createInstructEngine,
     mergeLoreSources,
     substituteParams,
 } from '@uberge/core';
@@ -184,6 +185,27 @@ export async function buildGenerationContext({
         currentChatId: chatName,
         limits: { maxContext: presetDoc.openai_max_context, maxResponse: presetDoc.openai_max_tokens },
     };
+
+    // instruct seam:引擎绑定 formatInstructExamples 填 substCtx。
+    // mainApi==='openai' 时 {{mesExamples}} 不走 instruct 形态(同原版
+    // script.js:5890 语义),但 seam 就位后 textgen 路径(TASK-020)直接用。
+    const powerUserInstruct = powerUser?.instruct ?? {};
+    const [instructPresetDocs, contextPresetDocs] = await Promise.all([
+        presetRepo.listWithDocs(handle, 'instruct').catch(() => []),
+        presetRepo.listWithDocs(handle, 'context').catch(() => []),
+    ]);
+    const instructEngine = createInstructEngine({
+        ...substCtx,
+        instruct: powerUserInstruct,
+        contextTemplate: powerUser?.context,
+        instructPresets: instructPresetDocs.map((d) => ({ name: d?.name, ...(d?.doc ?? {}) })),
+        contextPresets: contextPresetDocs.map((d) => ({ name: d?.name })),
+        modelTemplatesMappings: powerUser?.model_templates_mappings,
+        warn: (m) => console.warn(m),
+    });
+    substCtx.instruct = powerUserInstruct;
+    substCtx.mainApi = 'openai';
+    substCtx.formatInstructExamples = instructEngine.formatInstructExamples;
     const subst = (content) => substituteParams(content, substCtx);
 
     // —— extension prompts:settings 顶层 extension_prompts + chat_metadata.script_injects
