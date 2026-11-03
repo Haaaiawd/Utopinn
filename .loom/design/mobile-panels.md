@@ -44,6 +44,16 @@
 - 不追求移动端原生重绘面板——WebView 保兼容,原生渲染是以后的锦上添花
 - 选型已固化(见 capabilities/mobile-app-stack + sandboxed-card-apps):expo-router 底导航、LegendList 聊天列表、TanStack Query+WS ticket、streamdown 流式 markdown、NativeWind 共享 tokens;沙箱=独立 WebView+nonce 白名单桥+CSP+shim 降级
 
+## 机制层扩展(2026-11-03 TavernWeave/生态调研后)
+
+详见 `capabilities/sandboxed-card-apps/research/card-runtime-ecosystem.md`。要点:
+
+- **面板页 = 同层前端 shell 宿主**(TW-C5 三层架构的直接对应):真实聊天在服务端,面板是 0 号楼 shell。聊天页不内嵌卡 HTML → `is_hidden` 铁律天然满足,不需要 ST 的 DOM 折叠 hack
+- **双面 shim 按 bootstrap `face` 注入**(protocol `PANEL_METHODS_TH`):卡声明 `card_app` → ctx 桥;否则 → TavernHelper 兼容全局。API 面分 T0(变量/事件/消息读/injectPrompts/waitGlobalInitialized)/T1(消息写/triggerSlash/MVU 面)/T2(lodash/zod/SillyTavern.getContext 子集/window.parent 降级代理)三层实现
+- **远程资源走服务端 CDN 代理**:卡内 `import 'jsdelivr/...'` 经 `/api/cdn-proxy/<hash>` 拉取+缓存+SHA-256 校验。白名单两级:卡声明 `card_app.resources.allowlist` 精确放行;未声明按已知 CDN 域名级+逐 URL 审批准入。对任意卡生效,不逐卡适配
+- **MVU 服务端边界**:`<UpdateVariable>` 块在服务端生成管线解析 → stat_data 写 chat 变量;显示剥离沿用 `仅格式显示` 正则。面板内 Mvu 全局 = T1 桥面,不直接把 bundle.js 塞给 WebView
+- **is_hidden 铁律**:任何视觉隐藏不得改 `is_hidden`(会改 LLM 上下文语义);恢复优先级 真实聊天 > chat/message 变量 > localStorage > iframe 内存
+
 ## Verification strategy
 
 - 用 `tests/corpus/cards/` 中的 CardApp 卡与状态栏卡做设备端冒烟:挂载→状态读写→切 swipe 后状态回放正确
