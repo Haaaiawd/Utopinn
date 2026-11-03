@@ -1277,6 +1277,125 @@
       ],
       "implements": "",
       "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": "真实卡 HTML 应用在 web 面板页渲染;ctx.getVariables/setVariables 走桥;CSP 生效",
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T11:19:00.114Z",
+      "updated_at": "2026-11-03T11:19:00.114Z",
+      "integrity_version": 1,
+      "id": "TASK-022",
+      "title": "CardApp web 宿主:iframe 沙箱 + postMessage 桥",
+      "outcome": "web 端消费 card-runtime 服务端面,/m/<id> 挂载点渲染卡 HTML 应用,ctx API 桥接",
+      "depends_on": [
+        "TASK-014"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": "GET chats 挂 Sidebar;新聊天可建可聊;swipe 切换持久化到 JSONL",
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T11:19:00.114Z",
+      "updated_at": "2026-11-03T11:19:00.114Z",
+      "integrity_version": 1,
+      "id": "TASK-023",
+      "title": "聊天生命周期:列表/新建/重命名/删除/swipe持久化",
+      "outcome": "Sidebar 真实聊天列表+创建入口+swipe 写回",
+      "depends_on": [
+        "TASK-018"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": "web 设置域内 persona 管理可用",
+      "boundaries": [],
+      "reads": [],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T11:19:00.114Z",
+      "updated_at": "2026-11-03T11:19:00.114Z",
+      "integrity_version": 1,
+      "id": "TASK-024",
+      "title": "persona/用户面管理 UI",
+      "outcome": "persona 列表/切换/描述编辑(消费 GET /personas)",
+      "depends_on": [
+        "TASK-018"
+      ],
+      "implements": "",
+      "capability_hooks": []
+    }
+  ],
+  "milestones": [
+    {
+      "id": "M1",
+      "title": "能聊",
+      "goal": "web 上真实聊天闭环可用",
+      "tasks": [
+        "TASK-007",
+        "TASK-010",
+        "TASK-023",
+        "TASK-013"
+      ]
+    },
+    {
+      "id": "M2",
+      "title": "能管",
+      "goal": "库/预设/WI/persona/导入导出管理面可用",
+      "tasks": [
+        "TASK-018",
+        "TASK-016",
+        "TASK-021",
+        "TASK-024",
+        "TASK-017"
+      ]
+    },
+    {
+      "id": "M3",
+      "title": "能玩卡",
+      "goal": "CardApp/MVU/社区渲染器/插件生态可用",
+      "tasks": [
+        "TASK-014",
+        "TASK-022",
+        "TASK-013",
+        "TASK-015",
+        "TASK-019",
+        "TASK-020"
+      ]
     }
   ]
 }
