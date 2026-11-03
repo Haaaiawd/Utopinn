@@ -1,7 +1,10 @@
-// @uberge/formats — character card / world book / chat file codecs.
-// PNG tEXt chunks (CCv1/v2/v3), JSON cards, charx (zip), byaf,
-// world-info {entries:{}}, chat JSONL. Ported from
-// apps/server/src/{charx,byaf,character-card-parser}.js and src/png/.
-// Pure functions, no fs — usable on server AND inside apps/mobile
-// (import preview / export on device).
-export {};
+// @uberge/formats — 卡面/世界书/聊天文件编解码,纯函数无 fs。
+// 行为基准:apps/server/src/{character-card-parser,charx,byaf}.js + endpoints/chats.js。
+export * from './png.js';
+export * from './zip.js';
+export * from './charx.js';
+export * from './byaf.js';
+export * from './chat-jsonl.js';
+export * from './card.js';
+export { sanitizeFilename } from './sanitize.js';
+export { crc32 } from './crc32.js';

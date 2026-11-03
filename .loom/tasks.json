@@ -147,7 +147,7 @@
         {
           "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
           "verify_by": "pnpm --filter @uberge/formats test",
-          "evidence": ""
+          "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
         }
       ],
       "done_when": [],
@@ -174,15 +174,30 @@
       "covers": [
         "DLV-004"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [],
-        "current": "",
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "pnpm --filter @uberge/formats test → 17/17 pass(png 6 + charx 3 + byaf 3 + jsonl/card 5):写卡读卡往返、ccv3 优先、zTXt 解、strip、CharX 资产映射(sprite hyphen/background/icon 排除/远程排除/非图扩展名排除)、BYAF 宏替换+NSFW+内嵌书+display_name+聊天背景、JSONL 头/往返/末条、detectSpec/toV2",
+        "pnpm --filter @uberge/formats typecheck 通过(strict + noUncheckedIndexedAccess)",
+        "纯函数无 fs 无 Node Buffer:全部 Uint8Array + TextEncoder/Decoder + fflate,server/RN/浏览器三端可跑;base64/CRC32/sanitize 内联零额外依赖(唯一依赖 fflate@0.8.3)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
+              "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
+            }
+          ],
+          "at": "2026-11-03T03:22:14.720Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T03:22:14.720Z",
+      "completed_at": "2026-11-03T03:22:14.720Z"
     },
     {
       "id": "TASK-004",
