@@ -215,3 +215,34 @@ ST 主界面结构 = 顶栏 icon 排 + 左侧角色抽屉 + 中央聊天 + 浮�
 - 消息操作密度:ST 单条消息动作有 14+ 个,长按菜单层级怎么分组要真机试
 - 角色编辑器在窄屏 web(<1100px)是否改单栏 tab
 - WI 条目列表是否需要 ST 那样的拖拽排序(或 order 数值够用)
+
+## 7. 实证校准(2026-11-03,ref/Luker index.html 逐行盘点)
+
+子代理盘点完成(8741行 index.html + script.js)。修正:
+
+- **顶栏真实结构 = 8 个可钉抽屉**,分两组钉在左右:
+  左=生成配置族(sliders AI配置/plug API连接/font 格式化/book 世界书)
+  右=内容管理族(user-cog 设置/image 背景/puzzle 扩展/smile Persona)
+  +右抽屉=角色管理。我们的五域分法与实证吻合,但**API连接归"生成配置"
+  不归"设置"**(它和采样器是同一心智区,ST 分两个抽屉反而对)。
+- **Luker 独有面**(新结构必须留位):沉浸模式/变量op日志/聊天合并分支/
+  CardApp抽屉/欢迎屏/背景文件夹/诊断菜单/LAN-S3同步/服务端生成任务/
+  request inspector/存储检查器/activity pill/orchestrator扩展/Admin面板/
+  聊天工具面板。
+- **高频深埋点(IA 必修)**:provider切换3+层且互斥隐藏;Sync/备份4层;
+  Prompt Manager 4层;WI条目编辑4层;Author's Note/CFG/logprobs 无入口
+  (藏在 options/slash);扩展子设置3-4层。ST 好的留:More...聚合低频、
+  settingsSearch 全局搜索、消息 ⋯ 二级收纳。
+
+## 8. 两根支柱(用户原话钉板)
+
+**导入导出=用户的安装仪式**:ST 每个对象都带它(预设/主题/卡/WI/背景/
+Persona)。我们的设计:每对象就地保留 import/export + 设置·数据下统一
+"导入导出中心"(批量/格式总览/URL导入),移动端卡导入保 PNG/URL。
+
+**开发者工具=生态引水渠**:Luker 已埋半成品(request inspector/
+存储检查器/调试导出/生成任务/自profiling),新结构提成一等公民——
+web 导航加「诊断」域或生成配置内 tab:上一轮发给 LLM 的完整 prompt
+查看器(=request inspector 精神)、WI 激活轨迹、token 计数、生成任务
+监视、golden-diff 结果、存储检查、插件 degraded 诊断。服务"调卡人/
+插件作者/我们自己"三个角色。
