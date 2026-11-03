@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Uberge 线稿:Web SPA + 移动端 IA</title>
+<style>
+:root{--ink:#171717;--muted:#6d6d6d;--line:#c9c9c9;--paper:#fff;--wash:#f4f4f1;--radius:16px}
+*{box-sizing:border-box}body{margin:0;background:var(--wash);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif}button{font:inherit;color:inherit;cursor:pointer}[data-inert]{opacity:.55;cursor:default}button:focus-visible,[tabindex="0"]:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+.app{min-height:100vh;display:grid;grid-template-columns:230px minmax(0,1fr)}.sidebar{background:var(--paper);padding:22px;border-right:1px solid var(--line)}.brand{font-size:18px;font-weight:750;margin-bottom:20px}.nav{display:grid;gap:6px}.nav button,.quiet,.primary{border:1px solid var(--line);background:#fff;border-radius:11px;padding:9px 12px;text-align:left}.nav button.active,.primary{background:var(--ink);color:#fff;border-color:var(--ink)}.navgroup{font-size:11px;letter-spacing:.12em;color:var(--muted);margin:16px 0 4px}
+.workspace{min-width:0}.topbar{height:64px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:5}.topbar h1{font-size:16px;margin:0}.toolbar{display:flex;gap:8px}.content{padding:26px;max-width:1180px;margin:auto;position:relative;min-height:calc(100dvh - 64px)}.kicker{font-size:11px;letter-spacing:.12em;color:var(--muted)}h2{font-size:26px;margin:6px 0 20px}h3{margin:5px 0 8px;font-size:17px}.muted{color:var(--muted)}.card{position:relative;background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px}.button-row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}.primary{text-align:center}.status{display:inline-block;border:1px solid var(--line);border-radius:99px;padding:2px 8px;font-size:12px}
+.annotation,.asset-marker{position:absolute;top:10px;right:10px;width:28px;height:28px;border-radius:50%;border:1px solid var(--ink);background:#fff;font-weight:700}.asset-marker{width:auto;border-radius:8px;padding:0 7px}
+/* 线稿通用件 */
+.wf{border:1px solid var(--line);border-radius:12px;background:#fff;padding:14px}.wf-row{display:flex;gap:12px}.msg{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0}.msg .who{font-weight:700;font-size:12px}.msg-actions{font-size:12px;color:var(--muted);margin-top:4px}.skeleton{border:1px dashed var(--line);border-radius:8px;color:var(--muted);text-align:center;padding:10px;font-size:12px}.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}.col{display:grid;gap:10px;align-content:start}.listrow{border:1px solid var(--line);border-radius:10px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center}.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.tabs button{border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 12px;font-size:13px}.tabs button.on{background:var(--ink);color:#fff}.slider{height:6px;border-radius:3px;background:var(--wash);border:1px solid var(--line);margin:8px 0}.fold{border:1px solid var(--line);border-radius:10px;padding:10px 12px}.fold>b{display:flex;justify-content:space-between}.avatar{width:56px;height:56px;border:1px solid var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:11px}
+/* 手机框 */
+.phone{width:min(390px,94vw);margin:0 auto;border:2px solid var(--ink);border-radius:26px;background:#fff;overflow:hidden}.phone .screen{min-height:640px;display:flex;flex-direction:column}.ptop{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;font-weight:700}.pbody{flex:1;padding:12px;overflow:auto}.ptabbar{display:flex;border-top:1px solid var(--line)}.ptabbar button{flex:1;border:0;background:#fff;padding:11px 4px;font-size:12px;border-right:1px solid var(--line)}.ptabbar button:last-child{border-right:0}.ptabbar button.on{font-weight:800;border-top:2px solid var(--ink)}
+/* inspector/popup/layers/journey/review */
+.inspector{position:fixed;top:0;right:0;bottom:0;width:min(340px,calc(100vw - 20px));z-index:30;border-left:1px solid var(--line);box-shadow:-12px 0 40px #0002;transform:translateX(105%);transition:transform .2s;overflow:auto;background:var(--paper);padding:22px}.inspector.open{transform:none}.inspector h3{margin:0 0 6px}.inspector section{border-top:1px solid var(--line);padding-top:16px;margin-top:18px}.popover,.layers,.journey{position:fixed;background:#fff;border:1px solid var(--ink);border-radius:14px;box-shadow:0 12px 40px #0002;z-index:20}.popover{width:min(300px,calc(100vw - 24px));max-height:min(60vh,350px);overflow:auto;padding:16px}.layers{right:20px;top:76px;padding:14px;display:none}.layers.open{display:grid;gap:10px}.journey{right:20px;bottom:20px;width:min(380px,calc(100vw - 20px));max-height:75vh;overflow:auto;padding:18px;display:none}.journey.open{display:block}.journey ol{padding-left:20px}.journey li{padding:8px;border:1px solid var(--line);border-radius:9px;margin:8px 0;list-style-position:inside}.journey-trigger{position:fixed;left:250px;bottom:20px;z-index:10}.hidden{display:none!important}[data-layer="asset"]{display:none}.close{float:right;border:0;background:none;font-size:18px}
+.review-layer{position:absolute;inset:0;pointer-events:none;z-index:6}.review-marker{position:absolute;min-width:30px;height:26px;padding:0 8px;border:1.5px solid var(--ink);border-radius:13px 13px 13px 3px;background:repeating-linear-gradient(135deg,#fff,#fff 5px,#efefe9 5px,#efefe9 6px);font-size:11px;font-weight:800;pointer-events:auto}
+.review-hint{position:fixed;top:76px;left:50%;translate:-50% 0;z-index:40;background:var(--ink);color:#fff;padding:8px 16px;border-radius:999px;font-size:12px;display:none;white-space:nowrap}body.review-mode .review-hint{display:block}body.review-mode .content{cursor:crosshair}.review-mode #reviewButton{background:var(--ink);color:#fff}
+.popover textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;resize:vertical}.review-item{border:1px solid var(--line);border-radius:9px;padding:10px;margin:8px 0}.review-item p{margin:4px 0}.review-export{width:100%;font:11px/1.5 ui-monospace,monospace;white-space:pre-wrap;border:1px dashed var(--line);border-radius:8px;padding:8px;max-height:160px;overflow:auto;background:var(--wash)}
+@media(max-width:760px){.app{display:block}.sidebar{border:0;border-bottom:1px solid var(--line);padding:12px;position:sticky;top:0;z-index:7}.brand{display:none}.nav{display:flex;overflow:auto}.nav button{white-space:nowrap}.navgroup{display:none}.topbar{top:57px;padding:0 14px}.content{padding:16px}.grid2{grid-template-columns:1fr}.grid5{grid-template-columns:repeat(3,1fr)}.journey{left:10px;right:10px;bottom:10px;width:auto;max-height:68vh}.journey-trigger{left:12px;bottom:12px}.layers{right:10px;top:126px}h2{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="app">
+ <aside class="sidebar"><div class="brand">Uberge 线稿</div><nav class="nav">
+   <div class="navgroup">WEB 端(聊天+管理全量)</div>
+   <button data-go="w-chat" class="active">聊天</button>
+   <button data-go="w-chars">角色卡</button>
+   <button data-go="w-char-edit">└ 角色编辑器</button>
+   <button data-go="w-wi">世界书</button>
+   <button data-go="w-gen">生成配置</button>
+   <button data-go="w-ext">扩展</button>
+   <button data-go="w-plugins">插件</button>
+   <button data-go="w-settings">设置</button>
+   <div class="navgroup">移动端(薄壳)</div>
+   <button data-go="m-chat">聊天</button>
+   <button data-go="m-chars">角色</button>
+   <button data-go="m-panel">面板</button>
+   <button data-go="m-panel-app">└ 卡应用全屏</button>
+   <button data-go="m-me">我的</button>
+ </nav></aside>
+ <main class="workspace"><header class="topbar"><h1 id="pageTitle">聊天</h1><div class="toolbar"><button class="quiet" id="reviewButton">✎ 批注</button><button class="quiet" id="layersButton">图层</button><button class="quiet" id="inspectorButton" aria-expanded="false" aria-controls="inspector">ⓘ 说明</button></div></header><div class="content" id="screen"></div></main>
+ <aside class="inspector" id="inspector" aria-label="页面说明"><button class="close" id="inspectorClose" aria-label="关闭">×</button><h3>页面说明</h3><p id="pageInfo" class="muted"></p><section><h3>评审批注</h3><p class="muted" style="font-size:12px">批注是本机评审记录,可导出为修改提示词回给 AI。</p><div id="reviewList"></div><button class="quiet" id="copyReview">复制为修改提示词</button><div class="review-export hidden" id="reviewExport"></div></section></aside>
+<div class="review-hint" id="reviewHint">批注模式:点击页面任意位置留下批注 · Esc 或再次点击按钮退出</div>
+</div>
+<button class="quiet journey-trigger" id="journeyButton">查看路径</button>
+<div class="layers" id="layers"><label><input type="checkbox" id="uxToggle" checked> UX 标注</label><label><input type="checkbox" id="assetToggle"> 美术资产</label><label><input type="checkbox" id="reviewToggle" checked> 评审批注</label></div>
+<section class="journey" id="journey"><button class="close" id="journeyClose" aria-label="关闭">×</button><div id="journeyBody"></div></section>
+<div class="popover hidden" id="popover"></div>
+
+<!-- ============ WEB 页 ============ -->
+<template id="page-w-chat"><div class="kicker">WEB / 默认落点</div><h2>聊天 · 与「诡秘之主」</h2>
+<div class="wf-row"><div class="col" style="width:200px;flex:none">
+ <div class="wf"><b>会话列表</b><div class="listrow" style="margin-top:8px;background:var(--wash)"><span>● 今天 21:04</span></div><div class="listrow"><span>○ 昨天</span></div><div class="listrow"><span>○ 3 天前</span></div><button class="quiet" data-inert style="margin-top:8px">+ 新会话</button></div>
+ <button class="annotation" data-layer="ux" data-note="sesslist" style="position:relative;top:auto;right:auto">1</button>
+</div><div class="col" style="flex:1">
+ <div class="msg"><div class="who">诡秘之主 ◐</div>雾气漫过煤油灯罩……<div class="msg-actions">swipe ◀ 2/3 ▶ · ✎ ⧉ ↻ · <span class="muted">hover 才显,常态隐藏</span></div><button class="annotation" data-layer="ux" data-note="msgact" >2</button></div>
+ <div class="msg"><div class="who">我 ◑</div>我推开门。</div>
+ <div class="msg"><div class="who">诡秘之主 ◐</div><span class="skeleton">▌流式输出中…(增量渲染不跳动)</span></div>
+ <div class="wf"><b>输入</b> 写下行动…<div class="button-row"><button class="primary" data-transition="send">发送 ➤</button><button class="quiet" data-transition="regen">↻ 重生成</button><button class="quiet" data-inert>快捷 ▾</button><button class="quiet" data-go="m-panel">面板 ▸</button><button class="quiet" data-transition="open-drawer">会话 ⚙</button></div><button class="annotation" data-layer="ux" data-note="chatbar">3</button></div>
+</div></div></template>
+
+<template id="page-w-chat-drawer"><div class="kicker">WEB / 聊天 · 会话抽屉(右)</div><h2>聊天 · 会话设置抽屉</h2>
+<div class="wf-row"><div class="col" style="flex:1"><div class="skeleton" style="height:200px">聊天消息流(同左页)</div></div>
+<div class="col" style="width:300px;flex:none"><div class="wf"><b>会话 ⚙</b>
+ <div class="fold"><b>会话设置 <span>▾</span></b><p class="muted" style="font-size:12px">自动继续/作者注深度/聊天级世界书绑定</p></div>
+ <div class="fold"><b>世界书激活预览 <span>▾</span></b><p class="muted" style="font-size:12px">上一轮哪些条目被注入(调试友好)</p></div>
+ <div class="fold"><b>面板入口 <span>▾</span></b><p class="muted" style="font-size:12px">本卡的 CardApp/状态板 → 打开面板</p></div>
+ <div class="fold"><b>群员(插件位) <span>▾</span></b><p class="muted" style="font-size:12px">群聊编排是插件,D-012</p></div>
+ <button class="quiet" data-go="w-chat">关闭抽屉</button><button class="annotation" data-layer="ux" data-note="drawer">4</button></div></div>
+</div></template>
+
+<template id="page-w-chars"><div class="kicker">WEB / 库</div><h2>角色卡</h2>
+<div class="wf"><div class="button-row" style="margin-top:0"><span class="wf" style="flex:1">🔍 搜索…</span><button class="quiet" data-inert>排序 ▾</button><button class="primary" data-inert>+ 创建</button><button class="quiet" data-transition="import-card">⬆ 导入 PNG/charx/JSON/URL</button><button class="quiet" data-inert>⬇ 导出</button></div><button class="annotation" data-layer="ux" data-note="import">5</button></div>
+<div class="grid5" style="margin-top:14px">
+ <div class="card action" data-go="w-char-edit" tabindex="0"><div class="avatar" style="width:100%;height:80px">头像</div><h3>诡秘之主</h3><p class="muted" style="font-size:12px">面:TH·重前端·远程×1</p></div>
+ <div class="card"><div class="avatar" style="width:100%;height:80px">头像</div><h3>高中生活模拟</h3><p class="muted" style="font-size:12px">面:纯 prompt</p></div>
+ <div class="card"><div class="avatar" style="width:100%;height:80px">头像</div><h3>Wilderness</h3><p class="muted" style="font-size:12px">面:TH·14 脚本</p></div>
+ <div class="card"><div class="avatar" style="width:100%;height:80px">头像</div><h3>诡异修仙</h3><p class="muted" style="font-size:12px">面:轻状态栏</p></div>
+ <div class="card"><div class="avatar" style="width:100%;height:80px">+</div><h3 class="muted">导入更多</h3></div>
+</div>
+<p class="muted" style="margin-top:10px">「面」徽标来自 analyzeCardRuntime(机制级检测,D-013 卡资产全量编辑入口在编辑器内)。<button class="annotation" data-layer="ux" data-note="badge" style="position:relative;top:auto;right:auto">6</button></p></template>
+
+<template id="page-w-char-edit"><div class="kicker">WEB / 库 / 角色编辑器</div><h2>编辑 · 诡秘之主</h2>
+<div class="wf"><div class="wf-row"><div class="avatar">头像⬆</div><div style="flex:1"><b>名称 *</b> 诡秘之主 <span class="status">v2 卡</span> <span class="status">收藏 ☆</span><p class="muted" style="font-size:12px;margin:4px 0">creator: xxx · 标签: [西幻][悬疑]</p></div><button class="quiet" data-go="w-chars">← 返回库</button></div>
+<div class="tabs"><button class="on" data-inert>基本信息</button><button data-inert>定义</button><button data-inert>问候语 ×3</button><button data-inert>内嵌世界书</button><button data-go="w-ext">脚本与正则 ↗</button><button data-inert>元数据</button></div><button class="annotation" data-layer="ux" data-note="chartabs">7</button>
+<div class="wf"><b>description</b><div class="skeleton" style="height:90px">长文本编辑器(宏高亮+字数统计+预览)</div><p class="muted" style="font-size:12px">first_mes / personality / scenario / mes_example / system_prompt / post_history_instructions / creator_notes 同结构</p></div>
+<div class="button-row"><button class="quiet" data-inert>删除</button><button class="quiet" data-inert>复制</button><button class="primary" data-inert>保存</button></div></div></template>
+
+<template id="page-w-wi"><div class="kicker">WEB / 库</div><h2>世界书</h2>
+<div class="wf-row"><div class="col" style="width:210px;flex:none"><div class="wf"><b>文件</b><div class="listrow" style="margin-top:8px;background:var(--wash)"><span>● 常用设定</span></div><div class="listrow"><span>○ 诡秘内嵌书</span></div><div class="listrow"><span>○ 全局书</span></div><button class="quiet" data-inert>+ 新建/导入</button></div></div>
+<div class="col" style="flex:1"><div class="wf"><b>常用设定</b> <span class="status">全局 ✓</span> <span class="status">绑定:诡秘</span>
+ <div class="listrow" style="margin-top:10px"><span>☑ [迷雾,灯罩] before·order:100</span><button class="quiet" data-transition="open-wientry">编辑</button></div>
+ <div class="listrow"><span>☑ [值日,教师] atDepth:4·概率35%</span><button class="quiet" data-transition="open-wientry">编辑</button></div>
+ <div class="listrow"><span>□ [备用] 冷却3轮·角色过滤</span><button class="quiet" data-transition="open-wientry">编辑</button></div>
+ <button class="annotation" data-layer="ux" data-note="wilist">8</button></div></div>
+<div class="col" style="width:330px;flex:none"><div class="wf"><b>条目编辑</b><p class="muted" style="font-size:12px">keys/secondary/selective/位置/order/depth/概率/递归开关/角色过滤/timed(sticky·cooldown·delay)</p><div class="skeleton" style="height:110px">content 编辑器</div><div class="button-row"><button class="primary" data-inert>保存条目</button><button class="quiet" data-inert>关闭</button></div></div></div>
+</div></template>
+
+<template id="page-w-gen"><div class="kicker">WEB / 生成配置(ST 三面板合一)</div><h2>生成配置</h2>
+<div class="wf"><div class="button-row" style="margin-top:0"><b>预设:</b><span class="wf" style="flex:1">默认 ▾</span><button class="quiet" data-inert>另存</button><button class="quiet" data-inert>导入</button><button class="quiet" data-inert>导出</button></div></div>
+<div class="col" style="margin-top:14px">
+<div class="fold"><b>连接与采样 <span>▾ 开</span></b><p class="muted" style="font-size:12px">API源[OpenAI兼容▾] 模型[…] temp 0.9 · top_p 0.95 · max 4095</p><div class="slider"></div><div class="fold"><b>高级参数(默认收) <span>▸</span></b><p class="muted" style="font-size:12px">min_p/typical/DRY/top_a…</p></div></div>
+<div class="fold"><b>提示词条目 Prompt Manager <span>▸ 收</span></b><p class="muted" style="font-size:12px">几十条可拖项(main/jailbreak/char_desc/wi_before/示例…) → 二级面板</p><button class="annotation" data-layer="ux" data-note="promptmgr">9</button></div>
+<div class="fold"><b>instruct 模式 <span class="status">已启用</span><span>▸ 收</span></b></div>
+<div class="fold"><b>上下文模板 <span>▸ 收</span></b></div>
+</div></template>
+
+<template id="page-w-ext"><div class="kicker">WEB / 扩展(卡资产+官方重实现)</div><h2>扩展</h2>
+<div class="grid2">
+ <div class="card"><h3>正则脚本</h3><p class="muted">find/replace/placement/ephemeral;卡内嵌+全局两级</p><div class="listrow"><span>☑ 隐藏 UpdateVariable 块</span><span class="status">卡·诡秘</span></div><div class="listrow"><span>☑ 状态栏样式</span><span class="status">全局</span></div></div>
+ <div class="card"><h3>快捷回复(官方重实现)</h3><p class="muted">QR 插件:D-012 热门 ST 扩展由官方插件补齐</p><div class="listrow"><span>继续</span><span class="status">按钮</span></div></div>
+ <div class="card"><h3>注入提示词</h3><p class="muted">chat_state th.inject 持久化注入源(T0 已通)</p></div>
+ <div class="card"><h3>卡资产查看</h3><p class="muted">当前卡 TH 脚本 14 个/远程资源 1 个/CDN 白名单</p><button class="annotation" data-layer="ux" data-note="assets">10</button></div>
+</div></template>
+
+<template id="page-w-plugins"><div class="kicker">WEB / 插件(DSH 式管理)</div><h2>插件</h2>
+<div class="wf"><div class="button-row" style="margin-top:0"><button class="primary" data-inert>+ 安装(npm 包名/git)</button><button class="quiet" data-inert>↻ 检查更新</button><button class="quiet" data-inert>导出装载树</button></div></div>
+<div class="col" style="margin-top:14px">
+ <div class="listrow"><span>● <b>tavern-core</b> <span class="muted">内置 v0.1 · provides: promptBuilder/variableStore</span></span><span><button class="quiet" data-inert>⚙</button><button class="quiet" data-inert>日志</button></span></div>
+ <div class="listrow"><span>● <b>tavern-formats</b> <span class="muted">内置 · provides: cardAssets</span></span><button class="quiet" data-inert>⚙</button></div>
+ <div class="listrow"><span>● <b>card-runtime</b> <span class="muted">内置 · provides: cdnProxy/panelBridge</span></span><button class="quiet" data-inert>⚙</button></div>
+ <div class="listrow"><span>○ <b>my-wi-engine</b> <span class="muted">社区 v2.3 · 替换 promptBuilder</span></span><span><button class="primary" data-inert>启用</button><button class="quiet" data-inert>卸载</button></span></div>
+ <div class="listrow"><span>⚠ <b>some-plugin</b> <span class="muted">degraded:inject 缺失 'llm'</span></span><button class="quiet" data-inert>诊断</button></div>
+</div>
+<p class="muted"><button class="annotation" data-layer="ux" data-note="plugins" style="position:relative;top:auto;right:auto">11</button> 装的是补丁行不是黑盒:启用社区 WI 引擎=patch 替换 promptBuilder provider,tavern-core 仍在可回退。</p></template>
+
+<template id="page-w-settings"><div class="kicker">WEB / 设置</div><h2>设置</h2>
+<div class="grid2">
+ <div class="card"><h3>账号与连接</h3><p class="muted">账号密码 · 服务器信息 · <b>出 QR 码给手机扫码连</b></p><div class="skeleton">[QR] 手机扫码即连本服务端</div><button class="annotation" data-layer="ux" data-note="qr">12</button></div>
+ <div class="card"><h3>API 源与密钥</h3><p class="muted">各 provider 密钥存储(服务端保管)</p></div>
+ <div class="card"><h3>外观与阅读</h3><p class="muted">主题(深色优先)/字号/行距/字距/字体/密度 · <b>存服务端,各端同步</b></p><button class="annotation" data-layer="ux" data-note="sync">13</button></div>
+ <div class="card"><h3>语言</h3><p class="muted">中文 / English(双字典,D-013)</p></div>
+ <div class="card"><h3>数据</h3><p class="muted">导入导出/备份/缓存统计</p></div>
+ <div class="card"><h3>高级</h3><p class="muted">golden-diff 工具/诊断日志/HMR(dev)</p></div>
+</div></template>
+
+<!-- ============ 移动页 ============ -->
+<template id="page-m-chars"><div class="kicker">移动端 / 角色 tab</div><h2>移动端 · 角色</h2>
+<div class="phone"><div class="screen">
+ <div class="ptop"><span>角色</span><button class="quiet" data-inert>导入⬆</button></div>
+ <div class="pbody"><div class="col">
+  <div class="wf" style="padding:9px">🔍 搜索…</div>
+  <div class="listrow" data-go="m-chat" style="cursor:pointer"><span>● 诡秘之主 <span class="muted" style="font-size:11px">重前端</span></span><span>›</span></div>
+  <div class="listrow" data-go="m-chat" style="cursor:pointer"><span>● 高中生活模拟</span><span>›</span></div>
+  <div class="listrow" data-go="m-chat" style="cursor:pointer"><span>● Wilderness <span class="muted" style="font-size:11px">TH·14</span></span><span>›</span></div>
+  <p class="muted" style="font-size:12px">点卡进聊天;编辑全归 web。<button class="annotation" data-layer="ux" data-note="mchars" style="position:relative;top:auto;right:auto">18</button></p>
+ </div></div>
+ <div class="ptabbar"><button data-go="m-chat">聊天</button><button class="on" data-inert>角色</button><button data-go="m-panel">面板</button><button data-go="m-me">我的</button></div>
+</div></div></template>
+<template id="page-m-chat"><div class="kicker">移动端 / 聊天 tab(默认)</div><h2>移动端 · 聊天</h2>
+<div class="phone"><div class="screen">
+ <div class="ptop"><span>≡ 诡秘之主</span><span><button class="quiet" data-transition="open-panel">面板</button></span></div>
+ <div class="pbody">
+  <div class="msg"><div class="who">◐ 诡秘之主</div>雾气漫过煤油灯罩……<div class="msg-actions">◀2/3▶</div></div>
+  <div class="msg"><div class="who">◑ 我</div>我推开门。</div>
+  <div class="msg"><div class="who">◐</div><span class="skeleton">▌流式…</span></div>
+  <p class="muted" style="font-size:12px">长按消息 → 编辑/复制/重生成/删除/swipe/翻译<button class="annotation" data-layer="ux" data-note="longpress" style="position:relative;top:auto;right:auto">14</button></p>
+ </div>
+ <div class="wf" style="border-radius:0;border-left:0;border-right:0"><b>输入…</b><div class="button-row"><button class="primary" data-transition="send">➤</button><button class="quiet" data-transition="regen">↻</button><button class="quiet" data-inert>快捷</button></div></div>
+ <div class="ptabbar"><button class="on" data-inert>聊天</button><button data-go="m-chars">角色</button><button data-go="m-panel">面板</button><button data-go="m-me">我的</button></div>
+</div></div></template>
+
+<template id="page-m-panel"><div class="kicker">移动端 / 面板 tab(D-013:列表→全屏)</div><h2>移动端 · 面板</h2>
+<div class="phone"><div class="screen">
+ <div class="ptop"><span>面板 · 诡秘之主</span></div>
+ <div class="pbody"><div class="col">
+  <div class="listrow"><span>● 背包</span><button class="primary" data-transition="open-app">打开</button></div>
+  <div class="listrow"><span>● 任务册</span><button class="primary" data-transition="open-app">打开</button></div>
+  <div class="listrow"><span>● 状态栏(MVU)</span><button class="primary" data-transition="open-app">打开</button></div>
+  <div class="listrow"><span>○ 变量管理器 <span class="muted">已停用</span></span><button class="quiet" data-inert>启用</button></div>
+  <p class="muted" style="font-size:12px">无卡面板的卡 → 空态提示。<button class="annotation" data-layer="ux" data-note="panellist" style="position:relative;top:auto;right:auto">15</button></p>
+ </div></div>
+ <div class="ptabbar"><button data-go="m-chat">聊天</button><button data-go="m-chars">角色</button><button class="on" data-inert>面板</button><button data-go="m-me">我的</button></div>
+</div></div></template>
+
+<template id="page-m-panel-app"><div class="kicker">移动端 / 卡应用全屏 WebView</div><h2>面板 · 背包(全屏)</h2>
+<div class="phone"><div class="screen">
+ <div class="ptop"><span><button class="quiet" data-go="m-panel">◀ 面板</button></span><span>背包</span><span>⟳</span></div>
+ <div class="pbody"><div class="skeleton" style="height:420px">[ 全屏 WebView:卡自带 HTML/JS 应用,沙箱运行,TH-shim 桥 T0+T1 ]<button class="annotation" data-layer="ux" data-note="webview" style="position:relative;top:auto;right:auto">16</button></div></div>
+</div></div></template>
+
+<template id="page-m-me"><div class="kicker">移动端 / 我的 tab</div><h2>移动端 · 我的</h2>
+<div class="phone"><div class="screen">
+ <div class="ptop"><span>我的</span></div>
+ <div class="pbody"><div class="col">
+  <div class="listrow"><span>账号 xxx@服务器</span></div>
+  <div class="listrow"><span>连接(切换服务器)</span><button class="quiet" data-inert>URL+密码</button></div>
+  <div class="listrow"><span>外观·字号/行距/主题</span><span class="status">服务端同步</span></div>
+  <div class="listrow"><span>语言</span><span>中文/EN</span></div>
+  <div class="listrow"><span>人设</span><button class="quiet" data-inert>编辑</button></div>
+  <div class="listrow"><span>数据(缓存/导出)</span></div>
+  <div class="listrow"><span>诊断/关于</span></div>
+  <p class="muted" style="font-size:12px">管理功能(卡/WI/预设/插件编辑)全在 web 端,移动端不糊脸。<button class="annotation" data-layer="ux" data-note="me" style="position:relative;top:auto;right:auto">17</button></p>
+ </div></div>
+ <div class="ptabbar"><button data-go="m-chat">聊天</button><button data-go="m-chars">角色</button><button data-go="m-panel">面板</button><button class="on" data-inert>我的</button></div>
+</div></div></template>
+
+<script>
+const pages={
+'w-chat':{title:"聊天",info:"默认落点。ST 顶栏 icon 汤重排后,聊天是产品默认态。"},
+'w-chat-drawer':{title:"会话设置抽屉",info:"右侧抽屉承载会话级杂项:设置/WI预览/面板入口/群员。"},
+'w-chars':{title:"角色卡",info:"库视图:搜索/排序/创建/导入导出;徽标显示卡运行时面。"},
+'w-char-edit':{title:"角色编辑器",info:"卡内资产全量编辑(D-013):定义/问候/内嵌WI/脚本正则。"},
+'w-wi':{title:"世界书",info:"文件列表+条目列表+条目编辑器三栏。"},
+'w-gen':{title:"生成配置",info:"ST 三面板合一:连接采样+Prompt Manager+instruct+模板。"},
+'w-ext':{title:"扩展",info:"正则/QR(官方重实现)/注入/卡资产查看。"},
+'w-plugins':{title:"插件",info:"DSH 式插件管理:列表/安装/启禁/诊断;补丁行语义。"},
+'w-settings':{title:"设置",info:"账号/API源/外观(服务端同步)/语言/数据/高级。"},
+'m-chars':{title:'移动端·角色',info:'卡列表+搜索+导入入口;编辑全归 web。'},
+'m-chat':{title:"移动端·聊天",info:"薄壳聊天:消息流+输入+长按菜单,无管理杂项。"},
+'m-panel':{title:"移动端·面板",info:"当前卡面板入口列表→点开全屏(D-013)。"},
+'m-panel-app':{title:"移动端·卡应用",info:"全屏 WebView 沙箱,TH-shim 桥。"},
+'m-me':{title:"移动端·我的",info:"账号/连接/外观(同步)/语言/人设/数据/诊断。"}
+};
+const notes={
+sesslist:"① 会话列表独立列:ST 把聊天文件藏在二级面板,我们提为一级——多会话是日常行为。",
+msgact:"② 消息动作 hover/长按才显:ST 常态挂十几个图标太吵;swipe 保留在消息体下常驻。",
+chatbar:"③ 输入区集中生成控制:发送/重生成/快捷回复/面板入口——QR 是官方插件重实现(D-012)。",
+drawer:"④ 会话抽屉:ST 散落多处的会话级功能收进右抽屉,默认收起的 section 带 badge。",
+import:"⑤ 导入是高频入口(社区卡):PNG/charx/JSON/URL 四种全收进一个按钮组。",
+badge:"⑥ 「面」徽标=analyzeCardRuntime 输出可视化:用户不看代码也知道这张卡要面板还是纯文本。",
+chartabs:"⑦ 角色编辑器 tab 对齐 ST 编辑能力(D-013 全量):内嵌世界书和脚本正则不拆出去,就在卡里。",
+wilist:"⑧ 条目列表显示关键元数据一行化:位置/order/概率/冷却,扫一眼知全貌,不用逐条点开。",
+promptmgr:"⑨ Prompt Manager 收进二级面板:几十条拖序项是调卡工具不是日常,默认收起。",
+assets:"⑩ 卡资产查看=analyzeCardRuntime 的可读面:TH脚本数/远程资源/白名单命中,透明给用户看卡的底细。",
+plugins:"⑪ 插件页是'生态强于本体'的门面:替换 seam provider 是一个开关不是分叉。",
+qr:"⑫ web 出 QR 码:手机扫一下就连上本服务端——D-013 登录方式。",
+sync:"⑬ 外观/主题/字号存服务端,移动端只缓存:换设备无缝,D-013 容器化客户端。",
+longpress:"⑭ 移动端长按菜单:消息操作密度大,全部塞进长按二级菜单,屏面保持干净。",
+panellist:"⑮ 面板页=入口列表不是直接 WebView:一张卡可能有多个面板,先列再进,沉浸全屏。",
+mchars:"⑱ 移动端角色页刻意只读:选卡/搜索/导入入口,编辑一律 web——职责切分是 D-013 核心。",
+webview:"⑯ 全屏 WebView:沙箱容器+nonce 桥,卡代码不可信;返回键回列表。",
+me:"⑰ 我的 tab 刻意薄:凡是'配置'都暗示去 web 端;移动端只留用户态。",
+};
+const assets={
+A01:{name:"角色卡头像/封面图",type:"Image",page:"w-chars",priority:"P0",intent:"卡识别主视觉,库网格的情感锚点",constraints:"PNG 内嵌或外链;3:4 竖图;暗色主题对比",reuse:"聊天页消息头像/面板页头图同源裁切"},
+T01:{name:"正文阅读排版",type:"Typography",page:"m-chat",priority:"P0",intent:"CJK 长文阅读舒适(字号/行距/字距/密度可调)",constraints:"服务端设置同步;中英混排间距;流式增量不跳动",reuse:"web 聊天同一套排版 token"}
+};
+const flows=[
+{actor:"手机端日常玩家(卡已导入)",goal:"打开 App→选卡→聊几轮→面板页看背包状态",entry:"m-chat",outcome:"面板全屏显示卡自带背包应用,变量已随聊天更新",transitions:[
+ {id:"send",from:"m-chat",event:"输入并发送",to:"m-chat",result:"流式回复渲染,变量 settle 在服务端完成"},
+ {id:"open-panel",from:"m-chat",event:"点面板 tab",to:"m-panel",result:"面板入口列表出现当前卡应用"},
+ {id:"open-app",from:"m-panel",event:"打开「背包」",to:"m-panel-app",result:"全屏 WebView 加载卡应用,TH 桥就绪"}]},
+{actor:"桌面端管理用户",goal:"导入新卡→检查世界书→调生成配置→开聊",entry:"w-chars",outcome:"新卡出现在库中,WI/预设就绪,可直接发起会话",transitions:[
+ {id:"import-card",from:"w-chars",event:"导入 PNG 卡",to:"w-chars",result:"卡入库,徽标显示运行时面"},
+ {id:"open-drawer",from:"w-chat",event:"打开会话 ⚙",to:"w-chat-drawer",result:"会话级设置/WI预览/面板入口抽屉展开"},
+ {id:"open-wientry",from:"w-wi",event:"点条目编辑",to:"w-wi",result:"条目编辑器载入该条目"},
+ {id:"regen",from:"w-chat",event:"点重生成",to:"w-chat",result:"新 swipe 出现"}]}
+];
+let currentPage='m-chat',activePopoverAnchor=null;
+let reviewMode=false,pendingReview=null,reviewSeq=0;
+const REVIEW_KEY=`pwp-review::${location.pathname||document.title}`;
+let reviewNotes=[];
+try{const saved=JSON.parse(localStorage.getItem(REVIEW_KEY)||'null');if(Array.isArray(saved)){reviewNotes=saved;reviewSeq=saved.reduce((max,n)=>Math.max(max,+String(n.seq).replace(/\D/g,'')||0),0)}}catch(e){}
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const screenNode=$("#screen"),pageTitle=$("#pageTitle"),pageInfo=$("#pageInfo"),popover=$("#popover");
+const layers=$("#layers"),journey=$("#journey"),journeyBody=$("#journeyBody"),inspector=$("#inspector");
+const uxToggle=$("#uxToggle"),assetToggle=$("#assetToggle"),reviewToggle=$("#reviewToggle"),inspectorButton=$("#inspectorButton"),reviewButton=$("#reviewButton");
+const ANCHOR_SELECTOR='button,[data-go],[data-transition],a,input,select,textarea,h1,h2,h3,.card,.row,.msg,.listrow,.fold,.asset-slot,nav';
+const SKIP_SELECTOR='.annotation,.asset-marker,.review-marker,.review-layer,.popover,.inspector,.layers,.journey,.review-hint';
+function findAnchor(el){let n=el;while(n&&n!==screenNode){if(n.nodeType===1&&n.matches(ANCHOR_SELECTOR)&&!n.matches(SKIP_SELECTOR))return n;n=n.parentElement}return null}
+function describeAnchor(el){if(!el)return'页面空白处';const tag=el.tagName.toLowerCase();const label={button:'按钮',a:'链接',h1:'标题',h2:'标题',h3:'标题',nav:'导航',input:'输入框',select:'选择器',textarea:'文本域'}[tag]||(el.classList.contains('card')?'卡片':el.classList.contains('listrow')?'条目':el.classList.contains('msg')?'消息':el.classList.contains('fold')?'折叠区':tag);const text=(el.innerText||'').trim().replace(/\s+/g,' ').slice(0,20);return text?`${label}「${text}」`:label}
+function pathOf(el){const path=[];let n=el;while(n&&n!==screenNode){const p=n.parentElement;if(!p)return null;path.unshift([...p.children].indexOf(n));n=p}return n===screenNode?path:null}
+function locatePath(path){let el=screenNode;for(const i of path){el=el&&el.children[i];if(!el)return null}return el}
+function saveReviews(){try{localStorage.setItem(REVIEW_KEY,JSON.stringify(reviewNotes))}catch(e){}}
+function drawReviewMarkers(){let layer=screenNode.querySelector('.review-layer');if(!layer){layer=document.createElement('div');layer.className='review-layer';screenNode.appendChild(layer)}layer.innerHTML='';const cr=screenNode.getBoundingClientRect();reviewNotes.filter(n=>n.page===currentPage).forEach(note=>{let x=note.fx*screenNode.clientWidth,y=note.fy;const anchor=note.path&&locatePath(note.path);if(anchor){const r=anchor.getBoundingClientRect();x=r.left-cr.left+note.relX*r.width;y=r.top-cr.top+note.relY*r.height}const m=document.createElement('button');m.className='review-marker';m.dataset.layer='review';m.dataset.review=note.id;m.textContent=note.seq;m.style.left=Math.max(0,Math.min(x,screenNode.clientWidth-32))+'px';m.style.top=Math.max(0,y-13)+'px';m.style.display=reviewToggle.checked?'':'none';layer.appendChild(m)})}
+function drawReviewList(){const list=$("#reviewList");if(!reviewNotes.length){list.innerHTML='<p class="muted" style="font-size:12px">还没有批注。点顶部「✎ 批注」进入批注模式。</p>';return}const by={};reviewNotes.forEach(n=>(by[n.page]??=[]).push(n));list.innerHTML=Object.entries(by).map(([p,ns])=>`<p class="kicker" style="margin:10px 0 2px">${pages[p]?.title||p}</p>`+ns.map(n=>`<div class="review-item"><b>${n.seq}</b> <span class="muted" style="font-size:12px">${n.anchorDesc}</span><p style="font-size:13px">${n.text}</p><button class="quiet" data-review-del="${n.id}" style="font-size:12px;padding:3px 8px">删除</button></div>`).join('')).join('')}
+function openReviewEditor(d){pendingReview=d;popover.innerHTML=`<b>${d.id?'编辑批注':'新批注'}</b><p class="muted" style="font-size:12px;margin:6px 0">${d.anchorDesc}</p><textarea rows="3" id="reviewText" placeholder="写下要给 AI 的修改意见…">${d.text||''}</textarea><div class="button-row"><button class="primary" data-review-save>保存</button><button class="quiet" data-review-cancel>取消</button></div>`;popover.classList.remove('hidden');activePopoverAnchor=null;popover.style.left=Math.max(12,Math.min(d.clientX,innerWidth-popover.offsetWidth-12))+'px';popover.style.top=Math.max(12,Math.min(d.clientY,innerHeight-popover.offsetHeight-12))+'px';popover.querySelector('#reviewText').focus()}
+function commitReview(text){if(!pendingReview)return;const v=text.trim();if(!v){pendingReview=null;closePopover();return}if(pendingReview.id){const n=reviewNotes.find(n=>n.id===pendingReview.id);if(n)n.text=v}else{reviewSeq++;reviewNotes.push({id:`r${Date.now()}`,seq:`R${reviewSeq}`,page:currentPage,path:pendingReview.path,relX:pendingReview.relX,relY:pendingReview.relY,fx:pendingReview.fx,fy:pendingReview.fy,anchorDesc:pendingReview.anchorDesc,text:v})}pendingReview=null;saveReviews();drawReviewMarkers();drawReviewList();closePopover()}
+function openReviewNote(mk){const n=reviewNotes.find(n=>n.id===mk.dataset.review);if(!n)return;showPopover(mk,`<b>批注 ${n.seq}</b><p class="muted" style="font-size:12px;margin:6px 0">${n.anchorDesc}</p><p style="font-size:13px">${n.text}</p><div class="button-row"><button class="quiet" data-review-edit="${n.id}">编辑</button><button class="quiet" data-review-del="${n.id}">删除</button></div>`)}
+function exportReviews(){const box=$("#reviewExport");if(!reviewNotes.length){box.classList.remove('hidden');box.textContent='还没有批注可导出。';return}const by={};reviewNotes.forEach(n=>(by[n.page]??=[]).push(n));let md=`# 线稿评审批注(共 ${reviewNotes.length} 条)\n\n这份 HTML 是单文件线稿原型:页面定义在 pages 对象,路由 data-go,迁移 data-transition,UX 说明在 notes。请按批注逐条修改:\n\n`;for(const[p,ns]of Object.entries(by)){md+=`## 页面「${pages[p]?.title||p}」(${p})\n\n`;ns.forEach(n=>{md+=`- ${n.seq} · 位置:${n.anchorDesc}\n  批注:${n.text}\n`});md+='\n'}box.classList.remove('hidden');box.textContent=md;if(navigator.clipboard?.writeText)navigator.clipboard.writeText(md).then(()=>{box.textContent='已复制到剪贴板:\n\n'+md}).catch(()=>{})}
+function closePopover(){popover.classList.add("hidden");activePopoverAnchor=null;pendingReview=null}
+function applyLayers(){$$('[data-layer="ux"]').forEach(n=>n.style.display=uxToggle.checked?'':'none');$$('[data-layer="asset"]').forEach(n=>n.style.display=assetToggle.checked?'block':'none');$$('[data-layer="review"]').forEach(n=>n.style.display=reviewToggle.checked?'':'none');closePopover()}
+function render(key){if(!pages[key])return;currentPage=key;screenNode.innerHTML=$("#page-"+key).innerHTML;pageTitle.textContent=pages[key].title;pageInfo.textContent=pages[key].info;$$('.nav button').forEach(n=>n.classList.toggle('active',n.dataset.go===key));drawReviewMarkers();applyLayers();inspector.classList.remove('open');inspectorButton.setAttribute('aria-expanded','false')}
+function performTransition(id){const step=flows.flatMap(f=>f.transitions).find(t=>t.id===id);if(!step)return;if(currentPage!==step.from){console.warn(`Transition ${id} expected ${step.from},received ${currentPage}`);return}render(step.to)}
+function drawJourney(){journeyBody.innerHTML=flows.map((f,i)=>`<div class="kicker">用户路径 ${i+1}</div><h3>${f.goal}</h3><p class="muted">${f.actor}</p><ol>${f.transitions.map(s=>`<li><b>${s.event}</b><br><span class="muted">${pages[s.from].title} → ${pages[s.to].title} · ${s.result}</span></li>`).join('')}</ol><p><b>完成之后:</b>${f.outcome}</p>`).join('<hr style="border:0;border-top:1px solid var(--line);margin:14px 0">')}
+function positionPopover(){if(!activePopoverAnchor)return;if(!activePopoverAnchor.isConnected){closePopover();return}const r=activePopoverAnchor.getBoundingClientRect();if(r.bottom<0||r.top>innerHeight){closePopover();return}popover.style.left=Math.max(12,Math.min(r.right-popover.offsetWidth,innerWidth-popover.offsetWidth-12))+'px';popover.style.top=Math.max(12,Math.min(r.bottom+8,innerHeight-popover.offsetHeight-12))+'px'}
+function showPopover(t,h){popover.innerHTML=h;popover.classList.remove('hidden');activePopoverAnchor=t;positionPopover()}
+document.addEventListener('click',event=>{
+ const rm=event.target.closest('[data-review]');if(rm){openReviewNote(rm);return}
+ if(reviewMode&&screenNode.contains(event.target)){event.preventDefault();event.stopPropagation();closePopover();const anchor=findAnchor(event.target),cr=screenNode.getBoundingClientRect();let path=null,relX=0,relY=0;if(anchor){const r=anchor.getBoundingClientRect();path=pathOf(anchor);relX=(event.clientX-r.left)/r.width;relY=(event.clientY-r.top)/r.height}openReviewEditor({anchorDesc:describeAnchor(anchor),path,relX,relY,fx:(event.clientX-cr.left)/screenNode.clientWidth,fy:event.clientY-cr.top,clientX:event.clientX,clientY:event.clientY});return}
+ const sb=event.target.closest('[data-review-save]');if(sb){commitReview(popover.querySelector('#reviewText')?.value||'');return}
+ if(event.target.closest('[data-review-cancel]')){closePopover();return}
+ const eb=event.target.closest('[data-review-edit]');if(eb){const n=reviewNotes.find(n=>n.id===eb.dataset.reviewEdit);if(n)openReviewEditor({id:n.id,anchorDesc:n.anchorDesc,text:n.text,clientX:innerWidth/2-150,clientY:innerHeight/3});return}
+ const db=event.target.closest('[data-review-del]');if(db){reviewNotes=reviewNotes.filter(n=>n.id!==db.dataset.reviewDel);saveReviews();drawReviewMarkers();drawReviewList();closePopover();return}
+ const note=event.target.closest('[data-note]'),asset=event.target.closest('[data-asset]');
+ if(note){showPopover(note,`<b>UX ${note.textContent}</b><p>${notes[note.dataset.note]}</p>`);return}
+ if(asset){const spec=assets[asset.dataset.asset];showPopover(asset,`<b>${asset.dataset.asset} · ${spec.name}</b><p>${spec.type} · ${spec.priority}</p><p>${spec.intent}</p><small>${spec.constraints}<br>复用:${spec.reuse}</small>`);return}
+ const tr=event.target.closest('[data-transition]');if(tr){performTransition(tr.dataset.transition);return}
+ const ro=event.target.closest('[data-go]');if(ro){render(ro.dataset.go);return}
+ if(!event.target.closest('#popover'))closePopover();
+ if(!event.target.closest('#layers')&&!event.target.closest('#layersButton'))layers.classList.remove('open');
+ if(!event.target.closest('#inspector')&&!event.target.closest('#inspectorButton')){inspector.classList.remove('open');inspectorButton.setAttribute('aria-expanded','false')}
+});
+document.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.matches('[tabindex="0"]')){e.preventDefault();e.target.click()}if(e.key==='Escape'){closePopover();layers.classList.remove('open');journey.classList.remove('open');inspector.classList.remove('open');inspectorButton.setAttribute('aria-expanded','false');if(reviewMode){reviewMode=false;document.body.classList.remove('review-mode')}}});
+document.addEventListener('scroll',()=>{if(activePopoverAnchor)positionPopover()},{capture:true,passive:true});window.addEventListener('resize',()=>{if(activePopoverAnchor)positionPopover();drawReviewMarkers()});
+reviewButton.onclick=()=>{reviewMode=!reviewMode;document.body.classList.toggle('review-mode',reviewMode);closePopover()};
+$("#copyReview").onclick=exportReviews;
+$("#layersButton").onclick=()=>layers.classList.toggle('open');$("#journeyButton").onclick=()=>journey.classList.add('open');$("#journeyClose").onclick=()=>journey.classList.remove('open');
+inspectorButton.onclick=()=>{const o=inspector.classList.toggle('open');inspectorButton.setAttribute('aria-expanded',String(o))};$("#inspectorClose").onclick=()=>{inspector.classList.remove('open');inspectorButton.setAttribute('aria-expanded','false')};
+uxToggle.onchange=applyLayers;assetToggle.onchange=applyLayers;reviewToggle.onchange=applyLayers;
+function validateBlueprint(){const errors=[],ids=new Set(),states=new Set(Object.keys(pages));flows.flatMap(f=>f.transitions).forEach(s=>{if(!s.id||ids.has(s.id))errors.push('Dup transition id:'+s.id);ids.add(s.id);if(!states.has(s.from)||!states.has(s.to)||!s.event||!s.result)errors.push('Invalid transition:'+s.id);const tpl=$("#page-"+s.from);if(tpl&&!tpl.content.querySelector(`[data-transition="${s.id}"]`))errors.push('Transition '+s.id+' has no action on '+s.from)});const frags=[document,...Object.keys(pages).map(k=>new DOMParser().parseFromString($("#page-"+k).innerHTML,'text/html'))],all=s=>frags.flatMap(f=>[...f.querySelectorAll(s)]);all('[data-go]').forEach(n=>{if(!states.has(n.dataset.go))errors.push('Missing route:'+n.dataset.go)});all('[data-transition]').forEach(n=>{if(!ids.has(n.dataset.transition))errors.push('Missing transition:'+n.dataset.transition)});all('[data-note]').forEach(n=>{if(!notes[n.dataset.note])errors.push('Missing note:'+n.dataset.note)});all('[data-asset]').forEach(n=>{const spec=assets[n.dataset.asset];if(!spec||!spec.priority||!spec.intent||!spec.constraints||!spec.reuse)errors.push('Incomplete asset:'+n.dataset.asset)});const wired=new Set(['layersButton','inspectorButton','inspectorClose','journeyButton','journeyClose','reviewButton','copyReview','reviewText']);all('button').forEach(n=>{if(!(n.disabled||n.dataset.go||n.dataset.transition||n.dataset.note||n.dataset.asset||n.dataset.review||n.dataset.reviewDel!==undefined||n.dataset.reviewEdit!==undefined||n.dataset.reviewSave!==undefined||n.dataset.reviewCancel!==undefined||n.dataset.inert!==undefined||wired.has(n.id)||n.closest('#reviewList')))errors.push('Active button without behavior:'+n.textContent.trim().slice(0,30))});window.blueprintValidation={ok:!errors.length,errors};if(errors.length)console.error('Blueprint validation failed',errors);else console.info('Blueprint validation passed');return window.blueprintValidation}
+render(currentPage);drawJourney();drawReviewList();validateBlueprint();
+</script>
+</body></html>
