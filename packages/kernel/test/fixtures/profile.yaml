@@ -1,0 +1,9 @@
+name: hello-profile
+plugins:
+  - id: hello
+    module: ./hello-plugin.mjs
+    config:
+      greeting: hi
+  - id: skipme
+    module: ./missing-plugin.mjs
+    disabled: true
