@@ -8,6 +8,7 @@ import { CHAT_COMPLETION_SOURCES } from '../../constants.js';
 import { appendMessagesToChatFile } from '../chats.js';
 import { getConfigValue } from '../../util.js';
 import { stripJsonlExt } from '../../storage/name-validation.js';
+import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
 
 const generationJobs = new Map();
 const LUKER_GENERATION_JOB_MAX_ITEMS = 128;
@@ -711,12 +712,27 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             // Route through ChatRepo so writes land in the active engine,
             // not just the FS scratch directory. (filePath is still passed
             // so the sidecar gen-id helpers see a stable key.)
-            handle: job?.requestMeta?.handle,
+            // NOTE: requestMeta 无 handle 字段 —— 原 job?.requestMeta?.handle 恒为
+            // undefined,会静默落入 legacy fs 分支;必须用 job.handle。
+            handle: job?.handle,
             charDir: '',
             name: groupId,
             isGroup: true,
             groupId,
         });
+        // TASK-013 settle seam:chat.messagePersisted 后串行跑 MVU 投影。
+        // 结算失败不影响持久化结果(无 MVU 快照的聊天返回 no_baseline 即退)。
+        try {
+            await settlePersistedMvuMessage({
+                handle: job?.handle,
+                charDir: '',
+                name: groupId,
+                isGroup: true,
+                groupId,
+            });
+        } catch (error) {
+            console.error('[mvu] post-persist settle failed (group):', error);
+        }
         return true;
     }
 
@@ -739,11 +755,22 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             chatMetadata: persistTarget.chat_metadata || {},
             integritySlug: persistTarget.integrity || '',
             force: Boolean(persistTarget.force),
-            handle: job?.requestMeta?.handle,
+            handle: job?.handle,
             charDir: avatar,
             name: baseName,
             isGroup: false,
         });
+        // TASK-013 settle seam:同 group 分支,串行 post-persist 结算。
+        try {
+            await settlePersistedMvuMessage({
+                handle: job?.handle,
+                charDir: avatar,
+                name: baseName,
+                isGroup: false,
+            });
+        } catch (error) {
+            console.error('[mvu] post-persist settle failed (character):', error);
+        }
         return true;
     }
 
