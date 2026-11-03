@@ -18,12 +18,12 @@ const path = require('node:path');
 const allowlist = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'no-raw-fs-allowlist.json'), 'utf8'),
 );
-// Anchor allowlist entries to the repo root (one level above this rule file)
-// so the resolved absolute paths don't depend on ESLint's CWD. Without this,
-// invoking ESLint from a subdirectory would silently make allowlisted files
-// trip the rule.
-const ALLOWED = new Set(
-    allowlist.allowedFiles.map((p) => path.resolve(__dirname, '..', p)),
+// Allowlist entries are repo-relative paths like "src/endpoints/foo.js".
+// This rule file also runs from node_modules (eslint-plugin-luker is a file:
+// dep — pnpm hardlinks it), so __dirname is NOT reliably <app>/eslint-rules.
+// Match by normalized path suffix instead of joining onto __dirname.
+const ALLOWED_SUFFIXES = allowlist.allowedFiles.map(
+    (p) => '/' + p.split(path.sep).join('/'),
 );
 
 const FS_METHODS = new Set([
@@ -137,11 +137,12 @@ module.exports = {
     create(context) {
         const filename = context.getFilename();
         const resolved = path.resolve(filename);
+        const normalized = resolved.split(path.sep).join('/');
         // Rule is scoped to src/endpoints/ — no-ops elsewhere.
-        if (!resolved.includes(path.sep + 'src' + path.sep + 'endpoints' + path.sep)) {
+        if (!normalized.includes('/src/endpoints/')) {
             return {};
         }
-        if (ALLOWED.has(resolved)) return {};
+        if (ALLOWED_SUFFIXES.some((suffix) => normalized.endsWith(suffix))) return {};
 
         // Walk each function body; flag when the SAME function body contains
         // both an fs.* call and a request.user.directories.* access.

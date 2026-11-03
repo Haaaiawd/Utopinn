@@ -15,6 +15,7 @@
         "src/endpoints/settings.js",
         "src/endpoints/stable-diffusion.js",
         "src/endpoints/stats.js",
+        "src/endpoints/uberge-library.js",
         "src/endpoints/users-private.js",
         "src/endpoints/vectors.js"
     ],
