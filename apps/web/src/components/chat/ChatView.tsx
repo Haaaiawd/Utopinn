@@ -10,6 +10,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationView, MessageViewModel, RendererActions, RendererMessageRole } from '@uberge/protocol';
 import { useI18n } from '../../i18n';
 import { MOCK_MESSAGES } from '../../api/mock';
+import { getChat, appendUserMessage } from '../../api/chats';
+import { postGenerate, streamJob } from '../../api/generate';
 import type { ChatSummary, PreviewResponse, PreviewResult } from '../../types';
 import { Icon } from '../Icon';
 import { Composer } from './Composer';
@@ -44,6 +46,8 @@ export interface ChatViewProps {
     onTogglePanel: () => void;
     /** Status-bar hint for unwired actions. */
     onHint: (msg: string) => void;
+    /** True when the server is reachable — enables real load/send. */
+    live: boolean;
 }
 
 export function ChatView({
@@ -54,19 +58,37 @@ export function ChatView({
     onRunPreview,
     onTogglePanel,
     onHint,
+    live,
 }: ChatViewProps) {
     const { t } = useI18n();
     const [tab, setTab] = useState<'conversation' | 'preview'>('conversation');
     const [messages, setMessages] = useState<MessageViewModel[]>(() =>
         MOCK_MESSAGES.map((m) => ({ ...m })),
     );
+    const [streaming, setStreaming] = useState(false);
     const nextId = useRef(messages.length);
+    const abortRef = useRef<(() => void) | null>(null);
 
     // Prove the wiring on first paint: dry-run the assembly for this chat.
     useEffect(() => {
         onRunPreview();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat.id]);
+
+    // Real chat load — floors replace mock content when the server is live.
+    // Falls back to mock silently labelled via the preview badge/hint path.
+    useEffect(() => {
+        if (!live) return;
+        let dead = false;
+        getChat(chat.charDir, chat.chatName)
+            .then(({ messages: loaded }) => {
+                if (dead || !loaded.length) return;
+                nextId.current = loaded.length;
+                setMessages(loaded);
+            })
+            .catch(() => { /* 404/offline → keep mock floors, honest badge */ });
+        return () => { dead = true; };
+    }, [live, chat.charDir, chat.chatName]);
 
     const actions = useMemo<RendererActions>(() => ({
         swipe: (messageId, index) => {
@@ -103,11 +125,57 @@ export function ChatView({
     [preview]);
 
     const sendDraft = (text: string) => {
+        if (!live || streaming) {
+            setMessages((prev) => [
+                ...prev,
+                { id: nextId.current++, role: 'user', name: USER_NAME, content: text },
+            ]);
+            onHint(t('chat.send.draftOnly'));
+            return;
+        }
+        void sendLive(text);
+    };
+
+    /**
+     * Real send: append user floor → /api/uberge/generate → WS stream folds
+     * deltas into a live assistant floor → on end the server has persisted
+     * the reply, so we reload the chat for ground truth (swipes/receipts).
+     */
+    const sendLive = async (text: string) => {
+        abortRef.current?.();
+        setStreaming(true);
         setMessages((prev) => [
             ...prev,
-            { id: nextId.current++, role: 'user', name: USER_NAME, content: text },
+            { id: nextId.current++, role: 'user', name: USER_NAME, content: text, timestamp: Date.now() },
         ]);
-        onHint(t('chat.send.draftOnly'));
+        const floorId = nextId.current++;
+        const upsertFloor = (content: string) =>
+            setMessages((prev) => {
+                const i = prev.findIndex((m) => m.id === floorId);
+                const floor: MessageViewModel = { id: floorId, role: 'assistant', name: chat.charDir, content, streaming: true };
+                return i < 0 ? [...prev, floor] : prev.map((m) => (m.id === floorId ? floor : m));
+            });
+        try {
+            await appendUserMessage(chat.charDir, chat.chatName, USER_NAME, text);
+            const { jobId } = await postGenerate({
+                charDir: chat.charDir, chatName: chat.chatName, type: 'normal', user: { name: USER_NAME },
+            });
+            abortRef.current = await streamJob(jobId, {
+                onDelta: (acc) => upsertFloor(acc),
+                onEnd: () => {
+                    setStreaming(false);
+                    void getChat(chat.charDir, chat.chatName)
+                        .then(({ messages: loaded }) => {
+                            if (loaded.length) { nextId.current = loaded.length; setMessages(loaded); }
+                        })
+                        .catch(() => { /* keep streamed text */ });
+                },
+                onError: (msg) => { setStreaming(false); onHint(t('chat.send.failed') + ': ' + msg); },
+            });
+        } catch (e) {
+            setStreaming(false);
+            onHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : String(e)));
+        }
     };
 
     return (
@@ -150,7 +218,7 @@ export function ChatView({
                             : <p>{previewLoading ? '…' : t('chat.preview.empty')}</p>}
                     </div>
                 )}
-                {tab === 'conversation' && <Composer onSend={sendDraft} />}
+                {tab === 'conversation' && <Composer onSend={sendDraft} disabled={streaming} />}
             </div>
         </>
     );
