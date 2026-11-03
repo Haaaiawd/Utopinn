@@ -292,7 +292,29 @@ function preparePrompts(
         systemPrompts.push({ ...e, extension: e.extension ?? true });
     }
 
-    const prompts = new PromptCollection(req.prompts, req.promptOrder);
+    // getPromptCollection(type) 移植:按 promptOrder 遍历,
+    // enabled && shouldTrigger(= injection_trigger 无则放行/含 type)才进集合,
+    // 每项 preparePrompt(= 宏替换);被禁 main 给空替身保 marker 位。
+    // 不在序里的 preset prompt 原版不进集合。
+    const type = req.type ?? 'normal';
+    const order = Array.isArray(req.promptOrder) ? req.promptOrder : [];
+    const byId = new Map((req.prompts ?? []).map((p) => [p.identifier, p]));
+    const prompts = new PromptCollection([], order);
+    order.forEach((entry, i) => {
+        const id = typeof entry === 'string' ? entry : entry.identifier;
+        const prompt = byId.get(id);
+        if (!prompt) return;
+        const trigger = Array.isArray(prompt.injection_trigger) && prompt.injection_trigger.length
+            ? prompt.injection_trigger.includes(type)
+            : true;
+        // 原版 `entry.enabled && shouldTrigger`:缺 enabled 视为禁用(序条目恒带)
+        const enabled = typeof entry === 'object' ? Boolean(entry.enabled) : true;
+        if (enabled && trigger) {
+            prompts.collection[i] = { ...prompt, content: sub(prompt.content, deps) };
+        } else if (id === 'main') {
+            prompts.collection[i] = { ...prompt, content: '' };
+        }
+    });
 
     // 合并 system prompts 进集合(应用 prompt-manager override + 宏替换)
     for (const p of systemPrompts) {

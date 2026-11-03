@@ -70,6 +70,8 @@ test('depth injection: absolute prompt lands inside chat at depth', async () => 
                 injection_position: 1, injection_depth: 1, injection_order: 100,
             },
         ],
+        // 原版:注入类 preset prompt 也须列进 prompt_order(getPromptCollection 只遍历序)
+        promptOrder: ['main', 'an', 'chatHistory'],
     }), deps);
     const idx = r.messages.findIndex((m) => m.content.includes('AUTHORS-NOTE'));
     assert.ok(idx > 0 && idx < r.messages.length - 1, 'AN inside chat, idx=' + idx);
@@ -84,6 +86,7 @@ test('undefined injection_depth does not match depth 0', async () => {
             { identifier: 'dep0', role: 'system', content: 'AT-DEPTH-ZERO', injection_position: 1, injection_depth: 0, injection_order: 100 },
             { identifier: 'depU', role: 'system', content: 'UNDEFINED-DEPTH', injection_position: 1, injection_order: 100 },
         ],
+        promptOrder: ['main', 'dep0', 'depU', 'chatHistory'],
     }), deps);
     const atZero = r.messages.find((m) => m.content.includes('AT-DEPTH-ZERO'));
     const undef = r.messages.find((m) => m.content.includes('UNDEFINED-DEPTH'));
@@ -146,6 +149,7 @@ test('attach prompt appends to target-role message', async () => {
                 injection_position: 2, attach_role: 'user', attach_index: 1, attach_side: 'end',
             },
         ],
+        promptOrder: ['main', 'att', 'chatHistory'],
     }), deps);
     // attach_index=1 按时序取第一条 user 消息('hello'),不是最新一条
     const firstUser = r.messages.find((m) => m.role === 'user');
