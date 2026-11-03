@@ -1,8 +1,7 @@
-// Sidebar — DSH-style single navigation column (IA §14 revised):
-// brand/new-chat head → domain list (chat = 会话列表) → bottom domain nav
-// → user row. Owns its own width + the border-straddling drag handle.
-// Non-chat domains keep honest stub lists until their managers land.
-import { useState } from 'react';
+// Sidebar — GPT-desktop 双级:极左 52px rail(品牌标 + 域导航 + 主题)
+// + 内容栏(品牌行 → 醒目新会话 → 搜索 → charDir 折叠分组嵌套 → user 脚)。
+// Owns the border-straddling drag handle. 非聊天域保持诚实的 stub 列表。
+import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
 import type { ChatSummary, ViewId } from '../../types';
@@ -20,7 +19,6 @@ const NAV: { id: ViewId; icon: IconName }[] = [
     { id: 'rules', icon: 'rules' },
     { id: 'extensions', icon: 'extensions' },
     { id: 'diagnostics', icon: 'diagnostics' },
-    { id: 'settings', icon: 'settings' },
 ];
 
 const VIEW_LIST: Record<Exclude<ViewId, 'chat' | 'settings'>, { items: string[]; emptyKey: string }> = {
@@ -30,7 +28,26 @@ const VIEW_LIST: Record<Exclude<ViewId, 'chat' | 'settings'>, { items: string[];
     diagnostics: { items: ['prompt-inspector', 'wi-trace', 'gen-jobs', 'storage', 'golden-diff'], emptyKey: 'sidebar.empty.diagnostics' },
 };
 
-export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, onNewChat, onRenameChat, onDeleteChat, collapsed }: {
+function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
+    c: ChatSummary; active: boolean; t: (k: string) => string;
+    onSelect: () => void; onRename: () => void; onDelete: () => void;
+}) {
+    return (
+        <div className={`sb-item ${active ? 'on' : ''}`} onClick={onSelect}>
+            {c.unread && <span className="ind" />}
+            <span className="sb-item-title">{c.title}</span>
+            <span className="row-acts">
+                <IconButton size="icon-sm" label={t('chat.rename')} icon={<Icon name="edit" size={13} />}
+                    onClick={(e) => { e.stopPropagation(); onRename(); }} />
+                <IconButton size="icon-sm" label={t('chat.delete')} icon={<Icon name="x" size={13} />}
+                    className="hover:text-destructive"
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }} />
+            </span>
+        </div>
+    );
+}
+
+export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, onNewChat, onRenameChat, onDeleteChat, collapsed, onToggleCollapsed }: {
     view: ViewId;
     chats: ChatSummary[];
     activeChat: string;
@@ -41,15 +58,35 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
     onRenameChat: (chat: ChatSummary) => void;
     onDeleteChat: (chat: ChatSummary) => void;
     collapsed: boolean;
+    onToggleCollapsed: () => void;
 }) {
     const { t } = useI18n();
     const { theme, toggle } = useTheme();
     const [query, setQuery] = useState('');
     const [width, setWidth] = useState(272);
-    if (collapsed) return null;
+    /** charDir → folded; 默认全展开。 */
+    const [folded, setFolded] = useState<Set<string>>(new Set());
+
     const visibleChats = query.trim()
         ? chats.filter((c) => c.title.includes(query.trim()) || c.charDir.includes(query.trim()))
         : chats;
+
+    /** GPT 式嵌套:角色组(charDir) → 会话行;无 charDir 的落"最近"扁平段。 */
+    const { groups, loose } = useMemo(() => {
+        const g = new Map<string, ChatSummary[]>();
+        const loose: ChatSummary[] = [];
+        for (const c of visibleChats) {
+            if (!c.charDir) { loose.push(c); continue; }
+            (g.get(c.charDir) ?? g.set(c.charDir, []).get(c.charDir)!).push(c);
+        }
+        return { groups: [...g.entries()], loose };
+    }, [visibleChats]);
+
+    const toggleFold = (dir: string) => setFolded((prev) => {
+        const next = new Set(prev);
+        if (next.has(dir)) next.delete(dir); else next.add(dir);
+        return next;
+    });
 
     const startResize = (e: React.PointerEvent) => {
         e.preventDefault();
@@ -66,85 +103,121 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
     };
 
     return (
-        <aside className="sidebar" style={{ width }}>
-            <div className="sb-head">
-                <span className="ws">{t('app.name')}</span>
-                <span className="grow" />
-                {view === 'chat' && (
-                    <IconButton label={t('sidebar.newChat')} icon={<Icon name="plus" size={16} />} onClick={onNewChat} />
-                )}
-            </div>
-
-            {view === 'chat' && (
-                <div className="sb-search">
-                    <div className="relative">
-                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                            <Icon name="search" size={13} />
-                        </span>
-                        <Input
-                            className="h-8 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
-                            placeholder={t('sidebar.search')}
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                        />
-                    </div>
-                </div>
-            )}
-
-            <ScrollArea className="sb-scroll">
-                {view === 'chat' ? (
-                    visibleChats.map((c) => (
-                        <div
-                            key={c.id}
-                            className={`sb-item ${c.id === activeChat ? 'on' : ''}`}
-                            onClick={() => onSelectChat(c.id)}
-                        >
-                            {c.unread && <span className="ind" />}
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
-                            {/* hover/focus reveal (CSS-only); stopPropagation keeps row select clean */}
-                            <span className="row-acts">
-                                <IconButton size="icon-sm" label={t('chat.rename')} icon={<Icon name="edit" size={13} />}
-                                    onClick={(e) => { e.stopPropagation(); onRenameChat(c); }} />
-                                <IconButton size="icon-sm" label={t('chat.delete')} icon={<Icon name="x" size={13} />}
-                                    className="hover:text-destructive"
-                                    onClick={(e) => { e.stopPropagation(); onDeleteChat(c); }} />
-                            </span>
-                        </div>
-                    ))
-                ) : (
-                    <>
-                        {(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.items ?? []).map((it) => (
-                            <div key={it} className="sb-item"><span>{it}</span></div>
-                        ))}
-                        <div className="sb-empty">
-                            {t(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.emptyKey ?? 'sidebar.empty.settings')}
-                        </div>
-                    </>
-                )}
-            </ScrollArea>
-
-            <nav className="sb-nav">
+        <>
+            {/* ——— 域轨:品牌标 + L1 域标 + 主题 ——— */}
+            <nav className="rail">
+                <span className="rail-mark" aria-hidden="true">U</span>
                 {NAV.map((it) => (
-                    <button
+                    <IconButton
                         key={it.id}
-                        type="button"
-                        className={`sb-nav-item ${view === it.id ? 'on' : ''}`}
+                        label={t(`nav.${it.id}`)}
+                        tooltipSide="right"
+                        className={`rail-btn ${view === it.id ? 'on' : ''}`}
+                        icon={<Icon name={it.icon} size={19} />}
                         onClick={() => onSelectView(it.id)}
-                    >
-                        <Icon name={it.icon} size={17} />
-                        <span>{t(`nav.${it.id}`)}</span>
-                    </button>
+                    />
                 ))}
+                <span className="grow" />
+                <IconButton
+                    label={t('nav.settings')}
+                    tooltipSide="right"
+                    className={`rail-btn ${view === 'settings' ? 'on' : ''}`}
+                    icon={<Icon name="settings" size={18} />}
+                    onClick={() => onSelectView('settings')}
+                />
+                <IconButton label={t('menu.view.toggleTheme')} tooltipSide="right" className="rail-btn"
+                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} />} onClick={toggle} />
             </nav>
 
-            <div className="sb-foot">
-                <Icon name="user" size={15} />
-                <span>default-user</span>
-                <span className="grow" />
-                <IconButton label={t('menu.view.toggleTheme')} onClick={toggle}
-                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />} />
-            </div>
-            <div className="sb-resizer" onPointerDown={startResize} />
-        </aside>
+            {/* ——— 内容栏;折叠时 rail 仍在(域轨是常设导航) ——— */}
+            {!collapsed && (
+            <aside className="sidebar" style={{ width }}>
+                <div className="sb-head">
+                    <span className="ws">{t('app.name')}</span>
+                    <Icon name="chevronDown" size={13} className="mut" />
+                    <span className="grow" />
+                    <IconButton label={t('menu.view.toggleSidebar')} icon={<Icon name="sidebarLeft" size={15} />}
+                        onClick={onToggleCollapsed} />
+                </div>
+
+                {view === 'chat' && (
+                    <button type="button" className="sb-new" onClick={onNewChat}>
+                        <Icon name="plus" size={15} />
+                        <span>{t('sidebar.newChat')}</span>
+                    </button>
+                )}
+
+                {view === 'chat' && (
+                    <div className="sb-search">
+                        <div className="relative">
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                                <Icon name="search" size={13} />
+                            </span>
+                            <Input
+                                className="h-8 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
+                                placeholder={t('sidebar.search')}
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                )}
+
+                <ScrollArea className="sb-scroll">
+                    {view === 'chat' ? (
+                        <>
+                            {groups.map(([dir, items]) => {
+                                const isFolded = folded.has(dir);
+                                return (
+                                    <div key={dir} className="sb-group">
+                                        <button type="button" className="sb-group-head" onClick={() => toggleFold(dir)}>
+                                            <Icon name="chevronRight" size={12} className={`sb-fold ${isFolded ? '' : 'open'}`} />
+                                            <span className="sb-group-ava">{dir.slice(0, 1)}</span>
+                                            <span className="sb-group-name">{dir}</span>
+                                            <span className="sb-group-count">{items.length}</span>
+                                        </button>
+                                        {!isFolded && items.map((c) => (
+                                            <ChatRow key={c.id} c={c} t={t}
+                                                active={c.id === activeChat}
+                                                onSelect={() => onSelectChat(c.id)}
+                                                onRename={() => onRenameChat(c)}
+                                                onDelete={() => onDeleteChat(c)} />
+                                        ))}
+                                    </div>
+                                );
+                            })}
+                            {loose.length > 0 && (
+                                <>
+                                    <div className="sb-sect">{t('sidebar.recent')}</div>
+                                    {loose.map((c) => (
+                                        <ChatRow key={c.id} c={c} t={t}
+                                            active={c.id === activeChat}
+                                            onSelect={() => onSelectChat(c.id)}
+                                            onRename={() => onRenameChat(c)}
+                                            onDelete={() => onDeleteChat(c)} />
+                                    ))}
+                                </>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            {(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.items ?? []).map((it) => (
+                                <div key={it} className="sb-item"><span className="sb-item-title">{it}</span></div>
+                            ))}
+                            <div className="sb-empty">
+                                {t(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.emptyKey ?? 'sidebar.empty.settings')}
+                            </div>
+                        </>
+                    )}
+                </ScrollArea>
+
+                <div className="sb-foot">
+                    <span className="sb-foot-ava">U</span>
+                    <span>default-user</span>
+                </div>
+                <div className="sb-resizer" onPointerDown={startResize} />
+            </aside>
+            )}
+        </>
     );
 }

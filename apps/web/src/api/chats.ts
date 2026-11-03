@@ -3,7 +3,7 @@
 // ST wire message shape: {name, is_user, is_system, mes, send_date, swipe_id,
 // swipes:[...], extra} — mapped here into the renderer contract
 // (MessageViewModel) so renderers never see storage fields.
-import { apiFetch, apiPost, ApiError } from './client';
+import { apiFetch, apiGet, apiPost, assertOk } from './client';
 import type { MessageViewModel, SwipeView } from '@uberge/protocol';
 
 interface StChatMessage {
@@ -21,21 +21,6 @@ interface ChatDetail {
     name: string;
     header: Record<string, unknown>;
     messages: StChatMessage[];
-}
-
-/** Shared !ok → ApiError mapping (502+proxy header = labelled mock upstream). */
-async function assertOk(res: Response): Promise<void> {
-    if (!res.ok) {
-        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
-        const text = await res.text().catch(() => '');
-        throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
-    }
-}
-
-async function apiGet<T>(path: string): Promise<T> {
-    const res = await apiFetch(path);
-    await assertOk(res);
-    return (await res.json()) as T;
 }
 
 /** ST wire message → renderer view model. */

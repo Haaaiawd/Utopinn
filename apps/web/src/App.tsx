@@ -12,12 +12,12 @@ import { RightPanel } from './components/shell/RightPanel';
 import { ChatView } from './components/chat/ChatView';
 import { PlaceholderView } from './components/views/PlaceholderView';
 import { SettingsView } from './components/views/SettingsView';
+import { LibraryView } from './components/views/LibraryView';
+import { RulesView } from './components/views/RulesView';
 import { TooltipProvider } from './components/ui/tooltip';
 import type { IconName } from './components/Icon';
 
 const PLACEHOLDER_VIEWS: Partial<Record<ViewId, { icon: IconName; titleKey: string; descKey: string }>> = {
-    stories: { icon: 'stories', titleKey: 'view.stories.title', descKey: 'view.stories.desc' },
-    rules: { icon: 'rules', titleKey: 'view.rules.title', descKey: 'view.rules.desc' },
     extensions: { icon: 'extensions', titleKey: 'view.extensions.title', descKey: 'view.extensions.desc' },
     diagnostics: { icon: 'diagnostics', titleKey: 'view.diagnostics.title', descKey: 'view.diagnostics.desc' },
 };
@@ -139,6 +139,7 @@ function Shell() {
                 onRenameChat={onRenameChat}
                 onDeleteChat={onDeleteChat}
                 collapsed={sidebarCollapsed}
+                onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
             />
             <main className="main">
                 {view === 'chat' && chat && (
@@ -150,9 +151,26 @@ function Shell() {
                         onTogglePanel={() => setPanelHidden((v) => !v)}
                         onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
                         onHint={showHint}
+                        onImmersive={() => {
+                            const next = !(sidebarCollapsed && panelHidden);
+                            setSidebarCollapsed(next);
+                            setPanelHidden(next);
+                        }}
                         live={serverStatus === 'online'}
                     />
                 )}
+                {view === 'stories' && (
+                    <LibraryView
+                        chats={chats}
+                        onOpenCard={(dir) => {
+                            const first = chats.find((c) => c.charDir === dir);
+                            if (first) { setActiveChat(first.id); setView('chat'); }
+                            else showHint(t('lib.noChat'));
+                        }}
+                        onHint={showHint}
+                    />
+                )}
+                {view === 'rules' && <RulesView onHint={showHint} />}
                 {view === 'settings' && <SettingsView />}
                 {placeholder && (
                     <PlaceholderView icon={placeholder.icon} titleKey={placeholder.titleKey} descKey={placeholder.descKey} />
