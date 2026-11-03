@@ -1,1153 +1,1149 @@
 {
- "schema_version": 2,
- "tasks": [
-  {
-   "id": "TASK-001",
-   "title": "apps/server 基线跑通:pnpm 安装 + 启动 + 登录页/旧UI可用",
-   "outcome": "pnpm install 后 node server.js 启动,浏览器打开登录页并进入旧版主界面;存储引擎 fs 模式可读写。",
-   "acceptance": [
+  "schema_version": 2,
+  "tasks": [
     {
-     "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
-     "verify_by": "pnpm --filter @uberge/server install",
-     "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
-    },
-    {
-     "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
-     "verify_by": "cd apps/server && node server.js,然后 curl http://127.0.0.1:8000",
-     "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
-    },
-    {
-     "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
-     "verify_by": "启动日志查 storage/engine 输出;登录后检查 data/<user>/ 产生文件",
-     "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "不改 apps/server 源码行为",
-    "node_modules 不进 git"
-   ],
-   "depends_on": [],
-   "reads": [
-    "AGENTS.md",
-    "apps/server/package.json"
-   ],
-   "touches": [
-    "apps/server"
-   ],
-   "implements": "",
-   "design_exemption": "operational baseline; no design doc applies",
-   "capability_hooks": [],
-   "capability_exemption": "routine dependency install/boot; no specialist judgment changes the work",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-001"
-   ],
-   "status": "done",
-   "progress": {
-    "completed": [],
-    "current": "complete",
-    "next": ""
-   },
-   "evidence": [
-    "pnpm --filter @uberge/server install 成功;pnpm-workspace.yaml 增 onlyBuiltDependencies:[better-sqlite3] 后 rebuild 产出 build/Release/better_sqlite3.node",
-    "node server.js(WSL2 node v22.22.2,引擎告警 >=24 但基线可跑):首跑创建 config.yaml,Repo 层播种 ~200 内容文件,webpack 编译 lib 12.7s,监听 127.0.0.1:8000,ws-delivery 有连接",
-    "GET / -> 200,785KB,<title>Luker</title> 主界面 HTML(注意:需绕过环境里的 HTTP_PROXY)",
-    {
-     "type": "acceptance_results",
-     "results": [
-      {
-       "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
-       "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
+      "id": "TASK-001",
+      "title": "apps/server 基线跑通:pnpm 安装 + 启动 + 登录页/旧UI可用",
+      "outcome": "pnpm install 后 node server.js 启动,浏览器打开登录页并进入旧版主界面;存储引擎 fs 模式可读写。",
+      "acceptance": [
+        {
+          "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
+          "verify_by": "pnpm --filter @uberge/server install",
+          "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
+        },
+        {
+          "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
+          "verify_by": "cd apps/server && node server.js,然后 curl http://127.0.0.1:8000",
+          "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
+        },
+        {
+          "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
+          "verify_by": "启动日志查 storage/engine 输出;登录后检查 data/<user>/ 产生文件",
+          "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不改 apps/server 源码行为",
+        "node_modules 不进 git"
+      ],
+      "depends_on": [],
+      "reads": [
+        "AGENTS.md",
+        "apps/server/package.json"
+      ],
+      "touches": [
+        "apps/server"
+      ],
+      "implements": "",
+      "design_exemption": "operational baseline; no design doc applies",
+      "capability_hooks": [],
+      "capability_exemption": "routine dependency install/boot; no specialist judgment changes the work",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-001"
+      ],
+      "status": "done",
+      "progress": {
+        "completed": [],
+        "current": "complete",
+        "next": ""
       },
-      {
-       "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
-       "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
+      "evidence": [
+        "pnpm --filter @uberge/server install 成功;pnpm-workspace.yaml 增 onlyBuiltDependencies:[better-sqlite3] 后 rebuild 产出 build/Release/better_sqlite3.node",
+        "node server.js(WSL2 node v22.22.2,引擎告警 >=24 但基线可跑):首跑创建 config.yaml,Repo 层播种 ~200 内容文件,webpack 编译 lib 12.7s,监听 127.0.0.1:8000,ws-delivery 有连接",
+        "GET / -> 200,785KB,<title>Luker</title> 主界面 HTML(注意:需绕过环境里的 HTTP_PROXY)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
+              "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
+            },
+            {
+              "criterion": "server 启动且 GET / 返回登录或主界面 HTML",
+              "evidence": "node server.js 日志 'Luker is listening on IPv4: 127.0.0.1:8000';curl --noproxy '*' http://127.0.0.1:8000/ -> 200,785471 字节,<title>Luker</title>"
+            },
+            {
+              "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
+              "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
+            }
+          ],
+          "at": "2026-11-02T09:12:00.605Z"
+        }
+      ],
+      "created_at": "2026-11-02T08:50:32.133Z",
+      "updated_at": "2026-11-02T09:12:00.605Z",
+      "completed_at": "2026-11-02T09:12:00.605Z"
+    },
+    {
+      "id": "TASK-002",
+      "title": "packages/protocol 首版线协议 schema",
+      "outcome": "定义 GenerateRequest/GenerateEvent/job 状态、资源 schema(card/worldbook/preset/chat_state)、事件名枚举;TS 编译通过。",
+      "acceptance": [
+        {
+          "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
+          "verify_by": "pnpm --filter @uberge/protocol typecheck",
+          "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
+        },
+        {
+          "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
+          "verify_by": "对照 .loom/design/generation-api.md 逐字段 review",
+          "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只写类型/校验,无运行逻辑"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".loom/design/generation-api.md",
+        ".loom/design/mobile-panels.md"
+      ],
+      "touches": [
+        "packages/protocol/src"
+      ],
+      "implements": ".loom/design/generation-api.md#Interfaces and dependencies",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "schema authoring per generation-api design; transport choice already recorded",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-002"
+      ],
+      "status": "done",
+      "progress": {
+        "completed": [],
+        "current": "complete",
+        "next": ""
       },
-      {
-       "criterion": "启动日志确认存储引擎已初始化(fs 默认),且一次写入在 data/ 下持久化",
-       "evidence": "日志含 SettingsRepo/NamedDocRepo/WorldInfoRepo/PresetRepo 播种,data/default-user/ 生成完整目录树;API 写入:csrf-token->session cookie,POST /api/settings/save -> 200 {result:ok},settings.json mtime 17:10->17:11"
-      }
-     ],
-     "at": "2026-11-02T09:12:00.605Z"
-    }
-   ],
-   "created_at": "2026-11-02T08:50:32.133Z",
-   "updated_at": "2026-11-02T09:12:00.605Z",
-   "completed_at": "2026-11-02T09:12:00.605Z"
-  },
-  {
-   "id": "TASK-002",
-   "title": "packages/protocol 首版线协议 schema",
-   "outcome": "定义 GenerateRequest/GenerateEvent/job 状态、资源 schema(card/worldbook/preset/chat_state)、事件名枚举;TS 编译通过。",
-   "acceptance": [
-    {
-     "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
-     "verify_by": "pnpm --filter @uberge/protocol typecheck",
-     "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
+      "evidence": [
+        "packages/protocol/src: common.ts(ResourceRef/ApiError/UserProfile/CSRF)+resources.ts(CharacterCardData/WorldBook/Preset/Chat/ChatState/FloorState)+generation.ts(GenerateRequest/Job/事件流)+panels.ts(CardApp 桥契约),纯类型零依赖",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
+              "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
+            },
+            {
+              "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
+              "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
+            }
+          ],
+          "at": "2026-11-02T09:13:46.772Z"
+        }
+      ],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-02T09:13:46.772Z",
+      "completed_at": "2026-11-02T09:13:46.772Z"
     },
     {
-     "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
-     "verify_by": "对照 .loom/design/generation-api.md 逐字段 review",
-     "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "只写类型/校验,无运行逻辑"
-   ],
-   "depends_on": [],
-   "reads": [
-    ".loom/design/generation-api.md",
-    ".loom/design/mobile-panels.md"
-   ],
-   "touches": [
-    "packages/protocol/src"
-   ],
-   "implements": ".loom/design/generation-api.md#Interfaces and dependencies",
-   "design_exemption": "",
-   "capability_hooks": [],
-   "capability_exemption": "schema authoring per generation-api design; transport choice already recorded",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-002"
-   ],
-   "status": "done",
-   "progress": {
-    "completed": [],
-    "current": "complete",
-    "next": ""
-   },
-   "evidence": [
-    "packages/protocol/src: common.ts(ResourceRef/ApiError/UserProfile/CSRF)+resources.ts(CharacterCardData/WorldBook/Preset/Chat/ChatState/FloorState)+generation.ts(GenerateRequest/Job/事件流)+panels.ts(CardApp 桥契约),纯类型零依赖",
-    {
-     "type": "acceptance_results",
-     "results": [
-      {
-       "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
-       "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
+      "id": "TASK-003",
+      "title": "packages/formats:移植卡面/世界书/JSONL 编解码",
+      "outcome": "PNG tEXt(CCv1/v2/v3)、JSON 卡、charx zip、byaf、worldinfo {entries:{}}、chat JSONL 的 parse/serialize 纯函数,带 fixture 测试。",
+      "acceptance": [
+        {
+          "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
+          "verify_by": "pnpm --filter @uberge/formats test",
+          "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "纯函数无 fs(文件读写由调用方)",
+        "行为以 apps/server/src 原实现为准"
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/server/src/charx.js",
+        "apps/server/src/byaf.js",
+        "apps/server/src/character-card-parser.js",
+        "apps/server/src/png/encode.js"
+      ],
+      "touches": [
+        "packages/formats/src",
+        "packages/formats/tests"
+      ],
+      "implements": "",
+      "design_exemption": "faithful port of existing code; covered by compat-golden-diff verification design",
+      "capability_hooks": [],
+      "capability_exemption": "faithful port with fixture tests; methodology owned by st-engine-compat at verification level",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-004"
+      ],
+      "status": "done",
+      "progress": {
+        "completed": [],
+        "current": "complete",
+        "next": ""
       },
-      {
-       "criterion": "schema 覆盖 generation-api 设计中的请求/事件字段",
-       "evidence": "GenerateRequest{charRef|groupRef,chatRef,mode,userText?,presetRef?,overrides?,ephemeralDocs?,swipeIndex?}逐字落设计第12行;事件 delta/reasoning/trace/final/persisted/failed 覆盖第13行输出面;JOB_STATUSES 七态含 aborted;JobSubscribe/JobAck 覆盖 lastEventId/ack 断线续接;EphemeralDocument 覆盖临时上传语义"
-      }
-     ],
-     "at": "2026-11-02T09:13:46.772Z"
-    }
-   ],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-02T09:13:46.772Z",
-   "completed_at": "2026-11-02T09:13:46.772Z"
-  },
-  {
-   "id": "TASK-003",
-   "title": "packages/formats:移植卡面/世界书/JSONL 编解码",
-   "outcome": "PNG tEXt(CCv1/v2/v3)、JSON 卡、charx zip、byaf、worldinfo {entries:{}}、chat JSONL 的 parse/serialize 纯函数,带 fixture 测试。",
-   "acceptance": [
-    {
-     "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
-     "verify_by": "pnpm --filter @uberge/formats test",
-     "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "纯函数无 fs(文件读写由调用方)",
-    "行为以 apps/server/src 原实现为准"
-   ],
-   "depends_on": [],
-   "reads": [
-    "apps/server/src/charx.js",
-    "apps/server/src/byaf.js",
-    "apps/server/src/character-card-parser.js",
-    "apps/server/src/png/encode.js"
-   ],
-   "touches": [
-    "packages/formats/src",
-    "packages/formats/tests"
-   ],
-   "implements": "",
-   "design_exemption": "faithful port of existing code; covered by compat-golden-diff verification design",
-   "capability_hooks": [],
-   "capability_exemption": "faithful port with fixture tests; methodology owned by st-engine-compat at verification level",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-004"
-   ],
-   "status": "done",
-   "progress": {
-    "completed": [],
-    "current": "complete",
-    "next": ""
-   },
-   "evidence": [
-    "pnpm --filter @uberge/formats test → 17/17 pass(png 6 + charx 3 + byaf 3 + jsonl/card 5):写卡读卡往返、ccv3 优先、zTXt 解、strip、CharX 资产映射(sprite hyphen/background/icon 排除/远程排除/非图扩展名排除)、BYAF 宏替换+NSFW+内嵌书+display_name+聊天背景、JSONL 头/往返/末条、detectSpec/toV2",
-    "pnpm --filter @uberge/formats typecheck 通过(strict + noUncheckedIndexedAccess)",
-    "纯函数无 fs 无 Node Buffer:全部 Uint8Array + TextEncoder/Decoder + fflate,server/RN/浏览器三端可跑;base64/CRC32/sanitize 内联零额外依赖(唯一依赖 fflate@0.8.3)",
-    {
-     "type": "acceptance_results",
-     "results": [
-      {
-       "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
-       "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
-      }
-     ],
-     "at": "2026-11-03T03:22:14.720Z"
-    }
-   ],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T03:22:14.720Z",
-   "completed_at": "2026-11-03T03:22:14.720Z"
-  },
-  {
-   "id": "TASK-004",
-   "title": "golden-diff 语料验证 harness",
-   "outcome": "request-inspector 捕获原版 wireRequest → golden.json;diff runner 可对任意 assemble() 产出做规范化 deep diff 并分级报告。",
-   "acceptance": [
-    {
-     "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
-     "verify_by": "运行采集脚本,检查 golden 文件含 messages 数组",
-     "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
+      "evidence": [
+        "pnpm --filter @uberge/formats test → 17/17 pass(png 6 + charx 3 + byaf 3 + jsonl/card 5):写卡读卡往返、ccv3 优先、zTXt 解、strip、CharX 资产映射(sprite hyphen/background/icon 排除/远程排除/非图扩展名排除)、BYAF 宏替换+NSFW+内嵌书+display_name+聊天背景、JSONL 头/往返/末条、detectSpec/toV2",
+        "pnpm --filter @uberge/formats typecheck 通过(strict + noUncheckedIndexedAccess)",
+        "纯函数无 fs 无 Node Buffer:全部 Uint8Array + TextEncoder/Decoder + fflate,server/RN/浏览器三端可跑;base64/CRC32/sanitize 内联零额外依赖(唯一依赖 fflate@0.8.3)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
+              "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
+            }
+          ],
+          "at": "2026-11-03T03:22:14.720Z"
+        }
+      ],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T03:22:14.720Z",
+      "completed_at": "2026-11-03T03:22:14.720Z"
     },
     {
-     "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
-     "verify_by": "tests/ 下 diff 测试运行结果",
-     "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "语料卡标注兼容面标签",
-    "私有卡走 tests/corpus-private(gitignore)"
-   ],
-   "depends_on": [
-    "TASK-001"
-   ],
-   "reads": [
-    ".loom/design/compat-golden-diff.md",
-    "apps/server/src/request-inspector.js"
-   ],
-   "touches": [
-    "tests/corpus",
-    "tests/golden-diff"
-   ],
-   "implements": ".loom/design/compat-golden-diff.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "st-engine-compat#C1",
-     "at": "harness设计",
-     "must_produce": "golden采集+diff分级实现"
-    },
-    {
-     "node": "st-engine-compat#C4",
-     "at": "阈值定稿",
-     "must_produce": "白名单与通过线"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-009"
-   ],
-   "status": "done",
-   "progress": {
-    "completed": [
-     "extract-card.mjs 语料清单器落地",
-     "5张私有卡 manifest 已生成(覆盖面标签)"
-    ],
-    "current": "complete",
-    "next": ""
-   },
-   "evidence": [
-    "tests/golden-diff/capture.sh <card> 一键跑通:隔离 Luker server + mockLLM + 原生 chromium(系统库 dpkg -x 自备)+ 显式 API 连接。已产出 5 份 golden:golden/default_Seraphina.golden.json(公开,8 msgs)与 golden-private/ 下 诡异修仙(4 msgs,constant WI 实注)/高中生活模拟(9 msgs)/废材教主(3 msgs,galgame 接管型)/Wilderness_Survival(8 msgs,92 条内嵌书物化进 worlds/ 后 WI 注入可见)。游戏公司老板.png 无卡数据(C2PA-only 的 GPT 生成图),标记跳过。",
-    "diff-golden.mjs 自比对 PASS(8/8 msgs 零差异);扰动注入(改 msg[2] 内容 / splice 注入新消息)均正确报 FATAL,白名单归一化(时间戳/gen_id/空白)生效。",
-    "requestInspector 双保险:golden 同时含 mockLLM wireRequests 与 inspector.requestInspector[0].fullMessages+wireRequest;cardBook 字段随 golden 落盘供 WI 轨迹重建。",
-    {
-     "type": "acceptance_results",
-     "results": [
-      {
-       "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
-       "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
+      "id": "TASK-004",
+      "title": "golden-diff 语料验证 harness",
+      "outcome": "request-inspector 捕获原版 wireRequest → golden.json;diff runner 可对任意 assemble() 产出做规范化 deep diff 并分级报告。",
+      "acceptance": [
+        {
+          "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
+          "verify_by": "运行采集脚本,检查 golden 文件含 messages 数组",
+          "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
+        },
+        {
+          "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
+          "verify_by": "tests/ 下 diff 测试运行结果",
+          "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "语料卡标注兼容面标签",
+        "私有卡走 tests/corpus-private(gitignore)"
+      ],
+      "depends_on": [
+        "TASK-001"
+      ],
+      "reads": [
+        ".loom/design/compat-golden-diff.md",
+        "apps/server/src/request-inspector.js"
+      ],
+      "touches": [
+        "tests/corpus",
+        "tests/golden-diff"
+      ],
+      "implements": ".loom/design/compat-golden-diff.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C1",
+          "at": "harness设计",
+          "must_produce": "golden采集+diff分级实现"
+        },
+        {
+          "node": "st-engine-compat#C4",
+          "at": "阈值定稿",
+          "must_produce": "白名单与通过线"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-009"
+      ],
+      "status": "done",
+      "progress": {
+        "completed": [
+          "extract-card.mjs 语料清单器落地",
+          "5张私有卡 manifest 已生成(覆盖面标签)"
+        ],
+        "current": "complete",
+        "next": ""
       },
-      {
-       "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
-       "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
-      }
-     ],
-     "at": "2026-11-03T03:16:09.031Z"
-    }
-   ],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T03:16:09.031Z",
-   "completed_at": "2026-11-03T03:16:09.031Z"
-  },
-  {
-   "id": "TASK-005",
-   "title": "core 移植第一阶段:变量/宏 + 世界书引擎",
-   "outcome": "packages/core 提供 getvar/setvar 语义、宏替换、世界书扫描/触发/预算/注入,输出注入轨迹;过语料 WI 相关 diff。",
-   "acceptance": [
-    {
-     "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
-     "verify_by": "pnpm --filter @uberge/core test",
-     "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
+      "evidence": [
+        "tests/golden-diff/capture.sh <card> 一键跑通:隔离 Luker server + mockLLM + 原生 chromium(系统库 dpkg -x 自备)+ 显式 API 连接。已产出 5 份 golden:golden/default_Seraphina.golden.json(公开,8 msgs)与 golden-private/ 下 诡异修仙(4 msgs,constant WI 实注)/高中生活模拟(9 msgs)/废材教主(3 msgs,galgame 接管型)/Wilderness_Survival(8 msgs,92 条内嵌书物化进 worlds/ 后 WI 注入可见)。游戏公司老板.png 无卡数据(C2PA-only 的 GPT 生成图),标记跳过。",
+        "diff-golden.mjs 自比对 PASS(8/8 msgs 零差异);扰动注入(改 msg[2] 内容 / splice 注入新消息)均正确报 FATAL,白名单归一化(时间戳/gen_id/空白)生效。",
+        "requestInspector 双保险:golden 同时含 mockLLM wireRequests 与 inspector.requestInspector[0].fullMessages+wireRequest;cardBook 字段随 golden 落盘供 WI 轨迹重建。",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
+              "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
+            },
+            {
+              "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
+              "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
+            }
+          ],
+          "at": "2026-11-03T03:16:09.031Z"
+        }
+      ],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T03:16:09.031Z",
+      "completed_at": "2026-11-03T03:16:09.031Z"
     },
     {
-     "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
-     "verify_by": "golden-diff runner",
-     "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "零 DOM/fs;外部依赖经注入端口",
-    "行为差异以原版为准"
-   ],
-   "depends_on": [
-    "TASK-002",
-    "TASK-004",
-    "TASK-003"
-   ],
-   "reads": [
-    ".loom/design/core-engine.md",
-    "apps/server/public/scripts/world-info.js",
-    "apps/server/public/scripts/macros.js"
-   ],
-   "touches": [
-    "packages/core/src"
-   ],
-   "implements": ".loom/design/core-engine.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "st-engine-compat#C2",
-     "at": "WI/宏移植",
-     "must_produce": "行为面逐项断言"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-003"
-   ],
-   "status": "done",
-   "progress": {
-    "completed": [],
-    "current": "complete",
-    "next": ""
-   },
-   "evidence": [
-    "pnpm --filter @uberge/core test -> 59/59 绿(WI 36 + 宏 + 变量);packages/core/tests/wi-trace.test.mjs -> 5 卡 WI 注入轨迹与 golden wire 一致,高中卡 2-token KNOWN-GAP 挂账容差;计词升级端点语义 encode+5",
-    {
-     "type": "acceptance_results",
-     "results": [
-      {
-       "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
-       "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
+      "id": "TASK-005",
+      "title": "core 移植第一阶段:变量/宏 + 世界书引擎",
+      "outcome": "packages/core 提供 getvar/setvar 语义、宏替换、世界书扫描/触发/预算/注入,输出注入轨迹;过语料 WI 相关 diff。",
+      "acceptance": [
+        {
+          "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
+          "verify_by": "pnpm --filter @uberge/core test",
+          "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
+        },
+        {
+          "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
+          "verify_by": "golden-diff runner",
+          "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "零 DOM/fs;外部依赖经注入端口",
+        "行为差异以原版为准"
+      ],
+      "depends_on": [
+        "TASK-002",
+        "TASK-004",
+        "TASK-003"
+      ],
+      "reads": [
+        ".loom/design/core-engine.md",
+        "apps/server/public/scripts/world-info.js",
+        "apps/server/public/scripts/macros.js"
+      ],
+      "touches": [
+        "packages/core/src"
+      ],
+      "implements": ".loom/design/core-engine.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C2",
+          "at": "WI/宏移植",
+          "must_produce": "行为面逐项断言"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003"
+      ],
+      "status": "done",
+      "progress": {
+        "completed": [],
+        "current": "complete",
+        "next": ""
       },
-      {
-       "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
-       "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
-      }
-     ],
-     "at": "2026-11-03T06:34:44.592Z"
+      "evidence": [
+        "pnpm --filter @uberge/core test -> 59/59 绿(WI 36 + 宏 + 变量);packages/core/tests/wi-trace.test.mjs -> 5 卡 WI 注入轨迹与 golden wire 一致,高中卡 2-token KNOWN-GAP 挂账容差;计词升级端点语义 encode+5",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
+              "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
+            },
+            {
+              "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
+              "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
+            }
+          ],
+          "at": "2026-11-03T06:34:44.592Z"
+        }
+      ],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:34:44.592Z",
+      "completed_at": "2026-11-03T06:34:44.592Z"
+    },
+    {
+      "id": "TASK-006",
+      "title": "core 移植第二阶段:prompt 组装(chat completions 路径)",
+      "outcome": "消息数组编排:system/描述/性格/场景/示例对话/深度提示/AN/WI 注入位置语义与原版一致;token 预算截断。 【范围含:预设/采样器数据模型读取(输入侧,编辑UI在TASK-010)】",
+      "acceptance": [
+        {
+          "criterion": "语料卡 golden diff 消息序列一致(可忍差异除外)",
+          "verify_by": "golden-diff runner 报告",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "仅 chat-completions 源;text prompt/instruct 属后续阶段"
+      ],
+      "depends_on": [
+        "TASK-005"
+      ],
+      "reads": [
+        "apps/server/public/scripts/openai.js",
+        "apps/server/public/scripts/PromptManager.js"
+      ],
+      "touches": [
+        "packages/core/src"
+      ],
+      "implements": ".loom/design/core-engine.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C2",
+          "at": "prompt组装移植",
+          "must_produce": "行为面逐项断言"
+        },
+        {
+          "node": "st-engine-compat#C3",
+          "at": "宏/STscript分层",
+          "must_produce": "effects意图描述设计"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003"
+      ],
+      "status": "in_progress",
+      "progress": "引擎主体已移植(assemble/messages/injections/collection/tokens)+promptBuilder server provider;特征化9测全绿。余:预设→promptOrder解析入参(TASK-007 request-building 侧)、depthInjection 宿主接线、instruct/textgen 路径、golden-diff 语料判卷",
+      "evidence": [],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:36:05.129Z"
+    },
+    {
+      "id": "TASK-007",
+      "title": "/api/generate 服务端生成管线 + WS 投递",
+      "outcome": "POST /api/generate 走 core.assemble → dispatch → job → WS ticket 流式/回放;旧端点不受影响。 【V1补充:TH T1 桥面——triggerSlash/消息写回/生成控制,依赖本任务的生成管线】",
+      "acceptance": [
+        {
+          "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
+          "verify_by": "apps/server 下对应 e2e 测试",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不破坏 /api/backends/* 旧链路"
+      ],
+      "depends_on": [
+        "TASK-006",
+        "TASK-011"
+      ],
+      "reads": [
+        ".loom/design/generation-api.md",
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/src/ws-delivery.js"
+      ],
+      "touches": [
+        "apps/server/src",
+        "packages/api-client/src"
+      ],
+      "implements": ".loom/design/generation-api.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C3",
+          "at": "生成管线",
+          "must_produce": "effects执行边界"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-005",
+        "DLV-006"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:33:54.144Z"
+    },
+    {
+      "id": "TASK-008",
+      "title": "Expo 薄客户端:登录→角色列表→聊天流式",
+      "outcome": "apps/mobile 能配服务端地址登录,列角色卡,进聊天发消息并看到流式回复(WS);底导航骨架就位。",
+      "acceptance": [
+        {
+          "criterion": "真机/模拟器上完成一轮对话,锁屏恢复后经 job 回放补齐",
+          "verify_by": "人工验证 + 录屏或日志",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "高级设置不进移动端",
+        "不含面板页(后续任务)"
+      ],
+      "depends_on": [
+        "TASK-007",
+        "TASK-012"
+      ],
+      "reads": [
+        ".loom/design/mobile-panels.md",
+        "apps/mobile/App.tsx"
+      ],
+      "touches": [
+        "apps/mobile"
+      ],
+      "implements": "",
+      "design_exemption": "thin-client app shell; covered by mobile-panels and generation-api designs",
+      "capability_hooks": [
+        {
+          "node": "mobile-app-stack#C1",
+          "at": "基线",
+          "must_produce": "SDK58+dev build"
+        },
+        {
+          "node": "mobile-app-stack#C2",
+          "at": "导航",
+          "must_produce": "expo-router底导航"
+        },
+        {
+          "node": "mobile-app-stack#C3",
+          "at": "数据层",
+          "must_produce": "Query+WS ticket"
+        },
+        {
+          "node": "mobile-app-stack#C4",
+          "at": "列表",
+          "must_produce": "LegendList选型落地"
+        },
+        {
+          "node": "mobile-app-stack#C5",
+          "at": "渲染",
+          "must_produce": "streamdown落地"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-007"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:33:54.144Z"
+    },
+    {
+      "id": "TASK-009",
+      "title": "移动端面板页:CardApp WebView 沙箱 + ctx 桥",
+      "outcome": "底导航'面板'页承载当前聊天 CardApp;ctx 状态/变量/世界书 API 经 postMessage→api-client 落服务端;老状态栏 HTML 可渲染。 【D-013:面板页=应用列表→全屏WebView(多tab留v1.1);移动端无插件点,主题/设置随服务端同步】",
+      "acceptance": [
+        {
+          "criterion": "一张 CardApp 卡在设备上面板页可交互且状态跨重启保留",
+          "verify_by": "真机验证:改状态→重启 App→状态仍在",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "单 app 崩溃不拖垮页面",
+        "app 代码不直接触网"
+      ],
+      "depends_on": [
+        "TASK-008",
+        "TASK-014"
+      ],
+      "reads": [
+        ".loom/design/mobile-panels.md",
+        "apps/server/docs/development/card-developers.md"
+      ],
+      "touches": [
+        "apps/mobile"
+      ],
+      "implements": ".loom/design/mobile-panels.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "sandboxed-card-apps#C1",
+          "at": "容器",
+          "must_produce": "独立WebView锁定"
+        },
+        {
+          "node": "sandboxed-card-apps#C2",
+          "at": "桥",
+          "must_produce": "nonce+白名单协议"
+        },
+        {
+          "node": "sandboxed-card-apps#C4",
+          "at": "shim",
+          "must_produce": "ST全局shim+降级"
+        },
+        {
+          "node": "mobile-app-stack#C6",
+          "at": "样式层",
+          "must_produce": "NativeWind tokens"
+        },
+        {
+          "node": "sandboxed-card-apps#C3",
+          "at": "出口控制",
+          "must_produce": "CSP头注入+资源路由白名单"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-008"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:33:54.144Z"
+    },
+    {
+      "id": "TASK-010",
+      "title": "新 Web 管理端 SPA(骨架)",
+      "outcome": "web SPA 完整产品:桌面壳(标题栏/rail/二级侧栏/右面板/状态栏)+七域页面(聊天/故事/规则/扩展/诊断/设置)+会话侧栏+conversationRenderer宿主(prose/bubble)+⌘K命令面板+主题token(暗/亮)+i18n中英字典基建+ST对照表29条验收",
+      "acceptance": [
+        {
+          "criterion": "SPA 可登录并对世界书做 CRUD",
+          "verify_by": "pnpm --filter @uberge/web dev 人工验证",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "移动端未覆盖的高级功能全部在此保留入口"
+      ],
+      "depends_on": [
+        "TASK-007",
+        "TASK-012",
+        "TASK-015"
+      ],
+      "reads": [
+        "AGENTS.md"
+      ],
+      "touches": [
+        "apps/web"
+      ],
+      "implements": "",
+      "design_exemption": "web SPA direction in loom record assumptions; dedicated design doc deferred",
+      "capability_hooks": [
+        {
+          "node": "web-spa-stack#C2",
+          "at": "框架",
+          "must_produce": "React19+Vite"
+        },
+        {
+          "node": "web-spa-stack#C3",
+          "at": "UI库",
+          "must_produce": "Tailwind4+shadcn"
+        },
+        {
+          "node": "web-spa-stack#C4",
+          "at": "表单/数据",
+          "must_produce": "RHF+Zod+Query"
+        },
+        {
+          "node": "web-spa-stack#C5",
+          "at": "编辑器",
+          "must_produce": "CM6+Table+dnd"
+        },
+        {
+          "node": "web-spa-stack#C6",
+          "at": "桌面壳/主题/i18n",
+          "must_produce": "shell组件+主题token表+t()字典"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-02T08:50:32.134Z",
+      "updated_at": "2026-11-03T06:33:54.144Z"
+    },
+    {
+      "id": "TASK-011",
+      "title": "cordis 内核骨架:PluginContext/loader/profile/hello 冒烟",
+      "outcome": "pnpm add cordis 验证;packages/kernel 提供 Context+事件五模式+effect+inject+profile.yaml 按序装载;hello 插件真实组合测试全绿(inject缺失失败/effect清理/waterfall语义/degraded诊断)。 【含 ST 旧服务端插件 adapter:init(router)→ctx.route,exit→effect,info→manifest,D-012】",
+      "acceptance": [
+        {
+          "criterion": "cordis 在 Express+pnpm workspace 下可用(Context/plugin/effect)",
+          "verify_by": "hello 插件冒烟测试",
+          "evidence": "node --test dist/test 9/9 全绿"
+        },
+        {
+          "criterion": "profile.yaml 按序装载+patch行替换",
+          "verify_by": "loader 测试",
+          "evidence": "node --test dist/test 9/9 全绿"
+        },
+        {
+          "criterion": "inject 缺失显式失败,effect 卸载清理",
+          "verify_by": "loader 测试",
+          "evidence": "node --test dist/test 9/9 全绿"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只用 cordis core(Context/events/effects/registry),loader/profile/patch 自写",
+        "内核不得含 worldInfo/character 等酒馆符号"
+      ],
+      "depends_on": [
+        "TASK-002"
+      ],
+      "reads": [
+        ".loom/design/plugin-architecture.md",
+        "ref/deepseek-harness/docs/cordis-primer.md"
+      ],
+      "touches": [
+        "packages/kernel",
+        "apps/server"
+      ],
+      "implements": ".loom/design/plugin-architecture.md#2. 插件契约(直接映射 Cordis)",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "plugin-kernel#C1",
+          "at": "内核选型",
+          "must_produce": "pnpm add cordis 实测或回退记录"
+        },
+        {
+          "node": "plugin-kernel#C3",
+          "at": "profile/patch装载",
+          "must_produce": "按序装载+dump-config"
+        },
+        {
+          "node": "plugin-kernel#C4",
+          "at": "旧ST插件adapter",
+          "must_produce": "legacy-st-plugin-adapter 冒烟"
+        }
+      ],
+      "capability_exemption": "kernel is domain-agnostic infrastructure; no tavern semantics inside",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "done",
+      "progress": {
+        "completed": [
+          "pnpm add cordis@rc.12+schemastery+js-yaml 实测成立",
+          "packages/kernel:AppContext+ServiceCatalog(四角色)+provideSeam",
+          "loader:profile.yaml相对路径装载+patch替换+degraded",
+          "waterfall真实语义实证(inner产基值/args固定/变换回溯)",
+          "legacy-st-plugin-adapter 冒烟"
+        ],
+        "current": "已完成",
+        "next": "TASK-007 汇流:ctx.generation/promptBuilder 挂载"
+      },
+      "evidence": [
+        "packages/kernel/dist/test 9/9 测试绿",
+        "packages/kernel/src/{context,loader,plugin,legacy-adapter}.ts"
+      ],
+      "created_at": "2026-11-03T06:19:55.764Z",
+      "updated_at": "2026-11-03T08:23:18.588Z"
+    },
+    {
+      "id": "TASK-012",
+      "title": "web-ia 信息架构设计:ST 全部 UI 面重排 + 线稿",
+      "outcome": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认折叠映射+web/移动端线稿;喂给 TASK-008/009/010 的界面结构",
+      "acceptance": [
+        {
+          "criterion": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只设计不实现",
+        "以 ST 真实 UI 面为输入源,不靠记忆"
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/server/public/index.html",
+        "ref/Luker/public/index.html"
+      ],
+      "touches": [
+        ".loom/design/web-ia.md"
+      ],
+      "implements": ".loom/design/web-ia.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "web-spa-stack#C1",
+          "at": "IA重排",
+          "must_produce": "web-ia.md 一级/次级/折叠映射+线稿"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "done",
+      "progress": {
+        "completed": [
+          "IA v3 重排",
+          "ST 29 面对照表",
+          "web-ui-mockup.html 高保真稿",
+          "桌面壳+明暗主题+SVG图标",
+          "对话渲染器seam定义"
+        ],
+        "current": "已完成",
+        "next": "交 TASK-010/015 消费"
+      },
+      "evidence": [
+        ".loom/design/web-ia.md",
+        ".loom/design/web-ui-mockup.html",
+        "commit f4a169d"
+      ],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T07:24:36.900Z"
+    },
+    {
+      "id": "TASK-013",
+      "title": "MVU 服务端 settle:UpdateVariable→stat_data projection+状态栏模板 seam",
+      "outcome": "generation persist 钩子上注册 settle waterfall:解析 UpdateVariable 块→chatState projection(stat_data);状态栏固定模板渲染为 card-runtime 资产;单元测试用真实 MVU 卡样例",
+      "acceptance": [
+        {
+          "criterion": "generation persist 钩子上注册 settle waterfal",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "stat_data=聊天日志 fold 的视图,不是最近一块解析",
+        "is_hidden 语义不动"
+      ],
+      "depends_on": [
+        "TASK-007"
+      ],
+      "reads": [
+        ".loom/design/plugin-architecture.md",
+        "ref/SillyTavern/public/script.js"
+      ],
+      "touches": [
+        "packages/core",
+        "apps/server/src"
+      ],
+      "implements": ".loom/capabilities/mvu-runtime/capability.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "mvu-runtime#C1",
+          "at": "stat_data投影",
+          "must_produce": "registerProjection fold实现"
+        },
+        {
+          "node": "mvu-runtime#C2",
+          "at": "settle管线位",
+          "must_produce": "messagePersisted serial settle"
+        },
+        {
+          "node": "mvu-runtime#C3",
+          "at": "状态板",
+          "must_produce": "服务端模板渲染为系统面板"
+        },
+        {
+          "node": "mvu-runtime#C4",
+          "at": "变量回执",
+          "must_produce": "receipt内联+op日志"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T06:34:14.239Z"
+    },
+    {
+      "id": "TASK-014",
+      "title": "card-runtime 服务端:CDN代理+卡资产服务+CSP+card_app manifest",
+      "outcome": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行+已知CDN域名级准入+SHA256缓存);card资产端点;CSP/资源路由策略;panel WebView 可消费",
+      "acceptance": [
+        {
+          "criterion": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "远程资源通用处理,不为已知卡开洞",
+        "卡代码不可信,资产一律过代理"
+      ],
+      "depends_on": [
+        "TASK-002"
+      ],
+      "reads": [
+        ".loom/capabilities/sandboxed-card-apps/capability.md",
+        "apps/server/src/endpoints/panel-shim.js"
+      ],
+      "touches": [
+        "apps/server/src/endpoints",
+        "packages/protocol"
+      ],
+      "implements": ".loom/capabilities/sandboxed-card-apps/capability.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "sandboxed-card-apps#C3",
+          "at": "CDN代理/资产服务",
+          "must_produce": "白名单两级+SHA256缓存实现"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T06:34:14.239Z"
+    },
+    {
+      "acceptance": [
+        {
+          "criterion": "ConversationViewProps 类型定义进 packages/protocol",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "renderer registry seam 签名文档化",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "R1-R5 调研笔记落 capabilities/conversation-renderers/research",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "gal-*.js 精读结论:galgame 是渲染器还是面板边界明确",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "渲染器只做呈现,不碰消息语义",
+        "galgame/论坛体先调研后实现,不挤V1"
+      ],
+      "reads": [
+        ".loom/design/conversation-renderers.md",
+        "ref/dsh-tavern/tavern-plugin/src/client/gal-entry.js",
+        "ref/dsh-tavern/tavern-plugin/src/client/gal-looks.js"
+      ],
+      "touches": [
+        "packages/protocol",
+        ".loom/capabilities/conversation-renderers/research"
+      ],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-03T07:57:01.010Z",
+      "integrity_version": 1,
+      "id": "TASK-015",
+      "title": "conversationRenderer seam:契约定稿+形态调研(galgame/论坛体)",
+      "outcome": "ConversationViewProps 协议类型 + renderer registry seam 签名 + R1-R5 调研笔记(gal-*.js精读/论坛体映射/渲染器沙箱路线) + hello-renderer 冒烟计划",
+      "depends_on": [
+        "TASK-012"
+      ],
+      "implements": ".loom/capabilities/conversation-renderers/capability.md",
+      "capability_hooks": [
+        {
+          "node": "conversation-renderers#C1",
+          "at": "宿主契约",
+          "must_produce": "ConversationViewProps 类型"
+        },
+        {
+          "node": "conversation-renderers#C3",
+          "at": "stageScheme",
+          "must_produce": "优先级规则实现路径"
+        },
+        {
+          "node": "conversation-renderers#C4",
+          "at": "注册面",
+          "must_produce": "provide seam 签名"
+        }
+      ]
+    },
+    {
+      "acceptance": [
+        {
+          "criterion": "拖 PNG/JSON 到任意页面触发导入路由",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "URL 导入卡/世界书可用",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "导入前预览+冲突选项",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "备份快照+LAN 发现端点",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "ST data 目录扫描产出导入清单",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "数据无损=原始字节保留",
+        "不为已知卡开洞"
+      ],
+      "reads": [
+        ".loom/capabilities/import-export/capability.md",
+        "packages/formats/src/card.ts"
+      ],
+      "touches": [
+        "apps/server/src/endpoints",
+        "packages/formats"
+      ],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-03T07:57:01.010Z",
+      "integrity_version": 1,
+      "id": "TASK-016",
+      "title": "导入导出中心:万能拖放/URL/预览/备份同步/ST迁移",
+      "outcome": "formats类型嗅探路由+全局drop-zone端点+import preview+备份快照/LAN/S3端点+ST data目录扫描器;web UI 落在 TASK-010 数据中心页",
+      "depends_on": [
+        "TASK-003"
+      ],
+      "implements": ".loom/capabilities/import-export/capability.md",
+      "capability_hooks": [
+        {
+          "node": "import-export#C1",
+          "at": "导入手势",
+          "must_produce": "drop-zone+URL嗅探"
+        },
+        {
+          "node": "import-export#C2",
+          "at": "无损预览",
+          "must_produce": "preview sheet+原字节保留"
+        },
+        {
+          "node": "import-export#C3",
+          "at": "备份同步",
+          "must_produce": "快照+LAN/S3端点"
+        }
+      ]
+    },
+    {
+      "acceptance": [
+        {
+          "criterion": "上轮 messages[] 可重建查看含token分块",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "WI 激活轨迹可回放",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "变量 op 日志可查",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "生成任务监视实时",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        },
+        {
+          "criterion": "degraded 徽标→详情可操作",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不占聊天面,普通用户零打扰"
+      ],
+      "reads": [
+        ".loom/capabilities/dev-diagnostics/capability.md"
+      ],
+      "touches": [
+        "apps/web",
+        "apps/server/src/endpoints"
+      ],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-03T07:57:01.010Z",
+      "integrity_version": 1,
+      "id": "TASK-017",
+      "title": "诊断域:prompt viewer/WI轨迹/变量日志/任务监视/存储检查/golden页",
+      "outcome": "诊断一级域五工具+golden-diff结果页+degraded面板+调试导出打包;遵循model-visible⟺logged",
+      "depends_on": [
+        "TASK-007",
+        "TASK-010"
+      ],
+      "implements": ".loom/capabilities/dev-diagnostics/capability.md",
+      "capability_hooks": [
+        {
+          "node": "dev-diagnostics#C2",
+          "at": "prompt viewer",
+          "must_produce": "messages[]重建+token分块"
+        },
+        {
+          "node": "dev-diagnostics#C3",
+          "at": "五工具",
+          "must_produce": "WI轨迹/op日志/任务/存储"
+        },
+        {
+          "node": "dev-diagnostics#C4",
+          "at": "degraded",
+          "must_produce": "降级徽标+可操作说明"
+        }
+      ]
     }
-   ],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:34:44.592Z",
-   "completed_at": "2026-11-03T06:34:44.592Z"
-  },
-  {
-   "id": "TASK-006",
-   "title": "core 移植第二阶段:prompt 组装(chat completions 路径)",
-   "outcome": "消息数组编排:system/描述/性格/场景/示例对话/深度提示/AN/WI 注入位置语义与原版一致;token 预算截断。 【范围含:预设/采样器数据模型读取(输入侧,编辑UI在TASK-010)】",
-   "acceptance": [
-    {
-     "criterion": "语料卡 golden diff 消息序列一致(可忍差异除外)",
-     "verify_by": "golden-diff runner 报告",
-     "evidence": ""
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "仅 chat-completions 源;text prompt/instruct 属后续阶段"
-   ],
-   "depends_on": [
-    "TASK-005"
-   ],
-   "reads": [
-    "apps/server/public/scripts/openai.js",
-    "apps/server/public/scripts/PromptManager.js"
-   ],
-   "touches": [
-    "packages/core/src"
-   ],
-   "implements": ".loom/design/core-engine.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "st-engine-compat#C2",
-     "at": "prompt组装移植",
-     "must_produce": "行为面逐项断言"
-    },
-    {
-     "node": "st-engine-compat#C3",
-     "at": "宏/STscript分层",
-     "must_produce": "effects意图描述设计"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-003"
-   ],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:36:05.129Z"
-  },
-  {
-   "id": "TASK-007",
-   "title": "/api/generate 服务端生成管线 + WS 投递",
-   "outcome": "POST /api/generate 走 core.assemble → dispatch → job → WS ticket 流式/回放;旧端点不受影响。 【V1补充:TH T1 桥面——triggerSlash/消息写回/生成控制,依赖本任务的生成管线】",
-   "acceptance": [
-    {
-     "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
-     "verify_by": "apps/server 下对应 e2e 测试",
-     "evidence": ""
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "不破坏 /api/backends/* 旧链路"
-   ],
-   "depends_on": [
-    "TASK-006",
-    "TASK-011"
-   ],
-   "reads": [
-    ".loom/design/generation-api.md",
-    "apps/server/src/endpoints/backends/luker-generation.js",
-    "apps/server/src/ws-delivery.js"
-   ],
-   "touches": [
-    "apps/server/src",
-    "packages/api-client/src"
-   ],
-   "implements": ".loom/design/generation-api.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "st-engine-compat#C3",
-     "at": "生成管线",
-     "must_produce": "effects执行边界"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-005",
-    "DLV-006"
-   ],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:33:54.144Z"
-  },
-  {
-   "id": "TASK-008",
-   "title": "Expo 薄客户端:登录→角色列表→聊天流式",
-   "outcome": "apps/mobile 能配服务端地址登录,列角色卡,进聊天发消息并看到流式回复(WS);底导航骨架就位。",
-   "acceptance": [
-    {
-     "criterion": "真机/模拟器上完成一轮对话,锁屏恢复后经 job 回放补齐",
-     "verify_by": "人工验证 + 录屏或日志",
-     "evidence": ""
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "高级设置不进移动端",
-    "不含面板页(后续任务)"
-   ],
-   "depends_on": [
-    "TASK-007",
-    "TASK-012"
-   ],
-   "reads": [
-    ".loom/design/mobile-panels.md",
-    "apps/mobile/App.tsx"
-   ],
-   "touches": [
-    "apps/mobile"
-   ],
-   "implements": "",
-   "design_exemption": "thin-client app shell; covered by mobile-panels and generation-api designs",
-   "capability_hooks": [
-    {
-     "node": "mobile-app-stack#C1",
-     "at": "基线",
-     "must_produce": "SDK58+dev build"
-    },
-    {
-     "node": "mobile-app-stack#C2",
-     "at": "导航",
-     "must_produce": "expo-router底导航"
-    },
-    {
-     "node": "mobile-app-stack#C3",
-     "at": "数据层",
-     "must_produce": "Query+WS ticket"
-    },
-    {
-     "node": "mobile-app-stack#C4",
-     "at": "列表",
-     "must_produce": "LegendList选型落地"
-    },
-    {
-     "node": "mobile-app-stack#C5",
-     "at": "渲染",
-     "must_produce": "streamdown落地"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-007"
-   ],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:33:54.144Z"
-  },
-  {
-   "id": "TASK-009",
-   "title": "移动端面板页:CardApp WebView 沙箱 + ctx 桥",
-   "outcome": "底导航'面板'页承载当前聊天 CardApp;ctx 状态/变量/世界书 API 经 postMessage→api-client 落服务端;老状态栏 HTML 可渲染。 【D-013:面板页=应用列表→全屏WebView(多tab留v1.1);移动端无插件点,主题/设置随服务端同步】",
-   "acceptance": [
-    {
-     "criterion": "一张 CardApp 卡在设备上面板页可交互且状态跨重启保留",
-     "verify_by": "真机验证:改状态→重启 App→状态仍在",
-     "evidence": ""
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "单 app 崩溃不拖垮页面",
-    "app 代码不直接触网"
-   ],
-   "depends_on": [
-    "TASK-008",
-    "TASK-014"
-   ],
-   "reads": [
-    ".loom/design/mobile-panels.md",
-    "apps/server/docs/development/card-developers.md"
-   ],
-   "touches": [
-    "apps/mobile"
-   ],
-   "implements": ".loom/design/mobile-panels.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "sandboxed-card-apps#C1",
-     "at": "容器",
-     "must_produce": "独立WebView锁定"
-    },
-    {
-     "node": "sandboxed-card-apps#C2",
-     "at": "桥",
-     "must_produce": "nonce+白名单协议"
-    },
-    {
-     "node": "sandboxed-card-apps#C4",
-     "at": "shim",
-     "must_produce": "ST全局shim+降级"
-    },
-    {
-     "node": "mobile-app-stack#C6",
-     "at": "样式层",
-     "must_produce": "NativeWind tokens"
-    },
-    {
-     "node": "sandboxed-card-apps#C3",
-     "at": "出口控制",
-     "must_produce": "CSP头注入+资源路由白名单"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-008"
-   ],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:33:54.144Z"
-  },
-  {
-   "id": "TASK-010",
-   "title": "新 Web 管理端 SPA(骨架)",
-   "outcome": "web SPA 完整产品:桌面壳(标题栏/rail/二级侧栏/右面板/状态栏)+七域页面(聊天/故事/规则/扩展/诊断/设置)+会话侧栏+conversationRenderer宿主(prose/bubble)+⌘K命令面板+主题token(暗/亮)+i18n中英字典基建+ST对照表29条验收",
-   "acceptance": [
-    {
-     "criterion": "SPA 可登录并对世界书做 CRUD",
-     "verify_by": "pnpm --filter @uberge/web dev 人工验证",
-     "evidence": ""
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "移动端未覆盖的高级功能全部在此保留入口"
-   ],
-   "depends_on": [
-    "TASK-007",
-    "TASK-012",
-    "TASK-015"
-   ],
-   "reads": [
-    "AGENTS.md"
-   ],
-   "touches": [
-    "apps/web"
-   ],
-   "implements": "",
-   "design_exemption": "web SPA direction in loom record assumptions; dedicated design doc deferred",
-   "capability_hooks": [
-    {
-     "node": "web-spa-stack#C2",
-     "at": "框架",
-     "must_produce": "React19+Vite"
-    },
-    {
-     "node": "web-spa-stack#C3",
-     "at": "UI库",
-     "must_produce": "Tailwind4+shadcn"
-    },
-    {
-     "node": "web-spa-stack#C4",
-     "at": "表单/数据",
-     "must_produce": "RHF+Zod+Query"
-    },
-    {
-     "node": "web-spa-stack#C5",
-     "at": "编辑器",
-     "must_produce": "CM6+Table+dnd"
-    },
-    {
-     "node": "web-spa-stack#C6",
-     "at": "桌面壳/主题/i18n",
-     "must_produce": "shell组件+主题token表+t()字典"
-    }
-   ],
-   "capability_exemption": "",
-   "integrity_version": 1,
-   "covers": [
-    "DLV-010"
-   ],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T06:33:54.144Z"
-  },
-  {
-   "id": "TASK-011",
-   "title": "cordis 内核骨架:PluginContext/loader/profile/hello 冒烟",
-   "outcome": "pnpm add cordis 验证;packages/kernel 提供 Context+事件五模式+effect+inject+profile.yaml 按序装载;hello 插件真实组合测试全绿(inject缺失失败/effect清理/waterfall语义/degraded诊断)。 【含 ST 旧服务端插件 adapter:init(router)→ctx.route,exit→effect,info→manifest,D-012】",
-   "acceptance": [
-    {
-     "criterion": "cordis 在 Express+pnpm workspace 下可用(Context/plugin/effect)",
-     "verify_by": "hello 插件冒烟测试",
-     "evidence": "node --test dist/test 9/9 全绿"
-    },
-    {
-     "criterion": "profile.yaml 按序装载+patch行替换",
-     "verify_by": "loader 测试",
-     "evidence": "node --test dist/test 9/9 全绿"
-    },
-    {
-     "criterion": "inject 缺失显式失败,effect 卸载清理",
-     "verify_by": "loader 测试",
-     "evidence": "node --test dist/test 9/9 全绿"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "只用 cordis core(Context/events/effects/registry),loader/profile/patch 自写",
-    "内核不得含 worldInfo/character 等酒馆符号"
-   ],
-   "depends_on": [
-    "TASK-002"
-   ],
-   "reads": [
-    ".loom/design/plugin-architecture.md",
-    "ref/deepseek-harness/docs/cordis-primer.md"
-   ],
-   "touches": [
-    "packages/kernel",
-    "apps/server"
-   ],
-   "implements": ".loom/design/plugin-architecture.md#2. 插件契约(直接映射 Cordis)",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "plugin-kernel#C1",
-     "at": "内核选型",
-     "must_produce": "pnpm add cordis 实测或回退记录"
-    },
-    {
-     "node": "plugin-kernel#C3",
-     "at": "profile/patch装载",
-     "must_produce": "按序装载+dump-config"
-    },
-    {
-     "node": "plugin-kernel#C4",
-     "at": "旧ST插件adapter",
-     "must_produce": "legacy-st-plugin-adapter 冒烟"
-    }
-   ],
-   "capability_exemption": "kernel is domain-agnostic infrastructure; no tavern semantics inside",
-   "integrity_version": 1,
-   "covers": [],
-   "status": "done",
-   "progress": {
-    "completed": [
-     "pnpm add cordis@rc.12+schemastery+js-yaml 实测成立",
-     "packages/kernel:AppContext+ServiceCatalog(四角色)+provideSeam",
-     "loader:profile.yaml相对路径装载+patch替换+degraded",
-     "waterfall真实语义实证(inner产基值/args固定/变换回溯)",
-     "legacy-st-plugin-adapter 冒烟"
-    ],
-    "current": "已完成",
-    "next": "TASK-007 汇流:ctx.generation/promptBuilder 挂载"
-   },
-   "evidence": [
-    "packages/kernel/dist/test 9/9 测试绿",
-    "packages/kernel/src/{context,loader,plugin,legacy-adapter}.ts"
-   ],
-   "created_at": "2026-11-03T06:19:55.764Z",
-   "updated_at": "2026-11-03T08:23:18.588Z"
-  },
-  {
-   "id": "TASK-012",
-   "title": "web-ia 信息架构设计:ST 全部 UI 面重排 + 线稿",
-   "outcome": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认折叠映射+web/移动端线稿;喂给 TASK-008/009/010 的界面结构",
-   "acceptance": [
-    {
-     "criterion": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "只设计不实现",
-    "以 ST 真实 UI 面为输入源,不靠记忆"
-   ],
-   "depends_on": [],
-   "reads": [
-    "apps/server/public/index.html",
-    "ref/Luker/public/index.html"
-   ],
-   "touches": [
-    ".loom/design/web-ia.md"
-   ],
-   "implements": ".loom/design/web-ia.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "web-spa-stack#C1",
-     "at": "IA重排",
-     "must_produce": "web-ia.md 一级/次级/折叠映射+线稿"
-    }
-   ],
-   "integrity_version": 1,
-   "covers": [],
-   "status": "done",
-   "progress": {
-    "completed": [
-     "IA v3 重排",
-     "ST 29 面对照表",
-     "web-ui-mockup.html 高保真稿",
-     "桌面壳+明暗主题+SVG图标",
-     "对话渲染器seam定义"
-    ],
-    "current": "已完成",
-    "next": "交 TASK-010/015 消费"
-   },
-   "evidence": [
-    ".loom/design/web-ia.md",
-    ".loom/design/web-ui-mockup.html",
-    "commit f4a169d"
-   ],
-   "created_at": "2026-11-03T06:33:54.144Z",
-   "updated_at": "2026-11-03T07:24:36.900Z"
-  },
-  {
-   "id": "TASK-013",
-   "title": "MVU 服务端 settle:UpdateVariable→stat_data projection+状态栏模板 seam",
-   "outcome": "generation persist 钩子上注册 settle waterfall:解析 UpdateVariable 块→chatState projection(stat_data);状态栏固定模板渲染为 card-runtime 资产;单元测试用真实 MVU 卡样例",
-   "acceptance": [
-    {
-     "criterion": "generation persist 钩子上注册 settle waterfal",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "stat_data=聊天日志 fold 的视图,不是最近一块解析",
-    "is_hidden 语义不动"
-   ],
-   "depends_on": [
-    "TASK-007"
-   ],
-   "reads": [
-    ".loom/design/plugin-architecture.md",
-    "ref/SillyTavern/public/script.js"
-   ],
-   "touches": [
-    "packages/core",
-    "apps/server/src"
-   ],
-   "implements": ".loom/capabilities/mvu-runtime/capability.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "mvu-runtime#C1",
-     "at": "stat_data投影",
-     "must_produce": "registerProjection fold实现"
-    },
-    {
-     "node": "mvu-runtime#C2",
-     "at": "settle管线位",
-     "must_produce": "messagePersisted serial settle"
-    },
-    {
-     "node": "mvu-runtime#C3",
-     "at": "状态板",
-     "must_produce": "服务端模板渲染为系统面板"
-    },
-    {
-     "node": "mvu-runtime#C4",
-     "at": "变量回执",
-     "must_produce": "receipt内联+op日志"
-    }
-   ],
-   "integrity_version": 1,
-   "covers": [],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "待开始",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-03T06:33:54.144Z",
-   "updated_at": "2026-11-03T06:34:14.239Z"
-  },
-  {
-   "id": "TASK-014",
-   "title": "card-runtime 服务端:CDN代理+卡资产服务+CSP+card_app manifest",
-   "outcome": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行+已知CDN域名级准入+SHA256缓存);card资产端点;CSP/资源路由策略;panel WebView 可消费",
-   "acceptance": [
-    {
-     "criterion": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "远程资源通用处理,不为已知卡开洞",
-    "卡代码不可信,资产一律过代理"
-   ],
-   "depends_on": [
-    "TASK-002"
-   ],
-   "reads": [
-    ".loom/capabilities/sandboxed-card-apps/capability.md",
-    "apps/server/src/endpoints/panel-shim.js"
-   ],
-   "touches": [
-    "apps/server/src/endpoints",
-    "packages/protocol"
-   ],
-   "implements": ".loom/capabilities/sandboxed-card-apps/capability.md",
-   "design_exemption": "",
-   "capability_hooks": [
-    {
-     "node": "sandboxed-card-apps#C3",
-     "at": "CDN代理/资产服务",
-     "must_produce": "白名单两级+SHA256缓存实现"
-    }
-   ],
-   "integrity_version": 1,
-   "covers": [],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "待开始",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-03T06:33:54.144Z",
-   "updated_at": "2026-11-03T06:34:14.239Z"
-  },
-  {
-   "acceptance": [
-    {
-     "criterion": "ConversationViewProps 类型定义进 packages/protocol",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "renderer registry seam 签名文档化",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "R1-R5 调研笔记落 capabilities/conversation-renderers/research",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "gal-*.js 精读结论:galgame 是渲染器还是面板边界明确",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "渲染器只做呈现,不碰消息语义",
-    "galgame/论坛体先调研后实现,不挤V1"
-   ],
-   "reads": [
-    ".loom/design/conversation-renderers.md",
-    "ref/dsh-tavern/tavern-plugin/src/client/gal-entry.js",
-    "ref/dsh-tavern/tavern-plugin/src/client/gal-looks.js"
-   ],
-   "touches": [
-    "packages/protocol",
-    ".loom/capabilities/conversation-renderers/research"
-   ],
-   "design_exemption": "",
-   "covers": [],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "待开始",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-03T07:57:01.010Z",
-   "updated_at": "2026-11-03T07:57:01.010Z",
-   "integrity_version": 1,
-   "id": "TASK-015",
-   "title": "conversationRenderer seam:契约定稿+形态调研(galgame/论坛体)",
-   "outcome": "ConversationViewProps 协议类型 + renderer registry seam 签名 + R1-R5 调研笔记(gal-*.js精读/论坛体映射/渲染器沙箱路线) + hello-renderer 冒烟计划",
-   "depends_on": [
-    "TASK-012"
-   ],
-   "implements": ".loom/capabilities/conversation-renderers/capability.md",
-   "capability_hooks": [
-    {
-     "node": "conversation-renderers#C1",
-     "at": "宿主契约",
-     "must_produce": "ConversationViewProps 类型"
-    },
-    {
-     "node": "conversation-renderers#C3",
-     "at": "stageScheme",
-     "must_produce": "优先级规则实现路径"
-    },
-    {
-     "node": "conversation-renderers#C4",
-     "at": "注册面",
-     "must_produce": "provide seam 签名"
-    }
-   ]
-  },
-  {
-   "acceptance": [
-    {
-     "criterion": "拖 PNG/JSON 到任意页面触发导入路由",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "URL 导入卡/世界书可用",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "导入前预览+冲突选项",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "备份快照+LAN 发现端点",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "ST data 目录扫描产出导入清单",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "数据无损=原始字节保留",
-    "不为已知卡开洞"
-   ],
-   "reads": [
-    ".loom/capabilities/import-export/capability.md",
-    "packages/formats/src/card.ts"
-   ],
-   "touches": [
-    "apps/server/src/endpoints",
-    "packages/formats"
-   ],
-   "design_exemption": "",
-   "covers": [],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "待开始",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-03T07:57:01.010Z",
-   "updated_at": "2026-11-03T07:57:01.010Z",
-   "integrity_version": 1,
-   "id": "TASK-016",
-   "title": "导入导出中心:万能拖放/URL/预览/备份同步/ST迁移",
-   "outcome": "formats类型嗅探路由+全局drop-zone端点+import preview+备份快照/LAN/S3端点+ST data目录扫描器;web UI 落在 TASK-010 数据中心页",
-   "depends_on": [
-    "TASK-003"
-   ],
-   "implements": ".loom/capabilities/import-export/capability.md",
-   "capability_hooks": [
-    {
-     "node": "import-export#C1",
-     "at": "导入手势",
-     "must_produce": "drop-zone+URL嗅探"
-    },
-    {
-     "node": "import-export#C2",
-     "at": "无损预览",
-     "must_produce": "preview sheet+原字节保留"
-    },
-    {
-     "node": "import-export#C3",
-     "at": "备份同步",
-     "must_produce": "快照+LAN/S3端点"
-    }
-   ]
-  },
-  {
-   "acceptance": [
-    {
-     "criterion": "上轮 messages[] 可重建查看含token分块",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "WI 激活轨迹可回放",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "变量 op 日志可查",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "生成任务监视实时",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    },
-    {
-     "criterion": "degraded 徽标→详情可操作",
-     "verify_by": "loom check + 测试",
-     "evidence": "待跑"
-    }
-   ],
-   "done_when": [],
-   "boundaries": [
-    "不占聊天面,普通用户零打扰"
-   ],
-   "reads": [
-    ".loom/capabilities/dev-diagnostics/capability.md"
-   ],
-   "touches": [
-    "apps/web",
-    "apps/server/src/endpoints"
-   ],
-   "design_exemption": "",
-   "covers": [],
-   "status": "open",
-   "progress": {
-    "completed": [],
-    "current": "待开始",
-    "next": ""
-   },
-   "evidence": [],
-   "created_at": "2026-11-03T07:57:01.010Z",
-   "updated_at": "2026-11-03T07:57:01.010Z",
-   "integrity_version": 1,
-   "id": "TASK-017",
-   "title": "诊断域:prompt viewer/WI轨迹/变量日志/任务监视/存储检查/golden页",
-   "outcome": "诊断一级域五工具+golden-diff结果页+degraded面板+调试导出打包;遵循model-visible⟺logged",
-   "depends_on": [
-    "TASK-007",
-    "TASK-010"
-   ],
-   "implements": ".loom/capabilities/dev-diagnostics/capability.md",
-   "capability_hooks": [
-    {
-     "node": "dev-diagnostics#C2",
-     "at": "prompt viewer",
-     "must_produce": "messages[]重建+token分块"
-    },
-    {
-     "node": "dev-diagnostics#C3",
-     "at": "五工具",
-     "must_produce": "WI轨迹/op日志/任务/存储"
-    },
-    {
-     "node": "dev-diagnostics#C4",
-     "at": "degraded",
-     "must_produce": "降级徽标+可操作说明"
-    }
-   ]
-  }
- ]
+  ]
 }
