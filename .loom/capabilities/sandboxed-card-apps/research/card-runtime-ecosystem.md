@@ -123,7 +123,45 @@ TW-C5: 真实消息层(ST chat) → bridge 常驻脚本 → 0号楼 shell iframe
 - 恢复语义:面板重绘 = WebView 重载 + 从 server chat_state/变量重读,
   iframe 内存不视为持久(与 C5 一致)
 
-## 5. 待验证悬案(继承 TW 未决项 + 我们特有)
+## 5. 轻前端 vs 重前端(JS-Slash-Runner 源码实证,2026-11-03)
+
+**轻前端的判定契约出乎意料地小**(`src/util/is_frontend.ts`):
+```ts
+isFrontend(content) = content 包含 'html>' | '<head>' | '<body'
+```
+消息里 `<pre>` 代码块装着完整 HTML 文档 → TH 抽出,包 `div.TH-render`,
+渲染为该楼层的独立 iframe(`TH-message--{楼层}--{idx}`)。生命周期旋钮:
+`settings.render.enabled`、`render.depth`(只渲染最近 N 层),
+`render.allow_streaming`(流式容器内不渲染,`chat_length`/`chat_start` 也算)。
+
+**实测语料矩阵**(`analyzeCardRuntime`):
+| 卡 | face | mounts | takeover | remote |
+|---|---|---|---|---|
+| Wilderness | th | headless×10+regex floor | ✗ | 4(jsdelivr) |
+| 教主 | th | panel(shell) | ✓ | 1(自有域 files.yuzuki-rii.xyz) |
+| 诡异修仙 | th | floor(regex 产 HTML) | ✗ | 0 |
+| 高中 | none | — | ✗ | 0 |
+
+**关键机制事实**:
+- 接管型卡的脚本不只在 TH scripts 里——教主卡的 `$('body').load(url)` 直接写在 first_mes,
+  检测必须扫 greetings;`extensions.tavern_helper` 为空的卡也可能有 takeover
+- 远程资源不止 CDN:卡作者自有域(`files.yuzuki-rii.xyz`)同样要进 allowlist,
+  CDN 名单只决定**默认放行**策略,不决定**检测**范围
+- TH 脚本 `enabled:false` 不运行(Wilderness 16 脚本中 10 个启用)
+- regex 产**完整 HTML 文档** vs **片段** 要分开:前者挂 floor WebView,后者可内联渲染
+
+**轻/重渲染面分层**(对应宿主):
+```
+inline  — 正则/AI 产出的 HTML 片段:消息体内嵌安全渲染(无脚本)
+floor   — <pre> 完整 HTML 文档:楼层级 WebView,按可见性挂载(render.depth 语义)
+panel   — 0号楼 shell / takeover / card_app:面板页独占 WebView
+headless— TH 后台脚本:共享隐藏容器,事件驱动(不各自开 iframe)
+```
+
+**性能含义**(详见 design/perf-budget.md):P1 楼层 iframe 爆炸是移动端头号杀手——
+我们的楼层应用按可见性调度挂载、同屏上限 3、滚动卸载;后台脚本共享容器。
+
+## 6. 待验证悬案(继承 TW 未决项 + 我们特有)
 
 - U-E4:高中生活模拟 golden 中 E4(作息表)边界预算差 2 token —— 需 WI debug
   日志再捕获实证;测试已挂账单条容差

@@ -6,5 +6,6 @@ export * from './charx.js';
 export * from './byaf.js';
 export * from './chat-jsonl.js';
 export * from './card.js';
+export * from './runtime-profile.js';
 export { sanitizeFilename } from './sanitize.js';
 export { crc32 } from './crc32.js';
