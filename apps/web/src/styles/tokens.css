@@ -1,9 +1,64 @@
-/* Design tokens — DSH-informed scale.
-   原则(主人视觉要求):半径是结构语言(控件 pill / 卡片 12-14 / 容器 16-20);
-   字号即布局(UI 13.5-14 基准,阅读 17);主次靠布局+字级+颜色+icon 位,
-   不靠满地边框;中密度(GPT/DSH 对齐)。
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Design tokens — GPT 式"非黑即白"双色调面。
+   dark: 侧栏/面板 #171717、主面 #212121;light: 主面 #fff、侧栏 #f7f7f8。
+   灰色只允许出现在:局部 hover/选中填充(--bubble/--sel)、发丝分隔线(--line/
+   --line2)、次级文字(--ink2/--ink3)、chip、composer 盒(--raised)。
+   唯一强调色 = 中华琥珀 #ca6924,仅落点睛位(发送钮/未读点/流式光标/mock 徽标)。
+
+   shadcn 语义槽经 @theme inline 指到上面的手写变量:utility(bg-primary、
+   text-muted-foreground…)直接引用 var(--*),随 [data-theme] 翻转。
+   注意命名错位:shadcn 的 --color-accent 在这里 = 中性 hover 填充;
+   琥珀色走 --color-primary / --color-amber,不要混用。
 
    Theme via [data-theme] on <html>; dark default (IA §14). */
+
+@theme inline {
+    /* surfaces */
+    --color-background: var(--bg);
+    --color-foreground: var(--ink);
+    --color-surface: var(--bg2);
+    --color-card: var(--raised);
+    --color-card-foreground: var(--ink);
+    --color-popover: var(--raised);
+    --color-popover-foreground: var(--ink);
+    --color-muted: var(--bg2);
+    --color-muted-foreground: var(--ink3);
+
+    /* fills & text */
+    --color-accent: var(--bubble);
+    --color-accent-foreground: var(--ink);
+    --color-secondary: var(--bubble);
+    --color-secondary-foreground: var(--ink2);
+    --color-bubble: var(--bubble);
+    --color-sel: var(--sel);
+    --color-ink-2: var(--ink2);
+    --color-ink-3: var(--ink3);
+
+    /* color discipline */
+    --color-primary: var(--acc);
+    --color-primary-foreground: var(--acc-ink);
+    --color-amber: var(--acc);
+    --color-destructive: var(--err);
+    --color-warning: var(--warn);
+    --color-success: var(--ok);
+
+    /* hairlines & focus */
+    --color-border: var(--line);
+    --color-input: var(--line2);
+    --color-ring: var(--ring);
+
+    /* radius scale → 手写阶梯:6/10/14/22 */
+    --radius-sm: var(--radius-xs);
+    --radius-md: var(--radius);
+    --radius-lg: var(--radius-lg);
+    --radius-xl: var(--radius-xl);
+
+    --font-sans: var(--font-ui);
+    --font-serif: var(--font-reading);
+    --font-mono: var(--font-mono);
+}
 
 :root {
     --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
@@ -11,13 +66,13 @@
     --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
 
     /* 字号阶梯:caption(仅 statusbar 级)< ui < ui-lg < title < reading */
-    --fs-caption: 11.5px;
+    --fs-caption: 12px;
     --fs-ui: 14px;
     --fs-ui-lg: 15px;
     --fs-title: 16px;
     --read-size: 17.5px;
     --read-leading: 1.9;
-    --read-width: 720px;
+    --read-width: 760px;
 
     /* 半径阶梯:tag/小控件 → 行/输入 → 卡片 → 大容器(输入区) → 全圆 */
     --radius-xs: 6px;
@@ -30,18 +85,18 @@
 }
 
 [data-theme="dark"] {
-    /* 中性黑白灰面;唯一强调色 = 烛铜 */
-    --bg: #17181a;
-    --bg2: #1c1e21;
-    --bg3: #24272b;
-    --raised: #202327;
-    --panel: #191b1e;
-    --ink: #e9eaec;
-    --ink2: #a2a7ae;
-    --ink3: #6d7279;
-    --line: #ffffff0d;
-    --line2: #ffffff1d;
-    --bubble: #2a2d31;
+    /* 两主调 + 一结构灰(--raised);--bubble/--sel 是覆盖式灰,不引入新色阶 */
+    --bg: #212121;
+    --bg2: #171717;
+    --raised: #2f2f2f;
+    --bubble: #ffffff12;
+    --sel: #ffffff1c;
+    --ink: #ececec;
+    --ink2: #b1b4b9;
+    --ink3: #7d8288;
+    --line: #ffffff14;
+    --line2: #ffffff26;
+    --ring: #ffffff33;
     --acc: #ca6924;        /* 中华琥珀 — 全场唯一彩色,极少数点缀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca692422;
@@ -52,20 +107,25 @@
     --err: #d0715f;
     --shadow: 0 1px 2px #0007, 0 14px 34px -14px #000c;
     --composer-shadow: 0 10px 34px -12px #000d;
+
+    /* 侧栏行内操作底板的"实色"等效:行 hover/选中是透明填充盖 --bg2,
+       .row-acts 需要同效果的不透明色来遮住行尾文字。 */
+    --mix-row-hover: color-mix(in srgb, var(--bg2) 93%, #ffffff);
+    --mix-row-sel: color-mix(in srgb, var(--bg2) 89%, #ffffff);
 }
 
 [data-theme="light"] {
-    --bg: #f7f7f8;
-    --bg2: #f0f0f2;
-    --bg3: #e7e8ea;
+    --bg: #ffffff;
+    --bg2: #f7f7f8;
     --raised: #ffffff;
-    --panel: #f1f1f2;
-    --ink: #1d1f23;
-    --ink2: #5b6068;
-    --ink3: #9a9fa7;
-    --line: #0000000e;
-    --line2: #00000020;
-    --bubble: #e9eaec;
+    --bubble: #0000000a;
+    --sel: #00000014;
+    --ink: #0d0d0d;
+    --ink2: #5d6167;
+    --ink3: #90959b;
+    --line: #00000012;
+    --line2: #00000024;
+    --ring: #0000002e;
     --acc: #ca6924;        /* 中华琥珀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca69241c;
@@ -76,4 +136,7 @@
     --err: #b04a38;
     --shadow: 0 1px 2px #00000010, 0 14px 32px -14px #00000022;
     --composer-shadow: 0 10px 30px -12px #00000026;
+
+    --mix-row-hover: color-mix(in srgb, var(--bg2) 96%, #000000);
+    --mix-row-sel: color-mix(in srgb, var(--bg2) 92%, #000000);
 }

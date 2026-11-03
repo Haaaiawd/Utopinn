@@ -8,6 +8,9 @@ import { useTheme } from '../../theme';
 import type { ChatSummary, ViewId } from '../../types';
 import { Icon } from '../Icon';
 import type { IconName } from '../Icon';
+import { IconButton } from '../ui/icon-button';
+import { Input } from '../ui/input';
+import { ScrollArea } from '../ui/scroll-area';
 
 const SB_MIN = 240, SB_MAX = 460;
 
@@ -68,23 +71,27 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                 <span className="ws">{t('app.name')}</span>
                 <span className="grow" />
                 {view === 'chat' && (
-                    <button type="button" className="ibtn" title={t('sidebar.newChat')} onClick={onNewChat}>
-                        <Icon name="plus" size={16} />
-                    </button>
+                    <IconButton label={t('sidebar.newChat')} icon={<Icon name="plus" size={16} />} onClick={onNewChat} />
                 )}
             </div>
 
             {view === 'chat' && (
                 <div className="sb-search">
-                    <div className="search">
-                        <Icon name="search" size={14} />
-                        <input placeholder={t('sidebar.search')} value={query}
-                            onChange={(e) => setQuery(e.target.value)} />
+                    <div className="relative">
+                        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                            <Icon name="search" size={13} />
+                        </span>
+                        <Input
+                            className="h-8 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
+                            placeholder={t('sidebar.search')}
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                        />
                     </div>
                 </div>
             )}
 
-            <div className="sb-scroll">
+            <ScrollArea className="sb-scroll">
                 {view === 'chat' ? (
                     visibleChats.map((c) => (
                         <div
@@ -96,14 +103,11 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
                             {/* hover/focus reveal (CSS-only); stopPropagation keeps row select clean */}
                             <span className="row-acts">
-                                <button type="button" className="ibtn act" title={t('chat.rename')}
-                                    onClick={(e) => { e.stopPropagation(); onRenameChat(c); }}>
-                                    <Icon name="edit" size={13} />
-                                </button>
-                                <button type="button" className="ibtn act danger" title={t('chat.delete')}
-                                    onClick={(e) => { e.stopPropagation(); onDeleteChat(c); }}>
-                                    <Icon name="x" size={13} />
-                                </button>
+                                <IconButton size="icon-sm" label={t('chat.rename')} icon={<Icon name="edit" size={13} />}
+                                    onClick={(e) => { e.stopPropagation(); onRenameChat(c); }} />
+                                <IconButton size="icon-sm" label={t('chat.delete')} icon={<Icon name="x" size={13} />}
+                                    className="hover:text-destructive"
+                                    onClick={(e) => { e.stopPropagation(); onDeleteChat(c); }} />
                             </span>
                         </div>
                     ))
@@ -117,7 +121,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                         </div>
                     </>
                 )}
-            </div>
+            </ScrollArea>
 
             <nav className="sb-nav">
                 {NAV.map((it) => (
@@ -137,9 +141,8 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                 <Icon name="user" size={15} />
                 <span>default-user</span>
                 <span className="grow" />
-                <button type="button" className="ibtn" title={t('menu.view.toggleTheme')} onClick={toggle}>
-                    <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
-                </button>
+                <IconButton label={t('menu.view.toggleTheme')} onClick={toggle}
+                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />} />
             </div>
             <div className="sb-resizer" onPointerDown={startResize} />
         </aside>

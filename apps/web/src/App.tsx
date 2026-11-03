@@ -12,6 +12,7 @@ import { RightPanel } from './components/shell/RightPanel';
 import { ChatView } from './components/chat/ChatView';
 import { PlaceholderView } from './components/views/PlaceholderView';
 import { SettingsView } from './components/views/SettingsView';
+import { TooltipProvider } from './components/ui/tooltip';
 import type { IconName } from './components/Icon';
 
 const PLACEHOLDER_VIEWS: Partial<Record<ViewId, { icon: IconName; titleKey: string; descKey: string }>> = {
@@ -166,7 +167,9 @@ function Shell() {
 export default function App() {
     return (
         <I18nProvider>
-            <Shell />
+            <TooltipProvider delayDuration={350}>
+                <Shell />
+            </TooltipProvider>
         </I18nProvider>
     );
 }
