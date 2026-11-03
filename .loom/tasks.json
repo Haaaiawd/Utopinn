@@ -290,12 +290,12 @@
         {
           "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
           "verify_by": "pnpm --filter @uberge/core test",
-          "evidence": ""
+          "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
         },
         {
           "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
           "verify_by": "golden-diff runner",
-          "evidence": ""
+          "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
         }
       ],
       "done_when": [],
@@ -330,15 +330,32 @@
       "covers": [
         "DLV-003"
       ],
-      "status": "active",
+      "status": "done",
       "progress": {
         "completed": [],
-        "current": "",
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "pnpm --filter @uberge/core test -> 59/59 绿(WI 36 + 宏 + 变量);packages/core/tests/wi-trace.test.mjs -> 5 卡 WI 注入轨迹与 golden wire 一致,高中卡 2-token KNOWN-GAP 挂账容差;计词升级端点语义 encode+5",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
+              "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
+            },
+            {
+              "criterion": "对语料卡 golden diff 的 WI 注入轨迹一致",
+              "evidence": "wi-trace.test.mjs:Wilderness/教主/诡异修仙/高中 4 卡一致,高中 2token 边界 KNOWN-GAP 容差挂账(非拟合,分析穷尽后转实证队列),1 张非卡图片 Skip"
+            }
+          ],
+          "at": "2026-11-03T06:34:44.592Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T03:24:39.478Z"
+      "updated_at": "2026-11-03T06:34:44.592Z",
+      "completed_at": "2026-11-03T06:34:44.592Z"
     },
     {
       "id": "TASK-006",
@@ -356,8 +373,7 @@
         "仅 chat-completions 源;text prompt/instruct 属后续阶段"
       ],
       "depends_on": [
-        "TASK-005",
-        "TASK-011"
+        "TASK-005"
       ],
       "reads": [
         "apps/server/public/scripts/openai.js",
@@ -393,7 +409,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:19:55.764Z"
+      "updated_at": "2026-11-03T06:33:54.144Z"
     },
     {
       "id": "TASK-007",
@@ -411,8 +427,8 @@
         "不破坏 /api/backends/* 旧链路"
       ],
       "depends_on": [
-        "TASK-002",
-        "TASK-006"
+        "TASK-006",
+        "TASK-011"
       ],
       "reads": [
         ".loom/design/generation-api.md",
@@ -446,7 +462,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:19:55.764Z"
+      "updated_at": "2026-11-03T06:33:54.144Z"
     },
     {
       "id": "TASK-008",
@@ -465,7 +481,8 @@
         "不含面板页(后续任务)"
       ],
       "depends_on": [
-        "TASK-007"
+        "TASK-007",
+        "TASK-012"
       ],
       "reads": [
         ".loom/design/mobile-panels.md",
@@ -516,7 +533,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T08:50:32.134Z"
+      "updated_at": "2026-11-03T06:33:54.144Z"
     },
     {
       "id": "TASK-009",
@@ -535,7 +552,8 @@
         "app 代码不直接触网"
       ],
       "depends_on": [
-        "TASK-008"
+        "TASK-008",
+        "TASK-014"
       ],
       "reads": [
         ".loom/design/mobile-panels.md",
@@ -586,7 +604,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:32:46.892Z"
+      "updated_at": "2026-11-03T06:33:54.144Z"
     },
     {
       "id": "TASK-010",
@@ -604,7 +622,8 @@
         "移动端未覆盖的高级功能全部在此保留入口"
       ],
       "depends_on": [
-        "TASK-007"
+        "TASK-007",
+        "TASK-012"
       ],
       "reads": [
         "AGENTS.md"
@@ -649,7 +668,7 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:32:46.891Z"
+      "updated_at": "2026-11-03T06:33:54.144Z"
     },
     {
       "id": "TASK-011",
@@ -703,6 +722,147 @@
       "evidence": [],
       "created_at": "2026-11-03T06:19:55.764Z",
       "updated_at": "2026-11-03T06:19:55.764Z"
+    },
+    {
+      "id": "TASK-012",
+      "title": "web-ia 信息架构设计:ST 全部 UI 面重排 + 线稿",
+      "outcome": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认折叠映射+web/移动端线稿;喂给 TASK-008/009/010 的界面结构",
+      "acceptance": [
+        {
+          "criterion": "产出 design/web-ia.md:ST 全 UI 面清单→一级/次级/默认",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只设计不实现",
+        "以 ST 真实 UI 面为输入源,不靠记忆"
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/server/public/index.html",
+        "ref/Luker/public/index.html"
+      ],
+      "touches": [
+        ".loom/design/web-ia.md"
+      ],
+      "implements": ".loom/design/web-ia.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "web-spa-stack#C1",
+          "at": "IA重排",
+          "must_produce": "web-ia.md 一级/次级/折叠映射+线稿"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T06:34:14.238Z"
+    },
+    {
+      "id": "TASK-013",
+      "title": "MVU 服务端 settle:UpdateVariable→stat_data projection+状态栏模板 seam",
+      "outcome": "generation persist 钩子上注册 settle waterfall:解析 UpdateVariable 块→chatState projection(stat_data);状态栏固定模板渲染为 card-runtime 资产;单元测试用真实 MVU 卡样例",
+      "acceptance": [
+        {
+          "criterion": "generation persist 钩子上注册 settle waterfal",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "stat_data=聊天日志 fold 的视图,不是最近一块解析",
+        "is_hidden 语义不动"
+      ],
+      "depends_on": [
+        "TASK-007"
+      ],
+      "reads": [
+        ".loom/design/plugin-architecture.md",
+        "ref/SillyTavern/public/script.js"
+      ],
+      "touches": [
+        "packages/core",
+        "apps/server/src"
+      ],
+      "implements": ".loom/design/plugin-architecture.md#3d. Session Projection 机制(MVU 的正确模型)",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C3",
+          "at": "MVU settle projection",
+          "must_produce": "stat_data fold 实现+测试"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T06:34:14.239Z"
+    },
+    {
+      "id": "TASK-014",
+      "title": "card-runtime 服务端:CDN代理+卡资产服务+CSP+card_app manifest",
+      "outcome": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行+已知CDN域名级准入+SHA256缓存);card资产端点;CSP/资源路由策略;panel WebView 可消费",
+      "acceptance": [
+        {
+          "criterion": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行",
+          "verify_by": "loom check + 测试",
+          "evidence": "待跑"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "远程资源通用处理,不为已知卡开洞",
+        "卡代码不可信,资产一律过代理"
+      ],
+      "depends_on": [
+        "TASK-002"
+      ],
+      "reads": [
+        ".loom/capabilities/sandboxed-card-apps/capability.md",
+        "apps/server/src/endpoints/panel-shim.js"
+      ],
+      "touches": [
+        "apps/server/src/endpoints",
+        "packages/protocol"
+      ],
+      "implements": ".loom/capabilities/sandboxed-card-apps/capability.md",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "sandboxed-card-apps#C3",
+          "at": "CDN代理/资产服务",
+          "must_produce": "白名单两级+SHA256缓存实现"
+        }
+      ],
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "待开始",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T06:33:54.144Z",
+      "updated_at": "2026-11-03T06:34:14.239Z"
     }
   ]
 }
