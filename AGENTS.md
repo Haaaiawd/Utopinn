@@ -73,3 +73,5 @@ the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative 
 
 - better-sqlite3 等原生依赖在 pnpm 10+ 下默认不编译：首次 pnpm install 后需 pnpm approve-builds，或在 pnpm-workspace.yaml 配 onlyBuiltDependencies。
 - 兼容语料：tests/corpus/cards/ 进 git（公开卡）；tests/corpus-private/ 已 gitignore（用户私有卡，由用户提供）；ref/cards/GuiXu 为本地参考样本。
+- golden 捕获用 `tests/golden-diff/capture.sh <card.png>`（自动备齐 Playwright 缺的系统库、设 LD_LIBRARY_PATH）。私有卡产物自动落 golden-private/(gitignore)。前置条件：server.js 的 E2E_SCRATCH_ROOT/E2E_READY_TIMEOUT_MS 已由脚本内置；前端不会自动连 API，捕获脚本会显式点 #api_button_openai。
+- pnpm 布局下 `apps/server/node_modules/base64-js` 不存在（依赖提升），js-tiktoken bundle 合成会 500——已从 .pnpm 实体拷贝兜底；升级依赖时注意复査。
