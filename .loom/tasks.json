@@ -688,10 +688,10 @@
         "packages/kernel",
         "apps/server"
       ],
-      "implements": "design/plugin-architecture.md",
+      "implements": ".loom/design/plugin-architecture.md#2. 插件契约(直接映射 Cordis)",
       "design_exemption": "",
       "capability_hooks": [],
-      "capability_exemption": "",
+      "capability_exemption": "kernel is domain-agnostic infrastructure; no tavern semantics inside",
       "integrity_version": 1,
       "covers": [],
       "status": "open",
