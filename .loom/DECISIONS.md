@@ -118,3 +118,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: 无(web-ia-wireframe.html 作废,web-ui-mockup.html 为认可稿)
 - Affects: project-wide
 - Recorded: 2026-11-03T07:10:00.000Z
+
+## D-017: AI harness 自建薄内核,不站 DSH 当底座
+
+- Current decision: 内核=自建(npm cordis+自写loader/profile/patch,~TASK-011范围),不以 DSH monorepo 为底座也不 vendor 其切片。借用的仅是:cordis npm 包、DSH vendored cordis 的 patch 语义参考(profile/volatile config;module HMR 二期)、dsh-tavern AGPL 资产、DSH 包语义(settings/jobs/session)。若未来需要 DSH 级能力(jobs/session-query/MCP),经 seam 注册 Provider 引入,不重写内核。
+- Rationale: (a)产品模型不同构——DSH 是 agent harness(loop/工具/MCP),我们是 RP 聊天管线,用到其表面仅约5%;(b)数据真理冲突——DSH session 事件源 vs ST 兼容 JSONL,适配层是漂移温床;(c)未发布+pre-stable API,vendor 后永久跟其 release cadence(其自身仍在 rc11 升级中);(d)其通用件(settings/jobs/credentials)在我们域均为小实现,Luker 已有可移植版本;(e)dsh-tavern 实践证明 DSH 给的是壳,酒馆语义照样自建——那壳就不值得换整个 monorepo。
+- Source: conversation
+- Supersedes: 强化 D-010/D-016 立场(harness 自建)
+- Affects: project-wide;TASK-011 范围不变
+- Recorded: 2026-11-03T07:55:00.000Z
