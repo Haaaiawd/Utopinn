@@ -275,6 +275,7 @@ export async function buildGenerationContext({
         builtPrompt,
         request: assemblyRequest,
         presetDoc,
+        oaiSettings: settingsDoc?.oai_settings ?? {},
         trace: builtPrompt.trace,
         sources: {
             presetName: resolvedPresetName,
