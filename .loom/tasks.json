@@ -1365,6 +1365,36 @@
       ],
       "implements": "",
       "capability_hooks": []
+    },
+    {
+      "acceptance": [],
+      "done_when": "语料卡 thScripts 面抽样运行;getvar/setvar 宏与 MVU stat_data 互通;未实现 API 返回显式 unsupported",
+      "boundaries": [],
+      "reads": [
+        ".loom/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md"
+      ],
+      "touches": [],
+      "design_exemption": "",
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-03T11:37:49.263Z",
+      "updated_at": "2026-11-03T11:37:49.263Z",
+      "integrity_version": 1,
+      "id": "TASK-025",
+      "title": "TH-compat 插件:酒馆助手语义兼容层(自写)",
+      "outcome": "plugins/tavern-helper-compat 提供 {{getvar::}}/{{setvar::}} 宏、window.TavernHelper shim、eventSource 事件映射;不复制 TH 代码,只兼容 API 语义",
+      "depends_on": [
+        "TASK-013",
+        "TASK-019"
+      ],
+      "implements": "",
+      "capability_hooks": []
     }
   ],
   "milestones": [
@@ -1401,7 +1431,8 @@
         "TASK-013",
         "TASK-015",
         "TASK-019",
-        "TASK-020"
+        "TASK-020",
+        "TASK-025"
       ]
     }
   ]
