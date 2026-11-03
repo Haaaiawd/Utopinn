@@ -136,3 +136,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: TASK-013/015 及全部 dsh-tavern 移植点
 - Recorded: 2026-11-03T08:05:00.000Z
+
+## D-016: 借用三层策略——npm 依赖 / AGPL区移植 / 模式借用(补录,原档丢失)
+
+- Current decision: (1)直接依赖 cordis@rc.12 + schemastery(schema校验,不引zod进内核);(2)dsh-tavern(AGPL-3.0,与Luker同族)逻辑可移植进 server/插件 AGPL 区——magvarupdate vendor、gal-*渲染器、mod settingsSchema、card-stage-scheme、状态板、helper-facade 全是可搬资产;packages/{protocol,api-client,formats} 保持干净留 MIT-able;(3)DSH 包(MIT但未发布,依赖网深)只借语义不依赖——settings/jobs/session 语义进对应 seam;pi-mono 的 pi-ai provider 抽象形状供 ctx.generation provider seam 参考;(4)DSH vendored cordis 是 4.0.6-alpha 分叉线(24处本地改动),npm 版缺的 volatile config/hmr/profile 语义由自写 loader 层补;(5)dsh-tavern 无服务端引擎可搬(其架构=嵌ST前端frame),TASK-006 移植不可省。
+- Rationale: 同 cordis 底座+MIT/AGPL 兼容带使借用可分三层落地;dsh-tavern 是同一题目在 DSH 上的成品,外围资产直接省掉大量设计/实现;但引擎、GUI、koishi 生态不可借,边界写死防漂。
+- Source: conversation + ref/dsh-tavern LICENSE + vendor/cordis-rc11-upgrade-plan.md
+- Supersedes: none
+- Affects: TASK-011/013/015 及包 license 边界
+- Recorded: 2026-11-03T07:40:00.000Z

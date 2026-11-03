@@ -50,28 +50,12 @@ dsh-tavern 架构=**把 ST 前端引擎嵌 frame 挂进 DSH host**,引擎没重�
 - TASK-015:gal-*.js 精读升级为"移植评估"——哪些文件可直接改写成渲染器插件。
 - TASK-013:先读 lib/vendor/magvarupdate 决定 vendor or 重新实现。
 - packages/{protocol,api-client,formats}:禁引 AGPL 码,保持 MIT-able。
-EOF
-cat >> .loom/DECISIONS.md <<'EOF'
-
-## D-016: 借用三层策略——npm 依赖 / AGPL区移植 / 模式借用
-
-- Current decision: (1)直接依赖 cordis@rc.12 + schemastery(schema校验,不引zod进内核);(2)dsh-tavern(AGPL-3.0,与Luker同族)逻辑可移植进 server/插件 AGPL 区——magvarupdate vendor、gal-*渲染器、mod settingsSchema、card-stage-scheme、状态板、helper-facade 全是可搬资产;packages/{protocol,api-client,formats} 保持干净留 MIT-able;(3)DSH 包(MIT但未发布,依赖网深)只借语义不依赖——settings/jobs/session 语义进对应 seam;pi-mono 的 pi-ai provider 抽象形状供 ctx.generation provider seam 参考;(4)DSH vendored cordis 是 4.0.6-alpha 分叉线(24处本地改动),npm 版缺的 volatile config/hmr/profile 语义由自写 loader 层补;(5)dsh-tavern 无服务端引擎可搬(其架构=嵌ST前端frame),TASK-006 移植不可省。
-- Rationale: 同 cordis 底座+MIT/AGPL 兼容带使"借用"可分三层落地;dsh-tavern 是同一题目在 DSH 上的成品,外围资产直接省掉大量设计/实现;但引擎、GUI、koishi 生态不可借,边界必须写死防漂。
-- Source: conversation + ref/dsh-tavern LICENSE + vendor/cordis-rc11-upgrade-plan.md
-- Supersedes: none
-- Affects: TASK-011/013/015 及包 license 边界
-- Recorded: 2026-11-03T07:40:00.000Z
-EOF
-node -e 'const fs=require("fs");const t=JSON.parse(fs.readFileSync(".loom/tasks.json","utf8"));
-const x=t.tasks.find(y=>y.id==="TASK-011");x.reads.push(".loom/capabilities/plugin-kernel/research/borrow-map.md","ref/deepseek-harness/vendor/cordis-rc11-upgrade-plan.md");
-const y=t.tasks.find(z=>z.id==="TASK-013");y.reads.push("ref/dsh-tavern/tavern-plugin/lib/vendor/magvarupdate");
-fs.writeFileSync(".loom/tasks.json",JSON.stringify(t,null,1)+"\n");console.log("ok");' && loom check 2>&1 | sed -n '/"errors"/,/]/p' | head -5
 ## 耦合度分级(D-018 实证,grep getContext|SillyTavern|jQuery 判据)
 
 | 档 | 资产 | 处置 |
 |---|---|---|
-| 解耦可搬 |  全族零命中(~500行,DSH host原生码)、(MVU上游库) | 移植/改写成渲染器插件与MVU settle |
-| 只读参考 | 、、、(全命中,存在目的=伺候嵌入的ST前端) | 读语义(TH API面/shim行为),不搬码 |
+| 解耦可搬 | 「src/client/gal-*.js」全族零命中(~500行,DSH host原生码)、「lib/vendor/magvarupdate」(MVU上游库) | 移植/改写成渲染器插件与MVU settle |
+| 只读参考 | 「runtime/helper-*.js」「modules/frame-*」「session-*」「host-*」(全命中,存在目的=伺候嵌入的ST前端) | 读语义(TH API面/shim行为),不搬码 |
 | 不采用 | dsh-tavern 架构本体(嵌ST前端frame) | 路线拒绝;我们=服务端引擎移植 |
 
 **移植前纪律**:每个 dsh-tavern 文件先过 grep 判据;命中 ST 内部 API 的一律只读。ST 恶果(jQuery/DOM引擎/前端组装)由 TASK-005/006 服务端移植+golden-diff 对冲,不靠借用解决。
