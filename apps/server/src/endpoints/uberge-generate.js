@@ -79,8 +79,10 @@ router.post('/generate', async function (request, response) {
             chat_completion_source: body.chat_completion_source ?? presetDoc?.chat_completion_source ?? 'openai',
             messages: builtPrompt.messages,
             stream: body.stream !== false,
-            luker_generation: body.luker_generation ?? {
-                persist_target: {
+            // 客户端可传 job_id(回放对齐);persist_target 兜底按本次 char/chat 填
+            luker_generation: {
+                ...(body.luker_generation ?? {}),
+                persist_target: body.luker_generation?.persist_target ?? {
                     kind: 'character',
                     avatar_url: `${charDir}.png`,
                     file_name: `${chatName}.jsonl`,

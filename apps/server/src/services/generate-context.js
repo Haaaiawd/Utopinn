@@ -15,6 +15,13 @@ import {
     substituteParams,
 } from '@uberge/core';
 import { createPromptBuilder } from './prompt-builder.js';
+import {
+    createDepthInjectionProvider,
+    createWorldInfoRegexHook,
+    normalizeExtensionPrompts,
+    scannableExtensionPrompts,
+    SCRIPT_INJECT_KEY_PREFIX,
+} from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 
 /** openai.js promptManager 的全局序 dummyId(openai.js:1319-1324) */
@@ -177,6 +184,17 @@ export async function buildGenerationContext({
         currentChatId: chatName,
         limits: { maxContext: presetDoc.openai_max_context, maxResponse: presetDoc.openai_max_tokens },
     };
+    const subst = (content) => substituteParams(content, substCtx);
+
+    // —— extension prompts:settings 顶层 extension_prompts + chat_metadata.script_injects
+    //    重挂为 script_inject_* 键(processChatSlashCommands 语义,每次生成重建)——
+    const mergedExtPrompts = { ...(settingsDoc?.extension_prompts ?? {}) };
+    for (const [id, inject] of Object.entries(chatMetadata.script_injects ?? {})) {
+        if (inject && typeof inject === 'object') {
+            mergedExtPrompts[`${SCRIPT_INJECT_KEY_PREFIX}${id}`] = inject;
+        }
+    }
+    const extPromptSource = { ...(settingsDoc ?? {}), extension_prompts: mergedExtPrompts };
 
     // WI 扫描:chat 必须新到旧序(engine 约定 index 0 = newest);
     // globalScanData 是卡/人设字段,进扫描缓冲(原版 scanState 同位)
@@ -199,7 +217,12 @@ export async function buildGenerationContext({
                 settings: worldInfoSettings,
                 sortedEntries: entries,
                 chatMetadata,
-                substituteParams: (content) => substituteParams(content, substCtx),
+                substituteParams: subst,
+                // extension prompts 三面:scan 注入缓冲 + WI 内容正则钩子
+                scannableExtensionPrompts: scannableExtensionPrompts(extPromptSource, subst),
+                applyWorldInfoRegex: createWorldInfoRegexHook(extPromptSource, substCtx, {
+                    card, charDir, presetDoc, presetName: resolvedPresetName,
+                }),
                 countTokens: (t) => Math.ceil(String(t).length / 4), // WI 内部计数:guesstimate 口径
             },
         )
@@ -235,14 +258,17 @@ export async function buildGenerationContext({
             })),
             format: presetDoc.wi_format,
         },
-        extensionPrompts: overrides.extensionPrompts ?? {},
+        extensionPrompts: overrides.extensionPrompts ?? normalizeExtensionPrompts(extPromptSource),
         type,
         api: 'openai',
         model: presetDoc.openai_model,
         ...overrides,
     };
 
-    const builder = createPromptBuilder({ model: presetDoc.openai_model });
+    const builder = createPromptBuilder({
+        model: presetDoc.openai_model,
+        depthInjection: createDepthInjectionProvider(extPromptSource, subst),
+    });
     const builtPrompt = await builder(assemblyRequest, { substCtx });
 
     return {

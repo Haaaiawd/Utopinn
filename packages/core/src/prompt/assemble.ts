@@ -31,9 +31,9 @@ const NAMES_DEFAULT = 1;
 const NAMES_CONTENT = 2;
 const NAMES_COMPLETION = 3;
 
-// extension_prompt_types:BEFORE_PROMPT=0, IN_PROMPT=1, IN_CHAT=2
-const EXT_BEFORE_PROMPT = 0;
-const EXT_IN_PROMPT = 1;
+// extension_prompt_types(script.js:1456):NONE=-1, IN_PROMPT=0, IN_CHAT=1, BEFORE_PROMPT=2
+const EXT_IN_PROMPT = 0;
+const EXT_BEFORE_PROMPT = 2;
 
 export interface AssembleDeps {
     substCtx: SubstituteContext;
