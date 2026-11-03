@@ -24,6 +24,27 @@ import {
     SCRIPT_INJECT_KEY_PREFIX,
 } from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
+import { performance } from 'node:perf_hooks';
+
+/** 毫秒保留 1 位小数(打表口径) */
+const ms = (v) => Math.round(v * 10) / 10;
+
+/**
+ * [perf] 摘要行。约定:调用方把 endpoint 侧 cardMs 并入 perf.cardMs
+ * 与 perf.totalMs 后再打,totalMs = 含卡加载的整段耗时。
+ * @param {string} label 端点名(uberge/preview、uberge/generate)
+ * @param {object} perf buildGenerationContext 返回的 perf(调用方已补 cardMs)
+ * @param {{charDir?:string, chatName?:string}} id
+ */
+export function logPerfLine(label, perf, { charDir = '?', chatName = '?' } = {}) {
+    console.info(
+        `[perf] ${label} char=${charDir} chat=${chatName}`
+        + ` card=${ms(perf.cardMs ?? 0)}ms load=${ms(perf.loadMs)}ms preset=${ms(perf.presetMs)}ms`
+        + ` wi=${ms(perf.wiMs)}ms assemble=${ms(perf.assembleMs)}ms`
+        + `(collect=${ms(perf.collectionMs)} populate=${ms(perf.populateMs)} token=${ms(perf.tokenMs)})`
+        + ` total=${ms(perf.totalMs)}ms`,
+    );
+}
 
 /** openai.js promptManager 的全局序 dummyId(openai.js:1319-1324) */
 const OPENAI_ORDER_CHARACTER_ID = '100001';
@@ -119,7 +140,7 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  * @param {object} input.user 用户面 {name, description}
  * @param {string} [input.type] 生成类型
  * @param {object} [input.overrides] 直接覆盖请求字段(cyclePrompt/quietPrompt/extensionPrompts 等)
- * @returns {Promise<{builtPrompt, request, trace, sources}>}
+ * @returns {Promise<{builtPrompt, request, trace, sources, perf}>} perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs
  */
 export async function buildGenerationContext({
     request,
@@ -131,6 +152,15 @@ export async function buildGenerationContext({
     type = 'normal',
     overrides = {},
 }) {
+    // —— perf 打表(server 包裹层,core 签名不动)——
+    // cardMs 由调用方补(loadCharacterCard 在 endpoint);totalMs 为 buildGenerationContext 总耗。
+    const perf = {
+        cardMs: 0, loadMs: 0, presetMs: 0, wiMs: 0,
+        assembleMs: 0, collectionMs: 0, populateMs: 0, tokenMs: 0, totalMs: 0,
+    };
+    const t0 = performance.now();
+    let seg = t0;
+
     const handle = request.user.profile.handle;
     const chatRepo = getChatRepo();
     const presetRepo = getPresetRepo();
@@ -141,12 +171,15 @@ export async function buildGenerationContext({
         chatRepo.get(handle, charDir, chatName),
         settingsRepo.get(handle),
     ]);
+    perf.loadMs += performance.now() - seg;
     if (!chatDoc) throw new Error(`Chat not found: ${charDir}/${chatName}`);
 
     const powerUser = settingsDoc?.power_user ?? {};
     const worldInfoState = settingsDoc?.world_info ?? {};
     const resolvedPresetName = presetName ?? settingsDoc?.preset_settings_openai ?? 'Default';
+    seg = performance.now();
     const presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
+    perf.presetMs += performance.now() - seg;
     if (!presetDoc) throw new Error(`Preset not found: openai/${resolvedPresetName}`);
 
     const chatMessages = chatBodyToInput(chatDoc.body);
@@ -166,6 +199,7 @@ export async function buildGenerationContext({
         insertionStrategy: worldInfoSettings.worldInfoInsertStrategy ?? 0,
     };
     const worldNames = collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, charDir });
+    seg = performance.now();
     const worldCache = new Map();
     await Promise.all(worldNames.map(async (name) => {
         const doc = await worldInfoRepo.get(handle, name).catch(() => null);
@@ -175,6 +209,7 @@ export async function buildGenerationContext({
         ...loreInput,
         getWorldData: (name) => worldCache.get(name),
     });
+    perf.wiMs += performance.now() - seg;
 
     const substCtx = {
         name1: user?.name ?? 'User',
@@ -190,10 +225,12 @@ export async function buildGenerationContext({
     // mainApi==='openai' 时 {{mesExamples}} 不走 instruct 形态(同原版
     // script.js:5890 语义),但 seam 就位后 textgen 路径(TASK-020)直接用。
     const powerUserInstruct = powerUser?.instruct ?? {};
+    seg = performance.now();
     const [instructPresetDocs, contextPresetDocs] = await Promise.all([
         presetRepo.listWithDocs(handle, 'instruct').catch(() => []),
         presetRepo.listWithDocs(handle, 'context').catch(() => []),
     ]);
+    perf.presetMs += performance.now() - seg;
     const instructEngine = createInstructEngine({
         ...substCtx,
         instruct: powerUserInstruct,
@@ -229,6 +266,7 @@ export async function buildGenerationContext({
         scenario: card?.data?.scenario ?? card?.scenario ?? '',
         creatorNotes: card?.data?.creator_notes ?? card?.creator_notes ?? '',
     };
+    seg = performance.now();
     const wiActivated = entries.length
         ? await checkWorldInfo(
             chatMessages.map((m) => String(m.mes ?? '')).reverse(),
@@ -249,6 +287,7 @@ export async function buildGenerationContext({
             },
         )
         : { worldInfoBeforeEntries: [], worldInfoAfterEntries: [], WIDepthEntries: [], EMEntries: [] };
+    perf.wiMs += performance.now() - seg;
 
     const assemblyRequest = {
         card: {
@@ -291,10 +330,19 @@ export async function buildGenerationContext({
         model: presetDoc.openai_model,
         depthInjection: createDepthInjectionProvider(extPromptSource, subst),
     });
+    seg = performance.now();
     const builtPrompt = await builder(assemblyRequest, { substCtx });
+    perf.assembleMs = performance.now() - seg;
+    // collection/populate/token 分段由 prompt-builder 的 builtPrompt.perf 提供;
+    // 缺省(非服务端 builder)时全记 collection、token 记 0。
+    perf.collectionMs = builtPrompt.perf?.collectionMs ?? perf.assembleMs;
+    perf.populateMs = builtPrompt.perf?.populateMs ?? 0;
+    perf.tokenMs = builtPrompt.perf?.tokenMs ?? 0;
+    perf.totalMs = performance.now() - t0;
 
     return {
         builtPrompt,
+        perf,
         request: assemblyRequest,
         presetDoc,
         oaiSettings: settingsDoc?.oai_settings ?? {},

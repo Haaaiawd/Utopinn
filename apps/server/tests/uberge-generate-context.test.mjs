@@ -118,6 +118,20 @@ test('buildGenerationContext — storage → WI → prompt', async (t) => {
             assert.ok(builtPrompt.trace);
         });
 
+        await t.test('perf 分段计时齐字段且非负', async () => {
+            const { perf } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'c1', card: CARD, user: { name: 'User' },
+            });
+            for (const k of ['loadMs', 'presetMs', 'wiMs', 'assembleMs', 'collectionMs', 'populateMs', 'tokenMs', 'totalMs']) {
+                assert.ok(Number.isFinite(perf[k]) && perf[k] >= 0, `perf.${k}`);
+            }
+            assert.ok(perf.totalMs >= perf.assembleMs, 'total covers assemble');
+            assert.ok(perf.assembleMs >= perf.tokenMs, 'token inside assemble');
+            // collect+populate 量的是 promptBuilder 内层窗口,≤ 外层 assembleMs
+            assert.ok(perf.collectionMs + perf.populateMs <= perf.assembleMs, 'collect+populate within assemble');
+            assert.ok(perf.tokenMs > 0, 'encoder actually ran');
+        });
+
         await t.test('global world book activates on keyword hit', async () => {
             const { builtPrompt, sources } = await buildGenerationContext({
                 request, charDir: CHAR, chatName: 'c1', card: CARD, user: { name: 'User' },

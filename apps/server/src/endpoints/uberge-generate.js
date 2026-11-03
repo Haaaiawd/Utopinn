@@ -7,7 +7,7 @@
  * runLukerDispatch + provider dispatch 路径(job/SSE/persist 全部继承)。
  */
 import express from 'express';
-import { buildGenerationContext } from '../services/generate-context.js';
+import { buildGenerationContext, logPerfLine } from '../services/generate-context.js';
 import { selectChatCompletionDispatch } from './backends/chat-completions.js';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
@@ -15,6 +15,7 @@ import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { performance } from 'node:perf_hooks';
 
 export const router = express.Router();
 
@@ -74,12 +75,14 @@ router.post('/generate', async function (request, response) {
         }
 
         const directories = request.user.directories;
+        const cardStart = performance.now();
         const card = await loadCharacterCard(directories, charDir);
+        const cardMs = performance.now() - cardStart;
         if (!card) {
             return response.status(404).send({ error: `Character not found: ${charDir}` });
         }
 
-        const { builtPrompt, presetDoc, oaiSettings, trace } = await buildGenerationContext({
+        const { builtPrompt, presetDoc, oaiSettings, trace, perf } = await buildGenerationContext({
             request,
             charDir,
             chatName,
@@ -89,6 +92,9 @@ router.post('/generate', async function (request, response) {
             type: body.type ?? 'normal',
             overrides: body.overrides ?? {},
         });
+        perf.cardMs = cardMs;
+        perf.totalMs += cardMs;
+        logPerfLine('uberge/generate', perf, { charDir, chatName });
 
         // 派发体 = 连接层 oai_settings(custom_url/reverse_proxy/source 等)
         //  ← 预设生成参数覆盖(ST 选预设=重写 oai_settings)← 调用方显式字段
@@ -125,6 +131,9 @@ router.post('/generate', async function (request, response) {
 
         request.body = dispatchBody;
         request.ubergeTrace = trace; // 诊断面挂点(request inspector 可摘)
+        // /generate 响应体是 runner 立即 flush 的 {}(真实结果走 job 事件/WS),
+        // perf 挂响应头——需在 runLukerDispatch 的 response.json() 之前 set。
+        response.setHeader('x-uberge-perf', JSON.stringify(perf));
 
         return runLukerDispatch(request, response, {
             endpoint: 'uberge-generate',
@@ -146,11 +155,13 @@ router.post('/preview', async function (request, response) {
             return response.status(400).send({ error: 'charDir and chatName are required' });
         }
         const directories = request.user.directories;
+        const cardStart = performance.now();
         const card = await loadCharacterCard(directories, charDir);
+        const cardMs = performance.now() - cardStart;
         if (!card) {
             return response.status(404).send({ error: `Character not found: ${charDir}` });
         }
-        const { builtPrompt, trace, sources } = await buildGenerationContext({
+        const { builtPrompt, trace, sources, perf } = await buildGenerationContext({
             request,
             charDir,
             chatName,
@@ -160,7 +171,10 @@ router.post('/preview', async function (request, response) {
             type: body.type ?? 'normal',
             overrides: body.overrides ?? {},
         });
-        return response.send({ messages: builtPrompt.messages, trace, sources });
+        perf.cardMs = cardMs;
+        perf.totalMs += cardMs;
+        logPerfLine('uberge/preview', perf, { charDir, chatName });
+        return response.send({ messages: builtPrompt.messages, trace, sources, perf });
     } catch (error) {
         console.error('uberge/preview failed:', error);
         return response.status(500).send({ error: String(error?.message ?? error) });
