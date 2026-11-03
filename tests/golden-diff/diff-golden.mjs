@@ -25,7 +25,7 @@ function normalize(s) {
 }
 
 // ---------- 消息序列比对(致命) ----------
-const gMsgs = (golden.wireRequests?.[0]?.messages ?? actual.messages ? golden.messages : []) || [];
+const gMsgs = golden.wireRequests?.[0]?.messages ?? golden.messages ?? [];
 const aMsgs = actual.wireRequests?.[0]?.messages ?? actual.messages ?? [];
 
 const fatal = [], important = [], tolerated = [];

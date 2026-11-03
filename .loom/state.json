@@ -4,7 +4,7 @@
     "name": "Uberge",
     "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-02T13:15:34.644Z"
+    "updated_at": "2026-11-03T03:01:34.773Z"
   },
   "understanding": {
     "confirmed": [
@@ -61,6 +61,36 @@
         "text": "Local on-device storage of cards/world books is dropped as a v1 requirement; mobile keeps read cache + file import/export only.",
         "source": "conversation",
         "at": "2026-11-02T08:48:37.671Z"
+      },
+      {
+        "id": "F-010",
+        "text": "golden 捕获管线实证跑通:Seraphina 8 msgs + 诡异修仙 4 msgs(constant WI 实注入)。F-012",
+        "source": "conversation",
+        "at": "2026-11-03T03:01:34.773Z"
+      },
+      {
+        "id": "F-011",
+        "text": "页面'神秘关闭'真相:前端不自动连 API→send_but 恒 displayNone→waitFor 30s 超时→finally 关浏览器→浮空 evaluate 报 Target closed 假象;修法=显式 click #api_button_openai",
+        "source": "conversation",
+        "at": "2026-11-03T03:01:34.773Z"
+      },
+      {
+        "id": "F-012",
+        "text": "WSL Playwright 路径:channel:'chromium'(完整版 headless)+ LD_LIBRARY_PATH 指向 dpkg -x 的 nss/nspr/alsa,capture.sh 自动备齐;Windows CDP 方案废弃(连接受 NAT 中继影响不稳)",
+        "source": "conversation",
+        "at": "2026-11-03T03:01:34.773Z"
+      },
+      {
+        "id": "F-013",
+        "text": "教主卡确认为 galgame 接管型:first_mes 内含 .load(远程 v1.1.html),UI/资源全在作者 CDN(约 300MB),ex.world 绑定 'TTK v1.1',tavern_helper 为空壳——沙箱需要声明式出口白名单 + jQuery 面",
+        "source": "conversation",
+        "at": "2026-11-03T03:01:34.773Z"
+      },
+      {
+        "id": "F-014",
+        "text": "私有卡 golden 含卡面全文,恒落 tests/golden-diff/golden-private/(gitignore);公开语料 golden 才进 golden/",
+        "source": "conversation",
+        "at": "2026-11-03T03:01:34.773Z"
       }
     ],
     "assumptions": [

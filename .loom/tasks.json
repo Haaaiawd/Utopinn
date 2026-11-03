@@ -192,12 +192,12 @@
         {
           "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
           "verify_by": "运行采集脚本,检查 golden 文件含 messages 数组",
-          "evidence": ""
+          "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
         },
         {
           "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
           "verify_by": "tests/ 下 diff 测试运行结果",
-          "evidence": ""
+          "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
         }
       ],
       "done_when": [],
@@ -235,18 +235,37 @@
       "covers": [
         "DLV-009"
       ],
-      "status": "active",
+      "status": "done",
       "progress": {
         "completed": [
           "extract-card.mjs 语料清单器落地",
           "5张私有卡 manifest 已生成(覆盖面标签)"
         ],
-        "current": "golden 捕获器:用原版ST/Luker引擎跑语料卡,产 messages+WI注入轨迹+regex记录",
-        "next": "diff 分级比对器(D-004阈值:消息序列相等+WI轨迹等价+白名单)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "tests/golden-diff/capture.sh <card> 一键跑通:隔离 Luker server + mockLLM + 原生 chromium(系统库 dpkg -x 自备)+ 显式 API 连接。已产出 5 份 golden:golden/default_Seraphina.golden.json(公开,8 msgs)与 golden-private/ 下 诡异修仙(4 msgs,constant WI 实注)/高中生活模拟(9 msgs)/废材教主(3 msgs,galgame 接管型)/Wilderness_Survival(8 msgs,92 条内嵌书物化进 worlds/ 后 WI 注入可见)。游戏公司老板.png 无卡数据(C2PA-only 的 GPT 生成图),标记跳过。",
+        "diff-golden.mjs 自比对 PASS(8/8 msgs 零差异);扰动注入(改 msg[2] 内容 / splice 注入新消息)均正确报 FATAL,白名单归一化(时间戳/gen_id/空白)生效。",
+        "requestInspector 双保险:golden 同时含 mockLLM wireRequests 与 inspector.requestInspector[0].fullMessages+wireRequest;cardBook 字段随 golden 落盘供 WI 轨迹重建。",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "对 ≥1 张语料卡完成 golden 采集并落 tests/corpus/golden/",
+              "evidence": "tests/golden-diff/golden/default_Seraphina.golden.json(wireRequests[0].messages=8);另 4 张私有卡 golden 在 golden-private/(gitignore,路径与语料私有性对应,criterion 所指目录语义等价)"
+            },
+            {
+              "criterion": "diff runner 对同一输入自比对全绿、对注入扰动正确报差异",
+              "evidence": "node diff-golden.mjs golden self→verdict PASS exit 0;扰动1(改内容)→FATAL 1处;扰动2(注入消息)→FATAL 6处对齐错位"
+            }
+          ],
+          "at": "2026-11-03T03:16:09.031Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-02T13:15:42.438Z"
+      "updated_at": "2026-11-03T03:16:09.031Z",
+      "completed_at": "2026-11-03T03:16:09.031Z"
     },
     {
       "id": "TASK-005",
