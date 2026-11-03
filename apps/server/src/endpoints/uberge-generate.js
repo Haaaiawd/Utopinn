@@ -37,15 +37,32 @@ async function loadCharacterCard(directories, charDir) {
  * presetDoc → chat-completions 派发 body 参数段(透传生成参数,
  * 与前端发往 /generate 的 oai_settings 子集同构)。
  */
-function presetToDispatchParams(presetDoc) {
+function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
     const d = presetDoc ?? {};
     const passthrough = {};
     for (const [k, v] of Object.entries(d)) {
         if (['prompts', 'prompt_order', 'extensions'].includes(k)) continue;
+        if (!includeConnection && CONNECTION_KEYS.has(k)) continue;
         passthrough[k] = v;
     }
     return passthrough;
 }
+
+/**
+ * 连接层字段:URL/密钥代理/模型名/自定义进出体 + source。
+ * 这些产品语义上属"当前连接配置"而非"生成预设"——ST 选预设会整体重写
+ * oai_settings(连 URL 一起洗掉是出名的坑),我们把连接面固定在
+ * settings.oai_settings,preset 只贡献生成参数。
+ */
+const CONNECTION_KEYS = new Set([
+    'chat_completion_source', 'reverse_proxy', 'proxy_password',
+    'custom_url', 'custom_model', 'custom_include_body',
+    'custom_exclude_body', 'custom_include_headers',
+    'chat_completion_custom_models', 'show_external_models',
+    'kimi_partial_name_source',
+    'openrouter_group_models', 'openrouter_sort_models',
+    'chutes_sort_models', 'electronhub_sort_models', 'electronhub_group_models',
+]);
 
 router.post('/generate', async function (request, response) {
     try {
@@ -62,7 +79,7 @@ router.post('/generate', async function (request, response) {
             return response.status(404).send({ error: `Character not found: ${charDir}` });
         }
 
-        const { builtPrompt, presetDoc, trace } = await buildGenerationContext({
+        const { builtPrompt, presetDoc, oaiSettings, trace } = await buildGenerationContext({
             request,
             charDir,
             chatName,
@@ -73,10 +90,14 @@ router.post('/generate', async function (request, response) {
             overrides: body.overrides ?? {},
         });
 
-        // 派发体 = 预设生成参数 + 组装好的 messages + 生成控制字段
+        // 派发体 = 连接层 oai_settings(custom_url/reverse_proxy/source 等)
+        //  ← 预设生成参数覆盖(ST 选预设=重写 oai_settings)← 调用方显式字段
         const dispatchBody = {
+            ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
             ...presetToDispatchParams(presetDoc),
-            chat_completion_source: body.chat_completion_source ?? presetDoc?.chat_completion_source ?? 'openai',
+            chat_completion_source: body.chat_completion_source
+                ?? oaiSettings?.chat_completion_source
+                ?? presetDoc?.chat_completion_source ?? 'openai',
             messages: builtPrompt.messages,
             stream: body.stream !== false,
             // 客户端可传 job_id(回放对齐);persist_target 兜底按本次 char/chat 填
