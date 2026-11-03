@@ -466,9 +466,10 @@
           "/api/uberge/generate+preview 端点",
           "存储→WI→prompt 全链",
           "派发体 oai_settings/preset/body 三层合并+连接键排除",
-          "e2e 全绿(HTTP→组装→mock派发→job→persist→JSONL)"
+          "e2e 全绿(HTTP→组装→mock派发→job→persist→JSONL)",
+          "WS ticket 投递面验证(resume 回放 head/chunk/end 全帧)"
         ],
-        "current": "WS ticket 投递确认 + group chat",
+        "current": "group chat(余项)",
         "next": "TASK-018 库管理 API 解锁薄客户端"
       },
       "evidence": [
@@ -476,7 +477,7 @@
         "apps/server/tests/uberge-generate-context.test.mjs"
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T09:55:17.594Z"
+      "updated_at": "2026-11-03T11:04:40.543Z"
     },
     {
       "id": "TASK-008",
