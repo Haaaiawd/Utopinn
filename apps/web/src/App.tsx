@@ -130,7 +130,7 @@ function Shell() {
                         <PlaceholderView icon={placeholder.icon} titleKey={placeholder.titleKey} descKey={placeholder.descKey} />
                     )}
                 </main>
-                {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} />}
+                {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} charDir={chat?.charDir} chatName={chat?.chatName} />}
             </div>
             <StatusBar
                 server={serverStatus}

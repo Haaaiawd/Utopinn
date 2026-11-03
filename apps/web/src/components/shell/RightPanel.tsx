@@ -6,10 +6,11 @@ import { useI18n } from '../../i18n';
 import type { PreviewResult } from '../../types';
 import { Icon } from '../Icon';
 import { PreviewDebug } from '../chat/PreviewDebug';
+import { CardAppFrame } from '../../cardapp/CardAppFrame';
 
 type PanelTab = 'session' | 'diag' | 'panels';
 
-export function RightPanel({ preview, hidden }: { preview: PreviewResult | null; hidden: boolean }) {
+export function RightPanel({ preview, hidden, charDir, chatName }: { preview: PreviewResult | null; hidden: boolean; charDir?: string; chatName?: string }) {
     const { t } = useI18n();
     const [tab, setTab] = useState<PanelTab>('diag');
     if (hidden) return null;
@@ -41,12 +42,16 @@ export function RightPanel({ preview, hidden }: { preview: PreviewResult | null;
                 )}
                 {tab === 'diag' && <PreviewDebug result={preview} />}
                 {tab === 'panels' && (
-                    <div className="sp-card">
-                        <h4>{t('panel.panels')}</h4>
-                        <p className="mut" style={{ fontSize: 11.5, lineHeight: 1.7 }}>
-                            <Icon name="layout" size={13} /> {t('panel.panels.empty')}
-                        </p>
-                    </div>
+                    charDir ? (
+                        <CardAppFrame charDir={charDir} chatName={chatName} />
+                    ) : (
+                        <div className="sp-card">
+                            <h4>{t('panel.panels')}</h4>
+                            <p className="mut" style={{ fontSize: 11.5, lineHeight: 1.7 }}>
+                                <Icon name="layout" size={13} /> {t('panel.panels.empty')}
+                            </p>
+                        </div>
+                    )
                 )}
             </div>
         </aside>
