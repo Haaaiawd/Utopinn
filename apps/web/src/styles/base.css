@@ -74,3 +74,5 @@ details.fold .fold-body { padding: 2px 12px 12px; }
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: center; font-size: 12.5px; }
 .kv label { color: var(--ink2); font-size: 11.5px; }
 .warn { background: #e8a13c18; border: 1px solid #e8a13c55; color: var(--warn); border-radius: 9px; padding: 9px 12px; font-size: 11.5px; }
+.err { background: var(--err-soft, #d0715f18); border: 1px solid #d0715f55; color: var(--err); border-radius: 9px; padding: 9px 12px; font-size: 11.5px; }
+[data-theme="light"] .err { background: #b04a3814; border-color: #b04a3844; }

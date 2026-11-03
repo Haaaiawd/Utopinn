@@ -42,9 +42,9 @@
     --line: #ffffff0d;
     --line2: #ffffff1d;
     --bubble: #2a2d31;
-    --acc: #d4a05a;        /* 烛铜 — 全场唯一彩色 */
-    --acc-ink: #241a0e;
-    --acc-soft: #d4a05a26;
+    --acc: #ca6924;        /* 中华琥珀 — 全场唯一彩色,极少数点缀 */
+    --acc-ink: #fff7ef;
+    --acc-soft: #ca692422;
     --acc2: #8fa3c7;
     --quote: #c98d5e;
     --ok: #6fae7e;
@@ -66,9 +66,9 @@
     --line: #0000000e;
     --line2: #00000020;
     --bubble: #e9eaec;
-    --acc: #a5712a;        /* 黄铜压重保对比 */
-    --acc-ink: #ffffff;
-    --acc-soft: #a5712a1e;
+    --acc: #ca6924;        /* 中华琥珀 */
+    --acc-ink: #fff7ef;
+    --acc-soft: #ca69241c;
     --acc2: #5a739e;
     --quote: #a05c2a;
     --ok: #3d8453;

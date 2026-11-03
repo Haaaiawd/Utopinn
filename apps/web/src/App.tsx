@@ -31,13 +31,13 @@ function Shell() {
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
     const [preview, setPreview] = useState<PreviewResult | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
-    const [hint, setHint] = useState<string | null>(null);
+    const [hint, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
     const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const chat = useMemo(() => chats.find((c) => c.id === activeChat) ?? null, [chats, activeChat]);
 
-    const showHint = useCallback((msg: string) => {
-        setHint(msg);
+    const showHint = useCallback((msg: string, err?: boolean) => {
+        setHint({ msg, err });
         if (hintTimer.current) clearTimeout(hintTimer.current);
         hintTimer.current = setTimeout(() => setHint(null), 3200);
     }, []);
@@ -158,7 +158,7 @@ function Shell() {
                 )}
             </main>
             {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} charDir={chat?.charDir} chatName={chat?.chatName} />}
-            {hint && <div className="hint-pill">{hint}</div>}
+            {hint && <div className={`hint-pill${hint.err ? ' err' : ''}`}>{hint.msg}</div>}
         </div>
     );
 }

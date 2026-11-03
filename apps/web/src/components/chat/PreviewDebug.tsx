@@ -11,7 +11,7 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
         return <p className="mut" style={{ lineHeight: 1.7 }}>{t('panel.diag.noData')}</p>;
     }
     if (result.error) {
-        return <div className="warn">{t('chat.preview.failed')}: {result.error}</div>;
+        return <div className="err">{t('chat.preview.failed')}: {result.error}</div>;
     }
 
     const { data, mock } = result;
