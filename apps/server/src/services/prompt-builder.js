@@ -4,8 +4,8 @@
  * - TokenCounter:复用 endpoints/tokenizers 的 tiktoken 模型族映射,
  *   逐消息口径 = ST fallback 公式(tokensPerMessage + Σencode + name±1),
  *   批量 padding(+3)由 core 的 ChatCompletion.reserveBudget(3) 承担。
- * - depthInjection:getExtensionPrompt(IN_CHAT, depth, sep, role) 的服务端等价物
- *   将由 TASK-007 接线(目前为空实现返回 '')。
+ * - depthInjection:getExtensionPrompt(IN_CHAT, depth, sep, role) 的服务端等价物,
+ *   由 generate-context 经 extension-prompts.js createDepthInjectionProvider 接线。
  *
  * 入参/出参契约即 packages/core/src/prompt/types.ts 的
  * PromptBuildRequest / BuiltPrompt —— 客户端永远只见 BuiltPrompt。
