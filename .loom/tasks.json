@@ -684,17 +684,17 @@
     {
      "criterion": "cordis 在 Express+pnpm workspace 下可用(Context/plugin/effect)",
      "verify_by": "hello 插件冒烟测试",
-     "evidence": "待跑"
+     "evidence": "node --test dist/test 9/9 全绿"
     },
     {
      "criterion": "profile.yaml 按序装载+patch行替换",
      "verify_by": "loader 测试",
-     "evidence": "待跑"
+     "evidence": "node --test dist/test 9/9 全绿"
     },
     {
      "criterion": "inject 缺失显式失败,effect 卸载清理",
      "verify_by": "loader 测试",
-     "evidence": "待跑"
+     "evidence": "node --test dist/test 9/9 全绿"
     }
    ],
    "done_when": [],
@@ -735,15 +735,24 @@
    "capability_exemption": "kernel is domain-agnostic infrastructure; no tavern semantics inside",
    "integrity_version": 1,
    "covers": [],
-   "status": "open",
+   "status": "done",
    "progress": {
-    "completed": [],
-    "current": "待开始:骨架按 §2 契约实现",
-    "next": ""
+    "completed": [
+     "pnpm add cordis@rc.12+schemastery+js-yaml 实测成立",
+     "packages/kernel:AppContext+ServiceCatalog(四角色)+provideSeam",
+     "loader:profile.yaml相对路径装载+patch替换+degraded",
+     "waterfall真实语义实证(inner产基值/args固定/变换回溯)",
+     "legacy-st-plugin-adapter 冒烟"
+    ],
+    "current": "已完成",
+    "next": "TASK-007 汇流:ctx.generation/promptBuilder 挂载"
    },
-   "evidence": [],
+   "evidence": [
+    "packages/kernel/dist/test 9/9 测试绿",
+    "packages/kernel/src/{context,loader,plugin,legacy-adapter}.ts"
+   ],
    "created_at": "2026-11-03T06:19:55.764Z",
-   "updated_at": "2026-11-03T06:36:05.129Z"
+   "updated_at": "2026-11-03T08:23:18.588Z"
   },
   {
    "id": "TASK-012",
