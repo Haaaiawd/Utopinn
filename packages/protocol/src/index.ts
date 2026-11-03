@@ -7,3 +7,4 @@ export * from './common.js';
 export * from './resources.js';
 export * from './generation.js';
 export * from './panels.js';
+export * from './renderers.js';
