@@ -55,3 +55,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: .loom/design/mobile-panels.md, .loom/capabilities/sandboxed-card-apps/capability.md, packages/protocol/src/panels.ts
 - Recorded: 2026-11-02T09:18:53.743Z
+
+## D-007: D-009 插件核心架构(DSH 形态)
+
+- Current decision: 产品形态定为'插件核心':内核薄(存储/鉴权/传输/编排,无酒馆语义),tavern-core/tavern-formats/card-runtime/tavern-presets 为内置插件,第三方经 PluginManifest+PluginContext(权限声明+服务注册表+管线钩子 generation.preBuild/build/settle/chat.messagePersisted/card.imported)接入。packages/* 保持纯库,插件是薄适配层。Luker 插件面保留并升级为产品主架构(D-005 语义升级)。
+- Rationale: 用户拍板:像 DSH 一样以插件为核心且插件体验要好;插件生态强于我们本身——服务注册表+管线钩子让社区能替换/扩展引擎而不分叉产品
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/plugin-architecture.md, .loom/design/core-engine.md, .loom/design/generation-api.md
+- Recorded: 2026-11-03T05:46:58.777Z
