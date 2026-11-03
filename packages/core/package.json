@@ -14,9 +14,15 @@
     "scripts": {
         "build": "tsc -p tsconfig.json",
         "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test": "node --test tests/"
+        "test": "node --test tests/*.test.mjs"
     },
     "devDependencies": {
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "@uberge/formats": "workspace:*"
+    },
+    "dependencies": {
+        "seedrandom": "^3.0.5",
+        "droll": "^0.2.1",
+        "moment": "^2.30.1"
     }
 }
