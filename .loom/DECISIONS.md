@@ -100,3 +100,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: project-wide or not yet classified
 - Recorded: 2026-11-03T06:32:46.851Z
+
+## D-012: 任务图重排:011/006/012并行,首个dogfood=移动薄聊天,新增013/014任务
+
+- Current decision: 顺序重排:TASK-005结清;TASK-011(内核)、TASK-006(prompt组装,纯库先行不依赖内核)、TASK-012(web-ia设计)三线并行→TASK-007(生成API,内核汇流点)→TASK-008(移动薄聊天=首个dogfood)+TASK-013(MVU settle独立,挂生成persist)+TASK-014(card-runtime服务端CDN/资产/CSP)→TASK-009(移动面板)→TASK-010(web全量)。修正:MVU settle从006挪至013;card-runtime服务端从009隐含独立为014;web-ia独立为012喂给008/009/010。
+- Rationale: 006是纯函数库不需要等内核;MVU是persist时projection不是prompt组装;CDN/资产服务是移动面板的前置但属服务端工作;首个dogfood应对准用户最痛的手机场景。
+- Source: conversation
+- Supersedes: none
+- Affects: project-wide or not yet classified
+- Recorded: 2026-11-03T06:35:36.368Z
