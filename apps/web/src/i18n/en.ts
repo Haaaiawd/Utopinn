@@ -56,6 +56,11 @@ export const en: Dict = {
     'chat.action.unwired': 'not wired',
     'chat.you': 'Me',
     'chat.system': 'System',
+    'chat.rename': 'Rename chat',
+    'chat.rename.failed': 'rename failed',
+    'chat.delete': 'Delete chat',
+    'chat.delete.failed': 'delete failed',
+    'chat.delete.confirm': 'Delete this chat? This cannot be undone.',
 
     'panel.session': 'Session',
     'panel.diag': 'Diagnostics',

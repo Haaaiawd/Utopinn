@@ -18,12 +18,15 @@ const VIEW_SIDEBAR: Record<Exclude<ViewId, 'chat'>, { sectKey: string; items: st
     },
 };
 
-export function Sidebar({ view, chats, activeChat, onSelectChat, onNewChat, collapsed }: {
+export function Sidebar({ view, chats, activeChat, onSelectChat, onNewChat, onRenameChat, onDeleteChat, collapsed }: {
     view: ViewId;
     chats: ChatSummary[];
     activeChat: string;
     onSelectChat: (id: string) => void;
     onNewChat: () => void;
+    /** Row hover actions — App owns confirm/prompt + the API round-trip. */
+    onRenameChat: (chat: ChatSummary) => void;
+    onDeleteChat: (chat: ChatSummary) => void;
     collapsed: boolean;
 }) {
     const { t } = useI18n();
@@ -82,6 +85,17 @@ export function Sidebar({ view, chats, activeChat, onSelectChat, onNewChat, coll
                         {c.unread && <span className="ind" />}
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</span>
                         <span className="sub">{c.updatedAt}</span>
+                        {/* hover/focus reveal (CSS-only); stopPropagation keeps row select clean */}
+                        <span className="row-acts">
+                            <button type="button" className="ibtn act" title={t('chat.rename')}
+                                onClick={(e) => { e.stopPropagation(); onRenameChat(c); }}>
+                                <Icon name="edit" size={12} />
+                            </button>
+                            <button type="button" className="ibtn act danger" title={t('chat.delete')}
+                                onClick={(e) => { e.stopPropagation(); onDeleteChat(c); }}>
+                                <Icon name="x" size={12} />
+                            </button>
+                        </span>
                     </div>
                 ))}
             </div>

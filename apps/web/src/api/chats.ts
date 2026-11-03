@@ -23,13 +23,18 @@ interface ChatDetail {
     messages: StChatMessage[];
 }
 
-async function apiGet<T>(path: string): Promise<T> {
-    const res = await apiFetch(path);
+/** Shared !ok → ApiError mapping (502+proxy header = labelled mock upstream). */
+async function assertOk(res: Response): Promise<void> {
     if (!res.ok) {
         const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
         const text = await res.text().catch(() => '');
         throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
     }
+}
+
+async function apiGet<T>(path: string): Promise<T> {
+    const res = await apiFetch(path);
+    await assertOk(res);
     return (await res.json()) as T;
 }
 
@@ -124,4 +129,29 @@ export async function appendUserMessage(charDir: string, chatName: string, name:
             extra: {},
         },
     });
+}
+
+/**
+ * Rename a chat file. Uses the legacy /api/chats/rename route (the uberge
+ * router has no rename yet) — body fields are `original_file`/`renamed_file`
+ * WITH the .jsonl suffix; `avatar_url` carries the charDir + .png, matching
+ * append/patch above. Resolves to the server's sanitized new base name so the
+ * caller can rebuild the ChatSummary id even when sanitize() rewrote input.
+ */
+export async function renameChat(charDir: string, oldName: string, newName: string): Promise<string> {
+    const res = await apiPost<{ ok: boolean; sanitizedFileName?: string }>('/api/chats/rename', {
+        avatar_url: `${charDir}.png`,
+        original_file: `${oldName}.jsonl`,
+        renamed_file: `${newName}.jsonl`,
+    });
+    return res.sanitizedFileName ?? newName;
+}
+
+/** Delete a chat file via the uberge library route (204; 404 bubbles as ApiError). */
+export async function deleteChat(charDir: string, chatName: string): Promise<void> {
+    const res = await apiFetch(
+        `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`,
+        { method: 'DELETE' },
+    );
+    await assertOk(res);
 }
