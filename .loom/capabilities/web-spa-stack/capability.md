@@ -66,3 +66,13 @@
 - source: apps/server/package.json deps + research/framework-and-ui-landscape.md
 - counterexample: 若要做完整 IDE 体验(多文件/智能感知)则 Monaco;CardApp Studio 二期再说
 - output: CM6 + TanStack Table + dnd-kit
+
+### C6: 桌面应用壳与 i18n/主题
+
+- entry_when: TASK-010 骨架实现
+- options:
+  - A: ChatGPT 桌面式壳(标题栏/activity rail/二级侧栏/右面板/状态栏)+ CSS token 主题(暗色默认/纸面亮色)+ 服务端同步排版 + locale-owned 中英字典 → leads_to: 完成
+  - B: 网页式布局 + 客户端本地主题 → leads_to: 不像应用,主题不同步
+- decide_by: 用户拍板"不要像网页"(D-015);i18n=中英双字典起步(D-013);排版设置属用户数据应多端同步
+- source: design/web-ia.md §13/§14;design/web-ui-mockup.html(认可)
+- output: shell 组件 + 主题 token 表 + t() 字典基建;正式 UI 图标=24格 stroke SVG,禁 emoji

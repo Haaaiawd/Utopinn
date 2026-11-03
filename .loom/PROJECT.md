@@ -25,19 +25,26 @@
 
 ## Design document map
 
-- `design/plugin-architecture.md`(system)— cordis 内核+profile/patch组合+事件五模式+服务四角色+seam 清单
+- `design/plugin-architecture.md`(system)— cordis 内核+profile/patch组合+事件五模式+服务四角色+seam 清单+插件UI贡献点
 - `design/core-engine.md`(system)— 服务端大脑移植的责任、边界、副作用分层
 - `design/generation-api.md`(contract)— /api/generate + WS ticket 生成管线契约
 - `design/mobile-panels.md`(experience)— 移动端面板页与 CardApp 沙箱 UX
 - `design/perf-budget.md`(verification)— 渲染面分层+楼层WebView预算+性能预算数字
 - `design/compat-golden-diff.md`(verification)— 语料+golden 捕获+diff 分级机制
+- `design/web-ia.md`(experience)— ST 全部UI面重排:五域IA/故事=卡·规则=书心智/设置八节/实证痛点清单/ST对照表29条(认可稿:web-ui-mockup.html)
+- `design/conversation-renderers.md`(contract)— conversationRenderer seam:宿主契约/prose+bubble内置/stageScheme/社区渲染器/R1-R5调研挂账
 
 ## Professional capability map
 
-- `capabilities/mobile-app-stack/capability.md` — SDK58/expo-router/Query+WS/LegendList/streamdown/NativeWind 选型(决定 TASK-008/009 实现)
-- `capabilities/web-spa-stack/capability.md` — Vite+React19+Tailwind4+shadcn/RHF+Zod/CM6(决定 TASK-010)
+- `capabilities/mobile-app-stack/capability.md` — SDK58/expo-router/Query+WS/LegendList/streamdown/NativeWind 选型(决定 TASK-008/009)
+- `capabilities/web-spa-stack/capability.md` — Vite+React19+Tailwind4+shadcn/RHF+Zod/CM6+桌面壳/主题/i18n(决定 TASK-010)
 - `capabilities/st-engine-compat/capability.md` — 特征化移植策略+行为面断言清单+验收阈值(决定 TASK-004/005/006/007)
-- `capabilities/sandboxed-card-apps/capability.md` — 沙箱容器/nonce白名单桥/CSP/shim降级(决定 TASK-009)
+- `capabilities/sandboxed-card-apps/capability.md` — 沙箱容器/nonce白名单桥/CSP/shim降级/状态面板+渲染器沙箱复用(决定 TASK-009/014)
+- `capabilities/plugin-kernel/capability.md` — cordis core选型/插件UI六贡献点/profile+patch组合/旧ST插件adapter(决定 TASK-011)
+- `capabilities/conversation-renderers/capability.md` — 宿主契约/内置渲染器集/stageScheme优先级/注册面(决定 TASK-015)
+- `capabilities/import-export/capability.md` — 万能导入手势/无损预览/备份同步/ST迁移向导(决定 TASK-016)
+- `capabilities/mvu-runtime/capability.md` — stat_data投影/settle管线位/状态板服务端渲染/变量回执(决定 TASK-013)
+- `capabilities/dev-diagnostics/capability.md` — 诊断独立域/model-visible⟺logged/五工具/degraded可视化(决定 TASK-017)
 
 ## Project structure
 
@@ -45,7 +52,7 @@
 
 ## Work map
 
-见 `.loom/tasks.json`:10 个任务沿"基线→协议→formats→golden-diff→core→generate API→mobile→panels→web"推进,依赖链已建。
+见 `.loom/tasks.json`:17 个任务。主序:005(完)→ 011内核+006管线+015渲染器契约 并行 → 007生成API → 008首个dogfood+013MVU+014card-runtime → 009面板 → 010 web全量(含016导入导出面/017诊断域)。V1=聊天+完整管理端+MVU+TH T0/T1。
 
 ## Decision history
 

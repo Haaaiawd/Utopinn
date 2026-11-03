@@ -109,3 +109,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: project-wide or not yet classified
 - Recorded: 2026-11-03T06:35:36.368Z
+
+## D-015: IA v3 认可 + 对话渲染器升 seam + capability 扩展为9个 + 任务图17任务
+
+- Current decision: (1)桌面应用壳(标题栏/activity rail/二级侧栏/右面板/状态栏)+暗色默认/纸面亮色,web-ui-mockup.html 为认可稿,取代线稿;(2)对话呈现升为 conversationRenderer seam——prose(默认)/bubble 内置,论坛体/galgame/直播流归社区渲染器,卡可声明 stageScheme(用户覆盖优先),渲染器只做呈现,消息语义宿主供给;(3)扩展+插件合并为一域"扩展";作者注/Guide/注入统一为"注入"三作用域;正则一引擎多作用域;状态板=系统面板一种;(4)capability 从4扩到9:新增 plugin-kernel/conversation-renderers/import-export/mvu-runtime/dev-diagnostics;(5)任务图扩到17:新增 TASK-015(渲染器契约+gal/论坛调研)、TASK-016(导入导出中心)、TASK-017(诊断域);TASK-012 结清。(6)正式UI图标=24格stroke SVG禁emoji;i18n=中英双字典;导入导出+开发者诊断为产品两支柱(用户安装仪式/生态引水渠)。
+- Rationale: 用户认可桌面壳结构但要求防偏移落档;对话渲染器是社区生态面,必须契约化(宿主供给数据语义)才能放插件生态;两支柱(import-export/diagnostics)是实证痛点,提为一等域。
+- Source: conversation
+- Supersedes: 无(web-ia-wireframe.html 作废,web-ui-mockup.html 为认可稿)
+- Affects: project-wide
+- Recorded: 2026-11-03T07:10:00.000Z

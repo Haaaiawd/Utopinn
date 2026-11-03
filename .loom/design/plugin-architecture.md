@@ -137,9 +137,24 @@ DSH `ctx.sessionProjections`:注册 fold 单元,把持久事件折成视图。
 | 角色 | 可换? | 计数 | 我们的成员 |
 |---|---|---|---|
 | **core** | 否,单实现随声明走 | 1 owner,0 impls | `ctx.chats`、`ctx.users`、`ctx.settings`、`ctx.hmr` |
-| **seam** | 是,多实现竞争 | 1 owner,1+ impls | `ctx.promptBuilder`、`ctx.variableStore`、`ctx.cdnProxy`、`ctx.cardAssets` |
+| **seam** | 是,多实现竞争 | 1 owner,1+ impls | `ctx.promptBuilder`、`ctx.variableStore`、`ctx.cdnProxy`、`ctx.cardAssets`、`ctx.conversationRenderer` |
 | **bundle** | 是,profile 选一个具体插件 | 1 owner,0 impls | `ctx.generation`(编排器本体)、`ctx.panelBridge` |
 | **service** | 半,输出侧后端可变 | 1 owner,0-1 impls | `ctx.injectedPrompts`、`ctx.telemetry`(若上) |
+
+### 插件 UI 贡献点(DSH 式:插件自带 UI 面)
+
+插件除了服务端 seam,还能往客户端 UI 贡献六类条目——manifest 声明式注册,客户端零插件代码:
+
+| 贡献点 | 宿主呈现 | 例子 |
+|---|---|---|
+| settingsCard | 设置页卡片网格,settingsSchema 自动生成表单 | TTS 插件的参数面板 |
+| navPage | 活动栏/一级导航入口,路由到插件页 | orchestrator/memory-graph 总览 |
+| paletteCmd | ⌘K 命令面板条目 | "重结算本楼变量""导入卡包" |
+| conversationRenderer | 对话渲染器(见 design/conversation-renderers.md) | 论坛体/galgame |
+| sessionPanelItem | 会话抽屉/本局面板项 | 注入源、本局设置组 |
+| statusPanel | 状态面板(面板列表条目,服务端渲染产物) | MVU 状态板、任务面板 |
+
+规则:客户端只渲染 contribution 声明,不执行插件 JS(除 CardApp/渲染器沙箱通道);degraded 时贡献点显示降级态而非消失。
 
 **Seam = Definition/Provider/Consumer 三角齐备**才是完整接缝,缺一不算:
 
