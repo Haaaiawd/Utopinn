@@ -24,18 +24,35 @@ rail = 品牌标 + 域标 + 底部 settings/theme
 沉浸模式 = 内容栏+右面板同收,只留 rail+阅读列(ctbar focus 钮)
 ```
 
-## 规范表(待调研回填)
+## 规范表(调研回填 2026-11-03,来源 GPT/Claude/Linear/Geist/VS Code 实测惯例)
 
 | 维度 | 采用值 | 依据 |
 |---|---|---|
-| sidebar 行高/缩进阶梯 | ? | 待填 |
-| rail 宽度/icon 尺寸/hit area | 52px / 19px / 36px(暂定) | 待核 |
-| 字号阶梯(title/body/caption) | ? | 待填 |
-| spacing 页 padding/段距 | ? | 待填 |
-| radius 阶梯 | ? | 待填 |
-| icon 尺寸分级 | ? | 待填 |
-| 卡片 vs 扁平列表选用 | ? | 待填 |
-| hover/focus/active 三态 | ? | 待填 |
+| rail 宽度/icon/hit | **48px / 20px / 40-48px** | VS Code ACTIVITYBAR_WIDTH=48;L1 复合剪影用 20(细节多,24 糊)。52 是非标,压回 48 |
+| rail active 态 | 图标后圆角 wash(--sel)+提亮 | Discord/Slack 式;左指示条偏编辑器口音,弃 |
+| 行高 | **34-36px**(列表行/组头同高) | GPT 33-36、Claude ~33;长文阅读产品不取 Linear 28 |
+| 行 padding/radius | 纵 8-10、横 10-12、radius 8-10 | GPT 6/10 r10、Claude r8 |
+| 组内缩进 | 子行比组头 +~24px,只一档 | GPT Projects;再深用面包屑 |
+| section label | **12px/500/ink3/非 caps**;caps 只留管理页表单 | GPT"Today"式;11px caps 是编辑器口音,聊天区弃 |
+| 行内字 | **14px/400-500**,ink2→ink hover | GPT 14/500;Linear 13 是工具密度特例 |
+| 字号阶梯 | title 16-17/600 · 区块 14-15/500-600 · UI 正文 **14** · **新增 --fs-ui-sm 13**(设置/诊断/表格,消灭游离 12.5) · caption 12/ink3 | Geist copy-14/label-13/label-12 |
+| 阅读正文 | 16-17.5/lh1.6-1.9(当前 17.5/1.9 保,可加 16/1.8 紧凑档) | GPT 16/1.5 |
+| spacing | 4px 基;页 padding 24-32;段距 16-24;行内 gap 8-10;卡 padding 14-16;阅读栏 max 700-768(当前 760✓) | Geist 4px 基实测 |
+| radius | **6/10/14/22+pill 保持不动** | shadcn base 10 兼容 |
+| icon 三档纪律 | **L1=20(rail)/ L2=16(工具钮)/ L3=12(行内)** | VS Code codicon 16/12 两级制 + rail 一档;消灭 15/17/19 游离值 |
+| 状态点 | 6px | 现状✓ |
+| 卡片 vs 扁平 | 卡=浏览异质(Library 卡库);行=扫描同质(会话/规则/诊断);同质套卡=边框噪音红线 | NN/g cards 定义 |
+| hover | #fff@7-10%(dark)/#000@4-6%(light) wash | 现 --bubble ✓ |
+| selected | wash ~11% + 字 ink2→ink、wt 400→500 | 现 --sel ✓ |
+| focus ring | ring-2/40 只给键盘焦点 | shadcn v4 ✓(Tailwind v4 ring 默认 1px,写死宽度正确) |
+| 危险态 | 只文字/图标转 err,不着底 | GPT/Linear ✓现状 |
+| 禁用 | opacity .45 + pointer-events:none | ✓ |
+| 过渡 | ≤150ms transition-colors | Linear snappy ✓ |
+| tooltip | **delay 700→400ms**(Provider 级),rail 标配、行内不配 | NN/g 300-500;Radix 默认偏慢 |
+| tabular-nums | **非全局**——只数字列:sb-group-count/时间戳/诊断表格/token 计数 | Sentry 惯例 |
+| hit area | 桌面最小 24、实用 28-32;icon-sm 26 仅限行内,独立钮 ≥28 | WCAG 2.2 |
+| 双色分配铁律 | 全 app 只允许 2 底色+1 浮起色+2 档覆盖灰+发丝线;新颜色=bug | GPT --sidebar-surface 17/--main 21/--elevated 2f |
+| 待补样式清单 | `.rail` `.rail-mark` `.rail-btn` `.sb-new` `.sb-group-head` `.sb-group-ava` `.sb-sect` `.sb-item-title` `.sb-fold` `.sb-foot-ava` 全部零定义 | 调研报告实测 styles/ 下缺席 |
 
 ## 否决记录
 
