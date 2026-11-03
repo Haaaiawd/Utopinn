@@ -32,6 +32,7 @@
    <button data-go="w-gen">生成配置</button>
    <button data-go="w-ext">扩展</button>
    <button data-go="w-plugins">插件</button>
+   <button data-go="w-diag">诊断</button>
    <button data-go="w-settings">设置</button>
    <div class="navgroup">移动端(薄壳)</div>
    <button data-go="m-chat">聊天</button>
@@ -40,7 +41,7 @@
    <button data-go="m-panel-app">└ 卡应用全屏</button>
    <button data-go="m-me">我的</button>
  </nav></aside>
- <main class="workspace"><header class="topbar"><h1 id="pageTitle">聊天</h1><div class="toolbar"><button class="quiet" id="reviewButton">✎ 批注</button><button class="quiet" id="layersButton">图层</button><button class="quiet" id="inspectorButton" aria-expanded="false" aria-controls="inspector">ⓘ 说明</button></div></header><div class="content" id="screen"></div></main>
+ <main class="workspace"><header class="topbar"><h1 id="pageTitle">聊天</h1><div class="toolbar"><button class="quiet" data-inert title="命令面板">⌘K</button><button class="quiet" id="reviewButton">✎ 批注</button><button class="quiet" id="layersButton">图层</button><button class="quiet" id="inspectorButton" aria-expanded="false" aria-controls="inspector">ⓘ 说明</button></div></header><div class="content" id="screen"></div></main>
  <aside class="inspector" id="inspector" aria-label="页面说明"><button class="close" id="inspectorClose" aria-label="关闭">×</button><h3>页面说明</h3><p id="pageInfo" class="muted"></p><section><h3>评审批注</h3><p class="muted" style="font-size:12px">批注是本机评审记录,可导出为修改提示词回给 AI。</p><div id="reviewList"></div><button class="quiet" id="copyReview">复制为修改提示词</button><div class="review-export hidden" id="reviewExport"></div></section></aside>
 <div class="review-hint" id="reviewHint">批注模式:点击页面任意位置留下批注 · Esc 或再次点击按钮退出</div>
 </div>
@@ -67,6 +68,8 @@
  <div class="fold"><b>会话设置 <span>▾</span></b><p class="muted" style="font-size:12px">自动继续/作者注深度/聊天级世界书绑定</p></div>
  <div class="fold"><b>世界书激活预览 <span>▾</span></b><p class="muted" style="font-size:12px">上一轮哪些条目被注入(调试友好)</p></div>
  <div class="fold"><b>面板入口 <span>▾</span></b><p class="muted" style="font-size:12px">本卡的 CardApp/状态板 → 打开面板</p></div>
+ <div class="fold"><b>作者注 / CFG / Logprobs <span>▾</span></b><p class="muted" style="font-size:12px">ST 无入口的浮板 → 这里直达(§10#5)</p></div>
+ <div class="fold"><b>会话管理 <span>▾</span></b><p class="muted" style="font-size:12px">重命名/合并/分支/导出/搜索消息/统计</p></div>
  <div class="fold"><b>群员(插件位) <span>▾</span></b><p class="muted" style="font-size:12px">群聊编排是插件,D-012</p></div>
  <button class="quiet" data-go="w-chat">关闭抽屉</button><button class="annotation" data-layer="ux" data-note="drawer">4</button></div></div>
 </div></template>
@@ -125,6 +128,18 @@
  <div class="listrow"><span>⚠ <b>some-plugin</b> <span class="muted">degraded:inject 缺失 'llm'</span></span><button class="quiet" data-inert>诊断</button></div>
 </div>
 <p class="muted"><button class="annotation" data-layer="ux" data-note="plugins" style="position:relative;top:auto;right:auto">11</button> 装的是补丁行不是黑盒:启用社区 WI 引擎=patch 替换 promptBuilder provider,tavern-core 仍在可回退。</p></template>
+
+<template id="page-w-diag"><div class="kicker">WEB / 诊断(开发者一等公民,§8)</div><h2>诊断</h2>
+<div class="grid2">
+ <div class="card"><h3>Prompt 查看器</h3><p class="muted">上一轮发给 LLM 的完整 messages[](request inspector 精神,"model-visible means logged")</p><div class="skeleton" style="height:60px">role: system | 2,341 tok<br>role: user | …</div><button class="annotation" data-layer="ux" data-note="diagprompt">19</button></div>
+ <div class="card"><h3>世界书激活轨迹</h3><p class="muted">本轮 WI 扫描:哪些条目命中/为何/预算消耗——调卡人核心工具</p></div>
+ <div class="card"><h3>变量与 op 日志</h3><p class="muted">stat_data 投影当前态+UpdateVariable 操作历史(Luker mes_var_ops 精神)</p></div>
+ <div class="card"><h3>生成任务监视</h3><p class="muted">服务端生成任务队列/耗时/取消(Luker generate-task)</p></div>
+ <div class="card"><h3>存储检查器</h3><p class="muted">数据目录/聊天文件/缓存体积 drill-down</p></div>
+ <div class="card"><h3>golden-diff 结果</h3><p class="muted">语料卡兼容性判卷,KNOWN-GAP 清单</p></div>
+ <div class="card"><h3>调试导出</h3><p class="muted">打包日志/性能采样给 issue 用(Luker debug-export)</p></div>
+ <div class="card"><h3>插件 degraded</h3><p class="muted">降级插件诊断汇总(inject 缺失等)</p></div>
+</div></template>
 
 <template id="page-w-settings"><div class="kicker">WEB / 设置</div><h2>设置</h2>
 <div class="grid2">
@@ -208,6 +223,7 @@ const pages={
 'w-ext':{title:"扩展",info:"正则/QR(官方重实现)/注入/卡资产查看。"},
 'w-plugins':{title:"插件",info:"DSH 式插件管理:列表/安装/启禁/诊断;补丁行语义。"},
 'w-settings':{title:"设置",info:"账号/API源/外观(服务端同步)/语言/数据/高级。"},
+'w-diag':{title:"诊断",info:"开发者工具一等公民:prompt查看/WI轨迹/变量op/任务/存储/golden/导出。"},
 'm-chars':{title:'移动端·角色',info:'卡列表+搜索+导入入口;编辑全归 web。'},
 'm-chat':{title:"移动端·聊天",info:"薄壳聊天:消息流+输入+长按菜单,无管理杂项。"},
 'm-panel':{title:"移动端·面板",info:"当前卡面板入口列表→点开全屏(D-013)。"},
@@ -233,6 +249,7 @@ panellist:"⑮ 面板页=入口列表不是直接 WebView:一张卡可能有多�
 mchars:"⑱ 移动端角色页刻意只读:选卡/搜索/导入入口,编辑一律 web——职责切分是 D-013 核心。",
 webview:"⑯ 全屏 WebView:沙箱容器+nonce 桥,卡代码不可信;返回键回列表。",
 me:"⑰ 我的 tab 刻意薄:凡是'配置'都暗示去 web 端;移动端只留用户态。",
+diagprompt:"⑲ Prompt 查看器=调试兼容性的第一工具:模型可见的一切必须能从这里重建(不变式)。",
 };
 const assets={
 A01:{name:"角色卡头像/封面图",type:"Image",page:"w-chars",priority:"P0",intent:"卡识别主视觉,库网格的情感锚点",constraints:"PNG 内嵌或外链;3:4 竖图;暗色主题对比",reuse:"聊天页消息头像/面板页头图同源裁切"},
