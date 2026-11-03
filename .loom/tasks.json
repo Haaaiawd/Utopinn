@@ -1293,15 +1293,19 @@
       "touches": [],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "active",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "CardAppFrame iframe 沙箱",
+          "uberge-panel 桥协议",
+          "ctxApi 读面"
+        ],
+        "current": "宿主首刀入库,typecheck/build 绿",
+        "next": "变量写面(settle sidecar)、事件 th.eventOn、degraded 徽标、stories 域页"
       },
       "evidence": [],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-03T11:26:03.625Z",
+      "updated_at": "2026-11-03T11:48:13.862Z",
       "integrity_version": 1,
       "id": "TASK-022",
       "title": "CardApp web 宿主:iframe 沙箱 + postMessage 桥",
