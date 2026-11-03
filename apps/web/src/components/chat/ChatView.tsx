@@ -10,7 +10,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationView, MessageViewModel, RendererActions, RendererMessageRole } from '@uberge/protocol';
 import { useI18n } from '../../i18n';
 import { MOCK_MESSAGES } from '../../api/mock';
-import { getChat, appendUserMessage } from '../../api/chats';
+import { getChat, appendUserMessage, patchSwipe } from '../../api/chats';
 import { postGenerate, streamJob } from '../../api/generate';
 import type { ChatSummary, PreviewResponse, PreviewResult } from '../../types';
 import { Icon } from '../Icon';
@@ -93,7 +93,12 @@ export function ChatView({
     const actions = useMemo<RendererActions>(() => ({
         swipe: (messageId, index) => {
             // Host-owned semantics: swipe switch replaces the whole floor
-            // (design R5 — renderers never implement swipe meaning).
+            // (design R5 — renderers never implement swipe meaning). Loaded
+            // floors carry the storage index as id → persist swipe_id.
+            if (live) {
+                patchSwipe(chat.charDir, chat.chatName, Number(messageId), index)
+                    .catch((e) => onHint(`${t('chat.swipe')} ${t('chat.send.failed')}: ${e instanceof Error ? e.message : e}`));
+            }
             setMessages((prev) => prev.map((m) => {
                 if (m.id !== messageId || !m.swipes?.[index]) return m;
                 const s = m.swipes[index];
