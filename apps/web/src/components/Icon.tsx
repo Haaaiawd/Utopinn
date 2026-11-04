@@ -4,9 +4,9 @@
 import {
     ArrowClockwise, ArrowUp, Book, BookBookmark, Cards, CaretDown, CaretLeft,
     CaretRight, ChartLine, ChatsCircle, Check, Clock, Command, CornersOut, DotsThree,
-    DownloadSimple, Eye, File, GearSix, Globe, GridFour, House, Layout, Lightning, List,
-    MagnifyingGlass, Minus, Moon, NotePencil, Plus, Pulse, PuzzlePiece, SidebarSimple,
-    Square, Stack, Sun, User, X,
+    DownloadSimple, Eye, File, GearSix, Globe, GridFour, House, Image, Layout, Lightning,
+    Link, List, MagnifyingGlass, Minus, Moon, NotePencil, Plus, Pulse, PuzzlePiece,
+    SidebarSimple, Square, Stack, Sun, Trash, UploadSimple, User, Warning, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 
@@ -52,6 +52,11 @@ const MAP = {
     pulse: Pulse,
     globe: Globe,
     chartLine: ChartLine,
+    upload: UploadSimple,
+    link: Link,
+    trash: Trash,
+    warning: Warning,
+    image: Image,
 } as const satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof MAP;

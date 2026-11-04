@@ -4,6 +4,7 @@ import type { Feature, FeatureCtx } from '../kernel/kernel';
 import { FoyerView } from '../components/views/FoyerView';
 import { LibraryView } from '../components/views/LibraryView';
 import { RulesView } from '../components/views/RulesView';
+import { ImportView } from '../components/views/ImportView';
 import { ExtensionsView } from '../components/views/ExtensionsView';
 import { SettingsView } from '../components/views/SettingsView';
 
@@ -13,10 +14,12 @@ export const domainsFeature: Feature = {
         ctx.add('nav.rail', { view: 'foyer', icon: 'foyer', order: 0 });
         ctx.add('nav.rail', { view: 'stories', icon: 'stories', order: 20 });
         ctx.add('nav.rail', { view: 'rules', icon: 'rules', order: 30 });
+        ctx.add('nav.rail', { view: 'import', icon: 'import', order: 35 });
         ctx.add('nav.rail', { view: 'extensions', icon: 'extensions', order: 40 });
         ctx.add('view', { view: 'foyer', Component: FoyerView });
         ctx.add('view', { view: 'stories', Component: LibraryView });
         ctx.add('view', { view: 'rules', Component: RulesView });
+        ctx.add('view', { view: 'import', Component: ImportView });
         ctx.add('view', { view: 'extensions', Component: ExtensionsView });
         ctx.add('view', { view: 'settings', Component: SettingsView });
         ctx.locale('domains', {
@@ -24,6 +27,7 @@ export const domainsFeature: Feature = {
                 'nav.foyer': '门厅',
                 'nav.stories': '故事',
                 'nav.rules': '规则',
+                'nav.import': '导入',
                 'nav.extensions': '扩展',
 
                 'foyer.hello.morning': '早上好',
@@ -39,7 +43,6 @@ export const domainsFeature: Feature = {
                 'lib.search': '搜索卡片',
                 'lib.new': '新建/导入',
                 'lib.viewToggle': '切换网格/列表',
-                'lib.importSoon': '导入管线在路上 —— TASK-016',
                 'lib.noChat': '这个角色还没有会话 —— 先去聊天页开一个',
                 'lib.empty': '没有匹配的卡片',
                 'lib.chatCount': '会话',
@@ -89,6 +92,54 @@ export const domainsFeature: Feature = {
                 'rules.entry.keys': '触发关键词,逗号分隔',
                 'rules.entry.content': '条目正文(命中后注入提示词)',
                 'rules.entry.delete': '删除条目',
+                'rules.import': '导入',
+
+                'imp.title': '导入中心',
+                'imp.desc': '卡、世界书、预设、人设 —— 拖进来、贴链接或选文件,预览确认后入库。',
+                'imp.veil': '松手导入',
+                'imp.urlPlaceholder': 'https://… 卡 / 世界书 / 预设直链',
+                'imp.urlGo': '拉取',
+                'imp.urlBusy': '拉取中…',
+                'imp.urlInvalid': '只支持 http(s) 链接',
+                'imp.urlFailed': '链接拉取失败',
+                'imp.drop': '拖文件到这里 —— 或点击选择',
+                'imp.formats': 'PNG / JSON / CharX / BYAF;世界书、预设、人设走 JSON',
+                'imp.pending': '待导入',
+                'imp.previewing': '识别中…',
+                'imp.remove': '移除',
+                'imp.commit': '导入',
+                'imp.committing': '导入中…',
+                'imp.done': '已导入',
+                'imp.renamed': '已改名',
+                'imp.tooLarge': '文件超过 64MB,已跳过',
+                'imp.needsServer': '离线预览 —— 入库要连服务端',
+                'imp.conflict.existing': '同名已存在:',
+                'imp.conflict.need': '同名冲突 —— 先选处理方式',
+                'imp.conflict.rename': '改名',
+                'imp.conflict.overwrite': '覆盖',
+                'imp.conflict.skip': '跳过',
+                'imp.kind.char': '角色卡',
+                'imp.kind.world': '世界书',
+                'imp.kind.preset': '预设',
+                'imp.kind.persona': '人设',
+                'imp.sum.target': '落点',
+                'imp.sum.entries': '条目',
+                'imp.sum.prompts': '提示词',
+                'imp.sum.descLen': '字符',
+                'imp.sum.book': '书条目',
+                'imp.sum.regex': '正则',
+                'imp.sum.cardapp': 'CardApp 文件',
+                'imp.sum.depth': '深度提示',
+                'imp.sum.bound': '绑定书',
+                'imp.sum.alt': '备选开场',
+                'imp.sum.avatarBundled': '自带封面',
+                'imp.sum.by': '作者',
+                'imp.history': '最近导入',
+                'imp.history.clear': '清空',
+                'imp.history.empty': '还没有导入记录 —— 拖张卡进来。',
+                'imp.res.ok': '已导入',
+                'imp.res.skipped': '已跳过',
+                'imp.res.failed': '失败',
 
                 'ext.title': '扩展',
                 'ext.desc': '服务端执行的扩展能力 —— 客户端只是它们的容器与管理面。',
@@ -142,6 +193,7 @@ export const domainsFeature: Feature = {
                 'nav.foyer': 'Foyer',
                 'nav.stories': 'Stories',
                 'nav.rules': 'Rules',
+                'nav.import': 'Import',
                 'nav.extensions': 'Extensions',
 
                 'foyer.hello.morning': 'Good morning',
@@ -157,7 +209,6 @@ export const domainsFeature: Feature = {
                 'lib.search': 'Search cards',
                 'lib.new': 'New / import',
                 'lib.viewToggle': 'Toggle grid/list',
-                'lib.importSoon': 'Import pipeline on the way — TASK-016',
                 'lib.noChat': 'No chats on this character yet — start one from Chat',
                 'lib.empty': 'No matching cards',
                 'lib.chatCount': 'chats',
@@ -207,6 +258,54 @@ export const domainsFeature: Feature = {
                 'rules.entry.keys': 'Trigger keys, comma separated',
                 'rules.entry.content': 'Entry content (injected into the prompt when triggered)',
                 'rules.entry.delete': 'Delete entry',
+                'rules.import': 'Import',
+
+                'imp.title': 'Import Center',
+                'imp.desc': 'Cards, world books, presets, personas — drop them, paste a link, or pick files. Review the preview before they land.',
+                'imp.veil': 'Drop to import',
+                'imp.urlPlaceholder': 'https://… direct link to a card / worldbook / preset',
+                'imp.urlGo': 'Fetch',
+                'imp.urlBusy': 'Fetching…',
+                'imp.urlInvalid': 'Only http(s) links are supported',
+                'imp.urlFailed': 'Failed to fetch link',
+                'imp.drop': 'Drop files here — or click to choose',
+                'imp.formats': 'PNG / JSON / CharX / BYAF; worldbooks, presets and personas go as JSON',
+                'imp.pending': 'Pending',
+                'imp.previewing': 'Sniffing…',
+                'imp.remove': 'Remove',
+                'imp.commit': 'Import',
+                'imp.committing': 'Importing…',
+                'imp.done': 'Imported',
+                'imp.renamed': 'renamed',
+                'imp.tooLarge': 'File exceeds 64MB and was skipped',
+                'imp.needsServer': 'Offline preview — committing needs the server',
+                'imp.conflict.existing': 'Name already exists:',
+                'imp.conflict.need': 'Name conflict — pick how to resolve it',
+                'imp.conflict.rename': 'Rename',
+                'imp.conflict.overwrite': 'Overwrite',
+                'imp.conflict.skip': 'Skip',
+                'imp.kind.char': 'Character',
+                'imp.kind.world': 'World book',
+                'imp.kind.preset': 'Preset',
+                'imp.kind.persona': 'Persona',
+                'imp.sum.target': 'Lands as',
+                'imp.sum.entries': 'entries',
+                'imp.sum.prompts': 'prompts',
+                'imp.sum.descLen': 'chars',
+                'imp.sum.book': 'book entries',
+                'imp.sum.regex': 'regex',
+                'imp.sum.cardapp': 'CardApp files',
+                'imp.sum.depth': 'depth prompt',
+                'imp.sum.bound': 'Bound book',
+                'imp.sum.alt': 'alt greetings',
+                'imp.sum.avatarBundled': 'bundled cover',
+                'imp.sum.by': 'by',
+                'imp.history': 'Recent imports',
+                'imp.history.clear': 'Clear',
+                'imp.history.empty': 'No imports yet — drop a card in.',
+                'imp.res.ok': 'Imported',
+                'imp.res.skipped': 'Skipped',
+                'imp.res.failed': 'Failed',
 
                 'ext.title': 'Extensions',
                 'ext.desc': 'Extension capabilities execute server-side — the client is their container and management surface.',

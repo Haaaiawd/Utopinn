@@ -44,7 +44,7 @@ function helloKey(hour: number): 'night' | 'morning' | 'afternoon' | 'evening' {
 
 export function FoyerView() {
     const { t, locale } = useI18n();
-    const { chats, cards, selectChat, newChat, setView, openCharacter, hint } = useShell();
+    const { chats, cards, selectChat, newChat, setView, openCharacter } = useShell();
 
     /** 最近会话 = 「继续上次」唯一主角;零会话时整块让位给精选。 */
     const recent = useMemo<ChatSummary | undefined>(
@@ -113,7 +113,7 @@ export function FoyerView() {
                 <Button variant="secondary" size="sm" onClick={() => newChat()}>
                     <Icon name="plus" size={14} />{t('sidebar.newChat')}
                 </Button>
-                <Button variant="secondary" size="sm" onClick={() => hint(t('lib.importSoon'))}>
+                <Button variant="secondary" size="sm" onClick={() => setView('import')}>
                     <Icon name="import" size={14} />{t('foyer.import')}
                 </Button>
             </div>

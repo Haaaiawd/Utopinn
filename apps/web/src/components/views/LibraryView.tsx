@@ -156,7 +156,7 @@ function CharacterPage({ card, mock, onBack }: { card: CardItem; mock: boolean; 
 
 export function LibraryView() {
     const { t } = useI18n();
-    const { chats, cards, cardsMock, storiesFocus, clearStoriesFocus, hint } = useShell();
+    const { chats, cards, cardsMock, storiesFocus, clearStoriesFocus, setView } = useShell();
     /** 详情态:打开的 charDir;门厅经 storiesFocus 中转进来。 */
     const [opened, setOpened] = useState<string | null>(null);
     const [filter, setFilter] = useState<FilterId>('all');
@@ -206,8 +206,8 @@ export function LibraryView() {
                             <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                                 placeholder={t('lib.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                         </div>
-                        <Button variant="secondary" size="sm" onClick={() => hint(t('lib.importSoon'))}>
-                            <Icon name="plus" size={14} />{t('lib.new')}
+                        <Button variant="secondary" size="sm" onClick={() => setView('import')}>
+                            <Icon name="import" size={14} />{t('lib.new')}
                         </Button>
                     </div>
 

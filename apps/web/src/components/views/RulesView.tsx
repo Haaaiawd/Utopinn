@@ -33,7 +33,7 @@ function WorldList({ worlds, mock, onOpen, onCreated, refresh }: {
     refresh: () => void;
 }) {
     const { t } = useI18n();
-    const { hint } = useShell();
+    const { hint, setView } = useShell();
     const [filter, setFilter] = useState<'all' | 'global' | 'bound'>('all');
     const [query, setQuery] = useState('');
     const [creating, setCreating] = useState(false);
@@ -81,6 +81,9 @@ function WorldList({ worlds, mock, onOpen, onCreated, refresh }: {
                 </div>
                 <Button variant="secondary" size="sm" onClick={() => { setCreating((v) => !v); setNewName(''); }}>
                     <Icon name="plus" size={14} />{t('rules.new')}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setView('import')}>
+                    <Icon name="import" size={14} />{t('rules.import')}
                 </Button>
             </div>
 
