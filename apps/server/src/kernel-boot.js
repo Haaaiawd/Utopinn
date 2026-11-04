@@ -1,23 +1,24 @@
 /**
- * kernel-boot —— 服务端 Cordis 装配点(B 步首迁)。
+ * kernel-boot —— 服务端 Cordis 装配点(B 步)。
  *
  * createAppContext() 立根 context + ServiceCatalog;
- * webServer 服务立在这里:plugins 经 inject:['webServer'] 等位,
- * apply 里 register() 贡献路由,disposer 由插件生命周期收回。
+ * webServer 服务立在这里,插件清单经 profile.yaml + loadProfileFile
+ * 声明式装载(DSH cordis.yml 同形):每行状态(active/degraded/
+ * disabled/failed)打到日志,degraded 不静默不连坐。
+ *
+ * 顶层 await:ESM TLA,server-startup import 本模块时自然等插件就绪
+ * —— Express 挂载 dispatcher 之前路由表已就位,无启动竞态。
  *
  * 对外只出两样:
  *   webServer.middleware()   → server-startup.js 挂进 Express
- *                              (放在 legacy 挂载前:命中即接管,
- *                               未命中 next() 落回 legacy —— 按面切)
+ *                              (/api/uberge 面已 100% 插件化;未命中
+ *                               next() 继续向后走)
  *   webServer.upgradeListener() → server-main.js 挂 httpServer 'upgrade'
- *                              (未命中不动 socket,ws-delivery 共存)
+ *                              (/api/ws-delivery 经 registerUpgrade 贡献)
  */
-import { createAppContext, WebServer } from '@uberge/kernel';
-import * as ubergeLibrary from './plugins/uberge-library.js';
-import * as ubergeDiag from './plugins/uberge-diag.js';
-import * as ubergeGenerate from './plugins/uberge-generate.js';
-import * as ubergeMvu from './plugins/uberge-mvu.js';
-import * as ubergeDelivery from './plugins/uberge-delivery.js';
+import { createAppContext, WebServer, loadProfileFile } from '@uberge/kernel';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
 export const appCtx = createAppContext();
 
@@ -26,8 +27,14 @@ appCtx.provide('webServer', new WebServer());
 appCtx.catalog.register({ role: 'core', name: 'webServer', providedBy: 'kernel-boot' });
 export const webServer = appCtx.webServer;
 
-appCtx.plugin(ubergeLibrary);
-appCtx.plugin(ubergeDiag);
-appCtx.plugin(ubergeGenerate);
-appCtx.plugin(ubergeMvu);
-appCtx.plugin(ubergeDelivery);
+const here = dirname(fileURLToPath(import.meta.url));
+const loaded = await loadProfileFile(appCtx, join(here, 'profile.yaml'));
+for (const row of loaded) {
+    const line = `[kernel] plugin ${row.id}: ${row.status}${row.reason ? ` (${row.reason})` : ''}`;
+    if (row.status === 'active') console.info(line);
+    else console.warn(line);
+}
+const failed = loaded.filter((r) => r.status === 'failed');
+if (failed.length) {
+    console.warn(`[kernel] ${failed.length} plugin(s) failed to load — degraded surface, not fatal`);
+}

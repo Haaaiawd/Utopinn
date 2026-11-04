@@ -1,0 +1,21 @@
+# Uberge 服务端插件清单(DSH cordis.yml 同形,B 步 c 面)
+#
+# 装载语义(loadProfile):
+#   - 按列表顺序装载;inject 缺失 → degraded(记原因,不静默不连坐)
+#   - disabled: true 行保留位不装载
+#   - module 为相对本文件的路径或裸 specifier
+#
+# 内建面(webServer 路由/升级位贡献者)排最前 —— 它们 inject webServer,
+# 服务由 kernel-boot 在 loadProfileFile 之前提供。
+name: uberge-server
+plugins:
+  - id: uberge-library
+    module: ./plugins/uberge-library.js
+  - id: uberge-diag
+    module: ./plugins/uberge-diag.js
+  - id: uberge-generate
+    module: ./plugins/uberge-generate.js
+  - id: uberge-mvu
+    module: ./plugins/uberge-mvu.js
+  - id: uberge-delivery
+    module: ./plugins/uberge-delivery.js
