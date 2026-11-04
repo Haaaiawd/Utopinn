@@ -4,7 +4,12 @@
 // swipes:[...], extra} — mapped here into the renderer contract
 // (MessageViewModel) so renderers never see storage fields.
 import { apiFetch, apiGet, apiPost, assertOk } from './client';
+import { MVU_STATUS_PLACEHOLDER } from '@uberge/protocol';
 import type { MessageViewModel, SwipeView } from '@uberge/protocol';
+
+/** 剥离 MVU 状态占位符 —— 存储层保留(卡 shim 定位用),视图层不渲染。 */
+const stripStatusPlaceholder = (s: string) =>
+    s.includes(MVU_STATUS_PLACEHOLDER) ? s.replaceAll(MVU_STATUS_PLACEHOLDER, '').trimEnd() : s;
 
 interface StChatMessage {
     name?: string;
@@ -29,7 +34,7 @@ export function stToView(m: StChatMessage, id: number): MessageViewModel {
     const swipes: SwipeView[] | undefined = Array.isArray(m.swipes) && m.swipes.length > 1
         ? m.swipes.map((s, i) => ({
             index: i,
-            content: typeof s === 'string' ? s : (s.mes ?? ''),
+            content: stripStatusPlaceholder(typeof s === 'string' ? s : (s.mes ?? '')),
             timestamp: typeof s === 'object' && s.send_date != null ? Number(s.send_date) : undefined,
         }))
         : undefined;
@@ -38,7 +43,7 @@ export function stToView(m: StChatMessage, id: number): MessageViewModel {
         id,
         role: m.is_user ? 'user' : m.is_system ? 'system' : 'assistant',
         name: m.name ?? '',
-        content: base?.content ?? m.mes ?? '',
+        content: stripStatusPlaceholder(base?.content ?? m.mes ?? ''),
         timestamp: m.send_date != null ? Number(m.send_date) : undefined,
         swipes,
         activeSwipe: swipes ? Math.min(active, swipes.length - 1) : undefined,

@@ -29,6 +29,7 @@ import { getChatRepo, getGroupRepo, getStorageEngine } from '../storage/index.js
 import { ConflictError, InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
+import { resolveMvuChatTarget, settlePersistedMvuMessage, resettleChatMvu } from '../services/mvu-settle.js';
 
 const isBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
 const maxTotalChatBackups = Number(getConfigValue('backups.chat.maxTotalBackups', -1, 'number'));
@@ -1575,6 +1576,48 @@ function buildGroupPersistTargetHint(request) {
     };
 }
 
+// —— TASK-013 auto-resettle 触发点 ——
+// 写路径落库后串行跑 MVU 投影;与 luker-generation persistGeneratedReply
+// 同款模式:try/catch 吞错 + console.error,绝不阻塞写路径响应。
+function mvuRepoArgsFromRequest(request, { group = false } = {}) {
+    const source = group ? { ...(request.body ?? {}), is_group: true } : request.body;
+    const key = resolveMvuChatTarget(source);
+    if (!key) return null;
+    return {
+        handle: request.user.profile.handle,
+        charDir: key.charDir,
+        name: key.name,
+        isGroup: key.isGroup,
+        groupId: key.groupId,
+    };
+}
+
+/** /save、/patch 后全量重放(楼层被编辑/替换 → 投影重建)。 */
+async function resettleMvuAfterWrite(request, { group = false } = {}) {
+    try {
+        const args = mvuRepoArgsFromRequest(request, { group });
+        if (!args) return;
+        await resettleChatMvu(args);
+    } catch (error) {
+        console.error('[mvu] post-write resettle failed:', error);
+    }
+}
+
+/** /append 后末楼 settle;新建聊天带 autoInit(floor-0 未初始化先补 init)。 */
+async function settleMvuAfterAppend(request, { group = false, autoInit = false } = {}) {
+    try {
+        const args = mvuRepoArgsFromRequest(request, { group });
+        if (!args) return;
+        await settlePersistedMvuMessage({
+            ...args,
+            autoInit,
+            directories: request.user.directories,
+        });
+    } catch (error) {
+        console.error('[mvu] post-append settle failed:', error);
+    }
+}
+
 /**
  * Decodes a single JSON Pointer segment.
  * @param {string} segment
@@ -2162,6 +2205,8 @@ router.post('/save', validateAvatarUrlMiddleware, async function (request, respo
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
         acknowledgeGenerationFromValueOrPersistTarget(request, chatData, buildCharacterPersistTargetHint(request));
+        // TASK-013 auto-resettle:整写后全量重放投影(吞错,不阻塞响应)。
+        await resettleMvuAfterWrite(request);
         return response.send({ ok: true, integrity });
     } catch (error) {
         if (error instanceof InvalidArgumentError) {
@@ -2314,6 +2359,8 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
             }
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
             acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildCharacterPersistTargetHint(request));
+            // TASK-013 auto-resettle:新建聊天 floor-0 未初始化 → autoInit 补 init 再结算。
+            await settleMvuAfterAppend(request, { autoInit: true });
             return response.send({ ok: true, appended: cleanedMessages.length, created: true, integrity: newIntegrity });
         }
 
@@ -2378,6 +2425,8 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
         acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildCharacterPersistTargetHint(request));
+        // TASK-013 auto-resettle:末楼 settle(无 autoInit——存量聊天不主动初始化)。
+        await settleMvuAfterAppend(request);
         return response.send({
             ok: true,
             appended: dedupedMessages.length,
@@ -2497,6 +2546,8 @@ router.post('/patch', validateAvatarUrlMiddleware, async function (request, resp
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
         acknowledgeGenerationFromValueOrPersistTarget(request, operations, buildCharacterPersistTargetHint(request));
+        // TASK-013 auto-resettle:楼层被补丁改写 → 全量重放投影。
+        await resettleMvuAfterWrite(request);
         return response.send({
             ok: true,
             applied: idempotentOperations.length,
@@ -3458,6 +3509,8 @@ router.post('/group/save', async function (request, response) {
         }
         await refreshRecentChatIndexEntry(request, chatFilePath);
         acknowledgeGenerationFromValueOrPersistTarget(request, chatData, buildGroupPersistTargetHint(request));
+        // TASK-013 auto-resettle:整写后全量重放投影(吞错,不阻塞响应)。
+        await resettleMvuAfterWrite(request, { group: true });
         return response.send({ ok: true, integrity: result.integrity });
     } catch (error) {
         if (error instanceof InvalidArgumentError) {
@@ -3644,6 +3697,8 @@ router.post('/group/append', async function (request, response) {
 
         await refreshRecentChatIndexEntry(request, chatFilePath);
         acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildGroupPersistTargetHint(request));
+        // TASK-013 auto-resettle:末楼 settle;新建聊天带 autoInit。
+        await settleMvuAfterAppend(request, { group: true, autoInit: result?.created === true });
         return response.send({ ok: true, ...result });
     } catch (error) {
         if (error instanceof IntegrityMismatchError) {
@@ -3725,6 +3780,8 @@ router.post('/group/patch', async function (request, response) {
 
             await refreshRecentChatIndexEntry(request, chatFilePath);
             acknowledgeGenerationFromValueOrPersistTarget(request, operations, buildGroupPersistTargetHint(request));
+            // TASK-013 auto-resettle:楼层被补丁改写 → 全量重放投影。
+            await resettleMvuAfterWrite(request, { group: true });
             return response.send({
                 ok: true,
                 applied: operations.length,

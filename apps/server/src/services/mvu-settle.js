@@ -185,7 +185,37 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
             }));
         lorebooks.push({ name, entries, isPrimary: name === primaryName });
     }
-    return { lorebooks, primaryLorebookName: primaryName ?? 'unknown' };
+    return { lorebooks, primaryLorebookName: primaryName ?? 'unknown', card };
+}
+
+/** chat_metadata.variables 里 MVU 既存键(镜像过的六件套)。 */
+const MVU_VAR_KEYS = ['stat_data', 'mvu_data', 'schema', 'display_data', 'delta_data', 'initialized_lorebooks'];
+/** 世界书条目里的 MVU 命令语法:_.set(...)/_.assign(...) 等。 */
+const MVU_CMD_RE = /\b_\.\w+\s*\(/;
+
+/**
+ * MVU 相关性门控(upstream should_enable 每聊天开关的服务端等价):
+ * 满足任一即视为 MVU 上下文,否则 init/settle 跳过——非 MVU 卡不该
+ * 长出 stat_data 快照或 StatusPlaceHolder 占位符。
+ *   a) chat_metadata.mvu.enabled === true(显式每聊天开关)
+ *   b) chat_metadata.variables 已有 MVU 镜像键(已初始化/导入的 MVU 聊天)
+ *   c) card.data.extensions.mvu 为真(卡声明)
+ *   d) init 书目条目带 [initvar] 注释或 _. 命令语法(MVU 卡的世界书标配)
+ *   e) floor-0 正文含 <initvar> 块或 _. 命令(MVU 卡的开场初始化惯例)
+ */
+function mvuSignalPresent({ card, chatMetadata, lorebooks, floorText } = {}) {
+    if (chatMetadata?.mvu?.enabled === true) return true;
+    const vars = chatMetadata?.variables;
+    if (vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined)) return true;
+    if (card?.data?.extensions?.mvu || card?.extensions?.mvu) return true;
+    for (const book of lorebooks ?? []) {
+        for (const e of book?.entries ?? []) {
+            if (e?.comment?.toLowerCase().includes('[initvar]')) return true;
+            if (MVU_CMD_RE.test(e?.content ?? '')) return true;
+        }
+    }
+    if (floorText && (/<initvar>/i.test(floorText) || MVU_CMD_RE.test(floorText))) return true;
+    return false;
 }
 
 /**
@@ -213,6 +243,7 @@ export async function initializeMvuChat(args) {
 
     let lorebooks = Array.isArray(args.lorebooks) ? args.lorebooks : null;
     let primaryLorebookName = args.primaryLorebookName;
+    let card = args.card ?? null;
     if (!lorebooks) {
         const resolved = await resolveMvuInitLorebooks({
             handle: args.handle,
@@ -221,6 +252,7 @@ export async function initializeMvuChat(args) {
         });
         lorebooks = resolved.lorebooks;
         primaryLorebookName ??= resolved.primaryLorebookName;
+        card ??= resolved.card;
     }
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
@@ -230,6 +262,11 @@ export async function initializeMvuChat(args) {
             return { status: 'no_chat', initialized: false };
         }
         const floor = body[0];
+        const floorText = [floor?.mes, ...(Array.isArray(floor?.swipes) ? floor.swipes : [])]
+            .filter((s) => typeof s === 'string').join('\n');
+        if (!mvuSignalPresent({ card, chatMetadata: chat.header?.chat_metadata, lorebooks, floorText })) {
+            return { status: 'not_mvu', initialized: false };
+        }
         const swipeId = Number.isInteger(floor?.swipe_id) ? floor.swipe_id : 0;
         const floorVars = (floor?.variables && typeof floor.variables === 'object' && !Array.isArray(floor.variables))
             ? floor.variables
@@ -349,6 +386,20 @@ export async function settlePersistedMvuMessage(args) {
                     updateChatVariables,
                 });
                 if (init.status === 'initialized' || init.status === 'already_initialized') {
+                    if (init.status === 'initialized' && messageIndex === 0) {
+                        // 目标是 floor-0 自身:init 已把开场 swipe 文本 fold 进
+                        // 快照(initializeMvuVariables 内 settleMvuVariables),
+                        // 再 settle 一遍会把 greeting 的 _. 命令二次应用 → 直接返回。
+                        return {
+                            status: 'initialized',
+                            modified: true,
+                            messageIndex,
+                            swipeId: result.swipeId,
+                            baselineIndex: -1,
+                            receipt: result.receipt,
+                            init,
+                        };
+                    }
                     continue;
                 }
                 // no_chat/conflict:按原 no_baseline 结果返回,不阻塞写路径。
@@ -432,6 +483,18 @@ export async function resettleChatMvu(args) {
         const body = Array.isArray(chat?.body) ? chat.body : null;
         if (!chat || !body || body.length === 0) {
             return { status: 'no_chat', modified: false, floors: 0 };
+        }
+        // 非 MVU 聊天直接跳过全量重放(O(n²))——无镜像键且无楼层快照
+        // 即无 MVU 参与过,refold 只会有害无益。
+        const vars = chat.header?.chat_metadata?.variables;
+        const metaMvu = vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined);
+        const floorMvu = body.some((m) => {
+            const v = m?.variables;
+            if (!v || typeof v !== 'object') return false;
+            return Object.values(v).some((s) => isMvuData(s));
+        });
+        if (!metaMvu && !floorMvu) {
+            return { status: 'not_mvu', modified: false, floors: body.length };
         }
 
         let nextBody = body.slice();
