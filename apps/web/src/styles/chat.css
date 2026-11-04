@@ -109,4 +109,7 @@
 .diag-kv dt { color: var(--ink3); }
 .diag-kv dd { color: var(--ink); font-variant-numeric: tabular-nums; }
 
+.cardapp-host { display: flex; flex-direction: column; height: 100%; min-height: 200px; }
+.cardapp-host .cardapp-frame { flex: 1; min-height: 0; }
+.cardapp-degraded { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--line); }
 .cardapp-frame { width: 100%; height: 100%; min-height: 200px; border: 0; border-radius: var(--radius, 10px); background: var(--bg2, #0d0e10); }

@@ -20,9 +20,11 @@
  */
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
-import { settleMvuMessage, isMvuData } from '@uberge/core';
-import { getChatRepo } from '../storage/index.js';
+import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@uberge/core';
+import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
+import { loadCard } from './stscript-env.js';
+import { getCharExtraBooks } from './generate-context.js';
 
 /** chat_state sidecar 命名空间:回执 + op 日志("mes_var_ops" 等价物)。 */
 export const MVU_STATE_NAMESPACE = 'mvu';
@@ -124,6 +126,176 @@ async function appendMvuOpLog(repo, key, entry) {
 }
 
 /**
+ * floor 的 swipe 槽位 → 待初始化文本序列。
+ * upstream 口径:mes 是当前 swipe(swipe_id)的正文,swipes[] 是各候选;
+ * swipe_id 槽位优先取 mes(客户端保证 swipes[swipe_id] === mes,防漂移)。
+ * @returns {{index:number, text:string}[]}
+ */
+function floorSwipeInitTargets(floor) {
+    const swipeId = Number.isInteger(floor?.swipe_id) ? floor.swipe_id : 0;
+    const swipes = Array.isArray(floor?.swipes) ? floor.swipes : null;
+    const count = Math.max(swipes?.length ?? 0, swipeId + 1);
+    const out = [];
+    for (let i = 0; i < count; i++) {
+        const text = i === swipeId
+            ? String(floor?.mes ?? swipes?.[i] ?? '')
+            : String(swipes?.[i] ?? '');
+        out.push({ index: i, text });
+    }
+    return out;
+}
+
+/**
+ * init 书目解析(upstream initCheck 口径:selected_global + 角色主书 + 辅书;
+ * 不含 chat-bound/persona 书 —— 与 generate-context collectWorldNames 五层集合不同)。
+ * 顺序即 core initializeMvuVariables 的合并顺序:global → primary → extra。
+ * @param {object} args
+ * @param {string} args.handle
+ * @param {string} [args.charDir] 角色目录名(group 聊天传 '')
+ * @param {object} [args.directories] 用户目录集合(需要 .characters 读卡)
+ * @returns {Promise<{lorebooks:import('@uberge/core').MvuInitLorebook[], primaryLorebookName:string}>}
+ */
+export async function resolveMvuInitLorebooks({ handle, charDir = '', directories } = {}) {
+    const settings = await getSettingsRepo().get(handle).catch(() => null);
+    const powerUser = settings?.power_user ?? {};
+    const worldInfoState = settings?.world_info ?? {};
+
+    let card = null;
+    if (charDir && directories?.characters) {
+        card = await loadCard(directories, charDir).catch(() => null);
+    }
+    const primaryName = card?.data?.extensions?.world ?? card?.extensions?.world ?? null;
+
+    const names = [];
+    for (const n of powerUser.selected_world_info ?? []) if (n) names.push(String(n));
+    if (primaryName) names.push(String(primaryName));
+    for (const n of getCharExtraBooks(worldInfoState, charDir)) if (n) names.push(String(n));
+    const uniqueNames = [...new Set(names)];
+
+    const worldInfoRepo = getWorldInfoRepo();
+    const lorebooks = [];
+    for (const name of uniqueNames) {
+        const raw = await worldInfoRepo.get(handle, name).catch(() => null);
+        const doc = raw?.doc ?? raw;
+        const entries = Object.values(doc?.entries ?? {})
+            .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
+            .map((e) => ({
+                content: String(e.content ?? ''),
+                comment: typeof e.comment === 'string' ? e.comment : undefined,
+            }));
+        lorebooks.push({ name, entries, isPrimary: name === primaryName });
+    }
+    return { lorebooks, primaryLorebookName: primaryName ?? 'unknown' };
+}
+
+/**
+ * floor-0 初始化(upstream initCheck):0 层每个 swipe 跑 core
+ * initializeMvuVariables → body[0].variables[i] 快照 + chat_metadata.variables
+ * 镜像 + 侧车 kind:'init' op 日志。已初始化(variables[swipe_id] 过 isMvuData)早退。
+ * @param {object} args
+ * @param {string} args.handle
+ * @param {string} [args.charDir]
+ * @param {string} args.name
+ * @param {boolean} [args.isGroup]
+ * @param {string} [args.groupId]
+ * @param {import('@uberge/core').MvuInitLorebook[]} [args.lorebooks] 预解书目;
+ *   缺省时走 resolveMvuInitLorebooks(需要 args.directories)。
+ * @param {string} [args.primaryLorebookName]
+ * @param {object} [args.directories]
+ * @param {(s:string)=>string} [args.substitute]
+ * @param {boolean} [args.updateChatVariables]
+ * @returns {Promise<object>} {status:'initialized'|'already_initialized'|'no_chat'|'conflict'}
+ */
+export async function initializeMvuChat(args) {
+    const repo = getChatRepo();
+    const opts = { isGroup: !!args.isGroup, groupId: args.groupId };
+    const updateChatVariables = args.updateChatVariables !== false;
+
+    let lorebooks = Array.isArray(args.lorebooks) ? args.lorebooks : null;
+    let primaryLorebookName = args.primaryLorebookName;
+    if (!lorebooks) {
+        const resolved = await resolveMvuInitLorebooks({
+            handle: args.handle,
+            charDir: args.charDir ?? '',
+            directories: args.directories,
+        });
+        lorebooks = resolved.lorebooks;
+        primaryLorebookName ??= resolved.primaryLorebookName;
+    }
+
+    for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
+        const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
+        const body = Array.isArray(chat?.body) ? chat.body : null;
+        if (!chat || !body || body.length === 0) {
+            return { status: 'no_chat', initialized: false };
+        }
+        const floor = body[0];
+        const swipeId = Number.isInteger(floor?.swipe_id) ? floor.swipe_id : 0;
+        const floorVars = (floor?.variables && typeof floor.variables === 'object' && !Array.isArray(floor.variables))
+            ? floor.variables
+            : {};
+        if (isMvuData(floorVars[swipeId])) {
+            return { status: 'already_initialized', initialized: false };
+        }
+
+        const variables = { ...floorVars };
+        const errors = [];
+        let activeVariables = null;
+        const swipeTargets = floorSwipeInitTargets(floor);
+        for (const { index, text } of swipeTargets) {
+            const init = initializeMvuVariables({
+                swipeText: text,
+                lorebooks,
+                primaryLorebookName,
+                substitute: args.substitute,
+            });
+            variables[String(index)] = init.variables;
+            errors.push(...init.errors);
+            if (index === swipeId) activeVariables = init.variables;
+        }
+
+        const nextBody = body.slice();
+        nextBody[0] = { ...floor, variables };
+        let header = chat.header;
+        if (updateChatVariables && activeVariables) {
+            header = {
+                ...(header ?? {}),
+                chat_metadata: mergeChatVariablesPatch(header?.chat_metadata, activeVariables),
+            };
+        }
+
+        try {
+            const saved = await repo.save(args.handle, args.charDir ?? '', args.name, header, nextBody, chat.integrity, opts);
+            await appendMvuOpLog(repo, { handle: args.handle, charDir: args.charDir ?? '', name: args.name, ...opts }, {
+                ts: Date.now(),
+                messageIndex: 0,
+                swipeId,
+                baselineIndex: -1,
+                modified: true,
+                ops: [],
+                errors,
+                kind: 'init',
+                swipes: swipeTargets.length,
+            });
+            return {
+                status: 'initialized',
+                initialized: true,
+                swipes: swipeTargets.length,
+                errors,
+                integrity: saved.integrity,
+            };
+        } catch (error) {
+            // integrity_mismatch:persist/编辑与本写回竞争 → 重载重折(投影幂等)。
+            if (error instanceof ConflictError || error?.name === 'ConflictError') {
+                continue;
+            }
+            throw error;
+        }
+    }
+    return { status: 'conflict', initialized: false, attempts: MAX_SAVE_ATTEMPTS };
+}
+
+/**
  * 对已持久化楼层做一次 settle(默认末楼;串行调用点=消息持久化之后)。
  * @param {object} args
  * @param {string} args.handle 用户句柄(ChatRepo 路由键)。
@@ -134,12 +306,20 @@ async function appendMvuOpLog(repo, key, entry) {
  * @param {number} [args.messageIndex] 目标楼层,默认 body 末楼。
  * @param {boolean} [args.updateChatVariables] 是否镜像到 chat_metadata.variables
  *   (upstream 「更新到聊天变量」开关;默认 true——MVU 卡普遍依赖 getvar 读它)。
+ * @param {boolean} [args.autoInit] no_baseline 且 body[0] 存在时先跑
+ *   initializeMvuChat(floor-0 初始化),再重试本 settle;每调用最多触发一次。
+ * @param {import('@uberge/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
+ * @param {string} [args.primaryLorebookName] autoInit 主书名。
+ * @param {object} [args.directories] autoInit 自解书目所需用户目录(.characters 读卡)。
+ * @param {(s:string)=>string} [args.substitute] 透传给 init/settle 的宏替换。
  * @returns {Promise<object>} {status, modified, messageIndex, swipeId, baselineIndex, receipt}
  */
 export async function settlePersistedMvuMessage(args) {
     const repo = getChatRepo();
     const opts = { isGroup: !!args.isGroup, groupId: args.groupId };
     const updateChatVariables = args.updateChatVariables !== false;
+    const autoInit = args.autoInit === true;
+    let initAttempted = false;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
         const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
@@ -151,8 +331,28 @@ export async function settlePersistedMvuMessage(args) {
             ? Math.min(Math.max(0, args.messageIndex), body.length - 1)
             : body.length - 1;
 
-        const result = settleMvuMessage({ messages: body, messageIndex });
+        const result = settleMvuMessage({ messages: body, messageIndex, substitute: args.substitute });
         if (result.status !== 'settled') {
+            // no_baseline = floor-0 未初始化:autoInit 先补 init 再进下一轮 attempt。
+            if (result.status === 'no_baseline' && autoInit && !initAttempted) {
+                initAttempted = true;
+                const init = await initializeMvuChat({
+                    handle: args.handle,
+                    charDir: args.charDir ?? '',
+                    name: args.name,
+                    isGroup: args.isGroup,
+                    groupId: args.groupId,
+                    lorebooks: args.lorebooks,
+                    primaryLorebookName: args.primaryLorebookName,
+                    directories: args.directories,
+                    substitute: args.substitute,
+                    updateChatVariables,
+                });
+                if (init.status === 'initialized' || init.status === 'already_initialized') {
+                    continue;
+                }
+                // no_chat/conflict:按原 no_baseline 结果返回,不阻塞写路径。
+            }
             // skipped(<5字/无楼层)/no_baseline(未 init)——均无需写回。
             return {
                 status: result.status,
@@ -165,6 +365,22 @@ export async function settlePersistedMvuMessage(args) {
         }
 
         const nextBody = applySettleToBody(body, messageIndex, result);
+        // 幂等短路:楼层文本/快照无变化且无镜像补丁、无命令回执时省掉整写
+        // (重放/重复调用不再推高 integrity,避免客户端下次写无谓冲突)。
+        const patchNeeded = updateChatVariables && result.modified;
+        const floorChanged = JSON.stringify(nextBody[messageIndex]) !== JSON.stringify(body[messageIndex]);
+        const receiptQuiet = (result.receipt?.ops?.length ?? 0) === 0 && (result.receipt?.errors?.length ?? 0) === 0;
+        if (!floorChanged && !patchNeeded && receiptQuiet) {
+            return {
+                status: 'settled',
+                modified: false,
+                messageIndex,
+                swipeId: result.swipeId,
+                baselineIndex: result.baselineIndex,
+                receipt: result.receipt,
+                integrity: chat.integrity,
+            };
+        }
         let header = chat.header;
         if (updateChatVariables && result.modified) {
             header = {
@@ -236,6 +452,20 @@ export async function resettleChatMvu(args) {
             header = {
                 ...(header ?? {}),
                 chat_metadata: mergeChatVariablesPatch(header?.chat_metadata, lastPatch),
+            };
+        }
+
+        // 幂等短路:重放结果与现状一致(非 MVU 聊天/已结算聊天)时不整写,
+        // 避免每次 /save、/patch 都推高 integrity 让客户端下次写无谓冲突。
+        const settledCount = floorResults.filter(r => r.status === 'settled').length;
+        if (JSON.stringify(nextBody) === JSON.stringify(body) && header === chat.header) {
+            return {
+                status: 'settled',
+                modified: false,
+                floors: body.length,
+                settled: settledCount,
+                details: floorResults,
+                integrity: chat.integrity,
             };
         }
 

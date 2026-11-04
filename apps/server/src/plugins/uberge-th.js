@@ -110,14 +110,20 @@ async function resolveScope({ handle, scope, charDir, chatName, messageId }) {
             },
         };
     }
-    // scope==='message':TH 语义是消息级变量 —— 取 body[message_id].variables
+    // scope==='message':TH 生态惯例是 message.data 袋(MVU 楼层快照
+    // 即 data.stat_data/mvu_data);ST /setvar 的 message 变量走
+    // message.variables。读:data 优先、variables 兜底合并;写:进 data。
     const body = Array.isArray(doc.body) ? doc.body : [];
     const mid = Number.isInteger(messageId) ? messageId : body.length - 1;
     const msg = body[mid];
     if (!msg) return { error: `message ${mid} not found`, status: 404 };
-    if (typeof msg.variables !== 'object' || msg.variables === null) msg.variables = {};
+    if (typeof msg.data !== 'object' || msg.data === null) msg.data = {};
+    const store = (typeof msg.variables === 'object' && msg.variables !== null)
+        ? { ...msg.variables, ...msg.data }
+        : msg.data;
+    if (store !== msg.data) Object.assign(msg.data, store);
     return {
-        store: msg.variables,
+        store: msg.data,
         persist: async () => {
             await repo.save(handle, charDir, chatName, header, body);
         },

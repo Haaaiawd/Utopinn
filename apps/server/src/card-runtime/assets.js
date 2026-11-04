@@ -47,8 +47,17 @@ function setSecurityHeaders(request, response, mount) {
  * @param {string} html
  * @param {string} shimUrl
  */
-export function injectShimTag(html, shimUrl) {
-    const tag = `<script src="${shimUrl}" data-card-runtime-shim></script>`;
+export function injectShimTag(html, shimUrl, mount) {
+    // bridge bootstrap 先于 shim 源下发:nonce 由 mount 服务端持有,卡代码
+    // 可读但不可伪造来源(ev.source / RN 侧 nonce 校验各自消费)。
+    const bootstrap = mount?.bridgeNonce ? `<script data-card-runtime-bootstrap>window.__UBERGE_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UBERGE_PANEL_BOOTSTRAP__=${JSON.stringify({
+        face: 'th',
+        mountId: mount.id,
+        charId: mount.charId,
+        stateNamespaces: mount.manifest?.permissions?.stateNamespaces ?? [],
+        initializedGlobals: [],
+    })};</script>` : '';
+    const tag = `${bootstrap}<script src="${shimUrl}" data-card-runtime-shim></script>`;
     const head = html.match(/<head[^>]*>/i);
     if (head) {
         const at = head.index + head[0].length;
@@ -149,7 +158,7 @@ export function assetHandler(request, response) {
     if (ext === '.html' || ext === '.htm') {
         let body = fs.readFileSync(fullPath, 'utf8');
         const shimUrl = SHIM_URLS.get(String(request.query.shim || '')) || null;
-        if (shimUrl) body = injectShimTag(body, shimUrl);
+        if (shimUrl) body = injectShimTag(body, shimUrl, mount);
         return sendDocument(request, response, mount, body);
     }
 

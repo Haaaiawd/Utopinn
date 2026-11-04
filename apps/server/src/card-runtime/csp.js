@@ -37,7 +37,9 @@ const RUNTIME_BASE = '/card-runtime/';
  */
 export function buildCardRuntimeCsp({ selfOrigin, permissions = {} }) {
     const runtime = `${selfOrigin}${RUNTIME_BASE}`;
-    const sandbox = ['allow-scripts', 'allow-modals', 'allow-downloads'];
+    // 设计稿边界(cardapp-web-host.md):不给 modals/downloads——卡 UI 走
+    // 桥协议弹层,不该弹原生 alert/下载。sameOrigin 是显式声明位才放。
+    const sandbox = ['allow-scripts'];
     if (permissions.sameOrigin === true) sandbox.push('allow-same-origin');
 
     const scriptSrc = [runtime, `'wasm-unsafe-eval'`];

@@ -107,8 +107,9 @@ export function powerUserToWISettings(powerUser = {}) {
 /**
  * 角色 charLore(settings.world_info.charLore,按 avatar 目录名匹配)→ 额外书名。
  * 原版:world-info.js getCharLore `world_info.charLore.find(e => e.name === fileName)`
+ * export:mvu-settle resolveMvuInitLorebooks 复用同一口径(init 书目含辅书)。
  */
-function getCharExtraBooks(worldInfoState, charDir) {
+export function getCharExtraBooks(worldInfoState, charDir) {
     const lore = (worldInfoState?.charLore ?? []).find((l) => l.name === charDir);
     return Array.isArray(lore?.extraBooks) ? lore.extraBooks : [];
 }
