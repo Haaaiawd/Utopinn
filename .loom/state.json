@@ -4,7 +4,7 @@
     "name": "Uberge",
     "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-03T06:35:36.373Z"
+    "updated_at": "2026-11-04T04:23:08.226Z"
   },
   "understanding": {
     "confirmed": [
@@ -91,6 +91,48 @@
         "text": "私有卡 golden 含卡面全文,恒落 tests/golden-diff/golden-private/(gitignore);公开语料 golden 才进 golden/",
         "source": "conversation",
         "at": "2026-11-03T03:01:34.773Z"
+      },
+      {
+        "id": "F-015",
+        "text": "B 步服务端迁移推进方式 → 小面先行：先迁 chats/characters/worlds 只读列表端点趟熟 webServer.register→disposer 形状，第二波迁 generate/preview + streamJob",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.140Z"
+      },
+      {
+        "id": "F-016",
+        "text": "web 客户端动态化做到哪一层 → 完整动态 bundle：插件独立 bundle 运行时加载 + 平台模块表共享单例；manifest hydrate 是过渡路径不是终点",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-017",
+        "text": "内核缺口补齐范围 → 三件全补：inject 服务等待 + effect 作用域 + locale 命名空间，现在对齐 cordis 语义",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-018",
+        "text": "WS 通道归属 → 路由+WS 一起走：register + registerUpgrade 双注册位，streamJob 生成流随插件迁移",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-019",
+        "text": "PC 布局定案：rail+路由单骨架(harness 几何)+聊天域内酒馆式遮盖 chrome+沉浸开关；否决顶栏/左栏双模式",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-020",
+        "text": "web 壳已从接线板降为薄壳：类型化贡献点+Registry(add→disposer,订阅)+ShellProvider,feature 注册全部表面(commit 748b3b5)",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-021",
+        "text": "DSH 客户端整树是 cordis 插件：Loader+BootManifest 动态 bundle,React mount 也是 uiRenderer 服务；服务端 webServer extends Service,register/registerUpgrade→disposer",
+        "source": "clarification",
+        "at": "2026-11-04T04:23:05.141Z"
       }
     ],
     "assumptions": [
@@ -187,6 +229,31 @@
     "D-009",
     "D-010",
     "D-011",
-    "D-012"
-  ]
+    "D-012",
+    "D-013",
+    "D-014",
+    "D-015",
+    "D-016"
+  ],
+  "clarify": {
+    "active": false,
+    "reason": "方向拍板:web 全面转 DSH 式贡献架构(App 降为薄壳已落地);PC 布局否决双模式,定 rail+路由+聊天域内酒馆 chrome;服务端 /api/uberge/* 将迁移为 kernel 插件",
+    "started_at": "2026-11-04T04:20:45.643Z",
+    "closed_at": "2026-11-04T04:23:08.225Z",
+    "rounds": [
+      {
+        "round": 1,
+        "answered": [
+          "B 步服务端迁移推进方式",
+          "web 客户端动态化做到哪一层",
+          "内核缺口补齐范围",
+          "WS 通道归属"
+        ],
+        "confirmed": 3,
+        "decisions": 4,
+        "new_open": [],
+        "at": "2026-11-04T04:23:05.154Z"
+      }
+    ]
+  }
 }
