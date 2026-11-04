@@ -4,6 +4,7 @@ import type { ComponentType } from 'react';
 import { useI18n } from '../../i18n';
 import { useShell } from '../../kernel/context';
 import { PreviewDebug } from '../chat/PreviewDebug';
+import { JobsSection } from '../chat/JobsSection';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
 
 export function SessionBody() {
@@ -23,7 +24,12 @@ export function SessionBody() {
 
 export function DiagBody() {
     const { preview } = useShell();
-    return <PreviewDebug result={preview} />;
+    return (
+        <>
+            <PreviewDebug result={preview} />
+            <JobsSection />
+        </>
+    );
 }
 
 export function CardAppBody() {
