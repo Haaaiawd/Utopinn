@@ -10,6 +10,8 @@
  */
 import { buildGenerationContext, logPerfLine } from '../services/generate-context.js';
 import { selectChatCompletionDispatch } from '../endpoints/backends/chat-completions.js';
+import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
+import { TEXTGEN_TYPES } from '../constants.js';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
@@ -51,6 +53,42 @@ function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
 }
 
 /**
+ * textgen(TASK-020):messages[] → 单串 prompt,instruct 壳。
+ *   user/assistant 消息经 engine.formatChat 包 input/output 序列;
+ *   system 段(WI/作者注/jailbreak)原样并入 story(ST 同款);
+ *   尾段 engine.formatPrompt 接 output_sequence + name2 前缀。
+ * tgSettings 里剥离连接层字段(type/server_urls/preset 等非生成参数)。
+ */
+const TEXTGEN_CONN_KEYS = new Set(['type', 'server_urls', 'server', 'preset', 'legacy']);
+
+function messagesToTextgenPrompt(messages, engine, substCtx) {
+    const { name1, name2 } = substCtx;
+    const instructOn = !!substCtx.instruct?.enabled;
+    const parts = [];
+    for (const m of messages) {
+        const content = String(m?.content ?? '');
+        if (!content) continue;
+        if (m?.role === 'user') {
+            parts.push(instructOn
+                ? engine.formatChat(name1, content, true, false, false, name1, name2)
+                : `${name1}: ${content}\n`);
+        } else if (m?.role === 'assistant') {
+            parts.push(instructOn
+                ? engine.formatChat(name2, content, false, false, false, name1, name2)
+                : `${name2}: ${content}\n`);
+        } else {
+            // system/narration 段原样并入 story(jailbreak/WI 段不包 instruct 壳)
+            parts.push(content.endsWith('\n') ? content : `${content}\n`);
+        }
+    }
+    // 尾段:output_sequence+name2 前缀;instruct 关 → 裸 "name2:" 续写锚。
+    // TODO(storystring):instruct-off 原版还会经 context 模板整包
+    // (formatStoryString),更深一层 fidelity 随 TASK-020 后续切片。
+    parts.push(instructOn ? engine.formatPrompt(name2, false, '', name1, name2) : `${name2}:`);
+    return parts.join('');
+}
+
+/**
  * 连接层字段:URL/密钥代理/模型名/自定义进出体 + source。
  * 这些产品语义上属"当前连接配置"而非"生成预设"——ST 选预设会整体重写
  * oai_settings(连 URL 一起洗掉是出名的坑),我们把连接面固定在
@@ -86,7 +124,7 @@ export function apply(ctx) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
 
-            const { builtPrompt, presetDoc, oaiSettings, trace, perf } = await buildGenerationContext({
+            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, perf } = await buildGenerationContext({
                 request,
                 charDir,
                 chatName,
@@ -99,6 +137,59 @@ export function apply(ctx) {
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
             logPerfLine('uberge/generate', perf, { charDir, chatName });
+
+            // ---- TASK-020 textgen 分叉:body.api==='text' → 单串 prompt + text-completions 派发 ----
+            if (String(body.api ?? 'chat') === 'text') {
+                const apiType = body.api_type ?? tgSettings?.type;
+                if (!apiType || !Object.values(TEXTGEN_TYPES).includes(apiType)) {
+                    return response.status(400).send({
+                        error: `api_type must be one of TEXTGEN_TYPES (got: ${apiType ?? 'none'})`,
+                    });
+                }
+                const apiServer = body.api_server
+                    ?? tgSettings?.server_urls?.[apiType]
+                    ?? tgSettings?.server;
+                if (!apiServer) {
+                    return response.status(400).send({ error: 'api_server missing (body.api_server or settings.textgenerationwebui_settings.server_urls)' });
+                }
+                const prompt = messagesToTextgenPrompt(builtPrompt.messages, instructEngine, substCtx);
+                const tgParams = Object.fromEntries(
+                    Object.entries(tgSettings ?? {}).filter(([k]) => !TEXTGEN_CONN_KEYS.has(k)),
+                );
+                // ST 键 → 规范键别名(OpenAI 系 upstream 认 canonical;
+                // 原生键一并透传,provider pickBy 自滤)。显式 body 字段仍可覆盖。
+                const aliases = {
+                    temperature: tgSettings?.temp,
+                    stop: tgSettings?.stopping_strings,
+                    repetition_penalty: tgSettings?.rep_pen,
+                    max_tokens: tgSettings?.max_tokens ?? tgSettings?.genamt,
+                };
+                for (const [k, v] of Object.entries(aliases)) {
+                    if (v !== undefined && tgParams[k] === undefined) tgParams[k] = v;
+                }
+                request.body = {
+                    ...tgParams,
+                    ...(body.generation_overrides ?? {}),
+                    api_type: apiType,
+                    api_server: apiServer,
+                    prompt,
+                    stream: body.stream !== false,
+                    luker_generation: {
+                        ...(body.luker_generation ?? {}),
+                        persist_target: body.luker_generation?.persist_target ?? {
+                            kind: 'character',
+                            avatar_url: `${charDir}.png`,
+                            file_name: `${chatName}.jsonl`,
+                        },
+                    },
+                };
+                request.ubergeTrace = trace;
+                response.setHeader('x-uberge-perf', JSON.stringify(perf));
+                return runLukerDispatch(request, response, {
+                    endpoint: 'uberge-generate',
+                    select: () => dispatchTextCompletions,
+                });
+            }
 
             // 派发体 = 连接层 oai_settings(custom_url/reverse_proxy/source 等)
             //  ← 预设生成参数覆盖(ST 选预设=重写 oai_settings)← 调用方显式字段
