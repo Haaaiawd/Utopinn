@@ -357,6 +357,23 @@ export async function buildGenerationContext({
             worldInfoActivated: (wiActivated.worldInfoBeforeEntries?.length ?? 0)
                 + (wiActivated.worldInfoAfterEntries?.length ?? 0)
                 + (wiActivated.WIDepthEntries?.length ?? 0),
+            // WI 激活轨迹(TASK-017 回放数据源):触发成功的条目级明细,
+            // uid/world/key/comment/position/depth 足够客户端重建「哪本书
+            // 哪条、被什么键命中、注入在哪个位置」。allActivatedEntries
+            // 是 Set<WIEntry>,排序靠 world+uid 稳定化。
+            worldInfo: {
+                activated: Array.from(wiActivated.allActivatedEntries ?? [])
+                    .map((e) => ({
+                        uid: e.uid,
+                        world: e.world,
+                        comment: e.comment,
+                        key: e.key,
+                        position: e.position,
+                        depth: e.depth,
+                        outlet: e.outletName,
+                    }))
+                    .sort((a, b) => String(a.world ?? '').localeCompare(String(b.world ?? '')) || a.uid - b.uid),
+            },
             chatCount: chatMessages.length,
         },
     };
