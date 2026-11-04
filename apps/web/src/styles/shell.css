@@ -175,13 +175,8 @@
 .lib-sect { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 2px; }
 .lib-sect h3 { font-size: var(--fs-ui); font-weight: 600; }
 
+/* chips = ToggleGroup 原语;容器只留节奏,item 样式在 ui/toggle-group。 */
 .lib-chips { display: flex; gap: 6px; margin: 12px 0 18px; }
-.lib-chip {
-    padding: 5px 12px; border-radius: var(--radius-pill);
-    font-size: var(--fs-ui-sm); color: var(--ink2); transition: .12s;
-}
-.lib-chip:hover { background: var(--bubble); color: var(--ink); }
-.lib-chip.on { background: var(--sel); color: var(--ink); font-weight: 500; }
 
 /* ——— 卡格:16/10 raised 卡,thumb ~70%,下缘 meta 行 ——— */
 .lib-grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }

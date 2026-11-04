@@ -3,6 +3,8 @@
 // assembled messages themselves render in the main area via the renderer seam.
 import { useI18n } from '../../i18n';
 import type { PreviewResult } from '../../types';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../ui/collapsible';
+import { Icon } from '../Icon';
 
 export function PreviewDebug({ result }: { result: PreviewResult | null }) {
     const { t } = useI18n();
@@ -22,22 +24,26 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
         <div>
             {mock && <div className="warn" style={{ marginBottom: 10 }}>{t('chat.preview.mock')}</div>}
 
-            <details className="fold" open>
-                <summary>{t('diag.sources')}</summary>
-                <div className="fold-body">
+            <Collapsible className="fold" defaultOpen>
+                <CollapsibleTrigger className="fold-trigger">
+                    <Icon name="chevronRight" size={12} className="fold-caret" />{t('diag.sources')}
+                </CollapsibleTrigger>
+                <CollapsibleContent className="fold-body">
                     <dl className="diag-kv">
                         <dt>{t('diag.preset')}</dt><dd>{sources?.presetName ?? '—'}</dd>
                         <dt>{t('diag.model')}</dt><dd>{sources?.model ?? '—'}</dd>
                         <dt>{t('diag.wi')}</dt><dd>{sources?.worldInfoActivated ?? 0}</dd>
                         <dt>{t('diag.chatCount')}</dt><dd>{sources?.chatCount ?? 0}</dd>
                     </dl>
-                </div>
-            </details>
+                </CollapsibleContent>
+            </Collapsible>
 
             {trace && (
-                <details className="fold" open>
-                    <summary>{t('diag.trace')}</summary>
-                    <div className="fold-body">
+                <Collapsible className="fold" defaultOpen>
+                    <CollapsibleTrigger className="fold-trigger">
+                        <Icon name="chevronRight" size={12} className="fold-caret" />{t('diag.trace')}
+                    </CollapsibleTrigger>
+                    <CollapsibleContent className="fold-body">
                         <dl className="diag-kv" style={{ marginBottom: 8 }}>
                             <dt>{t('diag.budget')}</dt><dd>{trace.tokenBudget}</dd>
                             <dt>{t('diag.remaining')}</dt><dd>{trace.remainingBudget}</dd>
@@ -58,13 +64,15 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
                                 ))}
                             </tbody>
                         </table>
-                    </div>
-                </details>
+                    </CollapsibleContent>
+                </Collapsible>
             )}
 
-            <details className="fold">
-                <summary>{t('diag.messages')} ({data.messages.length})</summary>
-                <div className="fold-body">
+            <Collapsible className="fold">
+                <CollapsibleTrigger className="fold-trigger">
+                    <Icon name="chevronRight" size={12} className="fold-caret" />{t('diag.messages')} ({data.messages.length})
+                </CollapsibleTrigger>
+                <CollapsibleContent className="fold-body">
                     <dl className="diag-kv">
                         {data.messages.map((m, i) => (
                             <span key={i} style={{ display: 'contents' }}>
@@ -75,17 +83,19 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
                             </span>
                         ))}
                     </dl>
-                </div>
-            </details>
+                </CollapsibleContent>
+            </Collapsible>
 
-            <details className="fold">
-                <summary>{t('diag.raw')}</summary>
-                <div className="fold-body">
+            <Collapsible className="fold">
+                <CollapsibleTrigger className="fold-trigger">
+                    <Icon name="chevronRight" size={12} className="fold-caret" />{t('diag.raw')}
+                </CollapsibleTrigger>
+                <CollapsibleContent className="fold-body">
                     <pre style={{ fontSize: 12, overflowX: 'auto', color: 'var(--ink2)', fontFamily: 'var(--font-mono)', lineHeight: 1.7 }}>
                         {JSON.stringify(data, null, 2)}
                     </pre>
-                </div>
-            </details>
+                </CollapsibleContent>
+            </Collapsible>
         </div>
     );
 }

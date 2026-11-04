@@ -10,6 +10,7 @@ import { Icon } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
 type FilterId = 'all' | 'image' | 'json' | 'broken';
 const FILTERS: FilterId[] = ['all', 'image', 'json', 'broken'];
@@ -92,15 +93,12 @@ export function LibraryView({ chats, onOpenCard, onHint }: {
                     onClick={() => onHint(t('lib.importSoon'))} />
             </div>
 
-            <div className="lib-chips">
+            <ToggleGroup type="single" size="sm" className="lib-chips"
+                value={filter} onValueChange={(v) => v && setFilter(v as FilterId)}>
                 {FILTERS.map((f) => (
-                    <button key={f} type="button"
-                        className={`lib-chip ${filter === f ? 'on' : ''}`}
-                        onClick={() => setFilter(f)}>
-                        {t(`lib.filter.${f}`)}
-                    </button>
+                    <ToggleGroupItem key={f} value={f}>{t(`lib.filter.${f}`)}</ToggleGroupItem>
                 ))}
-            </div>
+            </ToggleGroup>
 
             <div className={grid ? 'lib-grid' : 'lib-rows'}>
                 {visible.map((c) => (
