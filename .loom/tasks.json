@@ -1188,27 +1188,32 @@
         {
           "criterion": "拖 PNG/JSON 到任意页面触发导入路由",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "5c05540 真机验证",
+          "verified": "yes"
         },
         {
           "criterion": "URL 导入卡/世界书可用",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "5c05540 真机验证",
+          "verified": "yes"
         },
         {
           "criterion": "导入前预览+冲突选项",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "5c05540 真机验证",
+          "verified": "yes"
         },
         {
           "criterion": "备份快照+LAN 发现端点",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "待跑",
+          "verified": "no"
         },
         {
           "criterion": "ST data 目录扫描产出导入清单",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "待跑",
+          "verified": "no"
         }
       ],
       "done_when": [
@@ -1230,13 +1235,7 @@
       "design_exemption": "",
       "covers": [],
       "status": "open",
-      "progress": {
-        "completed": [
-          "服务端导入面迁入 kernel 插件 umerge-import(preview/commit/conflict/rename 语义保留)"
-        ],
-        "current": "",
-        "next": "导出刀 + web 拖放中心 + 备份快照/LAN 发现/ST data 扫描清单"
-      },
+      "progress": "导入三刀进度:管线✅(uberge-import插件 preview/commit,8/8)+导出✅(legacy /api/characters/export 在)+拖放中心✅(5c05540:全局drop幕帘/URL行/待办卡预览/冲突三策/回执历史,真机th-probe验证)。缺:备份快照+LAN发现、ST data目录扫描清单。",
       "evidence": [
         "apps/server/src/plugins/uberge-import.js",
         "tests/e2e/uberge-import-surface.mjs",
@@ -1766,12 +1765,14 @@
         {
           "criterion": "插件启停/配置 API 可用",
           "verify_by": "端点测试绿",
-          "evidence": ""
+          "evidence": "/api/uberge/plugins + :id/enable|disable|reload;UI即调即刷新",
+          "verified": "yes"
         },
         {
           "criterion": "插件执行限定服务端",
           "verify_by": "无 web/mobile 插件执行路径",
-          "evidence": ""
+          "evidence": "Cordis ctx.plugin 服务端装载;客户端只有管理面",
+          "verified": "yes"
         }
       ],
       "done_when": [
@@ -1789,13 +1790,121 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [
-          "服务端执行面:list/row/enable/disable/reload + patch.yaml 持久化 + ctx.effect 可逆路由"
-        ],
-        "current": "",
-        "next": "插件管理 UI(web 设置域)"
+        "0": "服",
+        "1": "务",
+        "2": "端",
+        "3": "执",
+        "4": "行",
+        "5": "面",
+        "6": "(",
+        "7": "1",
+        "8": "4",
+        "9": "/",
+        "10": "1",
+        "11": "4",
+        "12": " ",
+        "13": "E",
+        "14": "2",
+        "15": "E",
+        "16": ":",
+        "17": "d",
+        "18": "i",
+        "19": "s",
+        "20": "a",
+        "21": "b",
+        "22": "l",
+        "23": "e",
+        "24": "→",
+        "25": "路",
+        "26": "由",
+        "27": "4",
+        "28": "0",
+        "29": "4",
+        "30": "/",
+        "31": "e",
+        "32": "n",
+        "33": "a",
+        "34": "b",
+        "35": "l",
+        "36": "e",
+        "37": "恢",
+        "38": "复",
+        "39": "/",
+        "40": "r",
+        "41": "e",
+        "42": "l",
+        "43": "o",
+        "44": "a",
+        "45": "d",
+        "46": "存",
+        "47": "活",
+        "48": "/",
+        "49": "自",
+        "50": "锁",
+        "51": "拒",
+        "52": ")",
+        "53": "+",
+        "54": "U",
+        "55": "I",
+        "56": "管",
+        "57": "理",
+        "58": "面",
+        "59": "(",
+        "60": "5",
+        "61": "c",
+        "62": "0",
+        "63": "5",
+        "64": "5",
+        "65": "4",
+        "66": "0",
+        "67": " ",
+        "68": "E",
+        "69": "x",
+        "70": "t",
+        "71": "e",
+        "72": "n",
+        "73": "s",
+        "74": "i",
+        "75": "o",
+        "76": "n",
+        "77": "s",
+        "78": "V",
+        "79": "i",
+        "80": "e",
+        "81": "w",
+        "82": "插",
+        "83": "件",
+        "84": "段",
+        "85": ":",
+        "86": "启",
+        "87": "停",
+        "88": "/",
+        "89": "r",
+        "90": "e",
+        "91": "l",
+        "92": "o",
+        "93": "a",
+        "94": "d",
+        "95": "/",
+        "96": "状",
+        "97": "态",
+        "98": "徽",
+        "99": "标",
+        "100": "/",
+        "101": "p",
+        "102": "a",
+        "103": "t",
+        "104": "c",
+        "105": "h",
+        "106": "e",
+        "107": "d",
+        "108": "标",
+        "109": ")",
+        "110": "。",
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
         "apps/server/src/plugins/uberge-plugins.js",
@@ -1803,10 +1912,25 @@
         "tests/e2e/uberge-plugin-manager.mjs",
         "commit e8f8660",
         "tests/e2e/uberge-plugin-manager.mjs 14/14 pass",
-        "commit e8f8660"
+        "commit e8f8660",
+        "服务端:uberge-plugin-manager.mjs 14/14(热插拔真机)+UI:5c05540 ExtensionsView插件段",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "插件启停/配置 API 可用",
+              "evidence": "/api/uberge/plugins + :id/enable|disable|reload;UI即调即刷新"
+            },
+            {
+              "criterion": "插件执行限定服务端",
+              "evidence": "Cordis ctx.plugin 服务端装载;客户端只有管理面"
+            }
+          ],
+          "at": "2026-11-04T10:01:09.682Z"
+        }
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
-      "updated_at": "2026-11-04T06:56:05.404Z",
+      "updated_at": "2026-11-04T10:01:09.682Z",
       "integrity_version": 1,
       "id": "TASK-021",
       "title": "插件管理 API",
@@ -1821,7 +1945,8 @@
           "at": "管理面",
           "must_produce": "插件启停/状态/patch 管理 API"
         }
-      ]
+      ],
+      "completed_at": "2026-11-04T10:01:09.682Z"
     },
     {
       "acceptance": [
