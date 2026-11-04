@@ -3,9 +3,9 @@
 // 新增图标先查 phosphor 词表,禁混第二套库。Emoji 只许出现在用户内容。
 import {
     ArrowClockwise, ArrowUp, Book, BookBookmark, Cards, CaretDown, CaretLeft,
-    CaretRight, ChatsCircle, Check, Clock, Command, CornersOut, DotsThree,
-    DownloadSimple, Eye, File, GearSix, GridFour, Layout, Lightning, List,
-    MagnifyingGlass, Minus, Moon, NotePencil, Plus, PuzzlePiece, SidebarSimple,
+    CaretRight, ChartLine, ChatsCircle, Check, Clock, Command, CornersOut, DotsThree,
+    DownloadSimple, Eye, File, GearSix, Globe, GridFour, Layout, Lightning, List,
+    MagnifyingGlass, Minus, Moon, NotePencil, Plus, Pulse, PuzzlePiece, SidebarSimple,
     Square, Stack, Sun, User, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
@@ -48,6 +48,9 @@ const MAP = {
     check: Check,
     book: Book,
     focus: CornersOut,
+    pulse: Pulse,
+    globe: Globe,
+    chartLine: ChartLine,
 } as const satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof MAP;

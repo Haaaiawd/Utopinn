@@ -1,6 +1,6 @@
-// Sidebar — GPT-desktop 双级:极左 52px rail(品牌标 + 域导航 + 主题)
-// + 内容栏(品牌行 → 醒目新会话 → 搜索 → charDir 折叠分组嵌套 → user 脚)。
-// Owns the border-straddling drag handle. 非聊天域保持诚实的 stub 列表。
+// Sidebar — 48px rail(品牌标 + 收起钮 + 域导航 + 账户菜单)+ 聊天域专属
+// 内容栏(品牌行 → 新会话 → 搜索 → charDir 折叠分组嵌套)。非聊天域不画
+// 内容栏 —— 管理面在主区整页展开,分类走页内 chips 不走侧栏列表。
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
@@ -10,6 +10,10 @@ import type { IconName } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+    DropdownMenuLabel, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 const SB_MIN = 240, SB_MAX = 460;
 
@@ -19,12 +23,6 @@ const NAV: { id: ViewId; icon: IconName }[] = [
     { id: 'rules', icon: 'rules' },
     { id: 'extensions', icon: 'extensions' },
 ];
-
-const VIEW_LIST: Record<Exclude<ViewId, 'chat' | 'settings'>, { items: string[]; emptyKey: string }> = {
-    stories: { items: [], emptyKey: 'sidebar.empty.stories' },
-    rules: { items: [], emptyKey: 'sidebar.empty.rules' },
-    extensions: { items: ['plugins', 'regex', 'quick-replies', 'injections', 'card-assets'], emptyKey: 'sidebar.empty.extensions' },
-};
 
 function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
     c: ChatSummary; active: boolean; t: (k: string) => string;
@@ -123,31 +121,39 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     />
                 ))}
                 <span className="grow" />
-                <IconButton
-                    label={t('nav.settings')}
-                    tooltipSide="right"
-                    className={`rail-btn ${view === 'settings' ? 'on' : ''}`}
-                    icon={<Icon name="settings" size={20} weight="duotone" />}
-                    onClick={() => onSelectView('settings')}
-                />
-                <IconButton label={t('menu.view.toggleTheme')} tooltipSide="right" className="rail-btn"
-                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} weight="duotone" />} onClick={toggle} />
+                {/* 账户菜单 = user+settings 合并位;主题切换收进菜单,不占地 */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <span>
+                            <IconButton label={t('menu.user')} tooltipSide="right"
+                                className={`rail-btn ${view === 'settings' ? 'on' : ''}`}
+                                icon={<Icon name="user" size={20} weight="duotone" />} />
+                        </span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="right" align="end" sideOffset={8}>
+                        <DropdownMenuLabel>default-user</DropdownMenuLabel>
+                        <DropdownMenuItem onClick={() => onSelectView('settings')}>
+                            <Icon name="settings" size={12} /> {t('nav.settings')}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={toggle}>
+                            <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={12} /> {t('menu.view.toggleTheme')}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </nav>
 
-            {/* ——— 内容栏;折叠时 rail 仍在(域轨是常设导航) ——— */}
-            {!collapsed && (
+            {/* ——— 内容栏;只有聊天域有,折叠/其他域时 rail 独行 ——— */}
+            {view === 'chat' && !collapsed && (
             <aside className="sidebar" style={{ width }}>
                 <div className="sb-head">
                     <span className="ws">{t('app.name')}</span>
                     <span className="grow" />
                 </div>
 
-                {view === 'chat' && (
-                    <button type="button" className="sb-new" onClick={onNewChat}>
-                        <Icon name="plus" size={16} />
-                        <span>{t('sidebar.newChat')}</span>
-                    </button>
-                )}
+                <button type="button" className="sb-new" onClick={onNewChat}>
+                    <Icon name="plus" size={16} />
+                    <span>{t('sidebar.newChat')}</span>
+                </button>
 
                 {view === 'chat' && (
                     <div className="sb-search">
@@ -166,9 +172,8 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                 )}
 
                 <ScrollArea className="sb-scroll">
-                    {view === 'chat' ? (
-                        <>
-                            {groups.map(([dir, items]) => {
+                    <>
+                        {groups.map(([dir, items]) => {
                                 const isFolded = folded.has(dir);
                                 return (
                                     <div key={dir} className="sb-group">
@@ -188,35 +193,21 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                                     </div>
                                 );
                             })}
-                            {loose.length > 0 && (
-                                <>
-                                    <div className="sb-sect">{t('sidebar.recent')}</div>
-                                    {loose.map((c) => (
-                                        <ChatRow key={c.id} c={c} t={t}
-                                            active={c.id === activeChat}
-                                            onSelect={() => onSelectChat(c.id)}
-                                            onRename={() => onRenameChat(c)}
-                                            onDelete={() => onDeleteChat(c)} />
-                                    ))}
-                                </>
-                            )}
-                        </>
-                    ) : (
-                        <>
-                            {(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.items ?? []).map((it) => (
-                                <div key={it} className="sb-item"><span className="sb-item-title">{it}</span></div>
-                            ))}
-                            <div className="sb-empty">
-                                {t(VIEW_LIST[view as Exclude<ViewId, 'chat' | 'settings'>]?.emptyKey ?? 'sidebar.empty.settings')}
-                            </div>
-                        </>
-                    )}
+                        {loose.length > 0 && (
+                            <>
+                                <div className="sb-sect">{t('sidebar.recent')}</div>
+                                {loose.map((c) => (
+                                    <ChatRow key={c.id} c={c} t={t}
+                                        active={c.id === activeChat}
+                                        onSelect={() => onSelectChat(c.id)}
+                                        onRename={() => onRenameChat(c)}
+                                        onDelete={() => onDeleteChat(c)} />
+                                ))}
+                            </>
+                        )}
+                    </>
                 </ScrollArea>
 
-                <div className="sb-foot">
-                    <span className="sb-foot-ava">U</span>
-                    <span>default-user</span>
-                </div>
                 <div className="sb-resizer" onPointerDown={startResize} />
             </aside>
             )}
