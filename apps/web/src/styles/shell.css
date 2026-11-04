@@ -277,6 +277,110 @@
 /* 启用✓ = 语义状态,走 --ok(琥珀纪律允许语义色)。 */
 .lib-tile-check { flex: none; color: var(--ok); }
 
+/* ---- 舞台头(ctbar 内,TASK-026):角色脸 + 名/会话名 + 资产 chip + persona 徽标 ----
+   密度参照 c.ai/Janitor 顶栏:identity 一组,chips 只装真实读数。 */
+.ctbar .stage-ava {
+    width: 28px; height: 28px; border-radius: 50%; flex: none; overflow: hidden;
+    display: grid; place-items: center;
+    background: var(--bubble); color: var(--ink2);
+    font-size: var(--fs-caption); font-weight: 600;
+    box-shadow: inset 0 0 0 1px var(--line2);
+}
+.ctbar .stage-ava img { width: 100%; height: 100%; object-fit: cover; }
+.ctbar .stage-id { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.ctbar .stage-sub {
+    font-size: var(--fs-ui-sm); color: var(--ink3); max-width: 260px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 资产 chip = pill 描边中性灰,只读数不操作;无读数整条不渲染。 */
+.ctbar .stage-chip {
+    display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 190px;
+    padding: 3px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+    font-size: var(--fs-caption); color: var(--ink2);
+}
+.ctbar .stage-chip .stage-chip-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ctbar .stage-chip-n { color: var(--ink3); font-variant-numeric: tabular-nums; }
+/* persona 徽标 = 可点 pill(快切);列表项选中态用 check 图标。 */
+.ctbar .stage-persona {
+    display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 200px;
+    padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+    font-size: var(--fs-ui-sm); color: var(--ink2); transition: background .12s, color .12s;
+}
+.ctbar .stage-persona:hover, .ctbar .stage-persona[data-state="open"] { background: var(--bubble); color: var(--ink); }
+.ctbar .stage-persona-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-persona-item { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- 角色页(TASK-026 卡→角色页→会话三级) ---- */
+/* hero = raised 大封面区:左 3:4 卡图,右名/文件/绑定 chip/标签。 */
+.cp-hero {
+    display: flex; gap: 18px; align-items: flex-start;
+    padding: 16px; margin-bottom: 6px;
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+}
+.cp-cover {
+    width: 132px; aspect-ratio: 3 / 4; flex: none; overflow: hidden;
+    border-radius: var(--radius); background: var(--bubble);
+    display: grid; place-items: center; color: var(--ink3);
+}
+.cp-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cp-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.cp-meta h2 { font-size: 20px; font-weight: 600; letter-spacing: .01em; }
+.cp-file { font-size: var(--fs-caption); font-variant-numeric: tabular-nums; }
+.cp-bound { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.cp-chip[data-slot="badge"] { gap: 5px; }
+.cp-tags { font-size: var(--fs-ui-sm); }
+/* greeting 预览 = 读面字体预览,不进阅读栏宽(管理面节奏)。 */
+.cp-greeting {
+    font-family: var(--font-reading); font-size: 15.5px; line-height: 1.9;
+    color: var(--ink2); white-space: pre-wrap; max-width: 720px;
+    padding: 4px 0 10px;
+}
+/* 会话行:扫描同质 → 行不套卡(规范表 §卡片vs扁平)。 */
+.cp-chats { display: flex; flex-direction: column; gap: 2px; }
+.cp-chat {
+    display: flex; align-items: center; gap: 12px; cursor: pointer;
+    padding: 9px 12px; border-radius: var(--radius);
+    font-size: var(--fs-ui); color: var(--ink2); transition: background .12s, color .12s;
+}
+.cp-chat:hover { background: var(--bubble); color: var(--ink); }
+.cp-chat-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.cp-chat-title { color: var(--ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cp-chat-prev {
+    font-size: var(--fs-caption); color: var(--ink3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cp-chat-meta { flex: none; font-size: var(--fs-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cp-chat-arrow { flex: none; color: var(--ink3); }
+
+/* ---- 门厅(TASK-026 RP 首页) ---- */
+.foyer { max-width: 980px; }
+.foyer-head { margin-bottom: 8px; }
+.foyer-head h1 { font-size: 22px; font-weight: 600; letter-spacing: .01em; }
+.foyer-head p { margin-top: 4px; font-size: var(--fs-ui-sm); }
+/* 继续上次大卡:行级扫描件,但体量放大一档(它是首屏主角)。 */
+.foyer-cont {
+    display: flex; align-items: center; gap: 14px; cursor: pointer;
+    padding: 14px 16px; margin-bottom: 4px;
+    background: var(--raised); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); transition: border-color .12s;
+}
+.foyer-cont:hover { border-color: var(--line2); }
+.foyer-cont-ava {
+    width: 52px; height: 52px; flex: none; overflow: hidden;
+    border-radius: var(--radius); background: var(--bubble);
+    display: grid; place-items: center; color: var(--ink2);
+    box-shadow: inset 0 0 0 1px var(--line);
+}
+.foyer-cont-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foyer-cont-init { font-size: 18px; font-weight: 600; }
+.foyer-cont-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.foyer-cont-title { font-size: var(--fs-ui-lg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foyer-cont-sub { font-size: var(--fs-ui-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.foyer-cont-arrow { flex: none; color: var(--ink3); }
+/* 快动作行:与精选格之间拉开段距。 */
+.foyer-acts { display: flex; gap: 10px; margin-top: 22px; }
+
 /* ---- 窄屏:面板/侧栏从分栏退成覆盖层(桌面优先 app 的诚实降级) ----
    ≤1180px 右栏盖在主区上;≤920px 侧栏变成抽屉,选中会话后 App 侧自动收起。 */
 @media (max-width: 1180px) {
@@ -295,6 +399,8 @@
     .sb-resizer { display: none; }
     .ctbar { padding: 0 12px; gap: 8px; }
     .ctbar h1 { font-size: var(--fs-ui-lg); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* 窄屏舞台头:会话副题与资产 chip 让位,persona 徽标保操作。 */
+    .ctbar .stage-sub, .ctbar .stage-chip { display: none; }
     .page-scroll { padding: 18px 16px; }
     .lib { padding: 20px 16px 28px; }
 }
@@ -303,4 +409,7 @@
     .read-col { padding: 0 16px; }
     .composer-inner { padding: 0 12px; }
     .empty-hint { margin-top: 8vh; }
+    /* 角色页 hero 竖排,封面整宽横图。 */
+    .cp-hero { flex-direction: column; }
+    .cp-cover { width: 100%; aspect-ratio: 16 / 10; }
 }

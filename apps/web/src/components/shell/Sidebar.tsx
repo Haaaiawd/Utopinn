@@ -1,11 +1,10 @@
 // Sidebar — 48px rail(品牌标 + 收起钮 + 域导航 + 账户菜单)+ 聊天域专属
 // 内容栏(品牌行 → 新会话 → 搜索 → charDir 折叠分组嵌套)。非聊天域不画
 // 内容栏 —— 管理面在主区整页展开,分类走页内 chips 不走侧栏列表。
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
-import { apiGet } from '../../api/client';
-import { MOCK_CARDS, type CardItem } from '../../api/mock';
+import type { CardItem } from '../../api/characters';
 import { useContribs, useShell } from '../../kernel/context';
 import type { ChatSummary } from '../../types';
 import { Icon } from '../Icon';
@@ -59,6 +58,7 @@ export function Sidebar() {
     const {
         view, setView, chats, activeChat, selectChat, newChat,
         renameChat, deleteChat, sidebarCollapsed: collapsed, toggleSidebar,
+        cards,
     } = useShell();
     /** rail 域标来自 nav.rail 贡献点,order 排序 —— feature 注册的。 */
     const nav = useContribs('nav.rail');
@@ -66,16 +66,6 @@ export function Sidebar() {
     const [width, setWidth] = useState(272);
     /** charDir → folded; 默认全展开。 */
     const [folded, setFolded] = useState<Set<string>>(new Set());
-    /** charDir → 卡元(名字/卡面)。离线回落 MOCK,再落不到就裸 dir。 */
-    const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
-
-    useEffect(() => {
-        let dead = false;
-        apiGet<{ items: CardItem[] }>('/api/uberge/characters')
-            .then((r) => { if (!dead) setCards(new Map(r.items.map((c) => [c.charDir, c]))); })
-            .catch(() => { if (!dead) setCards(new Map(MOCK_CARDS.map((c) => [c.charDir, c]))); });
-        return () => { dead = true; };
-    }, []);
 
     const visibleChats = query.trim()
         ? chats.filter((c) => c.title.includes(query.trim()) || c.charDir.includes(query.trim()))
@@ -164,7 +154,8 @@ export function Sidebar() {
                     <span className="grow" />
                 </div>
 
-                <button type="button" className="sb-new" onClick={newChat}>
+                {/* () => 包一层:onClick 会把 MouseEvent 当 charDir 传进去。 */}
+                <button type="button" className="sb-new" onClick={() => newChat()}>
                     <Icon name="plus" size={16} />
                     <span>{t('sidebar.newChat')}</span>
                 </button>

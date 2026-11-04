@@ -3,6 +3,8 @@
 // props 消失是刻意的:接线归注册表,数据归上下文,App 不再做逐件对接。
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import type { CardItem } from '../api/characters';
+import type { ActivePersona } from '../api/personas';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from '../types';
 import type { Contributions, PanelInst, PanelType } from './contributions';
 import { Registry } from './registry';
@@ -18,9 +20,23 @@ export interface ShellCtx {
     activeChat: string;
     chat: ChatSummary | null;
     selectChat: (id: string) => void;
-    newChat: () => void;
+    /** charDir 可指定开新会话的角色页上下文;缺省走当前会话的卡。 */
+    newChat: (charDir?: string) => void;
     renameChat: (c: ChatSummary) => void;
     deleteChat: (c: ChatSummary) => void;
+
+    /** 角色卡展示面(charDir → 行),App 单次拉取供侧栏/库/舞台头共用。 */
+    cards: Map<string, CardItem>;
+    /** cards 是 mock 回退时为 true(视图据此挂诚实徽标)。 */
+    cardsMock: boolean;
+    /** 门厅/库外跳角色页的中转:置位 → stories 视图打开该卡详情后清除。 */
+    storiesFocus: string | null;
+    openCharacter: (charDir: string) => void;
+    clearStoriesFocus: () => void;
+
+    /** 当前会话生效的 persona(舞台头快切;生成时携带进 body.user)。 */
+    persona: ActivePersona | null;
+    setPersona: (p: ActivePersona | null) => void;
 
     sidebarCollapsed: boolean;
     toggleSidebar: () => void;

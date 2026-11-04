@@ -6,19 +6,32 @@
 // View tabs: 对话 (the conversation) | 提示词预览 (/api/uberge/preview output
 // rendered through the SAME renderer — the assembled prompt is just a
 // message list, which is exactly what the seam consumes).
+//
+// 舞台头(TASK-026):角色头像/名/会话名 + persona 徽标(快切,本地选择态,
+// 生成时以 body.user 携带)+ 绑定书/预设 chip(有则显示,无为空态)。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ConversationView, MessageViewModel, RendererActions, RendererMessageRole } from '@uberge/protocol';
 import { useI18n } from '../../i18n';
-import { MOCK_MESSAGES } from '../../api/mock';
+import { MOCK_MESSAGES, MOCK_PERSONAS } from '../../api/mock';
+import { cardData, charImageUrl, getCharacter, type CardDoc } from '../../api/characters';
+import { listPersonas, type PersonaItem } from '../../api/personas';
 import { getChat, appendUserMessage, patchSwipe } from '../../api/chats';
 import { postGenerate, streamJob } from '../../api/generate';
 import { useContribs, useShell } from '../../kernel/context';
 import type { PreviewResponse } from '../../types';
 import { Icon } from '../Icon';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+    DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 import { Composer } from './Composer';
 
+/** persona 未装载/列表为空时的兜底身份(与 App 预览兜底同名)。 */
 const USER_NAME = '旅人';
+
+/** per-chat persona 选择态的本地键(服务端无 per-chat 端点,TASK-026 诚实路径)。 */
+const personaKey = (chatId: string) => `uberge.persona.${chatId}`;
 
 /** Assembled-prompt rows → floors. Preview messages carry {role,content,name}. */
 function previewToView(data: PreviewResponse): ConversationView {
@@ -42,9 +55,23 @@ function useRenderer() {
     return useMemo(() => [...renderers].sort((a, b) => a.order - b.order)[0]?.Component, [renderers]);
 }
 
+/** 舞台头圆形角色脸:真卡图,404/无图落首字(同 sb-group-ava 回落)。 */
+function StageAvatar({ name, file }: { name: string; file: string | null }) {
+    const [err, setErr] = useState(false);
+    if (!file || err) return <span className="stage-ava">{name.slice(0, 1) || '?'}</span>;
+    return (
+        <span className="stage-ava">
+            <img src={charImageUrl(file)} alt="" onError={() => setErr(true)} />
+        </span>
+    );
+}
+
 export function ChatView() {
     const { t } = useI18n();
-    const { chat, preview, previewLoading, runPreview, hint, live } = useShell();
+    const {
+        chat, preview, previewLoading, runPreview, hint, live,
+        cards, persona, setPersona, setView,
+    } = useShell();
     const ctbarActions = useContribs('ctbar.chat');
     const Renderer = useRenderer();
     const [tab, setTab] = useState<'conversation' | 'preview'>('conversation');
@@ -52,8 +79,54 @@ export function ChatView() {
         MOCK_MESSAGES.map((m) => ({ ...m })),
     );
     const [streaming, setStreaming] = useState(false);
+    const [personas, setPersonas] = useState<PersonaItem[]>([]);
+    const [cardDoc, setCardDoc] = useState<CardDoc | null>(null);
     const nextId = useRef(messages.length);
     const abortRef = useRef<(() => void) | null>(null);
+
+    const card = chat ? cards.get(chat.charDir) : undefined;
+    /** 显示名 = 卡名 → charDir;mock 的 group:'ungrouped' 不做名源。 */
+    const charName = card?.name ?? chat?.charDir ?? '';
+    const charImg = card?.avatar ?? (/\.(png|webp)$/i.test(card?.fileName ?? '') ? card!.fileName : null);
+
+    // persona 列表:在线真拉,离线回 MOCK(列表形态不变,写路径本就离线短路)。
+    useEffect(() => {
+        let dead = false;
+        listPersonas()
+            .then((r) => { if (!dead) setPersonas(r.items); })
+            .catch(() => { if (!dead) setPersonas(MOCK_PERSONAS); });
+        return () => { dead = true; };
+    }, [live]);
+
+    // 每个会话一个 persona 选择:本地存的 avatar → 默认 persona → 列表头 → 兜底名。
+    useEffect(() => {
+        if (!chat) return;
+        if (personas.length === 0) { setPersona(null); return; }
+        let stored: string | null = null;
+        try { stored = localStorage.getItem(personaKey(chat.id)); } catch { /* storage off */ }
+        const hit = personas.find((p) => p.avatar === stored)
+            ?? personas.find((p) => p.isDefault)
+            ?? personas[0];
+        if (!hit) return; // noUncheckedIndexedAccess:personas[0] 可为 undefined
+        setPersona({ avatar: hit.avatar, name: hit.name, description: hit.description });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [chat?.id, personas]);
+
+    // 绑定书读数:卡文档 extensions.world / character_book(角色页同源字段)。
+    useEffect(() => {
+        if (!live || !chat) { setCardDoc(null); return; }
+        let dead = false;
+        getCharacter(chat.charDir)
+            .then((d) => { if (!dead) setCardDoc(d); })
+            .catch(() => { if (!dead) setCardDoc(null); });
+        return () => { dead = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [live, chat?.charDir]);
+
+    const pickPersona = (p: PersonaItem) => {
+        setPersona({ avatar: p.avatar, name: p.name, description: p.description });
+        try { if (chat) localStorage.setItem(personaKey(chat.id), p.avatar); } catch { /* storage off */ }
+    };
 
     // Prove the wiring on first paint: dry-run the assembly for this chat.
     useEffect(() => {
@@ -61,12 +134,18 @@ export function ChatView() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [chat?.id]);
 
+    // persona 进组装 → 换 persona 后既有预览作废,重跑一次保读数诚实。
+    useEffect(() => {
+        if (preview) runPreview();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [persona]);
+
     // Real chat load — floors replace mock content when the server is live.
     // Falls back to mock silently labelled via the preview badge/hint path.
     useEffect(() => {
-        if (!live) return;
+        if (!live || !chat) return;
         let dead = false;
-        getChat(chat!.charDir, chat!.chatName)
+        getChat(chat.charDir, chat.chatName)
             .then(({ messages: loaded }) => {
                 if (dead || !loaded.length) return;
                 nextId.current = loaded.length;
@@ -74,7 +153,7 @@ export function ChatView() {
             })
             .catch(() => { /* 404/offline → keep mock floors, honest badge */ });
         return () => { dead = true; };
-    }, [live, chat!.charDir, chat!.chatName]);
+    }, [live, chat]);
 
     const actions = useMemo<RendererActions>(() => ({
         swipe: (messageId, index) => {
@@ -102,10 +181,10 @@ export function ChatView() {
         regenerate: () => hint(t('chat.action.unwired')),
         branch: () => hint(t('chat.action.unwired')),
         more: () => hint(t('chat.action.unwired')),
-    }), [hint, t]);
+    }), [hint, t, live, chat]);
 
     const conversationView = useMemo<ConversationView>(() => ({
-        chatRef: { kind: 'chat', character: chat!.charDir, file: `${chat!.chatName}.jsonl` },
+        chatRef: chat ? { kind: 'chat', character: chat.charDir, file: `${chat.chatName}.jsonl` } : undefined,
         messages,
         typing: {},
         revision: 0,
@@ -115,11 +194,14 @@ export function ChatView() {
         preview?.data ? previewToView(preview.data) : null,
     [preview]);
 
+    /** 生效用户身份:persona 选择优先,未装载落兜底名。 */
+    const userName = persona?.name?.trim() || USER_NAME;
+
     const sendDraft = (text: string) => {
         if (!live || streaming) {
             setMessages((prev) => [
                 ...prev,
-                { id: nextId.current++, role: 'user', name: USER_NAME, content: text },
+                { id: nextId.current++, role: 'user', name: userName, content: text },
             ]);
             hint(t('chat.send.draftOnly'));
             return;
@@ -131,25 +213,27 @@ export function ChatView() {
      * Real send: append user floor → /api/uberge/generate → WS stream folds
      * deltas into a live assistant floor → on end the server has persisted
      * the reply, so we reload the chat for ground truth (swipes/receipts).
+     * persona 选择经 body.user 进组装(服务端唯一生效路径)。
      */
     const sendLive = async (text: string) => {
         abortRef.current?.();
         setStreaming(true);
         setMessages((prev) => [
             ...prev,
-            { id: nextId.current++, role: 'user', name: USER_NAME, content: text, timestamp: Date.now() },
+            { id: nextId.current++, role: 'user', name: userName, content: text, timestamp: Date.now() },
         ]);
         const floorId = nextId.current++;
         const upsertFloor = (content: string) =>
             setMessages((prev) => {
                 const i = prev.findIndex((m) => m.id === floorId);
-                const floor: MessageViewModel = { id: floorId, role: 'assistant', name: chat!.charDir, content, streaming: true };
+                const floor: MessageViewModel = { id: floorId, role: 'assistant', name: charName || chat!.charDir, content, streaming: true };
                 return i < 0 ? [...prev, floor] : prev.map((m) => (m.id === floorId ? floor : m));
             });
         try {
-            await appendUserMessage(chat!.charDir, chat!.chatName, USER_NAME, text);
+            await appendUserMessage(chat!.charDir, chat!.chatName, userName, text);
             const { jobId } = await postGenerate({
-                charDir: chat!.charDir, chatName: chat!.chatName, type: 'normal', user: { name: USER_NAME },
+                charDir: chat!.charDir, chatName: chat!.chatName, type: 'normal',
+                user: { name: userName, description: persona?.description },
             });
             abortRef.current = await streamJob(jobId, {
                 onDelta: (acc) => upsertFloor(acc),
@@ -169,10 +253,62 @@ export function ChatView() {
         }
     };
 
+    // —— 舞台头读数:绑定书(卡声明)/预设(上次组装)/WI 命中数 ——
+    const docData = cardData(cardDoc);
+    const boundWorld = typeof docData.extensions?.world === 'string' ? docData.extensions.world : '';
+    const embeddedBook = docData.character_book != null && typeof docData.character_book === 'object';
+    const presetName = preview?.data?.sources?.presetName ?? '';
+    const wiCount = preview?.data?.sources?.worldInfoActivated ?? 0;
+
     return (
         <>
             <div className="ctbar">
-                <h1>{chat?.title}</h1>
+                <StageAvatar name={charName} file={charImg} />
+                <span className="stage-id">
+                    <h1>{charName || chat?.title}</h1>
+                    {chat && <span className="stage-sub">{chat.title}</span>}
+                </span>
+                {/* persona 徽标:点开快切;选择态存本地,生成时携带(设计 web-rp-form §2.3)。
+                    顺序按 mockup:persona ▾ · 书×N · 预设。 */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button type="button" className="stage-persona" aria-label={t('stage.persona.pick')}>
+                            <Icon name="user" size={12} />
+                            <span className="stage-persona-name">{userName}</span>
+                            <Icon name="chevronDown" size={12} />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="start">
+                        <DropdownMenuLabel>{t('stage.persona')}</DropdownMenuLabel>
+                        {personas.map((p) => (
+                            <DropdownMenuItem key={p.avatar} onClick={() => pickPersona(p)}>
+                                <Icon name={p.avatar === persona?.avatar ? 'check' : 'user'} size={12} />
+                                <span className="stage-persona-item">{p.name || p.avatar}</span>
+                                {p.isDefault && <span className="mut ml-auto">{t('persona.default')}</span>}
+                            </DropdownMenuItem>
+                        ))}
+                        {personas.length === 0 && (
+                            <DropdownMenuItem disabled>{t('stage.persona.none')}</DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => setView('settings')}>
+                            <Icon name="settings" size={12} />{t('stage.persona.manage')}
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+                {(boundWorld || embeddedBook) && (
+                    <span className="stage-chip" title={t('stage.world')}>
+                        <Icon name="book" size={12} />
+                        <span className="stage-chip-lbl">{boundWorld || t('stage.book.embedded')}</span>
+                        {wiCount > 0 && <span className="stage-chip-n">×{wiCount}</span>}
+                    </span>
+                )}
+                {presetName && (
+                    <span className="stage-chip" title={t('stage.preset')}>
+                        <Icon name="zap" size={12} />
+                        <span className="stage-chip-lbl">{presetName}</span>
+                    </span>
+                )}
                 <span className="grow" />
                 {/* mock 徽标只保留右栏诊断卡那一处 —— 它是数据可信度的本职位置,
                     ctbar 只留标题 + tabs + 图标。 */}
@@ -194,7 +330,13 @@ export function ChatView() {
             </div>
 
             <div className="read-zone">
-                {!Renderer ? null : tab === 'conversation' ? (
+                {/* 零会话(门厅首入且库空)→ 诚实空态,Composer 不挂(chat 为 null)。 */}
+                {!chat ? (
+                    <div className="empty-hint">
+                        <div className="glyph"><Icon name="chat" size={22} /></div>
+                        <p>{t('chat.noChat')}</p>
+                    </div>
+                ) : !Renderer ? null : tab === 'conversation' ? (
                     <Renderer view={conversationView} actions={actions} />
                 ) : previewView ? (
                     <Renderer view={previewView} actions={actions} />
@@ -206,7 +348,7 @@ export function ChatView() {
                             : <p>{previewLoading ? '…' : t('chat.preview.empty')}</p>}
                     </div>
                 )}
-                {tab === 'conversation' && <Composer onSend={sendDraft} disabled={streaming} />}
+                {chat && tab === 'conversation' && <Composer onSend={sendDraft} disabled={streaming} />}
             </div>
         </>
     );

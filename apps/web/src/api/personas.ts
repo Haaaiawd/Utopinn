@@ -23,6 +23,18 @@ export interface PersonaList {
     defaultPersona: string | null;
 }
 
+/**
+ * 当前会话生效的人设选择(舞台头快切)。服务端没有 per-chat persona
+ * 端点 —— 选择态存本地,生成时以 user:{name,description} 携带进
+ * /api/uberge/generate(uberge-generate.js body.user → substCtx.name1)。
+ */
+export interface ActivePersona {
+    /** personas 主键(头像文件名);mock/手填兜底可为 null。 */
+    avatar: string | null;
+    name: string;
+    description: string;
+}
+
 /** PUT body —— 服务端嵌套合并,缺省字段保持原值;is_default 只认 true。 */
 export interface PersonaPatch {
     name?: string;

@@ -86,6 +86,27 @@ export async function listAllChats(): Promise<import('../types').ChatSummary[]> 
     return out;
 }
 
+/**
+ * Per-character chat rows for the character page (TASK-026) — richer than
+ * the sidebar summary: messageCount/lastMessage/updatedAt ride along.
+ * Same route the sidebar flattening uses; kept separate so the char page
+ * doesn't depend on sidebar list freshness.
+ */
+export interface CharChatItem {
+    name: string;
+    fileName?: string;
+    messageCount: number;
+    byteSize?: number;
+    updatedAt?: string | number;
+    createdAt?: string | number;
+    lastMessage?: { mes?: string; name?: string; is_user?: boolean };
+    integrity?: string;
+}
+
+export async function listChatsForChar(charDir: string): Promise<{ items: CharChatItem[]; total: number }> {
+    return apiGet(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`);
+}
+
 /** Create a chat file (server saves header + the seed system message). */
 export async function createChat(charDir: string, chatName: string): Promise<void> {
     await apiPost('/api/chats/append', {

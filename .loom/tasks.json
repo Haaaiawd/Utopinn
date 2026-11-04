@@ -1693,8 +1693,22 @@
           "verified": ""
         }
       ],
-      "progress": "",
-      "evidence": [],
+      "progress": {
+        "completed": [
+          "门厅 FoyerView 落地:nav.rail order 最前、双语词条、默认 view(有会话历史时)、continue 大卡+stories 卡行+新会话/导入快动作",
+          "角色页:LibraryView 列表/详情双态(仿 RulesView),封面+first_mes greeting 预览+该卡会话列表(enter 会话)+编辑/资产占位入口,storiesFocus 支持门厅深跳",
+          "舞台头:ChatView ctbar 重排为 圆头像+角色名+会话名 → persona 徽标快切(下拉含默认标/管理入口)→ 世界书 chip(extensions.world/character_book 真实读数)→ 预设 chip;persona 存 localStorage per-chat,进 postGenerate body.user",
+          "ProseRenderer 四惯例:*action*→em.act 弱斜体,「」/「」/\"\"→span.say --quote 高亮,首条 assistant 消息 greeting 版式,空流式消息三点脉冲(有文保留 caret);swipe 控件不动",
+          "壳/数据:api/characters.ts 新建(listCharacters/getCharacter/cardData/charImageUrl),chats.ts listChatsForChar,ShellCtx 加 cards/persona/openCharacter/storiesFocus,newChat(charDir?),Sidebar 改用 ctx.cards"
+        ],
+        "current": "tsc --noEmit 0 错、vite build 通过、真卡数据形状已对(extensions.world=Eldoria/character_book/first_mes)",
+        "next": "人工 UI 验证三级路径与舞台头观感(vite dev),再按验收逐条 verified"
+      },
+      "evidence": [
+        "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
+        "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
+        "curl /api/uberge/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)"
+      ],
       "outcome": "桌面壳 RP 化:角色=一等对象。卡墙→角色页→会话三级路径;聊天页舞台头带 persona 快切与绑定资产;门厅首页;prose 渲染器吃 RP 文本惯例。",
       "status": "open",
       "boundaries": [
@@ -1702,7 +1716,8 @@
         "不改协议/renderer seam 契约",
         "移动端阅读器归 TASK-027 不在此",
         "stageScheme/per-chat 背景/立绘列 P1 不进本任务"
-      ]
+      ],
+      "updated_at": "2026-11-04T08:48:47.754Z"
     },
     {
       "id": "TASK-027",

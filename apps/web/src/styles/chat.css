@@ -55,6 +55,32 @@
     animation: ub-caret 1s steps(2) infinite;
 }
 @keyframes ub-caret { 50% { opacity: 0; } }
+
+/* ——— TASK-026 消息惯例 ——— */
+/* *动作* = 斜体弱墨;user 楼层本就弱一档,再降半档到 ink3。 */
+.ub-prose .msg .act { font-style: italic; color: var(--ink2); }
+.ub-prose .msg.user .act { color: var(--ink3); }
+/* 「…」/“…”/"…" = 引号对话色(--quote,琥珀同族;ST 主题 quote 槽)。 */
+.ub-prose .msg .say { color: var(--quote); }
+/* greeting(首条 assistant)= 开场版式:顶发丝线 + 稍大字号 + 名字加宽字距。
+   克制三件套,不居中(多段 prose 居中读起来脏)。 */
+.ub-prose .msg.greeting {
+    font-size: calc(var(--read-size) * 1.08);
+    border-top: 1px solid var(--line); padding-top: 1.1em;
+}
+.ub-prose .msg.greeting .who { color: var(--ink3); letter-spacing: .14em; }
+/* typing:生成中的空文楼层三点脉冲(有文时仍走 .caret)。 */
+.ub-prose .msg .tdots { display: inline-flex; gap: 5px; padding: .4em 2px; vertical-align: baseline; }
+.ub-prose .msg .tdots i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--ink3); animation: ub-tdot 1.2s infinite;
+}
+.ub-prose .msg .tdots i:nth-child(2) { animation-delay: .15s; }
+.ub-prose .msg .tdots i:nth-child(3) { animation-delay: .3s; }
+@keyframes ub-tdot { 0%, 60%, 100% { opacity: .25; } 30% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .ub-prose .msg .tdots i, .ub-prose .msg .caret { animation: none; }
+}
 .ub-prose .vreceipt {
     max-width: var(--read-width); margin: -0.6em auto 1.3em; padding: 0;
 }

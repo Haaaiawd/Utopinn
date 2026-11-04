@@ -4,7 +4,7 @@
 import {
     ArrowClockwise, ArrowUp, Book, BookBookmark, Cards, CaretDown, CaretLeft,
     CaretRight, ChartLine, ChatsCircle, Check, Clock, Command, CornersOut, DotsThree,
-    DownloadSimple, Eye, File, GearSix, Globe, GridFour, Layout, Lightning, List,
+    DownloadSimple, Eye, File, GearSix, Globe, GridFour, House, Layout, Lightning, List,
     MagnifyingGlass, Minus, Moon, NotePencil, Plus, Pulse, PuzzlePiece, SidebarSimple,
     Square, Stack, Sun, User, X,
     type Icon as PhosphorIcon,
@@ -12,6 +12,7 @@ import {
 
 const MAP = {
     /* L1 主 tab 标(duotone)— 各域的表情 */
+    foyer: House,
     chat: ChatsCircle,
     stories: Cards,
     rules: BookBookmark,
