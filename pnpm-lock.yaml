@@ -219,6 +219,9 @@ importers:
       '@uberge/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@uberge/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
       '@uberge/panel-shim':
         specifier: workspace:*
         version: link:../../packages/panel-shim
