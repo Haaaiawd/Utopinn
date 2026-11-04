@@ -23,7 +23,7 @@ import {
 import { getChatRepo, getSettingsRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './uberge-library.js';
-import { buildStscriptEnv } from '../services/stscript-env.js';
+import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
 
 export const inject = ['webServer'];
 
@@ -34,6 +34,11 @@ function pathSegs(p) {
 function getPath(obj, p) {
     let cur = obj;
     for (const s of pathSegs(p)) {
+        // ST 惯例:根可存 JSON 串(setvar 新根序列化)——读到串时尝试解包,
+        // 与 core getVariable 的平读语义对齐(TH 卡经 lodash-path 穿透它)。
+        if (typeof cur === 'string' && /^[{[]/.test(cur.trim())) {
+            try { cur = JSON.parse(cur); } catch { /* 非 JSON 串按字面 */ }
+        }
         if (cur === null || typeof cur !== 'object') return undefined;
         cur = cur[s];
     }
@@ -44,6 +49,9 @@ function setPath(obj, p, v) {
     let cur = obj;
     for (let i = 0; i < segs.length - 1; i++) {
         const s = segs[i];
+        if (typeof cur[s] === 'string' && /^[{[]/.test(cur[s].trim())) {
+            try { cur[s] = JSON.parse(cur[s]); } catch { cur[s] = {}; }
+        }
         if (cur[s] === null || typeof cur[s] !== 'object') cur[s] = {};
         cur = cur[s];
     }
@@ -53,9 +61,14 @@ function delPath(obj, p) {
     const segs = pathSegs(p);
     let cur = obj;
     for (let i = 0; i < segs.length - 1; i++) {
-        cur = cur?.[segs[i]];
-        if (cur === null || typeof cur !== 'object') return false;
+        let nxt = cur?.[segs[i]];
+        if (typeof nxt === 'string' && /^[{[]/.test(nxt.trim())) {
+            try { nxt = JSON.parse(nxt); cur[segs[i]] = nxt; } catch { return false; }
+        }
+        if (nxt === null || typeof nxt !== 'object') return false;
+        cur = nxt;
     }
+    if (cur === null || typeof cur !== 'object') return false;
     return delete cur[segs[segs.length - 1]];
 }
 
@@ -182,6 +195,20 @@ const METHODS = {
             ops: built.env.ops,
             notifications: built.sinks.notifications,
         };
+    },
+    /** 卡嵌脚本面:data.extensions.th_scripts(TH 生态契约;条目兼容
+     *  纯字符串与 {name,script} 两形)。 */
+    async getEmbeddedScripts(_a, _scope, ctx2) {
+        if (!ctx2.charDir) return { ok: false, status: 400, error: 'target.charDir required' };
+        const card = await loadCard(ctx2.directories, ctx2.charDir);
+        if (!card) return { ok: false, status: 404, error: 'card not found' };
+        const raw = card?.data?.extensions?.th_scripts ?? [];
+        const list = (Array.isArray(raw) ? raw : [raw])
+            .map((s, i) => typeof s === 'string'
+                ? { name: `script-${i}`, script: s }
+                : { name: s?.name ?? `script-${i}`, script: s?.script ?? s?.content ?? '' })
+            .filter(s => s.script);
+        return { ok: true, result: list };
     },
 };
 

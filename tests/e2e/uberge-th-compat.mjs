@@ -92,6 +92,28 @@ log('message 域写', r.body?.ok === true);
 r = await call('getVariables', { type: 'message', message_id: 1, path: 'stat_data.临时' });
 log('message 域读', r.body?.result === 'v', `result=${r.body?.result}`);
 
+// 12. 语料卡 th_scripts 抽样:getEmbeddedScripts 归一化 + 逐条 triggerSlash 实跑
+const CARD = 'e2e-th-card';
+const cbase = `/api/uberge/characters/${CARD}/chats`;
+fs.copyFileSync('tests/corpus/cards/th-probe.json', `apps/server/data/default-user/characters/${CARD}.json`);
+await req('PUT', `${cbase}/${CHAT}`, {});
+try {
+    r = await call('getEmbeddedScripts', {}, { charDir: CARD, chatName: CHAT });
+    const scripts = r.body?.result ?? [];
+    log('卡嵌脚本枚举', scripts.length === 2 && scripts[1].name === 'init-bag', JSON.stringify(scripts).slice(0, 140));
+    let ran = 0;
+    for (const s of scripts) {
+        const rr = await call('triggerSlash', { script: s.script }, { charDir: CARD, chatName: CHAT });
+        if (rr.body?.ok === true) ran++;
+    }
+    log('th_scripts 抽样运行', ran === scripts.length && ran > 0, `ran=${ran}/${scripts.length}`);
+    r = await call('getVariables', { type: 'chat', path: 'stat_data.背包.火把' }, { charDir: CARD, chatName: CHAT });
+    log('卡脚本写变量', Number(r.body?.result) === 3, `火把=${JSON.stringify(r.body?.result)}`);
+} finally {
+    await req('DELETE', `${cbase}/${CHAT}`);
+    fs.unlinkSync(`apps/server/data/default-user/characters/${CARD}.json`);
+}
+
 // 清理
 await req('DELETE', `${base}/${CHAT}`);
 log('清理', true);
