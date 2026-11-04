@@ -1,9 +1,11 @@
 // Sidebar — 48px rail(品牌标 + 收起钮 + 域导航 + 账户菜单)+ 聊天域专属
 // 内容栏(品牌行 → 新会话 → 搜索 → charDir 折叠分组嵌套)。非聊天域不画
 // 内容栏 —— 管理面在主区整页展开,分类走页内 chips 不走侧栏列表。
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
+import { apiGet } from '../../api/client';
+import { MOCK_CARDS, type CardItem } from '../../api/mock';
 import type { ChatSummary, ViewId } from '../../types';
 import { Icon } from '../Icon';
 import type { IconName } from '../Icon';
@@ -23,6 +25,21 @@ const NAV: { id: ViewId; icon: IconName }[] = [
     { id: 'rules', icon: 'rules' },
     { id: 'extensions', icon: 'extensions' },
 ];
+
+/** 组头卡面:有图放卡面(卡文件本身是 PNG 时直接当脸用),404/无图回落首字母。 */
+function CharFace({ dir, card }: { dir: string; card?: CardItem }) {
+    const [err, setErr] = useState(false);
+    const face = card?.avatar ?? (card?.fileName?.endsWith('.png') ? card.fileName : undefined);
+    if (!face || err) {
+        return <span className="sb-group-ava">{(card?.name ?? dir).slice(0, 1)}</span>;
+    }
+    return (
+        <span className="sb-group-ava">
+            <img src={`/characters/${encodeURIComponent(face)}`} alt="" loading="lazy"
+                onError={() => setErr(true)} />
+        </span>
+    );
+}
 
 function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
     c: ChatSummary; active: boolean; t: (k: string) => string;
@@ -62,6 +79,16 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
     const [width, setWidth] = useState(272);
     /** charDir → folded; 默认全展开。 */
     const [folded, setFolded] = useState<Set<string>>(new Set());
+    /** charDir → 卡元(名字/卡面)。离线回落 MOCK,再落不到就裸 dir。 */
+    const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
+
+    useEffect(() => {
+        let dead = false;
+        apiGet<{ items: CardItem[] }>('/api/uberge/characters')
+            .then((r) => { if (!dead) setCards(new Map(r.items.map((c) => [c.charDir, c]))); })
+            .catch(() => { if (!dead) setCards(new Map(MOCK_CARDS.map((c) => [c.charDir, c]))); });
+        return () => { dead = true; };
+    }, []);
 
     const visibleChats = query.trim()
         ? chats.filter((c) => c.title.includes(query.trim()) || c.charDir.includes(query.trim()))
@@ -179,8 +206,8 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                                     <div key={dir} className="sb-group">
                                         <button type="button" className="sb-group-head" onClick={() => toggleFold(dir)}>
                                             <Icon name="chevronRight" size={12} className={`sb-fold ${isFolded ? '' : 'open'}`} />
-                                            <span className="sb-group-ava">{dir.slice(0, 1)}</span>
-                                            <span className="sb-group-name">{dir}</span>
+                                            <CharFace dir={dir} card={cards.get(dir)} />
+                                            <span className="sb-group-name">{cards.get(dir)?.name ?? dir}</span>
                                             <span className="sb-group-count">{items.length}</span>
                                         </button>
                                         {!isFolded && items.map((c) => (

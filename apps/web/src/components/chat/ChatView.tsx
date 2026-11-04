@@ -19,6 +19,11 @@ import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
 import { Composer } from './Composer';
 import { ProseRenderer } from './renderers/ProseRenderer';
 import type { ConversationRendererComponent } from './renderers/types';
+import { PANEL_TYPES, type PanelType } from '../shell/RightPanel';
+import {
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+    DropdownMenuLabel, DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 const USER_NAME = '旅人';
 
@@ -45,7 +50,8 @@ export interface ChatViewProps {
     preview: PreviewResult | null;
     previewLoading: boolean;
     onRunPreview: () => void;
-    onTogglePanel: () => void;
+    /** "+" 加板块 —— 右栏无板块时自动收起,这是唯一常驻入口。 */
+    onAddPanel: (type: PanelType) => void;
     /** Status-bar hint for unwired actions. */
     onHint: (msg: string, err?: boolean) => void;
     /** 沉浸模式:同时收起内容栏与右面板,只留 rail+阅读列。 */
@@ -60,7 +66,7 @@ export function ChatView({
     preview,
     previewLoading,
     onRunPreview,
-    onTogglePanel,
+    onAddPanel,
     onHint,
     onImmersive,
     live,
@@ -205,8 +211,21 @@ export function ChatView({
                         <TabsTrigger value="preview">{t('chat.tabs.preview')}</TabsTrigger>
                     </TabsList>
                 </Tabs>
-                <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
-                    icon={<Icon name="panelRight" size={16} mirrored />} />
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <span><IconButton label={t('panel.add')} icon={<Icon name="plus" size={16} />} /></span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="end">
+                        <DropdownMenuLabel>{t('panel.add')}</DropdownMenuLabel>
+                        {PANEL_TYPES.map((pt) => (
+                            <DropdownMenuItem key={pt.type} onClick={() => onAddPanel(pt.type)}>
+                                <Icon name={pt.icon} size={12} />
+                                {t(`panel.type.${pt.type}`)}
+                                {!pt.wired && <span className="mut" style={{ marginLeft: 'auto' }}>{t('panel.soon')}</span>}
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
                 <IconButton label={t('menu.view.immersive')} onClick={onImmersive}
                     icon={<Icon name="focus" size={16} />} />
             </div>

@@ -25,10 +25,15 @@ rail = 品牌标 → 收起钮(唯一常驻位) → 域标(chat/stories/rules/ex
        extensions=能力注册页(ext.* 五类扩展点,全部标诚实接线态);
        settings=设置页。诊断域已砍(用户决定 2026-11-03)——trace
        只留在右面板 diag 板块,不再做独立页。
-右面板 = 多板块宿主(非固定 tab):panel.type.* 注册表 + "+"选择器
-       → 每个打开的板块 = 一条 tab(icon+名+×),可加宽(.wide)/隐藏;
-       session/diag/cardapp 已接线,browser/analysis 诚实 stub。
+右面板 = 多板块宿主:panel.type.* 注册表(session/diag/cardapp/analysis)
+       → 打开的板块 = tab(icon+名+×);板块清空→整条自动收起;
+       "+"唯一常驻入口在 ctbar(顶掉旧 panelRight 位)。
+       无加宽/隐藏钮 —— 宽度走左缘拖拽(300-560,默认 380)。
+       session/diag/cardapp 已接线,analysis 诚实 stub;浏览器类不做
+       (用户 2026-11-04:没必要真塞个浏览器)。
        预览眼睛钮已删——切到「提示词预览」tab 时才按需跑 runPreview。
+顶条对齐 = sb-head/ctbar/pnl-tabs 同高 56,一根发丝线贯通三栏
+       (VS Code 惯例:同行 chrome 共享高度,实测 35px 统一)。
 沉浸模式 = 内容栏+右面板同收,只留 rail+阅读列(ctbar focus 钮)
 ```
 
@@ -64,6 +69,11 @@ rail = 品牌标 → 收起钮(唯一常驻位) → 域标(chat/stories/rules/ex
 | hit area | 桌面最小 24、实用 28-32;icon-sm 26 仅限行内,独立钮 ≥28 | WCAG 2.2 |
 | 双色分配铁律 | 全 app 只允许 2 底色+1 浮起色+2 档覆盖灰+发丝线;新颜色=bug | GPT --sidebar-surface 17/--main 21/--elevated 2f |
 | 待补样式清单 | `.rail` `.rail-mark` `.rail-btn` `.sb-new` `.sb-group-head` `.sb-group-ava` `.sb-sect` `.sb-item-title` `.sb-fold` `.sb-foot-ava` 全部零定义 | 调研报告实测 styles/ 下缺席 |
+| 顶条同高 | **56px 一行**:sb-head/ctbar/pnl-tabs 同高,发丝线贯通 | VS Code 所有 pane title strip 统一 35px 的同一规则;反例(Figma/Discord)都是右栏"没有"顶条,而非不等高 |
+| 右栏宽度 | **默认 380,左缘拖拽 300-560** | VS Code aux bar 300-340、panel min 300;Figma 固定 241px 是被用户书签脚本绕过的实证反例 |
+| 会话行解剖 | title + hover 操作(rename/x);不加副行 | GPT=纯 title;dsh-tavern=title+meta(mode+日期)一档;ST 的三行预览/文件大小是管理弹窗面,不是导航件 |
+| 组头解剖 | chevron + **24px 圆卡面**(真图,404 落首字母)+ 显示名 + count | ST/c.ai/Risu 全部 avatar-first;组名必须是卡显示名不挂 charDir 裸目录名(2026-11-04 修) |
+| Stories 定位 | 页(卡 CRUD/导入/浏览),不进侧栏层级 | 组头一行已=一个故事;再嵌一层是重复分组键。卡管理归 LibraryView |
 
 ## 否决记录
 

@@ -1,32 +1,31 @@
 // Right bar — multi-panel host. Panels are typed instances added via the "+"
-// picker (本局/诊断/面板/浏览器/分析…), each living as a closable tab —
-// the host owns the strip, panel bodies render per type. Contextual data
-// (preview, charDir) flows down from App.
+// picker in the center topbar (本局/诊断/面板/分析), each living as a
+// closable tab — the host owns the strip, panel bodies render per type.
+// Zero panels → the whole track auto-collapses; "+" brings it back.
+import { useState } from 'react';
 import { useI18n } from '../../i18n';
 import type { PreviewResult } from '../../types';
 import { Icon, type IconName } from '../Icon';
-import { IconButton } from '../ui/icon-button';
 import { ScrollArea } from '../ui/scroll-area';
-import {
-    DropdownMenu, DropdownMenuContent, DropdownMenuItem,
-    DropdownMenuLabel, DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
 import { PreviewDebug } from '../chat/PreviewDebug';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
 
-export type PanelType = 'session' | 'diag' | 'cardapp' | 'browser' | 'analysis';
+export type PanelType = 'session' | 'diag' | 'cardapp' | 'analysis';
 export interface PanelInst { id: string; type: PanelType }
 
-const PANEL_TYPES: { type: PanelType; icon: IconName; wired: boolean }[] = [
+export const PANEL_TYPES: { type: PanelType; icon: IconName; wired: boolean }[] = [
     { type: 'session', icon: 'user', wired: true },
     { type: 'diag', icon: 'pulse', wired: true },
     { type: 'cardapp', icon: 'layout', wired: true },
-    { type: 'browser', icon: 'globe', wired: false },
     { type: 'analysis', icon: 'chartLine', wired: false },
 ];
 
 const PANEL_ICON: Record<PanelType, IconName> =
     Object.fromEntries(PANEL_TYPES.map((p) => [p.type, p.icon])) as Record<PanelType, IconName>;
+
+/* 右栏可拖(VS Code:一切 dock 皆可拖;Figma 固定右栏是实证反例)。
+   300 = VS Code panel min;560 封顶防吃掉阅读列。 */
+const PNL_MIN = 300, PNL_MAX = 560;
 
 function PanelBody({ type, preview, charDir, chatName }: {
     type: PanelType; preview: PreviewResult | null; charDir?: string; chatName?: string;
@@ -69,26 +68,42 @@ function PanelBody({ type, preview, charDir, chatName }: {
     }
 }
 
-export function RightPanel({ panels, active, preview, hidden, wide, charDir, chatName, onSelect, onClose, onAdd, onToggleWide, onHide }: {
+export function RightPanel({ panels, active, preview, hidden, charDir, chatName, onSelect, onClose }: {
     panels: PanelInst[];
     active: string | null;
     preview: PreviewResult | null;
     hidden: boolean;
-    wide: boolean;
     charDir?: string;
     chatName?: string;
     onSelect: (id: string) => void;
     onClose: (id: string) => void;
-    onAdd: (type: PanelType) => void;
-    onToggleWide: () => void;
-    onHide: () => void;
 }) {
     const { t } = useI18n();
-    if (hidden) return null;
-    const activePanel = panels.find((p) => p.id === active) ?? panels[0] ?? null;
+    const [width, setWidth] = useState(380);
+
+    const startResize = (e: React.PointerEvent) => {
+        e.preventDefault();
+        const startX = e.clientX;
+        const startW = width;
+        const move = (ev: PointerEvent) =>
+            // 左缘柄:左拖变宽。
+            setWidth(Math.min(PNL_MAX, Math.max(PNL_MIN, startW + startX - ev.clientX)));
+        const up = () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+    };
+
+    // 无板块时整条自动收起 —— 不再需要显式 hide 钮;加板块走 ctbar 的 "+"。
+    if (hidden || panels.length === 0) return null;
+    const activePanel = panels.find((p) => p.id === active) ?? panels[0];
+    if (!activePanel) return null;
 
     return (
-        <aside className={`upanel${wide ? ' wide' : ''}`}>
+        <aside className="upanel" style={{ width }}>
+            <div className="pnl-resizer" onPointerDown={startResize} />
             <div className="pnl-tabs">
                 <ScrollArea className="pnl-tabs-scroll">
                     <div className="pnl-tabs-row">
@@ -106,33 +121,10 @@ export function RightPanel({ panels, active, preview, hidden, wide, charDir, cha
                         ))}
                     </div>
                 </ScrollArea>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <span><IconButton size="icon-sm" label={t('panel.add')} icon={<Icon name="plus" size={16} />} /></span>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent side="bottom" align="end">
-                        <DropdownMenuLabel>{t('panel.add')}</DropdownMenuLabel>
-                        {PANEL_TYPES.map((pt) => (
-                            <DropdownMenuItem key={pt.type} onClick={() => onAdd(pt.type)}>
-                                <Icon name={pt.icon} size={12} />
-                                {t(`panel.type.${pt.type}`)}
-                                {!pt.wired && <span className="mut" style={{ marginLeft: 'auto' }}>{t('panel.soon')}</span>}
-                            </DropdownMenuItem>
-                        ))}
-                    </DropdownMenuContent>
-                </DropdownMenu>
-                <IconButton size="icon-sm" label={t('panel.wide')} icon={<Icon name="focus" size={12} />} onClick={onToggleWide} />
-                <IconButton size="icon-sm" label={t('menu.view.togglePanel')} icon={<Icon name="panelRight" size={12} mirrored />} onClick={onHide} />
             </div>
 
             <ScrollArea className="sp-body">
-                {activePanel ? (
-                    <PanelBody type={activePanel.type} preview={preview} charDir={charDir} chatName={chatName} />
-                ) : (
-                    <div className="sp-card">
-                        <p className="mut" style={{ lineHeight: 1.7 }}>{t('panel.empty')}</p>
-                    </div>
-                )}
+                <PanelBody type={activePanel.type} preview={preview} charDir={charDir} chatName={chatName} />
             </ScrollArea>
         </aside>
     );
