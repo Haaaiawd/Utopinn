@@ -906,7 +906,7 @@
     {
      "criterion": "/api/cdn-proxy 通用远程资产代理(卡声明allowlist精确放行",
      "verify_by": "loom check + 测试",
-     "evidence": "待跑"
+     "evidence": "cdn-proxy.js + card-runtime 测试全绿(既存)"
     }
    ],
    "done_when": [
@@ -938,15 +938,22 @@
    ],
    "integrity_version": 1,
    "covers": [],
-   "status": "open",
+   "status": "done",
    "progress": {
-    "completed": [],
-    "current": "待开始",
+    "completed": [
+     "服务端 mounts/assets/cdn-proxy/csp/manifest 全件+测试",
+     "bridgeNonce/bootstrap 下发双入口",
+     "宿主消费闭环(022):iframe+nonce 门+th/call 桥"
+    ],
+    "current": "",
     "next": ""
    },
-   "evidence": [],
+   "evidence": [
+    "tests/e2e/uberge-cardapp.mjs 15/15",
+    "apps/web cardapp/ 宿主"
+   ],
    "created_at": "2026-11-03T06:33:54.144Z",
-   "updated_at": "2026-11-03T06:34:14.239Z"
+   "updated_at": "2026-11-04T07:22:25.869Z"
   },
   {
    "acceptance": [
