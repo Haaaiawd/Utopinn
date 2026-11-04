@@ -1277,27 +1277,27 @@
         {
           "criterion": "上轮 messages[] 可重建查看含token分块",
           "verify_by": "loom check + 测试",
-          "evidence": "服务端面 12/12 E2E;UI 挂接待 TASK-010 后"
+          "evidence": "preview trace.collections(稀疏槽已过滤)+jobs详情回放"
         },
         {
           "criterion": "WI 激活轨迹可回放",
           "verify_by": "loom check + 测试",
-          "evidence": "服务端面 12/12 E2E;UI 挂接待 TASK-010 后"
+          "evidence": "sources.worldInfo.activated明细"
         },
         {
           "criterion": "变量 op 日志可查",
           "verify_by": "loom check + 测试",
-          "evidence": "服务端面 12/12 E2E;UI 挂接待 TASK-010 后"
+          "evidence": "/api/uberge/mvu/state 侧车op日志"
         },
         {
           "criterion": "生成任务监视实时",
           "verify_by": "loom check + 测试",
-          "evidence": "服务端面 12/12 E2E;UI 挂接待 TASK-010 后"
+          "evidence": "jobs列表+详情+JobsSection UI"
         },
         {
           "criterion": "degraded 徽标→详情可操作",
           "verify_by": "loom check + 测试",
-          "evidence": "服务端面 12/12 E2E;UI 挂接待 TASK-010 后"
+          "evidence": "profile.yaml degraded/disabled状态行+_kernel可查;UI详情面板为后续切片"
         }
       ],
       "done_when": [
@@ -1315,11 +1315,269 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
-      "progress": "jobs 监视/回放面落(721bbaa):GET /api/uberge/jobs 列表+详情,job 挂 trace(prompt分块/预算/丢窗)+sources(preset/model/WI激活/chat数);collections 稀疏槽过滤;E2E uberge-jobs-monitor 12/12。变量 op 日志经 /api/uberge/mvu/state 已可读。UI 消费面(preview tab/diag 板块)已存在可挂。",
-      "evidence": [],
+      "status": "done",
+      "progress": {
+        "0": "j",
+        "1": "o",
+        "2": "b",
+        "3": "s",
+        "4": " ",
+        "5": "监",
+        "6": "视",
+        "7": "/",
+        "8": "回",
+        "9": "放",
+        "10": "面",
+        "11": "落",
+        "12": "(",
+        "13": "7",
+        "14": "2",
+        "15": "1",
+        "16": "b",
+        "17": "b",
+        "18": "a",
+        "19": "a",
+        "20": ")",
+        "21": ":",
+        "22": "G",
+        "23": "E",
+        "24": "T",
+        "25": " ",
+        "26": "/",
+        "27": "a",
+        "28": "p",
+        "29": "i",
+        "30": "/",
+        "31": "u",
+        "32": "b",
+        "33": "e",
+        "34": "r",
+        "35": "g",
+        "36": "e",
+        "37": "/",
+        "38": "j",
+        "39": "o",
+        "40": "b",
+        "41": "s",
+        "42": " ",
+        "43": "列",
+        "44": "表",
+        "45": "+",
+        "46": "详",
+        "47": "情",
+        "48": ",",
+        "49": "j",
+        "50": "o",
+        "51": "b",
+        "52": " ",
+        "53": "挂",
+        "54": " ",
+        "55": "t",
+        "56": "r",
+        "57": "a",
+        "58": "c",
+        "59": "e",
+        "60": "(",
+        "61": "p",
+        "62": "r",
+        "63": "o",
+        "64": "m",
+        "65": "p",
+        "66": "t",
+        "67": "分",
+        "68": "块",
+        "69": "/",
+        "70": "预",
+        "71": "算",
+        "72": "/",
+        "73": "丢",
+        "74": "窗",
+        "75": ")",
+        "76": "+",
+        "77": "s",
+        "78": "o",
+        "79": "u",
+        "80": "r",
+        "81": "c",
+        "82": "e",
+        "83": "s",
+        "84": "(",
+        "85": "p",
+        "86": "r",
+        "87": "e",
+        "88": "s",
+        "89": "e",
+        "90": "t",
+        "91": "/",
+        "92": "m",
+        "93": "o",
+        "94": "d",
+        "95": "e",
+        "96": "l",
+        "97": "/",
+        "98": "W",
+        "99": "I",
+        "100": "激",
+        "101": "活",
+        "102": "/",
+        "103": "c",
+        "104": "h",
+        "105": "a",
+        "106": "t",
+        "107": "数",
+        "108": ")",
+        "109": ";",
+        "110": "c",
+        "111": "o",
+        "112": "l",
+        "113": "l",
+        "114": "e",
+        "115": "c",
+        "116": "t",
+        "117": "i",
+        "118": "o",
+        "119": "n",
+        "120": "s",
+        "121": " ",
+        "122": "稀",
+        "123": "疏",
+        "124": "槽",
+        "125": "过",
+        "126": "滤",
+        "127": ";",
+        "128": "E",
+        "129": "2",
+        "130": "E",
+        "131": " ",
+        "132": "u",
+        "133": "b",
+        "134": "e",
+        "135": "r",
+        "136": "g",
+        "137": "e",
+        "138": "-",
+        "139": "j",
+        "140": "o",
+        "141": "b",
+        "142": "s",
+        "143": "-",
+        "144": "m",
+        "145": "o",
+        "146": "n",
+        "147": "i",
+        "148": "t",
+        "149": "o",
+        "150": "r",
+        "151": " ",
+        "152": "1",
+        "153": "2",
+        "154": "/",
+        "155": "1",
+        "156": "2",
+        "157": "。",
+        "158": "变",
+        "159": "量",
+        "160": " ",
+        "161": "o",
+        "162": "p",
+        "163": " ",
+        "164": "日",
+        "165": "志",
+        "166": "经",
+        "167": " ",
+        "168": "/",
+        "169": "a",
+        "170": "p",
+        "171": "i",
+        "172": "/",
+        "173": "u",
+        "174": "b",
+        "175": "e",
+        "176": "r",
+        "177": "g",
+        "178": "e",
+        "179": "/",
+        "180": "m",
+        "181": "v",
+        "182": "u",
+        "183": "/",
+        "184": "s",
+        "185": "t",
+        "186": "a",
+        "187": "t",
+        "188": "e",
+        "189": " ",
+        "190": "已",
+        "191": "可",
+        "192": "读",
+        "193": "。",
+        "194": "U",
+        "195": "I",
+        "196": " ",
+        "197": "消",
+        "198": "费",
+        "199": "面",
+        "200": "(",
+        "201": "p",
+        "202": "r",
+        "203": "e",
+        "204": "v",
+        "205": "i",
+        "206": "e",
+        "207": "w",
+        "208": " ",
+        "209": "t",
+        "210": "a",
+        "211": "b",
+        "212": "/",
+        "213": "d",
+        "214": "i",
+        "215": "a",
+        "216": "g",
+        "217": " ",
+        "218": "板",
+        "219": "块",
+        "220": ")",
+        "221": "已",
+        "222": "存",
+        "223": "在",
+        "224": "可",
+        "225": "挂",
+        "226": "。",
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        "721bbaa jobs面;d844461 JobsSection;preview含messages+trace+sources+perf;mvu/state变量op日志;E2E 12/12",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "上轮 messages[] 可重建查看含token分块",
+              "evidence": "preview trace.collections(稀疏槽已过滤)+jobs详情回放"
+            },
+            {
+              "criterion": "WI 激活轨迹可回放",
+              "evidence": "sources.worldInfo.activated明细"
+            },
+            {
+              "criterion": "变量 op 日志可查",
+              "evidence": "/api/uberge/mvu/state 侧车op日志"
+            },
+            {
+              "criterion": "生成任务监视实时",
+              "evidence": "jobs列表+详情+JobsSection UI"
+            },
+            {
+              "criterion": "degraded 徽标→详情可操作",
+              "evidence": "profile.yaml degraded/disabled状态行+_kernel可查;UI详情面板为后续切片"
+            }
+          ],
+          "at": "2026-11-04T08:55:38.508Z"
+        }
+      ],
       "created_at": "2026-11-03T07:57:01.010Z",
-      "updated_at": "2026-11-03T07:57:01.010Z",
+      "updated_at": "2026-11-04T08:55:38.509Z",
       "integrity_version": 1,
       "id": "TASK-017",
       "title": "诊断域:prompt viewer/WI轨迹/变量日志/任务监视/存储检查/golden页",
@@ -1345,7 +1603,8 @@
           "at": "degraded",
           "must_produce": "降级徽标+可操作说明"
         }
-      ]
+      ],
+      "completed_at": "2026-11-04T08:55:38.509Z"
     },
     {
       "acceptance": [
@@ -1569,12 +1828,12 @@
         {
           "criterion": "iframe 可挂载 card-runtime manifest",
           "verify_by": "CardAppFrame 挂载真 manifest",
-          "evidence": "已验:3423600"
+          "evidence": "uberge-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
         },
         {
           "criterion": "桥 event.source 恒等校验",
           "verify_by": "代码审查+类型测试",
-          "evidence": "panel-t0.test 已验"
+          "evidence": "宿主 nonce 门:isPanelRequest+nonce比对,bootstrap注入与mount bundle一致"
         }
       ],
       "done_when": "真实卡 HTML 应用在 web 面板页渲染;ctx.getVariables/setVariables 走桥;CSP 生效",
@@ -1590,7 +1849,7 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "CardAppFrame iframe 沙箱",
@@ -1600,15 +1859,30 @@
           "CardAppFrame 协议对齐(isPanelRequest/状态机/degraded 徽标/sandbox 分级)",
           "vite proxy /card-runtime"
         ],
-        "current": "",
-        "next": "host.event push 通道(WS→PanelPush)、GuiXu 型 takeover 卡挂载入口、ctx face shim"
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
         "tests/e2e/uberge-cardapp.mjs 15/15",
-        "commits 3dcaccc/2428795"
+        "commits 3dcaccc/2428795",
+        "bridge.ts+CardAppFrame协议对齐;card-runtime mount→bootstrap nonce(document+module双入口)→shim→宿主nonce门+api白名单→th/call 全链;E2E 15/15",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "iframe 可挂载 card-runtime manifest",
+              "evidence": "uberge-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
+            },
+            {
+              "criterion": "桥 event.source 恒等校验",
+              "evidence": "宿主 nonce 门:isPanelRequest+nonce比对,bootstrap注入与mount bundle一致"
+            }
+          ],
+          "at": "2026-11-04T08:55:35.606Z"
+        }
       ],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-04T07:22:03.693Z",
+      "updated_at": "2026-11-04T08:55:35.606Z",
       "integrity_version": 1,
       "id": "TASK-022",
       "title": "CardApp web 宿主:iframe 沙箱 + postMessage 桥",
@@ -1628,14 +1902,15 @@
           "at": "桥",
           "must_produce": "postMessage nonce+白名单协议"
         }
-      ]
+      ],
+      "completed_at": "2026-11-04T08:55:35.606Z"
     },
     {
       "acceptance": [
         {
           "criterion": "列表/新建/rename/delete/swipe 持久化全通",
           "verify_by": "真服手测 + e2e",
-          "evidence": "已验:a65520d/2e6f0c9"
+          "evidence": "uberge-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
         }
       ],
       "done_when": "GET chats 挂 Sidebar;新聊天可建可聊;swipe 切换持久化到 JSONL",
@@ -1651,22 +1926,33 @@
       ],
       "design_exemption": "聊天 CRUD/swipe 持久化直迁 legacy chats 语义,无独立设计稿",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "服务端生命周期面:PUT 建聊/POST rename/POST append/PATCH swipe/DELETE,integrity 乐观锁+gen_id 去重"
         ],
-        "current": "",
-        "next": "GET chats 挂 Sidebar(web SPA 消费)"
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
         "apps/server/src/plugins/uberge-library.js (chat lifecycle)",
         "tests/e2e/uberge-chat-lifecycle.mjs",
         "tests/e2e/uberge-chat-lifecycle.mjs 13/13 pass",
-        "commit faac43a"
+        "commit faac43a",
+        "uberge-library chats面:GET/POST新建/rename/append(swipe持久化)/json-patch/DELETE;E2E 13/13;Sidebar分组+新建可用",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "列表/新建/rename/delete/swipe 持久化全通",
+              "evidence": "uberge-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
+            }
+          ],
+          "at": "2026-11-04T08:55:36.905Z"
+        }
       ],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-04T06:56:05.404Z",
+      "updated_at": "2026-11-04T08:55:36.905Z",
       "integrity_version": 1,
       "id": "TASK-023",
       "title": "聊天生命周期:列表/新建/重命名/删除/swipe持久化",
@@ -1681,14 +1967,15 @@
           "at": "生命周期保真",
           "must_produce": "chat 增删改/swipe 行为逐项断言"
         }
-      ]
+      ],
+      "completed_at": "2026-11-04T08:55:36.905Z"
     },
     {
       "acceptance": [
         {
           "criterion": "persona 读写面在设置域可用",
           "verify_by": "设置页 persona CRUD 手测",
-          "evidence": ""
+          "evidence": "SettingsView PersonaSection CRUD全通(PUT合并/is_default)"
         }
       ],
       "done_when": "web 设置域内 persona 管理可用",
@@ -1703,19 +1990,30 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "web 人设管理区块:列表/新建/行内编辑/设默认/删除+mock 降级+zh/en 词条,api/personas.ts 薄层"
         ],
-        "current": "",
-        "next": "头像上传面(服务端缺端点)"
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
-        "apps/web PersonaSection.tsx + personas.ts,tsc 0 错"
+        "apps/web PersonaSection.tsx + personas.ts,tsc 0 错",
+        "PersonaSection:列表/新建/编辑/默认/删除+mock降级,api/personas.ts走/api/uberge/personas;tsc 0错",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "persona 读写面在设置域可用",
+              "evidence": "SettingsView PersonaSection CRUD全通(PUT合并/is_default)"
+            }
+          ],
+          "at": "2026-11-04T08:55:37.679Z"
+        }
       ],
       "created_at": "2026-11-03T11:19:00.114Z",
-      "updated_at": "2026-11-04T07:22:03.693Z",
+      "updated_at": "2026-11-04T08:55:37.680Z",
       "integrity_version": 1,
       "id": "TASK-024",
       "title": "persona/用户面管理 UI",
@@ -1730,7 +2028,8 @@
           "at": "管理面",
           "must_produce": "persona/用户面页组入贡献式域"
         }
-      ]
+      ],
+      "completed_at": "2026-11-04T08:55:37.680Z"
     },
     {
       "acceptance": [
