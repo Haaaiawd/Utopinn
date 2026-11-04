@@ -71,6 +71,23 @@ try {
     log('revoke 204', r.status === 204, `status=${r.status}`);
     r = await req('GET', entryUrl);
     log('revoke 后 404', r.status === 404, `status=${r.status}`);
+
+    // 8. module 入口:shell 含 bootstrap + module script 标签
+    const MCARD = 'e2e-cardapp-module';
+    fs.copyFileSync('tests/corpus/cards/cardapp-module-probe.json', `apps/server/data/default-user/characters/${MCARD}.json`);
+    try {
+        r = await req('POST', '/api/card-runtime/mounts', { charId: MCARD });
+        const mEntry = r.body?.entryUrl;
+        log('module mount', r.status === 201 && r.body?.entryKind === 'module', JSON.stringify(r.body).slice(0, 120));
+        r = await req('GET', `${mEntry}?shim=t0`);
+        log('module shell 含 bootstrap', r.status === 200 && typeof r.body === 'string'
+            && r.body.includes('__UBERGE_PANEL_NONCE__') && r.body.includes('type="module"'), `status=${r.status}`);
+        if (r.body?.mountId) await req('DELETE', `/api/card-runtime/mounts/${r.body.mountId}`).catch(() => {});
+    } finally {
+        fs.unlinkSync(`apps/server/data/default-user/characters/${MCARD}.json`);
+        const mdir = `apps/server/data/default-user/card-apps/${MCARD}`;
+        if (fs.existsSync(mdir)) fs.rmSync(mdir, { recursive: true, force: true });
+    }
 } finally {
     if (mountId) await req('DELETE', `/api/card-runtime/mounts/${mountId}`).catch(() => {});
     fs.unlinkSync(`apps/server/data/default-user/characters/${CARD}.json`);
