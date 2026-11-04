@@ -27,3 +27,5 @@ plugins:
     module: ./plugins/uberge-script.js
   - id: uberge-th
     module: ./plugins/uberge-th.js
+  - id: uberge-data
+    module: ./plugins/uberge-data.js

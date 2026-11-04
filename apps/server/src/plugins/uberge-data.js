@@ -1,0 +1,107 @@
+/**
+ * uberge-data —— TASK-016 补刀:备份快照 + ST 目录扫描 + LAN 发现。
+ *
+ *   POST /api/uberge/backup          备份快照:createBackupArchive 复用
+ *                                    users.js 全量归档机(selection 分类可选)
+ *   POST /api/uberge/import/scan-st  {dir} 扫 ST default-user 目录 →
+ *                                    可导入清单(characters/worlds/presets/
+ *                                    quickReplies/personas/themes)
+ *   UDP <httpPort>                   LAN 发现:对 'uberge-discover' /
+ *                                    {"probe":"uberge"} 探头回 JSON pong;
+ *                                    socket 挂 ctx.effect,插件 dispose 即收
+ *
+ * 备份面只代理——归档/恢复重活在 legacy users-private 面上,不重复造。
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import dgram from 'node:dgram';
+import os from 'node:os';
+import { createBackupArchive } from '../users.js';
+import { getConfigValue } from '../util.js';
+
+export const inject = ['webServer'];
+
+/** ST default-user 数据目录 → 可导入类别映射。 */
+const ST_DIRS = [
+    ['characters', ['.png'], 'character'],
+    ['worlds', ['.json'], 'world'],
+    ['Worlds', ['.json'], 'world'],
+    ['QuickReplies', ['.json'], 'quickReply'],
+    ['OpenAI Settings', ['.json'], 'preset'],
+    ['TextGen Settings', ['.json'], 'preset'],
+    ['NovelAI Settings', ['.json'], 'preset'],
+    ['KoboldAI Settings', ['.json'], 'preset'],
+    ['User Avatars', ['.png', '.jpg', '.jpeg', '.webp'], 'persona'],
+    ['themes', ['.json'], 'theme'],
+];
+
+async function scanStDir(root) {
+    const items = [];
+    for (const [sub, exts, kind] of ST_DIRS) {
+        const dir = path.join(root, sub);
+        let files;
+        try {
+            files = await fs.promises.readdir(dir, { withFileTypes: true });
+        } catch {
+            continue; // 缺子目录是常态 —— ST 目录不一定长全
+        }
+        for (const f of files) {
+            if (!f.isFile()) continue;
+            if (!exts.includes(path.extname(f.name).toLowerCase())) continue;
+            const fp = path.join(dir, f.name);
+            const size = (await fs.promises.stat(fp).catch(() => null))?.size ?? 0;
+            items.push({ kind, name: path.basename(f.name, path.extname(f.name)), file: fp, bytes: size });
+        }
+    }
+    return items;
+}
+
+export function apply(ctx) {
+    const reg = (path_, handler) =>
+        ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path: path_, handler }));
+
+    /** 备份快照——复用 createBackupArchive(handle,response,selection)。 */
+    reg('/api/uberge/backup', async function (request, response) {
+        try {
+            const selection = request.body?.selection && typeof request.body.selection === 'object'
+                ? request.body.selection : undefined;
+            await createBackupArchive(request.user.profile.handle, response, selection);
+        } catch (error) {
+            console.error('[uberge/backup] failed:', error);
+            if (!response.headersSent) return response.status(500).send({ error: 'backup failed' });
+        }
+    });
+
+    /** ST 目录扫描——清单化,不导入;导入走 /import/preview+commit。 */
+    reg('/api/uberge/import/scan-st', async function (request, response) {
+        const dir = String(request.body?.dir ?? '').trim();
+        if (!dir) return response.status(400).send({ error: 'dir is required' });
+        const root = path.resolve(dir);
+        const st = await fs.promises.stat(root).catch(() => null);
+        if (!st?.isDirectory()) return response.status(404).send({ error: `not a directory: ${root}` });
+        const items = await scanStDir(root);
+        const counts = {};
+        for (const i of items) counts[i.kind] = (counts[i.kind] ?? 0) + 1;
+        return response.send({ root, total: items.length, counts, items });
+    });
+
+    /** LAN 发现:UDP 绑在 HTTP 同端口(UDP/TCP 端口互不冲突)。 */
+    ctx.effect(() => {
+        const port = Number(getConfigValue('port', 8000));
+        const socket = dgram.createSocket('udp4');
+        socket.on('error', (e) => console.warn('[uberge/discover] udp error:', e.message));
+        socket.on('message', (msg, rinfo) => {
+            const text = msg.toString('utf-8').trim();
+            if (text !== 'uberge-discover' && !text.includes('"uberge"')) return;
+            const payload = JSON.stringify({
+                app: 'uberge', name: os.hostname(),
+                httpPort: port,
+                version: process.env.npm_package_version ?? 'dev',
+            });
+            socket.send(payload, rinfo.port, rinfo.address, () => {});
+        });
+        socket.bind(port);
+        console.log(`[uberge/discover] udp responder on :${port}`);
+        return () => { try { socket.close(); } catch { /* already closed */ } };
+    });
+}
