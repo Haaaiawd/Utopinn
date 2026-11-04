@@ -86,28 +86,27 @@
 }
 
 [data-theme="dark"] {
-    /* 两主调 + 一结构灰(--raised);--bubble/--sel 是覆盖式灰,不引入新色阶 */
-    --bg: #212121;
-    --bg2: #171717;
-    --raised: #2f2f2f;
-    --bubble: #ffffff12;
-    --sel: #ffffff1c;
-    --ink: #ececec;
-    --ink2: #b1b4b9;
-    --ink3: #7d8288;
-    --line: #ffffff14;
-    --line2: #ffffff26;
-    --ring: #ffffff33;
+    /* 黑白双色压深:rail/侧栏近黑、主面再亮半档、raised 只给浮层。
+       灰阶带极轻冷调,纯中性灰在纯黑上发闷。 */
+    --bg: #141517;
+    --bg2: #0d0e10;
+    --raised: #1f2124;
+    --bubble: #ffffff10;
+    --sel: #ffffff1a;
+    --ink: #e8e9eb;
+    --ink2: #a4a8ad;
+    --ink3: #71767c;
+    --line: #ffffff12;
+    --line2: #ffffff22;
+    --ring: #ffffff30;
     --acc: #ca6924;        /* 中华琥珀 — 全场唯一彩色,极少数点缀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca692422;
-    --acc2: #8fa3c7;
-    --quote: #c98d5e;
     --ok: #6fae7e;
     --warn: #d4a05a;
     --err: #d0715f;
-    --shadow: 0 1px 2px #0007, 0 14px 34px -14px #000c;
-    --composer-shadow: 0 10px 34px -12px #000d;
+    --shadow: 0 1px 2px #0008, 0 14px 34px -14px #000e;
+    --composer-shadow: 0 10px 34px -12px #000f;
 
     /* 侧栏行内操作底板的"实色"等效:行 hover/选中是透明填充盖 --bg2,
        .row-acts 需要同效果的不透明色来遮住行尾文字。 */
@@ -130,8 +129,6 @@
     --acc: #ca6924;        /* 中华琥珀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca69241c;
-    --acc2: #5a739e;
-    --quote: #a05c2a;
     --ok: #3d8453;
     --warn: #a5712a;
     --err: #b04a38;

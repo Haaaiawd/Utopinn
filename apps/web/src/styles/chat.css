@@ -71,7 +71,7 @@
 }
 .ub-prose .vreceipt .op { padding: 5px 0; border-bottom: 1px dashed var(--line); }
 .ub-prose .vreceipt .op:last-child { border: 0; }
-.ub-prose .vreceipt .path { color: var(--acc2); font-family: var(--font-mono); font-size: var(--fs-caption); }
+.ub-prose .vreceipt .path { color: var(--ink2); font-family: var(--font-mono); font-size: var(--fs-caption); }
 .ub-prose .vreceipt .old { color: var(--ink3); text-decoration: line-through; }
 
 /* --- composer (host chrome, shared by all renderers) — DSH 式大圆角悬浮盒 --- */
@@ -109,4 +109,4 @@
 .diag-kv dt { color: var(--ink3); }
 .diag-kv dd { color: var(--ink); font-variant-numeric: tabular-nums; }
 
-.cardapp-frame { width: 100%; height: 100%; min-height: 200px; border: 0; border-radius: var(--radius, 10px); background: var(--bg2, #171717); }
+.cardapp-frame { width: 100%; height: 100%; min-height: 200px; border: 0; border-radius: var(--radius, 10px); background: var(--bg2, #0d0e10); }
