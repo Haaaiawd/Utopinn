@@ -4,6 +4,7 @@
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
 import { Tabs, TabsList, TabsTrigger } from '../ui/tabs';
+import { PersonaSection } from './PersonaSection';
 
 export function SettingsView() {
     const { t, locale, setLocale } = useI18n();
@@ -30,10 +31,11 @@ export function SettingsView() {
                     </Tabs>
                 </div>
             </div>
-            <div className="card">
+            <div className="card" style={{ marginBottom: 14 }}>
                 <div className="sect-title" style={{ marginTop: 0 }}>{t('settings.chain')}</div>
                 <p className="mut" style={{ fontSize: 12, lineHeight: 1.8 }}>{t('settings.chainNote')}</p>
             </div>
+            <PersonaSection />
         </div>
     );
 }

@@ -36,14 +36,19 @@ try {
     let r = await req('POST', '/api/card-runtime/mounts', { charId: CARD });
     log('mount 201', r.status === 201 && r.body?.entryUrl && r.body?.mountId, JSON.stringify(r.body).slice(0, 200));
     mountId = r.body?.mountId;
+    const bridgeNonce = r.body?.bridgeNonce;
     const entryUrl = r.body?.entryUrl;
     const shimUrl = r.body?.shimUrl;
 
-    // 2. entryUrl ?shim=t0 → shim 标签注入 + CSP 头
+    // 2. entryUrl ?shim=t0 → shim 标签注入 + bootstrap/nonce + CSP 头
     r = await req('GET', `${entryUrl}?shim=t0`);
     log('入口含 shim 标签', r.status === 200 && typeof r.body === 'string' && r.body.includes('data-card-runtime-shim'), `status=${r.status}`);
+    log('bootstrap 下发', typeof r.body === 'string' && r.body.includes('__UBERGE_PANEL_NONCE__') && r.body.includes('"face":"th"'), 'nonce+face');
+    const nonceMatch = typeof r.body === 'string' && r.body.match(/__UBERGE_PANEL_NONCE__="([a-f0-9]{32})"/);
+    log('nonce=bundle.bridgeNonce', !!nonceMatch && nonceMatch[1] === bridgeNonce, nonceMatch?.[1]?.slice(0, 8) ?? 'none');
     const csp = r.headers.get('content-security-policy') ?? '';
     log('CSP 头在', csp.length > 10, csp.slice(0, 80));
+    log('CSP 无 modals/downloads', !csp.includes('allow-modals') && !csp.includes('allow-downloads'), 'sandbox 收紧');
 
     // 3. 无 shim 参数 → 不注
     r = await req('GET', entryUrl);

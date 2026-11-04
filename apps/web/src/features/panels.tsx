@@ -49,6 +49,9 @@ export const panelsFeature: Feature = {
                 'panel.stub': '该板块类型已在注册表,本体接线中。',
                 'panel.soon': '接线中',
                 'panel.panels.empty': '卡内面板(CardApp)入口。当前卡未声明面板。',
+                'panel.cardapp.mountFailed': '面板装载失败',
+                'panel.cardapp.retry': '重试',
+                'panel.cardapp.ctxDegraded': 'ctx 面接线中',
             },
             en: {
                 'panel.type.cardapp': 'Panels',
@@ -58,6 +61,9 @@ export const panelsFeature: Feature = {
                 'panel.stub': 'Panel type registered; body still being wired.',
                 'panel.soon': 'Wiring',
                 'panel.panels.empty': 'Card-app panel entries. This card declares no panels.',
+                'panel.cardapp.mountFailed': 'Panel mount failed',
+                'panel.cardapp.retry': 'Retry',
+                'panel.cardapp.ctxDegraded': 'ctx face pending',
             },
         });
     },

@@ -1,86 +1,136 @@
 // CardAppFrame — web host for untrusted card HTML (TASK-022).
-// Flow: POST /api/card-runtime/mounts {charId} → {entryUrl, manifest} →
-// <iframe sandbox="allow-scripts"> at entryUrl?shim=t0 → 'uberge-panel'
-// postMessage bridge → ctxApi dispatch.
+// Flow: POST /api/card-runtime/mounts {charId} → mount bundle (entryUrl +
+// bridgeNonce + manifest) → <iframe sandbox> at entryUrl?shim=t0 →
+// 'uberge-panel' postMessage bridge → ctxApi → server TH layer.
 //
-// Security posture (design/cardapp-web-host.md):
-// - opaque-origin sandbox: card code cannot read DOM/cookies; no modals/dl
-// - NO nonce injection (can't write into an opaque iframe window) — the web
-//   host instead authenticates via `event.source === iframe.contentWindow`,
-//   which only this frame can satisfy. Equivalent strength for one iframe.
-// - requests outside the shim channel are dropped silently.
-import { useEffect, useRef, useState } from 'react';
+// Security posture (design/cardapp-web-host.md + protocol/panels.ts):
+// - opaque-origin sandbox by default; manifest.permissions.sameOrigin
+//   lifts it for cards that explicitly ask (and accept the weaker posture);
+// - inbound requests authenticate via `ev.source === iframe.contentWindow`
+//   AND the mount-scoped bridge nonce the shim echoes back — a forged or
+//   nonce-less request is denied, never dispatched;
+// - the method allowlist is expanded from manifest.permissions.api
+//   (absent/empty → ecosystem default = the full T0 table);
+// - 'ctx'-only manifests degrade to a badge: the t0 shim serves the th
+//   face, ctx calls are not wired yet.
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
+import { expandApiGrants, PanelBridge } from './bridge';
+import { useI18n } from '../i18n';
 import { Icon } from '../components/Icon';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
 
+/** Mount bundle from POST /api/card-runtime/mounts (mounts.js publicMount). */
 interface MountBundle {
+    mountId?: string;
+    charId?: string;
     entryUrl: string;
-    manifest?: { name?: string; enabled?: boolean };
+    bridgeNonce?: string;
+    manifest?: {
+        enabled?: boolean;
+        entry?: string;
+        entryKind?: 'document' | 'module';
+        permissions?: {
+            api?: string[];
+            sameOrigin?: boolean;
+            stateNamespaces?: string[];
+        };
+    };
     warnings?: string[];
 }
 
-interface BridgeMsg {
-    channel?: string;
-    direction?: string;
-    requestId?: string;
-    method?: string;
-    args?: Record<string, unknown>;
-}
+/** mounting → ready | degraded(reason); failure → error (retryable). */
+type Phase =
+    | { kind: 'mounting' }
+    | { kind: 'ready' }
+    | { kind: 'degraded'; reason: 'ctx-face' }
+    | { kind: 'error'; message: string };
 
 export function CardAppFrame({ charDir, chatName }: PanelContext) {
+    const { t } = useI18n();
     const [mount, setMount] = useState<MountBundle | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
+    const [attempt, setAttempt] = useState(0);
     const frameRef = useRef<HTMLIFrameElement>(null);
 
     useEffect(() => {
         let dead = false;
+        setMount(null);
+        setPhase({ kind: 'mounting' });
         apiPost<MountBundle>('/api/card-runtime/mounts', { charId: charDir })
-            .then((m) => { if (!dead) setMount(m); })
-            .catch((e) => { if (!dead) setError(e instanceof Error ? e.message : String(e)); });
+            .then((m) => {
+                if (dead) return;
+                setMount(m);
+                const grants = expandApiGrants(m.manifest?.permissions?.api);
+                // ctx-only manifest: nothing the t0 shim can lawfully call —
+                // still render the frame (static UI survives) under a badge.
+                setPhase(grants.ctxFace && !grants.thFace
+                    ? { kind: 'degraded', reason: 'ctx-face' }
+                    : { kind: 'ready' });
+            })
+            .catch((e) => {
+                if (!dead) setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
+            });
         return () => { dead = true; };
-    }, [charDir]);
+    }, [charDir, attempt]);
+
+    const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api), [mount]);
 
     useEffect(() => {
-        const onMsg = (ev: MessageEvent) => {
-            if (ev.source !== frameRef.current?.contentWindow) return;
-            const msg = ev.data as BridgeMsg;
-            if (msg?.channel !== 'uberge-panel' || msg.direction !== 'request' || !msg.requestId || !msg.method) return;
-            const reply = (ok: boolean, payload: unknown) => {
-                frameRef.current?.contentWindow?.postMessage(
-                    ok
-                        ? { channel: 'uberge-panel', direction: 'response', requestId: msg.requestId, ok: true, result: payload }
-                        : { channel: 'uberge-panel', direction: 'response', requestId: msg.requestId, ok: false, error: { message: String(payload) } },
-                    '*', // opaque origin — target must be '*'; source check above guards inbound
-                );
-            };
-            dispatchPanelCall(msg.method, msg.args ?? {}, { charDir, chatName })
-                .then((v) => reply(true, v))
-                .catch((e) => reply(false, e instanceof Error ? e.message : e));
+        if (!mount) return;
+        const bridge = new PanelBridge({
+            // No nonce in the bundle → '' — which no card can match, so every
+            // request is denied rather than silently authorized.
+            nonce: mount.bridgeNonce ?? '',
+            allowed: grants.allowed,
+            getWindow: () => frameRef.current?.contentWindow ?? null,
+            dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }),
+        });
+        window.addEventListener('message', bridge.onMessage);
+        return () => {
+            window.removeEventListener('message', bridge.onMessage);
+            bridge.dispose();
         };
-        window.addEventListener('message', onMsg);
-        return () => window.removeEventListener('message', onMsg);
-    }, [charDir, chatName]);
+    }, [mount, grants, charDir, chatName]);
 
-    if (error) {
+    if (phase.kind === 'error') {
         return (
             <div className="empty-hint">
                 <div className="glyph"><Icon name="stories" size={22} /></div>
-                <p>CardApp: {error}</p>
+                <p>{t('panel.cardapp.mountFailed')}: {phase.message}</p>
+                <p>
+                    <Button variant="outline" size="sm" onClick={() => setAttempt((a) => a + 1)}>
+                        {t('panel.cardapp.retry')}
+                    </Button>
+                </p>
             </div>
         );
     }
-    if (!mount) return <div className="empty-hint"><p>…</p></div>;
+    if (phase.kind === 'mounting' || !mount) {
+        return <div className="empty-hint"><p>…</p></div>;
+    }
 
     const src = `${mount.entryUrl}${mount.entryUrl.includes('?') ? '&' : '?'}shim=t0`;
+    const sandbox = mount.manifest?.permissions?.sameOrigin === true
+        ? 'allow-scripts allow-same-origin'
+        : 'allow-scripts';
     return (
-        <iframe
-            ref={frameRef}
-            className="cardapp-frame"
-            title={mount.manifest?.name ?? `cardapp:${charDir}`}
-            src={src}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-        />
+        <div className="cardapp-host">
+            {phase.kind === 'degraded' && (
+                <div className="cardapp-degraded">
+                    <Badge variant="warning">{t('panel.cardapp.ctxDegraded')}</Badge>
+                </div>
+            )}
+            <iframe
+                ref={frameRef}
+                className="cardapp-frame"
+                title={mount.manifest?.entry ?? `cardapp:${charDir}`}
+                src={src}
+                sandbox={sandbox}
+                referrerPolicy="no-referrer"
+            />
+        </div>
     );
 }

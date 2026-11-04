@@ -23,6 +23,11 @@ export const MOCK_CARDS: CardItem[] = [
     { charDir: 'corrupted-stub', name: 'corrupted-stub', avatar: null, fileName: 'corrupted-stub.json', fileSize: 12_000, tags: [], readable: false },
 ];
 
+/** /api/uberge/personas 的 mock 形状(设置页人设块用)。 */
+export const MOCK_PERSONAS: import('./personas').PersonaItem[] = [
+    { avatar: 'user-default.png', name: '旅人', description: '路过的旅人,斗篷上全是盐粒。', position: 0, title: '', hasImage: false, isDefault: true },
+];
+
 const CHAR_NAME = '归墟';
 const USER_NAME = '旅人';
 

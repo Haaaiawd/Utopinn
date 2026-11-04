@@ -40,6 +40,9 @@ export default defineConfig({
         proxy: {
             '/api': { target: SERVER_ORIGIN, changeOrigin: true, ws: true, configure: (proxy) => proxy.on('error', upstreamError) },
             '/csrf-token': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // CardApp iframe surface (/card-runtime/m/<id>/… + shim) — the
+            // mount-id capability carries it, no session needed upstream.
+            '/card-runtime': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
         },
     },
 });
