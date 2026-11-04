@@ -103,17 +103,28 @@ export function setVariable(store: VarStore, name: string, value: unknown, args:
 
     if (typeof name === 'string' && name.includes('.')) {
         const { root, path } = splitRootAndPath(name);
-        let parsed: unknown = {};
-        try {
-            parsed = JSON.parse(String(store[root] ?? 'null')) ?? {};
-        } catch {
-            parsed = {};
-        }
-        if (parsed === null || typeof parsed !== 'object') {
-            parsed = {};
+        const raw = store[root];
+        let parsed: unknown;
+        if (raw !== null && typeof raw === 'object') {
+            // 对象根(MVU stat_data 原生对象形态)——直接改,不写回串。
+            // TH/MVU 生态经 lodash-path 读对象;JSON.stringify 回写会把
+            // 对象降维成串并丢掉其余字段(曾实测会把整棵 stat_data 毁成
+            // 单路径的字符串)。
+            parsed = raw;
+        } else {
+            try {
+                parsed = JSON.parse(String(raw ?? 'null')) ?? {};
+            } catch {
+                parsed = {};
+            }
+            if (parsed === null || typeof parsed !== 'object') {
+                parsed = {};
+            }
         }
         writePath(parsed as Record<string, unknown>, path!, String(value ?? ''));
-        store[root] = JSON.stringify(parsed);
+        // 已有形态保持:对象根回写对象;字符串/新根按 ST 惯例 JSON 化
+        // ({{getvar::root}} 整根读拿到 JSON 串而非 [object Object])。
+        store[root] = (raw !== null && typeof raw === 'object') ? parsed : JSON.stringify(parsed);
         return value;
     }
 
