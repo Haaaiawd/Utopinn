@@ -6,6 +6,10 @@
  *   POST /api/uberge/import/scan-st  {dir} 扫 ST default-user 目录 →
  *                                    可导入清单(characters/worlds/presets/
  *                                    quickReplies/personas/themes)
+ *   POST /api/uberge/lan/offer       {handle,selection} → {url,expiresAt}
+ *                                    与 legacy /api/users/lan-migration/offer 同语义
+ *   POST /api/uberge/lan/import      {handle,url,selection,mode} →
+ *                                    loopback 代理到 legacy 流式 import(不复制语义)
  *   UDP <httpPort>                   LAN 发现:对 'uberge-discover' /
  *                                    {"probe":"uberge"} 探头回 JSON pong;
  *                                    socket 挂 ctx.effect,插件 dispose 即收
@@ -16,7 +20,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import dgram from 'node:dgram';
 import os from 'node:os';
-import { createBackupArchive } from '../users.js';
+import { createBackupArchive, normalizeUserBackupSelection } from '../users.js';
+import { createLanMigrationOffer, LAN_MIGRATION_PATH_PREFIX } from '../lan-migration.js';
+import { getRequestBaseUrl } from '../express-common.js';
 import { getConfigValue } from '../util.js';
 
 export const inject = ['webServer'];
@@ -70,6 +76,50 @@ export function apply(ctx) {
             console.error('[uberge/backup] failed:', error);
             if (!response.headersSent) return response.status(500).send({ error: 'backup failed' });
         }
+    });
+
+    /** LAN 迁移 offer——与 legacy 同语义:selection 消毒 + token + offer URL。 */
+    reg('/api/uberge/lan/offer', async function (request, response) {
+        const handle = String(request.body?.handle ?? request.user.profile.handle).trim();
+        if (!handle) return response.status(400).send({ error: 'Missing required fields' });
+        if (handle !== request.user.profile.handle && !request.user.profile.admin) {
+            return response.status(403).send({ error: 'Unauthorized' });
+        }
+        const isAdmin = Boolean(request.user?.profile?.admin);
+        let sel = request.body?.selection;
+        if (typeof sel === 'string') { try { sel = JSON.parse(sel); } catch { sel = {}; } }
+        const selection = normalizeUserBackupSelection(sel);
+        if (!isAdmin) selection.globalExtensions = false;
+        if (!Object.values(selection).some(Boolean)) {
+            return response.status(400).send({ error: 'At least one backup category must be selected.' });
+        }
+        const { token, expiresAt } = createLanMigrationOffer({ handle, selection, includeGlobalExtensions: isAdmin });
+        const url = `${getRequestBaseUrl(request).replace(/\/+$/, '')}${LAN_MIGRATION_PATH_PREFIX}${token}`;
+        return response.send({ url, expiresAt });
+    });
+
+    /** LAN 迁移 import——薄代理:转发会话凭据到 legacy 流式端点,语义不复制。 */
+    reg('/api/uberge/lan/import', async function (request, response) {
+        const port = Number(getConfigValue('port', 8000));
+        const headers = { 'content-type': 'application/json' };
+        for (const h of ['cookie', 'x-csrf-token', 'accept']) {
+            if (request.headers[h]) headers[h] = request.headers[h];
+        }
+        let upstream;
+        try {
+            upstream = await fetch(`http://127.0.0.1:${port}/api/users/lan-migration/import`, {
+                method: 'POST', headers, body: JSON.stringify(request.body ?? {}),
+            });
+        } catch (error) {
+            return response.status(502).send({ error: `lan import upstream failed: ${error.message}` });
+        }
+        response.status(upstream.status);
+        for (const h of ['content-type', 'content-disposition']) {
+            const v = upstream.headers.get(h);
+            if (v) response.setHeader(h, v);
+        }
+        const text = await upstream.text();
+        return response.send(text);
     });
 
     /** ST 目录扫描——清单化,不导入;导入走 /import/preview+commit。 */
