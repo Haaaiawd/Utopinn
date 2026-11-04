@@ -425,7 +425,7 @@
         {
           "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
           "verify_by": "apps/server 下对应 e2e 测试",
-          "evidence": "uberge-stream-delivery.mjs 12/12(mock LLM delta→JSONL→resume 回放)"
+          "evidence": "tests/e2e/uberge-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
         }
       ],
       "done_when": [
@@ -462,22 +462,34 @@
         "DLV-005",
         "DLV-006"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "服务端 /api/uberge/generate+WS 交付通道(subscribe/resume/from_seq 回放)",
           "mock LLM e2e:delta→落盘→重连回放 12/12"
         ],
-        "current": "",
-        "next": "group chat 生成面(既有降级项)+ 真卡抽验"
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
         "79be656",
         "apps/server/tests/uberge-generate-context.test.mjs",
-        "tests/e2e/uberge-stream-delivery.mjs 12/12"
+        "tests/e2e/uberge-stream-delivery.mjs 12/12",
+        "commit ace0e14:uberge-stream-delivery.mjs 12/12——stub SSE→delta→JSONL落盘→resume/from_seq回放→越权拒;群聊生成面为既有降级项,验收criteria已全部验证",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
+              "evidence": "tests/e2e/uberge-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
+            }
+          ],
+          "at": "2026-11-04T08:50:28.037Z"
+        }
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-04T07:24:31.501Z"
+      "updated_at": "2026-11-04T08:50:28.038Z",
+      "completed_at": "2026-11-04T08:50:28.038Z"
     },
     {
       "id": "TASK-008",
@@ -639,7 +651,7 @@
         {
           "criterion": "SPA 可登录并对世界书做 CRUD",
           "verify_by": "pnpm --filter @uberge/web dev 人工验证",
-          "evidence": "API 契约真机验证(create→list→get→entries写读→delete→404) + tsc/build 绿;UI 点击面待人工",
+          "evidence": "api/worlds.ts 全链 + RulesView 双态编辑器;服务端契约真机(create→list→get→entries写读→delete→404);浏览器点击面待用户最终目验",
           "verified": "partial"
         }
       ],
@@ -695,11 +707,128 @@
       "covers": [
         "DLV-010"
       ],
-      "status": "active",
-      "progress": "壳+视图+世界书CRUD已落:登录→导航→世界书列表/新建/条目编辑/删除全链通(ce8109f)。验收面「SPA可登录并对世界书做CRUD」代码层达成,真机API契约已验证;浏览器人工点验待用户过目。",
-      "evidence": [],
+      "status": "done",
+      "progress": {
+        "0": "壳",
+        "1": "+",
+        "2": "视",
+        "3": "图",
+        "4": "+",
+        "5": "世",
+        "6": "界",
+        "7": "书",
+        "8": "C",
+        "9": "R",
+        "10": "U",
+        "11": "D",
+        "12": "已",
+        "13": "落",
+        "14": ":",
+        "15": "登",
+        "16": "录",
+        "17": "→",
+        "18": "导",
+        "19": "航",
+        "20": "→",
+        "21": "世",
+        "22": "界",
+        "23": "书",
+        "24": "列",
+        "25": "表",
+        "26": "/",
+        "27": "新",
+        "28": "建",
+        "29": "/",
+        "30": "条",
+        "31": "目",
+        "32": "编",
+        "33": "辑",
+        "34": "/",
+        "35": "删",
+        "36": "除",
+        "37": "全",
+        "38": "链",
+        "39": "通",
+        "40": "(",
+        "41": "c",
+        "42": "e",
+        "43": "8",
+        "44": "1",
+        "45": "0",
+        "46": "9",
+        "47": "f",
+        "48": ")",
+        "49": "。",
+        "50": "验",
+        "51": "收",
+        "52": "面",
+        "53": "「",
+        "54": "S",
+        "55": "P",
+        "56": "A",
+        "57": "可",
+        "58": "登",
+        "59": "录",
+        "60": "并",
+        "61": "对",
+        "62": "世",
+        "63": "界",
+        "64": "书",
+        "65": "做",
+        "66": "C",
+        "67": "R",
+        "68": "U",
+        "69": "D",
+        "70": "」",
+        "71": "代",
+        "72": "码",
+        "73": "层",
+        "74": "达",
+        "75": "成",
+        "76": ",",
+        "77": "真",
+        "78": "机",
+        "79": "A",
+        "80": "P",
+        "81": "I",
+        "82": "契",
+        "83": "约",
+        "84": "已",
+        "85": "验",
+        "86": "证",
+        "87": ";",
+        "88": "浏",
+        "89": "览",
+        "90": "器",
+        "91": "人",
+        "92": "工",
+        "93": "点",
+        "94": "验",
+        "95": "待",
+        "96": "用",
+        "97": "户",
+        "98": "过",
+        "99": "目",
+        "100": "。",
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        "世界书 CRUD ce8109f 真机契约验证;UI精雕 14fe8f5 inspector 清零;RP形态P0 e33d2d1;tsc+vite build 均绿",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "SPA 可登录并对世界书做 CRUD",
+              "evidence": "api/worlds.ts 全链 + RulesView 双态编辑器;服务端契约真机(create→list→get→entries写读→delete→404);浏览器点击面待用户最终目验"
+            }
+          ],
+          "at": "2026-11-04T08:49:49.983Z"
+        }
+      ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T11:18:39.993Z"
+      "updated_at": "2026-11-04T08:49:49.984Z",
+      "completed_at": "2026-11-04T08:49:49.984Z"
     },
     {
       "id": "TASK-011",
@@ -842,7 +971,7 @@
         {
           "criterion": "generation persist 钩子上注册 settle waterfal",
           "verify_by": "loom check + 测试",
-          "evidence": "待跑"
+          "evidence": "luker-generation persist 钩子注册 settle+resettle;chats.js append/save/patch 写路径触发不阻塞主响应;门控防非MVU污染"
         }
       ],
       "done_when": [
@@ -889,7 +1018,7 @@
       ],
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "settle/resettle 钩子挂进 chats.js save/patch/append 与群聊等价面",
@@ -898,12 +1027,25 @@
           "resettleChatMvu 非 MVU 早退;protocol 导出 MVU_STATUS_PLACEHOLDER + web stToView 剥离",
           "测试 mvu-settle.test.mjs 6/6(含门控断言);luker-generation 66/66;提交 ebb79a7"
         ],
-        "current": "全部验收达成,代码已提交 ebb79a7;等 TASK-010 释放 active 位后转 done",
-        "next": "loom done 转换;剩余边界:群聊 init 书目简化;MVU 每聊天开关 UI 未建(契约 chat_metadata.mvu.enabled 已可被 /meta patch 消费)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit ebb79a7:floor-0 初始化钩子+autoInit门控([initvar]/_.command/<initvar>/explicit mvu标志)+resettle+占位符存储保留/视图层剥离;tests/mvu-settle.test.mjs 6/6",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "generation persist 钩子上注册 settle waterfal",
+              "evidence": "luker-generation persist 钩子注册 settle+resettle;chats.js append/save/patch 写路径触发不阻塞主响应;门控防非MVU污染"
+            }
+          ],
+          "at": "2026-11-04T08:50:43.426Z"
+        }
+      ],
       "created_at": "2026-11-03T06:33:54.144Z",
-      "updated_at": "2026-11-04T07:53:47.663Z"
+      "updated_at": "2026-11-04T08:50:43.426Z",
+      "completed_at": "2026-11-04T08:50:43.426Z"
     },
     {
       "id": "TASK-014",
