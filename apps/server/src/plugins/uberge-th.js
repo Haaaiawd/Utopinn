@@ -196,6 +196,27 @@ const METHODS = {
             notifications: built.sinks.notifications,
         };
     },
+    /** 身份面:CardApp 面板的 getCharacter/getCurrentCharacterName。 */
+    async getCharacter(_a, _scope, ctx2) {
+        if (!ctx2.charDir) return { ok: false, status: 400, error: 'target.charDir required' };
+        const card = await loadCard(ctx2.directories, ctx2.charDir);
+        if (!card) return { ok: false, status: 404, error: 'card not found' };
+        return { ok: true, result: { name: card?.data?.name ?? card?.name, avatar: `${ctx2.charDir}.png`, data: card?.data ?? card } };
+    },
+    async getCurrentCharacterName(_a, _scope, ctx2) {
+        if (!ctx2.charDir) return { ok: false, status: 400, error: 'target.charDir required' };
+        const card = await loadCard(ctx2.directories, ctx2.charDir);
+        return { ok: true, result: card?.data?.name ?? card?.name ?? ctx2.charDir };
+    },
+    /** 消息 id 面:TH 语义是数组下标。 */
+    async getLastMessageId(_a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) return { ok: true, result: -1 };
+        const doc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+        return { ok: true, result: (Array.isArray(doc?.body) ? doc.body.length : 0) - 1 };
+    },
+    async getCurrentMessageId(_a, _scope, ctx2) {
+        return METHODS.getLastMessageId(_a, _scope, ctx2);
+    },
     /** 卡嵌脚本面:data.extensions.th_scripts(TH 生态契约;条目兼容
      *  纯字符串与 {name,script} 两形)。 */
     async getEmbeddedScripts(_a, _scope, ctx2) {
