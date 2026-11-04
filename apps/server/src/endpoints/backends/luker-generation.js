@@ -439,6 +439,8 @@ function buildGenerationJobRequestMeta(request, persistTarget) {
         directories: {
             chats: String(request.user?.directories?.chats || ''),
             groupChats: String(request.user?.directories?.groupChats || ''),
+            // TASK-013 autoInit:persist 阶段 mvu-settle resolveMvuInitLorebooks 读卡用。
+            characters: String(request.user?.directories?.characters || ''),
         },
     };
 }
@@ -729,6 +731,9 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
                 name: groupId,
                 isGroup: true,
                 groupId,
+                // 新建聊天 floor-0 未初始化时先补 init 再结算(upstream initCheck)。
+                autoInit: true,
+                directories: job?.requestMeta?.directories,
             });
         } catch (error) {
             console.error('[mvu] post-persist settle failed (group):', error);
@@ -767,6 +772,9 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
                 charDir: avatar,
                 name: baseName,
                 isGroup: false,
+                // 同 group 分支:no_baseline 时自动 floor-0 初始化。
+                autoInit: true,
+                directories: job?.requestMeta?.directories,
             });
         } catch (error) {
             console.error('[mvu] post-persist settle failed (character):', error);

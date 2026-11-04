@@ -38,6 +38,12 @@ export interface UserProfile {
     password: boolean;
 }
 
+/**
+ * MVU settle 在 assistant 楼层尾部附的状态占位符 —— 持久化线契约的一部分
+ * (MVU 卡的客户端用它定位状态栏注入点)。显示层应剥离,不得裸渲染。
+ */
+export const MVU_STATUS_PLACEHOLDER = '<StatusPlaceHolderImpl/>';
+
 /** POST endpoints require a CSRF token bound to the session cookie. */
 export interface CsrfTokenResponse {
     token: string;

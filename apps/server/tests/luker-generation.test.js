@@ -97,7 +97,7 @@ describe('createGenerationJob', () => {
             },
             user: {
                 profile: { handle: 'alice' },
-                directories: { chats: '/tmp/chats', groupChats: '/tmp/groups' },
+                directories: { chats: '/tmp/chats', groupChats: '/tmp/groups', characters: '/tmp/chars' },
             },
         });
         const job = createGenerationJob(req, { job_id: jobId });
@@ -105,7 +105,7 @@ describe('createGenerationJob', () => {
             api: 'openai',
             char_name: 'Assistant',
             model: 'gpt-4',
-            directories: { chats: '/tmp/chats', groupChats: '/tmp/groups' },
+            directories: { chats: '/tmp/chats', groupChats: '/tmp/groups', characters: '/tmp/chars' },
         });
         expect(job.modelName).toBe('gpt-4');
     });
@@ -138,7 +138,7 @@ describe('createGenerationJob', () => {
         j1.error = 'boom';
         j1.acked = true;
         j1.text = 'stale';
-        // events array pre-existing is preserved (only replaced if not an array)
+        // events 也会在复用时被清空(流状态整体重置)
         j1.events.push({ seq: 999, data: 'stale', ts: 0 });
 
         const j2 = createGenerationJob(baseRequest(), { job_id: jobId });
@@ -146,10 +146,11 @@ describe('createGenerationJob', () => {
         expect(j2.status).toBe('running');
         expect(j2.error).toBe('');
         expect(j2.acked).toBe(false);
-        // text is NOT reset when reusing (documenting current behavior)
-        expect(j2.text).toBe('stale');
-        // events array is preserved (documenting current behavior)
-        expect(j2.events.length).toBe(1);
+        // 复用 job_id 必须重置流状态(text/events/lastSeq)——否则重试的
+        // resume 会重放上一轮的陈旧帧(createGenerationJob 注释块)。
+        expect(j2.text).toBe('');
+        expect(j2.events.length).toBe(0);
+        expect(j2.lastSeq).toBe(0);
     });
 });
 
