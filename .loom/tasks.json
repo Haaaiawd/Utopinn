@@ -1649,6 +1649,113 @@
           "must_produce": "TH 助手 API 行为面逐项断言"
         }
       ]
+    },
+    {
+      "id": "TASK-026",
+      "title": "桌面 RP 形态 P0:角色页/舞台头/门厅/消息惯例",
+      "depends_on": [
+        "TASK-010"
+      ],
+      "done_when": [
+        "卡格→角色页→会话三级路径通",
+        "舞台头 persona 快切生效",
+        "ProseRenderer 四惯例生效且 swipe 不回归",
+        "tsc+build 绿"
+      ],
+      "reads": [
+        ".loom/design/web-rp-form.md",
+        "apps/web/src/components/views/LibraryView.tsx",
+        "apps/web/src/components/chat/renderers/ProseRenderer.tsx"
+      ],
+      "touches": [
+        "apps/web/src/components/",
+        "apps/web/src/features/",
+        "apps/web/src/styles/"
+      ],
+      "implements": "web-spa-stack",
+      "acceptance": [
+        {
+          "criterion": "卡格→角色页→会话三级路径通",
+          "verify_by": "pnpm --filter @uberge/web dev 人工验证",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "舞台头 persona 快切+资产 chip 真实读数",
+          "verify_by": "人工验证",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "ProseRenderer asterisk斜体/引号高亮/greeting版式/typing 四惯例",
+          "verify_by": "人工验证+swipe回归",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": "",
+      "evidence": [],
+      "outcome": "桌面壳 RP 化:角色=一等对象。卡墙→角色页→会话三级路径;聊天页舞台头带 persona 快切与绑定资产;门厅首页;prose 渲染器吃 RP 文本惯例。",
+      "status": "open",
+      "boundaries": [
+        "不动 rail+路由骨架与右面板宿主结构",
+        "不改协议/renderer seam 契约",
+        "移动端阅读器归 TASK-027 不在此",
+        "stageScheme/per-chat 背景/立绘列 P1 不进本任务"
+      ]
+    },
+    {
+      "id": "TASK-027",
+      "title": "移动端阅读器形态:书架/书页/阅读屏/书写层",
+      "depends_on": [
+        "TASK-008"
+      ],
+      "done_when": [
+        "书架→书页→阅读器三级路径通",
+        "点中央呼出/收起chrome",
+        "Aa面板五主题+字号行距实时生效",
+        "书写层发送→落版→流式接写全链",
+        "bubble形态可切回"
+      ],
+      "reads": [
+        ".loom/design/mobile-reader-form.md",
+        "apps/mobile/app/chat/[charDir]/[chatName].tsx",
+        "apps/web/src/components/chat/renderers/ProseRenderer.tsx"
+      ],
+      "touches": [
+        "apps/mobile/"
+      ],
+      "implements": "mobile-app-stack",
+      "acceptance": [
+        {
+          "criterion": "书架→书页→阅读器三级路径通",
+          "verify_by": "expo start 人工/模拟器验证",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "点中央呼出chrome<200ms;Aa五主题+字号行距生效",
+          "verify_by": "人工验证",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "书写层→落版→流式接写全链;bubble可切回",
+          "verify_by": "人工验证",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": "",
+      "evidence": [],
+      "outcome": "移动端小说阅读器:会话=书。书架tab→书页→零chrome沉浸阅读器(点中央呼出/Aa五主题/夜读低对比/语义分章)+呼出式书写层;prose 渲染器 RN 实例,协议零新增。",
+      "status": "open",
+      "boundaries": [
+        "不动协议与 MessageViewModel",
+        "CardApp 面板桥复用既有协议不重造",
+        "桌面端改动归 TASK-026 不在此",
+        "避头尾/分人配色/AI章名拟题列 v2 不进本任务"
+      ]
     }
   ],
   "milestones": [
