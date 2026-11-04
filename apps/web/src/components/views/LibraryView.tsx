@@ -8,6 +8,7 @@ import { MOCK_CARDS, type CardItem } from '../../api/mock';
 import { useI18n } from '../../i18n';
 import { useShell } from '../../kernel/context';
 import { Icon } from '../Icon';
+import { Button } from '../ui/button';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
@@ -17,11 +18,14 @@ type FilterId = 'all' | 'image' | 'json' | 'broken';
 const FILTERS: FilterId[] = ['all', 'image', 'json', 'broken'];
 
 function CardTile({ card, chatCount, onOpen }: { card: CardItem; chatCount: number; onOpen: () => void }) {
+    const [imgErr, setImgErr] = useState(false);
     return (
         <div className={`lib-card ${card.readable ? '' : 'broken'}`} onClick={onOpen}>
             <div className="lib-thumb">
-                {card.avatar
-                    ? <img src={`/characters/${encodeURIComponent(card.avatar)}`} alt="" loading="lazy" />
+                {/* 卡面 404/未挂路由 → 回落首字占位,不留破图图标。 */}
+                {card.avatar && !imgErr
+                    ? <img src={`/characters/${encodeURIComponent(card.avatar)}`} alt="" loading="lazy"
+                        onError={() => setImgErr(true)} />
                     : <span className="lib-thumb-init">{card.name.slice(0, 1)}</span>}
             </div>
             <div className="lib-meta">
@@ -92,8 +96,9 @@ export function LibraryView() {
                     <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                         placeholder={t('lib.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                <IconButton label={t('lib.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => hint(t('lib.importSoon'))} />
+                <Button variant="secondary" size="sm" onClick={() => hint(t('lib.importSoon'))}>
+                    <Icon name="plus" size={14} />{t('lib.new')}
+                </Button>
             </div>
 
             <ToggleGroup type="single" size="sm" className="lib-chips"

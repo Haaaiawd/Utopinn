@@ -29,6 +29,14 @@ const EMPTY_DRAFT: Draft = { name: '', title: '', description: '' };
 /** ST 前端对 persona 头像的约定(getThumbnailUrl('persona', …))。 */
 const personaThumb = (avatar: string) => `/thumbnail?type=persona&file=${encodeURIComponent(avatar)}`;
 
+/** 头像缩略:dev 代理不转发 /thumbnail,404 → 回落 User 图标。 */
+function PersonaAvatar({ p }: { p: PersonaItem }) {
+    const [err, setErr] = useState(false);
+    if (!p.hasImage || err) return <Icon name="user" size={15} />;
+    return <img src={personaThumb(p.avatar)} alt="" loading="lazy" className="size-full object-cover"
+        onError={() => setErr(true)} />;
+}
+
 export function PersonaSection() {
     const { t } = useI18n();
     const { hint } = useShell();
@@ -156,9 +164,7 @@ export function PersonaSection() {
                         ) : (
                             <div key={p.avatar} className="group flex items-center gap-3 rounded-md px-2 py-2 hover:bg-bubble">
                                 <span className="grid size-9 flex-none place-items-center overflow-hidden rounded-md bg-surface text-ink-2">
-                                    {p.hasImage
-                                        ? <img src={personaThumb(p.avatar)} alt="" loading="lazy" className="size-full object-cover" />
-                                        : <Icon name="user" size={15} />}
+                                    <PersonaAvatar p={p} />
                                 </span>
                                 <span className="min-w-0 flex-1">
                                     <span className="flex items-center gap-2">

@@ -14,7 +14,7 @@ export function SessionBody() {
             {(['panel.session.authorNote', 'panel.session.cfg', 'panel.session.logprobs'] as const).map((k) => (
                 <div className="row" key={k}>
                     <span className="lab">{t(k)}</span>
-                    <span className="mut">{t('panel.session.unwired')}</span>
+                    <span className="mut2">{t('panel.session.unwired')}</span>
                 </div>
             ))}
         </div>
