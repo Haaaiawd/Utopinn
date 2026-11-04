@@ -4,6 +4,7 @@
 // 等 TASK-021 插件 UI 与各能力端点落地后逐格点亮。
 import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
+import { useShell } from '../../kernel/context';
 import { Icon, type IconName } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
@@ -19,8 +20,9 @@ const CATS: { id: ExtCat; icon: IconName; wired: boolean }[] = [
     { id: 'cardAssets', icon: 'grid', wired: false },
 ];
 
-export function ExtensionsView({ onHint }: { onHint: (msg: string) => void }) {
+export function ExtensionsView() {
     const { t } = useI18n();
+    const { hint } = useShell();
     const [cat, setCat] = useState<'all' | ExtCat>('all');
     const [query, setQuery] = useState('');
 
@@ -46,7 +48,7 @@ export function ExtensionsView({ onHint }: { onHint: (msg: string) => void }) {
                         placeholder={t('ext.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
                 <IconButton label={t('ext.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => onHint(t('ext.newSoon'))} />
+                    onClick={() => hint(t('ext.newSoon'))} />
             </div>
 
             <div className="lib-sect">
@@ -64,7 +66,7 @@ export function ExtensionsView({ onHint }: { onHint: (msg: string) => void }) {
 
             <div className="lib-tiles">
                 {visible.map((c) => (
-                    <div key={c.id} className="lib-tile" onClick={() => onHint(t('ext.tileSoon'))}>
+                    <div key={c.id} className="lib-tile" onClick={() => hint(t('ext.tileSoon'))}>
                         <span className="lib-tile-glyph"><Icon name={c.icon} size={16} /></span>
                         <span className="lib-tile-text">
                             <span className="lib-tile-name">{t(`ext.cat.${c.id}`)}</span>
