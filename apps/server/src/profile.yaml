@@ -23,3 +23,5 @@ plugins:
     module: ./plugins/uberge-import.js
   - id: uberge-plugins
     module: ./plugins/uberge-plugins.js
+  - id: uberge-script
+    module: ./plugins/uberge-script.js
