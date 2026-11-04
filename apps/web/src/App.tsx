@@ -6,9 +6,11 @@ import { I18nProvider, useI18n } from './i18n';
 import { MOCK_CARDS, MOCK_CHATS } from './api/mock';
 import { postPreviewWithFallback } from './api/preview';
 import { listCharacters, type CardItem } from './api/characters';
+import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import type { ActivePersona } from './api/personas';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from './types';
+import { Icon } from './components/Icon';
 import { Sidebar } from './components/shell/Sidebar';
 import { RightPanel } from './components/shell/RightPanel';
 import { TooltipProvider } from './components/ui/tooltip';
@@ -19,6 +21,7 @@ import { shellFeature } from './features/shell';
 import { chatFeature } from './features/chat';
 import { panelsFeature } from './features/panels';
 import { domainsFeature } from './features/domains';
+import { pluginsExtFeature } from './features/plugins-ext';
 
 /** 内建 feature 装配 —— kernel 即壳的全部表面;feature 顺序即词条/导航序。 */
 const kernel = new Kernel();
@@ -27,6 +30,7 @@ kernel.applyFeature(shellFeature);
 kernel.applyFeature(chatFeature);
 kernel.applyFeature(panelsFeature);
 kernel.applyFeature(domainsFeature);
+kernel.applyFeature(pluginsExtFeature);
 
 /** 主区出口:按当前 view 从 view 贡献点找组件,壳不 if/switch。 */
 function ViewOutlet() {
@@ -47,6 +51,9 @@ function Shell() {
     const [cardsMock, setCardsMock] = useState(false);
     /** 跨视图开角色页的中转位;LibraryView 消费即清。 */
     const [storiesFocus, setStoriesFocus] = useState<string | null>(null);
+    /** 导入中心待办队列(全局 drop/选文件/URL 共用);文件拖进窗口时盖导入幕帘。 */
+    const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
+    const [dropVeil, setDropVeil] = useState(false);
     /** 当前 persona;舞台头快切写入,生成/预览都携带。 */
     const [persona, setPersona] = useState<ActivePersona | null>(null);
     // 窄屏初值:侧栏/右栏默认收起(rail + 主区先行),需要时再从 rail 唤出。
@@ -122,6 +129,71 @@ function Shell() {
             void refreshCards();
         }
     }, [serverStatus, refreshChats, refreshCards]);
+
+    /** 全局拖放入口:文件落进窗口任意处 → 落 draft 队列 → 跳导入中心。 */
+    const queueImport = useCallback((drafts: ImportDraft[]) => {
+        if (!drafts.length) return;
+        setImportDrafts((prev) => [...prev, ...drafts]);
+        setView('import');
+    }, []);
+
+    const dismissImportDraft = useCallback((id: string) => {
+        setImportDrafts((prev) => prev.filter((d) => d.id !== id));
+    }, []);
+
+    const enqueueFiles = useCallback(async (files: File[]) => {
+        const drafts: ImportDraft[] = [];
+        let skipped = 0;
+        for (const f of files) {
+            if (f.size > MAX_IMPORT_BYTES) { skipped += 1; continue; }
+            drafts.push(await fileToDraft(f));
+        }
+        if (skipped) showHint(t('imp.tooLarge'), true);
+        if (drafts.length) queueImport(drafts);
+    }, [queueImport, showHint, t]);
+
+    /**
+     * window 级 drag/drop:dragenter/leave 计数器管幕帘(穿透 veil,
+     * 进出子元素的 enter/leave 成对抵消),drop 归拢文件进队列。
+     * 只认 Files 型拖拽 —— 文本/内部拖拽原样放行。
+     */
+    useEffect(() => {
+        let depth = 0;
+        const hasFiles = (e: DragEvent) =>
+            Array.from(e.dataTransfer?.types ?? []).includes('Files');
+        const onEnter = (e: DragEvent) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+            depth += 1;
+            setDropVeil(true);
+        };
+        const onOver = (e: DragEvent) => {
+            if (hasFiles(e)) e.preventDefault(); // 不拦 drop 就打不开
+        };
+        const onLeave = (e: DragEvent) => {
+            if (!hasFiles(e)) return;
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) setDropVeil(false);
+        };
+        const onDrop = (e: DragEvent) => {
+            if (!hasFiles(e)) return;
+            e.preventDefault();
+            depth = 0;
+            setDropVeil(false);
+            const files = Array.from(e.dataTransfer?.files ?? []);
+            if (files.length) void enqueueFiles(files);
+        };
+        window.addEventListener('dragenter', onEnter);
+        window.addEventListener('dragover', onOver);
+        window.addEventListener('dragleave', onLeave);
+        window.addEventListener('drop', onDrop);
+        return () => {
+            window.removeEventListener('dragenter', onEnter);
+            window.removeEventListener('dragover', onOver);
+            window.removeEventListener('dragleave', onLeave);
+            window.removeEventListener('drop', onDrop);
+        };
+    }, [enqueueFiles]);
 
     /** 任意视图 → 故事库 + 打开该卡的角色页(门厅大卡/精选格走这里)。 */
     const openCharacter = useCallback((charDir: string) => {
@@ -207,7 +279,8 @@ function Shell() {
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
-        cards, cardsMock,
+        cards, cardsMock, refreshCards,
+        importDrafts, queueImport, dismissImportDraft,
         storiesFocus, openCharacter,
         clearStoriesFocus: () => setStoriesFocus(null),
         persona, setPersona,
@@ -228,7 +301,8 @@ function Shell() {
         view, chats, chat, activeChat, sidebarCollapsed, panels, activePanel,
         panelHidden, preview, previewLoading, runPreview, showHint, serverStatus,
         onNewChat, onRenameChat, onDeleteChat, closePanel, addPanel,
-        cards, cardsMock, storiesFocus, openCharacter, persona,
+        cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
+        storiesFocus, openCharacter, persona,
     ]);
 
     /* 三栏:sidebar | main(view 出口) | rightbar。壳不认识域。 */
@@ -239,6 +313,12 @@ function Shell() {
                 <main className="main"><ViewOutlet /></main>
                 <RightPanel />
                 {hintState && <div className={`hint-pill${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
+                {dropVeil && (
+                    <div className="drop-veil">
+                        <Icon name="import" size={26} />
+                        <span>{t('imp.veil')}</span>
+                    </div>
+                )}
             </div>
         </ShellProvider>
     );

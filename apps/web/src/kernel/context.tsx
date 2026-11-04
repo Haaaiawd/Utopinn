@@ -4,6 +4,7 @@
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { CardItem } from '../api/characters';
+import type { ImportDraft } from '../api/import';
 import type { ActivePersona } from '../api/personas';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from '../types';
 import type { Contributions, PanelInst, PanelType } from './contributions';
@@ -29,6 +30,14 @@ export interface ShellCtx {
     cards: Map<string, CardItem>;
     /** cards 是 mock 回退时为 true(视图据此挂诚实徽标)。 */
     cardsMock: boolean;
+    /** 导入卡后重拉展示面(新卡立刻出现在库/门厅)。 */
+    refreshCards: () => Promise<void>;
+    /** 导入中心的待办队列:全局拖放/选文件/URL 都落成 draft 往这里塞,ImportView 逐卡消费。 */
+    importDrafts: ImportDraft[];
+    /** 追加待办并跳导入中心(全局 drop 的唯一入口)。 */
+    queueImport: (drafts: ImportDraft[]) => void;
+    /** 出队 —— 提交落定或手动移除。 */
+    dismissImportDraft: (id: string) => void;
     /** 门厅/库外跳角色页的中转:置位 → stories 视图打开该卡详情后清除。 */
     storiesFocus: string | null;
     openCharacter: (charDir: string) => void;
