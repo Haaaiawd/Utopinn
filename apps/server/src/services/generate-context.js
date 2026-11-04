@@ -346,6 +346,9 @@ export async function buildGenerationContext({
         request: assemblyRequest,
         presetDoc,
         oaiSettings: settingsDoc?.oai_settings ?? {},
+        tgSettings: settingsDoc?.textgenerationwebui_settings ?? {},
+        instructEngine,
+        substCtx,
         trace: builtPrompt.trace,
         sources: {
             presetName: resolvedPresetName,
