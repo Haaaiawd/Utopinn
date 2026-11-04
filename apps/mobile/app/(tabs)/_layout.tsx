@@ -1,4 +1,4 @@
-// Bottom navigation — 对话 / 角色 / 面板 / 我的.
+// Bottom navigation — 书架 / 角色 / 面板 / 我的(小说阅读器 IA,design §1).
 // No icon font package is installed, so tab glyphs are emoji.
 import { Tabs } from 'expo-router';
 import { Text, StyleSheet } from 'react-native';
@@ -23,7 +23,7 @@ export default function TabsLayout() {
                 sceneStyle: { backgroundColor: colors.bg },
             }}
         >
-            <Tabs.Screen name="index" options={{ title: '对话', tabBarIcon: glyph('💬') }} />
+            <Tabs.Screen name="index" options={{ title: '书架', tabBarIcon: glyph('📚') }} />
             <Tabs.Screen name="characters" options={{ title: '角色', tabBarIcon: glyph('🎭') }} />
             <Tabs.Screen name="panels" options={{ title: '面板', tabBarIcon: glyph('🧩') }} />
             <Tabs.Screen name="me" options={{ title: '我的', tabBarIcon: glyph('⚙️') }} />

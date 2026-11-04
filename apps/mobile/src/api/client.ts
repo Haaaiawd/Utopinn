@@ -5,6 +5,7 @@
 // endpoints yet, so they are declared here against the server contract
 // (apps/server/src/plugins/uberge-library.js, uberge-generate.js).
 import { UbergeClient } from '@uberge/api-client';
+import { MVU_STATUS_PLACEHOLDER } from '@uberge/protocol';
 import type { MessageViewModel, SwipeView } from '@uberge/protocol';
 import { session } from './session';
 
@@ -148,15 +149,112 @@ export function avatarUrl(avatar: string | null | undefined): string | null {
     return avatar ? session.url(`/characters/${enc(avatar)}`) : null;
 }
 
+/** Display fields lifted out of a CCv1/v2 card document. */
+export interface CardInfo {
+    name: string;
+    description: string;
+    personality: string;
+    scenario: string;
+    creatorNotes: string;
+    tags: string[];
+    firstMes: string;
+}
+
+export async function getCharacter(charDir: string): Promise<CardInfo | null> {
+    const card = await client().request<Record<string, unknown>>(
+        `/api/uberge/characters/${enc(charDir)}`,
+    ).catch(() => null);
+    if (!card) return null;
+    const data = (card.data && typeof card.data === 'object' && !Array.isArray(card.data)
+        ? card.data : card) as Record<string, unknown>;
+    const s = (v: unknown) => (typeof v === 'string' ? v : '');
+    return {
+        name: s(data.name) || charDir,
+        description: s(data.description),
+        personality: s(data.personality),
+        scenario: s(data.scenario),
+        creatorNotes: s(data.creator_notes),
+        tags: Array.isArray(data.tags) ? data.tags.filter((t): t is string => typeof t === 'string') : [],
+        firstMes: s(data.first_mes),
+    };
+}
+
+// ---------- writes (uberge PATCH / rename / delete / append — TASK-023 surface) ----------
+
+export interface JsonPatchOp {
+    op: 'add' | 'remove' | 'replace' | 'test';
+    path: string;
+    value?: unknown;
+}
+
+/**
+ * RFC6902-lite ops on the {header, body} chat doc — e.g.
+ * swipe switch: {op:'replace', path:'/body/<i>/swipe_id', value:n}.
+ * Server: PATCH /api/uberge/characters/:charDir/chats/:chatName.
+ */
+export async function patchChatOps(charDir: string, chatName: string, ops: JsonPatchOp[]): Promise<void> {
+    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
+        method: 'PATCH',
+        body: { ops },
+    });
+}
+
+export async function deleteChat(charDir: string, chatName: string): Promise<void> {
+    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
+        method: 'DELETE',
+    });
+}
+
+export async function renameChat(charDir: string, chatName: string, newName: string): Promise<void> {
+    await client().request(
+        `/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}/rename`,
+        { method: 'POST', body: { newName } },
+    );
+}
+
+/**
+ * 分叉:copy floors [0..uptoIndex] of `chatName` into a fresh chat named
+ * `newName` (PUT create + POST append — raw ST wire rows ride along,
+ * swipes included). Returns the new chat name for navigation.
+ */
+export async function branchChat(
+    charDir: string,
+    chatName: string,
+    uptoIndex: number,
+    newName: string,
+): Promise<string> {
+    const detail = await getChat(charDir, chatName);
+    const slice = (detail.messages ?? []).slice(0, Math.max(0, uptoIndex + 1));
+    await createChat(charDir, newName);
+    if (slice.length) {
+        await client().request(
+            `/api/uberge/characters/${enc(charDir)}/chats/${enc(newName)}/messages`,
+            { method: 'POST', body: { messages: slice } },
+        );
+    }
+    return newName;
+}
+
 // ---------- ST wire → view model (same mapping as apps/web/src/api/chats.ts) ----------
+
+/** 剥离 MVU 状态占位符 —— 存储层保留(卡 shim 定位用),视图层不渲染。 */
+const stripStatusPlaceholder = (s: string): string =>
+    s.includes(MVU_STATUS_PLACEHOLDER) ? s.replaceAll(MVU_STATUS_PLACEHOLDER, '').trimEnd() : s;
+
+/** send_date can be epoch ms OR an ISO string (server persist writes ISO). */
+function toMs(v: number | string | undefined): number | undefined {
+    if (v == null) return undefined;
+    const n = typeof v === 'number' ? v : Date.parse(String(v));
+    return Number.isNaN(n) ? undefined : n;
+}
 
 export function stToView(m: StChatMessage, id: number): MessageViewModel {
     const active = Number(m.swipe_id ?? 0);
     const swipes: SwipeView[] | undefined = Array.isArray(m.swipes) && m.swipes.length > 1
         ? m.swipes.map((s, i) => ({
             index: i,
-            content: typeof s === 'string' ? s : (s.mes ?? ''),
-            timestamp: typeof s === 'object' && s.send_date != null ? Number(s.send_date) : undefined,
+            content: stripStatusPlaceholder(typeof s === 'string' ? s : (s.mes ?? '')),
+            timestamp: typeof s === 'object' ? toMs(s.send_date) : undefined,
         }))
         : undefined;
     const base = swipes?.[Math.min(active, swipes.length - 1)];
@@ -164,8 +262,8 @@ export function stToView(m: StChatMessage, id: number): MessageViewModel {
         id,
         role: m.is_user ? 'user' : m.is_system ? 'system' : 'assistant',
         name: m.name ?? '',
-        content: base?.content ?? m.mes ?? '',
-        timestamp: m.send_date != null ? Number(m.send_date) : undefined,
+        content: stripStatusPlaceholder(base?.content ?? m.mes ?? ''),
+        timestamp: toMs(m.send_date),
         swipes,
         activeSwipe: swipes ? Math.min(active, swipes.length - 1) : undefined,
     };
