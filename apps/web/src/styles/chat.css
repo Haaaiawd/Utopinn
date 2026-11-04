@@ -19,12 +19,13 @@
 .ub-prose .msg .ava {
     position: absolute; left: 0; top: 3px; width: 34px; height: 34px;
     border-radius: 50%; overflow: hidden; display: grid; place-items: center;
-    font-family: var(--font-ui); font-size: var(--fs-ui-sm); color: #fff; font-weight: 600;
-    box-shadow: inset 0 0 0 1px #ffffff22; background: var(--raised);
+    font-family: var(--font-ui); font-size: var(--fs-ui-sm); color: var(--ink2); font-weight: 600;
+    /* 无卡面时回落中性底 + 首字;彩色哈希圆太脏,琥珀纪律也不给这里。 */
+    box-shadow: inset 0 0 0 1px var(--line2); background: var(--bubble);
 }
 .ub-prose .msg .ava img { width: 100%; height: 100%; object-fit: cover; }
 .ub-prose .msg .who {
-    font-family: var(--font-ui); font-size: var(--fs-ui); color: var(--ink3);
+    font-family: var(--font-ui); font-size: var(--fs-ui-sm); color: var(--ink2);
     margin-bottom: 4px; display: flex; gap: 8px; align-items: baseline;
 }
 .ub-prose .msg.user { color: var(--ink2); }

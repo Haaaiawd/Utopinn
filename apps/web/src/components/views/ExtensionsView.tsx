@@ -6,7 +6,7 @@ import { useMemo, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { useShell } from '../../kernel/context';
 import { Icon, type IconName } from '../Icon';
-import { IconButton } from '../ui/icon-button';
+import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
@@ -47,8 +47,9 @@ export function ExtensionsView() {
                     <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                         placeholder={t('ext.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                <IconButton label={t('ext.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => hint(t('ext.newSoon'))} />
+                <Button variant="secondary" size="sm" onClick={() => hint(t('ext.newSoon'))}>
+                    <Icon name="plus" size={14} />{t('ext.new')}
+                </Button>
             </div>
 
             <div className="lib-sect">
@@ -72,7 +73,8 @@ export function ExtensionsView() {
                             <span className="lib-tile-name">{t(`ext.cat.${c.id}`)}</span>
                             <span className="lib-tile-sub mut">{t(`ext.desc.${c.id}`)}</span>
                         </span>
-                        <Badge variant="warning">{t('ext.stubBadge')}</Badge>
+                        {/* 每格同一个状态徽标是噪音 —— 用中性 secondary,琥珀留给段头那一个。 */}
+                        <Badge variant="secondary">{t('ext.stubBadge')}</Badge>
                     </div>
                 ))}
                 {visible.length === 0 && <div className="lib-empty">{t('ext.empty')}</div>}

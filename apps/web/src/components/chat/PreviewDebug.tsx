@@ -10,7 +10,12 @@ export function PreviewDebug({ result }: { result: PreviewResult | null }) {
     const { t } = useI18n();
 
     if (!result || (!result.data && !result.error)) {
-        return <p className="mut" style={{ lineHeight: 1.7 }}>{t('panel.diag.noData')}</p>;
+        return (
+            <div className="pnl-empty">
+                <span className="glyph"><Icon name="pulse" size={18} /></span>
+                <p>{t('panel.diag.noData')}</p>
+            </div>
+        );
     }
     if (result.error) {
         return <div className="err">{t('chat.preview.failed')}: {result.error}</div>;

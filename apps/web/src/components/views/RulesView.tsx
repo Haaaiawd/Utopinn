@@ -8,7 +8,7 @@ import { apiGet } from '../../api/client';
 import { useI18n } from '../../i18n';
 import { useShell } from '../../kernel/context';
 import { Icon } from '../Icon';
-import { IconButton } from '../ui/icon-button';
+import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
@@ -61,8 +61,9 @@ export function RulesView() {
                     <Input className="h-8 w-52 rounded-full border-transparent bg-bubble pl-8 text-[13px]"
                         placeholder={t('rules.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
-                <IconButton label={t('rules.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => hint(t('lib.importSoon'))} />
+                <Button variant="secondary" size="sm" onClick={() => hint(t('lib.importSoon'))}>
+                    <Icon name="plus" size={14} />{t('rules.new')}
+                </Button>
             </div>
 
             <div className="lib-sect">

@@ -9,22 +9,11 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../ui/co
 import { IconButton } from '../../ui/icon-button';
 import type { ConversationRendererProps } from './types';
 
-/** Stable, cheap hue from a name — placeholder until avatar URLs resolve. */
-function hueFor(name: string): number {
-    let h = 0;
-    for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) % 360;
-    return h;
-}
-
 function Avatar({ name, url }: { name: string; url?: string }) {
     if (url) {
         return <span className="ava"><img src={url} alt="" /></span>;
     }
-    return (
-        <span className="ava" style={{ background: `hsl(${hueFor(name)} 12% 36%)` }}>
-            {name.slice(0, 1) || '?'}
-        </span>
-    );
+    return <span className="ava">{name.slice(0, 1) || '?'}</span>;
 }
 
 function ReceiptRow({ receipt }: { receipt: MessageReceipt }) {
@@ -33,7 +22,7 @@ function ReceiptRow({ receipt }: { receipt: MessageReceipt }) {
             <CollapsibleTrigger className="vr-head">
                 <span className="dot" />
                 <span>{receipt.kind}</span>
-                {receipt.summary && <span className="mut">{receipt.summary}</span>}
+                {receipt.summary && <span className="mut2">{receipt.summary}</span>}
             </CollapsibleTrigger>
             {(receipt.ops?.length ?? 0) > 0 && (
                 <CollapsibleContent className="vr-body">

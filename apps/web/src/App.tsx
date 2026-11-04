@@ -39,9 +39,11 @@ function Shell() {
     const [view, setView] = useState<ViewId>('chat');
     const [chats, setChats] = useState<ChatSummary[]>(MOCK_CHATS);
     const [activeChat, setActiveChat] = useState(chats[0]?.id ?? '');
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // 窄屏初值:侧栏/右栏默认收起(rail + 主区先行),需要时再从 rail 唤出。
+    // 阈值与 shell.css 媒体查询同源 —— 那里它们退成覆盖层,这里让它们默认不挡。
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth <= 920);
     // 右栏没有"收起"钮 —— hidden 只由沉浸模式驱动;板块清空时整条自动消失。
-    const [panelHidden, setPanelHidden] = useState(false);
+    const [panelHidden, setPanelHidden] = useState(() => window.innerWidth <= 1180);
     const [panels, setPanels] = useState<PanelInst[]>([
         { id: 'p-diag', type: 'diag' },
         { id: 'p-session', type: 'session' },
@@ -162,7 +164,12 @@ function Shell() {
         registry,
         view, setView,
         chats, activeChat, chat,
-        selectChat: (id) => { setActiveChat(id); setView('chat'); },
+        selectChat: (id) => {
+            setActiveChat(id);
+            setView('chat');
+            // 抽屉态(≤920px,与 shell.css 媒体查询同阈):选中即收,露出阅读区。
+            if (window.innerWidth <= 920) setSidebarCollapsed(true);
+        },
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
