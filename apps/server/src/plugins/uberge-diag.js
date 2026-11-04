@@ -11,7 +11,7 @@
 export const inject = ['webServer', 'catalog'];
 
 export function apply(ctx) {
-    ctx.webServer.register({
+    ctx.effect(() => ctx.webServer.register({
         kind: 'exact',
         method: 'GET',
         path: '/api/uberge/_kernel',
@@ -21,5 +21,5 @@ export function apply(ctx) {
                 services: ctx.catalog.list(),
             });
         },
-    });
+    }));
 }
