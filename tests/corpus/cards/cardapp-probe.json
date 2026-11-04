@@ -1,0 +1,22 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "CardApp-Probe",
+    "description": "Corpus fixture: card_app embedded-assets mount probe.",
+    "personality": "",
+    "scenario": "",
+    "first_mes": "probe",
+    "mes_example": "",
+    "extensions": {
+      "card_app": {
+        "enabled": true,
+        "entry": "index.html",
+        "files": {
+          "index.html": "<!doctype html><html><head><meta charset=\"utf-8\"><link rel=\"stylesheet\" href=\"./style.css\"><title>probe</title></head><body><div id=\"app\">probe</div><script>window.__probeResult = 'pending'; if (window.TavernHelper) { TavernHelper.getVariables({ type: 'chat' }).then(function (v) { window.__probeResult = JSON.stringify(v); }); }</script></body></html>",
+          "style.css": "#app{background:#111;color:#eee}"
+        }
+      }
+    }
+  }
+}
