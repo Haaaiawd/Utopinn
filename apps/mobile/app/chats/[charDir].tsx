@@ -1,10 +1,11 @@
-// 某角色的会话列表。点进 → 聊天屏;无会话自动建一个 `Mobile <MMDD-HHmm>`;
-// 「+ 新会话」按钮永远可用。
+// 角色的「作品列表」— 该角色下全部会话=同一个角色的几本书;
+// 点进 → 书页;无会话自动建一本 `Mobile <MMDD-HHmm>`;「+ 新会话」永远可用。
 import { useEffect, useRef, useState } from 'react';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
-import { createChat, listChats, type ChatItem } from '../../src/api/client';
+import { FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { avatarUrl, createChat, listChats, type ChatItem } from '../../src/api/client';
+import { previewLine } from '../../src/reader/format';
 import { colors } from '../../src/ui/theme';
 
 function newChatName(): string {
@@ -27,6 +28,13 @@ export default function CharacterChatsScreen() {
         enabled: !!charDir,
     });
 
+    const openBook = (chatName: string, mode: 'push' | 'replace' = 'push') => {
+        router[mode]({
+            pathname: '/book/[charDir]/[chatName]',
+            params: { charDir: charDir!, chatName, name: name ?? charDir! },
+        });
+    };
+
     const createAndOpen = async (mode: 'push' | 'replace' = 'push') => {
         if (creating || !charDir) return;
         setCreating(true);
@@ -35,7 +43,7 @@ export default function CharacterChatsScreen() {
             const chatName = newChatName();
             await createChat(charDir, chatName);
             await queryClient.invalidateQueries({ queryKey: ['chats', charDir] });
-            router[mode]({ pathname: '/chat/[charDir]/[chatName]', params: { charDir, chatName, name: name ?? charDir } });
+            openBook(chatName, mode);
         } catch (e) {
             setCreateErr(e instanceof Error ? e.message : String(e));
         } finally {
@@ -43,18 +51,19 @@ export default function CharacterChatsScreen() {
         }
     };
 
-    // 无会话 → 自动建一个再进聊天(任务要求)
+    // 无会话 → 自动建一本再进书页(replace:返回键回角色列表,不落在空列表上)
     useEffect(() => {
         if (autoCreated.current || isLoading || isError || !data || data.length > 0 || creating) return;
         autoCreated.current = true;
-        // 自动建 → replace:返回键回角色列表,不落在空列表上
         void createAndOpen('replace');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [data, isLoading, isError]);
 
+    const coverUri = avatarUrl(`${charDir}.png`);
+
     return (
         <View style={styles.root}>
-            <Stack.Screen options={{ title: name || charDir || '会话' }} />
+            <Stack.Screen options={{ title: name || charDir || '作品' }} />
             <Pressable style={({ pressed }) => [styles.newBtn, pressed && { opacity: 0.8 }]} onPress={() => void createAndOpen()} disabled={creating}>
                 <Text style={styles.newBtnText}>{creating ? '创建中…' : '+ 新会话'}</Text>
             </Pressable>
@@ -67,17 +76,19 @@ export default function CharacterChatsScreen() {
                 renderItem={({ item }: { item: ChatItem }) => (
                     <Pressable
                         style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-                        onPress={() =>
-                            router.push({
-                                pathname: '/chat/[charDir]/[chatName]',
-                                params: { charDir: charDir!, chatName: item.name, name: name ?? charDir! },
-                            })
-                        }
+                        onPress={() => openBook(item.name)}
                     >
+                        {coverUri ? (
+                            <Image source={{ uri: coverUri }} style={styles.cover} />
+                        ) : (
+                            <View style={[styles.cover, styles.coverFallback]}>
+                                <Text style={styles.coverInitial}>{(name || charDir || '?').slice(0, 1)}</Text>
+                            </View>
+                        )}
                         <View style={styles.rowBody}>
                             <Text style={styles.rowTitle} numberOfLines={1}>{item.name}</Text>
                             <Text style={styles.rowSub} numberOfLines={1}>
-                                {item.messageCount ?? 0} 楼{item.lastMessage ? ` · ${item.lastMessage}` : ''}
+                                {item.messageCount ?? 0} 段{item.lastMessage ? ` · ${previewLine(item.lastMessage, 30)}` : ''}
                             </Text>
                         </View>
                         <Text style={styles.chev}>›</Text>
@@ -117,14 +128,18 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
-        paddingVertical: 14,
+        paddingVertical: 12,
+        gap: 12,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderBottomColor: colors.border,
     },
     rowPressed: { backgroundColor: colors.card },
+    cover: { width: 42, height: 56, borderRadius: 4, backgroundColor: colors.cardAlt },
+    coverFallback: { backgroundColor: colors.accentDim, alignItems: 'center', justifyContent: 'center' },
+    coverInitial: { color: colors.text, fontSize: 17, fontWeight: '700' },
     rowBody: { flex: 1 },
     rowTitle: { color: colors.text, fontSize: 15, fontWeight: '600' },
-    rowSub: { color: colors.dim, fontSize: 12, marginTop: 3 },
+    rowSub: { color: colors.dim, fontSize: 12, marginTop: 4 },
     chev: { color: colors.dim, fontSize: 20 },
     emptyGrow: { flexGrow: 1 },
     empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
