@@ -18,8 +18,8 @@
 //     echoed by the shim (onMessage has no ev.source — nonce equality is
 //     the whole check); ungranted methods are denied without dispatch;
 //   - 'ctx'-only manifests degrade to a badge (t0 shim serves the th face).
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type FC, type ReactElement, type Ref } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { expandApiGrants, PanelBridge } from './bridge';
@@ -51,12 +51,39 @@ function receiveJs(msg: unknown): string {
     return `(function(){var f=window.__ubergePanelReceive;if(typeof f==='function'){f(${wire});}})();true;`;
 }
 
+// RNW 14 的 WebViewProps = IOS&Android&Windows 声明交集,在 strict 下塌成
+// never(库 d.ts 自身的问题,不是用法错)——这里声明我们实际使用的公共面,
+// 既绕开塌缩又保住对本文件 props 的类型检查。
+/** WebView 句柄的最小结构 —— 我们只调 injectJavaScript。 */
+export interface WebViewHandle {
+    injectJavaScript: (js: string) => void;
+}
+
+interface PanelWebViewElementProps {
+    ref?: Ref<WebViewHandle>;
+    source: { uri: string };
+    onMessage?: (e: WebViewMessageEvent) => void;
+    onShouldStartLoadWithRequest?: (req: { url: string }) => boolean;
+    originWhitelist?: string[];
+    setSupportMultipleWindows?: boolean;
+    sharedCookiesEnabled?: boolean;
+    domStorageEnabled?: boolean;
+    javaScriptEnabled?: boolean;
+    mixedContentMode?: 'never' | 'always' | 'compatibility';
+    onHttpError?: (e: { nativeEvent: { statusCode: number } }) => void;
+    onError?: (e: { nativeEvent: { description?: string } }) => void;
+    startInLoadingState?: boolean;
+    renderLoading?: () => ReactElement | null;
+    style?: StyleProp<ViewStyle>;
+}
+const WView = WebView as unknown as FC<PanelWebViewElementProps>;
+
 export function PanelWebView({ charDir, chatName }: PanelContext) {
     const conn = useSession();
     const [mount, setMount] = useState<MountBundle | null>(null);
     const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
     const [attempt, setAttempt] = useState(0);
-    const webRef = useRef<WebView | null>(null);
+    const webRef = useRef<WebViewHandle | null>(null);
     const bridgeRef = useRef<PanelBridge | null>(null);
 
     // ── mount lifecycle: mint → load; cleanup → revoke(会话切换/卸载即收) ──
@@ -160,7 +187,7 @@ export function PanelWebView({ charDir, chatName }: PanelContext) {
                     <Text style={styles.degradedText}>此卡声明了 ctx 面,当前只支持 th 面 —— 部分交互不可用</Text>
                 </View>
             )}
-            <WebView
+            <WView
                 ref={webRef}
                 source={{ uri: src }}
                 onMessage={onMessage}
