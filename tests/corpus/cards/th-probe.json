@@ -1,0 +1,18 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "TH-Probe",
+    "description": "Corpus fixture: TavernHelper th_scripts sampling card.",
+    "personality": "",
+    "scenario": "",
+    "first_mes": "probe",
+    "mes_example": "",
+    "extensions": {
+      "th_scripts": [
+        "/setvar key=th_fixture.plain string-entry-ok",
+        { "name": "init-bag", "script": "/setvar key=stat_data.背包.火把 3" }
+      ]
+    }
+  }
+}
