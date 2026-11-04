@@ -1,19 +1,22 @@
 {
-    "expo": {
-        "name": "Uberge",
-        "slug": "uberge",
-        "version": "0.0.0",
-        "orientation": "portrait",
-        "userInterfaceStyle": "automatic",
-        "scheme": "uberge",
-        "plugins": ["expo-router"],
-        "ios": {
-            "supportsTablet": true,
-            "bundleIdentifier": "moe.uberge.app"
-        },
-        "android": {
-            "package": "moe.uberge.app",
-            "usesCleartextTraffic": true
-        }
+  "expo": {
+    "name": "Uberge",
+    "slug": "uberge",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "scheme": "uberge",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "moe.uberge.app"
+    },
+    "android": {
+      "package": "moe.uberge.app",
+      "usesCleartextTraffic": true
     }
+  }
 }

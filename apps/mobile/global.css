@@ -1,16 +1,11 @@
-/* Uberge mobile — Tailwind v4 entry (uniwind engine).
- * Design tokens mirror src/ui/theme.ts — the file stays the runtime
- * source of truth for reader themes & dynamic values; @theme below
- * gives className vocabulary the same palette (single dark scheme).
- *
- *   @theme 注册的 token → className 词汇:
- *     --color-bg        → bg-bg / text-bg / border-bg …
- *     --color-card-alt  → bg-card-alt …
- *     --color-accent-dim→ bg-accent-dim …
- *     --text-body       → text-body …
+/* Uberge mobile — Tailwind v4 entry (uniwind engine) + heroui-native.
+ * heroui-native/styles 提供组件 token(语义色/圆角/字号);@theme 下的
+ * --color-* 是本项目阅读器调色板,与 heroui 的语义 token 共存不冲突——
+ * heroui 件走它自己的 accent/surface 语义,阅读器 chrome 走这套。
  */
 @import 'tailwindcss';
 @import 'uniwind';
+@import 'heroui-native/styles';
 
 @theme {
     --color-bg: #0d0f14;

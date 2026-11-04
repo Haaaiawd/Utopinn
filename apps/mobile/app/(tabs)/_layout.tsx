@@ -5,7 +5,7 @@ import { Text, StyleSheet } from 'react-native';
 import { colors } from '../../src/ui/theme';
 
 function glyph(g: string) {
-    return function TabGlyph({ focused }: { color: string; focused: boolean; size: number }) {
+    return function TabGlyph({ focused }: { focused: boolean }) {
         return <Text style={[styles.glyph, !focused && styles.dim]}>{g}</Text>;
     };
 }
