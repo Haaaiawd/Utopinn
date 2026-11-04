@@ -14,10 +14,14 @@
  */
 import { createAppContext, WebServer } from '@uberge/kernel';
 import * as ubergeLibrary from './plugins/uberge-library.js';
+import * as ubergeDiag from './plugins/uberge-diag.js';
 
 export const appCtx = createAppContext();
 
 appCtx.provide('webServer', new WebServer());
+// cordis provide 管注入语义,catalog 管归属可见性 —— 两个都要
+appCtx.catalog.register({ role: 'core', name: 'webServer', providedBy: 'kernel-boot' });
 export const webServer = appCtx.webServer;
 
 appCtx.plugin(ubergeLibrary);
+appCtx.plugin(ubergeDiag);
