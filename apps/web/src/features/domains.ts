@@ -1,17 +1,134 @@
-// feature:domains — 非聊天域的视图/nav 注册。各视图组件无 props,
-// 领域数据走 useShell()。
-import type { Registry } from '../kernel/registry';
+// feature:domains — 非聊天域的视图/nav 注册 + 词条。
+// 各视图组件无 props,领域数据走 useShell()。
+import type { Feature, FeatureCtx } from '../kernel/kernel';
 import { LibraryView } from '../components/views/LibraryView';
 import { RulesView } from '../components/views/RulesView';
 import { ExtensionsView } from '../components/views/ExtensionsView';
 import { SettingsView } from '../components/views/SettingsView';
 
-export function applyDomainsFeature(r: Registry) {
-    r.add('nav.rail', { view: 'stories', icon: 'stories', order: 20 });
-    r.add('nav.rail', { view: 'rules', icon: 'rules', order: 30 });
-    r.add('nav.rail', { view: 'extensions', icon: 'extensions', order: 40 });
-    r.add('view', { view: 'stories', Component: LibraryView });
-    r.add('view', { view: 'rules', Component: RulesView });
-    r.add('view', { view: 'extensions', Component: ExtensionsView });
-    r.add('view', { view: 'settings', Component: SettingsView });
-}
+export const domainsFeature: Feature = {
+    name: 'domains',
+    apply(ctx: FeatureCtx) {
+        ctx.add('nav.rail', { view: 'stories', icon: 'stories', order: 20 });
+        ctx.add('nav.rail', { view: 'rules', icon: 'rules', order: 30 });
+        ctx.add('nav.rail', { view: 'extensions', icon: 'extensions', order: 40 });
+        ctx.add('view', { view: 'stories', Component: LibraryView });
+        ctx.add('view', { view: 'rules', Component: RulesView });
+        ctx.add('view', { view: 'extensions', Component: ExtensionsView });
+        ctx.add('view', { view: 'settings', Component: SettingsView });
+        ctx.locale('domains', {
+            'zh-CN': {
+                'nav.stories': '故事',
+                'nav.rules': '规则',
+                'nav.extensions': '扩展',
+
+                'lib.title': '故事库',
+                'lib.search': '搜索卡片',
+                'lib.new': '新建/导入',
+                'lib.viewToggle': '切换网格/列表',
+                'lib.importSoon': '导入管线在路上 —— TASK-016',
+                'lib.noChat': '这个角色还没有会话 —— 先去聊天页开一个',
+                'lib.empty': '没有匹配的卡片',
+                'lib.filter.all': '全部',
+                'lib.filter.image': '图像卡',
+                'lib.filter.json': 'JSON 卡',
+                'lib.filter.broken': '损坏',
+
+                'rules.title': '世界书',
+                'rules.desc': '世界书 = 规则库。全局/角色绑定/卡内嵌入的来源不同,条目启禁与共通性在这里管理。',
+                'rules.search': '搜索世界书',
+                'rules.new': '新建世界书',
+                'rules.installed': '已收录',
+                'rules.filter.all': '全部',
+                'rules.filter.global': '全局',
+                'rules.filter.bound': '绑定',
+                'rules.empty': '没有世界书',
+
+                'ext.title': '扩展',
+                'ext.desc': '服务端执行的扩展能力 —— 客户端只是它们的容器与管理面。',
+                'ext.search': '搜索扩展…',
+                'ext.new': '添加',
+                'ext.installed': '能力点',
+                'ext.newSoon': '安装/接入面板在路上',
+                'ext.tileSoon': '该能力点的管理面接线中',
+                'ext.stubBadge': '接线中',
+                'ext.empty': '没有匹配的扩展点',
+                'ext.filter.all': '全部',
+                'ext.cat.plugins': '插件',
+                'ext.cat.regex': '正则',
+                'ext.cat.quickReplies': '快捷回复',
+                'ext.cat.injections': '注入',
+                'ext.cat.cardAssets': '卡内资源',
+                'ext.desc.plugins': 'Cordis 插件:服务端加载,生命周期与事件由内核管。',
+                'ext.desc.regex': '正则管线:渲染/提示词两阶段的替换脚本。',
+                'ext.desc.quickReplies': 'ST 快捷回复集:slash 命令按钮组。',
+                'ext.desc.injections': '注入提示词:作者注/世界书外的位置注入。',
+                'ext.desc.cardAssets': '卡内资源:卡自带的图片/字体/面板资产。',
+
+                'settings.title': '设置',
+                'settings.theme': '主题',
+                'settings.theme.dark': '深夜',
+                'settings.theme.light': '纸面',
+                'settings.locale': '语言',
+                'settings.chain': '连接 → 生成预设 → 提示词 → 外观 → 行为 → 数据 → 账号 → 高级',
+                'settings.chainNote': 'ST 的设置流程本来就是一条链。骨架阶段先放外观与语言。',
+            },
+            en: {
+                'nav.stories': 'Stories',
+                'nav.rules': 'Rules',
+                'nav.extensions': 'Extensions',
+
+                'lib.title': 'Story Library',
+                'lib.search': 'Search cards',
+                'lib.new': 'New / import',
+                'lib.viewToggle': 'Toggle grid/list',
+                'lib.importSoon': 'Import pipeline on the way — TASK-016',
+                'lib.noChat': 'No chats on this character yet — start one from Chat',
+                'lib.empty': 'No matching cards',
+                'lib.filter.all': 'All',
+                'lib.filter.image': 'Image cards',
+                'lib.filter.json': 'JSON cards',
+                'lib.filter.broken': 'Broken',
+
+                'rules.title': 'World Books',
+                'rules.desc': 'World books are the rule library — global, character-bound, or card-embedded. Entries and commonality are managed here.',
+                'rules.search': 'Search world books',
+                'rules.new': 'New world book',
+                'rules.installed': 'Collected',
+                'rules.filter.all': 'All',
+                'rules.filter.global': 'Global',
+                'rules.filter.bound': 'Bound',
+                'rules.empty': 'No world books',
+
+                'ext.title': 'Extensions',
+                'ext.desc': 'Extension capabilities execute server-side — the client is their container and management surface.',
+                'ext.search': 'Search extensions…',
+                'ext.new': 'Add',
+                'ext.installed': 'Capability points',
+                'ext.newSoon': 'Install/manage surfaces on the way',
+                'ext.tileSoon': 'Management surface for this capability is being wired',
+                'ext.stubBadge': 'Wiring',
+                'ext.empty': 'No matching capabilities',
+                'ext.filter.all': 'All',
+                'ext.cat.plugins': 'Plugins',
+                'ext.cat.regex': 'Regex',
+                'ext.cat.quickReplies': 'Quick replies',
+                'ext.cat.injections': 'Injections',
+                'ext.cat.cardAssets': 'Card assets',
+                'ext.desc.plugins': 'Cordis plugins: server-loaded, kernel-managed lifecycle.',
+                'ext.desc.regex': 'Regex pipeline: render/prompt-phase rewrite scripts.',
+                'ext.desc.quickReplies': 'ST quick-reply sets: slash-command button groups.',
+                'ext.desc.injections': 'Prompt injections: positional inserts beyond author note/WI.',
+                'ext.desc.cardAssets': 'Card assets: bundled images/fonts/panel files.',
+
+                'settings.title': 'Settings',
+                'settings.theme': 'Theme',
+                'settings.theme.dark': 'Midnight',
+                'settings.theme.light': 'Paper',
+                'settings.locale': 'Language',
+                'settings.chain': 'Connection → Presets → Prompts → Appearance → Behavior → Data → Account → Advanced',
+                'settings.chainNote': 'ST settings were always a chain. The skeleton only wires appearance + language.',
+            },
+        });
+    },
+};

@@ -46,10 +46,19 @@ export interface CtbarActionContribution {
     Component: ComponentType;
 }
 
+/** locale 贡献:feature 自带词条,按 locale id 分字典。
+ *  键已按约定带域前缀(chat./lib./panel.…),ns 是归属标签不是前缀。
+ *  feature 卸载 → 词条随贡献拆除,t() 回落键名 —— 诚实降级。 */
+export interface LocaleContribution {
+    ns: string;
+    dicts: Record<string, Record<string, string>>;
+}
+
 export interface Contributions {
     'nav.rail': NavRailContribution;
     'view': ViewContribution;
     'panel.type': PanelTypeContribution;
     'renderer': RendererContribution;
     'ctbar.chat': CtbarActionContribution;
+    'locale': LocaleContribution;
 }
