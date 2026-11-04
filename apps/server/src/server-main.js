@@ -164,8 +164,6 @@ import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent } from './endpoints/content-manager.js';
 import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
-import { verifyWsTicket } from './ws-ticket-router.js';
-import { createDeliveryServer } from './ws-delivery.js';
 import { webServer } from './kernel-boot.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
@@ -820,11 +818,11 @@ async function postSetupTasks(result) {
     // which is gated by the full HTTP middleware stack — Basic Auth,
     // cookieSession, setUserData, requireLogin, CSRF — so the WS channel
     // is trusted the moment the upgrade completes.
+    // WS 面已插件化:plugins/uberge-delivery.js 经 webServer.registerUpgrade
+    // 贡献 /api/ws-delivery(票验/心跳/订阅去重原样)。这里只需把统一
+    // upgradeListener 挂上 —— 命中表才接管 socket,未命中不动。
     if (result.servers && result.servers.length > 0) {
         for (const server of result.servers) {
-            createDeliveryServer({ httpServer: server, verifyTicket: verifyWsTicket });
-            // kernel webServer upgrade 位:path 命中 registerUpgrade 表才接管
-            // socket,未命中不动 —— 与 ws-delivery 监听者共存。
             server.on('upgrade', webServer.upgradeListener());
         }
     }
