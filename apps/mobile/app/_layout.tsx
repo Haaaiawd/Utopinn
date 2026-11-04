@@ -9,6 +9,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { HeroUINativeProvider } from 'heroui-native';
+import { ScopedTheme } from 'uniwind';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { session } from '../src/api/session';
 import { colors } from '../src/ui/theme';
@@ -31,6 +32,8 @@ export default function RootLayout() {
             <SafeAreaProvider>
                 <QueryClientProvider client={queryClient}>
                     <HeroUINativeProvider config={{ textProps: { minimumFontScale: 0.5, maxFontSizeMultiplier: 1.5 } }}>
+                        {/* 产品定调深色优先 —— 钉死 dark，不跟系统 scheme 漂 */}
+                        <ScopedTheme theme="dark">
                         <StatusBar style="light" />
                         {ready ? (
                             <Stack
@@ -48,6 +51,7 @@ export default function RootLayout() {
                                 <ActivityIndicator color={colors.sub} />
                             </View>
                         )}
+                        </ScopedTheme>
                     </HeroUINativeProvider>
                 </QueryClientProvider>
             </SafeAreaProvider>
