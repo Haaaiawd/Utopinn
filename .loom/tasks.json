@@ -1074,14 +1074,22 @@
    "design_exemption": "",
    "covers": [],
    "status": "open",
-   "progress": "import 管线已插件化:plugins/uberge-import.js,preview+commit 经 webServer,8/8 E2E。端点孤儿已收编。",
+   "progress": {
+    "completed": [
+     "服务端导入面迁入 kernel 插件 umerge-import(preview/commit/conflict/rename 语义保留)"
+    ],
+    "current": "",
+    "next": "导出刀 + web 拖放中心 + 备份快照/LAN 发现/ST data 扫描清单"
+   },
    "evidence": [
     "apps/server/src/plugins/uberge-import.js",
     "tests/e2e/uberge-import-surface.mjs",
+    "commit 2624ae4",
+    "tests/e2e/uberge-import-surface.mjs 8/8 pass",
     "commit 2624ae4"
    ],
    "created_at": "2026-11-03T07:57:01.010Z",
-   "updated_at": "2026-11-03T11:26:03.625Z",
+   "updated_at": "2026-11-04T06:56:05.404Z",
    "integrity_version": 1,
    "id": "TASK-016",
    "title": "导入导出中心:万能拖放/URL/预览/备份同步/ST迁移",
@@ -1371,15 +1379,23 @@
    "design_exemption": "",
    "covers": [],
    "status": "open",
-   "progress": "服务端执行面完成(未 done:UI 未做):pluginManager 服务 + GET/POST 管理 REST + patch.yaml 持久化 + 热插拔 E2E 14/14。剩:管理 UI 挂 apps/web。",
+   "progress": {
+    "completed": [
+     "服务端执行面:list/row/enable/disable/reload + patch.yaml 持久化 + ctx.effect 可逆路由"
+    ],
+    "current": "",
+    "next": "插件管理 UI(web 设置域)"
+   },
    "evidence": [
     "apps/server/src/plugins/uberge-plugins.js",
     "apps/server/src/kernel-boot.js (pluginManager)",
     "tests/e2e/uberge-plugin-manager.mjs",
+    "commit e8f8660",
+    "tests/e2e/uberge-plugin-manager.mjs 14/14 pass",
     "commit e8f8660"
    ],
    "created_at": "2026-11-03T09:52:13.053Z",
-   "updated_at": "2026-11-03T09:52:13.053Z",
+   "updated_at": "2026-11-04T06:56:05.404Z",
    "integrity_version": 1,
    "id": "TASK-021",
    "title": "插件管理 API",
@@ -1478,13 +1494,21 @@
    "design_exemption": "聊天 CRUD/swipe 持久化直迁 legacy chats 语义,无独立设计稿",
    "covers": [],
    "status": "open",
-   "progress": "服务端生命周期完成(未 done:Sidebar 挂接未做):create/append(swipe 持久化)/PATCH swipe_id/rename/delete + gen_id 去重 + integrity 锁,E2E 13/13。",
+   "progress": {
+    "completed": [
+     "服务端生命周期面:PUT 建聊/POST rename/POST append/PATCH swipe/DELETE,integrity 乐观锁+gen_id 去重"
+    ],
+    "current": "",
+    "next": "GET chats 挂 Sidebar(web SPA 消费)"
+   },
    "evidence": [
     "apps/server/src/plugins/uberge-library.js (chat lifecycle)",
-    "tests/e2e/uberge-chat-lifecycle.mjs"
+    "tests/e2e/uberge-chat-lifecycle.mjs",
+    "tests/e2e/uberge-chat-lifecycle.mjs 13/13 pass",
+    "commit faac43a"
    ],
    "created_at": "2026-11-03T11:19:00.114Z",
-   "updated_at": "2026-11-03T11:43:37.559Z",
+   "updated_at": "2026-11-04T06:56:05.404Z",
    "integrity_version": 1,
    "id": "TASK-023",
    "title": "聊天生命周期:列表/新建/重命名/删除/swipe持久化",
