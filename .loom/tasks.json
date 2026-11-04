@@ -1317,13 +1317,13 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "待开始",
-        "next": ""
-      },
-      "evidence": [],
+      "status": "done",
+      "progress": "/generate api=text 分叉全通:stub LLM 真机 E2E 12/12,prompt 组装+persist 回环验证。storystring 整包(context 模板)为后续 fidelity 切片。",
+      "evidence": [
+        "apps/server/src/plugins/uberge-generate.js (text fork)",
+        "apps/server/src/services/generate-context.js (extended return)",
+        "tests/e2e/uberge-textgen-dispatch.mjs"
+      ],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-03T11:26:03.625Z",
       "integrity_version": 1,
