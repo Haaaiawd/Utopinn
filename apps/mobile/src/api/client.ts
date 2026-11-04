@@ -23,6 +23,9 @@ export function client(): UbergeClient {
 
 const enc = encodeURIComponent;
 
+/** Hermes has no Intl/`localeCompare` — plain lexicographic compare. */
+const cmpStr = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 // ---------- wire shapes (server: plugins/uberge-library.js) ----------
 
 export interface CharacterItem {
@@ -115,7 +118,8 @@ export async function listAllChats(): Promise<ChatSummary[]> {
                 }
             }),
     );
-    out.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+    // ISO 时间戳字典序即时间序;localeCompare 在 Hermes 里未实现(Intl 缺失)。
+    out.sort((a, b) => cmpStr(b.updatedAt ?? '', a.updatedAt ?? ''));
     return out;
 }
 

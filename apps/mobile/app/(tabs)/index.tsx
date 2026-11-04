@@ -81,6 +81,7 @@ export default function ShelfScreen() {
         queryKey: ['all-chats'],
         queryFn: listAllChats,
     });
+    if (isError) console.warn('[dbg] all-chats error:', error instanceof Error ? (error.stack ?? error.message) : error);
     const [filter, setFilter] = useState<Filter>('all');
     const progressMap = useProgressMap();
 
@@ -108,7 +109,7 @@ export default function ShelfScreen() {
             map.set(c.charName, list);
         }
         return [...map.entries()]
-            .sort((a, b) => a[0].localeCompare(b[0]))
+            .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
             .map(([title, items]) => ({ title, data: items }));
     }, [filtered, filter]);
 

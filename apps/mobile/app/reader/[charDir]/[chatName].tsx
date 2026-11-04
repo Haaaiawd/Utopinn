@@ -246,9 +246,12 @@ export default function ReaderScreen() {
                 setCardOpen(true);
                 break;
             case 'panels':
-                // CardApp 挂点(TASK-009):现有面板 tab 就是 bridge 的家 ——
-                // 收进 chrome「…」而不是另占底 tab(design §0)。
-                router.push('/panels');
+                // CardApp 面板页(TASK-009):带上会话身份,面板 tab 按参数
+                // 定位;chatName 决定 th/call 的 chat 变量作用域。
+                router.push({
+                    pathname: '/panels',
+                    params: { charDir: charDir!, chatName: chatName!, name: charName },
+                });
                 break;
             case 'branchAll': {
                 setBusyNote('分叉中…');
