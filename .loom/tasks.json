@@ -425,7 +425,7 @@
     {
      "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
      "verify_by": "apps/server 下对应 e2e 测试",
-     "evidence": ""
+     "evidence": "uberge-stream-delivery.mjs 12/12(mock LLM delta→JSONL→resume 回放)"
     }
    ],
    "done_when": [
@@ -465,21 +465,19 @@
    "status": "open",
    "progress": {
     "completed": [
-     "/api/uberge/generate+preview 端点",
-     "存储→WI→prompt 全链",
-     "派发体 oai_settings/preset/body 三层合并+连接键排除",
-     "e2e 全绿(HTTP→组装→mock派发→job→persist→JSONL)",
-     "WS ticket 投递面验证(resume 回放 head/chunk/end 全帧)"
+     "服务端 /api/uberge/generate+WS 交付通道(subscribe/resume/from_seq 回放)",
+     "mock LLM e2e:delta→落盘→重连回放 12/12"
     ],
-    "current": "group chat(余项)",
-    "next": "TASK-018 库管理 API 解锁薄客户端"
+    "current": "",
+    "next": "group chat 生成面(既有降级项)+ 真卡抽验"
    },
    "evidence": [
     "79be656",
-    "apps/server/tests/uberge-generate-context.test.mjs"
+    "apps/server/tests/uberge-generate-context.test.mjs",
+    "tests/e2e/uberge-stream-delivery.mjs 12/12"
    ],
    "created_at": "2026-11-02T08:50:32.134Z",
-   "updated_at": "2026-11-03T11:04:40.543Z"
+   "updated_at": "2026-11-04T07:24:31.501Z"
   },
   {
    "id": "TASK-008",
