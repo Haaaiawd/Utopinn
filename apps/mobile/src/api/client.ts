@@ -23,8 +23,8 @@ export function client(): UbergeClient {
 
 const enc = encodeURIComponent;
 
-/** Hermes has no Intl/`localeCompare` — plain lexicographic compare. */
-const cmpStr = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+/** Hermes has no Intl/`localeCompare` — plain `</>` compare (number 或 ISO 串都序正确)。 */
+const cmpStr = (a: string | number, b: string | number): number => (a < b ? -1 : a > b ? 1 : 0);
 
 // ---------- wire shapes (server: plugins/uberge-library.js) ----------
 
@@ -43,8 +43,10 @@ export interface ChatItem {
     fileName?: string;
     messageCount?: number;
     byteSize?: number;
+    /** 预览文本 —— wire 上是最后一条楼层对象,listChats 已提取 .mes。 */
     lastMessage?: string;
-    updatedAt?: string;
+    /** epoch ms(服务端 info.updatedAt 是 number;老路径可能是 ISO 串)。 */
+    updatedAt?: string | number;
 }
 
 /** ST wire floor (JSONL row). */
@@ -73,7 +75,7 @@ export interface ChatSummary {
     chatName: string;
     messageCount: number;
     lastMessage?: string;
-    updatedAt?: string;
+    updatedAt?: string | number;
     avatar: string | null;
 }
 
@@ -85,10 +87,21 @@ export async function listCharacters(): Promise<CharacterItem[]> {
 }
 
 export async function listChats(charDir: string): Promise<ChatItem[]> {
-    const d = await client().request<{ items: ChatItem[]; total: number }>(
+    const d = await client().request<{ items: ChatItemWire[]; total: number }>(
         `/api/uberge/characters/${enc(charDir)}/chats`,
     );
-    return d.items ?? [];
+    // wire lastMessage 是整条楼层对象 —— 这里归一成 mes 文本,UI 统一当 string 用。
+    return (d.items ?? []).map((it) => ({ ...it, lastMessage: mesPreview(it.lastMessage) }));
+}
+
+type ChatItemWire = Omit<ChatItem, 'lastMessage'> & {
+    lastMessage?: string | { mes?: string } | null;
+};
+
+function mesPreview(v: ChatItemWire['lastMessage']): string | undefined {
+    if (v == null) return undefined;
+    if (typeof v === 'string') return v;
+    return typeof v.mes === 'string' ? v.mes : undefined;
 }
 
 /** All chats across all characters (对话 tab). Per-char failure is skipped. */

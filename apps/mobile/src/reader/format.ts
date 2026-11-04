@@ -170,7 +170,8 @@ export function chapterAt(chapters: Chapter[], paraIndex: number): Chapter | nul
 
 /** 书架副行/列表预览:首句截断。 */
 export function previewLine(text: string | undefined, max = 42): string {
-    if (!text) return '';
+    // wire 不可信(lastMessage 历史上是整条楼层对象)——非字符串直接放弃预览。
+    if (typeof text !== 'string' || !text) return '';
     const oneLine = text.replace(/\s+/g, ' ').trim();
     const s = firstSentence(oneLine, max);
     return s || (oneLine.length > max ? `${oneLine.slice(0, max)}…` : oneLine);
