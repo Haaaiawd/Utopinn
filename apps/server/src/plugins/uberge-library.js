@@ -16,7 +16,13 @@ import path from 'node:path';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
-import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
+import {
+    ConflictError,
+    InvalidArgumentError,
+    NotFoundError,
+    PatchTestFailedError,
+    UnsupportedPatchOpError,
+} from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
 
@@ -45,13 +51,19 @@ export function safeName(raw, field) {
     return name;
 }
 
-/** 统一错误出口:InvalidArgumentError→400,NotFoundError→404,其余→500。 */
+/** 统一错误出口:InvalidArgumentError→400,NotFoundError→404,ConflictError→409,patch 语义错→对应映射,其余→500。 */
 export function sendError(response, error, logPrefix) {
     if (error instanceof InvalidArgumentError) {
         return response.status(400).send({ error: error.message });
     }
     if (error instanceof NotFoundError) {
         return response.status(404).send({ error: error.message });
+    }
+    if (error instanceof ConflictError || error instanceof PatchTestFailedError) {
+        return response.status(409).send({ error: error.message });
+    }
+    if (error instanceof UnsupportedPatchOpError) {
+        return response.status(400).send({ error: error.message });
     }
     console.error(`${logPrefix} failed:`, error);
     return response.status(500).send({ error: String(error?.message ?? error) });
@@ -710,6 +722,104 @@ export function apply(ctx) {
             return response.sendStatus(204);
         } catch (error) {
             return sendError(response, error, 'uberge/secrets delete');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // 聊天生命周期(TASK-023):建 / 重命名 / 追加(swipe 随消息持久化)/ JSON-Patch
+    // -----------------------------------------------------------------------
+
+    /**
+     * PUT /characters/:charDir/chats/:chatName —— 新建空会话。
+     * body:{header?} → 缺省 {chat_metadata:{}};已存在 → 409。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName`, 'PUT', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            if (await repo.exists(handle, charDir, chatName)) {
+                return response.status(409).send({ error: `Chat already exists: ${charDir}/${chatName}` });
+            }
+            const header = request.body?.header;
+            if (header !== undefined && (typeof header !== 'object' || header === null || Array.isArray(header))) {
+                return response.status(400).send({ error: 'body.header must be an object when provided' });
+            }
+            const { integrity } = await repo.save(handle, charDir, chatName, header ?? { chat_metadata: {} }, []);
+            return response.status(201).send({ ok: true, name: chatName, fileName: `${chatName}.jsonl`, integrity });
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats create');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/chats/:chatName/rename —— 重命名。
+     * body:{newName};目标占用 → 409,源不存在 → 404。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/rename`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const newName = safeName(stripJsonlExt(request.body?.newName), 'newName');
+            const handle = request.user.profile.handle;
+            await getChatRepo().rename(handle, charDir, chatName, newName);
+            return response.send({ ok: true, name: newName, fileName: `${newName}.jsonl` });
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats rename');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/chats/:chatName/messages —— 追加消息。
+     * body:{messages:[...], integrity?}
+     *   消息原样入库(swipe_id/swipes 字段随之持久化 —— swipe 写在这层,
+     *   切 swipe 的改动走 PATCH /body/:i/swipe_id)。
+     *   gen_id 去重(重发安全),integrity 乐观锁不匹配 → 409。
+     * 响应:{integrity, accepted, dedupedGenIds}
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/messages`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const messages = request.body?.messages;
+            if (!Array.isArray(messages) || messages.length === 0) {
+                return response.status(400).send({ error: 'Expected body.messages non-empty array' });
+            }
+            const handle = request.user.profile.handle;
+            const result = await getChatRepo().append(
+                handle, charDir, chatName, messages,
+                typeof request.body?.integrity === 'string' ? request.body.integrity : undefined,
+            );
+            return response.send(result);
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats append');
+        }
+    });
+
+    /**
+     * PATCH /characters/:charDir/chats/:chatName —— JSON-Patch 局部改。
+     * body:{ops:[{op,path,value?}], integrity?}
+     *   doc 形状 {header, body:messages[]};swipe 切换 =
+     *   {op:'replace', path:'/body/<i>/swipe_id', value:<n>}。
+     *   integrity 不匹配 / test op 失败 → 409;op 非法/路径越权 → 400。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName`, 'PATCH', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const ops = request.body?.ops;
+            if (!Array.isArray(ops) || ops.length === 0) {
+                return response.status(400).send({ error: 'Expected body.ops non-empty array' });
+            }
+            const handle = request.user.profile.handle;
+            const result = await getChatRepo().patch(
+                handle, charDir, chatName, ops,
+                typeof request.body?.integrity === 'string' ? request.body.integrity : undefined,
+            );
+            return response.send(result);
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats patch');
         }
     });
 }
