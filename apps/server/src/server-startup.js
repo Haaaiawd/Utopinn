@@ -60,6 +60,7 @@ import { cardRuntimeApiRouter } from './card-runtime/index.js';
 import { router as ubergeGenerateRouter } from './endpoints/uberge-generate.js';
 import { router as ubergeLibraryRouter } from './endpoints/uberge-library.js';
 import { router as ubergeMvuRouter } from './endpoints/uberge-mvu.js';
+import { webServer } from './kernel-boot.js';
 import { router as docsRouter } from './endpoints/docs.js';
 import { createSkillsRouter } from './endpoints/skills.js';
 import { createSkillRepository } from './skills/repository.js';
@@ -140,6 +141,9 @@ export function setupPrivateEndpoints(app) {
     // CardApp mount admin: mints the capability ids that the session-free
     // /card-runtime/m/<id>/ surface (mounted pre-login in server-main) accepts.
     app.use('/api/card-runtime', cardRuntimeApiRouter);
+    // kernel webServer dispatcher:插件注册的路由(exact/pattern 全路径)
+    // 命中即接管,未命中 next() 落回下面的 legacy router —— 按面切换。
+    app.use(webServer.middleware());
     app.use('/api/uberge', ubergeGenerateRouter);
     app.use('/api/uberge', ubergeLibraryRouter);
     app.use('/api/uberge/mvu', ubergeMvuRouter);

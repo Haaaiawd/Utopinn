@@ -166,6 +166,7 @@ import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
 import { verifyWsTicket } from './ws-ticket-router.js';
 import { createDeliveryServer } from './ws-delivery.js';
+import { webServer } from './kernel-boot.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
@@ -822,6 +823,9 @@ async function postSetupTasks(result) {
     if (result.servers && result.servers.length > 0) {
         for (const server of result.servers) {
             createDeliveryServer({ httpServer: server, verifyTicket: verifyWsTicket });
+            // kernel webServer upgrade 位:path 命中 registerUpgrade 表才接管
+            // socket,未命中不动 —— 与 ws-delivery 监听者共存。
+            server.on('upgrade', webServer.upgradeListener());
         }
     }
 
