@@ -1,7 +1,7 @@
 // feature:panels — 板块宿主配套贡献:cardapp/analysis 板块类型 +
-// ctbar 的 "+" 添加器(唯一常驻入口,板块清空时右栏自动收起)。
+// ctbar 的 "+" 添加器(唯一常驻入口,板块清空时右栏自动收起)+ 本域词条。
 import { useI18n } from '../i18n';
-import type { Registry } from '../kernel/registry';
+import type { Feature, FeatureCtx } from '../kernel/kernel';
 import { useContribs, useShell } from '../kernel/context';
 import { CardAppBody, stubBody } from '../components/panels/bodies';
 import { Icon } from '../components/Icon';
@@ -34,8 +34,31 @@ function PanelAddAction() {
     );
 }
 
-export function applyPanelsFeature(r: Registry) {
-    r.add('panel.type', { type: 'cardapp', icon: 'layout', wired: true, Body: CardAppBody });
-    r.add('panel.type', { type: 'analysis', icon: 'chartLine', wired: false, Body: stubBody('panel.type.analysis') });
-    r.add('ctbar.chat', { id: 'panel-add', order: 80, Component: PanelAddAction });
-}
+export const panelsFeature: Feature = {
+    name: 'panels',
+    apply(ctx: FeatureCtx) {
+        ctx.add('panel.type', { type: 'cardapp', icon: 'layout', wired: true, Body: CardAppBody });
+        ctx.add('panel.type', { type: 'analysis', icon: 'chartLine', wired: false, Body: stubBody('panel.type.analysis') });
+        ctx.add('ctbar.chat', { id: 'panel-add', order: 80, Component: PanelAddAction });
+        ctx.locale('panels', {
+            'zh-CN': {
+                'panel.type.cardapp': '面板',
+                'panel.type.analysis': '分析',
+                'panel.add': '添加板块',
+                'panel.close': '关闭板块',
+                'panel.stub': '该板块类型已在注册表,本体接线中。',
+                'panel.soon': '接线中',
+                'panel.panels.empty': '卡内面板(CardApp)入口。当前卡未声明面板。',
+            },
+            en: {
+                'panel.type.cardapp': 'Panels',
+                'panel.type.analysis': 'Analysis',
+                'panel.add': 'Add panel',
+                'panel.close': 'Close panel',
+                'panel.stub': 'Panel type registered; body still being wired.',
+                'panel.soon': 'Wiring',
+                'panel.panels.empty': 'Card-app panel entries. This card declares no panels.',
+            },
+        });
+    },
+};

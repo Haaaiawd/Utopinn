@@ -1,12 +1,11 @@
 // Registry — cordis effect 语义的内存版:add() 返回 disposer,
 // feature 模块卸载一刀全拆;useSyncExternalStore 订阅让运行时
 // 新增贡献(将来的插件 manifest hydrate)能驱动重渲。
-import { useSyncExternalStore } from 'react';
 import type { Contributions } from './contributions';
 
 export type Disposer = () => void;
 
-const EMPTY: readonly never[] = [];
+const EMPTY: readonly unknown[] = [];
 
 export class Registry {
     private readonly map = new Map<string, readonly unknown[]>();

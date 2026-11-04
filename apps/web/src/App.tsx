@@ -11,17 +11,20 @@ import { Sidebar } from './components/shell/Sidebar';
 import { RightPanel } from './components/shell/RightPanel';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ShellProvider, useContribs, useShell, type ShellCtx } from './kernel/context';
-import { Registry } from './kernel/registry';
+import { Kernel } from './kernel/kernel';
 import type { PanelInst } from './kernel/contributions';
-import { applyChatFeature } from './features/chat';
-import { applyPanelsFeature } from './features/panels';
-import { applyDomainsFeature } from './features/domains';
+import { shellFeature } from './features/shell';
+import { chatFeature } from './features/chat';
+import { panelsFeature } from './features/panels';
+import { domainsFeature } from './features/domains';
 
-/** 内建 feature 注册 —— 壳启动时装配,registry 即壳的全部表面。 */
-const registry = new Registry();
-applyChatFeature(registry);
-applyPanelsFeature(registry);
-applyDomainsFeature(registry);
+/** 内建 feature 装配 —— kernel 即壳的全部表面;feature 顺序即词条/导航序。 */
+const kernel = new Kernel();
+const registry = kernel.registry;
+kernel.applyFeature(shellFeature);
+kernel.applyFeature(chatFeature);
+kernel.applyFeature(panelsFeature);
+kernel.applyFeature(domainsFeature);
 
 /** 主区出口:按当前 view 从 view 贡献点找组件,壳不 if/switch。 */
 function ViewOutlet() {
@@ -197,7 +200,7 @@ function Shell() {
 
 export default function App() {
     return (
-        <I18nProvider>
+        <I18nProvider registry={registry}>
             <TooltipProvider delayDuration={400}>
                 <Shell />
             </TooltipProvider>
