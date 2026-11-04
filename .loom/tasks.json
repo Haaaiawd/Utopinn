@@ -1479,16 +1479,11 @@
       "design_exemption": "聊天 CRUD/swipe 持久化直迁 legacy chats 语义,无独立设计稿",
       "covers": [],
       "status": "open",
-      "progress": {
-        "completed": [
-          "Sidebar 真聊天列表",
-          "新建聊天入口",
-          "swipe_id RFC6902 持久化"
-        ],
-        "current": "三件套入库,typecheck/build 绿",
-        "next": "rename/delete UI、chat 分支、group 面(降级)"
-      },
-      "evidence": [],
+      "progress": "服务端生命周期完成(未 done:Sidebar 挂接未做):create/append(swipe 持久化)/PATCH swipe_id/rename/delete + gen_id 去重 + integrity 锁,E2E 13/13。",
+      "evidence": [
+        "apps/server/src/plugins/uberge-library.js (chat lifecycle)",
+        "tests/e2e/uberge-chat-lifecycle.mjs"
+      ],
       "created_at": "2026-11-03T11:19:00.114Z",
       "updated_at": "2026-11-03T11:43:37.559Z",
       "integrity_version": 1,
