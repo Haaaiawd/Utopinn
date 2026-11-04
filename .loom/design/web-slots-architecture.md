@@ -1,9 +1,11 @@
 # web-slots-architecture — 客户端贡献式架构(TASK-010 深化)
 
-> 状态:定稿方向。用户拍板 2026-11-04:"就这么做,仿 DSH 把路走彻底"。
-> 参照:dsh `packages/client/ui-slots`(槽注册表)与 `ui-dockkit`
-> (纯引擎+React 表面两层)。本稿定 A 步契约——应用内微内核,
-> 不吞 Cordis-进-浏览器那档工程。
+> 状态:定稿方向。用户拍板 2026-11-04:"就这么做,仿 DSH 把路走彻底";
+> 同日 clarify 加码:**目标态 = DSH 全形态**(动态 bundle + 平台模块表
+> + inject/effect/locale 全补),manifest hydrate 是过渡不是终点。
+> 参照:dsh `packages/client/ui-slots`(槽注册表)、`ui-dockkit`
+> (纯引擎+React 表面两层)、`client/web`(Loader+BootManifest 插件树)、
+> `host/webserver`(路由即贡献的服务端同款)。
 
 ## 为什么
 
@@ -53,21 +55,42 @@ apps/web/src/
   App.tsx      组装:建 registry → apply(features) → <Shell registry>
 ```
 
-## 与 server cordis 的边界
+## 目标态(clarify 2026-11-04 拍板:DSH 全形态)
 
-- 内核语义对齐(effect→disposer、注册表、merge 声明),不共享运行时。
-  Web 端是 React 宿主,Cordis 跑在 server;两者经 API/manifest 对接。
-- B 步:apps/server 的 /api/uberge 端点逐迁移为 packages/kernel 插件;
-  legacy express 收进 legacy-adapter,按面切不是一次翻桌。
-- C 步:服务端插件 manifest 声明客户端贡献(panel.type/renderer/ns),
-  壳启动时拉清单 hydrate 进 registry —— 本稿的契约就为那一刻设计:
-  贡献体本身序列化无关,注册体是组件引用不是数据。
+A 步落地的微内核是起点不是终点。DSH 的完整形态由五层构成,
+我们的 adopt 路径按序铺开:
+
+| 层 | DSH 实物 | 我们的状态 |
+|---|---|---|
+| 贡献点表 + disposer + 订阅 | ui-slots | ✅ A 步已落(kernel/registry.ts) |
+| locale 命名空间按插件注册 | ctx.locale.register(ns, dict) | 🎯 B′ 步:i18n.ns 贡献点已在契约表,全局字典退役进 feature 词条 |
+| inject 服务等待 + effect 作用域 | `export const inject` + ctx.effect 纤程 | 🎯 B′ 步:feature apply(ctx) 升级 inject 声明;registry 按 feature 收 effect 域 |
+| 服务端路由/WS 即贡献 | host/webserver: register + registerUpgrade → disposer | 🎯 B 步:见下节 |
+| 动态 bundle + 平台模块表 | Loader + BootManifest + seed.ts 单例表 | 🎯 C 步终态:插件打独立 bundle 运行时加载;manifest hydrate 是过渡 |
+
+## 服务端同款(B 步,clarify 拍板)
+
+- 形状照 `dsh-host-webserver`:内核暴露 `webServer` 服务,
+  `register(route) → disposer`(HTTP)+ `registerUpgrade(route) →
+  disposer`(WS)双注册位;插件 `inject(['webServer'], ctx => …)` 挂端点。
+- **小面先行**:首批迁 chats/characters/worlds 只读列表趟熟形状,
+  第二波 generate/preview + streamJob(WS 一起走,只收 HTTP 会把最大
+  流量留在 Express 层)。
+- legacy Luker Express 收编进 legacy-adapter 插件保留,按面切不翻桌。
+
+## C 步终态:动态 bundle
+
+- 插件 = 独立 bundle + manifest 行(Loader.create 一条一个),
+  运行时装载;平台模块表(react/cordis/store/slots/…)做单例共享,
+  bundle 经 externals 解析——**插件加 UI 不再要发版**。
+- manifest hydrate(服务端插件声明 panel.type/renderer/ns,壳启动
+  hydrate)是过渡路径:贡献体已序列化无关,契约不换。
 
 ## 不抄的部分(记录否决)
 
 - ui-dockkit 全量:split 树/浮窗/op 序列重放 —— v1 面板是单列 tabs,
   等真要多 split 再引;面板宿主已按 kinded-opaque 设计,届时可换芯。
 - 74 包物理拆分:贡献点在内存里,不必包在物理里。
-  单 feature 需要独立版本节奏再说,现在分包=散件管理成本净负。
-- Cordis-in-browser:语义借鉴,运行时不引 —— 引了要把 ctx 生命周期、
-  effect 图、服务定位全搬进 SPA,收益付不出成本。
+  单 feature 需要独立版本节奏再说;bundle 化是装载边界,不强制 = 包边界。
+- mount-as-service:壳仍持 React 入口,uiRenderer 服务化的收益
+  (换渲染器整树重挂)在 RP 聊天域用不上。
