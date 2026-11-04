@@ -17,7 +17,6 @@
  *   - 探测失败 → 422 + hints(客户端据此提示用户换文件/改类型)。
  *   - 不做事务:单条成功/失败独立,批量由客户端逐条循环。
  */
-import express from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -29,8 +28,8 @@ import { getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/ind
 import { InvalidArgumentError, NotFoundError, StorageReadOnlyError } from '../storage/errors.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
 import { persistCharXAssets } from '../charx.js';
-import { importRisuSprites } from './sprites.js';
-import { extractCardAppFiles } from './card-app.js';
+import { importRisuSprites } from '../endpoints/sprites.js';
+import { extractCardAppFiles } from '../endpoints/card-app.js';
 import {
     IMPORT_KINDS,
     ImportParseError,
@@ -43,7 +42,7 @@ import {
     stripImportExt,
 } from '../services/import-pipeline.js';
 
-export const router = express.Router();
+export const inject = ['webServer'];
 
 // ---------------------------------------------------------------------------
 // 通用小件
@@ -171,7 +170,7 @@ async function uniqueTarget(request, target) {
  * commit 时,让本文件保持"轻依赖可独立挂载/测试"。
  */
 async function writeCardViaCharacters(input, cardJson, stem, request) {
-    const { writeCharacterData } = await import('./characters.js');
+    const { writeCharacterData } = await import('../endpoints/characters.js');
     return writeCharacterData(input, cardJson, stem, request);
 }
 
@@ -313,11 +312,14 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
 // 路由
 // ---------------------------------------------------------------------------
 
+export function apply(ctx) {
+    const reg = (path, handler) => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler });
+
 /**
  * POST /import/preview —— 探测 + 摘要 + 警告 + 冲突,不落库。
  * 响应:{kind,name,targetName,summary,warnings,conflicts:{existingSameName}}
  */
-router.post('/import/preview', async function (request, response) {
+reg('/api/uberge/import/preview', async function (request, response) {
     try {
         const { buffer, fileName } = await readImportPayload(request);
         const detected = detectImportPayload({ fileName, buffer });
@@ -381,7 +383,7 @@ const CONFLICT_POLICIES = new Set(['rename', 'overwrite', 'skip']);
  * {kind?, name?|targetName?, dataBase64 | multipart, conflict?, apiId?}
  * 响应:{ok,kind,name,targetName,renamed,skipped?,avatarKey?,warnings}
  */
-router.post('/import/commit', async function (request, response) {
+reg('/api/uberge/import/commit', async function (request, response) {
     try {
         const body = request.body ?? {};
         if (body.kind != null && !IMPORT_KINDS.includes(body.kind)) {
@@ -491,4 +493,5 @@ async function commitPersona(handle, doc, target) {
     };
     await repo.save(handle, next);
     return { ok: true };
+}
 }

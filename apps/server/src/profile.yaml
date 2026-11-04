@@ -19,3 +19,5 @@ plugins:
     module: ./plugins/uberge-mvu.js
   - id: uberge-delivery
     module: ./plugins/uberge-delivery.js
+  - id: uberge-import
+    module: ./plugins/uberge-import.js
