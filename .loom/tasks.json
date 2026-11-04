@@ -1443,14 +1443,20 @@
     "completed": [
      "CardAppFrame iframe 沙箱",
      "uberge-panel 桥协议",
-     "ctxApi 读面"
+     "ctxApi 读面",
+     "桥全链:mount→bootstrap nonce 下发(document+module 双入口)→shim→宿主 nonce 门+白名单+deny 不落服务端→th/call 后端",
+     "CardAppFrame 协议对齐(isPanelRequest/状态机/degraded 徽标/sandbox 分级)",
+     "vite proxy /card-runtime"
     ],
-    "current": "宿主首刀入库,typecheck/build 绿",
-    "next": "变量写面(settle sidecar)、事件 th.eventOn、degraded 徽标、stories 域页"
+    "current": "",
+    "next": "host.event push 通道(WS→PanelPush)、GuiXu 型 takeover 卡挂载入口、ctx face shim"
    },
-   "evidence": [],
+   "evidence": [
+    "tests/e2e/uberge-cardapp.mjs 15/15",
+    "commits 3dcaccc/2428795"
+   ],
    "created_at": "2026-11-03T11:19:00.114Z",
-   "updated_at": "2026-11-03T11:48:13.862Z",
+   "updated_at": "2026-11-04T07:22:03.693Z",
    "integrity_version": 1,
    "id": "TASK-022",
    "title": "CardApp web 宿主:iframe 沙箱 + postMessage 桥",
@@ -1547,13 +1553,17 @@
    "covers": [],
    "status": "open",
    "progress": {
-    "completed": [],
+    "completed": [
+     "web 人设管理区块:列表/新建/行内编辑/设默认/删除+mock 降级+zh/en 词条,api/personas.ts 薄层"
+    ],
     "current": "",
-    "next": ""
+    "next": "头像上传面(服务端缺端点)"
    },
-   "evidence": [],
+   "evidence": [
+    "apps/web PersonaSection.tsx + personas.ts,tsc 0 错"
+   ],
    "created_at": "2026-11-03T11:19:00.114Z",
-   "updated_at": "2026-11-03T11:19:00.114Z",
+   "updated_at": "2026-11-04T07:22:03.693Z",
    "integrity_version": 1,
    "id": "TASK-024",
    "title": "persona/用户面管理 UI",
