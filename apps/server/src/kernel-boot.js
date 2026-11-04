@@ -17,6 +17,7 @@ import * as ubergeLibrary from './plugins/uberge-library.js';
 import * as ubergeDiag from './plugins/uberge-diag.js';
 import * as ubergeGenerate from './plugins/uberge-generate.js';
 import * as ubergeMvu from './plugins/uberge-mvu.js';
+import * as ubergeDelivery from './plugins/uberge-delivery.js';
 
 export const appCtx = createAppContext();
 
@@ -29,3 +30,4 @@ appCtx.plugin(ubergeLibrary);
 appCtx.plugin(ubergeDiag);
 appCtx.plugin(ubergeGenerate);
 appCtx.plugin(ubergeMvu);
+appCtx.plugin(ubergeDelivery);
