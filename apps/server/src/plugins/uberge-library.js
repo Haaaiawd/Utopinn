@@ -141,6 +141,9 @@ export function sanitizeSettingsDoc(value) {
     return value;
 }
 
+/** PATCH /settings 允许的顶层段:只能往这两段里浅合并。 */
+const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']);
+
 // ---------------------------------------------------------------------------
 // 路由注册
 // ---------------------------------------------------------------------------
@@ -150,6 +153,7 @@ const P = '/api/uberge';
 export function apply(ctx) {
     const ws = ctx.webServer;
     const reg = (path, handler) => ws.register({ kind: 'pattern', method: 'GET', path, handler });
+    const regPost = (path, method, handler) => ws.register({ kind: 'pattern', method, path, handler });
 
     /**
      * GET /characters —— 角色库列表。
@@ -416,6 +420,68 @@ export function apply(ctx) {
                 return response.status(422).send({ error: 'Settings document is not valid JSON' });
             }
             return sendError(response, error, 'uberge/settings get');
+        }
+    });
+
+    /**
+     * DELETE /characters/:charDir/chats/:chatName —— 删除会话(204;不存在→404)。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName`, 'DELETE', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            if (!await repo.exists(handle, charDir, chatName)) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            await repo.delete(handle, charDir, chatName);
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats delete');
+        }
+    });
+
+    /**
+     * PATCH /settings —— 受限浅合并:{power_user:{...}, extension_settings:{...}}。
+     * 顶层键必须全部落在白名单里,每段值必须是对象(逐键浅合并进现有段);
+     * 其余顶层字段(oai_settings/world_info/预设选择等)不可经此端点写。
+     */
+    regPost(`${P}/settings`, 'PATCH', async function (request, response) {
+        try {
+            const patch = request.body;
+            if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+                return response.status(400).send({ error: 'Request body must be a JSON object' });
+            }
+            const keys = Object.keys(patch);
+            if (keys.length === 0) {
+                return response.status(400).send({ error: 'No settings sections provided' });
+            }
+            const rejected = keys.filter((key) => !PATCHABLE_SETTINGS_SECTIONS.has(key));
+            if (rejected.length > 0) {
+                return response.status(400).send({
+                    error: `Settings sections not patchable via this endpoint: ${rejected.join(', ')}. Allowed: ${[...PATCHABLE_SETTINGS_SECTIONS].join(', ')}`,
+                });
+            }
+            for (const key of keys) {
+                if (!patch[key] || typeof patch[key] !== 'object' || Array.isArray(patch[key])) {
+                    return response.status(422).send({ error: `Section "${key}" must be a JSON object` });
+                }
+            }
+
+            const repo = getSettingsRepo();
+            const handle = request.user.profile.handle;
+            const existing = await repo.get(handle);
+            const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
+            const next = { ...base };
+            for (const key of keys) {
+                const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
+                next[key] = { ...section, ...patch[key] };
+            }
+            await repo.save(handle, next);
+            return response.send({ settings: sanitizeSettingsDoc(next) });
+        } catch (error) {
+            return sendError(response, error, 'uberge/settings patch');
         }
     });
 }
