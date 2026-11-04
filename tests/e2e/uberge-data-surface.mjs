@@ -58,6 +58,22 @@ const zipHdr = (r.headers.get('content-disposition') ?? '').includes('attachment
     || (r.headers.get('content-type') ?? '').includes('zip');
 log('backup 200+zip', r.status === 200 && (isZip || zipHdr), `status=${r.status} ct=${r.headers.get('content-type')}`);
 
+// LAN offer/import 面
+r = await req('POST', '/api/uberge/lan/offer', { selection: { characters: true, settings: false } });
+const offerOk = r.status === 200 && /\/api\/users\/transfer\/backup\/[a-f0-9]{64}$/.test(r.body?.url ?? '');
+log('lan offer 200+url', offerOk, `status=${r.status} url=${(r.body?.url ?? '').slice(-20)}`);
+
+r = await req('POST', '/api/uberge/lan/offer', { selection: { characters: false, settings: false, secrets: false, chats: false, lorebooks: false, presets: false, assets: false, extensions: false } });
+log('lan offer 全否 → 400', r.status === 400, `status=${r.status}`);
+
+// import 薄代理:缺 url → upstream 400 透传
+r = await req('POST', '/api/uberge/lan/import', { selection: { characters: true } });
+log('lan import 缺 url → 400', r.status === 400, `status=${r.status}`);
+
+// import 假链接 → upstream 400/500 透传(不吞错)
+r = await req('POST', '/api/uberge/lan/import', { url: '/api/users/transfer/backup/' + 'f'.repeat(64), selection: { characters: true } });
+log('lan import 坏链接透传', r.status === 400 || r.status === 500, `status=${r.status}`);
+
 // UDP 发现
 const pong = await new Promise((resolve) => {
     const sock = dgram.createSocket('udp4');
