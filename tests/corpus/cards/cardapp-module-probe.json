@@ -1,0 +1,22 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "CardApp-Module-Probe",
+    "description": "Corpus fixture: module-entry card_app (init(ctx) convention).",
+    "personality": "",
+    "scenario": "",
+    "first_mes": "probe",
+    "mes_example": "",
+    "extensions": {
+      "card_app": {
+        "enabled": true,
+        "entry": "app.js",
+        "files": {
+          "app.js": "export function init(ctx) { document.getElementById('card-app-container').textContent = 'module-probe'; }",
+          "style.css": "#card-app-container{background:#222}"
+        }
+      }
+    }
+  }
+}

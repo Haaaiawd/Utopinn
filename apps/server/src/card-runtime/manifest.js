@@ -213,7 +213,9 @@ export function parseCardAppManifest(card) {
         }
     }
 
-    let api = ['ctx'];
+    // 缺省面:th(TH 兼容是生态契约,ctx 面 shim 未立前未声明的卡不该
+    // 落进降级徽标)。要 ctx 面的卡显式声明 api:['ctx']。
+    let api = ['th'];
     if (perms?.api !== undefined) {
         if (!Array.isArray(perms.api)) {
             errors.push('card_app.permissions.api: must be an array of face/method names');

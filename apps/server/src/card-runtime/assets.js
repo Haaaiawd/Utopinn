@@ -82,7 +82,18 @@ export function buildModuleShell(mount, shimUrl = null) {
     const entryDir = path.posix.dirname(mount.manifest.entry);
     const stylePath = entryDir === '.' ? 'style.css' : `${entryDir}/style.css`;
     const hasStyle = !!resolveAssetPath(mount, stylePath);
-    const shim = shimUrl ? `<script src="${shimUrl}" data-card-runtime-shim></script>\n` : '';
+    // module 入口与 document 同待遇:shim 前下发 bootstrap(nonce+face),
+    // 否则宿主 nonce 门全拒——桥死。
+    const bootstrap = shimUrl && mount?.bridgeNonce
+        ? `<script data-card-runtime-bootstrap>window.__UBERGE_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UBERGE_PANEL_BOOTSTRAP__=${JSON.stringify({
+            face: 'th',
+            mountId: mount.id,
+            charId: mount.charId,
+            stateNamespaces: mount.manifest?.permissions?.stateNamespaces ?? [],
+            initializedGlobals: [],
+        })};</script>\n`
+        : '';
+    const shim = shimUrl ? `${bootstrap}<script src="${shimUrl}" data-card-runtime-shim></script>\n` : '';
     const style = hasStyle ? `<link rel="stylesheet" href="./${stylePath}">` : '';
     return [
         '<!doctype html>',
