@@ -154,3 +154,39 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: plugin-kernel C-node、ctx.generation seam 设计、后续 agent 类任务
 - Recorded: 2026-11-03T09:05:00.000Z
+
+## D-013: 导航形态：单骨架 rail+路由，否决双模式
+
+- Current decision: PC 端固定 rail+keyed 路由；聊天域内部挂酒馆式遮盖 chrome；沉浸键藏 rail 后视觉即纯酒馆。不做顶栏/rail 切换开关。
+- Rationale: 抽屉与 rail 租户是两套宿主语义；生态无导航骨架切换先例；Marinara/DSH 已分别验证混合可行。聊天即舞台是视图状态不是导航范式。
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/web-ia.md, .loom/design/web-visual-system.md
+- Recorded: 2026-11-04T04:23:05.141Z
+
+## D-014: 客户端对齐 DSH 全形态：动态 bundle + 平台模块表
+
+- Current decision: 目标态 = 插件独立 bundle 运行时加载(Loader+manifest)+平台模块表共享单例。分阶段：静态贡献表(已落) → inject/effect/locale(B′) → bundle 装载(C)。manifest hydrate 为过渡。
+- Rationale: 用户拍板对 DSH 走彻底；服务端插件带客户端表面时，无 bundle 装载则插件加 UI 必须发版。
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/web-slots-architecture.md
+- Recorded: 2026-11-04T04:23:05.144Z
+
+## D-015: 内核三件全补：inject + effect + locale
+
+- Current decision: 微内核升级服务层：inject 声明服务等待，effect 按 feature 收作用域，'locale' 贡献点让 i18n 按 feature 命名空间注册，全局字典退役。
+- Rationale: 对齐 cordis 语义并为动态装载铺路；locale 拆分本就列在契约表。
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/design/web-slots-architecture.md, apps/web/src/kernel/
+- Recorded: 2026-11-04T04:23:05.148Z
+
+## D-016: 服务端路由与 WS 同为贡献点，小面先行
+
+- Current decision: kernel 插件双注册位 register(HTTP)+registerUpgrade(WS)；首批迁只读列表端点，第二波 generate/preview+streamJob；legacy Express 收 legacy-adapter。
+- Rationale: webServer.register→disposer 是 DSH 已验证形状；streamJob 是 WS，只收 HTTP 会把最大流量留在 Express。
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md, apps/server, packages/kernel
+- Recorded: 2026-11-04T04:23:05.151Z
