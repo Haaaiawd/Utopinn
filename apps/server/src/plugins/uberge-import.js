@@ -313,7 +313,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
 // ---------------------------------------------------------------------------
 
 export function apply(ctx) {
-    const reg = (path, handler) => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler });
+    const reg = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
 
 /**
  * POST /import/preview —— 探测 + 摘要 + 警告 + 冲突,不落库。

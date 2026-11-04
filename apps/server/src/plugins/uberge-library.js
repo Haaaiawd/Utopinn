@@ -153,8 +153,8 @@ const P = '/api/uberge';
 
 export function apply(ctx) {
     const ws = ctx.webServer;
-    const reg = (path, handler) => ws.register({ kind: 'pattern', method: 'GET', path, handler });
-    const regPost = (path, method, handler) => ws.register({ kind: 'pattern', method, path, handler });
+    const reg = (path, handler) => ctx.effect(() => ws.register({ kind: 'pattern', method: 'GET', path, handler }));
+    const regPost = (path, method, handler) => ctx.effect(() => ws.register({ kind: 'pattern', method, path, handler }));
 
     /**
      * GET /characters —— 角色库列表。

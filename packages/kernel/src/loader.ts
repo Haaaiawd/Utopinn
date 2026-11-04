@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { load as loadYaml } from 'js-yaml';
+import { load as loadYaml, dump as dumpYaml } from 'js-yaml';
 import type { AppContext } from './context.js';
 import type { PluginEntry, PluginModule } from './plugin.js';
 
@@ -15,6 +15,8 @@ export interface LoadedPlugin {
     id: string;
     status: 'active' | 'degraded' | 'disabled' | 'failed';
     reason?: string;
+    /** ctx.plugin 返回的 Fiber —— 管理面 enable/disable/reload 靠它 dispose */
+    fiber?: { dispose(): Promise<void> };
 }
 
 export interface Profile {
@@ -53,6 +55,23 @@ function normalize(mod: PluginModule | ((ctx: unknown, config: unknown) => void)
         return { apply: mod as (ctx: unknown, config: unknown) => void };
     }
     return mod;
+}
+
+/** 管理面 enable/reload 复用:按 profile 行解析 + 归一化模块(bust 供 reload 绕过 ESM 缓存) */
+export async function importPluginModule(
+    entry: PluginEntry,
+    baseDir?: string,
+    bust?: string,
+): Promise<PluginModule> {
+    if (typeof entry.module === 'string' && bust) {
+        const spec =
+            baseDir && entry.module.startsWith('.')
+                ? `${pathToFileURL(resolve(baseDir, entry.module)).href}?t=${bust}`
+                : `${entry.module}?t=${bust}`;
+        const mod = (await import(spec)) as PluginModule;
+        return normalize((mod.default ?? mod) as PluginModule);
+    }
+    return normalize(await resolveModule(entry, baseDir));
 }
 
 /**
@@ -102,8 +121,11 @@ export async function loadProfile(
                 ? { ...mod, name: mod.name ?? row.id }
                 : mod;
             // cordis Plugin 泛型按模块形状推断 config 元组;profile 行 config 恒为 Record,走宽松通道
-            (ctx.plugin as (p: unknown, c?: unknown) => unknown)(plugin, row.config);
-            results.push({ id: row.id, status: 'active' });
+            const fiber = (ctx.plugin as (p: unknown, c?: unknown) => { dispose(): Promise<void> })(
+                plugin,
+                row.config,
+            );
+            results.push({ id: row.id, status: 'active', fiber });
         } catch (e) {
             results.push({ id: row.id, status: 'failed', reason: (e as Error).message });
         }
@@ -134,6 +156,9 @@ export async function loadProfileFile(
         : [];
     return loadProfile(ctx, profile, patch, dirname(profilePath));
 }
+
+/** yaml 透出 —— 管理面写 patch 文件用(server 侧无 js-yaml 依赖) */
+export { loadYaml, dumpYaml };
 
 /** --dump-config:当前组合的可视化(调试/文档用) */
 export function dumpConfig(profile: Profile, patch: PluginEntry[] = []): string {

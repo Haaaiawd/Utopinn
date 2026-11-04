@@ -32,3 +32,4 @@ tests/golden-diff/golden-private/
 
 # 用户投放的卡原件(已镜像进 tests/corpus-private/)
 assets/
+apps/server/src/profile.patch.yaml

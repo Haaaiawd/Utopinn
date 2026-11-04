@@ -36,7 +36,7 @@ export function apply(ctx) {
     const ws = ctx.webServer;
     const P = '/api/uberge/mvu';
 
-    ws.register({ kind: 'pattern', method: 'POST', path: `${P}/settle`, handler: async function (request, response) {
+    ctx.effect(() => ws.register({ kind: 'pattern', method: 'POST', path: `${P}/settle`, handler: async function (request, response) {
         const args = targetArgs(request);
         if (!args) {
             return response.status(400).send({ error: 'Expected {avatar_url,file_name} or {is_group,id}.' });
@@ -53,9 +53,9 @@ export function apply(ctx) {
             console.error('[mvu] settle failed:', error);
             return response.status(500).send({ error: true, detail: String(error?.message ?? error) });
         }
-    }});
+    }}));
 
-    ws.register({ kind: 'pattern', method: 'POST', path: `${P}/resettle`, handler: async function (request, response) {
+    ctx.effect(() => ws.register({ kind: 'pattern', method: 'POST', path: `${P}/resettle`, handler: async function (request, response) {
         const args = targetArgs(request);
         if (!args) {
             return response.status(400).send({ error: 'Expected {avatar_url,file_name} or {is_group,id}.' });
@@ -70,9 +70,9 @@ export function apply(ctx) {
             console.error('[mvu] resettle failed:', error);
             return response.status(500).send({ error: true, detail: String(error?.message ?? error) });
         }
-    }});
+    }}));
 
-    ws.register({ kind: 'pattern', method: 'GET', path: `${P}/state`, handler: async function (request, response) {
+    ctx.effect(() => ws.register({ kind: 'pattern', method: 'GET', path: `${P}/state`, handler: async function (request, response) {
         const args = targetArgs(request);
         if (!args) {
             return response.status(400).send({ error: 'Expected {avatar_url,file_name} or {is_group,id}.' });
@@ -87,9 +87,9 @@ export function apply(ctx) {
             console.error('[mvu] state read failed:', error);
             return response.status(500).send({ error: true });
         }
-    }});
+    }}));
 
-    ws.register({ kind: 'pattern', method: 'POST', path: `${P}/panel/render`, handler: async function (request, response) {
+    ctx.effect(() => ws.register({ kind: 'pattern', method: 'POST', path: `${P}/panel/render`, handler: async function (request, response) {
         const template = request.body?.template;
         if (typeof template !== 'string' || template.length === 0) {
             return response.status(400).send({ error: 'Expected body.template string.' });
@@ -117,5 +117,5 @@ export function apply(ctx) {
             escapeHtml: request.body?.escape_html !== false,
         });
         return response.send({ ok: true, html });
-    }});
+    }}));
 }
