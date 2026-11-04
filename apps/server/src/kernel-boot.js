@@ -15,6 +15,8 @@
 import { createAppContext, WebServer } from '@uberge/kernel';
 import * as ubergeLibrary from './plugins/uberge-library.js';
 import * as ubergeDiag from './plugins/uberge-diag.js';
+import * as ubergeGenerate from './plugins/uberge-generate.js';
+import * as ubergeMvu from './plugins/uberge-mvu.js';
 
 export const appCtx = createAppContext();
 
@@ -25,3 +27,5 @@ export const webServer = appCtx.webServer;
 
 appCtx.plugin(ubergeLibrary);
 appCtx.plugin(ubergeDiag);
+appCtx.plugin(ubergeGenerate);
+appCtx.plugin(ubergeMvu);
