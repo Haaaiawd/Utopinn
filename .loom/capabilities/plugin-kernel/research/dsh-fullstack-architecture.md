@@ -58,4 +58,6 @@ LocaleNamespaceMap/槽表——类型安全且不动中心文件。
 - 自证插件 `plugins/uberge-diag.js`:`GET /api/uberge/_kernel` 吐 routes+services —— seam 服务自己,多插件并行贡献成立。
 - 第二面已迁:plugins/uberge-generate.js(POST /generate+/preview)+ uberge-mvu.js(4 条),legacy 端点文件删除;E2E 真机验证 17 路由齐、POST /preview 全组装 200。
 - 现状:/api/uberge/* 仅剩 DELETE chat + PATCH settings 走 legacy router(写路径第二波);CSRF 在 dispatcher 之前,插件面与 legacy 同栈同规。
-- 下一面:写路径收编后 endpoints/uberge-library.js 可删;WS 面 streamJob 交付走 registerUpgrade;再往后 profile.yaml 插件清单(loader.loadProfile 已有)。
+- 三面全收(真机 E2E):写路径迁入 → /api/uberge/* 100% 插件供给,uberge-library.js 删除;WS 面 ws-delivery.js → plugins/uberge-delivery.js 走 registerUpgrade(ctx.effect 挂 WSS+心跳,可逆拆);profile.yaml 声明式清单接 loadProfileFile,boot 日志 [kernel] plugin ×5 active。
+- kernel-boot.js = 服务端 AppWebEntry.run() 对应物;plugins/ = api-* 包对应物;webServer.register/registerUpgrade + inject 等位 + catalog 归属 —— DSH 路由即贡献形状完整落地。
+- 遗留面(下一波):/api/* 其余 legacy 域(characters/chats/worldinfo/settings 等老端点)按同法逐面迁;services 层(generate-context/mvu-settle/storage repos)提为 core/seam 服务后插件 inject 化;wsTickets 票据服务提 seam;客户端清单 hydrate(C 步,动态 bundle 目标态见 clarify round-1)。
