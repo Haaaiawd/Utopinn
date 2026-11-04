@@ -634,11 +634,7 @@
         "DLV-008"
       ],
       "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
-      },
+      "progress": "2026-11-04 665b8cc:src/panels/ 四件+panels tab 会话定位+reader 传参;tsc --noEmit 零错;顺手修真 bug(Hermes 无 localeCompare)。Metro 冒烟因代理轮询畸形未完成,真机桥握手待用户验证。",
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T06:33:54.144Z"
@@ -2459,17 +2455,7 @@
           "verified": ""
         }
       ],
-      "progress": {
-        "completed": [
-          "门厅 FoyerView 落地:nav.rail order 最前、双语词条、默认 view(有会话历史时)、continue 大卡+stories 卡行+新会话/导入快动作",
-          "角色页:LibraryView 列表/详情双态(仿 RulesView),封面+first_mes greeting 预览+该卡会话列表(enter 会话)+编辑/资产占位入口,storiesFocus 支持门厅深跳",
-          "舞台头:ChatView ctbar 重排为 圆头像+角色名+会话名 → persona 徽标快切(下拉含默认标/管理入口)→ 世界书 chip(extensions.world/character_book 真实读数)→ 预设 chip;persona 存 localStorage per-chat,进 postGenerate body.user",
-          "ProseRenderer 四惯例:*action*→em.act 弱斜体,「」/「」/\"\"→span.say --quote 高亮,首条 assistant 消息 greeting 版式,空流式消息三点脉冲(有文保留 caret);swipe 控件不动",
-          "壳/数据:api/characters.ts 新建(listCharacters/getCharacter/cardData/charImageUrl),chats.ts listChatsForChar,ShellCtx 加 cards/persona/openCharacter/storiesFocus,newChat(charDir?),Sidebar 改用 ctx.cards"
-        ],
-        "current": "tsc --noEmit 0 错、vite build 通过、真卡数据形状已对(extensions.world=Eldoria/character_book/first_mes)",
-        "next": "人工 UI 验证三级路径与舞台头观感(vite dev),再按验收逐条 verified"
-      },
+      "progress": "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。",
       "evidence": [
         "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
         "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
