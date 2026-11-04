@@ -195,14 +195,16 @@ export function ChatView({
                 <span className="grow" />
                 {/* mock 徽标只保留右栏诊断卡那一处 —— 它是数据可信度的本职位置,
                     ctbar 只留标题 + tabs + 图标。 */}
-                <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
+                <Tabs value={tab} onValueChange={(v) => {
+                    setTab(v as typeof tab);
+                    // 预览按需装配:首次切到 preview tab 才打 /preview,不做常驻请求
+                    if (v === 'preview' && !preview && !previewLoading) onRunPreview();
+                }}>
                     <TabsList>
                         <TabsTrigger value="conversation">{t('chat.tabs.conversation')}</TabsTrigger>
                         <TabsTrigger value="preview">{t('chat.tabs.preview')}</TabsTrigger>
                     </TabsList>
                 </Tabs>
-                <IconButton label={t('chat.preview')} icon={<Icon name="eye" size={16} />}
-                    disabled={previewLoading} onClick={onRunPreview} />
                 <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
                     icon={<Icon name="panelRight" size={16} mirrored />} />
                 <IconButton label={t('menu.view.immersive')} onClick={onImmersive}

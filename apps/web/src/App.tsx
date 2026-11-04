@@ -10,16 +10,12 @@ import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from './types';
 import { Sidebar } from './components/shell/Sidebar';
 import { RightPanel } from './components/shell/RightPanel';
 import { ChatView } from './components/chat/ChatView';
-import { PlaceholderView } from './components/views/PlaceholderView';
 import { SettingsView } from './components/views/SettingsView';
 import { LibraryView } from './components/views/LibraryView';
 import { RulesView } from './components/views/RulesView';
+import { ExtensionsView } from './components/views/ExtensionsView';
 import { TooltipProvider } from './components/ui/tooltip';
-import type { IconName } from './components/Icon';
-
-const PLACEHOLDER_VIEWS: Partial<Record<ViewId, { icon: IconName; titleKey: string; descKey: string }>> = {
-    extensions: { icon: 'extensions', titleKey: 'view.extensions.title', descKey: 'view.extensions.desc' },
-};
+import type { PanelInst, PanelType } from './components/shell/RightPanel';
 
 function Shell() {
     const { t } = useI18n();
@@ -28,6 +24,13 @@ function Shell() {
     const [activeChat, setActiveChat] = useState(chats[0]?.id ?? '');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [panelHidden, setPanelHidden] = useState(false);
+    const [panelWide, setPanelWide] = useState(false);
+    const [panels, setPanels] = useState<PanelInst[]>([
+        { id: 'p-diag', type: 'diag' },
+        { id: 'p-session', type: 'session' },
+    ]);
+    const [activePanel, setActivePanel] = useState<string | null>('p-diag');
+    const panelSeq = useRef(0);
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
     const [preview, setPreview] = useState<PreviewResult | null>(null);
     const [previewLoading, setPreviewLoading] = useState(false);
@@ -122,7 +125,19 @@ function Shell() {
             .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
 
-    const placeholder = PLACEHOLDER_VIEWS[view];
+    const addPanel = useCallback((type: PanelType) => {
+        const id = `p-${++panelSeq.current}-${type}`;
+        setPanels((prev) => [...prev, { id, type }]);
+        setActivePanel(id);
+    }, []);
+
+    const closePanel = useCallback((id: string) => {
+        setPanels((prev) => {
+            const next = prev.filter((p) => p.id !== id);
+            setActivePanel((a) => (a === id ? (next[next.length - 1]?.id ?? null) : a));
+            return next;
+        });
+    }, []);
 
     /* DSH AppFrame 三栏:sidebar | main | rightbar。无 menubar/activity rail/
        statusbar —— 导航在侧栏内,右栏是挂在右缘的 track。 */
@@ -169,12 +184,25 @@ function Shell() {
                     />
                 )}
                 {view === 'rules' && <RulesView onHint={showHint} />}
+                {view === 'extensions' && <ExtensionsView onHint={showHint} />}
                 {view === 'settings' && <SettingsView />}
-                {placeholder && (
-                    <PlaceholderView icon={placeholder.icon} titleKey={placeholder.titleKey} descKey={placeholder.descKey} />
-                )}
             </main>
-            {view === 'chat' && <RightPanel preview={preview} hidden={panelHidden} charDir={chat?.charDir} chatName={chat?.chatName} />}
+            {view === 'chat' && (
+                <RightPanel
+                    panels={panels}
+                    active={activePanel}
+                    preview={preview}
+                    hidden={panelHidden}
+                    wide={panelWide}
+                    charDir={chat?.charDir}
+                    chatName={chat?.chatName}
+                    onSelect={setActivePanel}
+                    onClose={closePanel}
+                    onAdd={addPanel}
+                    onToggleWide={() => setPanelWide((v) => !v)}
+                    onHide={() => setPanelHidden(true)}
+                />
+            )}
             {hint && <div className={`hint-pill${hint.err ? ' err' : ''}`}>{hint.msg}</div>}
         </div>
     );

@@ -16,12 +16,19 @@
 ## IA(已定,DSH/GPT 混合)
 
 ```
-rail(48px,常设) | 内容栏(240-460 可拖) | 主区(域视图) | 右面板(track)
-rail = 品牌标 + 域标 + 底部 settings/theme
-内容栏 = 品牌行 → 醒目新会话 → 搜索 → 分组嵌套列表 → 用户脚
-域视图:chat=阅读流+预览;stories=卡格库;rules/extensions=管理页;
+rail(48px,常设) | 内容栏(240-460 可拖,仅 chat 域) | 主区(域视图) | 右面板(track)
+rail = 品牌标 → 收起钮(唯一常驻位) → 域标(chat/stories/rules/extensions)
+     → 弹性空 → 账户菜单(用户+设置+主题合一,DropdownMenu)
+内容栏 = 仅 chat 域渲染:品牌行 → 醒目新会话 → 搜索 → 角色分组嵌套 → 最近
+       其余域主区整页管理面,侧栏不复用(用户 2026-11-04:左侧栏不该放这玩意)
+域视图:chat=阅读流+预览;stories=卡格库;rules=管理页;
+       extensions=能力注册页(ext.* 五类扩展点,全部标诚实接线态);
        settings=设置页。诊断域已砍(用户决定 2026-11-03)——trace
-       只留在聊天右面板 tab,不再做独立页。
+       只留在右面板 diag 板块,不再做独立页。
+右面板 = 多板块宿主(非固定 tab):panel.type.* 注册表 + "+"选择器
+       → 每个打开的板块 = 一条 tab(icon+名+×),可加宽(.wide)/隐藏;
+       session/diag/cardapp 已接线,browser/analysis 诚实 stub。
+       预览眼睛钮已删——切到「提示词预览」tab 时才按需跑 runPreview。
 沉浸模式 = 内容栏+右面板同收,只留 rail+阅读列(ctbar focus 钮)
 ```
 
