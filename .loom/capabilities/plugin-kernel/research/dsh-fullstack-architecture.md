@@ -47,3 +47,13 @@ LocaleNamespaceMap/槽表——类型安全且不动中心文件。
   逐面迁成插件,legacy Express 收 legacy-adapter。
 - web 侧:B′ 步补 inject/effect/locale 三层;C 步 bundle 化时
   平台表按 seed.ts 清单(react/cordis/store/slots/…)冻结共享。
+
+---
+
+## B 步落地记录(首迁,已入库)
+
+- `packages/kernel/webserver.ts`:`register(route)→disposer`(exact/pattern `:param`/prefix 三表)+ `registerUpgrade`;`middleware()` 挂 Express(插在 legacy 挂载前,未命中 `next()` 落回 —— 按面切不翻桌);`upgradeListener()` 挂 http `'upgrade'`,未命中不动 socket 与 ws-delivery 共存。
+- `apps/server/src/kernel-boot.js`:createAppContext + `provide('webServer')` + `catalog.register` 归属登记 + 插件装配。
+- 首迁插件 `plugins/uberge-library.js`:10 个只读 GET(characters/chats/presets/worlds/personas/settings)全迁;DELETE/PATCH 留 legacy。
+- 自证插件 `plugins/uberge-diag.js`:`GET /api/uberge/_kernel` 吐 routes+services —— seam 服务自己,多插件并行贡献成立。
+- 下一面:uberge-generate(POST /generate + /preview 进插件);WS 面:streamJob 交付通道走 registerUpgrade;再往后:profile.yaml 插件清单(loader.loadProfile 已有)。
