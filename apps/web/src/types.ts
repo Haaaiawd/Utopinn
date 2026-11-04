@@ -2,8 +2,8 @@
 // (import type only — protocol ships types + guards, the SPA must not
 // re-declare server contracts).
 
-/** Primary navigation domains — IA v3 (web-ia.md §13/§14). */
-export const VIEW_IDS = ['chat', 'stories', 'rules', 'extensions', 'settings'] as const;
+/** Primary navigation domains — IA v3 (web-ia.md §13/§14) + 门厅(TASK-026 RP 首页)。 */
+export const VIEW_IDS = ['foyer', 'chat', 'stories', 'rules', 'extensions', 'settings'] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
 
 /** Sidebar chat entry. `charDir`/`chatName` are the /api/uberge/* call params. */

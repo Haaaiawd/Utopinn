@@ -1,6 +1,7 @@
 // feature:domains — 非聊天域的视图/nav 注册 + 词条。
 // 各视图组件无 props,领域数据走 useShell()。
 import type { Feature, FeatureCtx } from '../kernel/kernel';
+import { FoyerView } from '../components/views/FoyerView';
 import { LibraryView } from '../components/views/LibraryView';
 import { RulesView } from '../components/views/RulesView';
 import { ExtensionsView } from '../components/views/ExtensionsView';
@@ -9,18 +10,30 @@ import { SettingsView } from '../components/views/SettingsView';
 export const domainsFeature: Feature = {
     name: 'domains',
     apply(ctx: FeatureCtx) {
+        ctx.add('nav.rail', { view: 'foyer', icon: 'foyer', order: 0 });
         ctx.add('nav.rail', { view: 'stories', icon: 'stories', order: 20 });
         ctx.add('nav.rail', { view: 'rules', icon: 'rules', order: 30 });
         ctx.add('nav.rail', { view: 'extensions', icon: 'extensions', order: 40 });
+        ctx.add('view', { view: 'foyer', Component: FoyerView });
         ctx.add('view', { view: 'stories', Component: LibraryView });
         ctx.add('view', { view: 'rules', Component: RulesView });
         ctx.add('view', { view: 'extensions', Component: ExtensionsView });
         ctx.add('view', { view: 'settings', Component: SettingsView });
         ctx.locale('domains', {
             'zh-CN': {
+                'nav.foyer': '门厅',
                 'nav.stories': '故事',
                 'nav.rules': '规则',
                 'nav.extensions': '扩展',
+
+                'foyer.hello.morning': '早上好',
+                'foyer.hello.afternoon': '下午好',
+                'foyer.hello.evening': '晚上好',
+                'foyer.hello.night': '夜深了',
+                'foyer.continue': '继续上次',
+                'foyer.stories': '故事精选',
+                'foyer.browse': '全部故事',
+                'foyer.import': '导入卡',
 
                 'lib.title': '故事库',
                 'lib.search': '搜索卡片',
@@ -29,10 +42,23 @@ export const domainsFeature: Feature = {
                 'lib.importSoon': '导入管线在路上 —— TASK-016',
                 'lib.noChat': '这个角色还没有会话 —— 先去聊天页开一个',
                 'lib.empty': '没有匹配的卡片',
+                'lib.chatCount': '会话',
+                'lib.card.more': '卡片操作',
                 'lib.filter.all': '全部',
                 'lib.filter.image': '图像卡',
                 'lib.filter.json': 'JSON 卡',
                 'lib.filter.broken': '损坏',
+
+                'cp.back': '返回故事库',
+                'cp.greeting': '开场白',
+                'cp.chats': '会话',
+                'cp.msgs': '条消息',
+                'cp.newChat': '开新会话',
+                'cp.noChats': '还没有会话 —— 开一个新的',
+                'cp.edit': '编辑卡',
+                'cp.assets': '绑定资产',
+                'cp.stub': '卡编辑与资产绑定接线中',
+                'cp.embeddedBook': '内嵌世界书',
 
                 'rules.title': '世界书',
                 'rules.desc': '世界书 = 规则库。全局/角色绑定/卡内嵌入的来源不同,条目启禁与共通性在这里管理。',
@@ -113,9 +139,19 @@ export const domainsFeature: Feature = {
                 'persona.deleteFailed': '人设删除失败',
             },
             en: {
+                'nav.foyer': 'Foyer',
                 'nav.stories': 'Stories',
                 'nav.rules': 'Rules',
                 'nav.extensions': 'Extensions',
+
+                'foyer.hello.morning': 'Good morning',
+                'foyer.hello.afternoon': 'Good afternoon',
+                'foyer.hello.evening': 'Good evening',
+                'foyer.hello.night': 'Up late',
+                'foyer.continue': 'Continue',
+                'foyer.stories': 'Stories',
+                'foyer.browse': 'All stories',
+                'foyer.import': 'Import card',
 
                 'lib.title': 'Story Library',
                 'lib.search': 'Search cards',
@@ -124,10 +160,23 @@ export const domainsFeature: Feature = {
                 'lib.importSoon': 'Import pipeline on the way — TASK-016',
                 'lib.noChat': 'No chats on this character yet — start one from Chat',
                 'lib.empty': 'No matching cards',
+                'lib.chatCount': 'chats',
+                'lib.card.more': 'Card actions',
                 'lib.filter.all': 'All',
                 'lib.filter.image': 'Image cards',
                 'lib.filter.json': 'JSON cards',
                 'lib.filter.broken': 'Broken',
+
+                'cp.back': 'Back to library',
+                'cp.greeting': 'Greeting',
+                'cp.chats': 'Chats',
+                'cp.msgs': 'msgs',
+                'cp.newChat': 'New chat',
+                'cp.noChats': 'No chats yet — start one',
+                'cp.edit': 'Edit card',
+                'cp.assets': 'Bound assets',
+                'cp.stub': 'Card editing and asset binding are being wired',
+                'cp.embeddedBook': 'Embedded book',
 
                 'rules.title': 'World Books',
                 'rules.desc': 'World books are the rule library — global, character-bound, or card-embedded. Entries and commonality are managed here.',

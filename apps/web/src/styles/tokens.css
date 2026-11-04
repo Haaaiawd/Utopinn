@@ -40,6 +40,7 @@
     --color-primary: var(--acc);
     --color-primary-foreground: var(--acc-ink);
     --color-amber: var(--acc);
+    --color-quote: var(--quote);
     --color-destructive: var(--err);
     --color-warning: var(--warn);
     --color-success: var(--ok);
@@ -102,6 +103,9 @@
     --acc: #ca6924;        /* 中华琥珀 — 全场唯一彩色,极少数点缀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca692422;
+    /* 引号对话色 = 琥珀同族提亮档(深色面上 acc 本体对比不足,
+       提亮后 ≈5.4:1);ST 主题的 quote 专色槽位对应物。 */
+    --quote: #d89468;
     --ok: #6fae7e;
     --warn: #d4a05a;
     --err: #d0715f;
@@ -129,6 +133,8 @@
     --acc: #ca6924;        /* 中华琥珀 */
     --acc-ink: #fff7ef;
     --acc-soft: #ca69241c;
+    /* 亮面侧同族压深档(白底 ≈4.8:1)。 */
+    --quote: #9e5a1c;
     --ok: #3d8453;
     --warn: #a5712a;
     --err: #b04a38;

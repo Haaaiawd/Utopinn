@@ -3,8 +3,10 @@
 // 壳不认识任何具体域:加域/加板块/换渲染器 = 一次 feature 注册。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
-import { MOCK_CHATS } from './api/mock';
+import { MOCK_CARDS, MOCK_CHATS } from './api/mock';
 import { postPreviewWithFallback } from './api/preview';
+import { listCharacters, type CardItem } from './api/characters';
+import type { ActivePersona } from './api/personas';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from './types';
 import { Sidebar } from './components/shell/Sidebar';
@@ -36,9 +38,17 @@ function ViewOutlet() {
 
 function Shell() {
     const { t } = useI18n();
-    const [view, setView] = useState<ViewId>('chat');
+    // 门厅 = 有会话历史时的默认落点(TASK-026);零会话直落聊天域。
+    const [view, setView] = useState<ViewId>(() => (MOCK_CHATS.length ? 'foyer' : 'chat'));
     const [chats, setChats] = useState<ChatSummary[]>(MOCK_CHATS);
     const [activeChat, setActiveChat] = useState(chats[0]?.id ?? '');
+    /** 卡展示面全壳共用(侧栏组头/卡格/门厅/舞台头),一次拉取。 */
+    const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
+    const [cardsMock, setCardsMock] = useState(false);
+    /** 跨视图开角色页的中转位;LibraryView 消费即清。 */
+    const [storiesFocus, setStoriesFocus] = useState<string | null>(null);
+    /** 当前 persona;舞台头快切写入,生成/预览都携带。 */
+    const [persona, setPersona] = useState<ActivePersona | null>(null);
     // 窄屏初值:侧栏/右栏默认收起(rail + 主区先行),需要时再从 rail 唤出。
     // 阈值与 shell.css 媒体查询同源 —— 那里它们退成覆盖层,这里让它们默认不挡。
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth <= 920);
@@ -71,12 +81,13 @@ function Shell() {
             charDir: chat.charDir,
             chatName: chat.chatName,
             type: 'normal',
-            user: { name: '旅人' },
+            // persona 与生成同源 —— 预览装配的就是真实会发出去的用户身份。
+            user: persona ?? { name: '旅人' },
         });
         setPreview(result);
         setServerStatus(result.mock ? 'mock' : 'online');
         setPreviewLoading(false);
-    }, [chat]);
+    }, [chat, persona]);
 
     // Real sidebar list once the server answers; keeps mock entries for any
     // char that isn't on disk yet (dev/demo chats survive alongside real ones).
@@ -91,19 +102,42 @@ function Shell() {
         } catch { return false; }
     }, []);
 
-    useEffect(() => {
-        if (serverStatus === 'online') void refreshChats();
-    }, [serverStatus, refreshChats]);
+    /** 卡面展示行:在线重拉,离线落 MOCK 并打标。 */
+    const refreshCards = useCallback(async () => {
+        try {
+            const r = await listCharacters();
+            setCards(new Map(r.items.map((c) => [c.charDir, c])));
+            setCardsMock(false);
+        } catch {
+            setCards(new Map(MOCK_CARDS.map((c) => [c.charDir, c])));
+            setCardsMock(true);
+        }
+    }, []);
 
-    /** New chat on the active character; name prompt keeps the skeleton honest. */
-    const onNewChat = useCallback(() => {
+    useEffect(() => { void refreshCards(); }, [refreshCards]);
+
+    useEffect(() => {
+        if (serverStatus === 'online') {
+            void refreshChats();
+            void refreshCards();
+        }
+    }, [serverStatus, refreshChats, refreshCards]);
+
+    /** 任意视图 → 故事库 + 打开该卡的角色页(门厅大卡/精选格走这里)。 */
+    const openCharacter = useCallback((charDir: string) => {
+        setStoriesFocus(charDir);
+        setView('stories');
+    }, []);
+
+    /** New chat; charDir 可由角色页指定,缺省沿用当前会话的卡。 */
+    const onNewChat = useCallback((charDir?: string) => {
+        const targetDir = charDir ?? chat?.charDir ?? 'default_Seraphina';
         if (serverStatus !== 'online') { setView('chat'); showHint(t('status.stub')); return; }
-        const charDir = chat?.charDir ?? 'default_Seraphina';
-        const name = window.prompt(`${t('sidebar.newChat')} (${charDir})`, `chat-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`);
+        const name = window.prompt(`${t('sidebar.newChat')} (${targetDir})`, `chat-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`);
         if (!name?.trim()) return;
-        void createChat(charDir, name.trim())
+        void createChat(targetDir, name.trim())
             .then(() => refreshChats())
-            .then(() => setActiveChat(`${charDir}/${name.trim()}`))
+            .then(() => setActiveChat(`${targetDir}/${name.trim()}`))
             .then(() => setView('chat'))
             .catch((e) => showHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chat, refreshChats, showHint, t]);
@@ -173,6 +207,10 @@ function Shell() {
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
+        cards, cardsMock,
+        storiesFocus, openCharacter,
+        clearStoriesFocus: () => setStoriesFocus(null),
+        persona, setPersona,
         sidebarCollapsed,
         toggleSidebar: () => setSidebarCollapsed((v) => !v),
         panels, activePanel, panelHidden,
@@ -190,6 +228,7 @@ function Shell() {
         view, chats, chat, activeChat, sidebarCollapsed, panels, activePanel,
         panelHidden, preview, previewLoading, runPreview, showHint, serverStatus,
         onNewChat, onRenameChat, onDeleteChat, closePanel, addPanel,
+        cards, cardsMock, storiesFocus, openCharacter, persona,
     ]);
 
     /* 三栏:sidebar | main(view 出口) | rightbar。壳不认识域。 */

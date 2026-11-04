@@ -51,6 +51,15 @@ export const chatFeature: Feature = {
                 'chat.delete': '删除会话',
                 'chat.delete.failed': '删除失败',
                 'chat.delete.confirm': '删除这个会话?此操作不可撤销。',
+                'chat.noChat': '还没有会话 —— 从门厅或故事库挑一张卡开始。',
+
+                'stage.persona': '人设',
+                'stage.persona.pick': '切换人设',
+                'stage.persona.manage': '管理人设',
+                'stage.persona.none': '暂无人设 —— 去设置页建一个',
+                'stage.world': '绑定世界书',
+                'stage.preset': '生成预设',
+                'stage.book.embedded': '内嵌书',
 
                 'panel.type.session': '本局',
                 'panel.type.diag': '诊断',
@@ -101,6 +110,15 @@ export const chatFeature: Feature = {
                 'chat.delete': 'Delete chat',
                 'chat.delete.failed': 'delete failed',
                 'chat.delete.confirm': 'Delete this chat? This cannot be undone.',
+                'chat.noChat': 'No chats yet — pick a card from the foyer or library to begin.',
+
+                'stage.persona': 'Persona',
+                'stage.persona.pick': 'Switch persona',
+                'stage.persona.manage': 'Manage personas',
+                'stage.persona.none': 'No personas yet — create one in Settings',
+                'stage.world': 'Bound world book',
+                'stage.preset': 'Generation preset',
+                'stage.book.embedded': 'Embedded',
 
                 'panel.type.session': 'Session',
                 'panel.type.diag': 'Diagnostics',

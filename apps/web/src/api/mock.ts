@@ -2,6 +2,7 @@
 // Shapes mirror the real contracts: ChatSummary (sidebar), MessageViewModel
 // (conversation, protocol type), PreviewResponse (assembled prompt).
 import type { MessageViewModel } from '@uberge/protocol';
+import type { CardItem } from './characters';
 import type { ChatSummary, PreviewRequestBody, PreviewResponse } from '../types';
 
 // c1 points at the seeded dev card/chat (data/default-user: default_Seraphina
@@ -12,11 +13,9 @@ export const MOCK_CHATS: ChatSummary[] = [
     { id: 'c2', title: '旧港灯塔', charDir: 'demo-card', chatName: 'lighthouse', group: 'ungrouped', updatedAt: 'yesterday' },
 ];
 
-/** /api/uberge/characters 的 mock 形状(library 卡格用)。 */
-export interface CardItem {
-    charDir: string; name: string; avatar: string | null;
-    fileName: string; fileSize: number; tags: string[]; readable: boolean;
-}
+/** /api/uberge/characters 的 mock 形状(library 卡格用);线型属 api/characters。 */
+export type { CardItem };
+
 export const MOCK_CARDS: CardItem[] = [
     { charDir: 'default_Seraphina', name: '归墟', avatar: null, fileName: 'default_Seraphina.png', fileSize: 512_000, tags: ['lighthouse', 'keeper'], readable: true },
     { charDir: 'demo-card', name: '旧港守灯人', avatar: null, fileName: 'demo-card.png', fileSize: 487_000, tags: [], readable: true },
