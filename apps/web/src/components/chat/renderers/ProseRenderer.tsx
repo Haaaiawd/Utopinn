@@ -5,6 +5,8 @@
 import type { MessageReceipt, MessageViewModel } from '@uberge/protocol';
 import { useI18n } from '../../../i18n';
 import { Icon } from '../../Icon';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../ui/collapsible';
+import { IconButton } from '../../ui/icon-button';
 import type { ConversationRendererProps } from './types';
 
 /** Stable, cheap hue from a name — placeholder until avatar URLs resolve. */
@@ -27,14 +29,14 @@ function Avatar({ name, url }: { name: string; url?: string }) {
 
 function ReceiptRow({ receipt }: { receipt: MessageReceipt }) {
     return (
-        <details className="vreceipt">
-            <summary className="vr-head">
+        <Collapsible className="vreceipt">
+            <CollapsibleTrigger className="vr-head">
                 <span className="dot" />
                 <span>{receipt.kind}</span>
                 {receipt.summary && <span className="mut">{receipt.summary}</span>}
-            </summary>
+            </CollapsibleTrigger>
             {(receipt.ops?.length ?? 0) > 0 && (
-                <div className="vr-body">
+                <CollapsibleContent className="vr-body">
                     {receipt.ops!.map((op, i) => (
                         <div className="op" key={i}>
                             <span className="path">{op.op} {op.key}{op.path ? `.${op.path}` : ''}</span>
@@ -42,9 +44,9 @@ function ReceiptRow({ receipt }: { receipt: MessageReceipt }) {
                             {op.previous !== undefined && <span className="old"> {JSON.stringify(op.previous)}</span>}
                         </div>
                     ))}
-                </div>
+                </CollapsibleContent>
             )}
-        </details>
+        </Collapsible>
     );
 }
 
@@ -81,18 +83,12 @@ function Message({ msg, actions }: { msg: MessageViewModel; actions: Conversatio
                 </span>
             )}
             <div className="acts">
-                <button type="button" className="ibtn" title={t('chat.action.edit')}
-                    onClick={() => actions.beginEdit(msg.id)}>
-                    <Icon name="edit" size={12} />
-                </button>
-                <button type="button" className="ibtn" title={t('chat.action.regen')}
-                    onClick={() => actions.regenerate(msg.id)}>
-                    <Icon name="refresh" size={12} />
-                </button>
-                <button type="button" className="ibtn" title={t('chat.action.more')}
-                    onClick={() => actions.more(msg.id)}>
-                    <Icon name="more" size={12} />
-                </button>
+                <IconButton size="icon-sm" label={t('chat.action.edit')} icon={<Icon name="edit" size={12} />}
+                    onClick={() => actions.beginEdit(msg.id)} />
+                <IconButton size="icon-sm" label={t('chat.action.regen')} icon={<Icon name="refresh" size={12} />}
+                    onClick={() => actions.regenerate(msg.id)} />
+                <IconButton size="icon-sm" label={t('chat.action.more')} icon={<Icon name="more" size={12} />}
+                    onClick={() => actions.more(msg.id)} />
             </div>
             {(msg.receipts ?? []).map((r, i) => <ReceiptRow key={i} receipt={r} />)}
         </div>

@@ -102,16 +102,23 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
 
     return (
         <>
-            {/* ——— 域轨:品牌标 + L1 域标 + 主题 ——— */}
+            {/* ——— 域轨:品牌标 + 收起钮(唯一位) + L1 域标(duotone) + 主题 ——— */}
             <nav className="rail">
                 <span className="rail-mark" aria-hidden="true">U</span>
+                <IconButton
+                    label={t('menu.view.toggleSidebar')}
+                    tooltipSide="right"
+                    className="rail-btn"
+                    icon={<Icon name="sidebarLeft" size={20} mirrored={collapsed} />}
+                    onClick={onToggleCollapsed}
+                />
                 {NAV.map((it) => (
                     <IconButton
                         key={it.id}
                         label={t(`nav.${it.id}`)}
                         tooltipSide="right"
                         className={`rail-btn ${view === it.id ? 'on' : ''}`}
-                        icon={<Icon name={it.icon} size={20} />}
+                        icon={<Icon name={it.icon} size={20} weight="duotone" />}
                         onClick={() => onSelectView(it.id)}
                     />
                 ))}
@@ -120,11 +127,11 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     label={t('nav.settings')}
                     tooltipSide="right"
                     className={`rail-btn ${view === 'settings' ? 'on' : ''}`}
-                    icon={<Icon name="settings" size={20} />}
+                    icon={<Icon name="settings" size={20} weight="duotone" />}
                     onClick={() => onSelectView('settings')}
                 />
                 <IconButton label={t('menu.view.toggleTheme')} tooltipSide="right" className="rail-btn"
-                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} />} onClick={toggle} />
+                    icon={<Icon name={theme === 'dark' ? 'sun' : 'moon'} size={20} weight="duotone" />} onClick={toggle} />
             </nav>
 
             {/* ——— 内容栏;折叠时 rail 仍在(域轨是常设导航) ——— */}
@@ -132,10 +139,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
             <aside className="sidebar" style={{ width }}>
                 <div className="sb-head">
                     <span className="ws">{t('app.name')}</span>
-                    <Icon name="chevronDown" size={12} className="mut" />
                     <span className="grow" />
-                    <IconButton label={t('menu.view.toggleSidebar')} icon={<Icon name="sidebarLeft" size={16} />}
-                        onClick={onToggleCollapsed} />
                 </div>
 
                 {view === 'chat' && (

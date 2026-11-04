@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { Button } from '../ui/button';
+import { Textarea } from '../ui/textarea';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -30,8 +31,9 @@ export function Composer({ onSend, disabled }: { onSend: (text: string) => void;
         <div className="composer">
             <div className="composer-inner">
                 <div className="composer-box">
-                    <textarea
+                    <Textarea
                         ref={areaRef}
+                        className="composer-ta border-0 shadow-none focus-visible:border-transparent focus-visible:ring-0"
                         rows={2}
                         value={text}
                         placeholder={t('chat.input.placeholder')}
@@ -46,11 +48,11 @@ export function Composer({ onSend, disabled }: { onSend: (text: string) => void;
                     <div className="composer-bar">
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <button type="button" className="preset-pick">
+                                <Button type="button" variant="ghost" size="sm" className="preset-pick">
                                     <Icon name="zap" size={12} />
                                     <span>default</span>
                                     <Icon name="chevronDown" size={12} />
-                                </button>
+                                </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent side="top" align="start">
                                 <DropdownMenuLabel>{t('diag.preset')}</DropdownMenuLabel>

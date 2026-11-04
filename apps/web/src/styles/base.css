@@ -38,17 +38,18 @@
 .mut { color: var(--ink3); }
 .mut2 { color: var(--ink2); }
 
-details.fold {
+/* .fold = Collapsible(radix):trigger 行 + content,chevron 用 Icon 不用伪类字符 */
+.fold {
     border: 1px solid var(--line); border-radius: 9px;
     background: var(--raised); margin-bottom: 8px;
 }
-details.fold > summary {
-    padding: 9px 12px; cursor: pointer; font-size: var(--fs-ui-sm); font-weight: 500;
-    list-style: none; display: flex; align-items: center; gap: 8px;
+.fold-trigger {
+    width: 100%; padding: 9px 12px; cursor: pointer; font-size: var(--fs-ui-sm); font-weight: 500;
+    display: flex; align-items: center; gap: 8px; color: var(--ink); text-align: left;
 }
-details.fold > summary::before { content: "▸"; color: var(--ink3); transition: .2s; font-size: var(--fs-caption); }
-details.fold[open] > summary::before { rotate: 90deg; }
-details.fold .fold-body { padding: 2px 12px 12px; }
+.fold-caret { color: var(--ink3); transition: rotate .15s var(--ease); }
+.fold[data-state="open"] > .fold-trigger .fold-caret { rotate: 90deg; }
+.fold-body { padding: 2px 12px 12px; }
 
 .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; }
 /* caps 段标 = 管理/设置页专用;聊天列表区段用 .sb-sect(非 caps)。 */

@@ -41,6 +41,9 @@ rail = 品牌标 + 域标 + 底部 settings/theme
 | spacing | 4px 基;页 padding 24-32;段距 16-24;行内 gap 8-10;卡 padding 14-16;阅读栏 max 700-768(当前 760✓) | Geist 4px 基实测 |
 | radius | **6/10/14/22+pill 保持不动** | shadcn base 10 兼容 |
 | icon 三档纪律 | **L1=20(rail)/ L2=16(工具钮)/ L3=12(行内)** | VS Code codicon 16/12 两级制 + rail 一档;消灭 15/17/19 游离值 |
+| icon 体系 | **@phosphor-icons/react** 单一家族;层级靠字重:L1=duotone、L2/L3=regular | 用户要"有个性/表情达意"的轨标;字重比手绘复杂度更成体系。禁混第二套图标库;新增图标先查 phosphor 词表 |
+| icon 使用克制 | 同一功能只允许一个常驻入口(收起钮唯一);暗示不存在的行为的图标(chevron 假下拉)删 | 用户 2026-11-03:收起出现两次、图标用得不够好 |
+| 收起控件归位 | 侧栏收起钮只留在 rail(rail-mark 之下、域标之上),常驻同一位;ctbar/sb-head 不再放 | 常驻 chrome 操作归 rail,与 settings/theme 同理 |
 | 状态点 | 6px | 现状✓ |
 | 卡片 vs 扁平 | 卡=浏览异质(Library 卡库);行=扫描同质(会话/规则/诊断);同质套卡=边框噪音红线 | NN/g cards 定义 |
 | hover | #fff@7-10%(dark)/#000@4-6%(light) wash | 现 --bubble ✓ |

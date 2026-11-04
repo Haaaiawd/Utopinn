@@ -46,7 +46,6 @@ export interface ChatViewProps {
     previewLoading: boolean;
     onRunPreview: () => void;
     onTogglePanel: () => void;
-    onToggleSidebar: () => void;
     /** Status-bar hint for unwired actions. */
     onHint: (msg: string, err?: boolean) => void;
     /** 沉浸模式:同时收起内容栏与右面板,只留 rail+阅读列。 */
@@ -62,7 +61,6 @@ export function ChatView({
     previewLoading,
     onRunPreview,
     onTogglePanel,
-    onToggleSidebar,
     onHint,
     onImmersive,
     live,
@@ -193,8 +191,6 @@ export function ChatView({
     return (
         <>
             <div className="ctbar">
-                <IconButton label={t('menu.view.toggleSidebar')} onClick={onToggleSidebar}
-                    icon={<Icon name="sidebarLeft" size={16} />} />
                 <h1>{chat.title}</h1>
                 <span className="grow" />
                 {/* mock 徽标只保留右栏诊断卡那一处 —— 它是数据可信度的本职位置,
@@ -208,7 +204,7 @@ export function ChatView({
                 <IconButton label={t('chat.preview')} icon={<Icon name="eye" size={16} />}
                     disabled={previewLoading} onClick={onRunPreview} />
                 <IconButton label={t('menu.view.togglePanel')} onClick={onTogglePanel}
-                    icon={<Icon name="panelRight" size={16} />} />
+                    icon={<Icon name="panelRight" size={16} mirrored />} />
                 <IconButton label={t('menu.view.immersive')} onClick={onImmersive}
                     icon={<Icon name="focus" size={16} />} />
             </div>

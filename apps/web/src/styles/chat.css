@@ -40,10 +40,7 @@
     opacity: 0; transition: .15s;
 }
 .ub-prose .msg:hover .acts { opacity: 1; }
-.ub-prose .msg .acts .ibtn {
-    width: 24px; height: 24px; background: var(--raised);
-    border: 1px solid var(--line); border-radius: 6px;
-}
+/* 消息行内操作 = IconButton ghost(icon-sm 28);reveal 由 .acts 控制。 */
 .ub-prose .msg .swipe {
     display: inline-flex; gap: 5px; align-items: center;
     font-size: var(--fs-caption); color: var(--ink3); font-family: var(--font-ui);
@@ -61,10 +58,12 @@
     max-width: var(--read-width); margin: -0.6em auto 1.3em; padding: 0;
 }
 .ub-prose .vreceipt .vr-head {
+    width: 100%; text-align: left;
     display: flex; align-items: center; gap: 8px; font-size: var(--fs-ui); color: var(--ink2);
     padding: 7px 12px; background: var(--raised); border: 1px solid var(--line);
     border-radius: var(--radius); cursor: pointer; font-family: var(--font-ui);
 }
+.ub-prose .vreceipt[data-state="open"] > .vr-head { border-radius: var(--radius) var(--radius) 0 0; }
 .ub-prose .vreceipt .vr-head .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
 .ub-prose .vreceipt .vr-body {
     border: 1px solid var(--line); border-top: 0; border-radius: 0 0 8px 8px;

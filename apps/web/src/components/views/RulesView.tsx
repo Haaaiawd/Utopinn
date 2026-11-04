@@ -10,6 +10,7 @@ import { Icon } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { Badge } from '../ui/badge';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
 interface WorldItem {
     name: string;
@@ -67,15 +68,12 @@ export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
                 {mock && <Badge variant="warning">{t('common.mockData')}</Badge>}
             </div>
 
-            <div className="lib-chips">
+            <ToggleGroup type="single" size="sm" className="lib-chips"
+                value={filter} onValueChange={(v) => v && setFilter(v as typeof filter)}>
                 {(['all', 'global', 'bound'] as const).map((f) => (
-                    <button key={f} type="button"
-                        className={`lib-chip ${filter === f ? 'on' : ''}`}
-                        onClick={() => setFilter(f)}>
-                        {t(`rules.filter.${f}`)}
-                    </button>
+                    <ToggleGroupItem key={f} value={f}>{t(`rules.filter.${f}`)}</ToggleGroupItem>
                 ))}
-            </div>
+            </ToggleGroup>
 
             <div className="lib-tiles">
                 {visible.map((w) => (

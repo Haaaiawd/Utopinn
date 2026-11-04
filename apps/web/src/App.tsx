@@ -148,7 +148,6 @@ function Shell() {
                         previewLoading={previewLoading}
                         onRunPreview={runPreview}
                         onTogglePanel={() => setPanelHidden((v) => !v)}
-                        onToggleSidebar={() => setSidebarCollapsed((v) => !v)}
                         onHint={showHint}
                         onImmersive={() => {
                             const next = !(sidebarCollapsed && panelHidden);
