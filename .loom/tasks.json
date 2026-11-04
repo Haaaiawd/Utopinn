@@ -1269,13 +1269,12 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "待开始",
-        "next": ""
-      },
-      "evidence": [],
+      "status": "done",
+      "progress": "server runner 端点接通并真机验证:POST /api/uberge/script/run,E2E 10/10(变量双层落库/消息写入/QR 递归/宏)。generateQuiet/trigger seam 未绑定按降级处理。",
+      "evidence": [
+        "apps/server/src/plugins/uberge-script.js",
+        "tests/e2e/uberge-script-runner.mjs"
+      ],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-03T11:26:03.619Z",
       "integrity_version": 1,
