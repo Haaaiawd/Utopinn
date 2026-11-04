@@ -23,8 +23,8 @@ function Shell() {
     const [chats, setChats] = useState<ChatSummary[]>(MOCK_CHATS);
     const [activeChat, setActiveChat] = useState(chats[0]?.id ?? '');
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // 右栏没有"收起"钮 —— hidden 只由沉浸模式驱动;板块清空时整条自动消失。
     const [panelHidden, setPanelHidden] = useState(false);
-    const [panelWide, setPanelWide] = useState(false);
     const [panels, setPanels] = useState<PanelInst[]>([
         { id: 'p-diag', type: 'diag' },
         { id: 'p-session', type: 'session' },
@@ -129,6 +129,8 @@ function Shell() {
         const id = `p-${++panelSeq.current}-${type}`;
         setPanels((prev) => [...prev, { id, type }]);
         setActivePanel(id);
+        // 加板块 = 展开右栏的入口;沉浸藏栏时也顺势唤回。
+        setPanelHidden(false);
     }, []);
 
     const closePanel = useCallback((id: string) => {
@@ -162,7 +164,7 @@ function Shell() {
                         preview={preview}
                         previewLoading={previewLoading}
                         onRunPreview={runPreview}
-                        onTogglePanel={() => setPanelHidden((v) => !v)}
+                        onAddPanel={addPanel}
                         onHint={showHint}
                         onImmersive={() => {
                             const next = !(sidebarCollapsed && panelHidden);
@@ -193,14 +195,10 @@ function Shell() {
                     active={activePanel}
                     preview={preview}
                     hidden={panelHidden}
-                    wide={panelWide}
                     charDir={chat?.charDir}
                     chatName={chat?.chatName}
                     onSelect={setActivePanel}
                     onClose={closePanel}
-                    onAdd={addPanel}
-                    onToggleWide={() => setPanelWide((v) => !v)}
-                    onHide={() => setPanelHidden(true)}
                 />
             )}
             {hint && <div className={`hint-pill${hint.err ? ' err' : ''}`}>{hint.msg}</div>}

@@ -1,7 +1,9 @@
 /* Shell — rail | sidebar | main | rightbar 四轨。
-   rail = 52px 常设域轨(品牌标 + L1 域标 + 主题);sidebar 整体收起后
+   rail = 48px 常设域轨(品牌标 + L1 域标 + 主题);sidebar 整体收起后
    只剩 rail(沉浸模式左半)。右栏是挂右缘的 track;拖拽柄是骑列缝的
    隐形条;hint 用浮窗胶囊。
+   三列顶条同高 56(sb-head/ctbar/pnl-tabs)—— VS Code 惯例:同行 chrome
+   共享高度,一根发丝线贯通三栏。
    行 hover/选中 = 平灰透明填充(--bubble/--sel),不蹭琥珀。 */
 
 .frame { display: flex; height: 100%; overflow: hidden; background: var(--bg); position: relative; }
@@ -38,7 +40,9 @@
 .sb-resizer:hover { background: var(--sel); }
 
 .sb-head {
-    padding: 16px 16px 12px; display: flex; align-items: center; gap: 8px;
+    height: 56px; flex: none; padding: 0 16px; box-sizing: border-box;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--line);
 }
 .sb-head .ws { font-size: var(--fs-title); font-weight: 600; letter-spacing: .01em; }
 .sb-head .grow { flex: 1; }
@@ -88,11 +92,12 @@
 .sb-fold { flex: none; color: var(--ink3); transition: rotate .15s var(--ease); }
 .sb-fold.open { rotate: 90deg; }
 .sb-group-ava {
-    width: 20px; height: 20px; border-radius: 50%; flex: none;
+    width: 24px; height: 24px; border-radius: 50%; flex: none; overflow: hidden;
     display: grid; place-items: center;
     background: var(--bubble); color: var(--ink2);
     font-size: var(--fs-caption); font-weight: 600; text-transform: uppercase;
 }
+.sb-group-ava img { width: 100%; height: 100%; object-fit: cover; }
 .sb-group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .sb-group-count {
     flex: none; font-size: var(--fs-caption); color: var(--ink3);
@@ -120,30 +125,35 @@
 
 /* ---- rightbar track ---- */
 .upanel {
-    width: 312px; flex: none; border-left: 1px solid var(--line);
+    width: 380px; flex: none; position: relative;
+    border-left: 1px solid var(--line);
     background: var(--bg2); display: flex; flex-direction: column; min-height: 0;
 }
-.upanel.wide { width: 480px; }
+.pnl-resizer {
+    position: absolute; top: 0; left: -4px; bottom: 0; width: 8px;
+    cursor: col-resize; z-index: 12;
+}
+.pnl-resizer:hover { background: var(--sel); }
 
-/* ---- panel host tab strip ---- */
+/* ---- panel host tab strip:与 ctbar 同高(56),发丝线贯通两栏 ---- */
 .pnl-tabs {
-    flex: none; height: 40px; display: flex; align-items: center; gap: 4px;
-    padding: 0 8px; border-bottom: 1px solid var(--line);
+    flex: none; height: 56px; display: flex; align-items: center; gap: 4px;
+    padding: 0 12px; border-bottom: 1px solid var(--line);
 }
 .pnl-tabs-scroll { flex: 1; min-width: 0; height: 100%; }
-.pnl-tabs-row { display: flex; align-items: center; gap: 2px; height: 100%; }
+.pnl-tabs-row { display: flex; align-items: center; gap: 3px; height: 100%; }
 .pnl-tab {
-    display: inline-flex; align-items: center; gap: 6px; height: 28px;
-    padding: 0 7px 0 9px; border-radius: var(--radius-sm); cursor: pointer;
-    font-size: var(--fs-ui-sm); color: var(--ink2); white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 7px; height: 34px;
+    padding: 0 8px 0 11px; border-radius: var(--radius); cursor: pointer;
+    font-size: var(--fs-ui); color: var(--ink2); white-space: nowrap;
     user-select: none;
 }
 .pnl-tab:hover { background: var(--bubble); }
 .pnl-tab.on { background: var(--sel); color: var(--ink); }
-.pnl-tab-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.pnl-tab-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
 .pnl-tab-x {
-    display: grid; place-items: center; width: 16px; height: 16px;
-    border: 0; border-radius: 4px; background: none; color: var(--ink3);
+    display: grid; place-items: center; width: 18px; height: 18px;
+    border: 0; border-radius: 5px; background: none; color: var(--ink3);
     cursor: pointer; padding: 0; flex: none;
 }
 .pnl-tab-x:hover { background: var(--line2); color: var(--ink); }
