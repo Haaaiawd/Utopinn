@@ -2,7 +2,7 @@
     "name": "@uberge/mobile",
     "version": "0.0.0",
     "private": true,
-    "main": "index.ts",
+    "main": "expo-router/entry",
     "scripts": {
         "start": "expo start",
         "android": "expo start --android",
@@ -10,6 +10,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
+        "@expo/metro-runtime": "^6.1.2",
         "@legendapp/list": "^3.0.0",
         "@tanstack/react-query": "^5.90.0",
         "@uberge/api-client": "workspace:*",

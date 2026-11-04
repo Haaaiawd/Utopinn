@@ -6,12 +6,14 @@
         "orientation": "portrait",
         "userInterfaceStyle": "automatic",
         "scheme": "uberge",
+        "plugins": ["expo-router"],
         "ios": {
             "supportsTablet": true,
             "bundleIdentifier": "moe.uberge.app"
         },
         "android": {
-            "package": "moe.uberge.app"
+            "package": "moe.uberge.app",
+            "usesCleartextTraffic": true
         }
     }
 }
