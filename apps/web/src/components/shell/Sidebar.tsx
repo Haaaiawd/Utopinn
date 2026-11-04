@@ -6,9 +6,9 @@ import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
 import { apiGet } from '../../api/client';
 import { MOCK_CARDS, type CardItem } from '../../api/mock';
-import type { ChatSummary, ViewId } from '../../types';
+import { useContribs, useShell } from '../../kernel/context';
+import type { ChatSummary } from '../../types';
 import { Icon } from '../Icon';
-import type { IconName } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
@@ -18,13 +18,6 @@ import {
 } from '../ui/dropdown-menu';
 
 const SB_MIN = 240, SB_MAX = 460;
-
-const NAV: { id: ViewId; icon: IconName }[] = [
-    { id: 'chat', icon: 'chat' },
-    { id: 'stories', icon: 'stories' },
-    { id: 'rules', icon: 'rules' },
-    { id: 'extensions', icon: 'extensions' },
-];
 
 /** 组头卡面:有图放卡面(卡文件本身是 PNG 时直接当脸用),404/无图回落首字母。 */
 function CharFace({ dir, card }: { dir: string; card?: CardItem }) {
@@ -60,21 +53,15 @@ function ChatRow({ c, active, onSelect, onRename, onDelete, t }: {
     );
 }
 
-export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, onNewChat, onRenameChat, onDeleteChat, collapsed, onToggleCollapsed }: {
-    view: ViewId;
-    chats: ChatSummary[];
-    activeChat: string;
-    onSelectView: (v: ViewId) => void;
-    onSelectChat: (id: string) => void;
-    onNewChat: () => void;
-    /** Row hover actions — App owns confirm/prompt + the API round-trip. */
-    onRenameChat: (chat: ChatSummary) => void;
-    onDeleteChat: (chat: ChatSummary) => void;
-    collapsed: boolean;
-    onToggleCollapsed: () => void;
-}) {
+export function Sidebar() {
     const { t } = useI18n();
     const { theme, toggle } = useTheme();
+    const {
+        view, setView, chats, activeChat, selectChat, newChat,
+        renameChat, deleteChat, sidebarCollapsed: collapsed, toggleSidebar,
+    } = useShell();
+    /** rail 域标来自 nav.rail 贡献点,order 排序 —— feature 注册的。 */
+    const nav = useContribs('nav.rail');
     const [query, setQuery] = useState('');
     const [width, setWidth] = useState(272);
     /** charDir → folded; 默认全展开。 */
@@ -135,16 +122,16 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     tooltipSide="right"
                     className="rail-btn"
                     icon={<Icon name="sidebarLeft" size={20} mirrored={collapsed} />}
-                    onClick={onToggleCollapsed}
+                    onClick={toggleSidebar}
                 />
-                {NAV.map((it) => (
+                {[...nav].sort((a, b) => a.order - b.order).map((it) => (
                     <IconButton
-                        key={it.id}
-                        label={t(`nav.${it.id}`)}
+                        key={it.view}
+                        label={t(`nav.${it.view}`)}
                         tooltipSide="right"
-                        className={`rail-btn ${view === it.id ? 'on' : ''}`}
+                        className={`rail-btn ${view === it.view ? 'on' : ''}`}
                         icon={<Icon name={it.icon} size={20} weight="duotone" />}
-                        onClick={() => onSelectView(it.id)}
+                        onClick={() => setView(it.view)}
                     />
                 ))}
                 <span className="grow" />
@@ -159,7 +146,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     </DropdownMenuTrigger>
                     <DropdownMenuContent side="right" align="end" sideOffset={8}>
                         <DropdownMenuLabel>default-user</DropdownMenuLabel>
-                        <DropdownMenuItem onClick={() => onSelectView('settings')}>
+                        <DropdownMenuItem onClick={() => setView('settings')}>
                             <Icon name="settings" size={12} /> {t('nav.settings')}
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={toggle}>
@@ -177,7 +164,7 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                     <span className="grow" />
                 </div>
 
-                <button type="button" className="sb-new" onClick={onNewChat}>
+                <button type="button" className="sb-new" onClick={newChat}>
                     <Icon name="plus" size={16} />
                     <span>{t('sidebar.newChat')}</span>
                 </button>
@@ -213,9 +200,9 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                                         {!isFolded && items.map((c) => (
                                             <ChatRow key={c.id} c={c} t={t}
                                                 active={c.id === activeChat}
-                                                onSelect={() => onSelectChat(c.id)}
-                                                onRename={() => onRenameChat(c)}
-                                                onDelete={() => onDeleteChat(c)} />
+                                                onSelect={() => selectChat(c.id)}
+                                                onRename={() => renameChat(c)}
+                                                onDelete={() => deleteChat(c)} />
                                         ))}
                                     </div>
                                 );
@@ -226,9 +213,9 @@ export function Sidebar({ view, chats, activeChat, onSelectView, onSelectChat, o
                                 {loose.map((c) => (
                                     <ChatRow key={c.id} c={c} t={t}
                                         active={c.id === activeChat}
-                                        onSelect={() => onSelectChat(c.id)}
-                                        onRename={() => onRenameChat(c)}
-                                        onDelete={() => onDeleteChat(c)} />
+                                        onSelect={() => selectChat(c.id)}
+                                        onRename={() => renameChat(c)}
+                                        onDelete={() => deleteChat(c)} />
                                 ))}
                             </>
                         )}

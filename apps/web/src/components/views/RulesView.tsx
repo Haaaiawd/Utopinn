@@ -6,6 +6,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../../api/client';
 import { useI18n } from '../../i18n';
+import { useShell } from '../../kernel/context';
 import { Icon } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
@@ -23,8 +24,9 @@ const MOCK_WORLDS: WorldItem[] = [
     { name: 'tide-and-salt', displayName: '潮与盐', extensions: {} },
 ];
 
-export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
+export function RulesView() {
     const { t } = useI18n();
+    const { hint } = useShell();
     const [worlds, setWorlds] = useState<WorldItem[]>([]);
     const [mock, setMock] = useState(false);
     const [filter, setFilter] = useState<'all' | 'global' | 'bound'>('all');
@@ -60,7 +62,7 @@ export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
                         placeholder={t('rules.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
                 <IconButton label={t('rules.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => onHint(t('lib.importSoon'))} />
+                    onClick={() => hint(t('lib.importSoon'))} />
             </div>
 
             <div className="lib-sect">
@@ -77,7 +79,7 @@ export function RulesView({ onHint }: { onHint: (msg: string) => void }) {
 
             <div className="lib-tiles">
                 {visible.map((w) => (
-                    <div key={w.name} className="lib-tile" onClick={() => onHint(w.name)}>
+                    <div key={w.name} className="lib-tile" onClick={() => hint(w.name)}>
                         <span className="lib-tile-glyph"><Icon name="book" size={16} /></span>
                         <span className="lib-tile-text">
                             <span className="lib-tile-name">{w.displayName}</span>

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiGet } from '../../api/client';
 import { MOCK_CARDS, type CardItem } from '../../api/mock';
 import { useI18n } from '../../i18n';
+import { useShell } from '../../kernel/context';
 import { Icon } from '../Icon';
 import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
@@ -39,13 +40,15 @@ function CardTile({ card, chatCount, onOpen }: { card: CardItem; chatCount: numb
     );
 }
 
-export function LibraryView({ chats, onOpenCard, onHint }: {
-    chats: { charDir: string }[];
-    /** 点卡 → 跳到该角色第一个会话(无会话则 hint)。 */
-    onOpenCard: (charDir: string) => void;
-    onHint: (msg: string) => void;
-}) {
+export function LibraryView() {
     const { t } = useI18n();
+    const { chats, selectChat, setView, hint } = useShell();
+    /** 点卡 → 跳到该角色第一个会话(无会话则 hint)。 */
+    const onOpenCard = (charDir: string) => {
+        const hit = chats.find((c) => c.charDir === charDir);
+        if (hit) { selectChat(hit.id); setView('chat'); }
+        else hint(t('lib.noChat'));
+    };
     const [cards, setCards] = useState<CardItem[]>([]);
     const [mock, setMock] = useState(false);
     const [filter, setFilter] = useState<FilterId>('all');
@@ -90,7 +93,7 @@ export function LibraryView({ chats, onOpenCard, onHint }: {
                         placeholder={t('lib.search')} value={query} onChange={(e) => setQuery(e.target.value)} />
                 </div>
                 <IconButton label={t('lib.new')} icon={<Icon name="plus" size={16} />}
-                    onClick={() => onHint(t('lib.importSoon'))} />
+                    onClick={() => hint(t('lib.importSoon'))} />
             </div>
 
             <ToggleGroup type="single" size="sm" className="lib-chips"
