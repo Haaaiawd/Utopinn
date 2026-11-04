@@ -1074,12 +1074,12 @@
       "design_exemption": "",
       "covers": [],
       "status": "open",
-      "progress": {
-        "completed": [],
-        "current": "待开始",
-        "next": ""
-      },
-      "evidence": [],
+      "progress": "import 管线已插件化:plugins/uberge-import.js,preview+commit 经 webServer,8/8 E2E。端点孤儿已收编。",
+      "evidence": [
+        "apps/server/src/plugins/uberge-import.js",
+        "tests/e2e/uberge-import-surface.mjs",
+        "commit 2624ae4"
+      ],
       "created_at": "2026-11-03T07:57:01.010Z",
       "updated_at": "2026-11-03T11:26:03.625Z",
       "integrity_version": 1,
@@ -1213,21 +1213,15 @@
       "design_exemption": "",
       "covers": [],
       "status": "done",
-      "progress": {
-        "completed": [
-          "REST 面全插件供给(19+8 路由)",
-          "写面 preset/world/persona PUT+DELETE",
-          "masked-secret GET/PUT/DELETE",
-          "E2E 17/17"
-        ],
-        "current": "done_when 达成:写面+masked-secret 齐",
-        "next": "(出 TASK-018 范围)导入导出/chat 分支 → 新任务面"
-      },
+      "progress": "/api/uberge REST 面 100% 插件化(31 routes 0 dup):library CRUD+secrets+generate+mvu+diag+import。legacy uberge 端点文件全删。done_when 的写面+masked-secret 已达。",
       "evidence": [
         "apps/server/src/plugins/uberge-library.js",
         "apps/server/src/kernel-boot.js",
         "apps/server/src/profile.yaml",
-        "tests/e2e/uberge-write-surface.mjs"
+        "tests/e2e/uberge-write-surface.mjs",
+        "tests/e2e/uberge-write-surface.mjs",
+        "tests/e2e/uberge-import-surface.mjs",
+        "commit 2624ae4"
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-04T06:05:48.208Z",
