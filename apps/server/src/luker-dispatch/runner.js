@@ -52,6 +52,10 @@ export async function runLukerDispatch(request, response, { endpoint, select }) 
     // the refactor forgot to carry it over, leaving getJobFromRequest
     // permanently returning null.
     attachJobToRequest(request, job);
+    // 诊断回放面(TASK-017):组装 trace/WI 来源挂 job —— /jobs/:id 详情
+    // 回放「本次生成的 prompt 组装现场」,不靠 preview 重算。
+    job.trace = request.ubergeTrace ?? null;
+    job.sources = request.ubergeSources ?? null;
     const abortController = new AbortController();
     job.abortController = abortController;
 

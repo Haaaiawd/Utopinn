@@ -818,11 +818,15 @@ export async function buildPromptMessages(
         return out as { role: string; content: unknown; name?: string };
     });
 
-    const collections = chatCompletion.messages.collection.map((c) =>
-        c instanceof MessageCollection
-            ? { identifier: c.identifier, tokens: c.getTokens(), count: c.flatten().length }
-            : { identifier: (c as Message).identifier, tokens: c.getTokens(), count: 1 },
-    );
+    // collection 是按 promptOrder 槽位预分配的稀疏数组——禁用/缺席槽
+    // 是空洞,JSON 化变 null。诊断面滤掉空槽,只看实际进组装的段。
+    const collections = chatCompletion.messages.collection
+        .filter((c): c is NonNullable<typeof c> => c != null)
+        .map((c) =>
+            c instanceof MessageCollection
+                ? { identifier: c.identifier, tokens: c.getTokens(), count: c.flatten().length }
+                : { identifier: (c as Message).identifier, tokens: c.getTokens(), count: 1 },
+        );
 
     const injectedCount = flat.filter((m) => m.injected).length;
     const historyCount = flat.filter((m) => m.identifier.startsWith('chatHistory')).length;

@@ -1055,3 +1055,27 @@ export function getGenerationJobForRequest(request, jobId) {
     }
     return job;
 }
+
+/**
+ * TASK-017 生成任务监视:本 handle 全部 job 的摘要列表(新→旧)。
+ * 摘要字段足够监视面列表态;详情走 getGenerationJobForRequest 单取。
+ */
+export function listGenerationJobsForRequest(request) {
+    pruneGenerationJobs();
+    const handle = request.user.profile.handle;
+    return Array.from(generationJobs.values())
+        .filter(job => job.handle === handle)
+        .sort((a, b) => Number(b.updatedAt || b.createdAt || 0) - Number(a.updatedAt || a.createdAt || 0))
+        .map(job => ({
+            id: job.id,
+            status: job.status,
+            chatKey: job.chatKey ?? null,
+            textPreview: String(job.text ?? '').slice(0, 120),
+            error: job.error || null,
+            persisted: Boolean(job.persisted),
+            eventCount: Array.isArray(job.events) ? job.events.length : 0,
+            hasTrace: job.trace != null,
+            created_at: job.createdAt,
+            updated_at: job.updatedAt,
+        }));
+}

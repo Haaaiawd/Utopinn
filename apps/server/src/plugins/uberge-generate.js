@@ -13,6 +13,7 @@ import { selectChatCompletionDispatch } from '../endpoints/backends/chat-complet
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
+import { listGenerationJobsForRequest, getGenerationJobForRequest } from '../endpoints/backends/luker-generation.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
@@ -106,6 +107,38 @@ const CONNECTION_KEYS = new Set([
 
 export function apply(ctx) {
     const reg = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
+    const regGet = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'GET', path, handler }));
+
+    // —— TASK-017 生成任务监视/回放 ——
+    /** GET /jobs —— 本 handle 全部生成任务摘要(新→旧),监视面数据源。 */
+    regGet('/api/uberge/jobs', async function (request, response) {
+        return response.send({ items: listGenerationJobsForRequest(request) });
+    });
+
+    /**
+     * GET /jobs/:id —— 单 job 详情:状态/文本/trace(组装 token 分块)
+     * /sources(WI 激活轨迹)/事件数。events 不回传(走 WS resume 通道)。
+     */
+    regGet('/api/uberge/jobs/:id', async function (request, response) {
+        const job = getGenerationJobForRequest(request, request.params.id);
+        if (!job) {
+            return response.status(404).send({ error: 'Job not found.' });
+        }
+        return response.send({
+            id: job.id,
+            status: job.status,
+            chatKey: job.chatKey ?? null,
+            text: job.text ?? '',
+            error: job.error || null,
+            persisted: Boolean(job.persisted),
+            lastSeq: job.lastSeq ?? 0,
+            eventCount: Array.isArray(job.events) ? job.events.length : 0,
+            trace: job.trace ?? null,
+            sources: job.sources ?? null,
+            created_at: job.createdAt,
+            updated_at: job.updatedAt,
+        });
+    });
 
     reg('/api/uberge/generate', async function (request, response) {
         try {
@@ -124,7 +157,7 @@ export function apply(ctx) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
 
-            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, perf } = await buildGenerationContext({
+            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, sources, perf } = await buildGenerationContext({
                 request,
                 charDir,
                 chatName,
@@ -184,6 +217,7 @@ export function apply(ctx) {
                     },
                 };
                 request.ubergeTrace = trace;
+                request.ubergeSources = sources;
                 response.setHeader('x-uberge-perf', JSON.stringify(perf));
                 return runLukerDispatch(request, response, {
                     endpoint: 'uberge-generate',
@@ -226,6 +260,7 @@ export function apply(ctx) {
 
             request.body = dispatchBody;
             request.ubergeTrace = trace; // 诊断面挂点(request inspector 可摘)
+            request.ubergeSources = sources; // WI 激活轨迹等来源明细,runner 挂 job 供回放
             // /generate 响应体是 runner 立即 flush 的 {}(真实结果走 job 事件/WS),
             // perf 挂响应头——需在 runLukerDispatch 的 response.json() 之前 set。
             response.setHeader('x-uberge-perf', JSON.stringify(perf));
