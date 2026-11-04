@@ -19,8 +19,8 @@ const FILTERS: { key: Filter; label: string }[] = [
     { key: 'byChar', label: '按角色' },
 ];
 
-function fmtTime(iso?: string): string {
-    if (!iso) return '';
+function fmtTime(iso?: string | number): string {
+    if (iso == null) return '';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '';
     const today = new Date();
@@ -81,7 +81,6 @@ export default function ShelfScreen() {
         queryKey: ['all-chats'],
         queryFn: listAllChats,
     });
-    if (isError) console.warn('[dbg] all-chats error:', error instanceof Error ? (error.stack ?? error.message) : error);
     const [filter, setFilter] = useState<Filter>('all');
     const progressMap = useProgressMap();
 
