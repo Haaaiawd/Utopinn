@@ -57,7 +57,6 @@ import { router as volcengineRouter } from './endpoints/volcengine.js';
 import { router as requestInspectorRouter } from './request-inspector.js';
 import { router as cardAppRouter } from './endpoints/card-app.js';
 import { cardRuntimeApiRouter } from './card-runtime/index.js';
-import { router as ubergeLibraryRouter } from './endpoints/uberge-library.js';
 import { webServer } from './kernel-boot.js';
 import { router as docsRouter } from './endpoints/docs.js';
 import { createSkillsRouter } from './endpoints/skills.js';
@@ -139,10 +138,9 @@ export function setupPrivateEndpoints(app) {
     // CardApp mount admin: mints the capability ids that the session-free
     // /card-runtime/m/<id>/ surface (mounted pre-login in server-main) accepts.
     app.use('/api/card-runtime', cardRuntimeApiRouter);
-    // kernel webServer dispatcher:插件注册的路由(exact/pattern 全路径)
-    // 命中即接管,未命中 next() 落回下面的 legacy router —— 按面切换。
+    // kernel webServer dispatcher:/api/uberge 面已 100% 插件化;
+    // 未命中 next() 继续向后走(docs/skills 等后续挂载不受影响)。
     app.use(webServer.middleware());
-    app.use('/api/uberge', ubergeLibraryRouter);
     app.use('/api/docs', docsRouter);
     // Skills are scoped to the authenticated user's data root, mirroring the
     // card-app pattern. Each request resolves a fresh SkillRepository because
