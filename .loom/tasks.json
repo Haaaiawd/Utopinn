@@ -1192,7 +1192,7 @@
         {
           "criterion": "库只读/delete/PATCH 面测试绿",
           "verify_by": "uberge-library.test 11/11",
-          "evidence": "已验"
+          "evidence": "tests/e2e/uberge-write-surface.mjs 17/17"
         }
       ],
       "done_when": [
@@ -1212,19 +1212,25 @@
       ],
       "design_exemption": "",
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "只读+delete+PATCH 面入库(11/11);REST 面已 100% kernel 插件供给(webServer.register×19 路由,真机 E2E)",
-        "next": "导入导出、preset/world 保存、chat 分支、masked-secret 端点(新写路径直接按插件形态加)"
+        "completed": [
+          "REST 面全插件供给(19+8 路由)",
+          "写面 preset/world/persona PUT+DELETE",
+          "masked-secret GET/PUT/DELETE",
+          "E2E 17/17"
+        ],
+        "current": "done_when 达成:写面+masked-secret 齐",
+        "next": "(出 TASK-018 范围)导入导出/chat 分支 → 新任务面"
       },
       "evidence": [
         "apps/server/src/plugins/uberge-library.js",
         "apps/server/src/kernel-boot.js",
-        "apps/server/src/profile.yaml"
+        "apps/server/src/profile.yaml",
+        "tests/e2e/uberge-write-surface.mjs"
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
-      "updated_at": "2026-11-04T05:58:11.976Z",
+      "updated_at": "2026-11-04T06:05:48.208Z",
       "integrity_version": 1,
       "id": "TASK-018",
       "title": "薄客户端库/管理 REST API 面",

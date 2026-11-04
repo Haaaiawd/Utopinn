@@ -18,6 +18,7 @@ import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '.
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
+import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
 
 export const inject = ['webServer'];
 
@@ -482,6 +483,233 @@ export function apply(ctx) {
             return response.send({ settings: sanitizeSettingsDoc(next) });
         } catch (error) {
             return sendError(response, error, 'uberge/settings patch');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // 写面第二波:preset/world 保存+删除、persona 写、masked-secret
+    // -----------------------------------------------------------------------
+
+    /**
+     * PUT /presets/:name?apiId= —— 整档保存(body=预设 doc 对象)。
+     */
+    regPost(`${P}/presets/:name`, 'PUT', async function (request, response) {
+        try {
+            const apiId = presetApiId(request.query.apiId);
+            const name = safeName(request.params.name, 'name');
+            const doc = request.body;
+            if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+                return response.status(422).send({ error: 'Preset doc must be a JSON object' });
+            }
+            await getPresetRepo().save(request.user.profile.handle, apiId, name, doc);
+            return response.send({ ok: true, name, apiId });
+        } catch (error) {
+            return sendError(response, error, 'uberge/presets put');
+        }
+    });
+
+    /** DELETE /presets/:name?apiId= —— 删预设(连带 state namespace 清理,Repo 内做)。 */
+    regPost(`${P}/presets/:name`, 'DELETE', async function (request, response) {
+        try {
+            const apiId = presetApiId(request.query.apiId);
+            const name = safeName(request.params.name, 'name');
+            const deleted = await getPresetRepo().delete(request.user.profile.handle, apiId, name);
+            if (!deleted) {
+                return response.status(404).send({ error: `Preset not found: ${apiId}/${name}` });
+            }
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'uberge/presets delete');
+        }
+    });
+
+    /**
+     * PUT /worlds/:name —— 整档保存(body={entries:{}};Repo 校验 entries 形态)。
+     * 书名经 resolveName 归一 —— 请求名与盘档名归一后返回 canonical。
+     */
+    regPost(`${P}/worlds/:name`, 'PUT', async function (request, response) {
+        try {
+            const name = safeName(request.params.name, 'name');
+            const doc = request.body;
+            if (!doc || typeof doc !== 'object' || Array.isArray(doc)
+                || !doc.entries || typeof doc.entries !== 'object' || Array.isArray(doc.entries)) {
+                return response.status(422).send({ error: 'World doc must be an object with an entries object' });
+            }
+            const repo = getWorldInfoRepo();
+            const handle = request.user.profile.handle;
+            await repo.save(handle, name, doc);
+            const canonical = await repo.resolveName(handle, name);
+            return response.send({ ok: true, name: canonical ?? name });
+        } catch (error) {
+            return sendError(response, error, 'uberge/worlds put');
+        }
+    });
+
+    /** DELETE /worlds/:name —— 删世界书。 */
+    regPost(`${P}/worlds/:name`, 'DELETE', async function (request, response) {
+        try {
+            const name = safeName(request.params.name, 'name');
+            const deleted = await getWorldInfoRepo().delete(request.user.profile.handle, name);
+            if (!deleted) {
+                return response.status(404).send({ error: `World book not found: ${name}` });
+            }
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'uberge/worlds delete');
+        }
+    });
+
+    /**
+     * PUT /personas/:avatar —— 人设写(嵌套合并进 power_user.personas +
+     * persona_descriptions,不能走 PATCH 顶层浅合并 —— 会洗掉兄弟键)。
+     * body:{name?,description?,position?,title?};avatar 文件名走 safeName。
+     */
+    regPost(`${P}/personas/:avatar`, 'PUT', async function (request, response) {
+        try {
+            const avatar = safeName(request.params.avatar, 'avatar');
+            const body = request.body ?? {};
+            if (typeof body !== 'object' || Array.isArray(body)) {
+                return response.status(400).send({ error: 'Request body must be a JSON object' });
+            }
+            const repo = getSettingsRepo();
+            const handle = request.user.profile.handle;
+            const existing = await repo.get(handle);
+            const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
+            const powerUser = (base.power_user && typeof base.power_user === 'object' && !Array.isArray(base.power_user))
+                ? { ...base.power_user }
+                : {};
+            const personas = (powerUser.personas && typeof powerUser.personas === 'object' && !Array.isArray(powerUser.personas))
+                ? { ...powerUser.personas }
+                : {};
+            const descMap = (powerUser.persona_descriptions && typeof powerUser.persona_descriptions === 'object' && !Array.isArray(powerUser.persona_descriptions))
+                ? { ...powerUser.persona_descriptions }
+                : {};
+
+            if (typeof body.name === 'string') {
+                personas[avatar] = body.name;
+            }
+            const descFields = {};
+            for (const k of ['description', 'position', 'title']) {
+                if (body[k] !== undefined) descFields[k] = body[k];
+            }
+            if (Object.keys(descFields).length > 0) {
+                const prior = (descMap[avatar] && typeof descMap[avatar] === 'object' && !Array.isArray(descMap[avatar]))
+                    ? descMap[avatar]
+                    : {};
+                descMap[avatar] = { ...prior, ...descFields };
+            }
+            if (body.is_default === true) {
+                powerUser.default_persona = avatar;
+            }
+            powerUser.personas = personas;
+            powerUser.persona_descriptions = descMap;
+
+            await repo.save(handle, { ...base, power_user: powerUser });
+            return response.send({
+                ok: true,
+                avatar,
+                name: typeof personas[avatar] === 'string' ? personas[avatar] : '',
+                description: typeof descMap[avatar]?.description === 'string' ? descMap[avatar].description : '',
+                position: descMap[avatar]?.position ?? 0,
+                title: typeof descMap[avatar]?.title === 'string' ? descMap[avatar].title : '',
+                isDefault: powerUser.default_persona === avatar,
+            });
+        } catch (error) {
+            return sendError(response, error, 'uberge/personas put');
+        }
+    });
+
+    /**
+     * DELETE /personas/:avatar —— 从 personas + persona_descriptions 双表摘除;
+     * 若恰是 default_persona 一并清默认位。
+     */
+    regPost(`${P}/personas/:avatar`, 'DELETE', async function (request, response) {
+        try {
+            const avatar = safeName(request.params.avatar, 'avatar');
+            const repo = getSettingsRepo();
+            const handle = request.user.profile.handle;
+            const existing = await repo.get(handle);
+            const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
+            const powerUser = (base.power_user && typeof base.power_user === 'object' && !Array.isArray(base.power_user))
+                ? { ...base.power_user }
+                : {};
+            const personas = (powerUser.personas && typeof powerUser.personas === 'object' && !Array.isArray(powerUser.personas))
+                ? { ...powerUser.personas }
+                : {};
+            const descMap = (powerUser.persona_descriptions && typeof powerUser.persona_descriptions === 'object' && !Array.isArray(powerUser.persona_descriptions))
+                ? { ...powerUser.persona_descriptions }
+                : {};
+
+            const had = Object.hasOwn(personas, avatar) || Object.hasOwn(descMap, avatar);
+            if (!had) {
+                return response.status(404).send({ error: `Persona not found: ${avatar}` });
+            }
+            delete personas[avatar];
+            delete descMap[avatar];
+            if (powerUser.default_persona === avatar) {
+                powerUser.default_persona = '';
+            }
+            powerUser.personas = personas;
+            powerUser.persona_descriptions = descMap;
+            await repo.save(handle, { ...base, power_user: powerUser });
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'uberge/personas delete');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // masked-secret:脱敏读(SecretManager.getSecretState 原生脱敏)+ 受限写
+    // -----------------------------------------------------------------------
+
+    const VALID_SECRET_KEYS = new Set(Object.values(SECRET_KEYS).filter((k) => k !== SECRET_KEYS._MIGRATED));
+
+    /** GET /secrets —— 全键脱敏态 {key: [{id,value:masked,label,active}]|null}。 */
+    reg(`${P}/secrets`, async function (request, response) {
+        try {
+            const state = new SecretManager(request.user.directories).getSecretState();
+            return response.send({ secrets: state });
+        } catch (error) {
+            return sendError(response, error, 'uberge/secrets get');
+        }
+    });
+
+    /**
+     * PUT /secrets/:key —— 写入一条新 secret(自动置 active,同 key 旧值退役)。
+     * body:{value:string,label?} → 返回该 key 的脱敏条目组(不 echo 明文)。
+     */
+    regPost(`${P}/secrets/:key`, 'PUT', async function (request, response) {
+        try {
+            const key = safeName(request.params.key, 'key');
+            if (!VALID_SECRET_KEYS.has(key)) {
+                return response.status(400).send({ error: `Unknown secret key: ${key}` });
+            }
+            const value = request.body?.value;
+            if (typeof value !== 'string' || value.length === 0) {
+                return response.status(400).send({ error: 'Expected body.value non-empty string' });
+            }
+            const label = typeof request.body?.label === 'string' ? request.body.label : 'Unlabeled';
+            const manager = new SecretManager(request.user.directories);
+            const id = manager.writeSecret(key, value, label);
+            const state = manager.getSecretState();
+            return response.send({ ok: true, id, key, entries: state[key] ?? null });
+        } catch (error) {
+            return sendError(response, error, 'uberge/secrets put');
+        }
+    });
+
+    /** DELETE /secrets/:key/:id —— 按 id 删一条。 */
+    regPost(`${P}/secrets/:key/:id`, 'DELETE', async function (request, response) {
+        try {
+            const key = safeName(request.params.key, 'key');
+            if (!VALID_SECRET_KEYS.has(key)) {
+                return response.status(400).send({ error: `Unknown secret key: ${key}` });
+            }
+            const id = safeName(request.params.id, 'id');
+            new SecretManager(request.user.directories).deleteSecret(key, id);
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'uberge/secrets delete');
         }
     });
 }
