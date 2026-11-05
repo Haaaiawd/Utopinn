@@ -12,6 +12,7 @@
 import {
     checkWorldInfo,
     createInstructEngine,
+    GENERATION_TYPE_TRIGGERS,
     mergeLoreSources,
     substituteParams,
 } from '@uberge/core';
@@ -284,7 +285,7 @@ export async function buildGenerationContext({
     // WI 扫描:chat 必须新到旧序(engine 约定 index 0 = newest);
     // globalScanData 是卡/人设字段,进扫描缓冲(原版 scanState 同位)
     const globalScanData = {
-        trigger: 'normal',
+        trigger: GENERATION_TYPE_TRIGGERS.includes(type) ? type : 'normal',
         personaDescription: user?.description ?? powerUser.persona_description ?? '',
         characterDescription: card?.data?.description ?? card?.description ?? '',
         characterPersonality: card?.data?.personality ?? card?.personality ?? '',

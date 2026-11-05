@@ -137,7 +137,19 @@ export class WebServer {
         return (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
             const path = (req.url ?? '').split('?')[0];
             const route = this.upgrades.get(path);
-            if (route) route.handler(req, socket, head);
+            if (!route) return;
+            try {
+                const result = route.handler(req, socket, head) as unknown;
+                if (result && typeof (result as Promise<unknown>).catch === 'function') {
+                    (result as Promise<unknown>).catch((err) => {
+                        console.error(`[webserver] upgrade handler ${path} rejected:`, err);
+                        socket.destroy();
+                    });
+                }
+            } catch (err) {
+                console.error(`[webserver] upgrade handler ${path} threw:`, err);
+                socket.destroy();
+            }
         };
     }
 
