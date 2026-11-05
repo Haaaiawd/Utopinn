@@ -17,6 +17,7 @@ import { listGenerationJobsForRequest, getGenerationJobForRequest } from '../end
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
+import { safeName, sendError } from './uberge-library.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
@@ -143,12 +144,8 @@ export function apply(ctx) {
     reg('/api/uberge/generate', async function (request, response) {
         try {
             const body = request.body ?? {};
-            const charDir = String(body.charDir ?? '');
-            const chatName = String(body.chatName ?? '');
-            if (!charDir || !chatName) {
-                return response.status(400).send({ error: 'charDir and chatName are required' });
-            }
-
+            const charDir = safeName(body.charDir, 'charDir');
+            const chatName = safeName(body.chatName, 'chatName');
             const directories = request.user.directories;
             const cardStart = performance.now();
             const card = await loadCharacterCard(directories, charDir);
@@ -270,8 +267,7 @@ export function apply(ctx) {
                 select: (b) => selectChatCompletionDispatch(b),
             });
         } catch (error) {
-            console.error('uberge/generate failed:', error);
-            return response.status(500).send({ error: String(error?.message ?? error) });
+            sendError(response, error, 'uberge/generate');
         }
     });
 
@@ -279,11 +275,8 @@ export function apply(ctx) {
     reg('/api/uberge/preview', async function (request, response) {
         try {
             const body = request.body ?? {};
-            const charDir = String(body.charDir ?? '');
-            const chatName = String(body.chatName ?? '');
-            if (!charDir || !chatName) {
-                return response.status(400).send({ error: 'charDir and chatName are required' });
-            }
+            const charDir = safeName(body.charDir, 'charDir');
+            const chatName = safeName(body.chatName, 'chatName');
             const directories = request.user.directories;
             const cardStart = performance.now();
             const card = await loadCharacterCard(directories, charDir);
@@ -306,8 +299,7 @@ export function apply(ctx) {
             logPerfLine('uberge/preview', perf, { charDir, chatName });
             return response.send({ messages: builtPrompt.messages, trace, sources, perf });
         } catch (error) {
-            console.error('uberge/preview failed:', error);
-            return response.status(500).send({ error: String(error?.message ?? error) });
+            sendError(response, error, 'uberge/preview');
         }
     });
 }

@@ -22,12 +22,18 @@ export function apply(ctx) {
         kind: 'pattern',
         method: 'GET',
         path: '/api/uberge/plugins',
-        handler: async function (_request, response) {
+        handler: async function (request, response) {
+            if (!request.user?.profile?.admin) {
+                return response.status(403).send({ error: 'Unauthorized' });
+            }
             return response.send({ items: await pm.list() });
         },
     }));
 
     const act = (verb) => async function (request, response) {
+        if (!request.user?.profile?.admin) {
+            return response.status(403).send({ error: 'Unauthorized' });
+        }
         const id = request.params?.id;
         if (id === SELF && verb !== 'enable') {
             return response.status(400).send({ error: `cannot ${verb} the plugin manager itself` });

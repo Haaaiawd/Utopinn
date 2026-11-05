@@ -124,6 +124,9 @@ export function apply(ctx) {
 
     /** ST 目录扫描——清单化,不导入;导入走 /import/preview+commit。 */
     reg('/api/uberge/import/scan-st', async function (request, response) {
+        if (!request.user?.profile?.admin) {
+            return response.status(403).send({ error: 'Unauthorized' });
+        }
         const dir = String(request.body?.dir ?? '').trim();
         if (!dir) return response.status(400).send({ error: 'dir is required' });
         const root = path.resolve(dir);
