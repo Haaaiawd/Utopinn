@@ -99,9 +99,33 @@ export function chatBodyToInput(messages) {
     }));
 }
 
-/** settings.power_user → WIEngineSettings 相关字段(其余字段走 core 默认) */
-export function powerUserToWISettings(powerUser = {}) {
-    return { ...(powerUser.world_info_settings ?? {}) };
+/** settings.world_info_settings → { engine: WIEngineSettings(camel), state: {globalSelect,charLore}, raw }。
+ * 上游口径:WI 设置全部在顶层 settings.world_info_settings(snake_case;
+ * script.js setWorldInfoSettings 读的就是它),其中 .world_info 子对象
+ * 装书目状态(globalSelect 全局勾选、charLore 角色辅书表)。
+ * power_user 里没有这些键——此前读 powerUser.world_info_settings /
+ * power_user.selected_world_info 属路径写错,全部静默失效(audit H1/H2)。 */
+const WI_SNAKE_TO_CAMEL = {
+    world_info_depth: 'worldInfoDepth',
+    world_info_budget: 'worldInfoBudget',
+    world_info_budget_cap: 'worldInfoBudgetCap',
+    world_info_case_sensitive: 'worldInfoCaseSensitive',
+    world_info_match_whole_words: 'worldInfoMatchWholeWords',
+    world_info_use_group_scoring: 'worldInfoUseGroupScoring',
+    world_info_recursive: 'worldInfoRecursive',
+    world_info_overflow_alert: 'worldInfoOverflowAlert',
+    world_info_min_activations: 'worldInfoMinActivations',
+    world_info_min_activations_depth_max: 'worldInfoMinActivationsDepthMax',
+    world_info_max_recursion_steps: 'worldInfoMaxRecursionSteps',
+};
+
+export function resolveWorldInfoSettings(settingsDoc = {}) {
+    const wis = settingsDoc?.world_info_settings ?? {};
+    const engine = {};
+    for (const [snake, camel] of Object.entries(WI_SNAKE_TO_CAMEL)) {
+        if (wis[snake] !== undefined) engine[camel] = wis[snake];
+    }
+    return { engine, state: wis.world_info ?? {}, raw: wis };
 }
 
 /**
@@ -126,7 +150,8 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
     if (powerUser.persona_description_lorebook) names.add(powerUser.persona_description_lorebook);
     if (card?.data?.extensions?.world) names.add(card.data.extensions.world);
     for (const b of getCharExtraBooks(worldInfoState, charDir)) if (b) names.add(b);
-    for (const n of powerUser.selected_world_info ?? []) if (n) names.add(n);
+    // 上游:world_info_settings.world_info.globalSelect = 全局勾选书目
+    for (const n of worldInfoState.globalSelect ?? []) if (n) names.add(n);
     return [...names];
 }
 
@@ -176,7 +201,7 @@ export async function buildGenerationContext({
     if (!chatDoc) throw new Error(`Chat not found: ${charDir}/${chatName}`);
 
     const powerUser = settingsDoc?.power_user ?? {};
-    const worldInfoState = settingsDoc?.world_info ?? {};
+    const { engine: worldInfoSettings, state: worldInfoState, raw: wiRaw } = resolveWorldInfoSettings(settingsDoc);
     const resolvedPresetName = presetName ?? settingsDoc?.preset_settings_openai ?? 'Default';
     seg = performance.now();
     const presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
@@ -187,17 +212,17 @@ export async function buildGenerationContext({
     const chatMetadata = chatDoc.header?.chat_metadata ?? {};
 
     // —— World Info:先取书名集 → 批量拉书 → mergeLoreSources 一次成型 ——
-    const worldInfoSettings = powerUserToWISettings(powerUser);
     const chatBoundWorlds = Array.isArray(chatMetadata.world_info)
         ? chatMetadata.world_info
         : (chatMetadata.world_info ? [chatMetadata.world_info] : []);
     const loreInput = {
-        selectedWorlds: powerUser.selected_world_info ?? [],
+        selectedWorlds: worldInfoState.globalSelect ?? [],
         characterPrimaryWorld: card?.data?.extensions?.world,
         characterExtraBooks: getCharExtraBooks(worldInfoState, charDir),
         chatWorlds: chatBoundWorlds,
         personaWorld: powerUser.persona_description_lorebook,
-        insertionStrategy: worldInfoSettings.worldInfoInsertStrategy ?? 0,
+        // 上游 world_info_character_strategy 默认 character_first(1)
+        insertionStrategy: wiRaw.world_info_character_strategy ?? 1,
     };
     const worldNames = collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, charDir });
     seg = performance.now();
@@ -268,9 +293,14 @@ export async function buildGenerationContext({
         creatorNotes: card?.data?.creator_notes ?? card?.creator_notes ?? '',
     };
     seg = performance.now();
+    // 上游 world_info_include_names(默认 true):扫描行带 `name: ` 前缀
+    const wiScanLines = (wiRaw.world_info_include_names !== false
+        ? chatMessages.map((m) => `${m.name}: ${String(m.mes ?? '')}`)
+        : chatMessages.map((m) => String(m.mes ?? ''))
+    ).reverse();
     const wiActivated = entries.length
         ? await checkWorldInfo(
-            chatMessages.map((m) => String(m.mes ?? '')).reverse(),
+            wiScanLines,
             presetDoc.openai_max_context ?? 8192,
             false,
             globalScanData,

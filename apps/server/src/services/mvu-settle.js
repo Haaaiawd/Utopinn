@@ -24,7 +24,7 @@ import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@uberge/cor
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
 import { loadCard } from './stscript-env.js';
-import { getCharExtraBooks } from './generate-context.js';
+import { getCharExtraBooks, resolveWorldInfoSettings } from './generate-context.js';
 
 /** chat_state sidecar 命名空间:回执 + op 日志("mes_var_ops" 等价物)。 */
 export const MVU_STATE_NAMESPACE = 'mvu';
@@ -157,8 +157,9 @@ function floorSwipeInitTargets(floor) {
  */
 export async function resolveMvuInitLorebooks({ handle, charDir = '', directories } = {}) {
     const settings = await getSettingsRepo().get(handle).catch(() => null);
-    const powerUser = settings?.power_user ?? {};
-    const worldInfoState = settings?.world_info ?? {};
+    // 上游口径:全局勾选在 world_info_settings.world_info.globalSelect,
+    // 辅书表在同对象 charLore —— 与 generate-context 共享归一化(audit H2 同族)。
+    const { state: worldInfoState } = resolveWorldInfoSettings(settings);
 
     let card = null;
     if (charDir && directories?.characters) {
@@ -167,7 +168,7 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
     const primaryName = card?.data?.extensions?.world ?? card?.extensions?.world ?? null;
 
     const names = [];
-    for (const n of powerUser.selected_world_info ?? []) if (n) names.push(String(n));
+    for (const n of worldInfoState.globalSelect ?? []) if (n) names.push(String(n));
     if (primaryName) names.push(String(primaryName));
     for (const n of getCharExtraBooks(worldInfoState, charDir)) if (n) names.push(String(n));
     const uniqueNames = [...new Set(names)];
