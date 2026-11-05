@@ -1490,6 +1490,16 @@ export async function createBackupArchive(handle, response, selectionInput = und
     const archive = archiver('zip');
 
     archive.on('error', function (err) {
+        console.error('Backup archive stream failed:', err);
+        if (response.headersSent) {
+            // Zip bytes already flowed; a JSON error body cannot be
+            // interleaved and response.send() here throws
+            // ERR_HTTP_HEADERS_SENT inside an event handler, which escapes
+            // as an uncaughtException and takes the process down. Destroy
+            // the socket instead so the client sees a truncated download.
+            response.destroy?.(err);
+            return;
+        }
         response.status(500).send({ error: err.message });
     });
 
