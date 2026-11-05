@@ -1,0 +1,38 @@
+# 后端 Audit:引擎核心(代理 2ad0302c,2026-11-04)
+
+## 总评
+移植骨架质量高(集合/Message/ChatCompletion、WI buffer/timed/组评分、正则六档、宏环境、STscript parser 都对得上上游)。**重灾区=接入层 generate-context.js**:想当然猜了三个不存在的 settings 键 + 产出没接到消费端。全是静默失效型 bug——golden-diff 最该抓、也必修。
+
+## 🔴 HIGH
+- **H1 WI 设置全静默失效** `generate-context.js:103-105`:读 `power_user.world_info_settings`(不存在)→恒{};且未做 snake→camel 映射(`world_info_depth`→`worldInfoDepth`)。depth/budget/recursive(上游默认true,core默认false)/case_sensitive/whole_words/min_activations/max_recursion/budget_cap/group_scoring/include_names 全落默认 → **递归扫描默认关,激活面直接变**
+- **H2 全局勾选书+角色辅书永不加载** `generate-context.js:179/195`+`mvu-settle.js:161`:读 `settings.world_info`(真实在 `settings.world_info_settings.world_info`)+`power_user.selected_world_info`(真实在 `world_info_settings.world_info.globalSelect`)→charLore/globalSelect 两层断链;MVU initvar 同错。五层来源断两层(最常见的两类)
+- **H3 timed effects+setvar 写瞬态 chatMetadata 不落盘** `generate-context.js:187/280`:chatMetadata 从 header 拷出后无人写回→sticky/cooldown/delay 每轮从空表起全失效;`{{setvar}}` 跨轮无法累计(MVU/状态栏卡功能级破坏);preview 同路。参照:上游 saveChat/saveMetadata 落盘
+- **H4 EM/AN/outlet 注入桶产出后被丢弃** `generate-context.js:310-321`:checkWorldInfo 返回的 EMEntries/ANBefore/ANAfter/outlet 无字段承接无下游消费→EMTop/EMBottom/ANTop/ANBottom 四条 position 静默不进 prompt;`{{outlet::name}}` 恒 ''
+- **H5 卡面 depth_prompt 从未注入** `generate-context.js:266`:只进了 WI 扫描缓冲(globalScanData.characterDepthPrompt),没按 depth/role 合入 extension_prompts;extension_settings.note.depth_prompt[] 多条目亦无入口
+
+## 🟠 MEDIUM
+- M1 **Author's Note 机制整体缺失**:chat_metadata.note_* 不读,extension_prompts['2_floating_prompt'] 不会产出
+- M2 `persona_description_position` 未建模(NONE/IN_PROMPT/TOP_AN/BOTTOM_AN/AT_DEPTH),persona 恒 IN_PROMPT
+- M3 WI trigger 硬编码 'normal'(type 传了没接)→trigger 过滤行为反转
+- M4 prompt_order 写死 100001/100000/lists[0] 兜底,不按真实 chid 解析→角色自定义顺序失效+可能错序
+- M5 substCtx.chat 裁剪丢 is_system/send_date/swipes→`{{lastCharMessage}}` 误算系统楼层、`{{idle_duration}}` 恒 just now、swipeId 宏恒 ''
+- M6 token 计数恒 gpt-4o:`openAIRawCount` model 形参默认 ''→encoderFor('')→key ''||'gpt-4o';bindPromptTokenCounter 模块级单例并发串账(修 M6 时一并)
+- M7 WI 内 token 计 len/4 vs prompt 真实 tokenizer→CJK 高估 2-4 倍,budget 提前溢出
+- M8 空消息双偏移:无条件 count(空消息~5token)+insert 门槛 tokens>0 恒真(上游 content||tool_calls)
+- M9 checkTokenBudget 超预算只 WARN 不抛(上游 TokenBudgetExceededError 硬失败)
+- M10 injection_depth 上限 100(上游 10000)→深位注入静默丢
+- M11 MVU oplog 读后写非原子(并入持久化 audit M2)
+- M12 STscript builtins 上游子集:/go/continue/swipe/note/persona/getat/setat/WI命令/QR 未注册(结构化错误非静默,卡脚本会跑不通)
+- M13 sendSystemMessage 不写 persistMetadata;stscript repo.save 盲替换 header(待核深合并语义)
+
+## 🟡 LOW
+L1 fromPromptAsync 多传 name(+1token);L2 continue_nudge 不替 `{{lastChatMessage}}` 字面残留;L3 getvar 空串返回''(上游 0);L4 variables 静默 catch 无 warn;L5 boundModel 单例(修 M6 时连带)
+
+## 已核对无缺陷(排除)
+WI buffer 深度/skew/组评分、matchKeys 整词/regex序、reserveBudget(3)、continue prefill、pin_examples、system squash、媒体/工具 token、canAffordAll 等价性、timed effects 计算本身、STscript registry 并发安全、generate type 透传、Luker 持久化口径
+
+## 修复路线(原报告)
+1. settings 路径族一处归一化+snake→camel 映射 → 连带修 H1/H2/MVU init 四面
+2. chatMetadata 持久化决策(写回 header vs chat_state;preview 不写)
+3. EM/AN/outlet/depth_prompt/AN/persona position 接入 assemble 扩展位
+4. M6-M10 计数边界,单行级
