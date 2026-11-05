@@ -155,6 +155,19 @@ export const pluginManager = {
     },
 };
 
+/** 关机 drain:反序 dispose 全部插件 fiber(ctx.effect 清理面全跑:路由摘除/定时器/WS 终止/写冲刷)。 */
+export async function shutdownKernelFibers() {
+    const entries = [...fibers.entries()].reverse();
+    for (const [id, fiber] of entries) {
+        try {
+            await fiber.dispose();
+        } catch (e) {
+            console.warn(`[kernel] fiber ${id} dispose failed:`, e?.message ?? e);
+        }
+        fibers.delete(id);
+    }
+}
+
 appCtx.provide('pluginManager', pluginManager);
 appCtx.catalog.register({ role: 'core', name: 'pluginManager', providedBy: 'kernel-boot' });
 

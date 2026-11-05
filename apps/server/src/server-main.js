@@ -164,7 +164,7 @@ import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent } from './endpoints/content-manager.js';
 import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
-import { webServer } from './kernel-boot.js';
+import { webServer, shutdownKernelFibers } from './kernel-boot.js';
 import { diskCache } from './endpoints/characters.js';
 import { migrateFlatSecrets } from './endpoints/secrets.js';
 import { migrateGroupChatsMetadataFormat } from './endpoints/groups.js';
@@ -223,6 +223,10 @@ app.use(responseTime());
 // the exit hook below dumps whatever requests were still running so we know
 // which endpoint took the server down.
 const inFlightRequests = new Map();
+// 关机 drain 用:postSetupTasks 注入 listening 中的 http(s) servers;
+// exitProcess 时停止接入 + 有界等在途 + dispose 内核 fiber。
+const httpServers = [];
+const SHUTDOWN_DRAIN_TIMEOUT_MS = 10_000;
 let inFlightSeq = 0;
 app.use((req, res, next) => {
     const id = ++inFlightSeq;
@@ -738,6 +742,26 @@ async function preSetupTasks() {
     const exitProcess = async () => {
         if (isExiting) return;
         isExiting = true;
+        try {
+            // 1) 停止接入新连接;closeIdleConnections 清 keep-alive 空闲 socket
+            //    (WS 升级后的 socket 由插件 fiber dispose 终止,见 shutdownKernelFibers)。
+            for (const server of httpServers) {
+                try {
+                    server.close();
+                    server.closeIdleConnections?.();
+                } catch { /* already closed */ }
+            }
+            // 2) 有界等在途请求排空(默认 10s;生成中的流式回复属于在途)
+            const deadline = Date.now() + SHUTDOWN_DRAIN_TIMEOUT_MS;
+            while (inFlightRequests.size > 0 && Date.now() < deadline) {
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            // 3) 插件 fiber 反序 dispose:路由摘除/定时器清理/WS terminate/写冲刷
+            //    全部走各自 ctx.effect disposer(plugins/uberge-delivery.js 等)。
+            await shutdownKernelFibers();
+        } catch (drainErr) {
+            console.error('shutdown drain error:', drainErr?.message || drainErr);
+        }
         await statsOnExit();
         if (typeof cleanupPlugins === 'function') {
             await cleanupPlugins();
@@ -822,6 +846,7 @@ async function postSetupTasks(result) {
     // 贡献 /api/ws-delivery(票验/心跳/订阅去重原样)。这里只需把统一
     // upgradeListener 挂上 —— 命中表才接管 socket,未命中不动。
     if (result.servers && result.servers.length > 0) {
+        httpServers.push(...result.servers);
         for (const server of result.servers) {
             server.on('upgrade', webServer.upgradeListener());
         }
