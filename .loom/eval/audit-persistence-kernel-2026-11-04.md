@@ -27,3 +27,11 @@ profile.yaml 10 行↔10 实物一一对应,无幽灵插件。inject 全有提�
 
 ## 优先级建议(原报告)
 H3 → H1 → H4 → H2 → M1 → M5 → M3 → M6 → 低项顺手清
+
+## 修复状态(2026-11-05 批次)
+
+HIGH 全灭:H1 ea9ad9b(admin 门)| H2 995e5ca(fiber await)| H3 ea9ad9b(upgrade catch)| H4 618143e(drain)
+MEDIUM:M1 2c6c899(per-handle 串行)| M3 e1ad4f2(17 写面入门表)| M4 76eaeb6(error 分支 headersSent)| M5 618143e(disposer terminate)| M6 76eaeb6(patch 增量+原子+串行)
+
+- **M2 chat↔sidecar 撕裂 —— 判定降级,设计级遗留**:实地查证 settle 按 messageIndex 键控且 CAS 写 chat_state;撕裂窗代价 = 单层楼层投影缺失(状态栏该层显示回退,非数据腐坏),后续楼层结算不受影响。真修 = 载入时 reconcile 或 chat+sidecar 同事务落盘,需 settle 管线重构(session 级)。
+- **残余**:L1-L8 lows;M4 备份流的「归档期并发改文件撕裂」由 e1ad4f2 缓解(backup 拿全类 reader 槽,sync writer 排队)但单文件级 torn read 属流式备份固有,v1 接受。
