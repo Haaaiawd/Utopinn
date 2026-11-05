@@ -8,7 +8,7 @@
  * 注册进 webServer pattern 表。request.body 由上游 express.json() 就位
  * (dispatcher 挂在全部路由中间件之后、legacy 挂载之前)。
  */
-import { buildGenerationContext, logPerfLine } from '../services/generate-context.js';
+import { buildGenerationContext, logPerfLine, persistWorldInfoTimedEffects } from '../services/generate-context.js';
 import { selectChatCompletionDispatch } from '../endpoints/backends/chat-completions.js';
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
 import { TEXTGEN_TYPES } from '../constants.js';
@@ -154,7 +154,7 @@ export function apply(ctx) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
 
-            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, sources, perf } = await buildGenerationContext({
+            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, sources, perf, chatMetadata, chatIntegrity } = await buildGenerationContext({
                 request,
                 charDir,
                 chatName,
@@ -167,6 +167,13 @@ export function apply(ctx) {
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
             logPerfLine('uberge/generate', perf, { charDir, chatName });
+            // WI timed effects 写回必须排在 dispatch 写楼层之前(effects 锚定的是
+            // 生成前楼层计数);失败不阻断生成——下个周期自愈。
+            try {
+                await persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity: chatIntegrity });
+            } catch (persistErr) {
+                console.warn('uberge/generate timedWorldInfo persist skipped:', persistErr?.message);
+            }
 
             // ---- TASK-020 textgen 分叉:body.api==='text' → 单串 prompt + text-completions 派发 ----
             if (String(body.api ?? 'chat') === 'text') {
@@ -291,6 +298,7 @@ export function apply(ctx) {
                 card,
                 presetName: body.presetName,
                 user: body.user ?? { name: request.user.profile.name },
+                dryRun: true,
                 type: body.type ?? 'normal',
                 overrides: body.overrides ?? {},
             });

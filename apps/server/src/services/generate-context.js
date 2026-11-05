@@ -174,7 +174,10 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  * @param {object} input.user 用户面 {name, description}
  * @param {string} [input.type] 生成类型
  * @param {object} [input.overrides] 直接覆盖请求字段(cyclePrompt/quietPrompt/extensionPrompts 等)
- * @returns {Promise<{builtPrompt, request, trace, sources, perf}>} perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs
+ * @param {boolean} [input.dryRun] preview/干跑:true → WI 不写 timed effects、返回值不含持久化义务
+ * @returns {Promise<{builtPrompt, request, trace, sources, perf, chatMetadata, chatIntegrity}>}
+ *   perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs;
+ *   chatMetadata/chatIntegrity 供调用方持久化 timedWorldInfo(仅非 dryRun)。
  */
 export async function buildGenerationContext({
     request,
@@ -185,6 +188,7 @@ export async function buildGenerationContext({
     user,
     type = 'normal',
     overrides = {},
+    dryRun = false,
 }) {
     // —— perf 打表(server 包裹层,core 签名不动)——
     // cardMs 由调用方补(loadCharacterCard 在 endpoint);totalMs 为 buildGenerationContext 总耗。
@@ -335,7 +339,7 @@ export async function buildGenerationContext({
         ? await checkWorldInfo(
             wiScanLines,
             presetDoc.openai_max_context ?? 8192,
-            false,
+            dryRun,
             globalScanData,
             {
                 settings: worldInfoSettings,
@@ -489,5 +493,30 @@ export async function buildGenerationContext({
             },
             chatCount: chatMessages.length,
         },
+        // 持久化义务包:非 dryRun 时调用方把 chatMetadata.timedWorldInfo 写回
+        // (WI 引擎原地改 meta;persistence is caller's job — engine.ts 注释契约)
+        chatMetadata,
+        chatIntegrity: chatDoc.integrity ?? null,
     };
+}
+
+/**
+ * WI timed effects(sticky/cooldown/delay)写回 chat_metadata。
+ * CAS 一次;integrity 冲突 = 生成期间会话被并发推进 → 重读最新再写
+ * (与上游 saveChatConditional last-write-wins 等价);二次失败=NotFound 等,
+ * 交由下个生成周期自愈。fire-and-forget 不可——dispatch 写楼层必须排在它后面。
+ */
+export async function persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity }) {
+    const timedWorldInfo = chatMetadata?.timedWorldInfo;
+    if (!timedWorldInfo || typeof timedWorldInfo !== 'object') return null;
+    const handle = request.user.profile.handle;
+    const chatRepo = getChatRepo();
+    try {
+        return await chatRepo.updateChatMetadata(handle, charDir, chatName, { timedWorldInfo }, expectedIntegrity);
+    } catch (error) {
+        if (error?.code !== 'integrity_mismatch') throw error;
+        const fresh = await chatRepo.get(handle, charDir, chatName);
+        if (!fresh) return null;
+        return chatRepo.updateChatMetadata(handle, charDir, chatName, { timedWorldInfo }, fresh.integrity);
+    }
 }
