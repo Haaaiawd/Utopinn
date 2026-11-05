@@ -125,6 +125,9 @@ export async function loadProfile(
                 plugin,
                 row.config,
             );
+            // cordis 4:ctx.plugin() 返回 thenable —— await 走 fiber.await(),
+            // async apply() 的 reject 会在这里抛出;不 await 则假 active。
+            await (fiber as unknown as PromiseLike<unknown>);
             results.push({ id: row.id, status: 'active', fiber });
         } catch (e) {
             results.push({ id: row.id, status: 'failed', reason: (e as Error).message });
