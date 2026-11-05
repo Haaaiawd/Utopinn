@@ -20,9 +20,16 @@ import { createPromptBuilder } from './prompt-builder.js';
 import {
     createDepthInjectionProvider,
     createWorldInfoRegexHook,
+    CUSTOM_WI_OUTLET_PREFIX,
+    DEPTH_PROMPT_KEY,
     normalizeExtensionPrompts,
+    NOTE_MODULE_NAME,
+    PERSONA_DESCRIPTION_KEY,
+    resolveAuthorsNote,
+    roleByName,
     scannableExtensionPrompts,
     SCRIPT_INJECT_KEY_PREFIX,
+    extension_prompt_types,
 } from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { performance } from 'node:perf_hooks';
@@ -280,6 +287,31 @@ export async function buildGenerationContext({
             mergedExtPrompts[`${SCRIPT_INJECT_KEY_PREFIX}${id}`] = inject;
         }
     }
+
+    // —— Author's Note + 卡 depth_prompt + persona 通道(上游在 WI 扫描前置位,
+    //    scan=allowWIScan 的条目参与本轮扫描;AN 合并/persona-AN 合并/outlet 在扫描后)——
+    const noteSettings = settingsDoc?.extension_settings?.note ?? {};
+    const anState = resolveAuthorsNote({
+        chatMetadata,
+        userMessageCount: chatMessages.filter((m) => m.is_user).length,
+        noteSettings,
+        charDir,
+    });
+    mergedExtPrompts[NOTE_MODULE_NAME] = anState.entry;
+    const depthPromptExt = card?.data?.extensions?.depth_prompt ?? {};
+    mergedExtPrompts[DEPTH_PROMPT_KEY] = {
+        value: String(depthPromptExt.prompt ?? ''),
+        position: extension_prompt_types.IN_CHAT,
+        depth: Number(depthPromptExt.depth ?? 4),
+        scan: !!noteSettings.allowWIScan,
+        role: roleByName(depthPromptExt.role ?? 'system'),
+    };
+    mergedExtPrompts[PERSONA_DESCRIPTION_KEY] = {
+        value: '',
+        position: extension_prompt_types.IN_PROMPT,
+        depth: 0,
+    };
+
     const extPromptSource = { ...(settingsDoc ?? {}), extension_prompts: mergedExtPrompts };
 
     // WI 扫描:chat 必须新到旧序(engine 约定 index 0 = newest);
@@ -318,8 +350,58 @@ export async function buildGenerationContext({
                 countTokens: (t) => Math.ceil(String(t).length / 4), // WI 内部计数:guesstimate 口径
             },
         )
-        : { worldInfoBeforeEntries: [], worldInfoAfterEntries: [], WIDepthEntries: [], EMEntries: [] };
+        : { worldInfoBeforeEntries: [], worldInfoAfterEntries: [], WIDepthEntries: [], EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {} };
     perf.wiMs += performance.now() - seg;
+
+    // —— WI 后注入通道(上游 script.js:4666-4684 同序)——
+    // 1) ANTop/ANBottom 合并进 AN(上游 checkWorldInfo 内段,shouldWIAddPrompt 门控)
+    if (anState.shouldAdd && mergedExtPrompts[NOTE_MODULE_NAME]) {
+        const anTop = (wiActivated.ANBeforeEntries ?? []).join('\n');
+        const anBottom = (wiActivated.ANAfterEntries ?? []).join('\n');
+        if (anTop || anBottom) {
+            mergedExtPrompts[NOTE_MODULE_NAME] = {
+                ...mergedExtPrompts[NOTE_MODULE_NAME],
+                value: `${anTop}\n${mergedExtPrompts[NOTE_MODULE_NAME].value}\n${anBottom}`.replace(/(^\n)|(\n$)/g, ''),
+            };
+        }
+    }
+    // 2) persona 描述:TOP_AN(2)/BOTTOM_AN(3) 合进 AN(shouldAdd 门控);
+    //    AT_DEPTH(4) 走独立 IN_CHAT 注入;其余位由 prompt 组装通道负责
+    const personaDescRaw = user?.description ?? powerUser.persona_description ?? '';
+    const personaPos = Number(powerUser.persona_description_position ?? 0);
+    if (personaDescRaw) {
+        if ((personaPos === 2 || personaPos === 3) && anState.shouldAdd && mergedExtPrompts[NOTE_MODULE_NAME]) {
+            const base = mergedExtPrompts[NOTE_MODULE_NAME].value;
+            mergedExtPrompts[NOTE_MODULE_NAME] = {
+                ...mergedExtPrompts[NOTE_MODULE_NAME],
+                value: personaPos === 2 ? `${personaDescRaw}\n${base}` : `${base}\n${personaDescRaw}`,
+            };
+        } else if (personaPos === 4) {
+            mergedExtPrompts[PERSONA_DESCRIPTION_KEY] = {
+                value: String(personaDescRaw),
+                position: extension_prompt_types.IN_CHAT,
+                depth: Number(powerUser.persona_description_depth ?? 4),
+                scan: true,
+                role: Number(powerUser.persona_description_role ?? 0),
+            };
+        }
+    }
+    // 3) outlet 产物挂回命名 extension_prompts(NONE 位,不进注入,按名取用)
+    for (const [key, arr] of Object.entries(wiActivated.outletEntries ?? {})) {
+        if (Array.isArray(arr) && arr.length) {
+            mergedExtPrompts[`${CUSTOM_WI_OUTLET_PREFIX}${key}`] = {
+                value: arr.join('\n'),
+                position: extension_prompt_types.NONE,
+                depth: 0,
+            };
+        }
+    }
+    // 4) EM(示例消息位):before 前置、after 尾置进 mesExample(<START> 块,
+    //    上游 parseMesExamples 后 unshift/push 等价)
+    const emBefore = (wiActivated.EMEntries ?? []).filter((e) => e?.position === 0).map((e) => e.content);
+    const emAfter = (wiActivated.EMEntries ?? []).filter((e) => e?.position === 1).map((e) => e.content);
+    const cardMesExample = card?.data?.mes_example ?? card?.mes_example ?? '';
+    const mergedMesExample = [...emBefore, cardMesExample, ...emAfter].filter(Boolean).join('\n<START>\n');
 
     const assemblyRequest = {
         card: {
@@ -327,7 +409,7 @@ export async function buildGenerationContext({
             description: card?.data?.description ?? card?.description ?? '',
             personality: card?.data?.personality ?? card?.personality ?? '',
             scenario: card?.data?.scenario ?? card?.scenario ?? '',
-            mesExample: card?.data?.mes_example ?? card?.mes_example ?? '',
+            mesExample: mergedMesExample,
             systemPromptOverride: card?.data?.system_prompt ?? card?.system_prompt,
             jailbreakOverride: card?.data?.post_history_instructions ?? card?.post_history_instructions,
         },

@@ -143,3 +143,56 @@ export function createWorldInfoRegexHook(settingsDoc, substCtx, opts = {}) {
         return applyWorldInfoRegexCore(scripts, content, { depth: regexOpts.depth, role: regexOpts.role }, substCtx);
     };
 }
+
+// —— Author's Note / 卡 depth_prompt / persona 注入通道(audit H4/H5/M1/M2)——
+// 键名与上游 inject_ids/authors-note.js 对齐;持久源=settingsDoc.extension_prompts。
+export const NOTE_MODULE_NAME = '2_floating_prompt';
+export const DEPTH_PROMPT_KEY = 'DEPTH_PROMPT';
+export const PERSONA_DESCRIPTION_KEY = 'PERSONA_DESCRIPTION';
+export const CUSTOM_WI_OUTLET_PREFIX = 'customWIOutlet_';
+const MAX_INJECTION_DEPTH = 10000; // script.js:500
+
+/** getExtensionPromptRoleByName(script.js:8942):数字直通,名字映射,非法回落 system。 */
+export function roleByName(roleName) {
+    if (typeof roleName === 'number' && Object.values(extension_prompt_roles).includes(roleName)) {
+        return roleName;
+    }
+    return ROLE_BY_NAME[String(roleName)] ?? extension_prompt_roles.SYSTEM;
+}
+
+/**
+ * setFloatingPrompt(authors-note.js:324-384)服务端等价物。
+ * chat_metadata.note_* ← extension_settings.note.default* ← 硬编码缺省;
+ * interval 对 user 消息数取模;chara 按 charDir(=getCharaFilename)合并。
+ * @returns {{shouldAdd:boolean, entry:{value,position,depth,scan,role}}}
+ *   shouldAdd=上游 shouldWIAddPrompt(门控 WI→AN 与 persona→AN 合并)。
+ */
+export function resolveAuthorsNote({ chatMetadata = {}, userMessageCount = 0, noteSettings = {}, charDir = '' } = {}) {
+    const note = noteSettings ?? {};
+    const interval = Number(chatMetadata.note_interval ?? note.defaultInterval ?? 1);
+    const position = Number(chatMetadata.note_position ?? note.defaultPosition ?? extension_prompt_types.IN_CHAT);
+    const depth = Number(chatMetadata.note_depth ?? note.defaultDepth ?? 4);
+    const role = Number(chatMetadata.note_role ?? note.defaultRole ?? extension_prompt_roles.SYSTEM);
+    const scan = !!note.allowWIScan;
+
+    let lastMessageNumber = userMessageCount;
+    if (interval === 1) lastMessageNumber = 1;
+    if (lastMessageNumber <= 0 || interval <= 0) {
+        return { shouldAdd: false, entry: { value: '', position: extension_prompt_types.NONE, depth: MAX_INJECTION_DEPTH, scan, role } };
+    }
+    const messagesTillInsertion = lastMessageNumber >= interval
+        ? lastMessageNumber % interval
+        : interval - lastMessageNumber;
+    const shouldAdd = messagesTillInsertion === 0;
+
+    let prompt = shouldAdd ? String(chatMetadata.note_prompt ?? note.default ?? '') : '';
+    if (shouldAdd && Array.isArray(note.chara)) {
+        const charaNote = note.chara.find((e) => e && e.name === charDir);
+        if (charaNote && charaNote.useChara) {
+            if (charaNote.position === 1) prompt = `${charaNote.prompt}\n${prompt}`;
+            else if (charaNote.position === 2) prompt = `${prompt}\n${charaNote.prompt}`;
+            else prompt = String(charaNote.prompt ?? '');
+        }
+    }
+    return { shouldAdd, entry: { value: prompt, position, depth, scan, role } };
+}
