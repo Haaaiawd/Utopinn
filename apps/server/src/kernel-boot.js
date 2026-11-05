@@ -74,19 +74,28 @@ async function applyRow(row) {
     const fiber = appCtx.plugin(plugin, row.config);
     fibers.set(row.id, fiber);
     results.set(row.id, { id: row.id, status: 'active', fiber });
+    // cordis 4:返回值 thenable 暴露 fiber.await() —— async apply() reject 在此抛出。
+    await fiber;
     return fiber;
 }
+
+// cordis FiberState 数字面(cordis 4 fiber.d.ts const enum)。
+const FIBER_STATES = ['pending', 'loading', 'active', 'failed', 'disposed', 'unloading'];
 
 export const pluginManager = {
     async list() {
         const patchRows = await readPatchRows();
         return mergedRows(patchRows).map((row) => {
             const rt = results.get(row.id);
+            // fiber 在场时读活状态:装载后 async 失败的插件不该报 active。
+            const liveStatus = rt?.fiber && typeof rt.fiber.state === 'number'
+                ? (FIBER_STATES[rt.fiber.state] ?? 'unknown')
+                : (rt?.status ?? 'unknown');
             return {
                 id: row.id,
                 module: typeof row.module === 'string' ? row.module : '<inline>',
                 disabled: !!row.disabled,
-                status: row.disabled ? 'disabled' : (rt?.status ?? 'unknown'),
+                status: row.disabled ? 'disabled' : liveStatus,
                 reason: rt?.reason,
                 patch: patchRows.some((p) => p.id === row.id),
             };
