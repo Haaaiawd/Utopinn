@@ -7,7 +7,7 @@
  * disabled/failed)打到日志,degraded 不静默不连坐。
  *
  * profile.patch.yaml —— 运行时覆盖层(enable/disable 持久化在这,
- * 不动基座清单;applyPatch 语义 = 按 id 整行替换)。
+ * 不动基座清单;行 = {id, disabled} 增量,按 id 叠回 base 行)。
  *
  * pluginManager 服务(TASK-021 执行面):
  *   list()                      合并态清单(profile × patch × 运行时)
@@ -25,11 +25,11 @@
  *   webServer.upgradeListener() → server-main.js 挂 httpServer 'upgrade'
  *                              (/api/ws-delivery 经 registerUpgrade 贡献)
  */
-import { createAppContext, WebServer, loadProfileFile, importPluginModule, applyPatch, loadYaml, dumpYaml } from '@uberge/kernel';
+import { createAppContext, WebServer, loadProfileFile, importPluginModule, loadYaml, dumpYaml } from '@uberge/kernel';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename } from 'node:fs/promises';
 
 export const appCtx = createAppContext();
 
@@ -56,16 +56,35 @@ async function readPatchRows() {
     return doc?.plugins ?? [];
 }
 
+// Patch 语义(2026-11 修正):patch 行只承载 {id, disabled} 增量 ——
+// 旧实现整行替换,module/config 的快照会永久遮蔽 base profile 的后续
+// 变更;且 enable 面可复活已从 base 删除的插件(module 注入面)。
+// base 缺失 id 的 patch 行直接忽略。旧部署遗留的整行 patch 仍兼容
+// (这里只读 .disabled),下次 upsert 自动落成增量形。
 function mergedRows(patchRows) {
-    return applyPatch(baseProfile.plugins ?? [], patchRows);
+    const disabledById = new Map(patchRows.map((r) => [r.id, r.disabled]));
+    return (baseProfile.plugins ?? []).map((row) => {
+        const disabled = disabledById.get(row.id);
+        return disabled === undefined ? row : { ...row, disabled: !!disabled };
+    });
 }
 
-async function upsertPatchRow(row) {
-    const rows = await readPatchRows();
-    const i = rows.findIndex((r) => r.id === row.id);
-    if (i >= 0) rows[i] = row;
-    else rows.push(row);
-    await writeFile(patchPath, dumpYaml({ plugins: rows }), 'utf8');
+let patchTail = Promise.resolve();
+
+async function upsertPatchRow(id, disabled) {
+    const next = patchTail.then(async () => {
+        const rows = await readPatchRows();
+        const i = rows.findIndex((r) => r.id === id);
+        const row = { id, disabled };
+        if (i >= 0) rows[i] = row;
+        else rows.push(row);
+        // 原子写:tmp+rename,避免崩溃留半文件 → 下次启动 loadYaml 抛错。
+        const tmp = `${patchPath}.${process.pid}.tmp`;
+        await writeFile(tmp, dumpYaml({ plugins: rows }), 'utf8');
+        await rename(tmp, patchPath);
+    });
+    patchTail = next.then(() => undefined, () => undefined);
+    return next;
 }
 
 async function applyRow(row) {
@@ -110,7 +129,7 @@ export const pluginManager = {
     async disable(id) {
         const row = await this.row(id);
         if (!row) return { ok: false, code: 404, error: `no such plugin: ${id}` };
-        await upsertPatchRow({ ...row, disabled: true });
+        await upsertPatchRow(row.id, true);
         const fiber = fibers.get(id);
         if (fiber) {
             await fiber.dispose();
@@ -126,7 +145,7 @@ export const pluginManager = {
         if (typeof row.module !== 'string') {
             return { ok: false, code: 400, error: `plugin ${id} has no importable module` };
         }
-        await upsertPatchRow({ ...row, disabled: false });
+        await upsertPatchRow(row.id, false);
         try {
             await applyRow({ ...row, disabled: false });
             return { ok: true, id, status: 'active' };
