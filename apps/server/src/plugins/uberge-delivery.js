@@ -252,6 +252,12 @@ export function apply(ctx) {
         return () => {
             disposeRoute();
             clearInterval(heartbeatTimer);
+            // wss.close() 只管拒新连接;已活的 WS 得逐个 terminate,否则
+            // 关机 drain 会等不到 socket 收尾(订阅事件客户端可 resume 重连,
+            // terminate 不丢持久数据)。
+            for (const ws of wss.clients) {
+                try { ws.terminate(); } catch { /* already gone */ }
+            }
             wss.close();
         };
     });
