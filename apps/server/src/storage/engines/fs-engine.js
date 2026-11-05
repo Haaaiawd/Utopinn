@@ -7,6 +7,10 @@ export class FsEngine {
         }
         this.kind = 'fs';
         this._directoriesByHandle = directoriesByHandle;
+        // Per-handle async tail,与 SqliteEngine 同构:fs 没有真事务,
+        // read-modify-write(CAS await 窗口)全靠这条链防交错丢写。
+        // repo 层无嵌套 withTransaction(扫描确认),故无需可重入。
+        this._txTail = new Map();
     }
 
     // `handle` is accepted but unused by FsTransaction — its per-kind handlers
@@ -15,7 +19,13 @@ export class FsEngine {
     // the engine contract takes (handle, fn) uniformly.
     async withTransaction(handle, fn) {
         const tx = new FsTransaction({ directoriesByHandle: this._directoriesByHandle });
-        return fn(tx);
+        // fn 体即临界区:链上前一个 tail,保证同一 handle 任意时刻只有一个
+        // get→check→put 序列在跑(putResourceIfMatch 的 TOCTOU 窗口闭合)。
+        const prev = this._txTail.get(handle) || Promise.resolve();
+        const run = prev.then(() => fn(tx));
+        // 吞掉尾链上的 rejection:失败的事务不毒化下一个调用方。
+        this._txTail.set(handle, run.catch(() => {}));
+        return run;
     }
 
     async ping(handle) { /* nothing to do */ }
