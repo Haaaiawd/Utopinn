@@ -190,3 +190,21 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: .loom/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md, apps/server, packages/kernel
 - Recorded: 2026-11-04T04:23:05.151Z
+
+## D-020: 移动端地基改为 fork IReader(KMP),Expo 实现退位为参照
+
+- Current decision: 移动端以 fork `IReaderorg/IReader`(Apache-2.0,Kotlin Multiplatform,android/desktop/iosApp 三端壳)为新地基;切割缝 = `source-api`/`source-runtime-js` 书源爬虫层整块移除,替换为「uberge 源」=服务端 api-client 的 Kotlin 实现;presentation/domain/data/i18n/壳层保留。现有 `apps/mobile`(Expo)退位为参照实现——其 design 调研(阅读器形态)与面板桥协议仍为有效资产,代码本身不再演进主线。RP 专属件(swipe 候选、书写层、CardApp WebView 面板、MVU 状态)在任何阅读器中均不存在,须在新地基上自建。
+- Rationale: (1)legado 上游已被法律核掉(删库公告,2026-05)——「国内圈子最火」选项实质消亡,快照可拿但属死上游+GPL+法律云;(2)Expo 实现 chrome 质感未达产品线(用户明确判定"完全不合格"),且手搓/半迁移组件库路线越补越散;(3)IReader 是当前唯一同时满足:活着(周级提交)、Apache-2.0、小说原生 UX(非 EPUB 错范式)、KMP 三端、模块切缝正好长在书源层的候选;(4)KMP 保留 iOS/桌面回路,不像纯 Kotlin 单体锁死安卓。
+- Source: conversation(用户两番拍板"fork是对的")+ GitHub 仓库实证(legado 删库公告 / IReader 模块布局)
+- Supersedes: D-008 移动端 Expo 实现路线(架构目标"薄客户端"不变,实现栈 RN/Expo→KMP)
+- Affects: apps/mobile(冻结为主线参照), ref/ireader(新地基源), TASK-008/009/027(已落代码转参照态,验收语义按新地基重排), mobile-panels/mobile-reader-form/mobile-ui-foundation 设计稿
+- Recorded: 2026-11-04T12:10:00.000Z
+
+## D-021: 产品形态(web+移动)为持续研究线,非一次性裁决
+
+- Current decision: 产品形态调研不设终点。已拍板的形态稿(web-rp-form 剧场深化 / mobile-reader-form 书架→阅读器)作为当前执行基线,但承认两端形态信息不足、需持续研究迭代——新实证(竞品变化、真实使用反馈、fork 代码阅读所得)可随时回写形态稿并重排任务。
+- Rationale: 用户观察"无论网页端还是移动端,产品形态都还有待研究"属实——形态稿建立在调研代理二手资料上,缺少真产品长期使用的一手判断;IReader fork 本身就会带来其成熟形态的一手细节(书架信息密度/阅读器菜单组织/主题系统),应当反哺而非固化。
+- Source: conversation(用户明示)
+- Supersedes: none(限定既有形态稿的"已拍板"语义:基线可用,不封顶)
+- Affects: .loom/design/web-rp-form.md, .loom/design/mobile-reader-form.md, 后续形态类任务
+- Recorded: 2026-11-04T12:10:00.000Z

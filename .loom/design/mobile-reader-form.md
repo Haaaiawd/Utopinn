@@ -1,5 +1,7 @@
 # mobile-reader-form — 移动端「小说阅读器」形态(TASK-008/009 上层)
 
+> 注(D-020/021,2026-11-04):本稿是 **UX 目标稿,仍然有效**——「会话=书/楼层=段落流/呼出 chrome/语义分章」的形态裁决不随实现栈变化;但实现地基已从 Expo 改判 fork IReader(见 mobile-fork-ireader.md),且形态属持续研究线,不封顶。
+
 > 状态:v1 拍板稿(2026-11-04)。调研报告:起点/番茄/微信读书/晋江/Kindle/
 > Apple Books/Wattpad/AO3 实测 + RP 先例(彩云小梦/Character.AI/ST 引号色)。
 > 结论:**会话=一本书,楼层=段落流,章节=语义切片;prose 渲染器的
