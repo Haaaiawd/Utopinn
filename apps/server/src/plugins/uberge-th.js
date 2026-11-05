@@ -31,6 +31,11 @@ export const inject = ['webServer'];
 function pathSegs(p) {
     return String(p).replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean);
 }
+// proto 污染防线:这些段名会让 set/del 改写 Object.prototype,拒绝一切含段路径。
+const FORBIDDEN_SEGS = new Set(['__proto__', 'constructor', 'prototype']);
+function unsafeSegs(p) {
+    return pathSegs(p).some((s) => FORBIDDEN_SEGS.has(s));
+}
 function getPath(obj, p) {
     let cur = obj;
     for (const s of pathSegs(p)) {
@@ -45,6 +50,7 @@ function getPath(obj, p) {
     return cur;
 }
 function setPath(obj, p, v) {
+    if (unsafeSegs(p)) return;
     const segs = pathSegs(p);
     let cur = obj;
     for (let i = 0; i < segs.length - 1; i++) {
@@ -58,6 +64,7 @@ function setPath(obj, p, v) {
     cur[segs[segs.length - 1]] = v;
 }
 function delPath(obj, p) {
+    if (unsafeSegs(p)) return false;
     const segs = pathSegs(p);
     let cur = obj;
     for (let i = 0; i < segs.length - 1; i++) {
