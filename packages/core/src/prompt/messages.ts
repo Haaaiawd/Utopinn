@@ -10,6 +10,14 @@ export interface TokenCounter {
     count(message: Record<string, unknown> & { role: string }): Promise<number>;
 }
 
+/** 上游 openai.js TokenBudgetExceededError 同形:must-fit 条目超预算 = 硬失败。 */
+export class TokenBudgetExceededError extends Error {
+    constructor(identifier: string) {
+        super(`Token budget exceeded: ${identifier}`);
+        this.name = 'TokenBudgetExceeded';
+    }
+}
+
 let counter: TokenCounter = { count: async (m) => Math.ceil(String(m.content ?? '').length / 4) };
 export function setTokenCounter(c: TokenCounter): void {
     counter = c;
@@ -309,8 +317,10 @@ export class ChatCompletion {
     }
 
     insert(message: Message, identifier: string, position: string | number = 'end'): void {
+        this.checkTokenBudget(message, message.identifier);
         const index = this.findMessageIndex(identifier);
-        if (message.content || message.tokens) {
+        // 上游门槛 content||tool_calls:空消息(含预置 tokens 的占位)不插入。
+        if (message.content || message.tool_calls) {
             const coll = this.messages.collection[index] as MessageCollection;
             if (position === 'start') coll.collection.unshift(message);
             else if (position === 'end') coll.collection.push(message);
@@ -367,7 +377,9 @@ export class ChatCompletion {
 
     private checkTokenBudget(collection: Message | MessageCollection, identifier: string): void {
         if (!this.canAfford(collection)) {
-            this.write(`WARN: ${identifier} exceeds budget (${collection.getTokens()} > ${this.tokenBudget})`);
+            // 上游硬失败:mandatory prompts 超预算 → TokenBudgetExceededError,
+            // Generate() catch 后向用户报 "Mandatory prompts exceed the context size"。
+            throw new TokenBudgetExceededError(identifier);
         }
     }
 

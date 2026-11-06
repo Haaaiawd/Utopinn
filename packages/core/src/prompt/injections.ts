@@ -133,7 +133,8 @@ export async function populationInjectionPrompts(
     opts: { maxDepth?: number; getDepthInjection?: DepthInjectionProvider } = {},
 ): Promise<PromptMessage[]> {
     let totalInserted = 0;
-    const maxDepth = opts.maxDepth ?? 100;
+    // 上游 MAX_INJECTION_DEPTH=10000(script.js);深位注入(>100)不能静默丢。
+    const maxDepth = opts.maxDepth ?? 10000;
     const roleOrder = ['system', 'user', 'assistant'];
     const extensionPromptsOrder = 100;
 

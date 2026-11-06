@@ -50,7 +50,7 @@ function timedEncoder(encoder) {
 
 /** 模型→tiktoken 解析(自缓存,不带 endpoints 的 express/config 传递依赖),失败回退 gpt-4o */
 const tokenizerCache = new Map();
-function resolveTokenizer(model) {
+export function resolveTokenizer(model) {
     const key = model || 'gpt-4o';
     if (!tokenizerCache.has(key)) {
         try {
@@ -67,7 +67,7 @@ let boundModel;
 /** 绑定全局 TokenCounter(幂等;同 model 跳过) */
 export function bindPromptTokenCounter(model) {
     if (boundModel === model) return;
-    setTokenCounter(createOpenAITokenCounter((m) => resolveTokenizer(m ?? model)));
+    setTokenCounter(createOpenAITokenCounter((m) => resolveTokenizer(m ?? model), model));
     boundModel = model;
 }
 
