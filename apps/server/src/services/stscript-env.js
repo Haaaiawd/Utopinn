@@ -117,9 +117,20 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             if (insertAt === null || insertAt === undefined) {
                 await getChatRepo().append(handle, charDir, chatName, [message]);
             } else {
+                // 中间插入 = 上游 saveChat 全量写回;header 直替为上游
+                // 三键形态(script.js:7425-7429),非深合并——上游也不合并。
                 await getChatRepo().save(handle, charDir, chatName,
-                    { chat_metadata: chatMetadata }, chat);
+                    { user_name: 'unused', character_name: 'unused', chat_metadata: chatMetadata }, chat);
             }
+        },
+        // saveChatConditional 等价(core insertChatMessage 在 appendMessage 后
+        // await 它):消息体已由 appendMessage 落盘,这里补 header.chat_metadata
+        // 快照——/sys /sendas /comment 写下的 tainted、/sysname 的 narrator_name。
+        // chatMetadata 与 macro.chatMetadata 是同一活对象,顶层合并结果与
+        // 上游整替一致;不整档 save 可避免重复写 body。
+        persistChat: async () => {
+            if (!charDir || !chatName) return;
+            await getChatRepo().updateChatMetadata(handle, charDir, chatName, chatMetadata);
         },
         persistMetadata: () => {
             if (!charDir || !chatName) return;
