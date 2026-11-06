@@ -17,6 +17,8 @@ import {
     initStorage,
 } from '../src/storage/index.js';
 import { buildGenerationContext, persistWorldInfoTimedEffects } from '../src/services/generate-context.js';
+import { buildStscriptEnv } from '../src/services/stscript-env.js';
+import { runStscript } from '@uberge/core';
 
 const HANDLE = 'h1';
 const CHAR = 'Alice';
@@ -388,6 +390,29 @@ test('audit regressions — settings + injection + persist', async (t) => {
             const text = allText(builtPrompt);
             assert.match(text, /Last message: It roared again\./, 'cyclePrompt trimmed + substituted');
             assert.doesNotMatch(text, /\{\{lastChatMessage\}\}/, 'no literal macro residue');
+        });
+
+        await t.test('audit M13: /sys persists message + chat_metadata.tainted (saveChatConditional)', async () => {
+            // 上游 sendNarratorMessage(slash-commands.js:6113-6152):
+            // chat_metadata.tainted = true → push → saveChatConditional()
+            // → header+body 一起落盘。persistChat seam 补 header 侧。
+            await fs.promises.mkdir(dirs.characters, { recursive: true });
+            await fs.promises.writeFile(
+                path.join(dirs.characters, `${CHAR}.json`), JSON.stringify(CARD2));
+            await getChatRepo().save(HANDLE, CHAR, 'm13',
+                { user_name: 'User', character_name: 'Alice', chat_metadata: {} },
+                [{ is_user: true, name: 'User', mes: 'hi' }],
+                null);
+            const built = await buildStscriptEnv({
+                handle: HANDLE, directories: dirs, charDir: CHAR, chatName: 'm13', userName: 'User',
+            });
+            assert.ok(!built.error, `env build failed: ${built.error}`);
+            const run = await runStscript(built.env, '/sys Narrator note');
+            assert.equal(run.error, undefined, `script error: ${run.error?.message}`);
+            const doc = await getChatRepo().get(HANDLE, CHAR, 'm13');
+            assert.ok(doc.body.some((m) => m.mes === 'Narrator note'), 'system message appended');
+            assert.equal(doc.header.chat_metadata.tainted, true, 'tainted persisted to header');
+            assert.equal(doc.header.user_name, 'User', 'existing header fields preserved');
         });
 
         await t.test('timed effects persist via persistWorldInfoTimedEffects; dryRun stays clean', async () => {
