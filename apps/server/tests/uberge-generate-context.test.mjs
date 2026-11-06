@@ -368,6 +368,28 @@ test('audit regressions — settings + injection + persist', async (t) => {
             assert.equal(contMsg.name, undefined, 'continued message must not carry name');
         });
 
+        await t.test('audit L2: continue_nudge substitutes {{lastChatMessage}} literally', async () => {
+            // 上游 openai.js:909 — substituteParamsExtended(continue_nudge_prompt,
+            // { lastChatMessage: String(cyclePrompt).trim() }):宏替成续写目标文本。
+            await getPresetRepo().save(HANDLE, 'openai', 'Default', {
+                ...PRESET,
+                continue_nudge_prompt: 'Continue. Last message: {{lastChatMessage}}',
+            });
+            await getSettingsRepo().save(HANDLE, baseSettings());
+            await getChatRepo().save(HANDLE, CHAR, 'l2',
+                { user_name: 'User', chat_metadata: {} },
+                [{ is_user: false, name: 'Alice', mes: 'It roared again.' }],
+                null);
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'l2', card: CARD2, user: { name: 'User' },
+                type: 'continue',
+                overrides: { cyclePrompt: '  It roared again.  ' },
+            });
+            const text = allText(builtPrompt);
+            assert.match(text, /Last message: It roared again\./, 'cyclePrompt trimmed + substituted');
+            assert.doesNotMatch(text, /\{\{lastChatMessage\}\}/, 'no literal macro residue');
+        });
+
         await t.test('timed effects persist via persistWorldInfoTimedEffects; dryRun stays clean', async () => {
             await getSettingsRepo().save(HANDLE, {
                 ...baseSettings(),
