@@ -93,8 +93,11 @@ export class Message {
     }
 
     static async fromPromptAsync(prompt: PromptLike): Promise<Message> {
-        const m = await Message.createAsync(prompt.role, prompt.content, prompt.identifier, prompt.name);
-        return m;
+        // 上游 openai.js:3792 — fromPromptAsync 不传 prompt.name;
+        // 名字只经 setName(=names_behavior COMPLETION 的 chat 路径)进入
+        // 计数载荷与 wire。透传会让每条 prompt 消息多 ~1 token 且带上
+        // 上游没有的 name 字段(audit L1)。
+        return Message.createAsync(prompt.role, prompt.content, prompt.identifier);
     }
 
     static async createManyAsync(
