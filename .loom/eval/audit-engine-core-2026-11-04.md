@@ -61,7 +61,7 @@ MEDIUM:M5 substCtx.chat 字段透传 3325553 | M6-M10 计数边界族 15ef9cf | 
 
 真机链路全通:Meowssiah 预设 × 诡异修仙人生模拟器卡 × 宠物行为世界书 × DeepSeek-V4.1-Flash-1017(aiping 中转,requestProxy 出站)。
 
-- ,WS head:1/chunk:2703/end:1 seq 单调,楼层落盘正常;预设人格(喵语癖/think_nya)证实装配进 prompt。
-- **新发现(已修 5a7a01a)**:chara_card_v2 嵌书直接物化进 worlds/ 时 uid=undefined,引擎去重键  使整本 59 条塌成 1 条。已 port 上游 convertCharacterBook → 内存即时转换(importEmbeddedWorldInfo 语义的读侧版),实测 58 条激活、生成文实际消费武山/货币设定。
-- **待查(登记)**:上游 dispatch 网络层失败时 job 仍报 (persisted=false,空文本,零 WS 帧)——应转 failed 并下发 error 帧。
+- job=completed + persisted=true,WS head:1/chunk:2703/end:1 seq 单调,楼层落盘正常;预设人格(喵语癖/think_nya)证实装配进 prompt。
+- **新发现(已修 5a7a01a)**:chara_card_v2 嵌书直接物化进 worlds/ 时 uid=undefined,引擎去重键 `world.uid` 使整本 59 条塌成 1 条。已 port 上游 convertCharacterBook → 内存即时转换(importEmbeddedWorldInfo 语义的读侧版),实测 58 条激活、生成文实际消费武山/货币设定。
+- **待查(登记)**:上游 dispatch 网络层失败时 job 仍报 completed(persisted=false,空文本,零 WS 帧)——应转 failed 并下发 error 帧。
 - harness 修复:writeScenarioConfig 二级 dotted key 曾错写到首个同名 leaf(requestProxy.enabled/url 落错块),已按 root 块锚定(c717ee9)。
