@@ -94,8 +94,10 @@ test('extension prompts — scan/depth/regex 三面', async (t) => {
         const request = { user: { profile: { handle: HANDLE, name: 'User' } } };
 
         const saveSettings = (extra) => getSettingsRepo().save(HANDLE, {
-            power_user: { selected_world_info: ['ScanBook'], persona_description: 'I am me.' },
-            world_info: {},
+            power_user: { persona_description: 'I am me.' },
+            // 真实路径:world_info_settings.world_info.globalSelect(5b9b6d2 后
+            // power_user.selected_world_info 已死,seed 错 = 测试绿着错)。
+            world_info_settings: { world_info: { globalSelect: ['ScanBook'] } },
             preset_settings_openai: 'Default',
             ...extra,
         });

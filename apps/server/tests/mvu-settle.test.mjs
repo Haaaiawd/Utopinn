@@ -78,10 +78,15 @@ test('resolveMvuInitLorebooks — selected_global + 主书 + 辅书,不含 chat-
         }));
         await getSettingsRepo().save(HANDLE, {
             power_user: {
-                selected_world_info: ['GlobalBook'],
                 persona_description_lorebook: 'ChatOnlyBook', // persona 书不进口径
             },
-            world_info: { charLore: [{ name: CHAR, extraBooks: ['ExtraBook'] }] },
+            // 真实路径(5b9b6d2 后 power_user.selected_world_info/顶层 world_info 已死)。
+            world_info_settings: {
+                world_info: {
+                    globalSelect: ['GlobalBook'],
+                    charLore: [{ name: CHAR, extraBooks: ['ExtraBook'] }],
+                },
+            },
         });
         await seedWorlds();
 
@@ -170,8 +175,12 @@ test('initializeMvuChat — directories 自解书目(无预解 lorebooks 时走 
             data: { name: CHAR, extensions: { world: 'CharBook' } },
         }));
         await getSettingsRepo().save(HANDLE, {
-            power_user: { selected_world_info: ['GlobalBook'] },
-            world_info: { charLore: [{ name: CHAR, extraBooks: ['ExtraBook'] }] },
+            world_info_settings: {
+                world_info: {
+                    globalSelect: ['GlobalBook'],
+                    charLore: [{ name: CHAR, extraBooks: ['ExtraBook'] }],
+                },
+            },
         });
         await seedWorlds();
         const repo = getChatRepo();
