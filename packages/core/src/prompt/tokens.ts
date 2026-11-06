@@ -20,16 +20,15 @@ export interface OpenAICountOptions {
 
 export function createOpenAITokenCounter(
     encoderFor: (model?: string) => MessageEncoder,
+    defaultModel?: string,
 ): TokenCounter & { countBatch(messages: (Record<string, unknown> & { role: string })[]): Promise<number> } {
     return {
         async count(message) {
-            const model = undefined;
-            const per = openAIRawCount([message], model, encoderFor);
+            const per = openAIRawCount([message], defaultModel, encoderFor);
             return per.rawTotal - 1; // full=true
         },
         async countBatch(messages) {
-            const model = undefined;
-            return openAIRawCount(messages, model, encoderFor).rawTotal - 1;
+            return openAIRawCount(messages, defaultModel, encoderFor).rawTotal - 1;
         },
     };
 }

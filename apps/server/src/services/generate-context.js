@@ -16,7 +16,7 @@ import {
     mergeLoreSources,
     substituteParams,
 } from '@uberge/core';
-import { createPromptBuilder } from './prompt-builder.js';
+import { createPromptBuilder, resolveTokenizer } from './prompt-builder.js';
 import {
     createDepthInjectionProvider,
     createWorldInfoRegexHook,
@@ -351,7 +351,9 @@ export async function buildGenerationContext({
                 applyWorldInfoRegex: createWorldInfoRegexHook(extPromptSource, substCtx, {
                     card, charDir, presetDoc, presetName: resolvedPresetName,
                 }),
-                countTokens: (t) => Math.ceil(String(t).length / 4), // WI 内部计数:guesstimate 口径
+                // WI 预算与 prompt 同 tokenizer(上游 Tokenizers.openai);
+                // len/4 会把 CJK 世界书高估 2-4 倍,预算提前溢出丢条目。
+                countTokens: (t) => resolveTokenizer(presetDoc.openai_model).encode(String(t)).length,
             },
         )
         : { worldInfoBeforeEntries: [], worldInfoAfterEntries: [], WIDepthEntries: [], EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {} };
