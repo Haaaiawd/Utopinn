@@ -61,15 +61,17 @@ const OPENAI_ORDER_CHARACTER_ID = '100001';
 const PROMPT_ROLES = ['system', 'user', 'assistant'];
 
 /**
- * 解析预设 prompt_order:openai 路径固定用 global 策略(原版 configuration.promptOrder.strategy='global')。
+ * 解析预设 prompt_order:openai 路径固定用 global 策略(原版 configuration.promptOrder.strategy='global',
+ * getPromptList 按 character_id===100001 找)。audit M4 修正:不可回退 lists[0] ——
+ * 预设缺 global 序时那是某角色的自定义序,错当全局序会错序;上游此处返回 [],
+ * 由 PromptManager 走默认序。
  * @param {object} presetDoc oai_settings 预设文档
  * @returns {{identifier:string, enabled?:boolean}[]}
  */
 export function resolvePromptOrder(presetDoc) {
     const lists = Array.isArray(presetDoc?.prompt_order) ? presetDoc.prompt_order : [];
     const entry = lists.find((l) => String(l.character_id) === OPENAI_ORDER_CHARACTER_ID)
-        ?? lists.find((l) => String(l.character_id) === '100000') // 兼容 PM 默认 dummyId
-        ?? lists[0];
+        ?? lists.find((l) => String(l.character_id) === '100000'); // 兼容 PM 默认 dummyId
     return Array.isArray(entry?.order) ? entry.order : [];
 }
 
@@ -102,6 +104,9 @@ export function chatBodyToInput(messages) {
         is_system: m.is_system,
         name: m.name,
         mes: m.mes,
+        send_date: m.send_date,
+        swipe_id: m.swipe_id,
+        swipes: m.swipes,
         force_avatar: m.force_avatar,
         extra: m.extra,
     }));
@@ -252,7 +257,18 @@ export async function buildGenerationContext({
     const substCtx = {
         name1: user?.name ?? 'User',
         name2: card?.data?.name ?? card?.name ?? 'Assistant',
-        chat: chatMessages.map((m) => ({ mes: m.mes, name: m.name, is_user: m.is_user })),
+        // 宏消费面(上游 evaluateMacros 的 chat 形):is_system 丢 → {{lastCharMessage}}
+        // 会误算系统楼层;send_date 丢 → {{idle_duration}} 恒 "just now";
+        // swipe_id 丢 → swipeId 宏恒 ''。
+        chat: chatMessages.map((m) => ({
+            mes: m.mes,
+            name: m.name,
+            is_user: m.is_user,
+            is_system: m.is_system,
+            send_date: m.send_date,
+            swipe_id: m.swipe_id,
+            swipes: m.swipes,
+        })),
         chatMetadata,
         globalVariables: settingsDoc?.extension_settings?.variables?.global ?? {},
         currentChatId: chatName,
