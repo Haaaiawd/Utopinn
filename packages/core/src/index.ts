@@ -10,6 +10,7 @@ export * from './world-info/buffer.js';
 export * from './world-info/timed-effects.js';
 export * from './world-info/groups.js';
 export * from './world-info/sources.js';
+export * from './world-info/convert.js';
 export * from './world-info/engine.js';
 export * from './macros/evaluate.js';
 export * from './macros/substitute.js';
