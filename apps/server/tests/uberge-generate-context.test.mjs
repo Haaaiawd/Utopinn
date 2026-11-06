@@ -330,6 +330,44 @@ test('audit regressions — settings + injection + persist', async (t) => {
             assert.match(text, /Tone: mournful\./);
         });
 
+        await t.test('audit L1: prompt/continued messages carry no name on wire (upstream drops it)', async () => {
+            // 上游 openai.js:3792 fromPromptAsync 不传 prompt.name;continueNudge
+            // 路径(917-921)也不 setName——名字只在 names_behavior=COMPLETION 的
+            // 聊天历史装填里经 setName 上线。
+            await getPresetRepo().save(HANDLE, 'openai', 'Default', {
+                ...PRESET,
+                prompts: PRESET.prompts.map((p) =>
+                    p.identifier === 'main' ? { ...p, name: 'PresetName' } : p),
+                names_behavior: 3, // COMPLETION
+            });
+            await getSettingsRepo().save(HANDLE, baseSettings());
+            await getChatRepo().save(HANDLE, CHAR, 'l1',
+                { user_name: 'User', chat_metadata: {} },
+                [
+                    { is_user: true, name: 'User', mes: 'The dragon landed.' },
+                    { is_user: false, name: 'Alice', mes: 'Then it roared.' },
+                ],
+                null);
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'l1', card: CARD2, user: { name: 'User' },
+                type: 'continue',
+                overrides: { cyclePrompt: 'Then it roared.' },
+            });
+            const msgs = builtPrompt.messages;
+            // prompt 级 name('PresetName')不上 wire
+            const mainMsg = msgs.find((m) => /You are Alice/.test(String(m.content)));
+            assert.ok(mainMsg, 'main prompt present');
+            assert.equal(mainMsg.name, undefined, 'prompt-derived message must not carry name');
+            // COMPLETION 下聊天历史仍带名
+            const histMsg = msgs.find((m) => String(m.content) === 'The dragon landed.');
+            assert.ok(histMsg, 'history message present');
+            assert.equal(histMsg.name, 'User', 'COMPLETION keeps name on chat history');
+            // 被 continue 的消息:上游不补名
+            const contMsg = msgs.find((m) => String(m.content) === 'Then it roared.');
+            assert.ok(contMsg, 'continued message present');
+            assert.equal(contMsg.name, undefined, 'continued message must not carry name');
+        });
+
         await t.test('timed effects persist via persistWorldInfoTimedEffects; dryRun stays clean', async () => {
             await getSettingsRepo().save(HANDLE, {
                 ...baseSettings(),

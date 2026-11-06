@@ -417,13 +417,12 @@ async function populateChatHistory(
         for (let k = messages.length - 1; k >= 0; k--) { if (!messages[k]!.injected) { continueIdx = k; break; } }
         if (continueIdx >= 0) {
             const continueMsg = messages.splice(continueIdx, 1)[0]!;
+            // 上游 openai.js:917-921 — continueNudge 路径 fromPromptAsync 不带 name
+            // (与 continue_prefill:1329 的显式 setName 不同,此处上游不上名)。
             const chatMessage = await Message.createAsync(
                 continueMsg.role,
                 sub(continueMsg.content, deps),
                 `chatHistory-${continueIdx}`,
-                continueMsg.name && s.names_behavior === NAMES_COMPLETION
-                    ? (isValidName(continueMsg.name) ? continueMsg.name : sanitizeName(continueMsg.name))
-                    : undefined,
             );
             continueMessageCollection.add(chatMessage);
         }
