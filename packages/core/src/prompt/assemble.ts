@@ -429,7 +429,12 @@ async function populateChatHistory(
         const nudgePrompt: PromptLike = {
             identifier: 'continueNudge',
             role: 'system',
-            content: sub(s.continue_nudge_prompt, deps),
+            // 上游 openai.js:909-912 — substituteParamsExtended 带
+            // { lastChatMessage: String(cyclePrompt).trim() } 动态宏,
+            // 等价 dynamicMacros 注入(audit L2)。
+            content: substituteParams(s.continue_nudge_prompt ?? '', deps.substCtx, {
+                dynamicMacros: { lastChatMessage: String(cyclePrompt).trim() },
+            }),
             system_prompt: true,
         };
         const nudgeMessage = await Message.fromPromptAsync(nudgePrompt);
