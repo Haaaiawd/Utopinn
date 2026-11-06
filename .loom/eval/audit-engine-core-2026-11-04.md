@@ -36,3 +36,12 @@ WI buffer 深度/skew/组评分、matchKeys 整词/regex序、reserveBudget(3)�
 2. chatMetadata 持久化决策(写回 header vs chat_state;preview 不写)
 3. EM/AN/outlet/depth_prompt/AN/persona position 接入 assemble 扩展位
 4. M6-M10 计数边界,单行级
+
+## 修复状态(2026-11-05/06 批次)
+
+HIGH 全灭(见各 commit):H1/H2 settings 路径族 5b9b6d2 | H3 timed-effects 持久化 6b9ce49 | H4/H5/M1/M2 注入通道 b9c4dbe | M3 trigger ea9ad9b
+MEDIUM:M5 substCtx.chat 字段透传 3325553 | M6-M10 计数边界族 15ef9cf | M11→持久化 M2(设计级)| M4 **修正诊断**:global dummyId 100001 本为上游真语义,真分叉是 lists[0] 错序兜底——已删(3325553)
+
+- **M12 STscript builtins 子集**(/go/continue/swipe/note/persona/getat/setat/WI命令/QR):非 bug 是功能缺口,结构化报错非静默——立为后续任务线。
+- **M13** sendSystemMessage persistMetadata + stscript repo.save 深合并:待逐项核实。
+- LOW 残余:L1 name 参数 +1token、L2 continue_nudge {{lastChatMessage}} 字面残留、L3 getvar '' vs 0、L4 静默 catch、L5 boundModel 单例竞态(M6 修了语义,并发串账结构仍在——真修=per-build counter 管线化)。
