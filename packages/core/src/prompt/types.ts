@@ -37,6 +37,12 @@ export interface ChatMessageInput {
     name?: string;
     mes: string;
     force_avatar?: boolean;
+    /** 楼层时间戳 —— {{idle_duration}}/{{time}} 等时序宏的源(audit M5)。 */
+    send_date?: number;
+    /** 当前 swipe 索引 —— swipeId 宏的源。 */
+    swipe_id?: number;
+    /** swipe 候选数组 —— swipe 类宏/分支用。 */
+    swipes?: unknown[];
     extra?: {
         type?: number; // system_message_types(NARRATOR→system)
         api?: string;
