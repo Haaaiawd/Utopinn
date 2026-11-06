@@ -11,6 +11,7 @@
  */
 import {
     checkWorldInfo,
+    convertCharacterBook,
     createInstructEngine,
     GENERATION_TYPE_TRIGGERS,
     mergeLoreSources,
@@ -246,6 +247,14 @@ export async function buildGenerationContext({
     const worldCache = new Map();
     await Promise.all(worldNames.map(async (name) => {
         const doc = await worldInfoRepo.get(handle, name).catch(() => null);
+        // 上游 importEmbeddedWorldInfo 语义:卡内嵌 character_book 但
+        // worlds/<extensions.world> 尚未物化时,内存里即时转换顶上(v2
+        // 卡书→world 文件形,uid/keys 归位——直接塞原始卡书会让全本
+        // 共享 "world.undefined" 去重键,整本书塌成一条)。
+        if (!doc && name === card?.data?.extensions?.world && card?.data?.character_book?.entries) {
+            worldCache.set(name, convertCharacterBook(card.data.character_book));
+            return;
+        }
         worldCache.set(name, doc?.doc ?? doc ?? undefined);
     }));
     const entries = mergeLoreSources({
