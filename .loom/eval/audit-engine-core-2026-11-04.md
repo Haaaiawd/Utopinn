@@ -45,3 +45,14 @@ MEDIUM:M5 substCtx.chat 字段透传 3325553 | M6-M10 计数边界族 15ef9cf | 
 - **M12 STscript builtins 子集**(/go/continue/swipe/note/persona/getat/setat/WI命令/QR):非 bug 是功能缺口,结构化报错非静默——立为后续任务线。
 - **M13** sendSystemMessage persistMetadata + stscript repo.save 深合并:待逐项核实。
 - LOW 残余:L1 name 参数 +1token、L2 continue_nudge {{lastChatMessage}} 字面残留、L3 getvar '' vs 0、L4 静默 catch、L5 boundModel 单例竞态(M6 修了语义,并发串账结构仍在——真修=per-build counter 管线化)。
+
+## 逐项核实结论(2026-11-06 批次)
+
+- **M13(a) 已修(053f504)**:真缺口不是 sendSystemMessage 本体(上游 doReturn chat-* 也只 push 不存),而是 `env.host.persistChat` seam 在服务端从未实现——core `insertChatMessage` 在 `appendMessage` 后 `await persistChat?.()`,/sys /sendas /comment 已写 `chatMetadata.tainted=true`,但尾插场景 append 只落 body,tainted 永不上盘。现在 persistChat 经 `updateChatMetadata` 补 header 快照(与上游 saveChatConditional 成对);中插 save 的 header 同步改为上游三键形态 `{user_name:'unused',character_name:'unused',chat_metadata}`(script.js:7425-7429)。
+- **M13(b) 验证无误**:上游 `saveChat` 本来就是整 header 直替(构造仅含 chat_metadata/user_name/character_name 三键,不做任何深合并;深合并只发生在独立 metadata 端点)。`repo.save` 全量替换 = 忠实语义,无需改。
+- **L1 已修(6408ede)**:上游 `fromPromptAsync`(openai.js:3792)走 3 参 `createAsync`,prompt.name 永不透传——名字只在 names_behavior=COMPLETION 的聊天历史装填经 setName 进计数与 wire。移植版透传导致每条 prompt 消息 +~1token 且 wire 多 name 字段。连带修了同类点:continueNudge 被续消息(上游 917-921 不 setName,与 prefill:1329 相反)。
+- **L2 已修(5d04119)**:上游 `substituteParamsExtended(continue_nudge_prompt, {lastChatMessage: String(cyclePrompt).trim()})`(openai.js:909-912);经 dynamicMacros seam 等价注入,字面残留消除。
+- **L3 误诊,不改**:上游 `getLocalVariable`/`getGlobalVariable`(variables.js:22-46/48-63)对缺失/空值一律返回 `''`(`coerceReturn`:`trim()===''||isNaN → value||''`);`{{getvar}}` 宏与 `/getvar` 命令同口径。`0` 只出现在 `add/inc/dec` 的算术兜底 `getLocalVariable(name) || 0`(空值按 0 起算),不是 getvar 读侧语义。两侧逐行一致。
+- **L4 已修(bc52b0a)**:宏替换循环的 warn(evaluate.ts `Macro content can't be replaced`,对 upstream macros.js:710)早已在;排查整个 substitution/variables 面,唯一缺的上游 warn 是 `substituteParams` 非串入参的 `content will be coerced to string`(script.js:2985)——已补。其余静默 catch(JSON.parse/index 访问)上游同样静默,逐行一致不改。
+- **L5 遗留**(同前):boundModel 单例竞态,属管线级改造,不在本批小项范围。
+- **附记**:createAsync 对空串 content 仍无条件计数({role,content:''}→~5token,上游空串直接 0 不入计)——M8 当时只修了 insert 门槛半边,此为另一半残余,记入后续。
