@@ -81,6 +81,8 @@ export function substituteParams(
         return '';
     }
     if (typeof content !== 'string') {
+        // 上游 script.js:2985 — 非串入参 warn 后强转(audit L4)。
+        console.warn('substituteParams: content will be coerced to string', content);
         content = String(content);
     }
 
