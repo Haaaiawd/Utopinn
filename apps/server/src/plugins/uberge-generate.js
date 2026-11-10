@@ -231,14 +231,16 @@ export function apply(ctx) {
 
             // 派发体 = 连接层 oai_settings(custom_url/reverse_proxy/source 等)
             //  ← 预设生成参数覆盖(ST 选预设=重写 oai_settings)← 调用方显式字段
+            const chatSource = body.chat_completion_source
+                ?? oaiSettings?.chat_completion_source
+                ?? presetDoc?.chat_completion_source ?? 'openai';
             const dispatchBody = {
                 ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
                 ...presetToDispatchParams(presetDoc),
-                chat_completion_source: body.chat_completion_source
-                    ?? oaiSettings?.chat_completion_source
-                    ?? presetDoc?.chat_completion_source ?? 'openai',
+                chat_completion_source: chatSource,
                 messages: builtPrompt.messages,
-                stream: body.stream !== false,
+                stream: (body.type === 'quiet' ? false : body.stream)
+                    ?? ((oaiSettings?.stream_openai ?? presetDoc?.stream_openai) !== false),
                 // 客户端可传 job_id(回放对齐);persist_target 兜底按本次 char/chat 填
                 luker_generation: {
                     ...(body.luker_generation ?? {}),
@@ -249,6 +251,11 @@ export function apply(ctx) {
                     },
                 },
             };
+            // 上游 getChatCompletionModel(source→{source}_model)+
+            // openai_max_tokens→max_tokens:provider 只认 canonical 键;
+            // generation_overrides 仍可显式盖掉。
+            dispatchBody.model ??= dispatchBody[`${chatSource}_model`] ?? null;
+            dispatchBody.max_tokens ??= dispatchBody.openai_max_tokens ?? null;
             if (body.generation_overrides) Object.assign(dispatchBody, body.generation_overrides);
 
             // 与 /generate 原版派发前处理同序(chat-completions.js:1161-1172)

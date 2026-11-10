@@ -98,9 +98,13 @@ export function presetToAssemblySettings(presetDoc, powerUser = {}) {
     };
 }
 
-/** 聊天 JSONL body → ChatMessageInput[](core setOpenAIMessages 入参) */
+/** 聊天 JSONL body → ChatMessageInput[](core setOpenAIMessages 入参)。
+ * 上游 script.js:7999 过滤:!is_system || 携 tool_invocations 的系统层
+ * (工具执行回执)保留;is_system 隐藏层不进 prompt。 */
 export function chatBodyToInput(messages) {
-    return (Array.isArray(messages) ? messages : []).map((m) => ({
+    return (Array.isArray(messages) ? messages : [])
+        .filter((m) => !m.is_system || m.tool_invocations)
+        .map((m) => ({
         is_user: m.is_user,
         is_system: m.is_system,
         name: m.name,
@@ -227,6 +231,9 @@ export async function buildGenerationContext({
     if (!presetDoc) throw new Error(`Preset not found: openai/${resolvedPresetName}`);
 
     const chatMessages = chatBodyToInput(chatDoc.body);
+    // 上游 script.js:8000-8002:type==='swipe' 时弹出末层(swipe 槽
+    // 重新生成旧楼层);WI 扫描缓冲同步不含该层。
+    if (type === 'swipe' && chatMessages.length) chatMessages.pop();
     const chatMetadata = chatDoc.header?.chat_metadata ?? {};
 
     // —— World Info:先取书名集 → 批量拉书 → mergeLoreSources 一次成型 ——
