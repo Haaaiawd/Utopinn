@@ -2,7 +2,11 @@
 
 ## Intended result
 
-把 SillyTavern(以 Luker fork 为基底)重构为 **DSH 式"全插件"产品**(D-010/D-011/D-012):内核=真 cordis(Context/events/effects/registry),酒馆语义全是插件(tavern-core/formats/card-runtime/presets),任何 seam 可被第三方 Provider 替换。浏览器端全新 SPA 管理端(全功能,含插件管理页)+ React Native/Expo 手机端(精简 UI,重 UI 收进底导航专属页)。**V1=聊天核心+完整管理端,做酒馆完全替代**;群聊/QR/图片/TTS/向量库归插件位。预设=数据无损+生成等价+UI重设计;MVU 完整支持(服务端 settle);TH T0/T1 进 V1;旧 ST 服务端插件走 adapter。
+**V1(2026-11-10 收缩拍板)= 旧 Luker/酒馆 UI 皮 + 服务端大脑真接线。** 循序渐进:apps/server/public 旧 UI 是正式前端(不再是过渡件),所有生成入口一次性改道 `/api/uberge/generate`(服务端组装+派发+落盘),浏览器端原版组装引擎(openai.js/world-info.js ~14k 行)留码停用、只作行为对照。性能目标=分离本身:WI扫描/tokenize/正则管线全在服务端,浏览器只渲染+交互。
+
+**搁置(非删除)**:apps/web 新 SPA、apps/mobile RN 端、CardApp WebView 面板、RP 形态/阅读器形态工作全部 parked——代码保留、设计文档转 reference,方向回暖可直接续。uberge 服务端插件面(/api/uberge/*)即产品服务端,不是为新 UI 预备的旁路。
+
+长期愿景(回温时恢复):DSH 式全插件产品——内核=真 cordis,酒馆语义皆插件;SPA 管理端 + RN 手机端 + CardApp 沙箱面板。MVU 服务端 settle、TH T0/T1、旧 ST 服务端插件 adapter 的既有成果全部保留为 V1 资产。
 
 ## People and operating reality
 
@@ -22,6 +26,7 @@
 - 高级功能不得挤占移动端主界面——藏进设置或仅 web 可见
 - 个人云为主,ST 式多用户隔离沿用不深化;online-first,客户端缓存只读
 - i18n=中英双字典起步(locale-owned 文案纪律);移动端=Expo dev build
+- V1 边界:不动旧 jQuery UI 渲染层(性能靠分离,不靠重写);旧 UI 生成入口全切服务端,客户端引擎留码停用可对照
 
 ## Design document map
 

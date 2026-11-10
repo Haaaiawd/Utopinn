@@ -2410,7 +2410,7 @@
   },
   {
    "id": "TASK-026",
-   "title": "桌面 RP 形态 P0:角色页/舞台头/门厅/消息惯例",
+   "title": "[停泊·2026-11-10方向收缩] 桌面 RP 形态 P0:角色页/舞台头/门厅/消息惯例",
    "depends_on": [
     "TASK-010"
    ],
@@ -2451,7 +2451,7 @@
      "verified": ""
     }
    ],
-   "progress": "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。",
+   "progress": "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
    "evidence": [
     "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
     "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
@@ -2524,7 +2524,7 @@
   },
   {
    "id": "TASK-028",
-   "title": "移动端新地基:fork IReader 切割 + uberge 源 + RP 四件",
+   "title": "[停泊·2026-11-10方向收缩] 移动端新地基:fork IReader 切割 + uberge 源 + RP 四件",
    "depends_on": [],
    "done_when": [
     "ref/ireader 切割:书源层(source-api实现/runtime-js)移除,编译通过",
@@ -2551,7 +2551,7 @@
      "verified": ""
     }
    ],
-   "progress": "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留",
+   "progress": "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
    "evidence": [],
    "outcome": "移动端真阅读器质感:以 IReader(Apache-2.0,KMP 三端)为地基,书源层换 uberge 服务端源,补 RP 专属四件",
    "status": "open",
@@ -2567,6 +2567,132 @@
     "TASK-027"
    ],
    "capability_exemption": "承接 superseded 任务的 capability 归属(同 mobile-app-stack)"
+  },
+  {
+   "id": "TASK-029",
+   "title": "后端 audit 修复:三格报告高危+中危逐条落地",
+   "outcome": "三份 audit 报告的高危清零,中危逐条裁决,每项修复带 node:test 回归钉",
+   "acceptance": [
+    {
+     "criterion": "三份 audit 报告高危项 0 残余(代码证据)",
+     "verify_by": "对照 .loom/eval/audit-*-2026-11-04.md 逐条核",
+     "evidence": ""
+    },
+    {
+     "criterion": "中危项逐条修复或注明不修理由",
+     "verify_by": "报告逐条销号记录",
+     "evidence": ""
+    },
+    {
+     "criterion": "每项修复有行为级回归钉",
+     "verify_by": "node --test tests/uberge-generate-context.test.mjs 等全绿",
+     "evidence": ""
+    },
+    {
+     "criterion": "WI 五层来源+设置组合 golden 复核",
+     "verify_by": "tests/golden-diff 捕获对比",
+     "evidence": ""
+    }
+   ],
+   "done_when": [],
+   "boundaries": [
+    "不动 web/mobile 客户端形态",
+    "不改上游语义——compat 分歧一律向 ref/SillyTavern 看齐",
+    "不动协议 wire 形状(单独拍板)"
+   ],
+   "depends_on": [],
+   "reads": [
+    ".loom/PROJECT.md"
+   ],
+   "touches": [
+    "apps/server/src/services/generate-context.js",
+    "apps/server/src/services/extension-prompts.js",
+    "apps/server/src/plugins/uberge-generate.js",
+    "packages/kernel/src/loader.ts",
+    "apps/server/src/kernel-boot.js",
+    "apps/server/src/server-main.js",
+    "apps/server/tests/uberge-generate-context.test.mjs"
+   ],
+   "implements": "",
+   "design_exemption": "",
+   "capability_hooks": [],
+   "capability_exemption": "",
+   "integrity_version": 1,
+   "covers": [],
+   "status": "open",
+   "progress": {
+    "completed": [
+     "三份 audit 的 HIGH 面全灭(安全+兼容+持久化)",
+     "engine MEDIUM 9/13 落地: M4/M5(3325553) M6-M10(15ef9cf) M11并入持久化M2",
+     "persistence MEDIUM 6/6(其中M2降级为设计级遗留,判定已入档)",
+     "api 面: admin门+穿越+upgrade catch(ea9ad9b) uberge写面入门(e1ad4f2)"
+    ],
+    "current": "audit 修复战役主体完成;剩 M12(STscript builtins 功能缺口)M13(待核) L1-L5 lows + M2 设计级",
+    "next": "golden-diff 语料复核 WI 五层来源;M12 STscript builtins 按上游清单补注册"
+   },
+   "evidence": [],
+   "created_at": "2026-11-05T08:04:51.786Z",
+   "updated_at": "2026-11-06T11:14:54.612Z"
+  },
+  {
+   "id": "TASK-030",
+   "title": "旧UI接线服务端大脑:生成入口全切 /api/uberge/generate",
+   "depends_on": [
+    "TASK-029"
+   ],
+   "done_when": [
+    "生成入口清单+服务端覆盖矩阵入库(impersonate/quiet/continue/swipe/regenerate/工具调用/quietPrompt逐项)",
+    "public/ 所有生成入口改道 /api/uberge/generate,浏览器内组装引擎成为死路径",
+    "主发送+swipe+regenerate+continue 实机冒烟通过(真卡+真预设)",
+    "e2e 回归全绿;golden-diff 无新分叉"
+   ],
+   "reads": [
+    "apps/server/public/scripts/openai.js",
+    "apps/server/public/script.js",
+    "apps/server/public/scripts/generate-task.js",
+    "apps/server/src/plugins/uberge-generate.js"
+   ],
+   "touches": [
+    "apps/server/public/script.js",
+    "apps/server/public/scripts/"
+   ],
+   "implements": "core-engine",
+   "status": "open",
+   "acceptance": [
+    {
+     "criterion": "生成入口清单+覆盖矩阵入库",
+     "verify_by": "文档评审",
+     "evidence": "",
+     "verified": ""
+    },
+    {
+     "criterion": "全入口改道服务端,客户端引擎死路径化",
+     "verify_by": "grep api/uberge/generate 命中所有入口;openai.js 组装路径无活跃调用",
+     "evidence": "",
+     "verified": ""
+    },
+    {
+     "criterion": "主发送/swipe/regenerate/continue 实机冒烟",
+     "verify_by": "live-fire 脚本+人工",
+     "evidence": "",
+     "verified": ""
+    },
+    {
+     "criterion": "e2e+golden-diff 全绿",
+     "verify_by": "pnpm test",
+     "evidence": "",
+     "verified": ""
+    }
+   ],
+   "progress": "",
+   "evidence": [],
+   "outcome": "旧 Luker/酒馆 UI 全部生成入口走服务端大脑(/api/uberge/generate),浏览器内组装引擎成为死路径;主发送/swipe/regenerate/continue 实机冒烟通过。",
+   "boundaries": [
+    "不删除浏览器内原版组装引擎(留码停用作行为对照)",
+    "不动旧 jQuery UI 渲染层/消息 DOM 结构",
+    "不改 /api/uberge/* 服务端既有语义(接线只动客户端调用面)",
+    "不恢复 apps/web/apps/mobile 工作(仍 parked)"
+   ]
   }
  ],
  "milestones": [
