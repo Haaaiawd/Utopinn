@@ -4,7 +4,7 @@
     "name": "Uberge",
     "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-04T10:12:08.618Z"
+    "updated_at": "2026-11-10T02:22:34.673Z"
   },
   "understanding": {
     "confirmed": [
@@ -133,6 +133,54 @@
         "text": "DSH 客户端整树是 cordis 插件：Loader+BootManifest 动态 bundle,React mount 也是 uiRenderer 服务；服务端 webServer extends Service,register/registerUpgrade→disposer",
         "source": "clarification",
         "at": "2026-11-04T04:23:05.141Z"
+      },
+      {
+        "id": "F-022",
+        "text": "旧 UI 接服务端大脑的切法? → 一次性全切——所有生成入口统一走 /api/uberge/generate(服务端组装+派发+落盘),不留双路径并存期。行为差异一次性暴露、一次性对齐。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-023",
+        "text": "浏览器内原版组装引擎(openai.js/world-info.js ~14k 行)怎么处理? → 留码停用——代码保留不删,生成入口改道后成为死路径,行为对不上时可手动切回比对。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-024",
+        "text": "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、uberge 插件面)处置? → API 留、前端藏——uberge 服务端插件面继续用(它就是服务端大脑);apps/mobile 与 apps/web 标记 parked;移动端/新UI 设计文档转 reference,不作为当前工作依据。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-025",
+        "text": "「改善性能」的具体所指? → 分离就够——V1 性能目标=客户端变轻(WI扫描/tokenize/正则管线已在服务端)+单一引擎事实源;不动旧 jQuery UI 的渲染层。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-026",
+        "text": "V1 = 旧 Luker/酒馆 UI(apps/server/public)+ 服务端大脑(/api/uberge/*)真接线;新 SPA 与移动端全部搁置。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-027",
+        "text": "packages/core 引擎 + uberge 插件面是产品当前唯一大脑,不再是为新UI预备的旁路。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-028",
+        "text": "客户端组装引擎(openai.js/world-info.js)留码停用,生成入口全部改道服务端。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-029",
+        "text": "性能目标 = 分离本身:浏览器只做渲染/交互,组装全在服务端。",
+        "source": "clarification",
+        "at": "2026-11-10T02:22:28.008Z"
       }
     ],
     "assumptions": [
@@ -146,14 +194,14 @@
       {
         "id": "A-002",
         "text": "Luker's legacy jQuery public/ UI is kept in apps/server as the interim management surface until apps/web SPA is built.",
-        "status": "active",
+        "status": "retired",
         "source": "agent",
         "at": "2026-11-02T08:48:37.671Z"
       },
       {
         "id": "A-003",
         "text": "apps/web SPA will use React (aligns with RN reuse + ecosystem); not yet confirmed by human.",
-        "status": "active",
+        "status": "retired",
         "source": "agent",
         "at": "2026-11-02T08:48:37.671Z"
       }
@@ -185,6 +233,17 @@
         "at": "2026-11-02T08:48:37.671Z",
         "resolution": "见 DECISIONS.md D-005:保留服务端插件/skills/orchestrator,不剥离",
         "resolved_at": "2026-11-02T08:57:13.114Z"
+      },
+      {
+        "id": "Q-004",
+        "question": "全切时异类生成(impersonate/quiet/continue/swipe/regenerate/工具调用/多轮quiet prompt)的服务端覆盖度还没逐项核——接线前要一份入口清单+覆盖矩阵,还是先接线后逐个补?",
+        "recommendation": "先做入口清单(便宜),全切按清单分批落地,每批可验证。",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-10T02:22:28.038Z",
+        "clarify_round": 1,
+        "resolution": "先做入口清单+覆盖矩阵(便宜的一步),全切按清单分批落地——清单是接线实施单,每批生成入口迁移后可独立验证。",
+        "resolved_at": "2026-11-10T02:22:34.348Z"
       }
     ]
   },
@@ -233,26 +292,39 @@
     "D-013",
     "D-014",
     "D-015",
-    "D-016"
+    "D-016",
+    "D-017"
   ],
   "clarify": {
     "active": false,
-    "reason": "方向拍板:web 全面转 DSH 式贡献架构(App 降为薄壳已落地);PC 布局否决双模式,定 rail+路由+聊天域内酒馆 chrome;服务端 /api/uberge/* 将迁移为 kernel 插件",
-    "started_at": "2026-11-04T04:20:45.643Z",
-    "closed_at": "2026-11-04T04:23:08.225Z",
+    "reason": "方向收缩:V1 改为旧UI(酒馆/Luker皮)+服务端大脑真接线;新SPA/移动端/CardApp面板全部搁置;目标=真分离+性能,循序渐进",
+    "started_at": "2026-11-10T02:15:03.806Z",
+    "closed_at": "2026-11-10T02:22:34.673Z",
     "rounds": [
       {
         "round": 1,
         "answered": [
-          "B 步服务端迁移推进方式",
-          "web 客户端动态化做到哪一层",
-          "内核缺口补齐范围",
-          "WS 通道归属"
+          "旧 UI 接服务端大脑的切法?",
+          "浏览器内原版组装引擎(openai.js/world-info.js ~14k 行)怎么处理?",
+          "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、uberge 插件面)处置?",
+          "「改善性能」的具体所指?"
         ],
-        "confirmed": 3,
-        "decisions": 4,
+        "confirmed": 4,
+        "decisions": 1,
+        "new_open": [
+          "Q-004"
+        ],
+        "at": "2026-11-10T02:22:28.038Z"
+      },
+      {
+        "round": 2,
+        "answered": [
+          "Q-004"
+        ],
+        "confirmed": 0,
+        "decisions": 0,
         "new_open": [],
-        "at": "2026-11-04T04:23:05.154Z"
+        "at": "2026-11-10T02:22:34.348Z"
       }
     ]
   }

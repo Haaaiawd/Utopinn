@@ -208,3 +208,18 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none(限定既有形态稿的"已拍板"语义:基线可用,不封顶)
 - Affects: .loom/design/web-rp-form.md, .loom/design/mobile-reader-form.md, 后续形态类任务
 - Recorded: 2026-11-04T12:10:00.000Z
+
+## D-017: V1 收缩:旧UI皮 + 服务端脑,一次性全切
+
+- Current decision: apps/server/public 旧 UI 即 V1 正式前端(不再是过渡管理端);所有生成入口一次性改道 /api/uberge/generate;客户端组装引擎留码停用;apps/mobile、apps/web 标记 parked;uberge 插件面即产品服务端。
+- Rationale: 此前宏大方案(新SPA+RN+CardApp面板)被负责人判定过大;循序渐进=把已验证的服务端大脑接上仍在用的旧UI,立刻兑现真分离+客户端变轻,同时保留向后演化空间(死路径可比对、文档可复用)。
+- Source: conversation
+- Supersedes: none
+- Affects: .loom/PROJECT.md, .loom/design/web-ia.md, .loom/design/web-form-v2.md, .loom/design/web-rp-form.md, .loom/design/web-visual-system.md, .loom/design/web-slots-architecture.md, .loom/design/mobile-fork-ireader.md, .loom/design/mobile-form-v2.md, .loom/design/mobile-reader-form.md, .loom/design/mobile-ui-foundation.md, .loom/design/mobile-panels.md, .loom/tasks.json
+- Recorded: 2026-11-10T02:22:28.009Z
+
+## D-2026-11-10-g076: 方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/uberge/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。
+
+- Changed: .loom/PROJECT.md, .loom/tasks.json
+- Affected tasks: TASK-026, TASK-028, TASK-030
+- At: 2026-11-10T02:23:32.616Z
