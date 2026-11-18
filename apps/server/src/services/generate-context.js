@@ -475,6 +475,9 @@ export async function buildGenerationContext({
         type,
         api: 'openai',
         model: presetDoc.openai_model,
+        // 上游 continue:cyclePrompt = 被续写楼层当前文本(script.js:8656)。
+        // 服务端按末层推导;调用方仍可 overrides.cyclePrompt 显式覆盖。
+        ...(type === 'continue' ? { cyclePrompt: chatMessages.at(-1)?.mes ?? '' } : {}),
         ...overrides,
     };
 

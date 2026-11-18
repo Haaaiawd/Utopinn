@@ -15,6 +15,7 @@ import {
     eventSource,
     extension_prompt_roles,
     extension_prompt_types,
+    extension_prompts,
     Generate,
     getCurrentChatId,
     getExtensionPrompt,
@@ -107,7 +108,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { AbortReason } from './util/AbortReason.js';
 import { pushReasoningDetails } from './util/reasoning-details.js';
 import { resolveChatCompletionRequestProfile } from './extensions/connection-manager/profile-resolver.js';
-import { COMETAPI_IGNORE_PATTERNS, IGNORE_SYMBOL, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
+import { COMETAPI_IGNORE_PATTERNS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
 import { maybeDeleteLinkedLorebookForPresetDeletion } from './world-info.js';
 import { showUndoToast } from './undo-toast.js';
 import {
@@ -4321,6 +4322,95 @@ function isChatCompletionResponseEmpty(data) {
     });
 }
 
+// —— 服务端大脑改道(TASK-030)——
+// chat 域生成走 /api/uberge/generate(服务端组装+派发+落盘);浏览器内
+// openai.js 组装链成为死路径(留码停用,行为对照用)。generateTask /
+// orchestrator / custom-request 等 requestScope!=='chat' 的调用不走此路。
+
+/** 组装面覆盖:目前仅 quiet → overrides.quietPrompt;continue 的 cyclePrompt
+ * 由服务端按末层推导;skipWIAN/quietImage/quietToLoud 为已知残留。 */
+function buildUbergeAssemblyOverrides(type) {
+    const overrides = {};
+    if (type === 'quiet') {
+        const quietPrompt = extension_prompts?.[inject_ids.QUIET_PROMPT]?.value;
+        if (quietPrompt) overrides.quietPrompt = quietPrompt;
+    }
+    return overrides;
+}
+
+/** @returns {object|null} uberge 请求体;group/解析失败 → null 回退 legacy。 */
+function buildUbergeGenerateBody(type, requestBody) {
+    if (selected_group) return null; // group 聊天服务端未接(deps.group 断)
+    const character = characters[this_chid];
+    const charDir = String(character?.avatar || '').replace(/\.png$/i, '');
+    const chatName = String(character?.chat || getCurrentChatId() || '').replace(/\.jsonl$/i, '');
+    if (!charDir || !chatName) return null;
+    const persistTypes = new Set(['normal', 'regenerate']);
+    const { messages: _discarded, luker_generation, ...dispatchOverrides } = requestBody;
+    return {
+        charDir,
+        chatName,
+        type,
+        stream: Boolean(requestBody.stream),
+        // 客户端派生的 canonical 派发字段(model/max_tokens/stop/logit_bias/
+        // tools/tool_choice/json_schema/n/user_name…)整包透传;
+        // 浏览器组装的 messages 丢弃——服务端重新组装。
+        generation_overrides: dispatchOverrides,
+        overrides: buildUbergeAssemblyOverrides(type),
+        luker_generation: {
+            ...(luker_generation ?? {}),
+            persist_target: persistTypes.has(type)
+                ? (luker_generation?.persist_target ?? buildLukerPersistTarget())
+                : { kind: 'none' }, // swipe/continue/impersonate/quiet 不落楼层
+        },
+        ...(requestBody.secret_id ? { secret_id: requestBody.secret_id } : {}),
+    };
+}
+
+/**
+ * @param {object} ubergeBody buildUbergeGenerateBody 产出
+ * @param {AbortSignal?} signal
+ * @returns {Promise<PostChatCompletionResult>}
+ */
+async function postUbergeGenerateRequest(ubergeBody, signal, { apiPresetName = '' } = {}) {
+    const requestTimeoutMs = getRequestTimeoutMs(apiPresetName);
+    if (requestTimeoutMs > 0) {
+        ubergeBody = {
+            ...ubergeBody,
+            luker_generation: {
+                ...(ubergeBody.luker_generation || {}),
+                request_timeout_ms: requestTimeoutMs,
+            },
+        };
+    }
+    // ws-delivery 代理把该 fetch 变成 job 事件驱动的等价 SSE/JSON Response。
+    const response = await withProfileRetry(async () => {
+        return await fetch('/api/uberge/generate', {
+            method: 'POST',
+            body: JSON.stringify(ubergeBody),
+            headers: getRequestHeaders(),
+            signal,
+        });
+    }, {
+        profileName: apiPresetName,
+        signal,
+        label: 'uberge-generate',
+        onAttempt: (attempt, _err, _delay, maxRetries) => {
+            toastr.info(t`Retrying request… (${attempt}/${maxRetries})`, t`Request failed`, { timeOut: 3000 });
+        },
+    });
+
+    if (!response.ok) {
+        const responseBody = await response.text();
+        console.error(`[uberge] ${response.status} from ${response.url}`, {
+            status: response.status, statusText: response.statusText,
+            body: responseBody.substring(0, 500),
+        });
+        throw new Error(`Got response status ${response.status} from ${response.url}: ${responseBody.substring(0, 200)}`);
+    }
+    return { response };
+}
+
 /**
  * @typedef {object} PostChatCompletionResult
  * @property {Response} response The raw fetch Response, body unconsumed. The
@@ -4663,7 +4753,14 @@ async function sendOpenAIRequest(type, messages, signal, {
             });
         }
     }
-    const { response } = await postChatCompletionGenerateRequest(requestBody, signal, { apiPresetName });
+    // TASK-030:chat 域一次性全切服务端大脑——body 换 uberge 契约,
+    // 客户端组装的 messages 不再上 wire(服务端重新组装,权威源)。
+    const ubergeBody = requestScope === 'chat'
+        ? buildUbergeGenerateBody(type, requestBody)
+        : null;
+    const { response } = ubergeBody
+        ? await postUbergeGenerateRequest(ubergeBody, signal, { apiPresetName })
+        : await postChatCompletionGenerateRequest(requestBody, signal, { apiPresetName });
     const generationIdHeader = response.headers.get('x-luker-generation-id');
     if (shouldTrackLukerGenerationState && generationIdHeader) {
         lastOpenAIGenerationId = generationIdHeader;
