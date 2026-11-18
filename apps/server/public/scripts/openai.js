@@ -4346,7 +4346,7 @@ function buildUbergeGenerateBody(type, requestBody) {
     const chatName = String(character?.chat || getCurrentChatId() || '').replace(/\.jsonl$/i, '');
     if (!charDir || !chatName) return null;
     const persistTypes = new Set(['normal', 'regenerate']);
-    const { messages: _discarded, luker_generation, ...dispatchOverrides } = requestBody;
+    const { messages: _discarded, luker_generation, type: _typeDiscarded, ...dispatchOverrides } = requestBody;
     return {
         charDir,
         chatName,
