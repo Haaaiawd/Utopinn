@@ -2682,7 +2682,7 @@
      "verified": ""
     }
    ],
-   "progress": "入口清单+覆盖矩阵入库(.loom/eval/generate-entries-inventory-2026-11-10.md,验收1达成)。批次0五项阻塞修复完成(6546a16):model/max_tokens canonical、stream_openai、quiet非流、ws-delivery PROXY、is_system过滤、swipe弹层。批1下一步:sendOpenAIRequest(openai.js:4358)fetch层换 /api/uberge/generate——最小切法保留函数壳+换URL/body为{charDir,chatName,type,generation_overrides,persist_target};彻底切法在 Generate() 更上游短路(浏览器不再组装,真分离)。swipe/continue/impersonate/quiet persist_target:{kind:\"none\"} 由调用方显式传。",
+   "progress": "入口清单+覆盖矩阵入库(.loom/eval/generate-entries-inventory-2026-11-10.md,验收1达成)。批次0五项阻塞修复完成(6546a16):model/max_tokens canonical、stream_openai、quiet非流、ws-delivery PROXY、is_system过滤、swipe弹层。批1下一步:sendOpenAIRequest(openai.js:4358)fetch层换 /api/uberge/generate——最小切法保留函数壳+换URL/body为{charDir,chatName,type,generation_overrides,persist_target};彻底切法在 Generate() 更上游短路(浏览器不再组装,真分离)。swipe/continue/impersonate/quiet persist_target:{kind:\"none\"} 由调用方显式传。 | 批1落地(a734a73):sendOpenAIRequest chat域全切 /api/uberge/generate——normal/regenerate/continue/swipe/impersonate/quiet 统一改道,generation_overrides 整包透传客户端派生键,非persist类强制 kind:none,group/extension scope 留 legacy。服务端补 continue cyclePrompt 推导。回归16/16。残留:浏览器组装仍跑(死工,perf短路留Phase2);skipWIAN/quietImage/quietToLoud;group聊天;textgen/kobold源;浏览器实烟未验。",
    "evidence": [],
    "outcome": "旧 Luker/酒馆 UI 全部生成入口走服务端大脑(/api/uberge/generate),浏览器内组装引擎成为死路径;主发送/swipe/regenerate/continue 实机冒烟通过。",
    "boundaries": [
