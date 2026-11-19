@@ -18,6 +18,7 @@ import {
     substituteParams,
 } from '@utopinn/core';
 import { createPromptBuilder, resolveTokenizer } from './prompt-builder.js';
+import { buildGroupCardFields, collectGroupDepthPrompts } from './group-orchestration.js';
 import {
     createDepthInjectionProvider,
     createWorldInfoRegexHook,
@@ -187,6 +188,12 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  * @param {boolean} [input.dryRun] preview/干跑:true → WI 不写 timed effects、返回值不含持久化义务
  * @param {string} [input.mainApi] 上游 main_api 同位量('openai'|'textgenerationwebui'|…);
  *   影响 substCtx.mainApi → mesExamples 块头/instruct 样例格式化路径(缺省 'openai')
+ * @param {object} [input.group] TASK-037 群聊上下文(缺省 = 单卡)。形状:
+ *   { id, chatId, doc, mode, members:[{avatar,name}], speakerAvatar,
+ *     joinedCardFields:{description,personality,scenario,mesExample}|null,
+ *     memberDepthPrompts:[{text,depth,role}] }
+ *   chatId = 群聊文件 id(Repo {isGroup:true,groupId} 寻址);doc = 群档
+ *   (substCtx.groups 料);card/charDir 入参此时是「发言成员」的卡与目录。
  * @returns {Promise<{builtPrompt, request, trace, sources, perf, chatMetadata, chatIntegrity}>}
  *   perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs;
  *   chatMetadata/chatIntegrity 供调用方持久化 timedWorldInfo(仅非 dryRun)。
@@ -202,6 +209,7 @@ export async function buildGenerationContext({
     overrides = {},
     dryRun = false,
     mainApi = 'openai',
+    group = null,
 }) {
     // —— perf 打表(server 包裹层,core 签名不动)——
     // cardMs 由调用方补(loadCharacterCard 在 endpoint);totalMs 为 buildGenerationContext 总耗。
@@ -218,12 +226,16 @@ export async function buildGenerationContext({
     const settingsRepo = getSettingsRepo();
     const worldInfoRepo = getWorldInfoRepo();
 
+    const isGroup = Boolean(group);
     const [chatDoc, settingsDoc] = await Promise.all([
-        chatRepo.get(handle, charDir, chatName),
+        isGroup
+            // 群聊文件寻址同 /api/chats/group/*:{charDir:'',name:chatId,isGroup,groupId}
+            ? chatRepo.get(handle, '', String(group.chatId), { isGroup: true, groupId: String(group.chatId) })
+            : chatRepo.get(handle, charDir, chatName),
         settingsRepo.get(handle),
     ]);
     perf.loadMs += performance.now() - seg;
-    if (!chatDoc) throw new Error(`Chat not found: ${charDir}/${chatName}`);
+    if (!chatDoc) throw new Error(isGroup ? `Group chat not found: ${group.chatId}` : `Chat not found: ${charDir}/${chatName}`);
 
     const powerUser = settingsDoc?.power_user ?? {};
     const { engine: worldInfoSettings, state: worldInfoState, raw: wiRaw } = resolveWorldInfoSettings(settingsDoc);
@@ -290,7 +302,7 @@ export async function buildGenerationContext({
         })),
         chatMetadata,
         globalVariables: settingsDoc?.extension_settings?.variables?.global ?? {},
-        currentChatId: chatName,
+        currentChatId: isGroup ? String(group.chatId) : chatName,
         limits: { maxContext: presetDoc.openai_max_context, maxResponse: presetDoc.openai_max_tokens },
     };
 
@@ -323,6 +335,72 @@ export async function buildGenerationContext({
     substCtx.bannedWords = { collect: true, push: (w) => bannedInMacros.push(w) };
     const subst = (content) => substituteParams(content, substCtx);
 
+    // —— TASK-037 group seams ——
+    // deps.group(assemble.ts:selected/botNames)+ substCtx.groups/{{group}}/
+    // {{notChar}}/{{groupNotMuted}} + textgen 群成员 stop 串 + cardFields。
+    // joinedCardFields/memberDepthPrompts 必须由 substCtx 派生(逐成员
+    // name2 宏替换),只能在 subst 就位后计算——故放这里而非入参处。
+    let groupCardFields = null;
+    let groupDepthPrompts = [];
+    if (isGroup) {
+        const roster = Array.isArray(group.members) ? group.members : [];
+        const substForMember = (text, memberName) =>
+            substituteParams(String(text ?? ''), substCtx, { name2Override: memberName });
+        groupCardFields = buildGroupCardFields({
+            group: group.doc ?? group,
+            roster,
+            speakerAvatar: group.speakerAvatar,
+            chatMetadata,
+            substForMember,
+            substGlobal: subst,
+        });
+        groupDepthPrompts = collectGroupDepthPrompts({
+            group: group.doc ?? group,
+            roster,
+            speakerAvatar: group.speakerAvatar,
+            substForMember,
+        });
+        substCtx.selectedGroup = String(group.id);
+        substCtx.groups = [{
+            id: String(group.id),
+            members: group.doc?.members ?? [],
+            disabled_members: group.doc?.disabled_members ?? [],
+        }];
+        const nameByAvatar = new Map(roster.map((m) => [String(m.avatar), m.name]));
+        substCtx.characterNameForAvatar = (avatar) => nameByAvatar.get(String(avatar)) ?? '';
+        // getStoppingStrings 群分支原料(textgen-body buildStoppingStrings
+        // 用它补 \n<成员名>: 停止串;发言者名在消费侧按 name2 排除)。
+        substCtx.groupMemberNames = roster.map((m) => m.name).filter(Boolean);
+    }
+    // getCharacterCardFields 等价面(substitute.ts cardFields seam):
+    // {{description}}/{{personality}}/{{scenario}}/{{mesExamples}}/{{charPrompt}}/
+    // {{charJailbreak}}/{{charDepthPrompt}}/{{creatorNotes}} 宏数据源。
+    // APPEND 模式 4 字段取联合卡(已逐成员预替换);SWAP/单卡取发言成员字段
+    // (全局 subst 一次,等价 legacy baseChatReplace)。
+    const cardDescText = groupCardFields?.description ?? subst(String(card?.data?.description ?? card?.description ?? '').trim());
+    const cardPersonalityText = groupCardFields?.personality ?? subst(String(card?.data?.personality ?? card?.personality ?? '').trim());
+    const cardScenarioText = groupCardFields?.scenario ?? subst(String(card?.data?.scenario ?? card?.scenario ?? '').trim());
+    const cardMesExampleText = groupCardFields?.mesExample ?? subst(String(card?.data?.mes_example ?? card?.mes_example ?? '').trim());
+    const memberSystemPrompt = String(chatMetadata.system_prompt || card?.data?.system_prompt || card?.system_prompt || '');
+    substCtx.cardFields = {
+        system: powerUser.prefer_character_prompt ? subst(memberSystemPrompt.trim()) : '',
+        jailbreak: powerUser.prefer_character_jailbreak
+            ? subst(String(card?.data?.post_history_instructions ?? card?.post_history_instructions ?? '').trim())
+            : '',
+        description: cardDescText,
+        personality: cardPersonalityText,
+        scenario: cardScenarioText,
+        mesExamples: cardMesExampleText,
+        persona: subst(String(powerUser.persona_description ?? '').trim()),
+        version: String(card?.data?.character_version ?? card?.character_version ?? ''),
+        charDepthPrompt: subst(String(card?.data?.extensions?.depth_prompt?.prompt ?? '').trim()),
+        creatorNotes: subst(String(card?.data?.creator_notes ?? card?.creator_notes ?? '').trim()),
+        firstMessage: String(card?.data?.first_mes ?? card?.first_mes ?? ''),
+        alternateGreetings: Array.isArray(card?.data?.alternate_greetings ?? card?.alternate_greetings)
+            ? (card?.data?.alternate_greetings ?? card?.alternate_greetings)
+            : [],
+    };
+
     // —— extension prompts:settings 顶层 extension_prompts + chat_metadata.script_injects
     //    重挂为 script_inject_* 键(processChatSlashCommands 语义,每次生成重建)——
     const mergedExtPrompts = { ...(settingsDoc?.extension_prompts ?? {}) };
@@ -342,14 +420,29 @@ export async function buildGenerationContext({
         charDir,
     });
     mergedExtPrompts[NOTE_MODULE_NAME] = anState.entry;
+    // depth_prompt 注入(script.js:8209-8220 同位):
+    // 群 APPEND/APPEND_DISABLED → DEPTH_PROMPT_${i} 逐成员注入(文本已按
+    // 各成员名预替换,互斥单键 DEPTH_PROMPT);SWAP/单卡 → 发言成员单键。
     const depthPromptExt = card?.data?.extensions?.depth_prompt ?? {};
-    mergedExtPrompts[DEPTH_PROMPT_KEY] = {
-        value: String(depthPromptExt.prompt ?? ''),
-        position: extension_prompt_types.IN_CHAT,
-        depth: Number(depthPromptExt.depth ?? 4),
-        scan: !!noteSettings.allowWIScan,
-        role: roleByName(depthPromptExt.role ?? 'system'),
-    };
+    if (isGroup && groupDepthPrompts.length > 0) {
+        groupDepthPrompts.forEach((dp, i) => {
+            mergedExtPrompts[`DEPTH_PROMPT_${i}`] = {
+                value: String(dp.text ?? ''),
+                position: extension_prompt_types.IN_CHAT,
+                depth: Number(dp.depth ?? 4),
+                scan: !!noteSettings.allowWIScan,
+                role: roleByName(dp.role ?? 'system'),
+            };
+        });
+    } else {
+        mergedExtPrompts[DEPTH_PROMPT_KEY] = {
+            value: String(depthPromptExt.prompt ?? ''),
+            position: extension_prompt_types.IN_CHAT,
+            depth: Number(depthPromptExt.depth ?? 4),
+            scan: !!noteSettings.allowWIScan,
+            role: roleByName(depthPromptExt.role ?? 'system'),
+        };
+    }
     mergedExtPrompts[PERSONA_DESCRIPTION_KEY] = {
         value: '',
         position: extension_prompt_types.IN_PROMPT,
@@ -369,13 +462,15 @@ export async function buildGenerationContext({
 
     // WI 扫描:chat 必须新到旧序(engine 约定 index 0 = newest);
     // globalScanData 是卡/人设字段,进扫描缓冲(原版 scanState 同位)
+    // 上游 scanState 的卡字段走 getCharacterCardFields —— APPEND 模式
+    // 即联合卡(groupCardsLazy 覆盖 4 字段),与 cardFields seam 同源取数。
     const globalScanData = {
         trigger: GENERATION_TYPE_TRIGGERS.includes(type) ? type : 'normal',
         personaDescription: user?.description ?? powerUser.persona_description ?? '',
-        characterDescription: card?.data?.description ?? card?.description ?? '',
-        characterPersonality: card?.data?.personality ?? card?.personality ?? '',
+        characterDescription: cardDescText,
+        characterPersonality: cardPersonalityText,
         characterDepthPrompt: card?.data?.extensions?.depth_prompt?.prompt ?? '',
-        scenario: card?.data?.scenario ?? card?.scenario ?? '',
+        scenario: cardScenarioText,
         creatorNotes: card?.data?.creator_notes ?? card?.creator_notes ?? '',
     };
     seg = performance.now();
@@ -400,6 +495,10 @@ export async function buildGenerationContext({
                 applyWorldInfoRegex: createWorldInfoRegexHook(extPromptSource, substCtx, {
                     card, charDir, presetDoc, presetName: resolvedPresetName,
                 }),
+                // characterFilter.names/tags(engine.ts 钩子):单卡 = 卡目录名;
+                // 群 = 发言成员目录名(getCharaFilename(this_chid) 同位)。
+                getCharacterFilename: () => charDir,
+                getCharacterTags: () => (card?.data?.tags ?? card?.tags ?? []),
                 // WI 预算与 prompt 同 tokenizer(上游 Tokenizers.openai);
                 // len/4 会把 CJK 世界书高估 2-4 倍,预算提前溢出丢条目。
                 countTokens: (t) => resolveTokenizer(presetDoc.openai_model).encode(String(t)).length,
@@ -455,15 +554,19 @@ export async function buildGenerationContext({
     //    上游 parseMesExamples 后 unshift/push 等价)
     const emBefore = (wiActivated.EMEntries ?? []).filter((e) => e?.position === 0).map((e) => e.content);
     const emAfter = (wiActivated.EMEntries ?? []).filter((e) => e?.position === 1).map((e) => e.content);
-    const cardMesExample = card?.data?.mes_example ?? card?.mes_example ?? '';
+    // APPEND 联合卡的 mesExample 段(groupCardsLazy.mesExamples 同位,
+    // 已逐成员预替换 + <START> 头补齐);SWAP/单卡 = 发言成员字段。
+    const cardMesExample = groupCardFields?.mesExample ?? (card?.data?.mes_example ?? card?.mes_example ?? '');
     const mergedMesExample = [...emBefore, cardMesExample, ...emAfter].filter(Boolean).join('\n<START>\n');
 
     const assemblyRequest = {
         card: {
             name: substCtx.name2,
-            description: card?.data?.description ?? card?.description ?? '',
-            personality: card?.data?.personality ?? card?.personality ?? '',
-            scenario: card?.data?.scenario ?? card?.scenario ?? '',
+            // 卡 4 字段:APPEND 联合卡(逐成员预替换文本)覆盖,SWAP/单卡
+            // 发言成员原值——与 getCharacterCardFieldsLazy 的字段级覆盖同语义。
+            description: groupCardFields?.description ?? card?.data?.description ?? card?.description ?? '',
+            personality: groupCardFields?.personality ?? card?.data?.personality ?? card?.personality ?? '',
+            scenario: groupCardFields?.scenario ?? card?.data?.scenario ?? card?.scenario ?? '',
             mesExample: mergedMesExample,
             systemPromptOverride: card?.data?.system_prompt ?? card?.system_prompt,
             jailbreakOverride: card?.data?.post_history_instructions ?? card?.post_history_instructions,
@@ -503,7 +606,15 @@ export async function buildGenerationContext({
         depthInjection: createDepthInjectionProvider(extPromptSource, subst),
     });
     seg = performance.now();
-    const builtPrompt = await builder(assemblyRequest, { substCtx });
+    // deps.group seam(assemble.ts):selected → groupNudge/new_group_chat_prompt;
+    // botNames(getGroupNames 同形,含 disabled)→ 名字前缀行为/他成员
+    // reasoning 抑制/示例解析。单卡传 undefined 不触任何群分支。
+    const builtPrompt = await builder(assemblyRequest, {
+        substCtx,
+        ...(isGroup
+            ? { group: { selected: String(group.id), botNames: (group.members ?? []).map((m) => m.name).filter(Boolean) } }
+            : {}),
+    });
     perf.assembleMs = performance.now() - seg;
     // collection/populate/token 分段由 prompt-builder 的 builtPrompt.perf 提供;
     // 缺省(非服务端 builder)时全记 collection、token 记 0。
@@ -570,17 +681,23 @@ export async function buildGenerationContext({
  * (与上游 saveChatConditional last-write-wins 等价);二次失败=NotFound 等,
  * 交由下个生成周期自愈。fire-and-forget 不可——dispatch 写楼层必须排在它后面。
  */
-export async function persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity }) {
+export async function persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity, groupChatId = null }) {
     const timedWorldInfo = chatMetadata?.timedWorldInfo;
     if (!timedWorldInfo || typeof timedWorldInfo !== 'object') return null;
     const handle = request.user.profile.handle;
     const chatRepo = getChatRepo();
+    // 群聊文件同一 CAS 语义,寻址换 {isGroup,groupId}(同 /api/chats/group/*)。
+    const repoOpts = groupChatId ? { isGroup: true, groupId: String(groupChatId) } : {};
+    const targetCharDir = groupChatId ? '' : charDir;
+    const targetName = groupChatId ? String(groupChatId) : chatName;
     try {
-        return await chatRepo.updateChatMetadata(handle, charDir, chatName, { timedWorldInfo }, expectedIntegrity);
+        return await chatRepo.updateChatMetadata(handle, targetCharDir, targetName, { timedWorldInfo }, expectedIntegrity, repoOpts);
     } catch (error) {
         if (error?.code !== 'integrity_mismatch') throw error;
-        const fresh = await chatRepo.get(handle, charDir, chatName);
+        const fresh = groupChatId
+            ? await chatRepo.get(handle, '', String(groupChatId), { isGroup: true, groupId: String(groupChatId) })
+            : await chatRepo.get(handle, charDir, chatName);
         if (!fresh) return null;
-        return chatRepo.updateChatMetadata(handle, charDir, chatName, { timedWorldInfo }, fresh.integrity);
+        return chatRepo.updateChatMetadata(handle, targetCharDir, targetName, { timedWorldInfo }, fresh.integrity, repoOpts);
     }
 }

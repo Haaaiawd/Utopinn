@@ -276,7 +276,9 @@ function getCustomStoppingStrings(powerUser, subst) {
 /**
  * getStoppingStrings(script.js:6178)textgen 分支:
  * names_as_stop_strings(user/char)+instruct 序列+custom 串+single_line。
- * 群成员名 stop 串依赖 selected_group——group 编排未落地(design §2),不实现。
+ * 群成员名 stop 串(script.js:6217):selected_group && (name2 || isImpersonate)
+ * 时,roster 里 name2 以外成员的 `\n{name}:` 全部进 stop——防成员互抢话头。
+ * roster 名表由 generate-context 挂 substCtx.groupMemberNames。
  */
 function buildStoppingStrings({ powerUser, substCtx, instructEngine, subst, isImpersonate, isContinue }) {
     const result = [];
@@ -290,6 +292,15 @@ function buildStoppingStrings({ powerUser, substCtx, instructEngine, subst, isIm
         result.push(userString);
         if (isContinue && substCtx?.chat?.at(-1)?.is_user) {
             result.push(charString);
+        }
+
+        // 群路:其余成员名当停止串(含 disabled —— legacy 遍历 group.members 全集)
+        if (Array.isArray(substCtx?.groupMemberNames) && (name2 || isImpersonate)) {
+            for (const memberName of substCtx.groupMemberNames) {
+                if (memberName && memberName !== name2) {
+                    result.push(`\n${memberName}:`);
+                }
+            }
         }
     }
 

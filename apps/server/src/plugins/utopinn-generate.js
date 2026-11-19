@@ -9,6 +9,15 @@
  * (dispatcher 挂在全部路由中间件之后、legacy 挂载之前)。
  */
 import { buildGenerationContext, logPerfLine, persistWorldInfoTimedEffects } from '../services/generate-context.js';
+import {
+    avatarToCharDir,
+    buildRosterEntry,
+    deriveActivationInput,
+    memberAvatarThumbnailUrl,
+    selectActivatedMembers,
+} from '../services/group-orchestration.js';
+import { getChatRepo, getGroupRepo } from '../storage/index.js';
+import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { buildTextgenDispatchBody, resolveTextgenModel, resolveTextgenServer, unescapeMacroBraces } from '../services/textgen-body.js';
 import { selectChatCompletionDispatch } from '../endpoints/backends/chat-completions.js';
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
@@ -38,6 +47,93 @@ async function loadCharacterCard(directories, charDir) {
         const raw = await fs.readFile(jsonPath, 'utf8').catch(() => null);
         return raw ? JSON.parse(raw) : null;
     }
+}
+
+// —— TASK-037 group 生成编排(第一刀:每请求一成员一楼)——
+
+/** legacy generateType 映射:group wrapper 只保留下列动词,其余(含 regenerate)走 'normal' */
+const GROUP_MEMBER_VERBS = new Set(['swipe', 'impersonate', 'quiet', 'continue']);
+
+/**
+ * body.member → roster avatar。接受三种形:avatar 文件名('X.png')、
+ * 目录名('X')、显示名(卡 name)。legacy force_chid 是下标;
+ * 服务端用 avatar 做稳定键,宽松解析减少调用方负担。
+ */
+function resolveMemberAvatar(roster, member) {
+    const needle = String(member ?? '').trim();
+    if (!needle) return null;
+    const byAvatar = roster.find((m) => m.avatar === needle);
+    if (byAvatar) return byAvatar.avatar;
+    const byDir = roster.find((m) => m.charDir === needle || m.avatar === `${needle}.png`);
+    if (byDir) return byDir.avatar;
+    const byName = roster.find((m) => m.name === needle);
+    return byName?.avatar ?? null;
+}
+
+/**
+ * 群生成计划:群 doc → 群聊文件 → roster(卡可加载成员)→ 成员选择。
+ * 返回 { doc, groupId, chatId, roster, activated, speaker, generateType };
+ * activated 空 = legacy「activatedMembers 空 → 只落用户楼」分支(调用方短路)。
+ */
+async function resolveGroupGenerationPlan({ request, body }) {
+    const handle = request.user.profile.handle;
+    const groupId = safeName(body.groupId, 'groupId');
+    const doc = await getGroupRepo().get(handle, groupId);
+    if (!doc) throw new NotFoundError(`Group not found: ${groupId}`);
+    // 寻址沿用 /api/chats/group/* 约定:id = 群聊文件名(≠ 群 doc id 时可多聊);
+    // 调用方带 .jsonl 后缀时先剥(group/get 的 stripJsonlExt 同款)
+    const rawChatId = String(body.chatId ?? body.chat_id ?? body.id ?? doc.chat_id ?? doc.id ?? groupId);
+    const chatId = safeName(rawChatId.replace(/\.jsonl$/i, ''), 'chatId');
+    const chatDoc = await getChatRepo().get(handle, '', chatId, { isGroup: true, groupId: chatId });
+    if (!chatDoc) throw new NotFoundError(`Group chat not found: ${chatId}`);
+
+    const roster = [];
+    for (const avatar of doc.members ?? []) {
+        // legacy unshallowGroupMembers:找不到的成员跳过(findIndex===-1 过滤)
+        const card = await loadCharacterCard(request.user.directories, avatarToCharDir(avatar));
+        if (card) roster.push(buildRosterEntry(String(avatar), card));
+    }
+    if (roster.length === 0) {
+        throw new InvalidArgumentError(`Group ${groupId} has no loadable member cards`);
+    }
+
+    const verb = String(body.type ?? 'normal');
+    const chatBody = Array.isArray(chatDoc.body) ? chatDoc.body : [];
+    const { isUserInput, activationText } = deriveActivationInput(chatBody, Boolean(body.automatic_trigger));
+
+    let forceAvatar = null;
+    if (body.member !== undefined && body.member !== null && String(body.member).trim() !== '') {
+        forceAvatar = resolveMemberAvatar(roster, body.member);
+        if (!forceAvatar) {
+            throw new InvalidArgumentError(`member not in group or card unloadable: ${body.member}`);
+        }
+    }
+    const { activated } = selectActivatedMembers({
+        group: doc,
+        roster,
+        chat: chatBody,
+        type: verb,
+        isUserInput,
+        activationText,
+        forceAvatar,
+    });
+    if ((verb === 'swipe' || verb === 'continue') && activated.length === 0) {
+        // legacy: toastr.warning('Deleted group member swiped') + throw
+        throw new InvalidArgumentError('Deleted group member swiped');
+    }
+
+    const speakerAvatar = activated[0] ?? null;
+    return {
+        doc,
+        groupId,
+        chatId,
+        roster,
+        activated,
+        speaker: speakerAvatar ? roster.find((m) => m.avatar === speakerAvatar) : null,
+        // legacy:成员内 Generate 的 type 映射(其余动词都按 normal 生成)
+        generateType: GROUP_MEMBER_VERBS.has(verb) ? verb : 'normal',
+        verb,
+    };
 }
 
 /**
@@ -93,9 +189,12 @@ function messagesToTextgenPrompt(messages, engine, substCtx) {
                 ? engine.formatChat(name1, content, true, false, false, name1, name2)
                 : `${name1}: ${content}\n`);
         } else if (m?.role === 'assistant') {
+            // legacy formatMessageHistoryItem 用楼层自身 name —— 群聊里每楼
+            // 都可能来自不同成员;单卡路 name===name2,语义不变。
+            const floorName = m?.name || name2;
             parts.push(instructOn
-                ? engine.formatChat(name2, content, false, false, false, name1, name2)
-                : `${name2}: ${content}\n`);
+                ? engine.formatChat(floorName, content, false, false, false, name1, name2)
+                : `${floorName}: ${content}\n`);
         } else {
             // system/narration 段原样并入 story(jailbreak/WI 段不包 instruct 壳)
             parts.push(content.endsWith('\n') ? content : `${content}\n`);
@@ -168,15 +267,40 @@ export function apply(ctx) {
     reg('/api/utopinn/generate', async function (request, response) {
         try {
             const body = request.body ?? {};
-            const charDir = safeName(body.charDir, 'charDir');
-            const chatName = safeName(body.chatName, 'chatName');
             const directories = request.user.directories;
             const cardStart = performance.now();
-            const card = await loadCharacterCard(directories, charDir);
+
+            // —— 目标解析:body.groupId 存在 → 群路(群 doc→群聊文件→成员
+            //    选择→发言成员卡);否则单卡路。两路收敛成同一组局部量
+            //    (charDir=发言成员目录 / chatName=群聊文件 id / card=发言
+            //    成员卡 / generateType=成员内生成动词),共用下方派发尾 ——
+            let charDir, chatName, card, groupPlan = null;
+            if (body.groupId !== undefined && body.groupId !== null && String(body.groupId).trim() !== '') {
+                groupPlan = await resolveGroupGenerationPlan({ request, body });
+                if (!groupPlan.speaker) {
+                    // legacy:activatedMembers 空 = 只落用户楼、无成员生成。
+                    // 服务端契约里用户楼已由调用方 append —— 回报空队列,不派发。
+                    return response.send({
+                        ok: true,
+                        skipped: 'no_activated_member',
+                        group: { groupId: groupPlan.groupId, chatId: groupPlan.chatId, queue: [] },
+                    });
+                }
+                charDir = groupPlan.speaker.charDir;
+                chatName = groupPlan.chatId;
+                card = groupPlan.speaker.card;
+            } else {
+                charDir = safeName(body.charDir, 'charDir');
+                chatName = safeName(body.chatName, 'chatName');
+                card = await loadCharacterCard(directories, charDir);
+            }
             const cardMs = performance.now() - cardStart;
             if (!card) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
+            // 群路动词 = 成员内 Generate 语义(legacy generateType 映射:
+            // regen→normal;swipe/impersonate/quiet/continue 原样)
+            const generateType = groupPlan ? groupPlan.generateType : String(body.type ?? 'normal');
 
             const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, powerUser, amountGen, bannedInMacros, trace, sources, perf, chatMetadata, chatIntegrity } = await buildGenerationContext({
                 request,
@@ -185,11 +309,22 @@ export function apply(ctx) {
                 card,
                 presetName: body.presetName,
                 user: body.user ?? { name: request.user.profile.name },
-                type: body.type ?? 'normal',
+                type: generateType,
                 overrides: body.overrides ?? {},
                 // text 派发时 main_api 同位量为 'textgenerationwebui'
                 // (mesExamples 块头/instruct 样例走 instruct 形态,design TASK-037 §1.8)
                 mainApi: String(body.api ?? 'chat') === 'text' ? 'textgenerationwebui' : 'openai',
+                ...(groupPlan
+                    ? {
+                        group: {
+                            id: groupPlan.groupId,
+                            chatId: groupPlan.chatId,
+                            doc: groupPlan.doc,
+                            members: groupPlan.roster,
+                            speakerAvatar: groupPlan.speaker.avatar,
+                        },
+                    }
+                    : {}),
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
@@ -197,13 +332,49 @@ export function apply(ctx) {
             // WI timed effects 写回必须排在 dispatch 写楼层之前(effects 锚定的是
             // 生成前楼层计数);失败不阻断生成——下个周期自愈。
             try {
-                await persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity: chatIntegrity });
+                await persistWorldInfoTimedEffects({
+                    request, charDir, chatName, chatMetadata,
+                    expectedIntegrity: chatIntegrity,
+                    groupChatId: groupPlan?.chatId ?? null,
+                });
                 // TASK-034:落库后快照挂 job(GET /jobs/:id 回传),浏览器生成后
                 // 回同步 chat_metadata.timedWorldInfo。只在 persist 成功后挂 ——
                 // 失败时回灌会让浏览器拿得比服务端还"新";不挂,下个周期自愈语义不变。
                 request.utopinnTimedWorldInfo = chatMetadata?.timedWorldInfo ?? null;
             } catch (persistErr) {
                 console.warn('utopinn/generate timedWorldInfo persist skipped:', persistErr?.message);
+            }
+
+            // —— persist_target 兜底:单卡填 avatar/file_name;群填 kind:group +
+            //    发言成员楼层字段(name/original_avatar/force_avatar/gen_id)——
+            let persistTargetDefault;
+            if (groupPlan) {
+                persistTargetDefault = {
+                    kind: 'group',
+                    id: groupPlan.chatId,
+                    char_name: groupPlan.speaker.name,
+                    original_avatar: groupPlan.speaker.avatar,
+                    force_avatar: memberAvatarThumbnailUrl(groupPlan.speaker.avatar),
+                    gen_id: Date.now(),
+                    chat_metadata: chatMetadata ?? {},
+                };
+                // 成员选择轨迹挂 job(sources)与响应头——客户端对账/回放用,
+                // 无需再查群 doc 即知本次发言者与完整激活队列。
+                sources.group = {
+                    groupId: groupPlan.groupId,
+                    chatId: groupPlan.chatId,
+                    mode: Number(groupPlan.doc.generation_mode ?? 0),
+                    strategy: Number(groupPlan.doc.activation_strategy ?? 0),
+                    member: { avatar: groupPlan.speaker.avatar, name: groupPlan.speaker.name },
+                    queue: groupPlan.activated,
+                };
+                response.setHeader('x-utopinn-group', JSON.stringify(sources.group));
+            } else {
+                persistTargetDefault = {
+                    kind: 'character',
+                    avatar_url: `${charDir}.png`,
+                    file_name: `${chatName}.jsonl`,
+                };
             }
 
             // ---- TASK-020 textgen 分叉:body.api==='text' → 单串 prompt + text-completions 派发 ----
@@ -255,7 +426,7 @@ export function apply(ctx) {
                     powerUser,
                     substCtx,
                     instructEngine,
-                    type: body.type ?? 'normal',
+                    type: generateType,
                     bannedInMacros,
                 });
                 request.body = {
@@ -270,11 +441,7 @@ export function apply(ctx) {
                     stream: body.stream ?? tgSettings?.streaming ?? false,
                     luker_generation: {
                         ...(body.luker_generation ?? {}),
-                        persist_target: body.luker_generation?.persist_target ?? {
-                            kind: 'character',
-                            avatar_url: `${charDir}.png`,
-                            file_name: `${chatName}.jsonl`,
-                        },
+                        persist_target: body.luker_generation?.persist_target ?? persistTargetDefault,
                     },
                 };
                 request.utopinnTrace = trace;
@@ -299,19 +466,16 @@ export function apply(ctx) {
                 ...presetToDispatchParams(presetDoc),
                 chat_completion_source: chatSource,
                 // verb 落 job.requestMeta——jobs/status、attach 写盘重建都靠它;
-                // provider pickBy 自滤,不会发给上游。
-                type: body.type ?? 'normal',
+                // provider pickBy 自滤,不会发给上游。群路 = 成员内动词
+                // (generateType),与 legacy 成员 Generate 语义同位。
+                type: generateType,
                 messages: builtPrompt.messages,
-                stream: (body.type === 'quiet' ? false : body.stream)
+                stream: (generateType === 'quiet' ? false : body.stream)
                     ?? ((oaiSettings?.stream_openai ?? presetDoc?.stream_openai) !== false),
                 // 客户端可传 job_id(回放对齐);persist_target 兜底按本次 char/chat 填
                 luker_generation: {
                     ...(body.luker_generation ?? {}),
-                    persist_target: body.luker_generation?.persist_target ?? {
-                        kind: 'character',
-                        avatar_url: `${charDir}.png`,
-                        file_name: `${chatName}.jsonl`,
-                    },
+                    persist_target: body.luker_generation?.persist_target ?? persistTargetDefault,
                 },
             };
             // 上游 getChatCompletionModel(source→{source}_model)+
@@ -352,13 +516,31 @@ export function apply(ctx) {
     reg('/api/utopinn/preview', async function (request, response) {
         try {
             const body = request.body ?? {};
-            const charDir = safeName(body.charDir, 'charDir');
-            const chatName = safeName(body.chatName, 'chatName');
             const directories = request.user.directories;
             const cardStart = performance.now();
-            const card = await loadCharacterCard(directories, charDir);
+
+            // 与 /generate 同形的目标解析:groupId → 发言成员预览;否则单卡
+            let charDir, chatName, card, groupPlan = null;
+            if (body.groupId !== undefined && body.groupId !== null && String(body.groupId).trim() !== '') {
+                groupPlan = await resolveGroupGenerationPlan({ request, body });
+                charDir = groupPlan.speaker?.charDir ?? null;
+                chatName = groupPlan.chatId;
+                card = groupPlan.speaker?.card ?? null;
+            } else {
+                charDir = safeName(body.charDir, 'charDir');
+                chatName = safeName(body.chatName, 'chatName');
+                card = await loadCharacterCard(directories, charDir);
+            }
             const cardMs = performance.now() - cardStart;
             if (!card) {
+                if (groupPlan) {
+                    // 预览同样回报空队列语义,不 404(群本身存在,只是没人可说)
+                    return response.send({
+                        messages: [], trace: null,
+                        sources: { group: { groupId: groupPlan.groupId, chatId: groupPlan.chatId, queue: [] } },
+                        perf: null, skipped: 'no_activated_member',
+                    });
+                }
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
             const { builtPrompt, trace, sources, perf } = await buildGenerationContext({
@@ -369,11 +551,32 @@ export function apply(ctx) {
                 presetName: body.presetName,
                 user: body.user ?? { name: request.user.profile.name },
                 dryRun: true,
-                type: body.type ?? 'normal',
+                type: groupPlan ? groupPlan.generateType : (body.type ?? 'normal'),
                 overrides: body.overrides ?? {},
+                ...(groupPlan
+                    ? {
+                        group: {
+                            id: groupPlan.groupId,
+                            chatId: groupPlan.chatId,
+                            doc: groupPlan.doc,
+                            members: groupPlan.roster,
+                            speakerAvatar: groupPlan.speaker.avatar,
+                        },
+                    }
+                    : {}),
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
+            if (groupPlan) {
+                sources.group = {
+                    groupId: groupPlan.groupId,
+                    chatId: groupPlan.chatId,
+                    mode: Number(groupPlan.doc.generation_mode ?? 0),
+                    strategy: Number(groupPlan.doc.activation_strategy ?? 0),
+                    member: { avatar: groupPlan.speaker.avatar, name: groupPlan.speaker.name },
+                    queue: groupPlan.activated,
+                };
+            }
             logPerfLine('utopinn/preview', perf, { charDir, chatName });
             return response.send({ messages: builtPrompt.messages, trace, sources, perf });
         } catch (error) {
