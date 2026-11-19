@@ -2765,7 +2765,7 @@
         "apps/server/src/endpoints/chats.js"
       ],
       "implements": "core-engine",
-      "status": "active",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "acknowledgeGenerationFromValueOrPersistTarget/integrity CAS/gen-id sidecar/settle hooks 全套移植进 utopinn fiber(chats 写盘域)",
@@ -2809,7 +2809,8 @@
         "不删 legacy 端点(转 TASK-035)",
         "行为语义以 legacy 为准做 parity diff,不自由发挥"
       ],
-      "updated_at": "2026-11-19T06:42:43.526Z"
+      "updated_at": "2026-11-19T06:42:43.526Z",
+      "note": "status: active→done(写盘面 ack/integrity/gen-id/settle 已落地,037b 系列验收过)"
     },
     {
       "id": "TASK-033",
@@ -2957,7 +2958,7 @@
         "apps/server/public/scripts/"
       ],
       "implements": "core-engine",
-      "status": "parked",
+      "status": "open",
       "acceptance": [
         {
           "criterion": "legacy /api/chats、/api/backends/chat-completions 生成/状态端点删除或降为纯转发",
@@ -2988,7 +2989,8 @@
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-19T05:40:27.051Z",
+      "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)"
     },
     {
       "id": "TASK-036",
@@ -3171,7 +3173,7 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "active",
+      "status": "open",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
@@ -3202,7 +3204,8 @@
       ],
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null
+      "completed_at": null,
+      "note": "status: active→open(复刻格在飞,验收后回 active/done)"
     },
     {
       "id": "TASK-041",
@@ -3221,7 +3224,7 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "active",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
@@ -3250,7 +3253,8 @@
       ],
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null
+      "completed_at": null,
+      "note": "status: active→done(矩阵+32方法/35路由交付,typecheck 0 错)"
     },
     {
       "id": "TASK-042",
@@ -3269,7 +3273,7 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "active",
+      "status": "open",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
@@ -3298,7 +3302,8 @@
       ],
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null
+      "completed_at": null,
+      "note": "status: active→open(设计档备齐,实现待排)"
     },
     {
       "id": "TASK-043",
@@ -3347,6 +3352,67 @@
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
       "completed_at": null
+    },
+    {
+      "id": "TASK-044",
+      "title": "形态×插件面:stats 插件 + novel 章目录 + galgame 三件套 + ui.contrib",
+      "outcome": "四种舞台形态与统计面所需的服务端/插件面按 plugin-surface-forms.md 规划落地:utopinn-stats 聚合视图(job perf/trace+diag inject 事件),novel 章目录 sidecar+range regen,galgame choices 字段+assets 面+scene sidecar,ui.contrib manifest(末位)。",
+      "acceptance": [
+        {
+          "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
+          "verify_by": "curl + utopinn stats 动词",
+          "evidence": ""
+        },
+        {
+          "criterion": "stats/inject 给出各注入源命中率+token 占比(制卡调试面)",
+          "verify_by": "掌门卡一轮生成后查 WI 条目命中",
+          "evidence": ""
+        },
+        {
+          "criterion": "novel: sidecar chapters ns + GET chapters 聚合视图 + regen --range 语义",
+          "verify_by": "验收矩阵加断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "galgame: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+galgame sidecar ns 约定",
+          "verify_by": "协议类型+实弹",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "ui.contrib manifest 不塞组件,只塞面板类型+数据路由+图标声明",
+        "形态未定稿前不动 galgame",
+        "统计面只读不另起存储"
+      ],
+      "depends_on": [
+        "TASK-043"
+      ],
+      "reads": [
+        ".loom/design/plugin-surface-forms.md",
+        ".loom/design/frontend-binding-matrix.md"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-stats.js",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        ".loom/design/plugin-surface-forms.md"
+      ],
+      "implements": "",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-19T13:46:57.022Z",
+      "updated_at": "2026-11-19T13:46:57.022Z"
     }
   ],
   "milestones": [
