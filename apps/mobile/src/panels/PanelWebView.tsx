@@ -1,7 +1,7 @@
 // PanelWebView — RN host for untrusted card HTML (TASK-009).
 // Flow mirrors the web CardAppFrame (apps/web/src/cardapp/CardAppFrame.tsx):
 //   POST /api/card-runtime/mounts {charId} → mount bundle (entryUrl +
-//   bridgeNonce + manifest) → WebView at entryUrl?shim=t0 → 'uberge-panel'
+//   bridgeNonce + manifest) → WebView at entryUrl?shim=t0 → 'utopinn-panel'
 //   bridge → ctxApi → server TH layer.
 //
 // Security posture (same model as design/cardapp-web-host.md + protocol
@@ -40,7 +40,7 @@ type Phase =
     | { kind: 'error'; message: string };
 
 /**
- * host→card wire delivery: inject `window.__ubergePanelReceive(msg)` — the
+ * host→card wire delivery: inject `window.__utopinnPanelReceive(msg)` — the
  * entrypoint the t0 shim installs for exactly this host (it also listens
  * for 'message' events, but direct delivery skips the event hop).
  * U+2028/U+2029 are legal JSON yet illegal inside JS string literals —
@@ -48,7 +48,7 @@ type Phase =
  */
 function receiveJs(msg: unknown): string {
     const wire = JSON.stringify(msg).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    return `(function(){var f=window.__ubergePanelReceive;if(typeof f==='function'){f(${wire});}})();true;`;
+    return `(function(){var f=window.__utopinnPanelReceive;if(typeof f==='function'){f(${wire});}})();true;`;
 }
 
 // RNW 14 的 WebViewProps = IOS&Android&Windows 声明交集,在 strict 下塌成

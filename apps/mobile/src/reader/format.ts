@@ -4,7 +4,7 @@
 //   user 段 → 左缘发丝线楼层块;system/hidden → 幕间灰字小注
 //   章节 = 语义切片(>4h 时间间隔 / ~5k 字节点,章名=首段首句截12字)
 // 全部是显示计算 —— 不碰消息语义,不持久化。
-import type { MessageViewModel, RendererMessageRole } from '@uberge/protocol';
+import type { MessageViewModel, RendererMessageRole } from '@utopinn/protocol';
 
 // ---------- inline marks ----------
 

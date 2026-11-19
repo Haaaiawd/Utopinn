@@ -2,13 +2,13 @@
 
 ## 定位
 
-chat-completions 路径(`/api/uberge/generate` 现成)只覆盖 openai 系;
+chat-completions 路径(`/api/utopinn/generate` 现成)只覆盖 openai 系;
 textgen(kobold/llamacpp/ooba 系)与 instruct-mode 是另一条组装线,
 `instruct/engine.ts` 已移植就位,缺的是派发分支与格式化入口。
 
 ## 分叉点
 
-`/api/uberge/generate` 的 `body.chat_completion_source`:
+`/api/utopinn/generate` 的 `body.chat_completion_source`:
 - `openai`/`custom`(chat API)→ 现有 messages 组装管线
 - textgen 系 → **prompt 字符串**组装线:instruct preset(context/instruct
   两个 JSON)→ `formatInstructExamples`(seam 已接 substCtx)→ 拼历史 →

@@ -235,7 +235,7 @@ function Shell() {
     }, [serverStatus, activeChat, refreshChats, showHint, t]);
 
     /**
-     * Delete via /api/uberge. If the deleted chat was open, the selection
+     * Delete via /api/utopinn. If the deleted chat was open, the selection
      * falls back to the first remaining row — never leaves ChatView pointed
      * at a ghost. Same ghost-row purge as rename, applied after the merge.
      */

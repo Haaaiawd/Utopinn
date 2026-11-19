@@ -1,6 +1,6 @@
 // useChatSession —— 阅读屏的宿主数据面(conversation-renderers.md §1 的
 // RendererActions 移动端实现):send/swipe/edit/regen/branch/copy 全走既有
-// uberge 端点,协议零新增。
+// utopinn 端点,协议零新增。
 //
 //   send      = POST messages → POST /generate → WS resume → delta 折进 live 层
 //   swipe     = PATCH /body/<i>/swipe_id(乐观更新 + 服务端落账)
@@ -11,7 +11,7 @@
 //   降级      = WS 断 → waitForPersistedReply 轮询落盘
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Clipboard } from 'react-native';
-import type { MessageViewModel } from '@uberge/protocol';
+import type { MessageViewModel } from '@utopinn/protocol';
 import {
     appendMessages,
     branchChat,

@@ -1,5 +1,5 @@
 {
-    "name": "uberge",
+    "name": "utopinn",
     "version": "0.0.0",
     "private": true,
     "type": "module",
@@ -7,9 +7,9 @@
         "node": ">= 24"
     },
     "scripts": {
-        "server": "pnpm --filter @uberge/server start",
-        "mobile": "pnpm --filter @uberge/mobile start",
-        "web": "pnpm --filter @uberge/web dev",
+        "server": "pnpm --filter @utopinn/server start",
+        "mobile": "pnpm --filter @utopinn/mobile start",
+        "web": "pnpm --filter @utopinn/web dev",
         "typecheck": "pnpm -r --if-present typecheck",
         "lint": "pnpm -r --if-present lint",
         "test": "pnpm -r --if-present test"

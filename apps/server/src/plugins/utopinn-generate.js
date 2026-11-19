@@ -1,10 +1,10 @@
 /**
- * uberge-generate —— kernel 插件:服务端全组装生成面(TASK-007 首迁 POST)。
+ * utopinn-generate —— kernel 插件:服务端全组装生成面(TASK-007 首迁 POST)。
  *
  * POST /generate  全组装 → runLukerDispatch(与 chat-completions 同派发路径)
  * POST /preview   干跑组装,回 messages+trace+sources+perf(prompt viewer 数据源)
  *
- * handler 原样搬自 endpoints/uberge-generate.js;path 补全 /api/uberge 前缀,
+ * handler 原样搬自 endpoints/utopinn-generate.js;path 补全 /api/utopinn 前缀,
  * 注册进 webServer pattern 表。request.body 由上游 express.json() 就位
  * (dispatcher 挂在全部路由中间件之后、legacy 挂载之前)。
  */
@@ -17,7 +17,7 @@ import { listGenerationJobsForRequest, getGenerationJobForRequest } from '../end
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
-import { safeName, sendError } from './uberge-library.js';
+import { safeName, sendError } from './utopinn-library.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
@@ -112,7 +112,7 @@ export function apply(ctx) {
 
     // —— TASK-017 生成任务监视/回放 ——
     /** GET /jobs —— 本 handle 全部生成任务摘要(新→旧),监视面数据源。 */
-    regGet('/api/uberge/jobs', async function (request, response) {
+    regGet('/api/utopinn/jobs', async function (request, response) {
         return response.send({ items: listGenerationJobsForRequest(request) });
     });
 
@@ -120,7 +120,7 @@ export function apply(ctx) {
      * GET /jobs/:id —— 单 job 详情:状态/文本/trace(组装 token 分块)
      * /sources(WI 激活轨迹)/事件数。events 不回传(走 WS resume 通道)。
      */
-    regGet('/api/uberge/jobs/:id', async function (request, response) {
+    regGet('/api/utopinn/jobs/:id', async function (request, response) {
         const job = getGenerationJobForRequest(request, request.params.id);
         if (!job) {
             return response.status(404).send({ error: 'Job not found.' });
@@ -143,7 +143,7 @@ export function apply(ctx) {
         });
     });
 
-    reg('/api/uberge/generate', async function (request, response) {
+    reg('/api/utopinn/generate', async function (request, response) {
         try {
             const body = request.body ?? {};
             const charDir = safeName(body.charDir, 'charDir');
@@ -168,13 +168,13 @@ export function apply(ctx) {
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
-            logPerfLine('uberge/generate', perf, { charDir, chatName });
+            logPerfLine('utopinn/generate', perf, { charDir, chatName });
             // WI timed effects 写回必须排在 dispatch 写楼层之前(effects 锚定的是
             // 生成前楼层计数);失败不阻断生成——下个周期自愈。
             try {
                 await persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity: chatIntegrity });
             } catch (persistErr) {
-                console.warn('uberge/generate timedWorldInfo persist skipped:', persistErr?.message);
+                console.warn('utopinn/generate timedWorldInfo persist skipped:', persistErr?.message);
             }
 
             // ---- TASK-020 textgen 分叉:body.api==='text' → 单串 prompt + text-completions 派发 ----
@@ -222,11 +222,11 @@ export function apply(ctx) {
                         },
                     },
                 };
-                request.ubergeTrace = trace;
-                request.ubergeSources = sources;
-                response.setHeader('x-uberge-perf', JSON.stringify(perf));
+                request.utopinnTrace = trace;
+                request.utopinnSources = sources;
+                response.setHeader('x-utopinn-perf', JSON.stringify(perf));
                 return runLukerDispatch(request, response, {
-                    endpoint: 'uberge-generate',
+                    endpoint: 'utopinn-generate',
                     select: () => dispatchTextCompletions,
                 });
             }
@@ -275,23 +275,23 @@ export function apply(ctx) {
             }
 
             request.body = dispatchBody;
-            request.ubergeTrace = trace; // 诊断面挂点(request inspector 可摘)
-            request.ubergeSources = sources; // WI 激活轨迹等来源明细,runner 挂 job 供回放
+            request.utopinnTrace = trace; // 诊断面挂点(request inspector 可摘)
+            request.utopinnSources = sources; // WI 激活轨迹等来源明细,runner 挂 job 供回放
             // /generate 响应体是 runner 立即 flush 的 {}(真实结果走 job 事件/WS),
             // perf 挂响应头——需在 runLukerDispatch 的 response.json() 之前 set。
-            response.setHeader('x-uberge-perf', JSON.stringify(perf));
+            response.setHeader('x-utopinn-perf', JSON.stringify(perf));
 
             return runLukerDispatch(request, response, {
-                endpoint: 'uberge-generate',
+                endpoint: 'utopinn-generate',
                 select: (b) => selectChatCompletionDispatch(b),
             });
         } catch (error) {
-            sendError(response, error, 'uberge/generate');
+            sendError(response, error, 'utopinn/generate');
         }
     });
 
     /** POST /preview —— 干跑组装,只回 messages+trace+sources+perf(prompt viewer 数据源) */
-    reg('/api/uberge/preview', async function (request, response) {
+    reg('/api/utopinn/preview', async function (request, response) {
         try {
             const body = request.body ?? {};
             const charDir = safeName(body.charDir, 'charDir');
@@ -316,10 +316,10 @@ export function apply(ctx) {
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
-            logPerfLine('uberge/preview', perf, { charDir, chatName });
+            logPerfLine('utopinn/preview', perf, { charDir, chatName });
             return response.send({ messages: builtPrompt.messages, trace, sources, perf });
         } catch (error) {
-            sendError(response, error, 'uberge/preview');
+            sendError(response, error, 'utopinn/preview');
         }
     });
 }

@@ -3,12 +3,12 @@
 # 用法: tests/golden-diff/capture.sh <card.png> [--out dir] [--turn "文本"]
 # 自备 Playwright 缺的 5 个系统库(nss/nspr/alsa,dpkg -x 免 root)。
 set -e
-LIBDIR="${PW_LIBDIR:-$HOME/.cache/uberge-pw-libs}"
+LIBDIR="${PW_LIBDIR:-$HOME/.cache/utopinn-pw-libs}"
 NEED="libnss3.so libnspr4.so libasound.so.2"
 missing=0
 for so in $NEED; do [ -f "$LIBDIR/usr/lib/x86_64-linux-gnu/$so" ] || missing=1; done
 if [ "$missing" = 1 ]; then
-    mkdir -p "$LIBDIR" /tmp/uberge-pw-debs && cd /tmp/uberge-pw-debs
+    mkdir -p "$LIBDIR" /tmp/utopinn-pw-debs && cd /tmp/utopinn-pw-debs
     MIRROR="${APT_MIRROR:-http://mirrors.aliyun.com/ubuntu}/pool/main"
     curl -sfO --noproxy '*' "$MIRROR/n/nspr/libnspr4_4.35-1.1build1_amd64.deb"
     curl -sfO --noproxy '*' "$MIRROR/n/nss/libnss3_3.98-1build1_amd64.deb"

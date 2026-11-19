@@ -1,5 +1,5 @@
 {
-  "summary": "方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/uberge/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。",
+  "summary": "方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/utopinn/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。",
   "changes": [
     ".loom/PROJECT.md",
     ".loom/tasks.json"

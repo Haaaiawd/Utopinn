@@ -193,7 +193,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 
 ## D-020: 移动端地基改为 fork IReader(KMP),Expo 实现退位为参照
 
-- Current decision: 移动端以 fork `IReaderorg/IReader`(Apache-2.0,Kotlin Multiplatform,android/desktop/iosApp 三端壳)为新地基;切割缝 = `source-api`/`source-runtime-js` 书源爬虫层整块移除,替换为「uberge 源」=服务端 api-client 的 Kotlin 实现;presentation/domain/data/i18n/壳层保留。现有 `apps/mobile`(Expo)退位为参照实现——其 design 调研(阅读器形态)与面板桥协议仍为有效资产,代码本身不再演进主线。RP 专属件(swipe 候选、书写层、CardApp WebView 面板、MVU 状态)在任何阅读器中均不存在,须在新地基上自建。
+- Current decision: 移动端以 fork `IReaderorg/IReader`(Apache-2.0,Kotlin Multiplatform,android/desktop/iosApp 三端壳)为新地基;切割缝 = `source-api`/`source-runtime-js` 书源爬虫层整块移除,替换为「utopinn 源」=服务端 api-client 的 Kotlin 实现;presentation/domain/data/i18n/壳层保留。现有 `apps/mobile`(Expo)退位为参照实现——其 design 调研(阅读器形态)与面板桥协议仍为有效资产,代码本身不再演进主线。RP 专属件(swipe 候选、书写层、CardApp WebView 面板、MVU 状态)在任何阅读器中均不存在,须在新地基上自建。
 - Rationale: (1)legado 上游已被法律核掉(删库公告,2026-05)——「国内圈子最火」选项实质消亡,快照可拿但属死上游+GPL+法律云;(2)Expo 实现 chrome 质感未达产品线(用户明确判定"完全不合格"),且手搓/半迁移组件库路线越补越散;(3)IReader 是当前唯一同时满足:活着(周级提交)、Apache-2.0、小说原生 UX(非 EPUB 错范式)、KMP 三端、模块切缝正好长在书源层的候选;(4)KMP 保留 iOS/桌面回路,不像纯 Kotlin 单体锁死安卓。
 - Source: conversation(用户两番拍板"fork是对的")+ GitHub 仓库实证(legado 删库公告 / IReader 模块布局)
 - Supersedes: D-008 移动端 Expo 实现路线(架构目标"薄客户端"不变,实现栈 RN/Expo→KMP)
@@ -211,14 +211,14 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 
 ## D-017: V1 收缩:旧UI皮 + 服务端脑,一次性全切
 
-- Current decision: apps/server/public 旧 UI 即 V1 正式前端(不再是过渡管理端);所有生成入口一次性改道 /api/uberge/generate;客户端组装引擎留码停用;apps/mobile、apps/web 标记 parked;uberge 插件面即产品服务端。
+- Current decision: apps/server/public 旧 UI 即 V1 正式前端(不再是过渡管理端);所有生成入口一次性改道 /api/utopinn/generate;客户端组装引擎留码停用;apps/mobile、apps/web 标记 parked;utopinn 插件面即产品服务端。
 - Rationale: 此前宏大方案(新SPA+RN+CardApp面板)被负责人判定过大;循序渐进=把已验证的服务端大脑接上仍在用的旧UI,立刻兑现真分离+客户端变轻,同时保留向后演化空间(死路径可比对、文档可复用)。
 - Source: conversation
 - Supersedes: none
 - Affects: .loom/PROJECT.md, .loom/design/web-ia.md, .loom/design/web-form-v2.md, .loom/design/web-rp-form.md, .loom/design/web-visual-system.md, .loom/design/web-slots-architecture.md, .loom/design/mobile-fork-ireader.md, .loom/design/mobile-form-v2.md, .loom/design/mobile-reader-form.md, .loom/design/mobile-ui-foundation.md, .loom/design/mobile-panels.md, .loom/tasks.json
 - Recorded: 2026-11-10T02:22:28.009Z
 
-## D-2026-11-10-g076: 方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/uberge/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。
+## D-2026-11-10-g076: 方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/utopinn/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。
 
 - Changed: .loom/PROJECT.md, .loom/tasks.json
 - Affected tasks: TASK-026, TASK-028, TASK-030
@@ -244,9 +244,9 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 
 ## D-020: Cordis 迁移路线重排——写盘面统一优先,按「机制移植→调用改道→组装短路→物理删除」四步退役旧架构
 
-- Current decision: TASK-030/031 done 后,主线改为 TASK-032(ack/integrity/gen-id/settle 机制从 legacy chats.js 移植进 uberge fiber,三写盘面收成一套)→ TASK-033(浏览器残存调用改道 uberge REST)→ TASK-034(浏览器组装空跑短路)→ TASK-035(旧端点物理删除)。支线:TASK-036(CLI 具名覆盖 30 raw-only)、TASK-037(group/textgen/kobold 接入)、TASK-038(CLI 验收矩阵+golden-diff 复跑)。TASK-026/028 保持停泊不启动。
-- Rationale: 当前最大风险是双写盘面并存——ack/integrity 机制长在 legacy chats.js 里而新 uberge chat 路由不触发它;任何经新面的写都会绕过结算/去重。必须先统写盘才能谈删旧。TASK-026/028 与 cordis 迁移无关,继续停泊。
+- Current decision: TASK-030/031 done 后,主线改为 TASK-032(ack/integrity/gen-id/settle 机制从 legacy chats.js 移植进 utopinn fiber,三写盘面收成一套)→ TASK-033(浏览器残存调用改道 utopinn REST)→ TASK-034(浏览器组装空跑短路)→ TASK-035(旧端点物理删除)。支线:TASK-036(CLI 具名覆盖 30 raw-only)、TASK-037(group/textgen/kobold 接入)、TASK-038(CLI 验收矩阵+golden-diff 复跑)。TASK-026/028 保持停泊不启动。
+- Rationale: 当前最大风险是双写盘面并存——ack/integrity 机制长在 legacy chats.js 里而新 utopinn chat 路由不触发它;任何经新面的写都会绕过结算/去重。必须先统写盘才能谈删旧。TASK-026/028 与 cordis 迁移无关,继续停泊。
 - Source: conversation + subagent 审查(34 条,5527db1 已修阻塞项)
 - Supersedes: none
-- Affects: .loom/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/uberge-cli.mjs
+- Affects: .loom/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/utopinn-cli.mjs
 - Recorded: 2026-11-19T06:00:00.000Z

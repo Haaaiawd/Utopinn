@@ -9,7 +9,7 @@
 // A plugin renderer gets adapted to this prop surface by a mount shim
 // (TASK-011 territory), keeping one host code path.
 import type { ComponentType } from 'react';
-import type { ConversationView, RendererActions } from '@uberge/protocol';
+import type { ConversationView, RendererActions } from '@utopinn/protocol';
 
 export interface ConversationRendererProps {
     /** Host-supplied visible window. The renderer must not reorder messages. */

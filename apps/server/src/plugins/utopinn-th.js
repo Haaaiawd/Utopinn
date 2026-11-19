@@ -1,8 +1,8 @@
 /**
- * uberge-th —— TavernHelper 语义兼容层(TASK-025,自写;TH 本体是
+ * utopinn-th —— TavernHelper 语义兼容层(TASK-025,自写;TH 本体是
  * PolyForm NC 许可,只实现 API 语义不搬代码)。
  *
- *   POST /api/uberge/th/call
+ *   POST /api/utopinn/th/call
  *   body:{method, args?, target?{charDir?, chatName?}}
  *
  * 已实现的 TH 方法面(其余 → {ok:false,unsupported:true,method}):
@@ -19,10 +19,10 @@
 import {
     executeSlashCommandsWithOptions,
     registerBuiltinCommands,
-} from '@uberge/core';
+} from '@utopinn/core';
 import { getChatRepo, getSettingsRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
-import { safeName, sendError } from './uberge-library.js';
+import { safeName, sendError } from './utopinn-library.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
 
 export const inject = ['webServer'];
@@ -252,7 +252,7 @@ export function apply(ctx) {
     ctx.effect(() => ctx.webServer.register({
         kind: 'pattern',
         method: 'POST',
-        path: '/api/uberge/th/call',
+        path: '/api/utopinn/th/call',
         handler: async function (request, response) {
             try {
                 const body = request.body ?? {};
@@ -297,7 +297,7 @@ export function apply(ctx) {
                 }
                 return response.send(out);
             } catch (error) {
-                return sendError(response, error, 'uberge/th call');
+                return sendError(response, error, 'utopinn/th call');
             }
         },
     }));

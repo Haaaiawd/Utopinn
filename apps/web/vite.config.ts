@@ -22,7 +22,7 @@ interface ProxyErrorSink {
 const upstreamError = (_err: unknown, _req: unknown, res: unknown) => {
     const r = res as ProxyErrorSink;
     if (!r.headersSent && r.writeHead) {
-        r.writeHead(502, { 'content-type': 'application/json', 'x-uberge-proxy-error': '1' });
+        r.writeHead(502, { 'content-type': 'application/json', 'x-utopinn-proxy-error': '1' });
     }
     r.end?.(JSON.stringify({ error: 'upstream_unavailable' }));
 };

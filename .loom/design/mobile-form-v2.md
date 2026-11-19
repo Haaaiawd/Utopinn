@@ -48,5 +48,5 @@
 ## 四、承接
 
 - mobile-reader-form.md v1 拍板全部保留作 UX 目标;本稿给出 IReader 骨架上的具体落位与改造清单
-- source-api/plugin-api 接口面(uberge 源工作量)未深挖,仍是 TASK-028 侦察项
+- source-api/plugin-api 接口面(utopinn 源工作量)未深挖,仍是 TASK-028 侦察项
 - RP app 交互来自公开评测(非一手实测),按 D-021 保持可修正

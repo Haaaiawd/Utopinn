@@ -53,7 +53,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
  */
 export async function assertOk(res: Response): Promise<void> {
     if (!res.ok) {
-        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
+        const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
         const text = await res.text().catch(() => '');
         throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
     }

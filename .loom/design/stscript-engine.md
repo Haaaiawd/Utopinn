@@ -34,8 +34,8 @@ server 侧 `services/stscript-runner.js` 提供 ctx 绑定(变量仓储/发送�
 
 ## 端点
 
-- `POST /api/uberge/stscript/run` — `{chatRef?, script, scope?}` → `{result, ops, error?}`(干跑友好)
-- QR CRUD 挂在 `/api/uberge` 库面(TASK-018 同族)
+- `POST /api/utopinn/stscript/run` — `{chatRef?, script, scope?}` → `{result, ops, error?}`(干跑友好)
+- QR CRUD 挂在 `/api/utopinn` 库面(TASK-018 同族)
 
 ## 边界
 

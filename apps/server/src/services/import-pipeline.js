@@ -28,7 +28,7 @@ import {
     cardData,
     detectSpec,
     getBoundWorldName,
-} from '@uberge/formats';
+} from '@utopinn/formats';
 import { InvalidArgumentError } from '../storage/errors.js';
 import { assertSafeRepoName } from '../storage/name-validation.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';

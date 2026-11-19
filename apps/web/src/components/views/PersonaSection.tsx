@@ -1,6 +1,6 @@
 // PersonaSection — 设置页的人设管理块(TASK-024)。
 // 列表(头像缩略/名字/title/描述摘要/默认徽标)+ 就地编辑 + 新建 + 删除,
-// 全部走 /api/uberge/personas(avatar 文件名兼任主键,创建 = PUT 新 id)。
+// 全部走 /api/utopinn/personas(avatar 文件名兼任主键,创建 = PUT 新 id)。
 // 头像图按 ST 惯例拼 /thumbnail?type=persona;无图人设落 User 图标占位。
 // 服务器不可达时回退 MOCK_PERSONAS + mock 徽标,写操作短路成提示。
 import { useCallback, useEffect, useState } from 'react';

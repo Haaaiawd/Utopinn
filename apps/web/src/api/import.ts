@@ -1,4 +1,4 @@
-// /api/uberge/import 导入管线(apps/server/src/plugins/uberge-import.js)。
+// /api/utopinn/import 导入管线(apps/server/src/plugins/utopinn-import.js)。
 // 两段式:preview(探测+摘要+警告+同名冲突,不落库)→ commit(显式落库)。
 // SPA 统一走 {name, dataBase64} JSON 面;multipart(field "avatar")留给旧 UI。
 // 降级惯例同 preview.ts:服务端不可达(TypeError / 代理 502)→ 本地嗅探的
@@ -137,7 +137,7 @@ async function postImport<T>(path: string, body: unknown): Promise<T> {
         body: JSON.stringify(body),
     });
     if (!res.ok) {
-        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
+        const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
         const parsed = await res.json().catch(() => null) as
             { error?: string; hints?: Record<string, unknown> } | null;
         throw new ImportApiError(
@@ -150,11 +150,11 @@ async function postImport<T>(path: string, body: unknown): Promise<T> {
 }
 
 export async function previewImport(name: string, dataBase64: string): Promise<ImportPreview> {
-    return postImport<ImportPreview>('/api/uberge/import/preview', { name, dataBase64 });
+    return postImport<ImportPreview>('/api/utopinn/import/preview', { name, dataBase64 });
 }
 
 export async function commitImport(body: ImportCommitBody): Promise<ImportCommitResult> {
-    return postImport<ImportCommitResult>('/api/uberge/import/commit', body);
+    return postImport<ImportCommitResult>('/api/utopinn/import/commit', body);
 }
 
 // ---------------------------------------------------------------------------

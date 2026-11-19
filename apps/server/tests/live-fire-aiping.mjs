@@ -1,13 +1,13 @@
 /**
  * 实弹测试(手动工具,非 CI):真 server + 真上游(aiping.cn 中转)
- * 验证整条链:/api/uberge/generate → 服务端组装 → dispatch → job →
+ * 验证整条链:/api/utopinn/generate → 服务端组装 → dispatch → job →
  * WS 帧回放 → 楼层持久化 → jobs/:id trace/sources。
  *
  * 用法:
  *   set -a; source apps/server/.env.local; set +a
  *   node apps/server/tests/live-fire-aiping.mjs
  *
- * key 走 env(UBERGE_TEST_API_URL/KEY/MODEL),不入库。
+ * key 走 env(UTOPINN_TEST_API_URL/KEY/MODEL),不入库。
  */
 import { mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -17,9 +17,11 @@ import WebSocket from 'ws';
 import { startServer, tearDownServer } from './e2e/_lib/server.js';
 import { markOnboarded } from './e2e/_lib/fixtures.js';
 
-const { UBERGE_TEST_API_URL, UBERGE_TEST_API_KEY, UBERGE_TEST_MODEL } = process.env;
-if (!UBERGE_TEST_API_URL || !UBERGE_TEST_API_KEY || !UBERGE_TEST_MODEL) {
-    console.error('need UBERGE_TEST_API_URL / UBERGE_TEST_API_KEY / UBERGE_TEST_MODEL in env');
+const UTOPINN_TEST_API_URL = process.env.UTOPINN_TEST_API_URL || process.env.UBERGE_TEST_API_URL;
+const UTOPINN_TEST_API_KEY = process.env.UTOPINN_TEST_API_KEY || process.env.UBERGE_TEST_API_KEY;
+const UTOPINN_TEST_MODEL = process.env.UTOPINN_TEST_MODEL || process.env.UBERGE_TEST_MODEL;
+if (!UTOPINN_TEST_API_URL || !UTOPINN_TEST_API_KEY || !UTOPINN_TEST_MODEL) {
+    console.error('need UTOPINN_TEST_API_URL / UTOPINN_TEST_API_KEY / UTOPINN_TEST_MODEL in env');
     process.exit(2);
 }
 
@@ -79,10 +81,10 @@ try {
     sdoc.oai_settings = {
         ...(sdoc.oai_settings ?? {}),
         chat_completion_source: 'openai',
-        reverse_proxy: UBERGE_TEST_API_URL,
-        proxy_password: UBERGE_TEST_API_KEY,
-        model: UBERGE_TEST_MODEL,
-        openai_model: UBERGE_TEST_MODEL,
+        reverse_proxy: UTOPINN_TEST_API_URL,
+        proxy_password: UTOPINN_TEST_API_KEY,
+        model: UTOPINN_TEST_MODEL,
+        openai_model: UTOPINN_TEST_MODEL,
     };
     // WI 四层一次 seed 齐:globalSelect(L1)+ charLore 辅书(L3);
     // L2 主书见下(嵌书物化),L4 聊天绑书写进 JSONL header。
@@ -103,8 +105,8 @@ try {
     copyFileSync(PRESET_SRC, presetDst);
     // 预设携带的 openai_model 是官方型号名,中转没有——改写为测试模型。
     const presetDoc = JSON.parse(readFileSync(presetDst, 'utf8'));
-    presetDoc.openai_model = UBERGE_TEST_MODEL;
-    if ('model' in presetDoc) presetDoc.model = UBERGE_TEST_MODEL;
+    presetDoc.openai_model = UTOPINN_TEST_MODEL;
+    if ('model' in presetDoc) presetDoc.model = UTOPINN_TEST_MODEL;
     writeFileSync(presetDst, JSON.stringify(presetDoc, null, 4));
     copyFileSync(CARD_SRC, resolve(userRoot, 'characters', `${CHAR_DIR}.png`));
     const charDir = CHAR_DIR;
@@ -137,8 +139,8 @@ try {
     const session = await getSession(server.baseURL);
     const jobId = randomUUID();
 
-    console.log(`→ POST /api/uberge/generate  model=${UBERGE_TEST_MODEL}`);
-    const res = await post(server.baseURL, '/api/uberge/generate', session, {
+    console.log(`→ POST /api/utopinn/generate  model=${UTOPINN_TEST_MODEL}`);
+    const res = await post(server.baseURL, '/api/utopinn/generate', session, {
         charDir, chatName: CHAT, presetName,
         stream: true,
         luker_generation: { job_id: jobId },
@@ -181,7 +183,7 @@ try {
 
     // 详情面:sources 是对象 — {presetName, model, worldInfoActivated,
     // worldInfo:{activated:[{uid,world,comment,key,position,depth,outlet}]}}
-    const detail = await (await get(server.baseURL, `/api/uberge/jobs/${jobId}`, session)).json().catch(() => null);
+    const detail = await (await get(server.baseURL, `/api/utopinn/jobs/${jobId}`, session)).json().catch(() => null);
     if (detail?.sources) {
         const src = detail.sources;
         const entries = Array.isArray(src.worldInfo?.activated) ? src.worldInfo.activated : [];

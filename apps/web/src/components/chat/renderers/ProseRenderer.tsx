@@ -9,7 +9,7 @@
 //   首条 assistant = greeting 楼层 → .greeting 版式待遇
 //   streaming 空文 → .tdots 三点脉冲;有文 → .caret 照旧
 import { Fragment, type ReactNode } from 'react';
-import type { MessageReceipt, MessageViewModel } from '@uberge/protocol';
+import type { MessageReceipt, MessageViewModel } from '@utopinn/protocol';
 import { useI18n } from '../../../i18n';
 import { Icon } from '../../Icon';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../../ui/collapsible';

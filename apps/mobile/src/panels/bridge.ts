@@ -1,4 +1,4 @@
-// bridge — 'uberge-panel' postMessage plumbing for the RN WebView host
+// bridge — 'utopinn-panel' postMessage plumbing for the RN WebView host
 // (TASK-009). One-to-one port of apps/web/src/cardapp/bridge.ts semantics:
 // inbound validation (channel → direction → requestId → NONCE → request
 // shape → method grant), response encoding, in-flight request ledger,
@@ -11,7 +11,7 @@
 // this WebView, so the mount-scoped bridge nonce is the whole gate
 // (same posture the server designed for: a nonce-less or mismatched
 // request is denied, never dispatched). Outbound goes through the
-// `send` callback (PanelWebView injects window.__ubergePanelReceive).
+// `send` callback (PanelWebView injects window.__utopinnPanelReceive).
 import {
     isPanelRequest,
     PANEL_METHODS_TH_T0,
@@ -19,7 +19,7 @@ import {
     type PanelPush,
     type PanelRequest,
     type PanelResponse,
-} from '@uberge/protocol';
+} from '@utopinn/protocol';
 
 /** manifest.permissions.api expanded into a concrete grant set + face flags. */
 export interface ApiGrants {
@@ -101,7 +101,7 @@ export class PanelBridge {
             }
         }
         const d = data as Partial<PanelRequest> | null;
-        if (!d || d.channel !== 'uberge-panel' || d.direction !== 'request') return;
+        if (!d || d.channel !== 'utopinn-panel' || d.direction !== 'request') return;
         if (typeof d.requestId !== 'string') return; // can't correlate — drop
         // Nonce gate first: absent ('' or undefined) never equals a real
         // bridge nonce, so legacy/forged traffic dies here as unauthorized.
@@ -125,7 +125,7 @@ export class PanelBridge {
     private respond(requestId: string, body: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }): void {
         if (this.dead) return;
         const msg: PanelResponse = {
-            channel: 'uberge-panel', direction: 'response',
+            channel: 'utopinn-panel', direction: 'response',
             nonce: this.opts.nonce, requestId, ...body,
         };
         this.opts.send(msg);
@@ -145,7 +145,7 @@ export class PanelBridge {
     push(event: PanelPush['event'], payload?: Record<string, unknown>): void {
         if (this.dead) return;
         const msg: PanelPush = {
-            channel: 'uberge-panel', direction: 'push',
+            channel: 'utopinn-panel', direction: 'push',
             nonce: this.opts.nonce, event, payload,
         };
         this.opts.send(msg);

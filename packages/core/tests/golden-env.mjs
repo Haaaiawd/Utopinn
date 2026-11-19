@@ -19,7 +19,7 @@
  *   捕获时无出站正则生效,适配层不重放正则。
  * - tokenizer:capture 源为 openai→'o1'(o200k_base);wire 侧计数公式
  *   encode+5/getTokenCountAsync 与 wi-trace.test.mjs 一致。
- * - WI:embedded book + bound world 经 @uberge/formats 转成 worldData,
+ * - WI:embedded book + bound world 经 @utopinn/formats 转成 worldData,
  *   mergeLoreSources 出 sortedEntries,checkWorldInfo 用捕获环境设置。
  *   已知边界差:高中生活模拟 1 条预算边界容差(见 wi-trace 注释)。
  * - depth 注入:extension_prompts 面(IN_CHAT)经 deps.depthInjection 回调
@@ -42,7 +42,7 @@ import {
     getEmbeddedBook,
     getBoundWorldName,
     cardData,
-} from '@uberge/formats';
+} from '@utopinn/formats';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const GOLDEN_DIRS = [

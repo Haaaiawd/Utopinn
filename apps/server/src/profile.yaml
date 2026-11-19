@@ -1,4 +1,4 @@
-# Uberge 服务端插件清单(DSH cordis.yml 同形,B 步 c 面)
+# Utopinn 服务端插件清单(DSH cordis.yml 同形,B 步 c 面)
 #
 # 装载语义(loadProfile):
 #   - 按列表顺序装载;inject 缺失 → degraded(记原因,不静默不连坐)
@@ -7,25 +7,25 @@
 #
 # 内建面(webServer 路由/升级位贡献者)排最前 —— 它们 inject webServer,
 # 服务由 kernel-boot 在 loadProfileFile 之前提供。
-name: uberge-server
+name: utopinn-server
 plugins:
-  - id: uberge-library
-    module: ./plugins/uberge-library.js
-  - id: uberge-diag
-    module: ./plugins/uberge-diag.js
-  - id: uberge-generate
-    module: ./plugins/uberge-generate.js
-  - id: uberge-mvu
-    module: ./plugins/uberge-mvu.js
-  - id: uberge-delivery
-    module: ./plugins/uberge-delivery.js
-  - id: uberge-import
-    module: ./plugins/uberge-import.js
-  - id: uberge-plugins
-    module: ./plugins/uberge-plugins.js
-  - id: uberge-script
-    module: ./plugins/uberge-script.js
-  - id: uberge-th
-    module: ./plugins/uberge-th.js
-  - id: uberge-data
-    module: ./plugins/uberge-data.js
+  - id: utopinn-library
+    module: ./plugins/utopinn-library.js
+  - id: utopinn-diag
+    module: ./plugins/utopinn-diag.js
+  - id: utopinn-generate
+    module: ./plugins/utopinn-generate.js
+  - id: utopinn-mvu
+    module: ./plugins/utopinn-mvu.js
+  - id: utopinn-delivery
+    module: ./plugins/utopinn-delivery.js
+  - id: utopinn-import
+    module: ./plugins/utopinn-import.js
+  - id: utopinn-plugins
+    module: ./plugins/utopinn-plugins.js
+  - id: utopinn-script
+    module: ./plugins/utopinn-script.js
+  - id: utopinn-th
+    module: ./plugins/utopinn-th.js
+  - id: utopinn-data
+    module: ./plugins/utopinn-data.js

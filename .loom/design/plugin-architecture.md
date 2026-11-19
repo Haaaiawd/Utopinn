@@ -80,13 +80,13 @@ plugins:
     config: { floorDepth: 8 }
   - id: tavern-presets
 ```
-- **bundle** = 插件包(代码 + 它默认挂载的补丁行),`package.json.uberge.plugin`
+- **bundle** = 插件包(代码 + 它默认挂载的补丁行),`package.json.utopinn.plugin`
   声明 manifest
 - **patch** = 用户对行的替换:`- id: tavern-core\n  disabled: true` +
   `- id: my-wi-engine\n  provides: promptBuilder` —— 替换 WI 引擎不需要分叉
 - 层序:内置 bundles → profile patch → 部署 patch → `--patch` CLI
 - HMR:dev flag,默认重启生效(同 DSH `no-hmr` 语义)
-- `pnpm uberge --profile tavern --dump-config` 能 dump 出实际装载树(DSH 同款调试)
+- `pnpm utopinn --profile tavern --dump-config` 能 dump 出实际装载树(DSH 同款调试)
 
 ## 3b. 事件三域 + dispatch 五模式(契约式,@mode 校验)
 

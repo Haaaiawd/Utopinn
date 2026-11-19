@@ -4,7 +4,7 @@
 import { memo, type ReactElement } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
-import type { MessageViewModel } from '@uberge/protocol';
+import type { MessageViewModel } from '@utopinn/protocol';
 import type { ReadingSettings } from '../state/reading';
 import type { ReaderTheme } from './theme';
 

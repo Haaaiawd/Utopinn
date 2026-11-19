@@ -6,7 +6,7 @@
 import { memo, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import { LegendList, type LegendListRef } from '@legendapp/list/react-native';
-import type { MessageReceipt, MessageViewModel } from '@uberge/protocol';
+import type { MessageReceipt, MessageViewModel } from '@utopinn/protocol';
 import type { ReadingSettings } from '../state/reading';
 import { inlineSegs, PARA_INDENT, type Chapter, type InlineSeg, type Para } from './format';
 import { readerFontFamily, type ReaderTheme } from './theme';

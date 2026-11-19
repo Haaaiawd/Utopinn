@@ -7,8 +7,8 @@
       "outcome": "pnpm install 后 node server.js 启动,浏览器打开登录页并进入旧版主界面;存储引擎 fs 模式可读写。",
       "acceptance": [
         {
-          "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
-          "verify_by": "pnpm --filter @uberge/server install",
+          "criterion": "pnpm --filter @utopinn/server install 成功(better-sqlite3 编译通过)",
+          "verify_by": "pnpm --filter @utopinn/server install",
           "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
         },
         {
@@ -50,14 +50,14 @@
         "next": ""
       },
       "evidence": [
-        "pnpm --filter @uberge/server install 成功;pnpm-workspace.yaml 增 onlyBuiltDependencies:[better-sqlite3] 后 rebuild 产出 build/Release/better_sqlite3.node",
+        "pnpm --filter @utopinn/server install 成功;pnpm-workspace.yaml 增 onlyBuiltDependencies:[better-sqlite3] 后 rebuild 产出 build/Release/better_sqlite3.node",
         "node server.js(WSL2 node v22.22.2,引擎告警 >=24 但基线可跑):首跑创建 config.yaml,Repo 层播种 ~200 内容文件,webpack 编译 lib 12.7s,监听 127.0.0.1:8000,ws-delivery 有连接",
         "GET / -> 200,785KB,<title>Luker</title> 主界面 HTML(注意:需绕过环境里的 HTTP_PROXY)",
         {
           "type": "acceptance_results",
           "results": [
             {
-              "criterion": "pnpm --filter @uberge/server install 成功(better-sqlite3 编译通过)",
+              "criterion": "pnpm --filter @utopinn/server install 成功(better-sqlite3 编译通过)",
               "evidence": "install 成功(引擎告警不阻塞);pnpm rebuild better-sqlite3 -> install: Done;ls apps/server/node_modules/better-sqlite3/build/Release/ -> better_sqlite3.node 存在"
             },
             {
@@ -82,8 +82,8 @@
       "outcome": "定义 GenerateRequest/GenerateEvent/job 状态、资源 schema(card/worldbook/preset/chat_state)、事件名枚举;TS 编译通过。",
       "acceptance": [
         {
-          "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
-          "verify_by": "pnpm --filter @uberge/protocol typecheck",
+          "criterion": "pnpm --filter @utopinn/protocol typecheck 通过",
+          "verify_by": "pnpm --filter @utopinn/protocol typecheck",
           "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
         },
         {
@@ -124,7 +124,7 @@
           "type": "acceptance_results",
           "results": [
             {
-              "criterion": "pnpm --filter @uberge/protocol typecheck 通过",
+              "criterion": "pnpm --filter @utopinn/protocol typecheck 通过",
               "evidence": "tsc -p tsconfig.json --noEmit 退出码 0,无诊断"
             },
             {
@@ -146,8 +146,8 @@
       "acceptance": [
         {
           "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
-          "verify_by": "pnpm --filter @uberge/formats test",
-          "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
+          "verify_by": "pnpm --filter @utopinn/formats test",
+          "evidence": "pnpm --filter @utopinn/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
         }
       ],
       "done_when": [],
@@ -181,15 +181,15 @@
         "next": ""
       },
       "evidence": [
-        "pnpm --filter @uberge/formats test → 17/17 pass(png 6 + charx 3 + byaf 3 + jsonl/card 5):写卡读卡往返、ccv3 优先、zTXt 解、strip、CharX 资产映射(sprite hyphen/background/icon 排除/远程排除/非图扩展名排除)、BYAF 宏替换+NSFW+内嵌书+display_name+聊天背景、JSONL 头/往返/末条、detectSpec/toV2",
-        "pnpm --filter @uberge/formats typecheck 通过(strict + noUncheckedIndexedAccess)",
+        "pnpm --filter @utopinn/formats test → 17/17 pass(png 6 + charx 3 + byaf 3 + jsonl/card 5):写卡读卡往返、ccv3 优先、zTXt 解、strip、CharX 资产映射(sprite hyphen/background/icon 排除/远程排除/非图扩展名排除)、BYAF 宏替换+NSFW+内嵌书+display_name+聊天背景、JSONL 头/往返/末条、detectSpec/toV2",
+        "pnpm --filter @utopinn/formats typecheck 通过(strict + noUncheckedIndexedAccess)",
         "纯函数无 fs 无 Node Buffer:全部 Uint8Array + TextEncoder/Decoder + fflate,server/RN/浏览器三端可跑;base64/CRC32/sanitize 内联零额外依赖(唯一依赖 fflate@0.8.3)",
         {
           "type": "acceptance_results",
           "results": [
             {
               "criterion": "测试通过:至少覆盖 PNG卡解析、charx 解包、内嵌 character_book 提取、JSONL 读写往返",
-              "evidence": "pnpm --filter @uberge/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
+              "evidence": "pnpm --filter @utopinn/formats test → 17 pass 0 fail;PNG 解析含 tEXt/zTXt/iTXt 与 ccv3 优先;charx 解包含 assets 映射与 avatar;内嵌 character_book 由 getEmbeddedBook/BYAF loreItems→character_book 覆盖;JSONL parse/serialize 往返同构"
             }
           ],
           "at": "2026-11-03T03:22:14.720Z"
@@ -289,7 +289,7 @@
       "acceptance": [
         {
           "criterion": "WI 引擎单元测试:关键字命中/次关键字/逻辑门/位置/预算/递归覆盖",
-          "verify_by": "pnpm --filter @uberge/core test",
+          "verify_by": "pnpm --filter @utopinn/core test",
           "evidence": "world-info.test.mjs 36/36 绿:命中/secondary/逻辑门/atDepth,before,after 位置/budget 截断/递归激活全覆盖"
         },
         {
@@ -337,7 +337,7 @@
         "next": ""
       },
       "evidence": [
-        "pnpm --filter @uberge/core test -> 59/59 绿(WI 36 + 宏 + 变量);packages/core/tests/wi-trace.test.mjs -> 5 卡 WI 注入轨迹与 golden wire 一致,高中卡 2-token KNOWN-GAP 挂账容差;计词升级端点语义 encode+5",
+        "pnpm --filter @utopinn/core test -> 59/59 绿(WI 36 + 宏 + 变量);packages/core/tests/wi-trace.test.mjs -> 5 卡 WI 注入轨迹与 golden wire 一致,高中卡 2-token KNOWN-GAP 挂账容差;计词升级端点语义 encode+5",
         {
           "type": "acceptance_results",
           "results": [
@@ -425,7 +425,7 @@
         {
           "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
           "verify_by": "apps/server 下对应 e2e 测试",
-          "evidence": "tests/e2e/uberge-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
+          "evidence": "tests/e2e/utopinn-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
         }
       ],
       "done_when": [
@@ -441,7 +441,7 @@
       "reads": [
         ".loom/design/generation-api.md",
         "apps/server/src/endpoints/backends/luker-generation.js",
-        "apps/server/src/plugins/uberge-delivery.js"
+        "apps/server/src/plugins/utopinn-delivery.js"
       ],
       "touches": [
         "apps/server/src",
@@ -465,7 +465,7 @@
       "status": "done",
       "progress": {
         "completed": [
-          "服务端 /api/uberge/generate+WS 交付通道(subscribe/resume/from_seq 回放)",
+          "服务端 /api/utopinn/generate+WS 交付通道(subscribe/resume/from_seq 回放)",
           "mock LLM e2e:delta→落盘→重连回放 12/12"
         ],
         "current": "complete",
@@ -473,15 +473,15 @@
       },
       "evidence": [
         "79be656",
-        "apps/server/tests/uberge-generate-context.test.mjs",
-        "tests/e2e/uberge-stream-delivery.mjs 12/12",
-        "commit ace0e14:uberge-stream-delivery.mjs 12/12——stub SSE→delta→JSONL落盘→resume/from_seq回放→越权拒;群聊生成面为既有降级项,验收criteria已全部验证",
+        "apps/server/tests/utopinn-generate-context.test.mjs",
+        "tests/e2e/utopinn-stream-delivery.mjs 12/12",
+        "commit ace0e14:utopinn-stream-delivery.mjs 12/12——stub SSE→delta→JSONL落盘→resume/from_seq回放→越权拒;群聊生成面为既有降级项,验收criteria已全部验证",
         {
           "type": "acceptance_results",
           "results": [
             {
               "criterion": "mock LLM 下 e2e:发消息→收到 delta→chat JSONL 落盘→重连可回放",
-              "evidence": "tests/e2e/uberge-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
+              "evidence": "tests/e2e/utopinn-stream-delivery.mjs 12/12 全真机(127.0.0.1:8000 + stub LLM 18766)"
             }
           ],
           "at": "2026-11-04T08:50:28.037Z"
@@ -642,7 +642,7 @@
       "acceptance": [
         {
           "criterion": "SPA 可登录并对世界书做 CRUD",
-          "verify_by": "pnpm --filter @uberge/web dev 人工验证",
+          "verify_by": "pnpm --filter @utopinn/web dev 人工验证",
           "evidence": "api/worlds.ts 全链 + RulesView 双态编辑器;服务端契约真机(create→list→get→entries写读→delete→404);浏览器点击面待用户最终目验",
           "verified": "partial"
         }
@@ -1090,7 +1090,7 @@
         "next": ""
       },
       "evidence": [
-        "tests/e2e/uberge-cardapp.mjs 15/15",
+        "tests/e2e/utopinn-cardapp.mjs 15/15",
         "apps/web cardapp/ 宿主"
       ],
       "created_at": "2026-11-03T06:33:54.144Z",
@@ -1198,13 +1198,13 @@
         {
           "criterion": "备份快照+LAN 发现端点",
           "verify_by": "loom check + 测试",
-          "evidence": "09fa066+45ac376:POST /api/uberge/backup+lan/offer+lan/import+UDP discover;E2E 11/11",
+          "evidence": "09fa066+45ac376:POST /api/utopinn/backup+lan/offer+lan/import+UDP discover;E2E 11/11",
           "verified": "yes"
         },
         {
           "criterion": "ST data 目录扫描产出导入清单",
           "verify_by": "loom check + 测试",
-          "evidence": "45ac376:POST /api/uberge/import/scan-st 六类映射清单;E2E 11/11",
+          "evidence": "45ac376:POST /api/utopinn/import/scan-st 六类映射清单;E2E 11/11",
           "verified": "yes"
         }
       ],
@@ -1401,12 +1401,12 @@
         "next": ""
       },
       "evidence": [
-        "apps/server/src/plugins/uberge-import.js",
-        "tests/e2e/uberge-import-surface.mjs",
+        "apps/server/src/plugins/utopinn-import.js",
+        "tests/e2e/utopinn-import-surface.mjs",
         "commit 2624ae4",
-        "tests/e2e/uberge-import-surface.mjs 8/8 pass",
+        "tests/e2e/utopinn-import-surface.mjs 8/8 pass",
         "commit 2624ae4",
-        "导入三刀全齐:uberge-import 管线(5c05540 前已落)+导入中心 UI(5c05540)+uberge-data 服务端面(45ac376+09fa066)。tests/e2e/uberge-data-surface.mjs 11/11 真机(127.0.0.1:8000):scan-st 清单/400/404、backup zip、lan offer URL+400、lan import upstream 透传、UDP pong。git status 干净。",
+        "导入三刀全齐:utopinn-import 管线(5c05540 前已落)+导入中心 UI(5c05540)+utopinn-data 服务端面(45ac376+09fa066)。tests/e2e/utopinn-data-surface.mjs 11/11 真机(127.0.0.1:8000):scan-st 清单/400/404、backup zip、lan offer URL+400、lan import upstream 透传、UDP pong。git status 干净。",
         {
           "type": "acceptance_results",
           "results": [
@@ -1424,11 +1424,11 @@
             },
             {
               "criterion": "备份快照+LAN 发现端点",
-              "evidence": "09fa066+45ac376:POST /api/uberge/backup+lan/offer+lan/import+UDP discover;E2E 11/11"
+              "evidence": "09fa066+45ac376:POST /api/utopinn/backup+lan/offer+lan/import+UDP discover;E2E 11/11"
             },
             {
               "criterion": "ST data 目录扫描产出导入清单",
-              "evidence": "45ac376:POST /api/uberge/import/scan-st 六类映射清单;E2E 11/11"
+              "evidence": "45ac376:POST /api/utopinn/import/scan-st 六类映射清单;E2E 11/11"
             }
           ],
           "at": "2026-11-04T10:12:16.778Z"
@@ -1478,7 +1478,7 @@
         {
           "criterion": "变量 op 日志可查",
           "verify_by": "loom check + 测试",
-          "evidence": "/api/uberge/mvu/state 侧车op日志"
+          "evidence": "/api/utopinn/mvu/state 侧车op日志"
         },
         {
           "criterion": "生成任务监视实时",
@@ -1753,7 +1753,7 @@
             },
             {
               "criterion": "变量 op 日志可查",
-              "evidence": "/api/uberge/mvu/state 侧车op日志"
+              "evidence": "/api/utopinn/mvu/state 侧车op日志"
             },
             {
               "criterion": "生成任务监视实时",
@@ -1801,8 +1801,8 @@
       "acceptance": [
         {
           "criterion": "库只读/delete/PATCH 面测试绿",
-          "verify_by": "uberge-library.test 11/11",
-          "evidence": "tests/e2e/uberge-write-surface.mjs 17/17"
+          "verify_by": "utopinn-library.test 11/11",
+          "evidence": "tests/e2e/utopinn-write-surface.mjs 17/17"
         }
       ],
       "done_when": [
@@ -1812,25 +1812,25 @@
         "刀1 不做导入导出、preset/world 写面、chat 分支、masked-secret"
       ],
       "reads": [
-        "apps/server/src/plugins/uberge-library.js",
-        "apps/server/tests/uberge-library.test.mjs",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/tests/utopinn-library.test.mjs",
         ".loom/design/import-export-center.md"
       ],
       "touches": [
-        "apps/server/src/plugins/uberge-library.js",
-        "apps/server/tests/uberge-library.test.mjs"
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/tests/utopinn-library.test.mjs"
       ],
       "design_exemption": "",
       "covers": [],
       "status": "done",
-      "progress": "/api/uberge REST 面 100% 插件化(31 routes 0 dup):library CRUD+secrets+generate+mvu+diag+import。legacy uberge 端点文件全删。done_when 的写面+masked-secret 已达。",
+      "progress": "/api/utopinn REST 面 100% 插件化(31 routes 0 dup):library CRUD+secrets+generate+mvu+diag+import。legacy utopinn 端点文件全删。done_when 的写面+masked-secret 已达。",
       "evidence": [
-        "apps/server/src/plugins/uberge-library.js",
+        "apps/server/src/plugins/utopinn-library.js",
         "apps/server/src/kernel-boot.js",
         "apps/server/src/profile.yaml",
-        "tests/e2e/uberge-write-surface.mjs",
-        "tests/e2e/uberge-write-surface.mjs",
-        "tests/e2e/uberge-import-surface.mjs",
+        "tests/e2e/utopinn-write-surface.mjs",
+        "tests/e2e/utopinn-write-surface.mjs",
+        "tests/e2e/utopinn-import-surface.mjs",
         "commit 2624ae4"
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
@@ -1847,7 +1847,7 @@
         {
           "node": "plugin-kernel#C3",
           "at": "REST面构成",
-          "must_produce": "uberge REST 全量经 profile.yaml+webServer.register 插件供给"
+          "must_produce": "utopinn REST 全量经 profile.yaml+webServer.register 插件供给"
         }
       ]
     },
@@ -1880,10 +1880,10 @@
       "design_exemption": "",
       "covers": [],
       "status": "done",
-      "progress": "server runner 端点接通并真机验证:POST /api/uberge/script/run,E2E 10/10(变量双层落库/消息写入/QR 递归/宏)。generateQuiet/trigger seam 未绑定按降级处理。",
+      "progress": "server runner 端点接通并真机验证:POST /api/utopinn/script/run,E2E 10/10(变量双层落库/消息写入/QR 递归/宏)。generateQuiet/trigger seam 未绑定按降级处理。",
       "evidence": [
-        "apps/server/src/plugins/uberge-script.js",
-        "tests/e2e/uberge-script-runner.mjs"
+        "apps/server/src/plugins/utopinn-script.js",
+        "tests/e2e/utopinn-script-runner.mjs"
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-03T11:26:03.619Z",
@@ -1929,9 +1929,9 @@
       "status": "done",
       "progress": "/generate api=text 分叉全通:stub LLM 真机 E2E 12/12,prompt 组装+persist 回环验证。storystring 整包(context 模板)为后续 fidelity 切片。",
       "evidence": [
-        "apps/server/src/plugins/uberge-generate.js (text fork)",
+        "apps/server/src/plugins/utopinn-generate.js (text fork)",
         "apps/server/src/services/generate-context.js (extended return)",
-        "tests/e2e/uberge-textgen-dispatch.mjs"
+        "tests/e2e/utopinn-textgen-dispatch.mjs"
       ],
       "created_at": "2026-11-03T09:52:13.053Z",
       "updated_at": "2026-11-03T11:26:03.625Z",
@@ -1957,7 +1957,7 @@
         {
           "criterion": "插件启停/配置 API 可用",
           "verify_by": "端点测试绿",
-          "evidence": "/api/uberge/plugins + :id/enable|disable|reload;UI即调即刷新",
+          "evidence": "/api/utopinn/plugins + :id/enable|disable|reload;UI即调即刷新",
           "verified": "yes"
         },
         {
@@ -2099,19 +2099,19 @@
         "next": ""
       },
       "evidence": [
-        "apps/server/src/plugins/uberge-plugins.js",
+        "apps/server/src/plugins/utopinn-plugins.js",
         "apps/server/src/kernel-boot.js (pluginManager)",
-        "tests/e2e/uberge-plugin-manager.mjs",
+        "tests/e2e/utopinn-plugin-manager.mjs",
         "commit e8f8660",
-        "tests/e2e/uberge-plugin-manager.mjs 14/14 pass",
+        "tests/e2e/utopinn-plugin-manager.mjs 14/14 pass",
         "commit e8f8660",
-        "服务端:uberge-plugin-manager.mjs 14/14(热插拔真机)+UI:5c05540 ExtensionsView插件段",
+        "服务端:utopinn-plugin-manager.mjs 14/14(热插拔真机)+UI:5c05540 ExtensionsView插件段",
         {
           "type": "acceptance_results",
           "results": [
             {
               "criterion": "插件启停/配置 API 可用",
-              "evidence": "/api/uberge/plugins + :id/enable|disable|reload;UI即调即刷新"
+              "evidence": "/api/utopinn/plugins + :id/enable|disable|reload;UI即调即刷新"
             },
             {
               "criterion": "插件执行限定服务端",
@@ -2145,7 +2145,7 @@
         {
           "criterion": "iframe 可挂载 card-runtime manifest",
           "verify_by": "CardAppFrame 挂载真 manifest",
-          "evidence": "uberge-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
+          "evidence": "utopinn-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
         },
         {
           "criterion": "桥 event.source 恒等校验",
@@ -2170,7 +2170,7 @@
       "progress": {
         "completed": [
           "CardAppFrame iframe 沙箱",
-          "uberge-panel 桥协议",
+          "utopinn-panel 桥协议",
           "ctxApi 读面",
           "桥全链:mount→bootstrap nonce 下发(document+module 双入口)→shim→宿主 nonce 门+白名单+deny 不落服务端→th/call 后端",
           "CardAppFrame 协议对齐(isPanelRequest/状态机/degraded 徽标/sandbox 分级)",
@@ -2180,7 +2180,7 @@
         "next": ""
       },
       "evidence": [
-        "tests/e2e/uberge-cardapp.mjs 15/15",
+        "tests/e2e/utopinn-cardapp.mjs 15/15",
         "commits 3dcaccc/2428795",
         "bridge.ts+CardAppFrame协议对齐;card-runtime mount→bootstrap nonce(document+module双入口)→shim→宿主nonce门+api白名单→th/call 全链;E2E 15/15",
         {
@@ -2188,7 +2188,7 @@
           "results": [
             {
               "criterion": "iframe 可挂载 card-runtime manifest",
-              "evidence": "uberge-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
+              "evidence": "utopinn-cardapp.mjs 15/15:manifest/document/module mount+entry+资产+CSP"
             },
             {
               "criterion": "桥 event.source 恒等校验",
@@ -2227,7 +2227,7 @@
         {
           "criterion": "列表/新建/rename/delete/swipe 持久化全通",
           "verify_by": "真服手测 + e2e",
-          "evidence": "uberge-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
+          "evidence": "utopinn-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
         }
       ],
       "done_when": "GET chats 挂 Sidebar;新聊天可建可聊;swipe 切换持久化到 JSONL",
@@ -2252,17 +2252,17 @@
         "next": ""
       },
       "evidence": [
-        "apps/server/src/plugins/uberge-library.js (chat lifecycle)",
-        "tests/e2e/uberge-chat-lifecycle.mjs",
-        "tests/e2e/uberge-chat-lifecycle.mjs 13/13 pass",
+        "apps/server/src/plugins/utopinn-library.js (chat lifecycle)",
+        "tests/e2e/utopinn-chat-lifecycle.mjs",
+        "tests/e2e/utopinn-chat-lifecycle.mjs 13/13 pass",
         "commit faac43a",
-        "uberge-library chats面:GET/POST新建/rename/append(swipe持久化)/json-patch/DELETE;E2E 13/13;Sidebar分组+新建可用",
+        "utopinn-library chats面:GET/POST新建/rename/append(swipe持久化)/json-patch/DELETE;E2E 13/13;Sidebar分组+新建可用",
         {
           "type": "acceptance_results",
           "results": [
             {
               "criterion": "列表/新建/rename/delete/swipe 持久化全通",
-              "evidence": "uberge-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
+              "evidence": "utopinn-chat-lifecycle.mjs 13/13:swipe持久化/gen_id去重/integrity锁/rename/delete"
             }
           ],
           "at": "2026-11-04T08:55:36.905Z"
@@ -2317,7 +2317,7 @@
       },
       "evidence": [
         "apps/web PersonaSection.tsx + personas.ts,tsc 0 错",
-        "PersonaSection:列表/新建/编辑/默认/删除+mock降级,api/personas.ts走/api/uberge/personas;tsc 0错",
+        "PersonaSection:列表/新建/编辑/默认/删除+mock降级,api/personas.ts走/api/utopinn/personas;tsc 0错",
         {
           "type": "acceptance_results",
           "results": [
@@ -2364,10 +2364,10 @@
         ".loom/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md"
       ],
       "touches": [
-        "apps/server/src/plugins/uberge-th.js",
+        "apps/server/src/plugins/utopinn-th.js",
         "apps/server/src/services/stscript-env.js",
         "tests/corpus/cards/th-probe.json",
-        "tests/e2e/uberge-th-compat.mjs"
+        "tests/e2e/utopinn-th-compat.mjs"
       ],
       "design_exemption": "",
       "covers": [],
@@ -2382,7 +2382,7 @@
         "next": ""
       },
       "evidence": [
-        "tests/e2e/uberge-th-compat.mjs 18/18 pass (stat_data 互通/th_scripts 抽样/unsupported 显式)"
+        "tests/e2e/utopinn-th-compat.mjs 18/18 pass (stat_data 互通/th_scripts 抽样/unsupported 显式)"
       ],
       "created_at": "2026-11-03T11:37:49.263Z",
       "updated_at": "2026-11-04T06:55:39.762Z",
@@ -2434,7 +2434,7 @@
       "acceptance": [
         {
           "criterion": "卡格→角色页→会话三级路径通",
-          "verify_by": "pnpm --filter @uberge/web dev 人工验证",
+          "verify_by": "pnpm --filter @utopinn/web dev 人工验证",
           "evidence": "",
           "verified": ""
         },
@@ -2455,7 +2455,7 @@
       "evidence": [
         "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
         "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
-        "curl /api/uberge/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)"
+        "curl /api/utopinn/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)"
       ],
       "outcome": "桌面壳 RP 化:角色=一等对象。卡墙→角色页→会话三级路径;聊天页舞台头带 persona 快切与绑定资产;门厅首页;prose 渲染器吃 RP 文本惯例。",
       "status": "open",
@@ -2524,11 +2524,11 @@
     },
     {
       "id": "TASK-028",
-      "title": "[停泊·2026-11-10方向收缩] 移动端新地基:fork IReader 切割 + uberge 源 + RP 四件",
+      "title": "[停泊·2026-11-10方向收缩] 移动端新地基:fork IReader 切割 + utopinn 源 + RP 四件",
       "depends_on": [],
       "done_when": [
         "ref/ireader 切割:书源层(source-api实现/runtime-js)移除,编译通过",
-        "uberge 源落地:书架=会话列表/书页=角色会话/阅读=楼层流,真机可见",
+        "utopinn 源落地:书架=会话列表/书页=角色会话/阅读=楼层流,真机可见",
         "RP 四件:swipe候选+书写层+CardApp WebView面板(nonce桥)+MVU状态条",
         "原 TASK-008/009/027 done_when 在 KMP 栈重新达成"
       ],
@@ -2545,7 +2545,7 @@
       "implements": "mobile-app-stack",
       "acceptance": [
         {
-          "criterion": "uberge 源书架→阅读器全链真机通",
+          "criterion": "utopinn 源书架→阅读器全链真机通",
           "verify_by": "模拟器截图+人工验证",
           "evidence": "",
           "verified": ""
@@ -2553,7 +2553,7 @@
       ],
       "progress": "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
       "evidence": [],
-      "outcome": "移动端真阅读器质感:以 IReader(Apache-2.0,KMP 三端)为地基,书源层换 uberge 服务端源,补 RP 专属四件",
+      "outcome": "移动端真阅读器质感:以 IReader(Apache-2.0,KMP 三端)为地基,书源层换 utopinn 服务端源,补 RP 专属四件",
       "status": "open",
       "boundaries": [
         "服务端协议零改动",
@@ -2585,7 +2585,7 @@
         },
         {
           "criterion": "每项修复有行为级回归钉",
-          "verify_by": "node --test tests/uberge-generate-context.test.mjs 等全绿",
+          "verify_by": "node --test tests/utopinn-generate-context.test.mjs 等全绿",
           "evidence": ""
         },
         {
@@ -2607,11 +2607,11 @@
       "touches": [
         "apps/server/src/services/generate-context.js",
         "apps/server/src/services/extension-prompts.js",
-        "apps/server/src/plugins/uberge-generate.js",
+        "apps/server/src/plugins/utopinn-generate.js",
         "packages/kernel/src/loader.ts",
         "apps/server/src/kernel-boot.js",
         "apps/server/src/server-main.js",
-        "apps/server/tests/uberge-generate-context.test.mjs"
+        "apps/server/tests/utopinn-generate-context.test.mjs"
       ],
       "implements": "",
       "design_exemption": "",
@@ -2625,7 +2625,7 @@
           "三份 audit 的 HIGH 面全灭(安全+兼容+持久化)",
           "engine MEDIUM 9/13 落地: M4/M5(3325553) M6-M10(15ef9cf) M11并入持久化M2",
           "persistence MEDIUM 6/6(其中M2降级为设计级遗留,判定已入档)",
-          "api 面: admin门+穿越+upgrade catch(ea9ad9b) uberge写面入门(e1ad4f2)"
+          "api 面: admin门+穿越+upgrade catch(ea9ad9b) utopinn写面入门(e1ad4f2)"
         ],
         "current": "audit 修复战役主体完成;剩 M12(STscript builtins 功能缺口)M13(待核) L1-L5 lows + M2 设计级",
         "next": "golden-diff 语料复核 WI 五层来源;M12 STscript builtins 按上游清单补注册"
@@ -2636,11 +2636,11 @@
     },
     {
       "id": "TASK-030",
-      "title": "旧UI接线服务端大脑:生成入口全切 /api/uberge/generate",
+      "title": "旧UI接线服务端大脑:生成入口全切 /api/utopinn/generate",
       "depends_on": [],
       "done_when": [
         "生成入口清单+服务端覆盖矩阵入库(impersonate/quiet/continue/swipe/regenerate/工具调用/quietPrompt逐项)",
-        "public/ 所有生成入口改道 /api/uberge/generate,浏览器内组装引擎成为死路径",
+        "public/ 所有生成入口改道 /api/utopinn/generate,浏览器内组装引擎成为死路径",
         "主发送+swipe+regenerate+continue 实机冒烟通过(真卡+真预设)",
         "e2e 回归全绿;golden-diff 无新分叉"
       ],
@@ -2648,7 +2648,7 @@
         "apps/server/public/scripts/openai.js",
         "apps/server/public/script.js",
         "apps/server/public/scripts/generate-task.js",
-        "apps/server/src/plugins/uberge-generate.js"
+        "apps/server/src/plugins/utopinn-generate.js"
       ],
       "touches": [
         "apps/server/public/script.js",
@@ -2665,7 +2665,7 @@
         },
         {
           "criterion": "全入口改道服务端,客户端引擎死路径化",
-          "verify_by": "grep api/uberge/generate 命中所有入口;openai.js 组装路径无活跃调用",
+          "verify_by": "grep api/utopinn/generate 命中所有入口;openai.js 组装路径无活跃调用",
           "evidence": "",
           "verified": ""
         },
@@ -2682,13 +2682,13 @@
           "verified": ""
         }
       ],
-      "progress": "入口清单+覆盖矩阵入库(.loom/eval/generate-entries-inventory-2026-11-10.md,验收1达成)。批次0五项阻塞修复完成(6546a16):model/max_tokens canonical、stream_openai、quiet非流、ws-delivery PROXY、is_system过滤、swipe弹层。批1下一步:sendOpenAIRequest(openai.js:4358)fetch层换 /api/uberge/generate——最小切法保留函数壳+换URL/body为{charDir,chatName,type,generation_overrides,persist_target};彻底切法在 Generate() 更上游短路(浏览器不再组装,真分离)。swipe/continue/impersonate/quiet persist_target:{kind:\"none\"} 由调用方显式传。 | 批1落地(a734a73):sendOpenAIRequest chat域全切 /api/uberge/generate——normal/regenerate/continue/swipe/impersonate/quiet 统一改道,generation_overrides 整包透传客户端派生键,非persist类强制 kind:none,group/extension scope 留 legacy。服务端补 continue cyclePrompt 推导。回归16/16。残留:浏览器组装仍跑(死工,perf短路留Phase2);skipWIAN/quietImage/quietToLoud;group聊天;textgen/kobold源;浏览器实烟未验。 | 批1浏览器实弹通过(52cc744):playwright 真点发送,网络探针实锤 POST /api/uberge/generate(charDir/chatName/type/generation_overrides,无 messages 上 wire);WS 流式 live 渲染;楼层4服务端落盘。真卡+真预设+aiping 真上游。修 type 泄漏进 generation_overrides。另:种子聊天缺 integrity 令牌的 UI 拒写为预期行为(非产品 bug)。 | 收尾(2026-11-19):CLI 实测 send/continue/swipe/regen 全链绿,floors 22→24 无双写,ack 闭环 completed+persisted;subagent 审查 34 条阻塞清零(5527db1)。验收4 golden-diff 未重跑→挪 TASK-038 验收矩阵;浏览器组装空跑残留→TASK-034 短路。group/textgen→TASK-037。",
+      "progress": "入口清单+覆盖矩阵入库(.loom/eval/generate-entries-inventory-2026-11-10.md,验收1达成)。批次0五项阻塞修复完成(6546a16):model/max_tokens canonical、stream_openai、quiet非流、ws-delivery PROXY、is_system过滤、swipe弹层。批1下一步:sendOpenAIRequest(openai.js:4358)fetch层换 /api/utopinn/generate——最小切法保留函数壳+换URL/body为{charDir,chatName,type,generation_overrides,persist_target};彻底切法在 Generate() 更上游短路(浏览器不再组装,真分离)。swipe/continue/impersonate/quiet persist_target:{kind:\"none\"} 由调用方显式传。 | 批1落地(a734a73):sendOpenAIRequest chat域全切 /api/utopinn/generate——normal/regenerate/continue/swipe/impersonate/quiet 统一改道,generation_overrides 整包透传客户端派生键,非persist类强制 kind:none,group/extension scope 留 legacy。服务端补 continue cyclePrompt 推导。回归16/16。残留:浏览器组装仍跑(死工,perf短路留Phase2);skipWIAN/quietImage/quietToLoud;group聊天;textgen/kobold源;浏览器实烟未验。 | 批1浏览器实弹通过(52cc744):playwright 真点发送,网络探针实锤 POST /api/utopinn/generate(charDir/chatName/type/generation_overrides,无 messages 上 wire);WS 流式 live 渲染;楼层4服务端落盘。真卡+真预设+aiping 真上游。修 type 泄漏进 generation_overrides。另:种子聊天缺 integrity 令牌的 UI 拒写为预期行为(非产品 bug)。 | 收尾(2026-11-19):CLI 实测 send/continue/swipe/regen 全链绿,floors 22→24 无双写,ack 闭环 completed+persisted;subagent 审查 34 条阻塞清零(5527db1)。验收4 golden-diff 未重跑→挪 TASK-038 验收矩阵;浏览器组装空跑残留→TASK-034 短路。group/textgen→TASK-037。",
       "evidence": [],
-      "outcome": "旧 Luker/酒馆 UI 全部生成入口走服务端大脑(/api/uberge/generate),浏览器内组装引擎成为死路径;主发送/swipe/regenerate/continue 实机冒烟通过。",
+      "outcome": "旧 Luker/酒馆 UI 全部生成入口走服务端大脑(/api/utopinn/generate),浏览器内组装引擎成为死路径;主发送/swipe/regenerate/continue 实机冒烟通过。",
       "boundaries": [
         "不删除浏览器内原版组装引擎(留码停用作行为对照)",
         "不动旧 jQuery UI 渲染层/消息 DOM 结构",
-        "不改 /api/uberge/* 服务端既有语义(接线只动客户端调用面)",
+        "不改 /api/utopinn/* 服务端既有语义(接线只动客户端调用面)",
         "不恢复 apps/web/apps/mobile 工作(仍 parked)"
       ],
       "updated_at": "2026-11-19T05:40:27.051Z"
@@ -2696,13 +2696,13 @@
     {
       "id": "TASK-031",
       "status": "done",
-      "title": "CLI 薄客户端 uberge-cli:命令行全操控面(会话/生成流式/楼层/诊断)",
+      "title": "CLI 薄客户端 utopinn-cli:命令行全操控面(会话/生成流式/楼层/诊断)",
       "depends_on": [
         "TASK-030"
       ],
       "notes": "capability doc: .loom/capabilities/cli-client/capability.md。零依赖单文件 Node≥22;会话/WS 帧与浏览器同 wire;v1: use/chars/chats/send/regen/swipe/continue/history/inspect/preview。驱动 10 轮诡异修仙实测+前端展示核对。",
       "progress": "v0.x 全功能落地(809f7a8/a09fdf3/5527db1)。组件面 cordis 绑定完成;kernel 47 路由 17 具名 30 raw。阻塞审查项已修。后续具名命令扩展并入 TASK-036。",
-      "outcome": "uberge-cli v0.x 单文件零依赖交付:会话/生成流式/楼层/诊断/组件面(kernel/plugins/mvu/script/th/worlds/wi/raw/doctor覆盖差集)全操控;诡异修仙卡实弹 10+ 轮验证;subagent 34 条审查阻塞项修复(5527db1)。",
+      "outcome": "utopinn-cli v0.x 单文件零依赖交付:会话/生成流式/楼层/诊断/组件面(kernel/plugins/mvu/script/th/worlds/wi/raw/doctor覆盖差集)全操控;诡异修仙卡实弹 10+ 轮验证;subagent 34 条审查阻塞项修复(5527db1)。",
       "done_when": [
         "CLI 覆盖会话+生成+楼层+诊断+组件面",
         "实弹 10 轮全绿",
@@ -2710,7 +2710,7 @@
       ],
       "updated_at": "2026-11-19T05:40:27.051Z",
       "reads": [
-        "apps/cli/uberge-cli.mjs"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "touches": [
         "apps/cli/"
@@ -2744,21 +2744,21 @@
     },
     {
       "id": "TASK-032",
-      "title": "写盘面统一:ack/integrity/gen-id/settle 机制迁入 fiber,uberge chats 路由对齐 legacy 语义",
+      "title": "写盘面统一:ack/integrity/gen-id/settle 机制迁入 fiber,utopinn chats 路由对齐 legacy 语义",
       "depends_on": [
         "TASK-030"
       ],
       "done_when": [
-        "acknowledgeGenerationFromValueOrPersistTarget/integrity CAS/gen-id sidecar/settle hooks 全套移植进 uberge fiber(chats 写盘域)",
-        "/api/uberge/characters/:dir/chats 写路径与 legacy /api/chats 行为对齐(append/patch/save+MVU settle+WI timed-effects+gen-id dedup)",
-        "CLI 写盘动词(appendFloors/patchFloors)切换到 uberge 路由,实弹无双写无丢 ack",
+        "acknowledgeGenerationFromValueOrPersistTarget/integrity CAS/gen-id sidecar/settle hooks 全套移植进 utopinn fiber(chats 写盘域)",
+        "/api/utopinn/characters/:dir/chats 写路径与 legacy /api/chats 行为对齐(append/patch/save+MVU settle+WI timed-effects+gen-id dedup)",
+        "CLI 写盘动词(appendFloors/patchFloors)切换到 utopinn 路由,实弹无双写无丢 ack",
         "legacy /api/chats 端点标 deprecated 并保留兼容转发(过渡期)"
       ],
       "reads": [
         "apps/server/src/endpoints/chats.js",
-        "apps/server/src/plugins/uberge-library.js",
+        "apps/server/src/plugins/utopinn-library.js",
         "apps/server/src/endpoints/backends/luker-generation.js",
-        "apps/cli/uberge-cli.mjs"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "touches": [
         "apps/server/src/plugins/",
@@ -2768,19 +2768,19 @@
       "status": "active",
       "acceptance": [
         {
-          "criterion": "acknowledgeGenerationFromValueOrPersistTarget/integrity CAS/gen-id sidecar/settle hooks 全套移植进 uberge fiber(chats 写盘域)",
+          "criterion": "acknowledgeGenerationFromValueOrPersistTarget/integrity CAS/gen-id sidecar/settle hooks 全套移植进 utopinn fiber(chats 写盘域)",
           "verify_by": "node --test + CLI 实弹",
           "evidence": "",
           "verified": ""
         },
         {
-          "criterion": "/api/uberge/characters/:dir/chats 写路径与 legacy /api/chats 行为对齐(append/patch/save+MVU settle+WI timed-effects+gen-id dedup)",
+          "criterion": "/api/utopinn/characters/:dir/chats 写路径与 legacy /api/chats 行为对齐(append/patch/save+MVU settle+WI timed-effects+gen-id dedup)",
           "verify_by": "node --test + CLI 实弹",
           "evidence": "",
           "verified": ""
         },
         {
-          "criterion": "CLI 写盘动词(appendFloors/patchFloors)切换到 uberge 路由,实弹无双写无丢 ack",
+          "criterion": "CLI 写盘动词(appendFloors/patchFloors)切换到 utopinn 路由,实弹无双写无丢 ack",
           "verify_by": "node --test + CLI 实弹",
           "evidence": "",
           "verified": ""
@@ -2794,17 +2794,17 @@
       ],
       "progress": {
         "completed": [
-          "uberge append/patch 与 legacy /api/chats 同源机制移植(ack/integrity/gen-id/settle;b31f898)",
+          "utopinn append/patch 与 legacy /api/chats 同源机制移植(ack/integrity/gen-id/settle;b31f898)",
           "CLI 时序修复:awaiting_ack 即到即写,kind:none 纯化;swipe 409 重锚实弹闭环",
           "对抗自查 10 项全核,safe-to-proceed(.loom/eval/task032-self-review-2026-11-19.md)",
           "PUT chats/:chatName/document 整文档写盘(legacy /save 等价;双形状;CAS+force+checkIntegrity;backup/recents/gen-id ack/MVU 全量重放;c8ad7f4)",
           "CLI chat-put 具名:CAS 自动注入+409 重锚;实弹 26 层逐字节相同"
         ],
-        "current": "整文档写盘已通;剩 state sidecar 三族(chat_state/char_state/preset_state)uberge 路由——TASK-033 前置",
-        "next": "设计并实现 /api/uberge/state/* 三路 sidecar 路由(读 legacy chats.js state 端点契约),然后开 TASK-033 Top-10 改道"
+        "current": "整文档写盘已通;剩 state sidecar 三族(chat_state/char_state/preset_state)utopinn 路由——TASK-033 前置",
+        "next": "设计并实现 /api/utopinn/state/* 三路 sidecar 路由(读 legacy chats.js state 端点契约),然后开 TASK-033 Top-10 改道"
       },
       "evidence": [],
-      "outcome": "三套写盘面收成一套:ack/integrity/gen-id/settle 机制归 fiber 所有,uberge chats REST 成为唯一权威写盘接口;legacy /api/chats 退化为兼容转发。",
+      "outcome": "三套写盘面收成一套:ack/integrity/gen-id/settle 机制归 fiber 所有,utopinn chats REST 成为唯一权威写盘接口;legacy /api/chats 退化为兼容转发。",
       "boundaries": [
         "不删 legacy 端点(转 TASK-035)",
         "行为语义以 legacy 为准做 parity diff,不自由发挥"
@@ -2813,20 +2813,20 @@
     },
     {
       "id": "TASK-033",
-      "title": "浏览器残存调用改道:chats/characters/presets/settings/personas/secrets → uberge REST",
+      "title": "浏览器残存调用改道:chats/characters/presets/settings/personas/secrets → utopinn REST",
       "depends_on": [
         "TASK-032"
       ],
       "done_when": [
-        "public/ 内 /api/chats/get|append|patch|save 调用全切 uberge 路由(或经兼容 shim)",
-        "characters/presets/settings/personas/secrets 读取写改道 uberge REST",
+        "public/ 内 /api/chats/get|append|patch|save 调用全切 utopinn 路由(或经兼容 shim)",
+        "characters/presets/settings/personas/secrets 读取写改道 utopinn REST",
         "grep legacy 端点在 public/ 残留 = 0(白名单豁免除外)",
         "浏览器实烟:聊天读写/预设切换/persona/世界书 UI 全功能不回退"
       ],
       "reads": [
         "apps/server/public/script.js",
         "apps/server/public/scripts/",
-        "apps/server/src/plugins/uberge-library.js"
+        "apps/server/src/plugins/utopinn-library.js"
       ],
       "touches": [
         "apps/server/public/"
@@ -2835,13 +2835,13 @@
       "status": "open",
       "acceptance": [
         {
-          "criterion": "public/ 内 /api/chats/get|append|patch|save 调用全切 uberge 路由(或经兼容 shim)",
+          "criterion": "public/ 内 /api/chats/get|append|patch|save 调用全切 utopinn 路由(或经兼容 shim)",
           "verify_by": "playwright 探针 + 手测",
           "evidence": "",
           "verified": ""
         },
         {
-          "criterion": "characters/presets/settings/personas/secrets 读取写改道 uberge REST",
+          "criterion": "characters/presets/settings/personas/secrets 读取写改道 utopinn REST",
           "verify_by": "playwright 探针 + 手测",
           "evidence": "",
           "verified": ""
@@ -2862,13 +2862,13 @@
       "progress": {
         "completed": [
           "全量盘点入库:~504 调用点,47 可改道/457 保留(.loom/eval/browser-legacy-calls-inventory-2026-11-19.md,3fb43e3)",
-          "前置 unblocked:document 整写路由已落地(c8ad7f4),/api/chats/save 有了 uberge 等价"
+          "前置 unblocked:document 整写路由已落地(c8ad7f4),/api/chats/save 有了 utopinn 等价"
         ],
         "current": "Top-10 高热调用改道中(子代理):chats get/save/append/patch/delete/rename + characters all/get + presets/worldinfo/settings CRUD",
         "next": "子代理收口后逐点验收;state sidecar 路由(并行中)落地后补 state 调用改道;settings PATCH 白名单外的节保留 legacy 标记"
       },
       "evidence": [],
-      "outcome": "旧 UI 所有数据面调用都走 uberge REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
+      "outcome": "旧 UI 所有数据面调用都走 utopinn REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
       "boundaries": [
         "jQuery 渲染层不动",
         "group 聊天依赖 TASK-037"
@@ -2996,11 +2996,11 @@
         "每个新动词带 schema 自描述+next hints"
       ],
       "reads": [
-        "apps/cli/uberge-cli.mjs",
-        "apps/server/src/plugins/uberge-diag.js"
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/plugins/utopinn-diag.js"
       ],
       "touches": [
-        "apps/cli/uberge-cli.mjs"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
       "status": "open",
@@ -3045,7 +3045,7 @@
     },
     {
       "id": "TASK-037",
-      "title": "旁路接入:group 聊天 + textgen/kobold/novel 源进 uberge 管道",
+      "title": "旁路接入:group 聊天 + textgen/kobold/novel 源进 utopinn 管道",
       "depends_on": [
         "TASK-032"
       ],
@@ -3055,11 +3055,11 @@
         "对应 CLI 动词实弹验证"
       ],
       "reads": [
-        "apps/server/src/plugins/uberge-generate.js",
+        "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/src/luker-dispatch/"
       ],
       "touches": [
-        "apps/server/src/plugins/uberge-generate.js",
+        "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/public/script.js"
       ],
       "implements": "core-engine",
@@ -3101,12 +3101,12 @@
         "TASK-036"
       ],
       "done_when": [
-        "每个 fiber 面对应 CLI 验收脚本(uberge-* 全覆盖),一键可跑",
+        "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
         "golden-diff 复跑无新分叉(TASK-030 移交项)",
         "WS 断流/重连/双写防护有针对性用例"
       ],
       "reads": [
-        "apps/cli/uberge-cli.mjs",
+        "apps/cli/utopinn-cli.mjs",
         "apps/server/tests/"
       ],
       "touches": [
@@ -3117,7 +3117,7 @@
       "status": "open",
       "acceptance": [
         {
-          "criterion": "每个 fiber 面对应 CLI 验收脚本(uberge-* 全覆盖),一键可跑",
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
           "verify_by": "验收脚本全绿",
           "evidence": "",
           "verified": ""

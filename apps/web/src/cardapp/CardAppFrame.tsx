@@ -1,7 +1,7 @@
 // CardAppFrame — web host for untrusted card HTML (TASK-022).
 // Flow: POST /api/card-runtime/mounts {charId} → mount bundle (entryUrl +
 // bridgeNonce + manifest) → <iframe sandbox> at entryUrl?shim=t0 →
-// 'uberge-panel' postMessage bridge → ctxApi → server TH layer.
+// 'utopinn-panel' postMessage bridge → ctxApi → server TH layer.
 //
 // Security posture (design/cardapp-web-host.md + protocol/panels.ts):
 // - opaque-origin sandbox by default; manifest.permissions.sameOrigin

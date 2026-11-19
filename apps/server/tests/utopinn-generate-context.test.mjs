@@ -2,7 +2,7 @@
  * buildGenerationContext 集成测试(node:test,无 jest 依赖)。
  * 真 FsEngine + 种子数据:chat/preset/settings/world 四 repo →
  * mergeLoreSources → checkWorldInfo → buildPromptMessages 全链。
- * 跑法:node --test tests/uberge-generate-context.test.mjs
+ * 跑法:node --test tests/utopinn-generate-context.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ import {
 } from '../src/storage/index.js';
 import { buildGenerationContext, persistWorldInfoTimedEffects } from '../src/services/generate-context.js';
 import { buildStscriptEnv } from '../src/services/stscript-env.js';
-import { runStscript } from '@uberge/core';
+import { runStscript } from '@utopinn/core';
 
 const HANDLE = 'h1';
 const CHAR = 'Alice';
@@ -61,7 +61,7 @@ function allText(builtPrompt) {
 }
 
 test('buildGenerationContext — storage → WI → prompt', async (t) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-genctx-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-genctx-'));
     try {
         // FsEngine 需要按 dirKey 寻址(preset→openAI_Settings,world→worlds…),
         // 与 tests/storage/harness/fs-harness.js USER_DIRS 同构。
@@ -186,7 +186,7 @@ test('buildGenerationContext — storage → WI → prompt', async (t) => {
  * timed-effects 持久化 / dryRun 不写。
  */
 test('audit regressions — settings + injection + persist', async (t) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-genctx2-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-genctx2-'));
     try {
         const dirs = {
             root: tmpDir,

@@ -1,5 +1,5 @@
 /**
- * /api/uberge/import 导入管线(uberge-import.js + services/import-pipeline.js)
+ * /api/utopinn/import 导入管线(utopinn-import.js + services/import-pipeline.js)
  * 集成测试(node:test)。真 FsEngine + 真 express + 真 HTTP;
  * request.user 经中间件注入(等价 requireLogin+setUserData 之后的形态)。
  *
@@ -7,7 +7,7 @@
  * before() 里先 setConfigFilePath(default/config.yaml) + DATA_ROOT,
  * 再让第一次 commit 触发它的惰性 import。
  *
- * 跑法:node --test tests/uberge-import.test.mjs
+ * 跑法:node --test tests/utopinn-import.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import multer from 'multer';
 import { zipSync } from 'fflate';
-import { readCardFromPng, writeCardToPng } from '@uberge/formats';
+import { readCardFromPng, writeCardToPng } from '@utopinn/formats';
 import {
     getPresetRepo,
     getSettingsRepo,
@@ -26,7 +26,7 @@ import {
     initStorage,
 } from '../src/storage/index.js';
 import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
-import { router as ubergeImportRouter } from '../src/endpoints/uberge-import.js';
+import { router as utopinnImportRouter } from '../src/endpoints/utopinn-import.js';
 
 const HANDLE = 'u1';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -174,7 +174,7 @@ test.before(async () => {
     process.env.LUKER_PERFORMANCE_USEDISKCACHE = 'false';
     process.env.LUKER_PERFORMANCE_USE_DISK_CACHE = 'false';
 
-    ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-import-'));
+    ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-import-'));
     globalThis.DATA_ROOT = ROOT;
     dirs = {};
     for (const [key, rel] of Object.entries(USER_DIRS)) {
@@ -193,7 +193,7 @@ test.before(async () => {
             destination: (_req, _file, cb) => cb(null, path.join(ROOT, '_uploads')),
         }),
     }).single('avatar');
-    app.use('/api/uberge', (request, response, next) => {
+    app.use('/api/utopinn', (request, response, next) => {
         if (request.is('multipart/*')) return upload(request, response, next);
         next();
     });
@@ -201,7 +201,7 @@ test.before(async () => {
         request.user = { profile: { handle: HANDLE, name: 'User' }, directories: dirs };
         next();
     });
-    app.use('/api/uberge', ubergeImportRouter);
+    app.use('/api/utopinn', utopinnImportRouter);
     await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
     BASE = `http://127.0.0.1:${server.address().port}`;
 });
@@ -214,7 +214,7 @@ test.after(async () => {
 // ---------- Preview:各类型探测 ----------
 
 test('preview PNG card — kind char, summary 列出书条目/regex/depth_prompt', async () => {
-    const { status, body } = await api('/api/uberge/import/preview', {
+    const { status, body } = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'alice.png', dataBase64: pngCardB64(CARD_ALICE) },
     });
@@ -238,7 +238,7 @@ test('preview PNG card — kind char, summary 列出书条目/regex/depth_prompt
 });
 
 test('preview JSON v1 card — char + 升级警告', async () => {
-    const { status, body } = await api('/api/uberge/import/preview', {
+    const { status, body } = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'vince.json', dataBase64: Buffer.from(CARD_V1_JSON).toString('base64') },
     });
@@ -252,7 +252,7 @@ test('preview JSON v1 card — char + 升级警告', async () => {
 });
 
 test('preview charx / byaf — 都是 char,带各自警告', async () => {
-    const charx = await api('/api/uberge/import/preview', {
+    const charx = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'charxie.charx', dataBase64: Buffer.from(charxFixture()).toString('base64') },
     });
@@ -262,7 +262,7 @@ test('preview charx / byaf — 都是 char,带各自警告', async () => {
     assert.equal(charx.body.summary.sourceFormat, 'charx');
     assert.ok(charx.body.warnings.some((w) => /CharX assets/i.test(w)));
 
-    const byaf = await api('/api/uberge/import/preview', {
+    const byaf = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'byafie.byaf', dataBase64: Buffer.from(byafFixture()).toString('base64') },
     });
@@ -274,7 +274,7 @@ test('preview charx / byaf — 都是 char,带各自警告', async () => {
 });
 
 test('preview worldbook / preset / persona — kind 分流正确', async () => {
-    const world = await api('/api/uberge/import/preview', {
+    const world = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'GlobalBook.json', dataBase64: Buffer.from(WORLDBOOK).toString('base64') },
     });
@@ -283,7 +283,7 @@ test('preview worldbook / preset / persona — kind 分流正确', async () => {
     assert.equal(world.body.targetName, 'GlobalBook');
     assert.equal(world.body.summary.entries, 1);
 
-    const preset = await api('/api/uberge/import/preview', {
+    const preset = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'preset.json', dataBase64: Buffer.from(PRESET).toString('base64') },
     });
@@ -292,7 +292,7 @@ test('preview worldbook / preset / persona — kind 分流正确', async () => {
     assert.equal(preset.body.name, 'TestPreset');
     assert.equal(preset.body.summary.prompts, 1);
 
-    const persona = await api('/api/uberge/import/preview', {
+    const persona = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'mia.json', dataBase64: Buffer.from(PERSONA).toString('base64') },
     });
@@ -304,7 +304,7 @@ test('preview worldbook / preset / persona — kind 分流正确', async () => {
 });
 
 test('preview — 不可识别载荷一律 422 + hints', async () => {
-    const garbage = await api('/api/uberge/import/preview', {
+    const garbage = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'x.bin', dataBase64: Buffer.from('not json at all \x01\x02').toString('base64') },
     });
@@ -312,21 +312,21 @@ test('preview — 不可识别载荷一律 422 + hints', async () => {
     assert.ok(garbage.body.error);
     assert.ok(garbage.body.hints);
 
-    const barePng = await api('/api/uberge/import/preview', {
+    const barePng = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'bare.png', dataBase64: PNG_1PX.toString('base64') },
     });
     assert.equal(barePng.status, 422);
     assert.match(barePng.body.error, /PNG/i);
 
-    const zipNoCard = await api('/api/uberge/import/preview', {
+    const zipNoCard = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'x.charx', dataBase64: Buffer.from(zipSync({ 'readme.txt': te.encode('hi') })).toString('base64') },
     });
     assert.equal(zipNoCard.status, 422);
     assert.match(zipNoCard.body.error, /ZIP/i);
 
-    const unknownJson = await api('/api/uberge/import/preview', {
+    const unknownJson = await api('/api/utopinn/import/preview', {
         method: 'POST',
         body: { name: 'x.json', dataBase64: Buffer.from('{"foo":1,"bar":2}').toString('base64') },
     });
@@ -337,7 +337,7 @@ test('preview — 不可识别载荷一律 422 + hints', async () => {
 test('preview — multipart 上传(avatar 字段)走同一管线', async () => {
     const fd = new FormData();
     fd.append('avatar', new Blob([writeCardToPng(new Uint8Array(PNG_1PX), CARD_ALICE)]), 'alice.png');
-    const res = await fetch(`${BASE}/api/uberge/import/preview`, { method: 'POST', body: fd });
+    const res = await fetch(`${BASE}/api/utopinn/import/preview`, { method: 'POST', body: fd });
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.kind, 'char');
@@ -347,7 +347,7 @@ test('preview — multipart 上传(avatar 字段)走同一管线', async () => {
 // ---------- Commit ----------
 
 test('commit PNG card → characters/Alice.png 可读回', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { dataBase64: pngCardB64(CARD_ALICE) },
     });
@@ -368,7 +368,7 @@ test('commit PNG card → characters/Alice.png 可读回', async () => {
 });
 
 test('commit JSON v1 card → 升格 v2 PNG(默认头像)', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { name: 'vince.json', dataBase64: Buffer.from(CARD_V1_JSON).toString('base64') },
     });
@@ -382,7 +382,7 @@ test('commit JSON v1 card → 升格 v2 PNG(默认头像)', async () => {
 });
 
 test('commit charx → PNG + 辅助立绘落 sprites 目录', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { name: 'charxie.charx', dataBase64: Buffer.from(charxFixture()).toString('base64') },
     });
@@ -397,7 +397,7 @@ test('commit charx → PNG + 辅助立绘落 sprites 目录', async () => {
 });
 
 test('commit byaf → PNG,宏已替换、首图作头像', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { name: 'byafie.byaf', dataBase64: Buffer.from(byafFixture()).toString('base64') },
     });
@@ -410,7 +410,7 @@ test('commit byaf → PNG,宏已替换、首图作头像', async () => {
 });
 
 test('commit worldbook → WorldInfoRepo 可读', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { name: 'GlobalBook.json', dataBase64: Buffer.from(WORLDBOOK).toString('base64') },
     });
@@ -422,7 +422,7 @@ test('commit worldbook → WorldInfoRepo 可读', async () => {
 });
 
 test('commit preset → PresetRepo(openai) 可读;非法 apiId → 400', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { dataBase64: Buffer.from(PRESET).toString('base64') },
     });
@@ -432,7 +432,7 @@ test('commit preset → PresetRepo(openai) 可读;非法 apiId → 400', async (
     assert.equal(doc.openai_model, 'gpt-test');
 
     // apiId 校验在冲突裁决之前 → 400 而非 409
-    const badId = await api('/api/uberge/import/commit', {
+    const badId = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { apiId: 'bogus', dataBase64: Buffer.from(PRESET).toString('base64') },
     });
@@ -441,7 +441,7 @@ test('commit preset → PresetRepo(openai) 可读;非法 apiId → 400', async (
 });
 
 test('commit persona → settings.power_user 两表都落', async () => {
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { dataBase64: Buffer.from(PERSONA).toString('base64') },
     });
@@ -458,14 +458,14 @@ test('commit persona → settings.power_user 两表都落', async () => {
 
 test('同名冲突:无策略→409;skip→skipped;rename→Name1', async () => {
     // Alice.png 已在上面的 commit 里落下
-    const again = await api('/api/uberge/import/commit', {
+    const again = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { dataBase64: pngCardB64(CARD_ALICE) },
     });
     assert.equal(again.status, 409);
     assert.equal(again.body.conflicts.existingSameName, true);
 
-    const skipped = await api('/api/uberge/import/commit', {
+    const skipped = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { conflict: 'skip', dataBase64: pngCardB64(CARD_ALICE) },
     });
@@ -473,7 +473,7 @@ test('同名冲突:无策略→409;skip→skipped;rename→Name1', async () => {
     assert.equal(skipped.body.skipped, true);
     assert.ok(!fs.existsSync(path.join(dirs.characters, 'Alice1.png')), 'skip must not write');
 
-    const renamed = await api('/api/uberge/import/commit', {
+    const renamed = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { conflict: 'rename', dataBase64: pngCardB64(CARD_ALICE) },
     });
@@ -489,7 +489,7 @@ test('overwrite 同名片 → 继承旧 chat 指针', async () => {
     fs.writeFileSync(path.join(dirs.characters, 'Kee.png'), writeCardToPng(new Uint8Array(PNG_1PX), oldCard));
 
     const newCard = JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', data: { name: 'KeeNew', description: 'fresh' } });
-    const commit = await api('/api/uberge/import/commit', {
+    const commit = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { targetName: 'Kee', conflict: 'overwrite', dataBase64: pngCardB64(newCard) },
     });
@@ -501,7 +501,7 @@ test('overwrite 同名片 → 继承旧 chat 指针', async () => {
 });
 
 test('worldbook 同名 rename → GlobalBook1 落库', async () => {
-    const renamed = await api('/api/uberge/import/commit', {
+    const renamed = await api('/api/utopinn/import/commit', {
         method: 'POST',
         // worldbook 文档本身无 name,客户端回传原文件名作提示
         body: { name: 'GlobalBook.json', conflict: 'rename', dataBase64: Buffer.from(WORLDBOOK).toString('base64') },
@@ -515,14 +515,14 @@ test('worldbook 同名 rename → GlobalBook1 落库', async () => {
 // ---------- 边界 ----------
 
 test('commit — 声明 kind 与探测不符 → 422;非法 kind → 400', async () => {
-    const mismatch = await api('/api/uberge/import/commit', {
+    const mismatch = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { kind: 'world', dataBase64: pngCardB64(CARD_ALICE) },
     });
     assert.equal(mismatch.status, 422);
     assert.match(mismatch.body.error, /detected kind "char"/);
 
-    const badKind = await api('/api/uberge/import/commit', {
+    const badKind = await api('/api/utopinn/import/commit', {
         method: 'POST',
         body: { kind: 'theme', dataBase64: pngCardB64(CARD_ALICE) },
     });
@@ -530,7 +530,7 @@ test('commit — 声明 kind 与探测不符 → 422;非法 kind → 400', async
 });
 
 test('无载荷 → 400', async () => {
-    const res = await api('/api/uberge/import/preview', { method: 'POST', body: {} });
+    const res = await api('/api/utopinn/import/preview', { method: 'POST', body: {} });
     assert.equal(res.status, 400);
     assert.ok(res.body.error);
 });

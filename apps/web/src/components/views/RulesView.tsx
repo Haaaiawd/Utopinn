@@ -1,7 +1,7 @@
 // RulesView — 世界书管理页(GPT「技能」式):
 // 列表态:页头(标题+描述+搜索/新建) → 来源 chips → 卡格。
 // 详情态:点卡进条目编辑器(启禁/注释/关键词/正文就地改,整档 PUT 回存)。
-// 真实数据走 /api/uberge/worlds(全局书);绑定书在卡上,列表
+// 真实数据走 /api/utopinn/worlds(全局书);绑定书在卡上,列表
 // 端点尚未覆盖 → chips 诚实显示空态。离线回退 mock + 徽标,写操作短路。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { deleteWorld, getWorld, listWorlds, saveWorld } from '../../api/worlds';

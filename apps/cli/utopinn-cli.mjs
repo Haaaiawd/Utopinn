@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * uberge — Uberge 服务端大脑的命令行薄客户端(agent-first 设计)。
+ * utopinn — Utopinn 服务端大脑的命令行薄客户端(agent-first 设计)。
  * 规格:.loom/capabilities/cli-client/capability.md(唯一契约,先读它)。
  * 零依赖:Node ≥22 原生 fetch + WebSocket。
  */
@@ -73,10 +73,16 @@ for (let i = 0; i < argv.length; i++) {
     else positional.push(a);
 }
 const CMD = positional[0];
-if (process.env.UBERGE_JSON === '1') flags.json = true;
+if (process.env.UTOPINN_JSON === '1') flags.json = true;
 
 // ═══ state(唯一事实源,凭证零落盘)═══
-const STATE_PATH = resolve(flags.state || process.env.UBERGE_STATE || `${homedir()}/.uberge-cli.json`);
+const STATE_PATH = (() => {
+    if (flags.state) return resolve(flags.state);
+    const envPath = process.env.UTOPINN_STATE || process.env.UBERGE_STATE;
+    if (envPath) return resolve(envPath);
+    const np = homedir() + '/.utopinn-cli.json', op = homedir() + '/.uberge-cli.json';
+    return existsSync(np) || !existsSync(op) ? np : op; // 改名后旧 state 文件兜底读
+})();
 function loadState() {
     try { return JSON.parse(readFileSync(STATE_PATH, 'utf8')); } catch { return {}; }
 }
@@ -99,7 +105,7 @@ function ring(cmd, rc, extra = {}) {
     } catch { /* 环不进状态不致命 */ }
 }
 
-const SERVER = (flags.server || process.env.UBERGE_SERVER || state.server || DEFAULT_SERVER).replace(/\/+$/, '');
+const SERVER = (flags.server || process.env.UTOPINN_SERVER || state.server || DEFAULT_SERVER).replace(/\/+$/, '');
 saveState({ server: SERVER });
 const isLoopback = /^https?:\/\/(127\.|localhost|\[?::1\]?)/.test(SERVER);
 if (!isLoopback) warn('non-loopback server — 未测远端/无登录面,建议 SSH tunnel 或白名单');
@@ -155,7 +161,7 @@ function fail(code, message, { status, detail, hint, nexts = [], rc = 1 } = {}) 
 }
 const needCtx = () => {
     if (!state.char?.dir || !state.chat?.name) {
-        fail('no_ctx', 'no active char/chat', { hint: 'uberge use <char> [chat]', nexts: [{ cmd: 'uberge chars', why: '挑一张卡' }], rc: 2 });
+        fail('no_ctx', 'no active char/chat', { hint: 'utopinn use <char> [chat]', nexts: [{ cmd: 'utopinn chars', why: '挑一张卡' }], rc: 2 });
         return null;
     }
     return { charDir: state.char.dir, chatName: state.chat.name, charName: state.char.name };
@@ -225,7 +231,7 @@ async function resolveChar(fuzzy) {
         fail('ambiguous', `"${name}" matches ${partial.length} chars`, { detail: partial.map(c => stripExt(c.avatar, 'png')).join(' | '), hint: '用更长的名或目录名' });
         return null;
     }
-    fail('not_found', `character not found: "${name}"`, { detail: chars.map(c => stripExt(c.avatar, 'png')).slice(0, 12).join(' | '), hint: `共 ${chars.length} 张,uberge chars 看全表` });
+    fail('not_found', `character not found: "${name}"`, { detail: chars.map(c => stripExt(c.avatar, 'png')).slice(0, 12).join(' | '), hint: `共 ${chars.length} 张,utopinn chars 看全表` });
     return null;
 }
 async function resolveChatForUse(charDir, fuzzy, charChat) {
@@ -239,7 +245,7 @@ async function resolveChatForUse(charDir, fuzzy, charChat) {
             const newest = chats.reduce((a, c) => (Number(c?.sort_time ?? 0) > Number(a?.sort_time ?? 0) ? c : a), chats[0]);
             return stripExt(newest?.file_name ?? newest?.name ?? names[0], 'jsonl');
         }
-        fail('not_found', `no chats for ${charDir}`, { hint: 'uberge chat-new <name> 建一个' });
+        fail('not_found', `no chats for ${charDir}`, { hint: 'utopinn chat-new <name> 建一个' });
         return null;
     }
     const name = stripExt(fuzzy, 'jsonl');
@@ -252,16 +258,16 @@ async function resolveChatForUse(charDir, fuzzy, charChat) {
         return null;
     }
     // 铁律12:不许隐式建聊天——typo 不该变新文件
-    fail('not_found', `chat not found: "${name}"`, { detail: names.slice(0, 10).join(' | '), hint: '新聊天用 uberge chat-new <name>' });
+    fail('not_found', `chat not found: "${name}"`, { detail: names.slice(0, 10).join(' | '), hint: '新聊天用 utopinn chat-new <name>' });
     return null;
 }
 
-// ═══ 写盘(uberge REST:append=POST messages / patch=PATCH chat)═══
-// TASK-032:写盘面已统一进 uberge fiber——ack/integrity/gen-id/settle 与 legacy 同机制。
-// patch 的 op path 用 /body/<i> 命名空间(uberge doc = {header, body:[]})。
+// ═══ 写盘(utopinn REST:append=POST messages / patch=PATCH chat)═══
+// TASK-032:写盘面已统一进 utopinn fiber——ack/integrity/gen-id/settle 与 legacy 同机制。
+// patch 的 op path 用 /body/<i> 命名空间(utopinn doc = {header, body:[]})。
 async function writeOp(op, body, { retried = false } = {}) {
     const { charDir, chatName } = needCtx();
-    const base = `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`;
+    const base = `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`;
     const isAppend = op === 'append';
     const path = isAppend ? `${base}/messages` : base;
     const payload = isAppend
@@ -274,7 +280,7 @@ async function writeOp(op, body, { retried = false } = {}) {
         return data;
     } catch (e) {
         // 409 分两种:integrity CAS(可重锚重试)vs patch op 冲突(重试无用)。
-        // uberge ConflictError 回 {error:'integrity_mismatch', actual}——直接拿 actual 重锚。
+        // utopinn ConflictError 回 {error:'integrity_mismatch', actual}——直接拿 actual 重锚。
         const isIntegrity409 = e.status === 409 && /integrity/i.test(JSON.stringify(e.data ?? '') + e.message);
         if (isIntegrity409 && !retried && !flags.force) {
             warn('integrity 409 — 重锚后重试一次');
@@ -315,7 +321,7 @@ async function checkNoActiveJob(charDir, chatName) {
         fail('active_job', `chat has active job ${active.id}`, {
             detail: `status=${active.status}`,
             hint: '等它完,或恢复/中止',
-            nexts: [{ cmd: `uberge attach ${active.id}` }, { cmd: `uberge abort ${active.id}` }],
+            nexts: [{ cmd: `utopinn attach ${active.id}` }, { cmd: `utopinn abort ${active.id}` }],
             rc: 3,
         });
         return active.id;
@@ -484,7 +490,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         const lastIdx = floorsData.length - 1;
         const last = floorsData[lastIdx];
         if (!last || last.is_user || lastIdx < 1) {
-            fail('no_ai_floor', 'regen 需要末楼是 AI 楼', { hint: '末楼是 user——用 send 续对话', nexts: [{ cmd: 'uberge send "…"' }] });
+            fail('no_ai_floor', 'regen 需要末楼是 AI 楼', { hint: '末楼是 user——用 send 续对话', nexts: [{ cmd: 'utopinn send "…"' }] });
             return null;
         }
         await patchFloors([{ op: 'remove', path: `/body/${lastIdx - 1}` }]);
@@ -534,7 +540,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     // job id 立刻入 state——POST 之后任何中断都能 `attach <id>` 找回
     saveState({ lastJob: { id: jobId, type, status: 'running', at: Date.now() } });
     // generate 用整个 wait 窗口——慢盘组装+上游排队能远超 30s 默认请求超时
-    const { headers } = await req('POST', '/api/uberge/generate', body, { timeout: flags.wait ?? DEFAULT_WAIT_MS });
+    const { headers } = await req('POST', '/api/utopinn/generate', body, { timeout: flags.wait ?? DEFAULT_WAIT_MS });
     const echoed = headers.get('x-luker-generation-id');
     if (echoed && echoed !== jobId) warn(`job id echo mismatch: ${echoed}`);
 
@@ -611,12 +617,12 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
 }
 
 function genNextFor(verb, failed) {
-    if (failed) return [{ cmd: 'uberge inspect', why: '看 job 错误与 WI 轨迹' }, { cmd: `uberge attach ${state.lastJob?.id ?? ''}`.trim(), why: '对账终态' }];
+    if (failed) return [{ cmd: 'utopinn inspect', why: '看 job 错误与 WI 轨迹' }, { cmd: `utopinn attach ${state.lastJob?.id ?? ''}`.trim(), why: '对账终态' }];
     switch (verb) {
-        case 'send': return [{ cmd: 'uberge send "…"', why: '继续' }, { cmd: 'uberge swipe', why: '换一版' }, { cmd: 'uberge inspect', why: '看 WI/轨迹' }];
-        case 'regen': case 'swipe': return [{ cmd: 'uberge swipe', why: '再换一版' }, { cmd: 'uberge send "…"', why: '接着聊' }];
-        case 'continue': return [{ cmd: 'uberge continue', why: '再续' }, { cmd: 'uberge send "…"' }];
-        default: return [{ cmd: 'uberge history -n 3' }, { cmd: 'uberge send "…"' }];
+        case 'send': return [{ cmd: 'utopinn send "…"', why: '继续' }, { cmd: 'utopinn swipe', why: '换一版' }, { cmd: 'utopinn inspect', why: '看 WI/轨迹' }];
+        case 'regen': case 'swipe': return [{ cmd: 'utopinn swipe', why: '再换一版' }, { cmd: 'utopinn send "…"', why: '接着聊' }];
+        case 'continue': return [{ cmd: 'utopinn continue', why: '再续' }, { cmd: 'utopinn send "…"' }];
+        default: return [{ cmd: 'utopinn history -n 3' }, { cmd: 'utopinn send "…"' }];
     }
 }
 
@@ -624,7 +630,7 @@ function genNextFor(verb, failed) {
 process.on('SIGINT', () => {
     const j = state.lastJob;
     process.stderr.write(`\n[cli] interrupted${j ? ` — job ${j.id} still running` : ''}\n`);
-    if (j) process.stderr.write(`[cli] resume: uberge attach ${j.id}\n`);
+    if (j) process.stderr.write(`[cli] resume: utopinn attach ${j.id}\n`);
     process.exit(6);
 });
 
@@ -660,7 +666,7 @@ async function cmdBare() {
     // 零网络:纯快照+建议(设计铁律 1)
     const c = ctxSummary();
     if (JSON_MODE) return out({ snapshot: c, recent: state.recent?.slice(-5) }, bareNext());
-    console.log(`\x1b[1muberge\x1b[0m ${SERVER}${c.charName ? ` — ${c.charName} @ ${c.chatName}` : ''}`);
+    console.log(`\x1b[1mutopinn\x1b[0m ${SERVER}${c.charName ? ` — ${c.charName} @ ${c.chatName}` : ''}`);
     if (c.charName) {
         console.log(`  floors ${c.floors ?? '?'} · integrity ${c.integrity ? c.integrity.slice(0, 8) + '…' : '—'} · last job ${c.job ? `${String(c.job.id).slice(0, 8)}:${c.job.status}` : '—'}`);
         if (state.lastReplyPreview) console.log(`  last: ${trunc(state.lastReplyPreview, 70)}`);
@@ -671,8 +677,8 @@ async function cmdBare() {
     if (n.length) console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
 }
 function bareNext() {
-    if (!state.char?.dir) return [{ cmd: 'uberge chars', why: '选卡' }, { cmd: 'uberge doctor', why: '体检链路' }];
-    return [{ cmd: 'uberge send "…"', why: '发消息' }, { cmd: 'uberge status', why: '在线刷新' }, { cmd: 'uberge history -n 5', why: '看上文' }];
+    if (!state.char?.dir) return [{ cmd: 'utopinn chars', why: '选卡' }, { cmd: 'utopinn doctor', why: '体检链路' }];
+    return [{ cmd: 'utopinn send "…"', why: '发消息' }, { cmd: 'utopinn status', why: '在线刷新' }, { cmd: 'utopinn history -n 5', why: '看上文' }];
 }
 
 async function cmdStatus() {
@@ -693,77 +699,77 @@ async function cmdStatus() {
         const jobs = Array.isArray(active?.jobs) ? active.jobs : [];
         const running = jobs.filter(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
         const snap = { ...ctxSummary(), floors, integrity, swipe: lastSwipe, activeJobs: running.map(j => ({ id: j.id, status: j.status })) };
-        if (JSON_MODE) return out(snap, running.length ? [{ cmd: `uberge attach ${running[0].id}` }] : genNextFor('status', false));
+        if (JSON_MODE) return out(snap, running.length ? [{ cmd: `utopinn attach ${running[0].id}` }] : genNextFor('status', false));
         console.log(`${c.charName} @ ${c.chatName} · floors ${floors} · integrity ${(integrity ?? '—').slice(0, 10)}`);
         if (lastSwipe) console.log(`  last floor swipe ${lastSwipe.n}/${lastSwipe.total}`);
         console.log(running.length ? `  ⚠ active jobs: ${running.map(j => `${j.id.slice(0, 8)}:${j.status}`).join(', ')}` : '  no active jobs');
         footer();
-        nextHints = running.length ? [{ cmd: `uberge attach ${running[0].id}` }] : bareNext();
+        nextHints = running.length ? [{ cmd: `utopinn attach ${running[0].id}` }] : bareNext();
         if (nextHints.length) console.log(`\x1b[2m· next: ${nextHints.map(n => n.cmd).join(' · ')}\x1b[0m`);
         return snap;
     }
     const c2 = ctxSummary();
     if (JSON_MODE) return out(c2, bareNext());
     console.log(`server ${SERVER} · no ctx`);
-    console.log(`\x1b[2m· next: uberge chars · uberge doctor\x1b[0m`);
+    console.log(`\x1b[2m· next: utopinn chars · utopinn doctor\x1b[0m`);
     return c2;
 }
 
 // doctor 覆盖差集用:具名命令已绑的 kernel 路由(kernel list() 的
 // "METHOD|kind|path" 串格式)。未列的 = raw-only,doctor --full 会打印差集。
-const NAMED_UBERGE_ROUTES = new Set([
-    'GET|exact|/api/uberge/_kernel',
-    'GET|pattern|/api/uberge/jobs',
-    'GET|pattern|/api/uberge/jobs/:id',
-    'POST|pattern|/api/uberge/generate',
-    'POST|pattern|/api/uberge/preview',
+const NAMED_UTOPINN_ROUTES = new Set([
+    'GET|exact|/api/utopinn/_kernel',
+    'GET|pattern|/api/utopinn/jobs',
+    'GET|pattern|/api/utopinn/jobs/:id',
+    'POST|pattern|/api/utopinn/generate',
+    'POST|pattern|/api/utopinn/preview',
     // —— 生成写盘(writeOp:send/say append;edit/swipe/continue patch)——
-    'POST|pattern|/api/uberge/characters/:charDir/chats/:chatName/messages',
-    'PATCH|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    'POST|pattern|/api/utopinn/characters/:charDir/chats/:chatName/messages',
+    'PATCH|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
     // —— library 读面(chars/chats 显示已切 kernel;legacy 仅留内部解析用)——
-    'GET|pattern|/api/uberge/characters',
-    'GET|pattern|/api/uberge/characters/:charDir',
-    'GET|pattern|/api/uberge/characters/:charDir/chats',
-    'GET|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    'GET|pattern|/api/utopinn/characters',
+    'GET|pattern|/api/utopinn/characters/:charDir',
+    'GET|pattern|/api/utopinn/characters/:charDir/chats',
+    'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
     // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
-    'PUT|pattern|/api/uberge/characters/:charDir/chats/:chatName',
-    'PUT|pattern|/api/uberge/characters/:charDir/chats/:chatName/document',
-    'POST|pattern|/api/uberge/characters/:charDir/chats/:chatName/rename',
-    'DELETE|pattern|/api/uberge/characters/:charDir/chats/:chatName',
-    'GET|pattern|/api/uberge/worlds',
-    'GET|pattern|/api/uberge/worlds/:name',
-    'PUT|pattern|/api/uberge/worlds/:name',
-    'DELETE|pattern|/api/uberge/worlds/:name',
-    'GET|pattern|/api/uberge/presets',
-    'GET|pattern|/api/uberge/presets/:name',
-    'PUT|pattern|/api/uberge/presets/:name',
-    'DELETE|pattern|/api/uberge/presets/:name',
-    'GET|pattern|/api/uberge/personas',
-    'PUT|pattern|/api/uberge/personas/:avatar',
-    'DELETE|pattern|/api/uberge/personas/:avatar',
-    'GET|pattern|/api/uberge/settings',
-    'PATCH|pattern|/api/uberge/settings',
-    'GET|pattern|/api/uberge/secrets',
-    'PUT|pattern|/api/uberge/secrets/:key',
-    'DELETE|pattern|/api/uberge/secrets/:key/:id',
+    'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
+    'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName/document',
+    'POST|pattern|/api/utopinn/characters/:charDir/chats/:chatName/rename',
+    'DELETE|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
+    'GET|pattern|/api/utopinn/worlds',
+    'GET|pattern|/api/utopinn/worlds/:name',
+    'PUT|pattern|/api/utopinn/worlds/:name',
+    'DELETE|pattern|/api/utopinn/worlds/:name',
+    'GET|pattern|/api/utopinn/presets',
+    'GET|pattern|/api/utopinn/presets/:name',
+    'PUT|pattern|/api/utopinn/presets/:name',
+    'DELETE|pattern|/api/utopinn/presets/:name',
+    'GET|pattern|/api/utopinn/personas',
+    'PUT|pattern|/api/utopinn/personas/:avatar',
+    'DELETE|pattern|/api/utopinn/personas/:avatar',
+    'GET|pattern|/api/utopinn/settings',
+    'PATCH|pattern|/api/utopinn/settings',
+    'GET|pattern|/api/utopinn/secrets',
+    'PUT|pattern|/api/utopinn/secrets/:key',
+    'DELETE|pattern|/api/utopinn/secrets/:key/:id',
     // —— 组件面 ——
-    'GET|pattern|/api/uberge/plugins',
-    'POST|pattern|/api/uberge/plugins/:id/enable',
-    'POST|pattern|/api/uberge/plugins/:id/disable',
-    'POST|pattern|/api/uberge/plugins/:id/reload',
-    'POST|pattern|/api/uberge/mvu/settle',
-    'POST|pattern|/api/uberge/mvu/resettle',
-    'GET|pattern|/api/uberge/mvu/state',
-    'POST|pattern|/api/uberge/mvu/panel/render',
-    'POST|pattern|/api/uberge/script/run',
-    'POST|pattern|/api/uberge/th/call',
+    'GET|pattern|/api/utopinn/plugins',
+    'POST|pattern|/api/utopinn/plugins/:id/enable',
+    'POST|pattern|/api/utopinn/plugins/:id/disable',
+    'POST|pattern|/api/utopinn/plugins/:id/reload',
+    'POST|pattern|/api/utopinn/mvu/settle',
+    'POST|pattern|/api/utopinn/mvu/resettle',
+    'GET|pattern|/api/utopinn/mvu/state',
+    'POST|pattern|/api/utopinn/mvu/panel/render',
+    'POST|pattern|/api/utopinn/script/run',
+    'POST|pattern|/api/utopinn/th/call',
     // —— 数据面(import/backup/lan)——
-    'POST|pattern|/api/uberge/import/scan-st',
-    'POST|pattern|/api/uberge/import/preview',
-    'POST|pattern|/api/uberge/import/commit',
-    'POST|pattern|/api/uberge/backup',
-    'POST|pattern|/api/uberge/lan/offer',
-    'POST|pattern|/api/uberge/lan/import',
+    'POST|pattern|/api/utopinn/import/scan-st',
+    'POST|pattern|/api/utopinn/import/preview',
+    'POST|pattern|/api/utopinn/import/commit',
+    'POST|pattern|/api/utopinn/backup',
+    'POST|pattern|/api/utopinn/lan/offer',
+    'POST|pattern|/api/utopinn/lan/import',
 ]);
 
 async function cmdDoctor() {
@@ -804,14 +810,14 @@ async function cmdDoctor() {
     // cordis 覆盖差集:kernel 路由表 vs CLI 具名命令。具名=输出已整理的动词;
     // 其余由 raw 逃生舱兜底(可达但不友好)。差集清单就是 CLI 待补面。
     await step('capability coverage', async () => {
-        const { data } = await req('GET', '/api/uberge/_kernel');
+        const { data } = await req('GET', '/api/utopinn/_kernel');
         const routes = (data?.routes ?? []).map(r => String(r));
-        const named = NAMED_UBERGE_ROUTES;
+        const named = NAMED_UTOPINN_ROUTES;
         const uncovered = routes.filter(r => !named.has(r) && !r.startsWith('upgrade|'));
         return `${routes.length} routes · named ${routes.length - uncovered.length} · raw-only ${uncovered.length}${flags.full && uncovered.length ? ` (${uncovered.join(', ')})` : ''}`;
     });
     const allOk = steps.every(s => s.ok);
-    if (JSON_MODE) return out({ steps, ok: allOk }, allOk ? bareNext() : [{ cmd: 'uberge doctor', why: '修完重验' }]);
+    if (JSON_MODE) return out({ steps, ok: allOk }, allOk ? bareNext() : [{ cmd: 'utopinn doctor', why: '修完重验' }]);
     for (const s of steps) {
         console.log(`${s.ok ? '\x1b[32m✓\x1b[0m' : '\x1b[31m✗\x1b[0m'} ${s.name} — ${s.detail}${s.hint ? `  \x1b[2m(${s.hint})\x1b[0m` : ''}`);
     }
@@ -822,81 +828,81 @@ async function cmdDoctor() {
 const SCHEMA = {
     version: VERSION,
     commands: [
-        { cmd: 'uberge', desc: '状态快照+next(零网络)', out: 'snapshot' },
-        { cmd: 'uberge status', desc: '在线 ctx/floors/integrity/active jobs', out: 'ctx+jobs' },
-        { cmd: 'uberge doctor', desc: '链路体检(server/session/ws/ctx)', out: 'steps[]' },
-        { cmd: 'uberge schema', desc: '本目录(self-describing)', out: 'schema' },
-        { cmd: 'uberge chars [-n N]', desc: '角色列表', out: '[{dir,name,chat}]' },
-        { cmd: 'uberge chats [--char d]', desc: '当前/指定角色聊天列表', out: '[{name,floors,last}]' },
-        { cmd: 'uberge recent [-n N]', desc: '跨角色最近聊天', out: '[{char,chat,time}]' },
-        { cmd: 'uberge use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
-        { cmd: 'uberge chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
-        { cmd: 'uberge chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
-        { cmd: 'uberge chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
-        { cmd: 'uberge chat-get [chat]', desc: '[library] uberge doc 全文{header,messages,integrity}', out: '{doc}' },
-        { cmd: 'uberge chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
-        { cmd: 'uberge chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
-        { cmd: 'uberge char <name>', desc: '[library] 角色卡全文(模糊名→目录名)', out: '{card}' },
-        { cmd: 'uberge send <text>|--stdin', desc: 'append user 楼+生成+append AI 楼', out: 'stream text + footer' },
-        { cmd: 'uberge say <text>', desc: '只写 user 楼不生成', out: 'floor' },
-        { cmd: 'uberge regen', desc: '删末 AI 楼重生成', out: 'stream text' },
-        { cmd: 'uberge swipe [N]|--list', desc: '末楼换一版/导航/列表', out: 'stream|swipe state' },
-        { cmd: 'uberge continue', desc: '末楼续写(合入同楼)', out: 'stream delta' },
-        { cmd: 'uberge impersonate [--write]', desc: '生成 user 口吻草稿(默认不落盘)', out: 'draft text' },
-        { cmd: 'uberge quiet <prompt>', desc: 'quiet 生成(不落盘)', out: 'final text' },
-        { cmd: 'uberge history [-n N] [--floor i] [--full] [--out f]', desc: '楼层回放', out: '[floor]' },
-        { cmd: 'uberge edit <floor> <text|--stdin>', desc: '改楼层(swipes 同步)', out: 'updated' },
-        { cmd: 'uberge jobs [-n N]', desc: 'job 列表', out: '[job]' },
-        { cmd: 'uberge inspect [jobId] [--section s]', desc: 'job trace/sources/WI', out: 'detail' },
-        { cmd: 'uberge preview [--type t] [-n N]', desc: '干跑组装 messages', out: '[msg]' },
-        { cmd: 'uberge attach [jobId]', desc: '断链恢复(WS resume/status 对账)', out: 'stream|text' },
-        { cmd: 'uberge abort [jobId]', desc: '中止 job', out: 'aborted' },
-        { cmd: 'uberge persona [name]', desc: '查看/设定 persona', out: 'persona' },
-        { cmd: 'uberge personas', desc: '[library] 人设表(avatar/name/default)', out: '[{avatar,name,isDefault}]' },
-        { cmd: 'uberge persona-edit <avatar> [json|--json-file|--stdin|--set k=v]', desc: '[library] 写人设(name/description/position/title/is_default)', out: '{ok,avatar,name}' },
-        { cmd: 'uberge persona-delete <avatar>', desc: '[library] 删人设(personas+desc 双表摘除)', out: '204' },
-        { cmd: 'uberge presets', desc: 'openai 预设列表(kernel)', out: '[name]' },
-        { cmd: 'uberge preset <name>|--off', desc: '绑定预设进 generate.presetName', out: 'preset' },
-        { cmd: 'uberge preset-get <name>', desc: '[library] 预设全文 doc(--api 族,默认 openai)', out: '{name,apiId,doc}' },
-        { cmd: 'uberge preset-edit <name> [json|--json-file|--stdin]', desc: '[library] 预设整档写回(upsert)', out: '{ok,name,apiId}' },
-        { cmd: 'uberge preset-delete <name>', desc: '[library] 删预设(--api 族)', out: '204' },
-        { cmd: 'uberge settings', desc: '[library] 服务端 settings(脱敏视图)', out: '{settings}' },
-        { cmd: 'uberge settings-set <json|--json-file|--stdin>', desc: '[library] settings 受限合并(仅 power_user|extension_settings)', out: '{settings}' },
-        { cmd: 'uberge secrets', desc: '[secrets] 全键脱敏态(value 恒打码)', out: '{key:[{id,masked,label,active}]}' },
-        { cmd: 'uberge secret-set <key> --value v|--stdin [--label l]', desc: '[secrets] 写新 secret(服务端铸 id,不回显明文)', out: '{ok,id,entries*masked}' },
-        { cmd: 'uberge secret-delete <key> <id>', desc: '[secrets] 按 id 删一条', out: '204' },
-        { cmd: 'uberge worlds', desc: '[library] 世界书列表', out: '[{name,displayName}]' },
-        { cmd: 'uberge wi <book> [-n N] [--full] [--out f]', desc: '[library] 世界书条目(uid/keys/constant/off)', out: '[entry]' },
-        { cmd: 'uberge world-edit <name> [json|--json-file|--stdin]', desc: '[library] 世界书整档写回{entries:{}}(upsert)', out: '{ok,name}' },
-        { cmd: 'uberge world-delete <name>', desc: '[library] 删世界书(显式名)', out: '204' },
-        { cmd: 'uberge kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
-        { cmd: 'uberge plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
-        { cmd: 'uberge plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
-        { cmd: 'uberge mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
-        { cmd: 'uberge mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
-        { cmd: 'uberge mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
-        { cmd: 'uberge mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
-        { cmd: 'uberge script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
-        { cmd: 'uberge th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
-        { cmd: 'uberge import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
-        { cmd: 'uberge import-preview <file|--file f|--stdin>', desc: '[data] 格式探测+摘要+冲突,不落库', out: '{kind,summary,warnings,conflicts}' },
-        { cmd: 'uberge import-commit <file|--file f> [--conflict r|o|s] [--as name] [--kind k]', desc: '[data] 显式落库(同名 409→--conflict rename|overwrite|skip)', out: '{ok,targetName,renamed}' },
-        { cmd: 'uberge backup [--out f|dir] [--set cat=bool]', desc: '[data] zip 快照下载落盘(默认 cwd 用服务端文件名)', out: '{file,bytes}' },
-        { cmd: 'uberge lan-offer [--set cat=bool|--json-file sel]', desc: '[data] LAN 迁移 offer→一次性 url', out: '{url,expiresAt}' },
-        { cmd: 'uberge lan-import <url|--code c> [--mode merge|overwrite]', desc: '[data] 拉对端 zip 恢复(慢,--wait)', out: '{mode,restored}' },
-        { cmd: 'uberge raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
+        { cmd: 'utopinn', desc: '状态快照+next(零网络)', out: 'snapshot' },
+        { cmd: 'utopinn status', desc: '在线 ctx/floors/integrity/active jobs', out: 'ctx+jobs' },
+        { cmd: 'utopinn doctor', desc: '链路体检(server/session/ws/ctx)', out: 'steps[]' },
+        { cmd: 'utopinn schema', desc: '本目录(self-describing)', out: 'schema' },
+        { cmd: 'utopinn chars [-n N]', desc: '角色列表', out: '[{dir,name,chat}]' },
+        { cmd: 'utopinn chats [--char d]', desc: '当前/指定角色聊天列表', out: '[{name,floors,last}]' },
+        { cmd: 'utopinn recent [-n N]', desc: '跨角色最近聊天', out: '[{char,chat,time}]' },
+        { cmd: 'utopinn use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
+        { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
+        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
+        { cmd: 'utopinn chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
+        { cmd: 'utopinn chat-get [chat]', desc: '[library] utopinn doc 全文{header,messages,integrity}', out: '{doc}' },
+        { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
+        { cmd: 'utopinn chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
+        { cmd: 'utopinn char <name>', desc: '[library] 角色卡全文(模糊名→目录名)', out: '{card}' },
+        { cmd: 'utopinn send <text>|--stdin', desc: 'append user 楼+生成+append AI 楼', out: 'stream text + footer' },
+        { cmd: 'utopinn say <text>', desc: '只写 user 楼不生成', out: 'floor' },
+        { cmd: 'utopinn regen', desc: '删末 AI 楼重生成', out: 'stream text' },
+        { cmd: 'utopinn swipe [N]|--list', desc: '末楼换一版/导航/列表', out: 'stream|swipe state' },
+        { cmd: 'utopinn continue', desc: '末楼续写(合入同楼)', out: 'stream delta' },
+        { cmd: 'utopinn impersonate [--write]', desc: '生成 user 口吻草稿(默认不落盘)', out: 'draft text' },
+        { cmd: 'utopinn quiet <prompt>', desc: 'quiet 生成(不落盘)', out: 'final text' },
+        { cmd: 'utopinn history [-n N] [--floor i] [--full] [--out f]', desc: '楼层回放', out: '[floor]' },
+        { cmd: 'utopinn edit <floor> <text|--stdin>', desc: '改楼层(swipes 同步)', out: 'updated' },
+        { cmd: 'utopinn jobs [-n N]', desc: 'job 列表', out: '[job]' },
+        { cmd: 'utopinn inspect [jobId] [--section s]', desc: 'job trace/sources/WI', out: 'detail' },
+        { cmd: 'utopinn preview [--type t] [-n N]', desc: '干跑组装 messages', out: '[msg]' },
+        { cmd: 'utopinn attach [jobId]', desc: '断链恢复(WS resume/status 对账)', out: 'stream|text' },
+        { cmd: 'utopinn abort [jobId]', desc: '中止 job', out: 'aborted' },
+        { cmd: 'utopinn persona [name]', desc: '查看/设定 persona', out: 'persona' },
+        { cmd: 'utopinn personas', desc: '[library] 人设表(avatar/name/default)', out: '[{avatar,name,isDefault}]' },
+        { cmd: 'utopinn persona-edit <avatar> [json|--json-file|--stdin|--set k=v]', desc: '[library] 写人设(name/description/position/title/is_default)', out: '{ok,avatar,name}' },
+        { cmd: 'utopinn persona-delete <avatar>', desc: '[library] 删人设(personas+desc 双表摘除)', out: '204' },
+        { cmd: 'utopinn presets', desc: 'openai 预设列表(kernel)', out: '[name]' },
+        { cmd: 'utopinn preset <name>|--off', desc: '绑定预设进 generate.presetName', out: 'preset' },
+        { cmd: 'utopinn preset-get <name>', desc: '[library] 预设全文 doc(--api 族,默认 openai)', out: '{name,apiId,doc}' },
+        { cmd: 'utopinn preset-edit <name> [json|--json-file|--stdin]', desc: '[library] 预设整档写回(upsert)', out: '{ok,name,apiId}' },
+        { cmd: 'utopinn preset-delete <name>', desc: '[library] 删预设(--api 族)', out: '204' },
+        { cmd: 'utopinn settings', desc: '[library] 服务端 settings(脱敏视图)', out: '{settings}' },
+        { cmd: 'utopinn settings-set <json|--json-file|--stdin>', desc: '[library] settings 受限合并(仅 power_user|extension_settings)', out: '{settings}' },
+        { cmd: 'utopinn secrets', desc: '[secrets] 全键脱敏态(value 恒打码)', out: '{key:[{id,masked,label,active}]}' },
+        { cmd: 'utopinn secret-set <key> --value v|--stdin [--label l]', desc: '[secrets] 写新 secret(服务端铸 id,不回显明文)', out: '{ok,id,entries*masked}' },
+        { cmd: 'utopinn secret-delete <key> <id>', desc: '[secrets] 按 id 删一条', out: '204' },
+        { cmd: 'utopinn worlds', desc: '[library] 世界书列表', out: '[{name,displayName}]' },
+        { cmd: 'utopinn wi <book> [-n N] [--full] [--out f]', desc: '[library] 世界书条目(uid/keys/constant/off)', out: '[entry]' },
+        { cmd: 'utopinn world-edit <name> [json|--json-file|--stdin]', desc: '[library] 世界书整档写回{entries:{}}(upsert)', out: '{ok,name}' },
+        { cmd: 'utopinn world-delete <name>', desc: '[library] 删世界书(显式名)', out: '204' },
+        { cmd: 'utopinn kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
+        { cmd: 'utopinn plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
+        { cmd: 'utopinn plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
+        { cmd: 'utopinn mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
+        { cmd: 'utopinn mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
+        { cmd: 'utopinn mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
+        { cmd: 'utopinn mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
+        { cmd: 'utopinn script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
+        { cmd: 'utopinn th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
+        { cmd: 'utopinn import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
+        { cmd: 'utopinn import-preview <file|--file f|--stdin>', desc: '[data] 格式探测+摘要+冲突,不落库', out: '{kind,summary,warnings,conflicts}' },
+        { cmd: 'utopinn import-commit <file|--file f> [--conflict r|o|s] [--as name] [--kind k]', desc: '[data] 显式落库(同名 409→--conflict rename|overwrite|skip)', out: '{ok,targetName,renamed}' },
+        { cmd: 'utopinn backup [--out f|dir] [--set cat=bool]', desc: '[data] zip 快照下载落盘(默认 cwd 用服务端文件名)', out: '{file,bytes}' },
+        { cmd: 'utopinn lan-offer [--set cat=bool|--json-file sel]', desc: '[data] LAN 迁移 offer→一次性 url', out: '{url,expiresAt}' },
+        { cmd: 'utopinn lan-import <url|--code c> [--mode merge|overwrite]', desc: '[data] 拉对端 zip 恢复(慢,--wait)', out: '{mode,restored}' },
+        { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UBERGE_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
-    stateFile: '~/.uberge-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
-    flow: 'send: ctx → jobs/active 护栏 → append user 楼 → POST /api/uberge/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
+    stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
+    flow: 'send: ctx → jobs/active 护栏 → append user 楼 → POST /api/utopinn/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
 };
 
 async function cmdChars() {
     // kernel GET /characters 给 tags/readable;chat 指针只在 legacy all 里 → 双源合并
     const chars = await listChars();
-    const { data: kdata, status: kst } = await req('GET', '/api/uberge/characters', undefined, { allowFail: true });
+    const { data: kdata, status: kst } = await req('GET', '/api/utopinn/characters', undefined, { allowFail: true });
     const kmap = new Map((kst < 400 && Array.isArray(kdata?.items) ? kdata.items : []).map(i => [i.charDir, i]));
     const rows = chars.map(c => {
         const dir = stripExt(c.avatar, 'png');
@@ -905,10 +911,10 @@ async function cmdChars() {
     });
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(rows, null, 2)); warn(`wrote ${flags.out}`); }
     const show = flags.n ? rows.slice(0, flags.n) : rows;
-    if (JSON_MODE) return out(show, [{ cmd: 'uberge use <dir>', why: '选卡进 ctx' }, { cmd: 'uberge char <dir>', why: '看卡全文' }]);
+    if (JSON_MODE) return out(show, [{ cmd: 'utopinn use <dir>', why: '选卡进 ctx' }, { cmd: 'utopinn char <dir>', why: '看卡全文' }]);
     for (const r of show) console.log(`${r.readable === false ? '\x1b[31m!\x1b[0m' : ' '}${r.dir.padEnd(36)} ${r.name} ${r.chat ? `· ${r.chat}` : ''}`);
     console.log(`\n${rows.length} characters`);
-    next('uberge use <dir>');
+    next('utopinn use <dir>');
     footer();
     return rows;
 }
@@ -917,7 +923,7 @@ async function cmdChats() {
     const charDir = flags.char ? stripExt(flags.char, 'png') : needCtx()?.charDir;
     if (!charDir) return;
     // kernel GET 面(messageCount/lastMessage/updatedAt)优先;缺 items 回退 legacy
-    const { data: kdata, status: kst } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, undefined, { allowFail: true });
+    const { data: kdata, status: kst } = await req('GET', `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats`, undefined, { allowFail: true });
     let rows;
     if (kst < 400 && Array.isArray(kdata?.items)) {
         rows = kdata.items.map(i => ({
@@ -936,7 +942,7 @@ async function cmdChats() {
             time: c.sort_time ? new Date(c.sort_time).toISOString().slice(0, 16) : null,
         }));
     }
-    if (JSON_MODE) return out(rows, [{ cmd: 'uberge use <char> <chat>', why: '切聊天' }, { cmd: 'uberge chat-new <name>' }]);
+    if (JSON_MODE) return out(rows, [{ cmd: 'utopinn use <char> <chat>', why: '切聊天' }, { cmd: 'utopinn chat-new <name>' }]);
     for (const r of rows) console.log(`${r.name === state.chat?.name ? '*' : ' '} ${r.name}  ${r.floors ?? '?'}f  ${r.time ?? ''}  ${r.last}`);
     console.log(`\n${rows.length} chats for ${charDir}`);
     footer();
@@ -950,7 +956,7 @@ async function cmdRecent() {
         chat: stripExt(c.file_name ?? '', 'jsonl'),
         time: c.sort_time ? new Date(c.sort_time).toISOString().slice(0, 16) : null,
     }));
-    if (JSON_MODE) return out(rows, [{ cmd: 'uberge use <char> <chat>' }]);
+    if (JSON_MODE) return out(rows, [{ cmd: 'utopinn use <char> <chat>' }]);
     for (const r of rows) console.log(`${r.char.padEnd(30)} ${r.chat}  ${r.time ?? ''}`);
     footer();
     return rows;
@@ -963,7 +969,7 @@ async function cmdUse() {
     const chatName = await resolveChatForUse(charDir, positional[2], char.chat);
     if (!chatName) return;
     saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: { name: chatName }, floors: null, integrity: null });
-    const n = [{ cmd: 'uberge history -n 3', why: '看上文' }, { cmd: 'uberge send "…"', why: '发消息' }];
+    const n = [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: '发消息' }];
     if (JSON_MODE) return out({ charDir, charName: char.name, chatName }, n);
     console.log(`→ ${char.name ?? charDir} @ ${chatName}`);
     footer();
@@ -973,16 +979,16 @@ async function cmdUse() {
 
 async function cmdChatNew() {
     const c = needCtx() ?? { charDir: flags.char ? stripExt(flags.char, 'png') : null, charName: null };
-    if (!c?.charDir) { fail('no_ctx', '先选卡', { hint: 'uberge use <char>' }); return; }
+    if (!c?.charDir) { fail('no_ctx', '先选卡', { hint: 'utopinn use <char>' }); return; }
     const name = stripExt(positional[1] ?? '', 'jsonl');
-    if (!name) return void fail('usage', 'uberge chat-new <name>', { rc: 2 });
+    if (!name) return void fail('usage', 'utopinn chat-new <name>', { rc: 2 });
     const chats = await listChats(c.charDir);
     const names = chats.map(x => stripExt(x.file_name ?? x.name ?? x, 'jsonl'));
     if (names.includes(name)) {
         return void fail('exists', `chat exists: ${name}`, { detail: names.filter(n => n.includes(name.slice(0, 8))).join(' | '), rc: 3 });
     }
     saveState({ chat: { name }, floors: 0, integrity: null });
-    const n = [{ cmd: 'uberge send "…"', why: '首条消息自动建文件' }];
+    const n = [{ cmd: 'utopinn send "…"', why: '首条消息自动建文件' }];
     if (JSON_MODE) return out({ chatName: name }, n);
     console.log(`chat = ${name}(空,首条 send 建文件)`);
     footer();
@@ -993,9 +999,9 @@ async function cmdChatNew() {
 async function cmdChatRename() {
     const c = needCtx(); if (!c) return;
     const newName = stripExt(positional[1] ?? '', 'jsonl');
-    if (!newName) return void fail('usage', 'uberge chat-rename <new>', { rc: 2 });
-    const { data, status } = await req('POST', `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/rename`, { newName }, { allowFail: true });
-    if (status === 404) return void fail('not_found', `chat ${c.chatName} 不存在`, { hint: 'uberge chats 看列表' });
+    if (!newName) return void fail('usage', 'utopinn chat-rename <new>', { rc: 2 });
+    const { data, status } = await req('POST', `/api/utopinn/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/rename`, { newName }, { allowFail: true });
+    if (status === 404) return void fail('not_found', `chat ${c.chatName} 不存在`, { hint: 'utopinn chats 看列表' });
     if (status === 409) return void fail('exists', `chat exists: ${newName}`, { rc: 3 });
     if (status >= 400 || data?.error) return void fail('server', `rename 失败:${data?.error ?? status}`, { status });
     saveState({ chat: { name: newName } });
@@ -1007,12 +1013,12 @@ async function cmdChatRename() {
 async function cmdChatDelete() {
     const c = needCtx(); if (!c) return;
     const name = stripExt(positional[1] ?? '', 'jsonl');
-    if (!name) return void fail('usage', 'uberge chat-delete <name>(显式名,不给模糊)', { rc: 2 });
-    const { data, status } = await req('DELETE', `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(name)}`, undefined, { allowFail: true });
-    if (status === 404) return void fail('not_found', `chat not found: ${name}`, { hint: 'uberge chats 看列表' });
+    if (!name) return void fail('usage', 'utopinn chat-delete <name>(显式名,不给模糊)', { rc: 2 });
+    const { data, status } = await req('DELETE', `/api/utopinn/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `chat not found: ${name}`, { hint: 'utopinn chats 看列表' });
     if (status >= 400 || data?.error) return void fail('server', `delete 失败:${data?.error ?? status}`, { status });
     if (state.chat?.name === name) saveState({ chat: { name: null }, floors: null, integrity: null });
-    if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'uberge chats' }]);
+    if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'utopinn chats' }]);
     console.log(`deleted ${name}`);
     footer();
 }
@@ -1020,7 +1026,7 @@ async function cmdChatDelete() {
 async function cmdHistory() {
     const c = needCtx(); if (!c) return;
     const data = await getChat(c.charDir, c.chatName);
-    if (data?.new_chat) { fail('new_chat', 'chat 还没楼层', { hint: 'uberge send "…" 开第一条' }); return; }
+    if (data?.new_chat) { fail('new_chat', 'chat 还没楼层', { hint: 'utopinn send "…" 开第一条' }); return; }
     if (!Array.isArray(data)) return void fail('server', 'unexpected chats/get shape', { detail: data });
     saveState({ integrity: data[0]?.chat_metadata?.integrity ?? state.integrity, floors: data.length - 1 });
     const body = data.slice(1);
@@ -1035,7 +1041,7 @@ async function cmdHistory() {
     }
     const n = flags.n ?? 5;
     const show = body.slice(-n);
-    if (JSON_MODE) return out(show, [{ cmd: 'uberge send "…"' }, { cmd: `uberge history --floor ${body.length - 1}` }]);
+    if (JSON_MODE) return out(show, [{ cmd: 'utopinn send "…"' }, { cmd: `utopinn history --floor ${body.length - 1}` }]);
     show.forEach((m, i) => {
         const idx = body.length - show.length + i;
         const sw = Array.isArray(m.swipes) && m.swipes.length > 1 ? ` swipe ${(m.swipe_id ?? 0) + 1}/${m.swipes.length}` : '';
@@ -1043,14 +1049,14 @@ async function cmdHistory() {
         console.log(flags.full ? m.mes : trunc(m.mes, 300));
     });
     footer();
-    nextHints = [{ cmd: 'uberge send "…"' }, { cmd: `uberge history -n ${Math.min(body.length, n * 3)}`, why: '看更早' }];
+    nextHints = [{ cmd: 'utopinn send "…"' }, { cmd: `utopinn history -n ${Math.min(body.length, n * 3)}`, why: '看更早' }];
     console.log(`\x1b[2m· next: ${nextHints.map(x => x.cmd).join(' · ')}\x1b[0m`);
 }
 
 async function cmdEdit() {
     const c = needCtx(); if (!c) return;
     const idx = Number(positional[1]);
-    if (!Number.isInteger(idx)) return void fail('usage', 'uberge edit <floor> <text|--stdin>', { rc: 2 });
+    if (!Number.isInteger(idx)) return void fail('usage', 'utopinn edit <floor> <text|--stdin>', { rc: 2 });
     const text = await readTextArg(positional.slice(2));
     if (!text) return void fail('usage', 'edit 需要文本', { rc: 2 });
     const cur = await getChat(c.charDir, c.chatName);
@@ -1063,13 +1069,13 @@ async function cmdEdit() {
         ops.push({ op: 'replace', path: `/${idx}/swipes/${m.swipe_id}`, value: text });
     }
     await patchFloors(ops);
-    if (JSON_MODE) return out({ floor: idx, ops: ops.length }, [{ cmd: 'uberge history -n 3' }]);
+    if (JSON_MODE) return out({ floor: idx, ops: ops.length }, [{ cmd: 'utopinn history -n 3' }]);
     console.log(`floor #${idx} updated(${ops.length} ops)`);
     footer();
 }
 
 async function cmdJobs() {
-    const { data } = await req('GET', '/api/uberge/jobs');
+    const { data } = await req('GET', '/api/utopinn/jobs');
     // 服务端实际形状 {items:[{id,status,chatKey,textPreview,persisted,...}]}
     const jobs = (Array.isArray(data?.items) ? data.items : Array.isArray(data?.jobs) ? data.jobs : Array.isArray(data) ? data : []).slice(0, flags.n ?? 10);
     const rows = jobs.map(j => ({
@@ -1077,7 +1083,7 @@ async function cmdJobs() {
         chat: j.chatKey ?? (j.persist_target ? `${stripExt(j.persist_target.avatar_url ?? '', 'png')}/${stripExt(j.persist_target.file_name ?? '', 'jsonl')}` : null),
         text: trunc(j.textPreview ?? j.text ?? '', 60), at: j.created_at ?? j.at ?? null,
     }));
-    if (JSON_MODE) return out(rows, [{ cmd: 'uberge inspect <id8>', why: '看明细' }]);
+    if (JSON_MODE) return out(rows, [{ cmd: 'utopinn inspect <id8>', why: '看明细' }]);
     for (const r of rows) console.log(`${String(r.id).slice(0, 8)}  ${r.status?.padEnd(12)} ${r.persisted ? 'persisted' : '         '}  ${r.chat ?? '-'}  ${r.text}`);
     footer();
     return rows;
@@ -1085,9 +1091,9 @@ async function cmdJobs() {
 
 async function cmdInspect() {
     const id = positional[1] || state.lastJob?.id;
-    if (!id) return void fail('usage', 'uberge inspect <jobId>(或先生成一次)', { rc: 2 });
-    const { data: d } = await req('GET', `/api/uberge/jobs/${id}`, undefined, { allowFail: true });
-    if (!d || d.error) return void fail('not_found', `job not found: ${id}`, { hint: 'uberge jobs 看列表' });
+    if (!id) return void fail('usage', 'utopinn inspect <jobId>(或先生成一次)', { rc: 2 });
+    const { data: d } = await req('GET', `/api/utopinn/jobs/${id}`, undefined, { allowFail: true });
+    if (!d || d.error) return void fail('not_found', `job not found: ${id}`, { hint: 'utopinn jobs 看列表' });
     saveState({ lastJob: { id, type: d.type ?? state.lastJob?.type, status: d.status, at: Date.now(), chars: (d.text ?? '').length } });
     const src = d.sources ?? {};
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(d, null, 2)); warn(`wrote ${flags.out}`); }
@@ -1110,7 +1116,7 @@ async function cmdInspect() {
         console.log(JSON.stringify(payload, null, 2).slice(0, flags.full ? 1e9 : 6000));
         return;
     }
-    if (JSON_MODE) return out({ ...summary, entries: flags.full ? entries : entries.slice(0, 15) }, [{ cmd: 'uberge inspect --section sources' }]);
+    if (JSON_MODE) return out({ ...summary, entries: flags.full ? entries : entries.slice(0, 15) }, [{ cmd: 'utopinn inspect --section sources' }]);
     console.log(`job ${String(id).slice(0, 8)} · ${summary.status} · persisted=${summary.persisted} · ${summary.model ?? '?'} · preset ${summary.preset ?? '-'}`);
     console.log(`WI activated ${summary.wiActivated}${summary.elapsed ? ` · ${Math.round(summary.elapsed)}ms` : ''}`);
     for (const w of summary.worlds) console.log(`  ${w.world}: ${w.n}`);
@@ -1123,10 +1129,10 @@ async function cmdInspect() {
 async function cmdPreview() {
     const c = needCtx(); if (!c) return;
     const type = flags.type ?? 'normal';
-    const { data } = await req('POST', '/api/uberge/preview', { charDir: c.charDir, chatName: c.chatName, type, user: { name: flags.user ?? state.persona ?? 'User' } });
+    const { data } = await req('POST', '/api/utopinn/preview', { charDir: c.charDir, chatName: c.chatName, type, user: { name: flags.user ?? state.persona ?? 'User' } });
     const msgs = data.messages ?? [];
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
-    if (JSON_MODE) return out({ count: msgs.length, perf: data.perf, messages: flags.full ? msgs : msgs.slice(0, flags.n ?? 8) }, [{ cmd: 'uberge send "…"' }]);
+    if (JSON_MODE) return out({ count: msgs.length, perf: data.perf, messages: flags.full ? msgs : msgs.slice(0, flags.n ?? 8) }, [{ cmd: 'utopinn send "…"' }]);
     console.log(`messages: ${msgs.length}${data.perf?.totalMs ? ` · ${Math.round(data.perf.totalMs)}ms` : ''}`);
     for (const m of msgs.slice(0, flags.n ?? 8)) {
         console.log(`\x1b[2m[${m.role}${m.name ? ':' + m.name : ''}]\x1b[0m ${trunc(m.content, flags.full ? 1e9 : 150)}`);
@@ -1207,7 +1213,7 @@ async function maybeCompensateAttachWrite(id, final, text) {
     const v = final.verb || (state.lastJob?.id === id ? state.lastJob?.type : null) || flags.as;
     const c = v ? needCtx() : null;
     if (!v || !c || !['send', 'regen', 'swipe', 'continue', 'impersonate'].includes(v)) {
-        if (v && !c) warn('attach: 无 ctx,跳过客户端写盘(uberge use 锁定聊天后可补写)');
+        if (v && !c) warn('attach: 无 ctx,跳过客户端写盘(utopinn use 锁定聊天后可补写)');
         return null;
     }
     const floorsData = await getChat(c.charDir, c.chatName);
@@ -1218,7 +1224,7 @@ async function maybeCompensateAttachWrite(id, final, text) {
 
 async function cmdAttach() {
     const id = positional[1] || state.lastJob?.id;
-    if (!id) return void fail('usage', 'uberge attach <jobId>', { rc: 2 });
+    if (!id) return void fail('usage', 'utopinn attach <jobId>', { rc: 2 });
     const st = await pollStatus(id, { waitMs: 3000 });
     if (!st) return void fail('not_found', `job ${id}`, {});
     if (['completed', 'failed', 'cancelled'].includes(st.status)) {
@@ -1246,7 +1252,7 @@ async function cmdAttach() {
 
 async function cmdAbort() {
     const id = positional[1] || state.lastJob?.id;
-    if (!id) return void fail('usage', 'uberge abort <jobId>', { rc: 2 });
+    if (!id) return void fail('usage', 'utopinn abort <jobId>', { rc: 2 });
     await req('POST', `/api/generation/${encodeURIComponent(id)}/abort`, {});
     if (JSON_MODE) return out({ aborted: id });
     console.log(`aborted ${String(id).slice(0, 8)}`);
@@ -1268,7 +1274,7 @@ async function cmdPersona() {
 
 async function cmdPresets() {
     const names = await cmdPresetsQuiet() ?? [];
-    if (JSON_MODE) return out(names, [{ cmd: 'uberge preset <name>' }, { cmd: 'uberge preset-get <name>' }]);
+    if (JSON_MODE) return out(names, [{ cmd: 'utopinn preset <name>' }, { cmd: 'utopinn preset-get <name>' }]);
     for (const n of names) console.log(` ${n === state.preset ? '*' : ' '} ${n}`);
     footer();
     return names;
@@ -1282,7 +1288,7 @@ async function cmdPreset() {
         return;
     }
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge preset <name>|--off', { rc: 2 });
+    if (!name) return void fail('usage', 'utopinn preset <name>|--off', { rc: 2 });
     const names = await cmdPresetsQuiet();
     if (Array.isArray(names) && names.length && !names.includes(name)) {
         const close = names.filter(n => n.includes(name));
@@ -1294,7 +1300,7 @@ async function cmdPreset() {
 }
 async function cmdPresetsQuiet() {
     // kernel GET /presets 优先(同 PresetRepo 数据);缺 items 回退 legacy list
-    const { data, status } = await req('GET', `/api/uberge/presets?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
+    const { data, status } = await req('GET', `/api/utopinn/presets?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
     if (status < 400 && Array.isArray(data?.items)) {
         return data.items.map(i => i?.name).filter(n => typeof n === 'string' && n.length > 0);
     }
@@ -1312,7 +1318,7 @@ async function cmdSwipe() {
         const idx = cur.length - 1;
         const m = cur[idx];
         const swipes = Array.isArray(m?.swipes) ? m.swipes : [];
-        if (!swipes.length) return void fail('no_swipe', '末楼无 swipes', { hint: '先 uberge swipe 生成一版' });
+        if (!swipes.length) return void fail('no_swipe', '末楼无 swipes', { hint: '先 utopinn swipe 生成一版' });
         if (flags.list) {
             if (JSON_MODE) return out({ swipe_id: m.swipe_id ?? 0, total: swipes.length, swipes: swipes.map(s => trunc(s, 120)) });
             swipes.forEach((s, i) => console.log(`${i === (m.swipe_id ?? 0) ? '*' : ' '} ${i}: ${trunc(s, 100)}`));
@@ -1343,27 +1349,27 @@ async function cmdSwipe() {
 }
 
 // ═══ 组件面(cordis fiber ↔ CLI 动词一一对应)═══
-// uberge-library  → worlds / wi
-// uberge-mvu      → mvu(状态板=卡内悬浮窗的数据源)
-// uberge-diag     → kernel(路由+服务清单)
-// uberge-plugins  → plugins / plugin(生命周期:enable|disable|reload)
-// uberge-script   → script(服务端 STscript runner)
+// utopinn-library  → worlds / wi
+// utopinn-mvu      → mvu(状态板=卡内悬浮窗的数据源)
+// utopinn-diag     → kernel(路由+服务清单)
+// utopinn-plugins  → plugins / plugin(生命周期:enable|disable|reload)
+// utopinn-script   → script(服务端 STscript runner)
 
 async function cmdWorlds() {
-    const { data } = await req('GET', '/api/uberge/worlds');
+    const { data } = await req('GET', '/api/utopinn/worlds');
     const items = data?.items ?? [];
-    if (JSON_MODE) return out(items, [{ cmd: 'uberge wi <name>', why: '看条目' }]);
+    if (JSON_MODE) return out(items, [{ cmd: 'utopinn wi <name>', why: '看条目' }]);
     for (const w of items) console.log(` ${w.name}${w.displayName !== w.name ? `  (${w.displayName})` : ''}`);
     console.log(`\n${items.length} world books`);
-    next('uberge wi <name>');
+    next('utopinn wi <name>');
     footer();
 }
 
 async function cmdWi() {
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge wi <book>', { hint: 'uberge worlds 看列表', rc: 2 });
-    const { data, status } = await req('GET', `/api/uberge/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
-    if (status >= 400 || data?.error) return void fail('not_found', `world book: ${name}`, { hint: 'uberge worlds 看列表' });
+    if (!name) return void fail('usage', 'utopinn wi <book>', { hint: 'utopinn worlds 看列表', rc: 2 });
+    const { data, status } = await req('GET', `/api/utopinn/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('not_found', `world book: ${name}`, { hint: 'utopinn worlds 看列表' });
     const entries = Object.entries(data?.doc?.entries ?? {});
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data.doc, null, 2)); warn(`wrote ${flags.out}`); }
     const rows = entries.map(([uid, e]) => ({
@@ -1384,7 +1390,7 @@ async function cmdWi() {
 }
 
 async function cmdKernel() {
-    const { data } = await req('GET', '/api/uberge/_kernel');
+    const { data } = await req('GET', '/api/utopinn/_kernel');
     const routes = data?.routes ?? [];
     const services = data?.services ?? [];
     if (JSON_MODE) return out(data);
@@ -1396,23 +1402,23 @@ async function cmdKernel() {
 }
 
 async function cmdPlugins() {
-    const { data, status } = await req('GET', '/api/uberge/plugins', undefined, { allowFail: true });
+    const { data, status } = await req('GET', '/api/utopinn/plugins', undefined, { allowFail: true });
     if (status >= 400) return void fail('server', `plugins 列表失败:${data?.error ?? 'denied?'}`, { hint: '需要 admin profile' });
     const items = data?.items ?? [];
-    if (JSON_MODE) return out(items, [{ cmd: 'uberge plugin <id> <enable|disable|reload>' }]);
+    if (JSON_MODE) return out(items, [{ cmd: 'utopinn plugin <id> <enable|disable|reload>' }]);
     for (const p of items) console.log(` ${p.disabled ? '\x1b[2m○\x1b[0m' : '\x1b[32m●\x1b[0m'} ${p.id ?? p.name}${p.version ? ` v${p.version}` : ''}${p.disabled ? ' (disabled)' : ''}`);
     console.log(`\n${items.length} fibers`);
-    next('uberge plugin <id> <enable|disable|reload>');
+    next('utopinn plugin <id> <enable|disable|reload>');
     footer();
 }
 
 async function cmdPlugin() {
     const id = positional[1], verb = positional[2];
     if (!id || !['enable', 'disable', 'reload'].includes(verb)) {
-        return void fail('usage', 'uberge plugin <id> <enable|disable|reload>', { hint: 'uberge plugins 看清单', rc: 2 });
+        return void fail('usage', 'utopinn plugin <id> <enable|disable|reload>', { hint: 'utopinn plugins 看清单', rc: 2 });
     }
-    const { data, status } = await req('POST', `/api/uberge/plugins/${encodeURIComponent(id)}/${verb}`, {}, { allowFail: true });
-    if (status >= 400 || data?.error) return void fail('server', `${verb} ${id} 失败:${data?.error ?? 'unknown'}`, { hint: id === 'uberge-plugins' ? '插件管理器自锁,改 profile.patch.yaml' : undefined });
+    const { data, status } = await req('POST', `/api/utopinn/plugins/${encodeURIComponent(id)}/${verb}`, {}, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `${verb} ${id} 失败:${data?.error ?? 'unknown'}`, { hint: id === 'utopinn-plugins' ? '插件管理器自锁,改 profile.patch.yaml' : undefined });
     if (JSON_MODE) return out(data);
     console.log(`${verb} → ${id}: ${data?.ok ? 'ok' : JSON.stringify(data)}`);
     footer();
@@ -1430,7 +1436,7 @@ async function cmdMvu() {
     if (!t) return;
     if (sub === 'state') {
         const q = `avatar_url=${encodeURIComponent(t.avatar_url)}&file_name=${encodeURIComponent(t.file_name)}`;
-        const { data, status } = await req('GET', `/api/uberge/mvu/state?${q}`, undefined, { allowFail: true });
+        const { data, status } = await req('GET', `/api/utopinn/mvu/state?${q}`, undefined, { allowFail: true });
         if (status >= 400 || data?.error) return void fail('server', `mvu state 失败:${data?.error ?? ''}`, { hint: '卡可能无 MVU 变量——send 生成一轮后再看' });
         const vars = data?.chatVariables ?? data?.variables ?? {};
         const keys = Object.keys(vars);
@@ -1451,7 +1457,7 @@ async function cmdMvu() {
     if (sub === 'settle' || sub === 'resettle') {
         const body = { ...t };
         if (sub === 'settle' && flags.floor != null) body.message_index = flags.floor;
-        const { data, status } = await req('POST', `/api/uberge/mvu/${sub}`, body, { allowFail: true });
+        const { data, status } = await req('POST', `/api/utopinn/mvu/${sub}`, body, { allowFail: true });
         if (status >= 400 || data?.error) return void fail('server', `mvu ${sub} 失败:${JSON.stringify(data?.error ?? data)}`);
         if (JSON_MODE) return out(data);
         console.log(`mvu ${sub}: ${data?.ok ? 'ok' : 'done'} ${trunc(JSON.stringify(data).slice(0, 200), 200)}`);
@@ -1467,8 +1473,8 @@ async function cmdMvu() {
         } else {
             template = await readTextArg(positional.slice(2));
         }
-        if (!String(template ?? '').trim()) return void fail('usage', 'uberge mvu panel <tpl|--file f|--stdin>', { hint: 'scope 缺省取当前 chat 变量', rc: 2 });
-        const { data, status } = await req('POST', '/api/uberge/mvu/panel/render', { template, ...t }, { allowFail: true });
+        if (!String(template ?? '').trim()) return void fail('usage', 'utopinn mvu panel <tpl|--file f|--stdin>', { hint: 'scope 缺省取当前 chat 变量', rc: 2 });
+        const { data, status } = await req('POST', '/api/utopinn/mvu/panel/render', { template, ...t }, { allowFail: true });
         if (status >= 400 || data?.error) return void fail('server', `mvu panel 失败:${data?.error ?? status}`, { status });
         const html = String(data?.html ?? '');
         if (flags.out) { writeFileSync(resolve(flags.out), html); warn(`wrote ${flags.out} (${html.length}ch)`); }
@@ -1477,14 +1483,14 @@ async function cmdMvu() {
         footer(`${html.length}ch`);
         return;
     }
-    fail('usage', 'uberge mvu [state|settle [--floor i]|resettle|panel <tpl|--file|--stdin>]', { rc: 2 });
+    fail('usage', 'utopinn mvu [state|settle [--floor i]|resettle|panel <tpl|--file|--stdin>]', { rc: 2 });
 }
 
 async function cmdScript() {
     const script = await readTextArg(positional.slice(1));
-    if (!script) return void fail('usage', 'uberge script <stscript|--stdin>', { hint: '例:uberge script "/echo hi"', rc: 2 });
+    if (!script) return void fail('usage', 'utopinn script <stscript|--stdin>', { hint: '例:utopinn script "/echo hi"', rc: 2 });
     const c = needCtx() ?? {};
-    const { data, status } = await req('POST', '/api/uberge/script/run', {
+    const { data, status } = await req('POST', '/api/utopinn/script/run', {
         script,
         ...(c.charDir ? { charDir: c.charDir } : {}),
         ...(c.chatName ? { chatName: c.chatName } : {}),
@@ -1498,9 +1504,9 @@ async function cmdScript() {
 }
 
 async function cmdTh() {
-    // uberge-th fiber:TavernHelper 兼容调用面。METHODS 见插件源码。
+    // utopinn-th fiber:TavernHelper 兼容调用面。METHODS 见插件源码。
     const method = positional[1];
-    if (!method) return void fail('usage', 'uberge th <method> [json-args|--stdin]', {
+    if (!method) return void fail('usage', 'utopinn th <method> [json-args|--stdin]', {
         detail: 'getVariables|replaceVariables|insertOrAssignVariables|deleteVariable|getChatMessages|triggerSlash|getCharacter|getCurrentCharacterName|getLastMessageId|getCurrentMessageId|getEmbeddedScripts',
         rc: 2,
     });
@@ -1508,7 +1514,7 @@ async function cmdTh() {
     if (flags.stdin) { try { args = JSON.parse(await readTextArg([])) ?? {}; } catch { args = {}; } }
     else if (positional[2] !== undefined) { try { args = JSON.parse(positional.slice(2).join(' ')) ?? {}; } catch { return void fail('usage', 'args 必须是 JSON', { rc: 2 }); } }
     const c = needCtx() ?? {};
-    const { data, status } = await req('POST', '/api/uberge/th/call', {
+    const { data, status } = await req('POST', '/api/utopinn/th/call', {
         method,
         target: { ...(c.charDir ? { charDir: c.charDir } : {}), ...(c.chatName ? { chatName: c.chatName } : {}) },
         args,
@@ -1529,10 +1535,10 @@ async function cmdChar() {
     const char = await resolveChar(positional[1]);
     if (!char) return;
     const charDir = stripExt(char.avatar, 'png');
-    const { data, status } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}`, undefined, { allowFail: true });
+    const { data, status } = await req('GET', `/api/utopinn/characters/${encodeURIComponent(charDir)}`, undefined, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('not_found', `char: ${charDir}`, { detail: data?.error, status });
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
-    if (JSON_MODE) return out(data, [{ cmd: `uberge use ${charDir}` }]);
+    if (JSON_MODE) return out(data, [{ cmd: `utopinn use ${charDir}` }]);
     const d = (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) ? data.data : data;
     console.log(`\x1b[1m${d?.name ?? charDir}\x1b[0m  \x1b[2m(${charDir})\x1b[0m`);
     if (Array.isArray(d?.tags) && d.tags.length) console.log(`tags: ${d.tags.join(', ')}`);
@@ -1549,9 +1555,9 @@ async function cmdChatGet() {
     // charDir = --char | ctx.char;chatName = 位置参 | ctx.chat —— 两组独立来源
     const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
     const chatName = stripExt(positional[1] ?? state.chat?.name, 'jsonl');
-    if (!charDir || !chatName) return void fail('no_ctx', 'chat-get 需要 char+chat', { hint: 'uberge use <char> <chat> 或 chat-get <chat> --char <d>', rc: 2 });
-    const { data, status } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`, undefined, { allowFail: true });
-    if (status === 404 || data?.error) return void fail('not_found', `chat: ${charDir}/${chatName}`, { detail: data?.error, hint: 'uberge chats 看列表' });
+    if (!charDir || !chatName) return void fail('no_ctx', 'chat-get 需要 char+chat', { hint: 'utopinn use <char> <chat> 或 chat-get <chat> --char <d>', rc: 2 });
+    const { data, status } = await req('GET', `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`, undefined, { allowFail: true });
+    if (status === 404 || data?.error) return void fail('not_found', `chat: ${charDir}/${chatName}`, { detail: data?.error, hint: 'utopinn chats 看列表' });
     if (status >= 400) return void fail('server', `chat-get → ${status}`, { status });
     const msgs = Array.isArray(data?.messages) ? data.messages : [];
     if (data?.integrity) saveState({ integrity: data.integrity, floors: chatName === state.chat?.name ? msgs.length : state.floors });
@@ -1570,15 +1576,15 @@ async function cmdChatGet() {
 async function cmdChatCreate() {
     // 只需要 charDir(ctx.char 或 --char);chatName 就是要建的,不依赖 ctx.chat
     const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
-    if (!charDir) return void fail('no_ctx', '先选卡', { hint: 'uberge use <char> 或 --char d', rc: 2 });
+    if (!charDir) return void fail('no_ctx', '先选卡', { hint: 'utopinn use <char> 或 --char d', rc: 2 });
     const name = stripExt(positional[1] ?? '', 'jsonl');
-    if (!name) return void fail('usage', 'uberge chat-create <name>(立即建空文件;懒建用 chat-new)', { rc: 2 });
-    const { data, status } = await req('PUT', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(name)}`, { header: { chat_metadata: {} } }, { allowFail: true });
-    if (status === 409) return void fail('exists', `chat exists: ${name}`, { hint: 'uberge chats 看列表', rc: 3 });
+    if (!name) return void fail('usage', 'utopinn chat-create <name>(立即建空文件;懒建用 chat-new)', { rc: 2 });
+    const { data, status } = await req('PUT', `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(name)}`, { header: { chat_metadata: {} } }, { allowFail: true });
+    if (status === 409) return void fail('exists', `chat exists: ${name}`, { hint: 'utopinn chats 看列表', rc: 3 });
     if (status >= 400 || data?.error) return void fail('server', `chat-create 失败:${data?.error ?? status}`, { status });
     // 只在 ctx.char 与目标同卡时才把 ctx.chat 切过去(--char 建到别的卡上不挪 ctx)
     if (charDir === state.char?.dir) saveState({ chat: { name }, floors: 0, integrity: data?.integrity ?? null });
-    const n = [{ cmd: 'uberge send "…"', why: '写第一楼' }];
+    const n = [{ cmd: 'utopinn send "…"', why: '写第一楼' }];
     if (JSON_MODE) return out({ created: name, integrity: data?.integrity }, n);
     console.log(`chat = ${name}(空文件已建)`);
     footer();
@@ -1596,7 +1602,7 @@ async function cmdChatPut() {
         : (Array.isArray(doc.messages) ? doc.messages.length : null);
     if (flags.force) payload.force = true;
     else if (state.integrity && payload.integrity === undefined) payload.integrity = state.integrity;
-    const route = `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/document`;
+    const route = `/api/utopinn/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/document`;
     const attempt = async () => req('PUT', route, payload, { allowFail: true });
     let { data, status } = await attempt();
     // 409 重锚一次:document 路由回 {error:'integrity', current_integrity}
@@ -1613,7 +1619,7 @@ async function cmdChatPut() {
         return void fail('server', `chat-put 失败:${data?.error ?? status}`, { status, detail: data?.current_integrity ? `current=${data.current_integrity.slice(0, 12)}…` : undefined });
     }
     if (data?.integrity) saveState({ integrity: data.integrity, ...(floors !== null ? { floors } : {}) });
-    const n = [{ cmd: 'uberge history -n 3', why: '核对写回' }, { cmd: 'uberge send "…"', why: '继续' }];
+    const n = [{ cmd: 'utopinn history -n 3', why: '核对写回' }, { cmd: 'utopinn send "…"', why: '继续' }];
     if (JSON_MODE) return out({ ok: true, integrity: data?.integrity, floors }, n);
     console.log(`chat document saved — floors ${floors ?? '?'} · integrity ${String(data?.integrity ?? '').slice(0, 8)}…`);
     footer();
@@ -1624,15 +1630,15 @@ async function cmdChatPut() {
 // —— worlds 写面 ——
 async function cmdWorldEdit() {
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge world-edit <name> [json|--json-file f|--stdin]', { hint: 'uberge wi <book> --out d.json 取现文档改完写回', rc: 2 });
+    if (!name) return void fail('usage', 'utopinn world-edit <name> [json|--json-file f|--stdin]', { hint: 'utopinn wi <book> --out d.json 取现文档改完写回', rc: 2 });
     const doc = await readJsonBody(positional.slice(2), 'world-edit 需要世界书文档 {entries:{}}');
     if (doc === undefined) return;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !doc.entries || typeof doc.entries !== 'object' || Array.isArray(doc.entries)) {
         return void fail('usage', 'world doc 必须是含 entries 对象的对象', { rc: 2 });
     }
-    const { data, status } = await req('PUT', `/api/uberge/worlds/${encodeURIComponent(name)}`, doc, { allowFail: true });
+    const { data, status } = await req('PUT', `/api/utopinn/worlds/${encodeURIComponent(name)}`, doc, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `world-edit ${name} 失败:${data?.error ?? status}`, { status });
-    const n = [{ cmd: `uberge wi ${data?.name ?? name} -n 10`, why: '验证写回' }];
+    const n = [{ cmd: `utopinn wi ${data?.name ?? name} -n 10`, why: '验证写回' }];
     if (JSON_MODE) return out(data, n);
     console.log(`world "${data?.name ?? name}" saved — ${Object.keys(doc.entries).length} entries`);
     footer();
@@ -1642,27 +1648,27 @@ async function cmdWorldEdit() {
 
 async function cmdWorldDelete() {
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge world-delete <name>(显式名)', { rc: 2 });
-    const { data, status } = await req('DELETE', `/api/uberge/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
-    if (status === 404) return void fail('not_found', `world book: ${name}`, { hint: 'uberge worlds 看列表' });
+    if (!name) return void fail('usage', 'utopinn world-delete <name>(显式名)', { rc: 2 });
+    const { data, status } = await req('DELETE', `/api/utopinn/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `world book: ${name}`, { hint: 'utopinn worlds 看列表' });
     if (status >= 400 || data?.error) return void fail('server', `world-delete 失败:${data?.error ?? status}`, { status });
-    if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'uberge worlds' }]);
+    if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'utopinn worlds' }]);
     console.log(`deleted world "${name}"`);
     footer();
 }
 
 // —— presets 写面(apiId 默认 openai,--api 换族)——
-const presetPath = (name) => `/api/uberge/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(flags.api ?? 'openai')}`;
+const presetPath = (name) => `/api/utopinn/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(flags.api ?? 'openai')}`;
 
 async function cmdPresetGet() {
     const name = positional[1] ?? state.preset;
-    if (!name) return void fail('usage', 'uberge preset-get <name>', { hint: 'uberge presets 看列表', rc: 2 });
+    if (!name) return void fail('usage', 'utopinn preset-get <name>', { hint: 'utopinn presets 看列表', rc: 2 });
     const { data, status } = await req('GET', presetPath(name), undefined, { allowFail: true });
-    if (status === 404 || data?.error) return void fail('not_found', `preset: ${name}`, { hint: 'uberge presets 看列表' });
+    if (status === 404 || data?.error) return void fail('not_found', `preset: ${name}`, { hint: 'utopinn presets 看列表' });
     if (status >= 400) return void fail('server', `preset-get → ${status}`, { status });
     const doc = data?.doc ?? {};
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(doc, null, 2)); warn(`wrote ${flags.out}`); }
-    if (JSON_MODE) return out(data, [{ cmd: `uberge preset-edit ${name} --json-file <doc>`, why: '改完写回' }]);
+    if (JSON_MODE) return out(data, [{ cmd: `utopinn preset-edit ${name} --json-file <doc>`, why: '改完写回' }]);
     const prompts = Array.isArray(doc.prompts) ? doc.prompts.length : 0;
     const sampler = ['temperature', 'top_p', 'max_tokens', 'frequency_penalty', 'presence_penalty', 'stream_openai']
         .filter(k => doc[k] !== undefined).map(k => `${k}=${trunc(JSON.stringify(doc[k]), 24)}`).join(' ');
@@ -1673,7 +1679,7 @@ async function cmdPresetGet() {
 
 async function cmdPresetEdit() {
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge preset-edit <name> [json|--json-file f|--stdin]', { hint: 'uberge preset-get <name> --out d.json 取现文档', rc: 2 });
+    if (!name) return void fail('usage', 'utopinn preset-edit <name> [json|--json-file f|--stdin]', { hint: 'utopinn preset-get <name> --out d.json 取现文档', rc: 2 });
     const doc = await readJsonBody(positional.slice(2), 'preset-edit 需要预设 doc 对象');
     if (doc === undefined) return;
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
@@ -1681,7 +1687,7 @@ async function cmdPresetEdit() {
     }
     const { data, status } = await req('PUT', presetPath(name), doc, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `preset-edit ${name} 失败:${data?.error ?? status}`, { status });
-    const n = [{ cmd: `uberge preset-get ${name}`, why: '验证写回' }, { cmd: `uberge preset ${name}`, why: '绑进 ctx' }];
+    const n = [{ cmd: `utopinn preset-get ${name}`, why: '验证写回' }, { cmd: `utopinn preset ${name}`, why: '绑进 ctx' }];
     if (JSON_MODE) return out(data, n);
     console.log(`preset "${name}" saved (${data?.apiId ?? flags.api ?? 'openai'})`);
     footer();
@@ -1691,34 +1697,34 @@ async function cmdPresetEdit() {
 
 async function cmdPresetDelete() {
     const name = positional[1];
-    if (!name) return void fail('usage', 'uberge preset-delete <name>(显式名,--api 族)', { rc: 2 });
+    if (!name) return void fail('usage', 'utopinn preset-delete <name>(显式名,--api 族)', { rc: 2 });
     const { data, status } = await req('DELETE', presetPath(name), undefined, { allowFail: true });
-    if (status === 404) return void fail('not_found', `preset: ${name}`, { hint: 'uberge presets 看列表' });
+    if (status === 404) return void fail('not_found', `preset: ${name}`, { hint: 'utopinn presets 看列表' });
     if (status >= 400 || data?.error) return void fail('server', `preset-delete 失败:${data?.error ?? status}`, { status });
     const wasBound = state.preset === name;
     if (wasBound) saveState({ preset: null });
-    if (JSON_MODE) return out({ deleted: name, unbound: wasBound }, [{ cmd: 'uberge presets' }]);
+    if (JSON_MODE) return out({ deleted: name, unbound: wasBound }, [{ cmd: 'utopinn presets' }]);
     console.log(`deleted preset "${name}"${wasBound ? '(已解绑 ctx.preset)' : ''}`);
     footer();
 }
 
 // —— personas 面 ——
 async function cmdPersonas() {
-    const { data, status } = await req('GET', '/api/uberge/personas', undefined, { allowFail: true });
+    const { data, status } = await req('GET', '/api/utopinn/personas', undefined, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `personas 列表失败:${data?.error ?? status}`, { status });
     const items = Array.isArray(data?.items) ? data.items : [];
-    if (JSON_MODE) return out({ items, defaultPersona: data?.defaultPersona ?? null }, [{ cmd: 'uberge persona-edit <avatar> --set name=…' }]);
+    if (JSON_MODE) return out({ items, defaultPersona: data?.defaultPersona ?? null }, [{ cmd: 'utopinn persona-edit <avatar> --set name=…' }]);
     for (const p of items) {
         console.log(`${p.isDefault ? '*' : ' '} ${p.avatar.padEnd(28)} ${p.name}${p.title ? ` · ${p.title}` : ''}${p.hasImage ? '' : '  \x1b[2m(no img)\x1b[0m'}`);
     }
     console.log(`\n${items.length} personas`);
-    next('uberge persona-edit <avatar> --set name=…');
+    next('utopinn persona-edit <avatar> --set name=…');
     footer();
 }
 
 async function cmdPersonaEdit() {
     const avatar = positional[1];
-    if (!avatar) return void fail('usage', 'uberge persona-edit <avatar> [json|--json-file f|--stdin|--set k=v]', { hint: '字段:name/description/position/title/is_default', rc: 2 });
+    if (!avatar) return void fail('usage', 'utopinn persona-edit <avatar> [json|--json-file f|--stdin|--set k=v]', { hint: '字段:name/description/position/title/is_default', rc: 2 });
     let body = {};
     if (flags.jsonFile || flags.stdin || positional[2] !== undefined) {
         const doc = await readJsonBody(positional.slice(2), 'persona-edit 需要 JSON doc 或 --set k=v');
@@ -1728,9 +1734,9 @@ async function cmdPersonaEdit() {
     }
     body = { ...body, ...(flags.set ?? {}) };
     if (!Object.keys(body).length) return void fail('usage', 'persona-edit 无字段可写——给 JSON doc 或 --set name=…', { rc: 2 });
-    const { data, status } = await req('PUT', `/api/uberge/personas/${encodeURIComponent(avatar)}`, body, { allowFail: true });
+    const { data, status } = await req('PUT', `/api/utopinn/personas/${encodeURIComponent(avatar)}`, body, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `persona-edit ${avatar} 失败:${data?.error ?? status}`, { status });
-    const n = [{ cmd: 'uberge personas', why: '看表' }];
+    const n = [{ cmd: 'utopinn personas', why: '看表' }];
     if (JSON_MODE) return out(data, n);
     console.log(`persona ${data?.avatar ?? avatar} → name="${data?.name ?? ''}"${data?.isDefault ? ' · default' : ''}${data?.title ? ` · ${data.title}` : ''}`);
     footer();
@@ -1740,11 +1746,11 @@ async function cmdPersonaEdit() {
 
 async function cmdPersonaDelete() {
     const avatar = positional[1];
-    if (!avatar) return void fail('usage', 'uberge persona-delete <avatar>(显式 avatar 文件名)', { rc: 2 });
-    const { data, status } = await req('DELETE', `/api/uberge/personas/${encodeURIComponent(avatar)}`, undefined, { allowFail: true });
-    if (status === 404) return void fail('not_found', `persona: ${avatar}`, { hint: 'uberge personas 看列表' });
+    if (!avatar) return void fail('usage', 'utopinn persona-delete <avatar>(显式 avatar 文件名)', { rc: 2 });
+    const { data, status } = await req('DELETE', `/api/utopinn/personas/${encodeURIComponent(avatar)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `persona: ${avatar}`, { hint: 'utopinn personas 看列表' });
     if (status >= 400 || data?.error) return void fail('server', `persona-delete 失败:${data?.error ?? status}`, { status });
-    if (JSON_MODE) return out({ deleted: avatar }, [{ cmd: 'uberge personas' }]);
+    if (JSON_MODE) return out({ deleted: avatar }, [{ cmd: 'utopinn personas' }]);
     console.log(`deleted persona "${avatar}"`);
     footer();
 }
@@ -1753,11 +1759,11 @@ async function cmdPersonaDelete() {
 const SETTINGS_PATCHABLE = new Set(['power_user', 'extension_settings']);
 
 async function cmdSettings() {
-    const { data, status } = await req('GET', '/api/uberge/settings', undefined, { allowFail: true });
+    const { data, status } = await req('GET', '/api/utopinn/settings', undefined, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `settings 读取失败:${data?.error ?? status}`, { status });
     const settings = data?.settings ?? {};
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(settings, null, 2)); warn(`wrote ${flags.out}`); }
-    if (JSON_MODE) return out(data, [{ cmd: 'uberge settings-set --json-file <patch>', why: '受限合并写回' }]);
+    if (JSON_MODE) return out(data, [{ cmd: 'utopinn settings-set --json-file <patch>', why: '受限合并写回' }]);
     const keys = Object.keys(settings);
     console.log(`settings — ${keys.length} 顶层段`);
     for (const k of keys.slice(0, flags.n ?? 25)) {
@@ -1766,7 +1772,7 @@ async function cmdSettings() {
         console.log(`  ${k} ${desc}`);
     }
     if (!flags.full && keys.length > (flags.n ?? 25)) console.log(`  …+${keys.length - (flags.n ?? 25)}(--full/--out 展开)`);
-    next('uberge settings-set --json-file <patch>');
+    next('utopinn settings-set --json-file <patch>');
     footer();
 }
 
@@ -1785,9 +1791,9 @@ async function cmdSettingsSet() {
             return void fail('usage', `section "${k}" 必须是 JSON 对象(逐键浅合并)`, { rc: 2 });
         }
     }
-    const { data, status } = await req('PATCH', '/api/uberge/settings', patch, { allowFail: true });
+    const { data, status } = await req('PATCH', '/api/utopinn/settings', patch, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `settings-set 失败:${data?.error ?? status}`, { status });
-    const n = [{ cmd: 'uberge settings', why: '看合并后视图' }];
+    const n = [{ cmd: 'utopinn settings', why: '看合并后视图' }];
     if (JSON_MODE) return out(data, n);
     console.log(`settings merged: ${Object.keys(patch).map(k => `${k}(+${Object.keys(patch[k]).length})`).join(' · ')}`);
     footer();
@@ -1806,7 +1812,7 @@ const maskedSecretEntries = (entries) => (Array.isArray(entries) ? entries : [])
 }));
 
 async function cmdSecrets() {
-    const { data, status } = await req('GET', '/api/uberge/secrets', undefined, { allowFail: true });
+    const { data, status } = await req('GET', '/api/utopinn/secrets', undefined, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `secrets 读取失败:${data?.error ?? status}`, { status });
     const raw = data?.secrets ?? {};
     const set = {};
@@ -1815,7 +1821,7 @@ async function cmdSecrets() {
         if (Array.isArray(entries) && entries.length) set[k] = maskedSecretEntries(entries);
         else nullCount++;
     }
-    if (JSON_MODE) return out({ secrets: set, unset: nullCount }, [{ cmd: 'uberge secret-set <key> --value …|--stdin' }]);
+    if (JSON_MODE) return out({ secrets: set, unset: nullCount }, [{ cmd: 'utopinn secret-set <key> --value …|--stdin' }]);
     const rows = Object.entries(set);
     for (const [k, entries] of rows) {
         for (const e of entries) {
@@ -1823,7 +1829,7 @@ async function cmdSecrets() {
         }
     }
     console.log(`\n${rows.length} keys set · ${nullCount} empty`);
-    next('uberge secret-set <key> --value …|--stdin');
+    next('utopinn secret-set <key> --value …|--stdin');
     footer();
 }
 
@@ -1836,10 +1842,10 @@ async function cmdSecretSet() {
         value = (await readStdinBuffer()).toString('utf8').replace(/\r?\n$/, '');
     }
     if (value === undefined && positional[2] !== undefined) value = positional[2];
-    if (!key) return void fail('usage', 'uberge secret-set <key> --value v|--stdin [--label l]', { hint: 'uberge secrets 看键名(api_key_* 一族)', rc: 2 });
+    if (!key) return void fail('usage', 'utopinn secret-set <key> --value v|--stdin [--label l]', { hint: 'utopinn secrets 看键名(api_key_* 一族)', rc: 2 });
     if (typeof value !== 'string' || !value) return void fail('usage', 'secret-set 需要 --value v 或 --stdin(值不进命令行历史)', { rc: 2 });
-    const { data, status } = await req('PUT', `/api/uberge/secrets/${encodeURIComponent(key)}`, { value, ...(flags.label ? { label: flags.label } : {}) }, { allowFail: true });
-    if (status === 400) return void fail('usage', `secret-set 被拒:${data?.error ?? 'bad key/value'}`, { detail: data?.error, hint: 'uberge secrets 看合法键名', rc: 2 });
+    const { data, status } = await req('PUT', `/api/utopinn/secrets/${encodeURIComponent(key)}`, { value, ...(flags.label ? { label: flags.label } : {}) }, { allowFail: true });
+    if (status === 400) return void fail('usage', `secret-set 被拒:${data?.error ?? 'bad key/value'}`, { detail: data?.error, hint: 'utopinn secrets 看合法键名', rc: 2 });
     if (status >= 400 || data?.error) return void fail('server', `secret-set 失败:${data?.error ?? status}`, { status });
     const entries = maskedSecretEntries(data?.entries);
     if (JSON_MODE) return out({ ok: true, id: data?.id, key, entries });
@@ -1850,11 +1856,11 @@ async function cmdSecretSet() {
 
 async function cmdSecretDelete() {
     const key = positional[1], id = positional[2] ?? flags.id;
-    if (!key || !id) return void fail('usage', 'uberge secret-delete <key> <id>', { hint: 'uberge secrets 看 id', rc: 2 });
-    const { data, status } = await req('DELETE', `/api/uberge/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}`, undefined, { allowFail: true });
+    if (!key || !id) return void fail('usage', 'utopinn secret-delete <key> <id>', { hint: 'utopinn secrets 看 id', rc: 2 });
+    const { data, status } = await req('DELETE', `/api/utopinn/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}`, undefined, { allowFail: true });
     if (status === 400) return void fail('usage', `secret-delete 被拒:${data?.error ?? ''}`, { rc: 2 });
     if (status >= 400 || data?.error) return void fail('server', `secret-delete 失败:${data?.error ?? status}`, { status });
-    if (JSON_MODE) return out({ deleted: { key, id } }, [{ cmd: 'uberge secrets' }]);
+    if (JSON_MODE) return out({ deleted: { key, id } }, [{ cmd: 'utopinn secrets' }]);
     console.log(`deleted secret ${key}/${String(id).slice(0, 8)}`);
     footer();
 }
@@ -1878,33 +1884,33 @@ const importBody = (p, extra = {}) => ({ name: p.fileName, dataBase64: p.buffer.
 
 async function cmdImportScan() {
     const dir = positional[1] ?? flags.dir;
-    if (!dir) return void fail('usage', 'uberge import-scan <dir>(服务端路径,不是本地路径)', { rc: 2 });
-    const { data, status } = await req('POST', '/api/uberge/import/scan-st', { dir: String(dir) }, { allowFail: true });
+    if (!dir) return void fail('usage', 'utopinn import-scan <dir>(服务端路径,不是本地路径)', { rc: 2 });
+    const { data, status } = await req('POST', '/api/utopinn/import/scan-st', { dir: String(dir) }, { allowFail: true });
     if (status === 403) return void fail('server', 'import-scan 需要 admin profile', { status });
     if (status === 404) return void fail('not_found', `not a directory: ${dir}`, { detail: data?.error });
     if (status >= 400 || data?.error) return void fail('server', `import-scan 失败:${data?.error ?? status}`, { status });
     const counts = data?.counts ?? {};
     const items = Array.isArray(data?.items) ? data.items : [];
-    if (JSON_MODE) return out(data, [{ cmd: 'uberge import-preview --file <path>' }]);
+    if (JSON_MODE) return out(data, [{ cmd: 'utopinn import-preview --file <path>' }]);
     console.log(`${data?.root ?? dir} — ${data?.total ?? items.length} importable`);
     for (const [k, n] of Object.entries(counts)) console.log(`  ${k.padEnd(12)} ${n}`);
     for (const i of items.slice(0, flags.n ?? 20)) console.log(`  \x1b[2m${i.kind.padEnd(10)}\x1b[0m ${trunc(i.name, 40)}  \x1b[2m${(i.bytes / 1024).toFixed(0)}KB ${i.file}\x1b[0m`);
     if (!flags.full && items.length > (flags.n ?? 20)) console.log(`  …+${items.length - (flags.n ?? 20)}(--full 展开)`);
-    next('uberge import-preview --file <path>');
+    next('utopinn import-preview --file <path>');
     footer();
 }
 
 async function cmdImportPreview() {
     const p = await importPayload();
     if (!p) return;
-    const { data, status } = await req('POST', '/api/uberge/import/preview', importBody(p, {
+    const { data, status } = await req('POST', '/api/utopinn/import/preview', importBody(p, {
         ...(flags.api ? { apiId: flags.api } : {}),
         ...(flags.as ? { targetName: flags.as } : {}),
     }), { allowFail: true });
     if (status === 422 || status === 400) return void fail('usage', `探测失败:${data?.error ?? status}`, { detail: data?.hints ?? data?.error, hint: '换文件或用 --kind/--api 纠类型后 commit', rc: 2 });
     if (status >= 400 || data?.error) return void fail('server', `import-preview 失败:${data?.error ?? status}`, { status });
     const conflict = Boolean(data?.conflicts?.existingSameName);
-    const n = [{ cmd: `uberge import-commit ${flags.file ?? positional[1] ?? '<file>'}${conflict ? ' --conflict rename' : ''}`, why: conflict ? '有同名冲突,显式给策略' : '确认落库' }];
+    const n = [{ cmd: `utopinn import-commit ${flags.file ?? positional[1] ?? '<file>'}${conflict ? ' --conflict rename' : ''}`, why: conflict ? '有同名冲突,显式给策略' : '确认落库' }];
     if (JSON_MODE) return out(data, n);
     console.log(`${data?.kind ?? '?'}  "${data?.name ?? '?'}" → ${data?.targetName ?? '?'}${conflict ? '  \x1b[33m⚠ 同名已存在\x1b[0m' : ''}`);
     const sum = data?.summary ?? {};
@@ -1920,7 +1926,7 @@ async function cmdImportPreview() {
 async function cmdImportCommit() {
     const p = await importPayload();
     if (!p) return;
-    const { data, status } = await req('POST', '/api/uberge/import/commit', importBody(p, {
+    const { data, status } = await req('POST', '/api/utopinn/import/commit', importBody(p, {
         ...(flags.kind ? { kind: flags.kind } : {}),
         ...(flags.as ? { targetName: flags.as } : {}),
         ...(flags.conflict ? { conflict: flags.conflict } : {}),
@@ -1930,13 +1936,13 @@ async function cmdImportCommit() {
         return void fail('exists', `同名冲突 "${data?.targetName ?? ''}"——显式给策略`, {
             detail: data?.error,
             hint: '--conflict rename|overwrite|skip',
-            nexts: [{ cmd: `uberge import-commit ${flags.file ?? positional[1] ?? '<file>'} --conflict rename` }],
+            nexts: [{ cmd: `utopinn import-commit ${flags.file ?? positional[1] ?? '<file>'} --conflict rename` }],
             rc: 3,
         });
     }
     if (status === 422 || status === 400) return void fail('usage', `commit 被拒:${data?.error ?? status}`, { detail: data?.hints ?? data?.error, rc: 2 });
     if (status >= 400 || data?.error) return void fail('server', `import-commit 失败:${data?.error ?? status}`, { status });
-    const n = data?.kind === 'char' ? [{ cmd: 'uberge chars -n 5', why: '看新卡' }] : data?.kind === 'world' ? [{ cmd: `uberge wi ${data.targetName} -n 10` }] : [{ cmd: 'uberge doctor' }];
+    const n = data?.kind === 'char' ? [{ cmd: 'utopinn chars -n 5', why: '看新卡' }] : data?.kind === 'world' ? [{ cmd: `utopinn wi ${data.targetName} -n 10` }] : [{ cmd: 'utopinn doctor' }];
     if (JSON_MODE) return out(data, n);
     console.log(`imported ${data?.kind ?? '?'} "${data?.name ?? ''}" → ${data?.targetName ?? '?'}${data?.renamed ? ' (renamed)' : ''}${data?.skipped ? ' (skipped)' : ''}`);
     for (const w of (data?.warnings ?? [])) console.log(`  \x1b[33mwarning:\x1b[0m ${w}`);
@@ -1947,7 +1953,7 @@ async function cmdImportCommit() {
 
 async function cmdBackup() {
     // zip attachment 二进制流——req() 的 JSON 路径走不通,自管 fetch(保留 401/403 重握手一次)
-    const doFetch = () => fetch(`${SERVER}/api/uberge/backup`, {
+    const doFetch = () => fetch(`${SERVER}/api/utopinn/backup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, Cookie: cookie },
         body: JSON.stringify(flags.set ? { selection: flags.set } : {}),
@@ -1964,7 +1970,7 @@ async function cmdBackup() {
     const buf = Buffer.from(await r.arrayBuffer());
     const cd = r.headers.get('content-disposition') ?? '';
     const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd);
-    const srvName = (m ? decodeURIComponent(String(m[1]).trim().replace(/^"|"$/g, '')) : '') || `uberge-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    const srvName = (m ? decodeURIComponent(String(m[1]).trim().replace(/^"|"$/g, '')) : '') || `utopinn-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
     let outPath;
     if (flags.out) {
         const p = resolve(flags.out);
@@ -1991,12 +1997,12 @@ function lanSelection() {
 async function cmdLanOffer() {
     const selection = lanSelection();
     if (selection === null) return;
-    const { data, status } = await req('POST', '/api/uberge/lan/offer', {
+    const { data, status } = await req('POST', '/api/utopinn/lan/offer', {
         ...(flags.handle ? { handle: flags.handle } : {}),
         ...(selection ? { selection } : {}),
     }, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `lan-offer 失败:${data?.error ?? status}`, { status, hint: status === 403 ? '跨 handle 需要 admin' : undefined });
-    const n = [{ cmd: `uberge lan-import --code ${data?.url ?? '<url>'}`, why: '对端机器执行拉入' }];
+    const n = [{ cmd: `utopinn lan-import --code ${data?.url ?? '<url>'}`, why: '对端机器执行拉入' }];
     if (JSON_MODE) return out(data, n);
     console.log(`offer → ${data?.url ?? '(no url)'}`);
     console.log(`expires ${data?.expiresAt ? new Date(data.expiresAt).toISOString() : '?'}(一次性,~10min)`);
@@ -2007,12 +2013,12 @@ async function cmdLanOffer() {
 
 async function cmdLanImport() {
     const url = flags.code ?? positional[1];
-    if (!url) return void fail('usage', 'uberge lan-import <offer-url|--code c> [--mode merge|overwrite]', { hint: 'url 来自对端 lan-offer', rc: 2 });
+    if (!url) return void fail('usage', 'utopinn lan-import <offer-url|--code c> [--mode merge|overwrite]', { hint: 'url 来自对端 lan-offer', rc: 2 });
     const selection = lanSelection();
     if (selection === null) return;
     const mode = String(flags.mode ?? 'merge').toLowerCase();
     if (!['merge', 'overwrite'].includes(mode)) return void fail('usage', '--mode 只认 merge|overwrite', { rc: 2 });
-    const { data, status } = await req('POST', '/api/uberge/lan/import', {
+    const { data, status } = await req('POST', '/api/utopinn/lan/import', {
         url,
         ...(flags.handle ? { handle: flags.handle } : {}),
         ...(selection ? { selection } : {}),
@@ -2037,7 +2043,7 @@ async function cmdRaw() {
     // 不必为每条 REST 面单开命令。读面优先用具名命令(输出已整理)。
     const method = String(positional[1] ?? 'GET').toUpperCase();
     const path = positional[2];
-    if (!path?.startsWith('/')) return void fail('usage', 'uberge raw <METHOD> </path> [json|--stdin]', { hint: 'uberge kernel 看路由表', rc: 2 });
+    if (!path?.startsWith('/')) return void fail('usage', 'utopinn raw <METHOD> </path> [json|--stdin]', { hint: 'utopinn kernel 看路由表', rc: 2 });
     let body;
     if (flags.stdin) { const t = await readTextArg([]); try { body = JSON.parse(t); } catch { body = t; } }
     else if (positional[3] !== undefined) { try { body = JSON.parse(positional.slice(3).join(' ')); } catch { body = positional.slice(3).join(' '); } }
@@ -2117,16 +2123,16 @@ try {
         case 'lan-import': await cmdLanImport(); break;
         case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
-            console.log('uberge — agent-first CLI。裸跑看状态,`uberge schema` 看自描述目录,`uberge doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
+            console.log('utopinn — agent-first CLI。裸跑看状态,`utopinn schema` 看自描述目录,`utopinn doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
             break;
         default:
-            fail('usage', `unknown command: ${CMD}`, { hint: 'uberge schema 看命令面', rc: 2 });
+            fail('usage', `unknown command: ${CMD}`, { hint: 'utopinn schema 看命令面', rc: 2 });
     }
 } catch (e) {
     const code = e.code ?? (e.status ? 'server' : 'network');
     fail(code, e.message, {
         status: e.status, detail: e.data,
-        hint: code === 'session' ? '会话/CSRF 失败——确认 server 起在 loopback 白名单面' : code === 'network' ? 'server 不可达——uberge doctor 体检' : undefined,
+        hint: code === 'session' ? '会话/CSRF 失败——确认 server 起在 loopback 白名单面' : code === 'network' ? 'server 不可达——utopinn doctor 体检' : undefined,
         rc: code === 'session' || code === 'network' ? 4 : (e.status === 409 ? 3 : 1),
     });
 }

@@ -1,8 +1,8 @@
 /**
- * /api/uberge 库/管理 API(uberge-library.js)集成测试(node:test)。
+ * /api/utopinn 库/管理 API(utopinn-library.js)集成测试(node:test)。
  * 真 FsEngine + 种子数据 + 真 express + 真 HTTP(fetch 本地端口);
  * request.user 经中间件注入(等价 requireLogin+setUserData 之后的形态)。
- * 跑法:node --test tests/uberge-library.test.mjs
+ * 跑法:node --test tests/utopinn-library.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-import { writeCardToPng } from '@uberge/formats';
+import { writeCardToPng } from '@utopinn/formats';
 import {
     getChatRepo,
     getPresetRepo,
@@ -101,17 +101,17 @@ test.before(async () => {
     process.env.LUKER_PERFORMANCE_USEDISKCACHE = 'false';
     process.env.LUKER_PERFORMANCE_USE_DISK_CACHE = 'false';
 
-    const { apply: applyUbergeLibrary } = await import('../src/plugins/uberge-library.js');
-    const ubergeLibraryRouter = express.Router();
+    const { apply: applyUtopinnLibrary } = await import('../src/plugins/utopinn-library.js');
+    const utopinnLibraryRouter = express.Router();
     const ws = {
         register: (spec) => {
-            ubergeLibraryRouter[String(spec.method || 'GET').toLowerCase()](spec.path, spec.handler);
+            utopinnLibraryRouter[String(spec.method || 'GET').toLowerCase()](spec.path, spec.handler);
             return () => {};
         },
     };
-    applyUbergeLibrary({ webServer: ws, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) });
+    applyUtopinnLibrary({ webServer: ws, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) });
 
-    ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-lib-'));
+    ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-lib-'));
     dirs = {};
     for (const [key, rel] of Object.entries(USER_DIRS)) {
         dirs[key] = path.join(ROOT, rel);
@@ -178,7 +178,7 @@ test.before(async () => {
         request.user = { profile: { handle: HANDLE, name: 'User' }, directories: dirs };
         next();
     });
-    app.use(ubergeLibraryRouter); // 插件注册的是 /api/uberge/* 全路径,根挂
+    app.use(utopinnLibraryRouter); // 插件注册的是 /api/utopinn/* 全路径,根挂
     await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
     BASE = `http://127.0.0.1:${server.address().port}`;
 });
@@ -191,7 +191,7 @@ test.after(() => {
 // ---------- Characters ----------
 
 test('GET /characters — lists png + json cards with name/avatar/tags', async () => {
-    const { status, body } = await api('/api/uberge/characters');
+    const { status, body } = await api('/api/utopinn/characters');
     assert.equal(status, 200);
     assert.equal(body.total, 3);
     const byDir = Object.fromEntries(body.items.map((i) => [i.charDir, i]));
@@ -213,20 +213,20 @@ test('GET /characters — lists png + json cards with name/avatar/tags', async (
 });
 
 test('GET /characters/:charDir — card doc; 404 on missing; 400 on unsafe', async () => {
-    const ok = await api('/api/uberge/characters/Alice');
+    const ok = await api('/api/utopinn/characters/Alice');
     assert.equal(ok.status, 200);
     assert.equal(ok.body.data.name, 'Alice');
     assert.equal(ok.body.data.description, 'A wandering knight.');
 
-    const jsonOnly = await api('/api/uberge/characters/Bob');
+    const jsonOnly = await api('/api/utopinn/characters/Bob');
     assert.equal(jsonOnly.status, 200);
     assert.equal(jsonOnly.body.data.name, 'Bob');
 
-    const missing = await api('/api/uberge/characters/ghost');
+    const missing = await api('/api/utopinn/characters/ghost');
     assert.equal(missing.status, 404);
     assert.ok(missing.body.error);
 
-    const unsafe = await api('/api/uberge/characters/..%2F..%2Fetc');
+    const unsafe = await api('/api/utopinn/characters/..%2F..%2Fetc');
     assert.equal(unsafe.status, 400);
     assert.ok(unsafe.body.error);
 });
@@ -234,7 +234,7 @@ test('GET /characters/:charDir — card doc; 404 on missing; 400 on unsafe', asy
 // ---------- Chats ----------
 
 test('GET /characters/:charDir/chats — chat metadata list', async () => {
-    const { status, body } = await api('/api/uberge/characters/Alice/chats');
+    const { status, body } = await api('/api/utopinn/characters/Alice/chats');
     assert.equal(status, 200);
     assert.equal(body.total, 2);
     const c1 = body.items.find((i) => i.name === 'c1');
@@ -246,84 +246,84 @@ test('GET /characters/:charDir/chats — chat metadata list', async () => {
 });
 
 test('GET chat detail — header + messages; .jsonl suffix tolerated; 404s', async () => {
-    const ok = await api('/api/uberge/characters/Alice/chats/c1');
+    const ok = await api('/api/utopinn/characters/Alice/chats/c1');
     assert.equal(ok.status, 200);
     assert.equal(ok.body.header.user_name, 'User');
     assert.equal(ok.body.messages.length, 2);
     assert.equal(ok.body.messages[1].mes, 'Keep your voice down.');
     assert.ok(ok.body.integrity);
 
-    const suffixed = await api('/api/uberge/characters/Alice/chats/c1.jsonl');
+    const suffixed = await api('/api/utopinn/characters/Alice/chats/c1.jsonl');
     assert.equal(suffixed.status, 200);
     assert.equal(suffixed.body.name, 'c1');
 
-    const missingChat = await api('/api/uberge/characters/Alice/chats/ghost');
+    const missingChat = await api('/api/utopinn/characters/Alice/chats/ghost');
     assert.equal(missingChat.status, 404);
-    const missingChar = await api('/api/uberge/characters/ghost/chats/c1');
+    const missingChar = await api('/api/utopinn/characters/ghost/chats/c1');
     assert.equal(missingChar.status, 404);
-    const unsafe = await api('/api/uberge/characters/Alice/chats/a%2Fb');
+    const unsafe = await api('/api/utopinn/characters/Alice/chats/a%2Fb');
     assert.equal(unsafe.status, 400);
 });
 
 test('DELETE chat — 204 then gone; ghost chat 404', async () => {
-    const del = await api('/api/uberge/characters/Alice/chats/c2', { method: 'DELETE' });
+    const del = await api('/api/utopinn/characters/Alice/chats/c2', { method: 'DELETE' });
     assert.equal(del.status, 204);
-    const after = await api('/api/uberge/characters/Alice/chats/c2');
+    const after = await api('/api/utopinn/characters/Alice/chats/c2');
     assert.equal(after.status, 404);
-    const again = await api('/api/uberge/characters/Alice/chats/c2', { method: 'DELETE' });
+    const again = await api('/api/utopinn/characters/Alice/chats/c2', { method: 'DELETE' });
     assert.equal(again.status, 404);
 });
 
 // ---------- Presets ----------
 
 test('GET /presets — apiId validation + list', async () => {
-    const ok = await api('/api/uberge/presets?apiId=openai');
+    const ok = await api('/api/utopinn/presets?apiId=openai');
     assert.equal(ok.status, 200);
     assert.equal(ok.body.apiId, 'openai');
     assert.equal(ok.body.total, 1);
     assert.deepEqual(ok.body.items, [{ name: 'Default' }]);
 
     // apiId 省略时默认 openai
-    const dflt = await api('/api/uberge/presets');
+    const dflt = await api('/api/utopinn/presets');
     assert.equal(dflt.status, 200);
     assert.equal(dflt.body.total, 1);
 
-    const bad = await api('/api/uberge/presets?apiId=bogus');
+    const bad = await api('/api/utopinn/presets?apiId=bogus');
     assert.equal(bad.status, 400);
     assert.match(bad.body.error, /apiId/);
 });
 
 test('GET /presets/:name — doc; 404 missing', async () => {
-    const ok = await api('/api/uberge/presets/Default?apiId=openai');
+    const ok = await api('/api/utopinn/presets/Default?apiId=openai');
     assert.equal(ok.status, 200);
     assert.equal(ok.body.name, 'Default');
     assert.equal(ok.body.doc.openai_model, 'gpt-test');
 
-    const missing = await api('/api/uberge/presets/ghost?apiId=openai');
+    const missing = await api('/api/utopinn/presets/ghost?apiId=openai');
     assert.equal(missing.status, 404);
 });
 
 // ---------- World books ----------
 
 test('GET /worlds — list + doc + 404', async () => {
-    const list = await api('/api/uberge/worlds');
+    const list = await api('/api/utopinn/worlds');
     assert.equal(list.status, 200);
     assert.equal(list.body.total, 1);
     assert.equal(list.body.items[0].name, 'GlobalBook');
 
-    const doc = await api('/api/uberge/worlds/GlobalBook');
+    const doc = await api('/api/utopinn/worlds/GlobalBook');
     assert.equal(doc.status, 200);
     assert.equal(doc.body.name, 'GlobalBook');
     assert.equal(doc.body.doc.entries['0'].content, 'Dragons once ruled.');
 
-    const missing = await api('/api/uberge/worlds/ghost');
+    const missing = await api('/api/utopinn/worlds/ghost');
     assert.equal(missing.status, 404);
 });
 
 // ---------- Personas ----------
 
 test('GET /personas — merged personas + persona_descriptions view', async () => {
-    const { status, body } = await api('/api/uberge/personas');
+    const { status, body } = await api('/api/utopinn/personas');
     assert.equal(status, 200);
     assert.equal(body.total, 1);
     assert.equal(body.defaultPersona, 'ava.png');
@@ -341,7 +341,7 @@ test('GET /personas — merged personas + persona_descriptions view', async () =
 // ---------- Settings ----------
 
 test('GET /settings — secrets stripped, legit fields kept', async () => {
-    const { status, body } = await api('/api/uberge/settings');
+    const { status, body } = await api('/api/utopinn/settings');
     assert.equal(status, 200);
     const s = body.settings;
     assert.equal(s.power_user.personas['ava.png'], 'Mia');
@@ -359,7 +359,7 @@ test('GET /settings — secrets stripped, legit fields kept', async () => {
 });
 
 test('PATCH /settings — allowlist shallow-merge only', async () => {
-    const merged = await api('/api/uberge/settings', {
+    const merged = await api('/api/utopinn/settings', {
         method: 'PATCH',
         body: { power_user: { new_key: 'yes' }, extension_settings: { coolExt: { theme: 'light' } } },
     });
@@ -371,20 +371,20 @@ test('PATCH /settings — allowlist shallow-merge only', async () => {
     assert.equal(s.extension_settings.coolExt.theme, 'light');
 
     // 已写入存储层(GET 能再读到)
-    const again = await api('/api/uberge/settings');
+    const again = await api('/api/utopinn/settings');
     assert.equal(again.body.settings.power_user.new_key, 'yes');
 
-    const rejected = await api('/api/uberge/settings', {
+    const rejected = await api('/api/utopinn/settings', {
         method: 'PATCH', body: { oai_settings: { chat_completion_source: 'claude' } },
     });
     assert.equal(rejected.status, 400);
     assert.match(rejected.body.error, /not patchable/);
 
-    const badSection = await api('/api/uberge/settings', {
+    const badSection = await api('/api/utopinn/settings', {
         method: 'PATCH', body: { power_user: 'string-not-object' },
     });
     assert.equal(badSection.status, 422);
 
-    const empty = await api('/api/uberge/settings', { method: 'PATCH', body: {} });
+    const empty = await api('/api/utopinn/settings', { method: 'PATCH', body: {} });
     assert.equal(empty.status, 400);
 });

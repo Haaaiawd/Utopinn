@@ -1,6 +1,6 @@
-// POST /api/uberge/generate + WS job stream.
+// POST /api/utopinn/generate + WS job stream.
 // Server contract (apps/server):
-//   POST /api/uberge/generate → 200 + `x-luker-generation-id` header; the job
+//   POST /api/utopinn/generate → 200 + `x-luker-generation-id` header; the job
 //   runs in background, events delivered via /api/ws-delivery.
 //   POST /api/ws-ticket → {ticket} (one-shot, mounted behind session+CSRF).
 //   WS upgrade: Sec-WebSocket-Protocol `luker-ws-ticket.<ticket>` — the ticket
@@ -19,13 +19,13 @@ export interface GenerateResult {
 
 export async function postGenerate(body: PreviewRequestBody): Promise<GenerateResult> {
     const { apiFetch } = await import('./client');
-    const res = await apiFetch('/api/uberge/generate', {
+    const res = await apiFetch('/api/utopinn/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...body, stream: true }),
     });
     if (!res.ok) {
-        const unreachable = res.status === 502 && res.headers.has('x-uberge-proxy-error');
+        const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
         const text = await res.text().catch(() => '');
         throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
     }

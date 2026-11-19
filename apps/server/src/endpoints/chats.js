@@ -1287,7 +1287,7 @@ function buildSplitSegments(source, splitPoints, targetNames, nowIso, sourceName
 }
 
 export { buildMergedBodyAndHeader, buildSplitSegments, resolveAvailableTargetName };  // for jest tests
-// TASK-032 doc-save 复用:uberge document 路由与 /save 同源。
+// TASK-032 doc-save 复用:utopinn document 路由与 /save 同源。
 export { getBackupFunction, writeChatSyncState, applyIntegrityToMetadata, sendRepoIntegrityConflict, createChatHeader, checkIntegrity };
 // 审查修复:append 去重/完整性复用。
 export { stripLukerGenerationIdFromMessage, isChatMessageLike, createIntegrityMismatchError };
@@ -1455,7 +1455,7 @@ function isJsonPatchValidationError(error) {
         || message.includes('Unsupported JSON Patch operation:');
 }
 
-// TASK-032 state sidecar 复用口:/api/uberge/state/chat/* 插件路由与
+// TASK-032 state sidecar 复用口:/api/utopinn/state/chat/* 插件路由与
 // legacy /api/chats/state/* 共用同一组 target/namespace/patch 判定 ——
 // 行为面只有一个事实源,插件侧不重抄。
 export {

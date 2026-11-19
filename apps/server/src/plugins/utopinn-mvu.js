@@ -1,5 +1,5 @@
 /**
- * uberge-mvu —— kernel 插件:MVU settle/状态板 seam 的 REST 面(TASK-013)。
+ * utopinn-mvu —— kernel 插件:MVU settle/状态板 seam 的 REST 面(TASK-013)。
  *
  *   POST /settle        对目标楼层(默认末楼)跑一次 settle;
  *                       生成管线已在持久化后自动调用,本端点供手动重结算/调试。
@@ -7,9 +7,9 @@
  *   GET  /state         读 chat_metadata.variables + chat_state 'mvu' 回执日志。
  *   POST /panel/render  状态栏固定模板 × 变量字典 → 服务端渲染面板 HTML。
  *
- * handler 原样搬自 endpoints/uberge-mvu.js;4 条全迁,legacy 文件删除。
+ * handler 原样搬自 endpoints/utopinn-mvu.js;4 条全迁,legacy 文件删除。
  */
-import { renderMvuStatusPanel } from '@uberge/core';
+import { renderMvuStatusPanel } from '@utopinn/core';
 import {
     resolveMvuChatTarget,
     settlePersistedMvuMessage,
@@ -34,7 +34,7 @@ function targetArgs(request) {
 
 export function apply(ctx) {
     const ws = ctx.webServer;
-    const P = '/api/uberge/mvu';
+    const P = '/api/utopinn/mvu';
 
     ctx.effect(() => ws.register({ kind: 'pattern', method: 'POST', path: `${P}/settle`, handler: async function (request, response) {
         const args = targetArgs(request);

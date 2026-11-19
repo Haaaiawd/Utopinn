@@ -1,5 +1,5 @@
 {
-    "name": "@uberge/panel-shim",
+    "name": "@utopinn/panel-shim",
     "version": "0.1.0",
     "private": true,
     "type": "module",
@@ -16,7 +16,7 @@
         "typecheck": "tsc --noEmit"
     },
     "dependencies": {
-        "@uberge/protocol": "workspace:*"
+        "@utopinn/protocol": "workspace:*"
     },
     "devDependencies": {
         "typescript": "^5.9.0"

@@ -1,4 +1,4 @@
-// Generation jobs via /api/uberge/jobs(TASK-017 监视/回放面)。
+// Generation jobs via /api/utopinn/jobs(TASK-017 监视/回放面)。
 // 列表=摘要(新→旧);详情=状态/文本/trace(组装分块)/sources(WI轨迹)。
 // events 不回传 —— 事件流走 WS resume 通道,详情面回放的是落盘文本。
 import { apiGet } from './client';
@@ -43,9 +43,9 @@ export interface JobDetail {
 }
 
 export async function listJobs(): Promise<{ items: JobSummary[] }> {
-    return apiGet('/api/uberge/jobs');
+    return apiGet('/api/utopinn/jobs');
 }
 
 export async function getJob(id: string): Promise<JobDetail> {
-    return apiGet(`/api/uberge/jobs/${encodeURIComponent(id)}`);
+    return apiGet(`/api/utopinn/jobs/${encodeURIComponent(id)}`);
 }

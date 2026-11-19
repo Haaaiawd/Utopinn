@@ -680,14 +680,14 @@ async function preSetupTasks() {
 
     // Print formatted header
     console.log();
-    console.log(`Luker ${version.pkgVersion}`);
+    console.log(`Utopinn ${version.pkgVersion}`);
     if (version.gitBranch && version.commitDate) {
         const date = new Date(version.commitDate);
         const localDate = date.toLocaleString('en-US', { timeZoneName: 'short' });
         console.log(`Running '${version.gitBranch}' (${version.gitRevision}) - ${localDate}`);
         checkRemoteVersion().then((remoteData) => {
             if (!remoteData.isLatest && ['staging', 'release'].includes(version.gitBranch)) {
-                console.log('INFO: A newer tagged Luker version is available.');
+                console.log('INFO: A newer tagged Utopinn version is available.');
                 console.log('      Pull latest tags/changes to update.');
             }
         });
@@ -757,7 +757,7 @@ async function preSetupTasks() {
                 await new Promise((resolve) => setTimeout(resolve, 200));
             }
             // 3) 插件 fiber 反序 dispose:路由摘除/定时器清理/WS terminate/写冲刷
-            //    全部走各自 ctx.effect disposer(plugins/uberge-delivery.js 等)。
+            //    全部走各自 ctx.effect disposer(plugins/utopinn-delivery.js 等)。
             await shutdownKernelFibers();
         } catch (drainErr) {
             console.error('shutdown drain error:', drainErr?.message || drainErr);
@@ -842,7 +842,7 @@ async function postSetupTasks(result) {
     // which is gated by the full HTTP middleware stack — Basic Auth,
     // cookieSession, setUserData, requireLogin, CSRF — so the WS channel
     // is trusted the moment the upgrade completes.
-    // WS 面已插件化:plugins/uberge-delivery.js 经 webServer.registerUpgrade
+    // WS 面已插件化:plugins/utopinn-delivery.js 经 webServer.registerUpgrade
     // 贡献 /api/ws-delivery(票验/心跳/订阅去重原样)。这里只需把统一
     // upgradeListener 挂上 —— 命中表才接管 socket,未命中不动。
     if (result.servers && result.servers.length > 0) {
@@ -907,9 +907,9 @@ async function postSetupTasks(result) {
         setInterval(writeHeartbeat, intervalMs).unref();
     }
 
-    setWindowTitle('Luker WebServer');
+    setWindowTitle('Utopinn WebServer');
 
-    let logListen = 'Luker is listening on';
+    let logListen = 'Utopinn is listening on';
 
     if (result.useIPv6 && !result.v6Failed) {
         logListen += color.green(
@@ -923,7 +923,7 @@ async function postSetupTasks(result) {
         );
     }
 
-    const goToLog = `Go to: ${color.blue(browserLaunchUrl)} to open Luker`;
+    const goToLog = `Go to: ${color.blue(browserLaunchUrl)} to open Utopinn`;
     const plainGoToLog = removeColorFormatting(goToLog);
 
     console.log(logListen);

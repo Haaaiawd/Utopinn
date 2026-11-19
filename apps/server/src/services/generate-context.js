@@ -16,7 +16,7 @@ import {
     GENERATION_TYPE_TRIGGERS,
     mergeLoreSources,
     substituteParams,
-} from '@uberge/core';
+} from '@utopinn/core';
 import { createPromptBuilder, resolveTokenizer } from './prompt-builder.js';
 import {
     createDepthInjectionProvider,
@@ -41,7 +41,7 @@ const ms = (v) => Math.round(v * 10) / 10;
 /**
  * [perf] 摘要行。约定:调用方把 endpoint 侧 cardMs 并入 perf.cardMs
  * 与 perf.totalMs 后再打,totalMs = 含卡加载的整段耗时。
- * @param {string} label 端点名(uberge/preview、uberge/generate)
+ * @param {string} label 端点名(utopinn/preview、utopinn/generate)
  * @param {object} perf buildGenerationContext 返回的 perf(调用方已补 cardMs)
  * @param {{charDir?:string, chatName?:string}} id
  */

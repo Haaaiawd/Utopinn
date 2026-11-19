@@ -1,14 +1,14 @@
 # TASK-036 — CLI kernel 路由全覆盖(具名动词补面)
 
 **结果:`doctor` capability coverage = 47 routes · named 47 · raw-only 0(此前 16/47)。**
-`apps/cli/uberge-cli.mjs` v0.2.0 → **v0.3.0**。
+`apps/cli/utopinn-cli.mjs` v0.2.0 → **v0.3.0**。
 
 ## 新增动词(21 个 + 1 个 mvu 子命令)
 
 | 动词 | 路由 | 备注 |
 |---|---|---|
 | `char <name>` | GET /characters/:charDir | 模糊名→resolveChar→目录名;卡全文 |
-| `chat-get [chat]` | GET /characters/:charDir/chats/:chatName | uberge doc {header,messages,integrity};刷新 state |
+| `chat-get [chat]` | GET /characters/:charDir/chats/:chatName | utopinn doc {header,messages,integrity};刷新 state |
 | `chat-create <name>` | PUT …/chats/:chatName | 立即建空文件(chat-new 仍是懒建坐标) |
 | `world-edit <name>` | PUT /worlds/:name | `--json-file|--stdin|inline json`,需 {entries:{}};upsert |
 | `world-delete <name>` | DELETE /worlds/:name | 显式名 |

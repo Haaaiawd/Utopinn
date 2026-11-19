@@ -19,7 +19,7 @@ golden 不内嵌预设快照/卡数据,需由适配层从语料卡与捕获环�
   chat(`chat[0].mes` 已被原版 `substituteParams` 过一次,作为输入事实直接采用;装配时再
   subst 是幂等路径)。私有卡捕获里 **Generate 时 chat 不含 user turn**(快照只有问候+占位),
   按捕获事实复现,不补发。
-- **card**:`@uberge/formats` 读 PNG → `cardData`;字段经 `baseChatReplace` 等价处理
+- **card**:`@utopinn/formats` 读 PNG → `cardData`;字段经 `baseChatReplace` 等价处理
   (`substituteParams(replaceCharacterCard:false)` + `\r` 剥离;`collapse_newlines=false`)。
   `jailbreakOverride` = `post_history_instructions`,`systemPromptOverride` 空
   (`prefer_character_prompt/jailbreak=true`,卡均无 `system_prompt`)。

@@ -1,7 +1,7 @@
 /**
  * stscript-env —— 服务端 StscriptEnv 共享构造(TASK-019/025 共用)。
  *
- * uberge-script(REST runner)与 uberge-th(TH 兼容 triggerSlash)填同一套
+ * utopinn-script(REST runner)与 utopinn-th(TH 兼容 triggerSlash)填同一套
  * StscriptHost seams,语义必须单点:
  *   appendMessage/sendSystemMessage → chatRepo 持久化 + macro.chat 内存同步
  *   persistMetadata → chat_metadata.variables 落库
@@ -16,7 +16,7 @@ import path from 'node:path';
 import {
     createStscriptEnv,
     executeSlashCommandsWithOptions,
-} from '@uberge/core';
+} from '@utopinn/core';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getChatRepo, getSettingsRepo } from '../storage/index.js';
 

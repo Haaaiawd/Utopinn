@@ -22,7 +22,7 @@ import {
     getEmbeddedBook,
     getBoundWorldName,
     cardData,
-} from '@uberge/formats';
+} from '@utopinn/formats';
 import {
     CAPTURED_OAI_SETTINGS,
     CAPTURED_PROMPTS,

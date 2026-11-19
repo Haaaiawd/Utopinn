@@ -243,7 +243,7 @@
     "id": 1,
     "ts": "2026-11-03T02:50:58.497Z",
     "level": "log",
-    "message": "Using data root: /tmp/uberge-e2e-scratch/chat-golden-default_Seraphina-38940"
+    "message": "Using data root: /tmp/utopinn-e2e-scratch/chat-golden-default_Seraphina-38940"
    },
    {
     "id": 2,
@@ -378,7 +378,7 @@
     "external": 338644947,
     "arrayBuffers": 284374512
    },
-   "cwd": "/mnt/d/PROJECTALL/Uberge/apps/server"
+   "cwd": "/mnt/d/PROJECTALL/Utopinn/apps/server"
   }
  }
 }

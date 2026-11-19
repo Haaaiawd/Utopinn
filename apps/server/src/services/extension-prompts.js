@@ -13,7 +13,7 @@
  * position 编号 = ST extension_prompt_types 原值(NONE=-1/IN_PROMPT=0/IN_CHAT=1/BEFORE_PROMPT=2,
  * ref/Luker/public/script.js:1456-1470),与 core assemble.ts EXT_* 常量同号,规整时透传不重排。
  */
-import { substituteParams, applyWorldInfoRegex as applyWorldInfoRegexCore } from '@uberge/core';
+import { substituteParams, applyWorldInfoRegex as applyWorldInfoRegexCore } from '@utopinn/core';
 
 /** ST 枚举(ref/Luker/public/script.js:1456-1470;core assemble.ts EXT_* 同号) */
 export const extension_prompt_types = { NONE: -1, IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 };
@@ -97,7 +97,7 @@ export function createDepthInjectionProvider(settingsDoc, subst = (x) => x) {
 
 // —— WI regex 钩子(getRegexedString(WORLD_INFO,{depth,isPrompt:true}) 等价物)——
 // 脚本源收集/放行判(全局/preset/scoped 三层)留服务端,执行引擎走
-// @uberge/core regex(engine.js:placement/minDepth/maxDepth/promptOnly 门控
+// @utopinn/core regex(engine.js:placement/minDepth/maxDepth/promptOnly 门控
 // + findRegex/replaceString/trimStrings/宏 与原版逐行一致)。
 
 /**

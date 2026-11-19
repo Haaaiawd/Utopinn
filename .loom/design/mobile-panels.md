@@ -17,7 +17,7 @@
 
 - 底导航:`对话` / `角色` / `面板` / `我的`
 - 面板页 = 当前聊天的 CardApp 聚合。每个 app 一个 `react-native-webview` 沙箱容器,注入最小 DOM 壳 + `ctx` 桥
-- **ctx 桥**:WebView 内 `ctx.*` 调用 → postMessage → RN 侧 → `@uberge/api-client` → 服务端(`/api/chats/state/*`、`/api/worldinfo/*`、事件订阅经 WS)。API 面与 Luker web 端 CardApp ctx 一一对应,同一份卡片代码两端可跑
+- **ctx 桥**:WebView 内 `ctx.*` 调用 → postMessage → RN 侧 → `@utopinn/api-client` → 服务端(`/api/chats/state/*`、`/api/worldinfo/*`、事件订阅经 WS)。API 面与 Luker web 端 CardApp ctx 一一对应,同一份卡片代码两端可跑
 - **老卡兼容**:非 CardApp 的正则状态栏(服务端正则管线产出的 HTML)同样注入 WebView 壳渲染;需要一层 shim 兜住常见 ST 全局(`getContext()`、`eventSource`、jQuery 片段),戳不动的降级为静态渲染
 - 事件:服务端 WS 推 `chat.state.changed`/`message.*` → RN → 注入 WebView `eventSource` 派发
 
@@ -29,7 +29,7 @@
 ## Interfaces and dependencies
 
 - react-native-webview(已在 apps/mobile 依赖)
-- @uberge/api-client、@uberge/protocol(ctx 方法签名、事件名)
+- @utopinn/api-client、@utopinn/protocol(ctx 方法签名、事件名)
 - 服务端 CardApp 资产路由 + state API(Luker 已有)
 
 ## Failure, safety, and recovery

@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
-import { writeCardToPng } from '@uberge/formats';
+import { writeCardToPng } from '@utopinn/formats';
 import { cardRuntimePublicRouter, cardRuntimeApiRouter } from '../src/card-runtime/index.js';
 import { __cardRuntimeTestUtils } from '../src/card-runtime/mounts.js';
 
@@ -84,7 +84,7 @@ test.before(async () => {
         },
     }));
 
-    // png-card: real PNG metadata read path via @uberge/formats writer.
+    // png-card: real PNG metadata read path via @utopinn/formats writer.
     fs.writeFileSync(
         path.join(DIRECTORIES.characters, 'png-card.png'),
         writeCardToPng(new Uint8Array(PNG_1PX), cardJson({

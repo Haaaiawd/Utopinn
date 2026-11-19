@@ -80,7 +80,7 @@ export default function MeScreen() {
                         <Text style={styles.statusText}>{CONN_LABEL[session.conn]}</Text>
                     </View>
                     <Card.Description style={styles.mt}>
-                        {`当前:${session.baseUrl}\n自检打 GET /api/uberge/_kernel;会话 cookie + CSRF 由客户端自动维护。`}
+                        {`当前:${session.baseUrl}\n自检打 GET /api/utopinn/_kernel;会话 cookie + CSRF 由客户端自动维护。`}
                     </Card.Description>
                 </Card.Body>
             </Card>
@@ -89,7 +89,7 @@ export default function MeScreen() {
             <Card>
                 <Card.Body>
                     <Card.Description>
-                        Uberge 薄客户端 —— 组装/生成/状态全在服务端,这里只做呈现与转发。
+                        Utopinn 薄客户端 —— 组装/生成/状态全在服务端,这里只做呈现与转发。
                     </Card.Description>
                 </Card.Body>
             </Card>

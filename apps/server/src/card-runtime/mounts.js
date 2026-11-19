@@ -65,7 +65,7 @@ export class CardRuntimeError extends Error {
 }
 
 /**
- * Loads a character card by id — mirrors uberge-generate.loadCharacterCard:
+ * Loads a character card by id — mirrors utopinn-generate.loadCharacterCard:
  * PNG metadata first, `<charId>.json` sidecar fallback.
  * @param {object} directories user directories
  * @param {string} charId avatar basename (no .png)

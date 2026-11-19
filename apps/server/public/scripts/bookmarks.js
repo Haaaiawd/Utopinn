@@ -110,11 +110,11 @@ async function getExistingChatNames() {
         return [];
     }
 
-    // TASK-033 reroute: legacy /api/characters/chats → uberge chats list
+    // TASK-033 reroute: legacy /api/characters/chats → utopinn chats list
     // ({items:[{name, fileName, ...}]} — only the names are needed here).
     const charDir = String(character.avatar || '').trim().replace(/\.(png|webp|json)$/i, '');
     const response = charDir
-        ? await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+        ? await fetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/chats`, {
             method: 'GET',
             headers: getRequestHeaders(),
             cache: 'no-cache',

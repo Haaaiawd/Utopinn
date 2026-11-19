@@ -1,7 +1,7 @@
 // 「✦N稿」半屏候选卡 —— design §2:swipe → 段尾角标 → 半屏候选卡
 // (60 字预览 + 时间戳,选定稿走 actions.swipe —— 渲染器只调宿主回调)。
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import type { MessageViewModel } from '@uberge/protocol';
+import type { MessageViewModel } from '@utopinn/protocol';
 import { previewLine } from './format';
 import { Sheet } from './Sheet';
 import type { ReaderTheme } from './theme';

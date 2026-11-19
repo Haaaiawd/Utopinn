@@ -19,7 +19,7 @@ import {
     substituteParams,
     world_info_insertion_strategy,
 } from '../dist/index.js';
-import { readCardFromPng, convertCharacterBook, getEmbeddedBook, getBoundWorldName, cardData } from '@uberge/formats';
+import { readCardFromPng, convertCharacterBook, getEmbeddedBook, getBoundWorldName, cardData } from '@utopinn/formats';
 import { createRequire } from 'node:module';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');

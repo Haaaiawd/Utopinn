@@ -1,6 +1,6 @@
 /**
  * promptBuilder seam —— 服务端 Provider。
- * 把 @uberge/core 的 buildPromptMessages 接到服务器真实依赖上:
+ * 把 @utopinn/core 的 buildPromptMessages 接到服务器真实依赖上:
  * - TokenCounter:复用 endpoints/tokenizers 的 tiktoken 模型族映射,
  *   逐消息口径 = ST fallback 公式(tokensPerMessage + Σencode + name±1),
  *   批量 padding(+3)由 core 的 ChatCompletion.reserveBudget(3) 承担。
@@ -21,7 +21,7 @@ import {
     buildPromptMessages,
     setTokenCounter,
     createOpenAITokenCounter,
-} from '@uberge/core';
+} from '@utopinn/core';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { performance } from 'node:perf_hooks';
 import { createTiktokenTokenizer } from '../tiktoken-adapter.js';
@@ -74,7 +74,7 @@ export function bindPromptTokenCounter(model) {
 /**
  * 创建 promptBuilder 实例(ctx.promptBuilder 的候选实现)。
  * @param {{ model?: string, depthInjection?: (depth:number, role:string)=>Promise<string>, warn?:(m:string)=>void }} opts
- * @returns {(req: import('@uberge/core').PromptBuildRequest, deps: import('@uberge/core').AssembleDeps) => Promise<import('@uberge/core').BuiltPrompt>}
+ * @returns {(req: import('@utopinn/core').PromptBuildRequest, deps: import('@utopinn/core').AssembleDeps) => Promise<import('@utopinn/core').BuiltPrompt>}
  */
 export function createPromptBuilder(opts = {}) {
     if (opts.model !== undefined) bindPromptTokenCounter(opts.model);

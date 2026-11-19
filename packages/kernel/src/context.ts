@@ -42,7 +42,7 @@ export class ServiceCatalog {
     }
 }
 
-/** 应用根上下文:cordis Context + Uberge 约定面 */
+/** 应用根上下文:cordis Context + Utopinn 约定面 */
 export interface AppContext extends Context {
     catalog: ServiceCatalog;
 }

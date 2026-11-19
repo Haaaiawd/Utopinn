@@ -19,7 +19,7 @@ import { IconButton } from '../ui/icon-button';
 import { Input } from '../ui/input';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
 
-const HISTORY_KEY = 'uberge.import.history';
+const HISTORY_KEY = 'utopinn.import.history';
 const HISTORY_MAX = 30;
 
 const KIND_ICON: Record<ImportKind, IconName> = {

@@ -1,9 +1,9 @@
 {
-    "name": "@uberge/cli",
+    "name": "@utopinn/cli",
     "version": "0.1.0",
     "private": true,
     "type": "module",
     "bin": {
-        "uberge": "./uberge-cli.mjs"
+        "utopinn": "./utopinn-cli.mjs"
     }
 }

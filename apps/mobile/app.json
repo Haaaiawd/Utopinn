@@ -1,21 +1,21 @@
 {
   "expo": {
-    "name": "Uberge",
-    "slug": "uberge",
+    "name": "Utopinn",
+    "slug": "utopinn",
     "version": "0.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "scheme": "uberge",
+    "scheme": "utopinn",
     "plugins": [
       "expo-router",
       "expo-secure-store"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "moe.uberge.app"
+      "bundleIdentifier": "moe.utopinn.app"
     },
     "android": {
-      "package": "moe.uberge.app",
+      "package": "moe.utopinn.app",
       "usesCleartextTraffic": true
     }
   }

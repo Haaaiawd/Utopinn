@@ -9,11 +9,11 @@
         "declaration": false,
         "declarationMap": false,
         "sourceMap": false,
-        // Resolve workspace types from source so `pnpm --filter @uberge/web
-        // typecheck` works before @uberge/protocol has been built.
+        // Resolve workspace types from source so `pnpm --filter @utopinn/web
+        // typecheck` works before @utopinn/protocol has been built.
         "paths": {
-            "@uberge/protocol": ["../../packages/protocol/src/index.ts"],
-            "@uberge/protocol/*": ["../../packages/protocol/src/*"],
+            "@utopinn/protocol": ["../../packages/protocol/src/index.ts"],
+            "@utopinn/protocol/*": ["../../packages/protocol/src/*"],
             "@/*": ["./src/*"]
         }
     },

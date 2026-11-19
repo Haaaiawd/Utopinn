@@ -1,4 +1,4 @@
-// App-local view types. Wire/resource types come from '@uberge/protocol'
+// App-local view types. Wire/resource types come from '@utopinn/protocol'
 // (import type only — protocol ships types + guards, the SPA must not
 // re-declare server contracts).
 
@@ -6,7 +6,7 @@
 export const VIEW_IDS = ['foyer', 'chat', 'stories', 'rules', 'import', 'extensions', 'settings'] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
 
-/** Sidebar chat entry. `charDir`/`chatName` are the /api/uberge/* call params. */
+/** Sidebar chat entry. `charDir`/`chatName` are the /api/utopinn/* call params. */
 export interface ChatSummary {
     id: string;
     title: string;
@@ -22,7 +22,7 @@ export interface ChatSummary {
 /** Server reachability — drives status bar + mock badge. */
 export type ServerStatus = 'checking' | 'online' | 'mock' | 'offline';
 
-/** POST /api/uberge/preview response (apps/server/src/endpoints/uberge-generate.js). */
+/** POST /api/utopinn/preview response (apps/server/src/endpoints/utopinn-generate.js). */
 export interface PreviewMessage {
     role: string;
     content: unknown;

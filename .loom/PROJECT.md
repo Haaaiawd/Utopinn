@@ -2,9 +2,9 @@
 
 ## Intended result
 
-**V1(2026-11-10 收缩拍板)= 旧 Luker/酒馆 UI 皮 + 服务端大脑真接线。** 循序渐进:apps/server/public 旧 UI 是正式前端(不再是过渡件),所有生成入口一次性改道 `/api/uberge/generate`(服务端组装+派发+落盘),浏览器端原版组装引擎(openai.js/world-info.js ~14k 行)留码停用、只作行为对照。性能目标=分离本身:WI扫描/tokenize/正则管线全在服务端,浏览器只渲染+交互。
+**V1(2026-11-10 收缩拍板)= 旧 Luker/酒馆 UI 皮 + 服务端大脑真接线。** 循序渐进:apps/server/public 旧 UI 是正式前端(不再是过渡件),所有生成入口一次性改道 `/api/utopinn/generate`(服务端组装+派发+落盘),浏览器端原版组装引擎(openai.js/world-info.js ~14k 行)留码停用、只作行为对照。性能目标=分离本身:WI扫描/tokenize/正则管线全在服务端,浏览器只渲染+交互。
 
-**搁置(非删除)**:apps/web 新 SPA、apps/mobile RN 端、CardApp WebView 面板、RP 形态/阅读器形态工作全部 parked——代码保留、设计文档转 reference,方向回暖可直接续。uberge 服务端插件面(/api/uberge/*)即产品服务端,不是为新 UI 预备的旁路。
+**搁置(非删除)**:apps/web 新 SPA、apps/mobile RN 端、CardApp WebView 面板、RP 形态/阅读器形态工作全部 parked——代码保留、设计文档转 reference,方向回暖可直接续。utopinn 服务端插件面(/api/utopinn/*)即产品服务端,不是为新 UI 预备的旁路。
 
 长期愿景(回温时恢复):DSH 式全插件产品——内核=真 cordis,酒馆语义皆插件;SPA 管理端 + RN 手机端 + CardApp 沙箱面板。MVU 服务端 settle、TH T0/T1、旧 ST 服务端插件 adapter 的既有成果全部保留为 V1 资产。
 

@@ -1,4 +1,4 @@
-// Diagnostics face for /api/uberge/preview — the request-inspector spirit
+// Diagnostics face for /api/utopinn/preview — the request-inspector spirit
 // (web-ia.md §11 diagnostics domain). Shows sources + assembly trace; the
 // assembled messages themselves render in the main area via the renderer seam.
 import { useI18n } from '../../i18n';

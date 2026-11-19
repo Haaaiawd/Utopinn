@@ -4,7 +4,7 @@
 // The minted mountId is the capability that authorizes the session-free
 // public surface (/card-runtime/m/<id>/…) the WebView loads; the admin
 // endpoints themselves ride the normal session+CSRF api-client.
-import { ApiError } from '@uberge/api-client';
+import { ApiError } from '@utopinn/api-client';
 import { client } from '../api/client';
 
 /** Mount bundle from POST /api/card-runtime/mounts (mounts.js publicMount). */

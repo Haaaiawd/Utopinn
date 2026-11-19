@@ -548,7 +548,7 @@ export function installLifecycleHooks(delivery) {
 }
 
 export const PROXY_PATTERNS = [
-    '/api/uberge/generate',
+    '/api/utopinn/generate',
     '/api/backends/chat-completions/generate',
     '/api/backends/text-completions/generate',
     '/api/backends/kobold/generate',

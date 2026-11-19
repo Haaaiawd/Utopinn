@@ -1,7 +1,7 @@
 // Mock data for offline development — every consumer labels it 'mock'.
 // Shapes mirror the real contracts: ChatSummary (sidebar), MessageViewModel
 // (conversation, protocol type), PreviewResponse (assembled prompt).
-import type { MessageViewModel } from '@uberge/protocol';
+import type { MessageViewModel } from '@utopinn/protocol';
 import type { CardItem } from './characters';
 import type { ChatSummary, PreviewRequestBody, PreviewResponse } from '../types';
 
@@ -13,7 +13,7 @@ export const MOCK_CHATS: ChatSummary[] = [
     { id: 'c2', title: '旧港灯塔', charDir: 'demo-card', chatName: 'lighthouse', group: 'ungrouped', updatedAt: 'yesterday' },
 ];
 
-/** /api/uberge/characters 的 mock 形状(library 卡格用);线型属 api/characters。 */
+/** /api/utopinn/characters 的 mock 形状(library 卡格用);线型属 api/characters。 */
 export type { CardItem };
 
 export const MOCK_CARDS: CardItem[] = [
@@ -22,7 +22,7 @@ export const MOCK_CARDS: CardItem[] = [
     { charDir: 'corrupted-stub', name: 'corrupted-stub', avatar: null, fileName: 'corrupted-stub.json', fileSize: 12_000, tags: [], readable: false },
 ];
 
-/** /api/uberge/personas 的 mock 形状(设置页人设块用)。 */
+/** /api/utopinn/personas 的 mock 形状(设置页人设块用)。 */
 export const MOCK_PERSONAS: import('./personas').PersonaItem[] = [
     { avatar: 'user-default.png', name: '旅人', description: '路过的旅人,斗篷上全是盐粒。', position: 0, title: '', hasImage: false, isDefault: true },
 ];
@@ -68,7 +68,7 @@ export const MOCK_MESSAGES: MessageViewModel[] = [
     },
 ];
 
-/** Dry-run assembly result shaped exactly like /api/uberge/preview. */
+/** Dry-run assembly result shaped exactly like /api/utopinn/preview. */
 export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
     return {
         messages: [

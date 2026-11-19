@@ -130,11 +130,11 @@ async function fetchChatListForContext({ isGroup, avatarUrl, groupId }) {
         }
         return results;
     }
-    // TASK-033 reroute: legacy /api/characters/chats → uberge chats list
+    // TASK-033 reroute: legacy /api/characters/chats → utopinn chats list
     // ({items:[{name, fileName, messageCount, ...}]}).
     const charDir = String(avatarUrl || '').trim().replace(/\.(png|webp|json)$/i, '');
     if (!charDir) return [];
-    const res = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+    const res = await fetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/chats`, {
         method: 'GET',
         headers,
         cache: 'no-cache',

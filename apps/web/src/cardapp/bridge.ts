@@ -1,4 +1,4 @@
-// bridge — 'uberge-panel' postMessage plumbing for the web host (TASK-022).
+// bridge — 'utopinn-panel' postMessage plumbing for the web host (TASK-022).
 // CardAppFrame owns React/mount state; this module owns the wire:
 // inbound validation (frame source → nonce → request shape → method grant),
 // response encoding, and the in-flight request ledger. Contract shapes live
@@ -10,7 +10,7 @@ import {
     type PanelPush,
     type PanelRequest,
     type PanelResponse,
-} from '@uberge/protocol';
+} from '@utopinn/protocol';
 
 /** manifest.permissions.api expanded into a concrete grant set + face flags. */
 export interface ApiGrants {
@@ -80,7 +80,7 @@ export class PanelBridge {
     readonly onMessage = (ev: MessageEvent): void => {
         if (this.dead || ev.source !== this.opts.getWindow()) return;
         const data = ev.data as Partial<PanelRequest> | null;
-        if (!data || data.channel !== 'uberge-panel' || data.direction !== 'request') return;
+        if (!data || data.channel !== 'utopinn-panel' || data.direction !== 'request') return;
         if (typeof data.requestId !== 'string') return; // can't correlate — drop
         // Nonce gate first: absent ('' or undefined) never equals a real
         // bridge nonce, so legacy/forged traffic dies here as unauthorized.
@@ -104,7 +104,7 @@ export class PanelBridge {
     private respond(requestId: string, body: { ok: true; result: unknown } | { ok: false; error: { code: string; message: string } }): void {
         if (this.dead) return;
         const msg: PanelResponse = {
-            channel: 'uberge-panel', direction: 'response',
+            channel: 'utopinn-panel', direction: 'response',
             nonce: this.opts.nonce, requestId, ...body,
         };
         // Opaque-origin iframe: target must be '*'; inbound source+nonce
@@ -125,7 +125,7 @@ export class PanelBridge {
     push(event: PanelPush['event'], payload?: Record<string, unknown>): void {
         if (this.dead) return;
         const msg: PanelPush = {
-            channel: 'uberge-panel', direction: 'push',
+            channel: 'utopinn-panel', direction: 'push',
             nonce: this.opts.nonce, event, payload,
         };
         this.opts.getWindow()?.postMessage(msg, '*');

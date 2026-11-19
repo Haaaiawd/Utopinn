@@ -1,7 +1,7 @@
 {
   "schema_version": 2,
   "project": {
-    "name": "Uberge",
+    "name": "Utopinn",
     "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
     "updated_at": "2026-11-19T05:41:24.497Z"
@@ -46,7 +46,7 @@
       },
       {
         "id": "F-007",
-        "text": "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @uberge/core output on real cards).",
+        "text": "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @utopinn/core output on real cards).",
         "source": "conversation",
         "at": "2026-11-02T08:48:37.671Z"
       },
@@ -136,7 +136,7 @@
       },
       {
         "id": "F-022",
-        "text": "旧 UI 接服务端大脑的切法? → 一次性全切——所有生成入口统一走 /api/uberge/generate(服务端组装+派发+落盘),不留双路径并存期。行为差异一次性暴露、一次性对齐。",
+        "text": "旧 UI 接服务端大脑的切法? → 一次性全切——所有生成入口统一走 /api/utopinn/generate(服务端组装+派发+落盘),不留双路径并存期。行为差异一次性暴露、一次性对齐。",
         "source": "clarification",
         "at": "2026-11-10T02:22:28.008Z"
       },
@@ -148,7 +148,7 @@
       },
       {
         "id": "F-024",
-        "text": "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、uberge 插件面)处置? → API 留、前端藏——uberge 服务端插件面继续用(它就是服务端大脑);apps/mobile 与 apps/web 标记 parked;移动端/新UI 设计文档转 reference,不作为当前工作依据。",
+        "text": "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、utopinn 插件面)处置? → API 留、前端藏——utopinn 服务端插件面继续用(它就是服务端大脑);apps/mobile 与 apps/web 标记 parked;移动端/新UI 设计文档转 reference,不作为当前工作依据。",
         "source": "clarification",
         "at": "2026-11-10T02:22:28.008Z"
       },
@@ -160,13 +160,13 @@
       },
       {
         "id": "F-026",
-        "text": "V1 = 旧 Luker/酒馆 UI(apps/server/public)+ 服务端大脑(/api/uberge/*)真接线;新 SPA 与移动端全部搁置。",
+        "text": "V1 = 旧 Luker/酒馆 UI(apps/server/public)+ 服务端大脑(/api/utopinn/*)真接线;新 SPA 与移动端全部搁置。",
         "source": "clarification",
         "at": "2026-11-10T02:22:28.008Z"
       },
       {
         "id": "F-027",
-        "text": "packages/core 引擎 + uberge 插件面是产品当前唯一大脑,不再是为新UI预备的旁路。",
+        "text": "packages/core 引擎 + utopinn 插件面是产品当前唯一大脑,不再是为新UI预备的旁路。",
         "source": "clarification",
         "at": "2026-11-10T02:22:28.008Z"
       },
@@ -521,7 +521,7 @@
         "answered": [
           "旧 UI 接服务端大脑的切法?",
           "浏览器内原版组装引擎(openai.js/world-info.js ~14k 行)怎么处理?",
-          "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、uberge 插件面)处置?",
+          "已建资产(apps/mobile 骨架、apps/web 占位、设计文档、utopinn 插件面)处置?",
           "「改善性能」的具体所指?"
         ],
         "confirmed": 4,
