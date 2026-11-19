@@ -709,7 +709,10 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             filePath: chatFilePath,
             messages: [message],
             chatMetadata: persistTarget.chat_metadata || {},
-            integritySlug: persistTarget.integrity || '',
+            // 兜底 persist 不做 CAS:persistTarget.integrity 是请求时快照,
+            // 生成期间服务端自身写入(WI timed effects 等)必然推进 integrity,
+            // 拿它校验 = 结构性必挂。双写由 gen-id sidecar/幂等 dedup 兜底。
+            integritySlug: '',
             force: Boolean(persistTarget.force),
             // Route through ChatRepo so writes land in the active engine,
             // not just the FS scratch directory. (filePath is still passed
@@ -758,7 +761,8 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             filePath: chatFilePath,
             messages: [message],
             chatMetadata: persistTarget.chat_metadata || {},
-            integritySlug: persistTarget.integrity || '',
+            // 同 group 分支:兜底 persist 不做 CAS(见上注)。
+            integritySlug: '',
             force: Boolean(persistTarget.force),
             handle: job?.handle,
             charDir: avatar,
