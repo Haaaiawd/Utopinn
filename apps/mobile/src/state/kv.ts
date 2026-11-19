@@ -13,7 +13,7 @@ function backend() {
         // Lazy require so a missing native module never breaks module init.
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { createMMKV } = require('react-native-mmkv') as typeof import('react-native-mmkv');
-        const store = createMMKV({ id: 'uberge.reader' });
+        const store = createMMKV({ id: 'utopinn.reader' });
         impl = {
             getString: (k) => store.getString(k),
             set: (k, v) => store.set(k, v),

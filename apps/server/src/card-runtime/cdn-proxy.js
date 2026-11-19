@@ -38,7 +38,7 @@ const INDEX_TTL_MS = 12 * 60 * 60 * 1000;  // jsdelivr @branch rolling window
 const MAX_BYTES = 32 * 1024 * 1024;        // ecosystem libs reach ~30MB
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_REDIRECTS = 5;
-const USER_AGENT = 'UbergeCardRuntime/1.0 (+card-app cdn-proxy)';
+const USER_AGENT = 'UtopinnCardRuntime/1.0 (+card-app cdn-proxy)';
 
 /** Upstream media types the sandbox may receive; others → octet-stream. */
 const CONTENT_TYPE_MAP = new Map(Object.entries({

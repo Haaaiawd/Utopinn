@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { isMvuData, MVU_STATUS_PLACEHOLDER } from '@uberge/core';
+import { isMvuData, MVU_STATUS_PLACEHOLDER } from '@utopinn/core';
 import {
     getChatRepo,
     getSettingsRepo,
@@ -67,7 +67,7 @@ async function seedWorlds() {
 }
 
 test('resolveMvuInitLorebooks — selected_global + 主书 + 辅书,不含 chat-bound/persona', async (t) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-books-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-books-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
@@ -111,7 +111,7 @@ test('resolveMvuInitLorebooks — selected_global + 主书 + 辅书,不含 chat-
 });
 
 test('initializeMvuChat — floor-0 写 variables[i]+镜像+kind:init 日志;已初始化早退', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-init-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-init-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
@@ -165,7 +165,7 @@ test('initializeMvuChat — floor-0 写 variables[i]+镜像+kind:init 日志;已
 });
 
 test('initializeMvuChat — directories 自解书目(无预解 lorebooks 时走 resolve)', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-initres-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-initres-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
@@ -204,7 +204,7 @@ test('initializeMvuChat — directories 自解书目(无预解 lorebooks 时走 
 });
 
 test('settlePersistedMvuMessage autoInit — no_baseline 先 init 再 settle', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-autoinit-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-autoinit-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
@@ -253,7 +253,7 @@ test('settlePersistedMvuMessage autoInit — no_baseline 先 init 再 settle', a
 });
 
 test('settlePersistedMvuMessage autoInit + messageIndex 0 — greeting 命令不二次 fold', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-floor0-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-floor0-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
@@ -277,7 +277,7 @@ test('settlePersistedMvuMessage autoInit + messageIndex 0 — greeting 命令不
 });
 
 test('resettleChatMvu — 非 MVU 聊天无变化跳过整写;MVU 聊天改文后重放', async () => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-mvu-resettle-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-resettle-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });

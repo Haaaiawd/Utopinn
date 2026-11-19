@@ -1,11 +1,11 @@
-// POST /api/uberge/preview — dry-run prompt assembly (uberge-generate.js:123).
+// POST /api/utopinn/preview — dry-run prompt assembly (utopinn-generate.js:123).
 // Returns {messages, trace, sources}; feeds the prompt-viewer/diagnostics face.
 import { ApiError, apiPost } from './client';
 import { mockPreviewResponse } from './mock';
 import type { PreviewRequestBody, PreviewResponse, PreviewResult } from '../types';
 
 export async function postPreview(body: PreviewRequestBody): Promise<PreviewResponse> {
-    return apiPost<PreviewResponse>('/api/uberge/preview', body);
+    return apiPost<PreviewResponse>('/api/utopinn/preview', body);
 }
 
 /**

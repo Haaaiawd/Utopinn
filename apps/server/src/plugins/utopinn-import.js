@@ -1,7 +1,7 @@
 /**
- * /api/uberge/import —— 导入管线(TASK-016 刀 1)。
+ * /api/utopinn/import —— 导入管线(TASK-016 刀 1)。
  *
- * 与 uberge-library.js 并列挂在 /api/uberge 下:
+ * 与 utopinn-library.js 并列挂在 /api/utopinn 下:
  *   POST /import/preview  {name, dataBase64} 或 multipart(field "avatar",
  *                          沿用 server-main 的全局 multer)→ 格式探测 +
  *                          结构摘要 + 警告 + 同名冲突,不落库。
@@ -23,7 +23,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { isPng, readCardFromPng, toV2, writeCardToPng } from '@uberge/formats';
+import { isPng, readCardFromPng, toV2, writeCardToPng } from '@utopinn/formats';
 import { getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { InvalidArgumentError, NotFoundError, StorageReadOnlyError } from '../storage/errors.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
@@ -215,7 +215,7 @@ function invalidateAvatarThumbnail(directories, stem) {
             fs.unlinkSync(thumbnailPath);
         }
     } catch (error) {
-        console.warn(`uberge/import: failed to invalidate avatar thumbnail for ${stem}:`, error);
+        console.warn(`utopinn/import: failed to invalidate avatar thumbnail for ${stem}:`, error);
     }
 }
 
@@ -279,7 +279,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
         try {
             persistCharXAssets(prepared.auxAssets, prepared.extractedBuffers, directories, displayName);
         } catch (error) {
-            console.warn(`uberge/import: failed to persist CharX assets for ${displayName}:`, error);
+            console.warn(`utopinn/import: failed to persist CharX assets for ${displayName}:`, error);
         }
     }
 
@@ -296,7 +296,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
             return { ok: true };
         } catch (error) {
             // 底图畸形 / 默认头像缺失等 → 退回 writeCharacterData 的兜底链
-            console.warn('uberge/import: direct PNG write failed, falling back to writeCharacterData:', error);
+            console.warn('utopinn/import: direct PNG write failed, falling back to writeCharacterData:', error);
         }
     }
 
@@ -319,7 +319,7 @@ export function apply(ctx) {
  * POST /import/preview —— 探测 + 摘要 + 警告 + 冲突,不落库。
  * 响应:{kind,name,targetName,summary,warnings,conflicts:{existingSameName}}
  */
-reg('/api/uberge/import/preview', async function (request, response) {
+reg('/api/utopinn/import/preview', async function (request, response) {
     try {
         const { buffer, fileName } = await readImportPayload(request);
         const detected = detectImportPayload({ fileName, buffer });
@@ -347,7 +347,7 @@ reg('/api/uberge/import/preview', async function (request, response) {
             conflicts: { existingSameName },
         });
     } catch (error) {
-        return sendError(response, error, 'uberge/import preview');
+        return sendError(response, error, 'utopinn/import preview');
     }
 });
 
@@ -383,7 +383,7 @@ const CONFLICT_POLICIES = new Set(['rename', 'overwrite', 'skip']);
  * {kind?, name?|targetName?, dataBase64 | multipart, conflict?, apiId?}
  * 响应:{ok,kind,name,targetName,renamed,skipped?,avatarKey?,warnings}
  */
-reg('/api/uberge/import/commit', async function (request, response) {
+reg('/api/utopinn/import/commit', async function (request, response) {
     try {
         const body = request.body ?? {};
         if (body.kind != null && !IMPORT_KINDS.includes(body.kind)) {
@@ -442,7 +442,7 @@ reg('/api/uberge/import/commit', async function (request, response) {
             warnings: result.warnings ?? [],
         });
     } catch (error) {
-        return sendError(response, error, 'uberge/import commit');
+        return sendError(response, error, 'utopinn/import commit');
     }
 });
 

@@ -5,7 +5,7 @@
 
 ## Responsibility in the whole
 
-把"兼容绝大多数卡"从口号变成可测的机制:收集真实卡语料,用原版引擎产出 golden 组装结果,与 `@uberge/core` 产出逐字段 diff,作为 core 移植的验收门禁。
+把"兼容绝大多数卡"从口号变成可测的机制:收集真实卡语料,用原版引擎产出 golden 组装结果,与 `@utopinn/core` 产出逐字段 diff,作为 core 移植的验收门禁。
 
 ## Inputs, outputs, and boundaries
 
@@ -19,7 +19,7 @@
 Golden 采集:apps/server(含旧 jQuery UI)起服务 + request-inspector 开启
   → Playwright 驱动旧 UI:导入卡→开聊天→发送固定消息
   → inspector 捕获 wireRequest → 落 tests/corpus/golden/<card>.json
-Diff 执行:@uberge/core.assemble(同 fixture 输入)→ 规范化 → deep diff → 报告
+Diff 执行:@utopinn/core.assemble(同 fixture 输入)→ 规范化 → deep diff → 报告
 ```
 
 - 关键工具已存在:`src/request-inspector.js` 捕获完整 wireRequest(含 fullMessages);`tests/` 已有 Playwright e2e 设施(eslint-plugin-playwright + e2e 目录)
@@ -32,8 +32,8 @@ Diff 执行:@uberge/core.assemble(同 fixture 输入)→ 规范化 → deep diff
 
 ## Interfaces and dependencies
 
-- apps/server(request-inspector)、Playwright、@uberge/core
-- 卡格式解析走 @uberge/formats(顺带验证格式层)
+- apps/server(request-inspector)、Playwright、@utopinn/core
+- 卡格式解析走 @utopinn/formats(顺带验证格式层)
 
 ## Failure, safety, and recovery
 

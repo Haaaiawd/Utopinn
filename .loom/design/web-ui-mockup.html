@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Uberge · Desktop UI Mockup v3</title>
+<title>Utopinn · Desktop UI Mockup v3</title>
 <style>
 /* ================= tokens: 明暗双色 ================= */
 :root{
@@ -286,7 +286,7 @@ body.reviewing{cursor:crosshair}
   <button class="tb-ic" title="返回">‹</button><button class="tb-ic" title="前进">›</button>
   <button class="tb-ic" id="sbToggle" title="侧栏"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M9.5 4.5v15"/></svg></button>
   <div class="tb-menu"><button>文件</button><button>编辑</button><button>视图</button><button>帮助</button></div>
-  <div class="grow"></div><span class="app-name">雨夜来信 — Uberge</span><div class="grow"></div>
+  <div class="grow"></div><span class="app-name">雨夜来信 — Utopinn</span><div class="grow"></div>
   <div class="win-ctl"><button title="最小化">─</button><button title="最大化">▢</button><button class="close" title="关闭">✕</button></div>
 </header>
 
@@ -642,7 +642,7 @@ body.reviewing{cursor:crosshair}
         <div class="sw"><div><div class="sw-t">S3 同步</div><div class="sw-d">对象存储远程备份</div></div><div class="tog"></div></div>
         <div class="sw"><div><div class="sw-t">自动备份</div><div class="sw-d">每日快照,保留 14 天</div></div><div class="tog on"></div></div>
         <div class="sect-title">存储</div>
-        <div class="mut2" style="font-size:11.5px;line-height:1.9">数据目录 ~/.uberge/data · 聊天 342 · 卡 12 · 缓存 86MB<br><button class="btn ghost" style="font-size:10.5px">打开存储检查器 →</button></div>
+        <div class="mut2" style="font-size:11.5px;line-height:1.9">数据目录 ~/.utopinn/data · 聊天 342 · 卡 12 · 缓存 86MB<br><button class="btn ghost" style="font-size:10.5px">打开存储检查器 →</button></div>
       </div>
       <div class="set-page" data-setpage="acct">
         <h2>账号</h2><p class="desc">登录 / 多用户 / 设备配对。<span class="st-src">ST: Admin+账号</span></p>
@@ -706,7 +706,7 @@ body.reviewing{cursor:crosshair}
 <footer id="statusbar">
   <span class="ok">● 已连接</span><span>deepseek-chat</span><span>灯塔样例</span><span>2,341 tok</span>
   <span style="flex:1"></span>
-  <button class="sbtn">后台结算 ✓</button><button class="sbtn">degraded ×1</button><span>Uberge 0.1.0</span>
+  <button class="sbtn">后台结算 ✓</button><button class="sbtn">degraded ×1</button><span>Utopinn 0.1.0</span>
 </footer>
 
 <!-- palette -->
@@ -785,7 +785,7 @@ function go(id){pages.forEach(p=>p.classList.toggle('on',p.id===id));
   const pg=document.getElementById(id),sbKey=pg?.dataset.sb;
   if(sbKey){const t=document.getElementById(sbKey);sbBody.innerHTML=t?t.innerHTML:'';sbTitle.textContent=SB_NAMES[id]||'';sidebar.classList.remove('hide');}
   else sidebar.classList.add('hide');
-  location.hash='#'+id;document.title='Uberge · '+id;}
+  location.hash='#'+id;document.title='Utopinn · '+id;}
 railBtns.forEach(b=>b.onclick=()=>go(b.dataset.page));
 document.getElementById('sbToggle').onclick=()=>sidebar.classList.toggle('hide');
 addEventListener('hashchange',()=>{const id=location.hash.slice(1);

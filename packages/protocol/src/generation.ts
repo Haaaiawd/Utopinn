@@ -8,10 +8,10 @@
  * 本文件如实描述现行协议,不发明尚未实现的事件。
  *
  * 覆盖:
- *   POST /api/uberge/generate   生产生成(chat completions dispatch)
- *   POST /api/uberge/preview    干跑组装(dryRun,不落盘不写 effects)
- *   GET  /api/uberge/jobs       本 handle 全部 job 摘要(新→旧)
- *   GET  /api/uberge/jobs/:id   单 job 详情(text/trace/sources)
+ *   POST /api/utopinn/generate   生产生成(chat completions dispatch)
+ *   POST /api/utopinn/preview    干跑组装(dryRun,不落盘不写 effects)
+ *   GET  /api/utopinn/jobs       本 handle 全部 job 摘要(新→旧)
+ *   GET  /api/utopinn/jobs/:id   单 job 详情(text/trace/sources)
  *   POST /api/generation/:request_id/abort
  *   POST /api/ws-ticket         一次性 WS 票据
  *   WS   /api/ws-delivery       job 事件流(subscribe/resume/unsubscribe)
@@ -53,14 +53,14 @@ export interface EphemeralDocument {
 
 /** 生成落点:dispatch 完成后把 assistant 楼层写回哪个会话。 */
 export interface PersistTarget {
-    /** 'char' = 单卡会话;group 暂不在 uberge 面。 */
+    /** 'char' = 单卡会话;group 暂不在 utopinn 面。 */
     kind?: 'char';
     avatar_url?: string;
     file_name?: string;
     char_name?: string;
 }
 
-/** POST /api/uberge/generate 请求体(核心字段;dispatch 参数按源透传)。 */
+/** POST /api/utopinn/generate 请求体(核心字段;dispatch 参数按源透传)。 */
 export interface GenerateRequest {
     charDir: string;
     chatName: string;
@@ -105,7 +105,7 @@ export const JOB_STATUSES = [
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
-/** GET /api/uberge/jobs → { items: GenerationJobSummary[] }(新→旧)。 */
+/** GET /api/utopinn/jobs → { items: GenerationJobSummary[] }(新→旧)。 */
 export interface GenerationJobSummary {
     id: string;
     status: JobStatus | (string & {});
@@ -119,7 +119,7 @@ export interface GenerationJobSummary {
     updated_at: number;
 }
 
-/** GET /api/uberge/jobs/:id → GenerationJobDetail(events 不回传,走 WS resume)。 */
+/** GET /api/utopinn/jobs/:id → GenerationJobDetail(events 不回传,走 WS resume)。 */
 export interface GenerationJobDetail {
     id: string;
     status: JobStatus | (string & {});
@@ -244,7 +244,7 @@ export interface SseEventEntry {
 
 // ---------- Preview ----------
 
-/** POST /api/uberge/preview → 干跑产物;dryRun 不写 timed effects/楼层。 */
+/** POST /api/utopinn/preview → 干跑产物;dryRun 不写 timed effects/楼层。 */
 export interface PreviewResponse {
     messages: { role: 'system' | 'user' | 'assistant'; content: string; name?: string }[];
     trace: unknown;

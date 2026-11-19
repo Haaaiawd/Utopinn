@@ -20,12 +20,12 @@
  *
  * 对外只出两样:
  *   webServer.middleware()   → server-startup.js 挂进 Express
- *                              (/api/uberge 面已 100% 插件化;未命中
+ *                              (/api/utopinn 面已 100% 插件化;未命中
  *                               next() 继续向后走)
  *   webServer.upgradeListener() → server-main.js 挂 httpServer 'upgrade'
  *                              (/api/ws-delivery 经 registerUpgrade 贡献)
  */
-import { createAppContext, WebServer, loadProfileFile, importPluginModule, loadYaml, dumpYaml } from '@uberge/kernel';
+import { createAppContext, WebServer, loadProfileFile, importPluginModule, loadYaml, dumpYaml } from '@utopinn/kernel';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';

@@ -49,7 +49,7 @@
 
 - entry_when: 编辑器实现
 - options:
-  - A: React Hook Form + Zod(schema 与 @uberge/protocol 共享)→ leads_to: C5
+  - A: React Hook Form + Zod(schema 与 @utopinn/protocol 共享)→ leads_to: C5
   - B: Formik/自写 → leads_to: C5
 - decide_by: schema 复用与类型安全——protocol 包已是 Zod 风格契约,A 顺接
 - source: research/framework-and-ui-landscape.md

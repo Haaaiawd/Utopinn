@@ -1,5 +1,5 @@
 {
-    "name": "@uberge/web",
+    "name": "@utopinn/web",
     "version": "0.0.0",
     "private": true,
     "type": "module",
@@ -18,7 +18,7 @@
         "@radix-ui/react-tabs": "1.2.1",
         "@radix-ui/react-toggle-group": "1.1.11",
         "@radix-ui/react-tooltip": "1.4.1",
-        "@uberge/protocol": "workspace:*",
+        "@utopinn/protocol": "workspace:*",
         "class-variance-authority": "0.7.1",
         "clsx": "2.1.1",
         "react": "19.3.0",

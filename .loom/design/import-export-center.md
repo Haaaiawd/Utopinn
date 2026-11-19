@@ -9,13 +9,13 @@
 ## 切三刀(粒度收敛,别一次全做)
 
 **刀 1 — 导入管线(服务端)**
-`POST /api/uberge/import` multipart → 格式探测
-(@uberge/formats:PNG tEXt/charx zip/byaf/json)→ 预览
+`POST /api/utopinn/import` multipart → 格式探测
+(@utopinn/formats:PNG tEXt/charx zip/byaf/json)→ 预览
 `{kind:'char|world|preset|persona|theme', summary, warnings}` → 确认落库
 (对应 repo + 文件面)。批量=逐条管线循环,不做事务(逐条独立成败)。
 
 **刀 2 — 导出管线**
-`GET /api/uberge/export/:kind/:name` → 原始格式回出(卡→png 保留
+`GET /api/utopinn/export/:kind/:name` → 原始格式回出(卡→png 保留
 tEXt;世界书→json;预设→json)。聊天导出为 jsonl+可选 txt 渲染。
 
 **刀 3 — web 拖放中心**

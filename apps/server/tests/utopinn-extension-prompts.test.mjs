@@ -4,7 +4,7 @@
  *   - scan 标记注入进 checkWorldInfo 扫描缓冲
  *   - IN_CHAT 深度注入聚合进 messages(深度/role 过滤)
  *   - WI 内容正则钩子(placement 含 WORLD_INFO + promptOnly)
- * 跑法:node --test tests/uberge-extension-prompts.test.mjs
+ * 跑法:node --test tests/utopinn-extension-prompts.test.mjs
  *
  * 注意:position 用 ST 编号(extension_prompt_types:
  * NONE=-1 / IN_PROMPT=0 / IN_CHAT=1 / BEFORE_PROMPT=2),normalize 透传同号。
@@ -73,7 +73,7 @@ function allText(builtPrompt) {
 const ST = { IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 };
 
 test('extension prompts — scan/depth/regex 三面', async (t) => {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-extprompts-'));
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-extprompts-'));
     try {
         const dirs = {
             root: tmpDir,

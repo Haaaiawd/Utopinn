@@ -29,7 +29,7 @@ rootProject.name = "Infinity"
 
 **保留**(阅读器质感所在):presentation 全部屏、domain 模型、data 层形状、i18n、三端壳
 **切除**:source-runtime-js(JS 爬虫引擎——书源生态本身就是 legado 被告的那块,我们没有也不要)、supabase/、huggingface/、benchmark/、test_local_novel/、plans/
-**替换**:`source-api` 的 Source 接口实现 → 「uberge 源」:以我们服务端 api-client 为唯一数据后端(书架=会话列表、书页=角色/会话详情、章节=楼层语义切片)
+**替换**:`source-api` 的 Source 接口实现 → 「utopinn 源」:以我们服务端 api-client 为唯一数据后端(书架=会话列表、书页=角色/会话详情、章节=楼层语义切片)
 **新建**(任何阅读器都没有的 RP 件):
 - swipe 候选(段尾「✦N稿」→半屏候选卡)
 - 书写层(「你的回合」呼出式 composer)
@@ -39,7 +39,7 @@ rootProject.name = "Infinity"
 ## 与现有资产的关系
 
 - `apps/mobile`(Expo):冻结为参照。面板桥 nonce 协议、会话流数据形状、阅读器形态调研继续有效;HeroUI/uniwind 栈不迁移。
-- 服务端协议零改动:uberge 源就是一个客户端,KMP 侧吃同一套 REST/WS。
+- 服务端协议零改动:utopinn 源就是一个客户端,KMP 侧吃同一套 REST/WS。
 - TASK-008/009/027 已落代码转参照态;验收语义按新地基重排(同一批 done_when 在新栈上重新达成)。
 
 ## 渲染器承接(用户 2026-11-04 拍板补充)
@@ -53,7 +53,7 @@ rootProject.name = "Infinity"
 
 ## 开放问题(侦察待续)
 
-- source-api 的 Source 契约具体形状(接口面多大,uberge 源工作量)
+- source-api 的 Source 契约具体形状(接口面多大,utopinn 源工作量)
 - presentation 层对 source 层的耦合点(书架/详情/阅读器分别从哪个接口取数)
 - Compose Multiplatform iOS 实际成熟度(iosApp 是脚手架还是可用)
 - 阅读器屏的分页引擎形态(滚动流 vs 分页——RP 楼层流适配哪种)

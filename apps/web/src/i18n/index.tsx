@@ -9,7 +9,7 @@ import type { Dict, Locale } from './types';
 
 export type { Locale } from './types';
 
-const STORAGE_KEY = 'uberge.locale';
+const STORAGE_KEY = 'utopinn.locale';
 
 function readStoredLocale(): Locale {
     try {

@@ -1,10 +1,10 @@
 /**
- * /api/uberge/generate 端到端(node:test,非 Playwright):
+ * /api/utopinn/generate 端到端(node:test,非 Playwright):
  * 真 Luker server + mock LLM + 真 HTTP——
- *   POST /api/uberge/generate → 200 + x-luker-generation-id
+ *   POST /api/utopinn/generate → 200 + x-luker-generation-id
  *   → 轮询 jobs/status 到 persisted → 断言 mock 上游请求 messages
  *   是服务端组装产物(宏替换/聊天史)→ chat JSONL 已追加 assistant 回复。
- * 跑法:node --test tests/uberge-generate-e2e.test.mjs
+ * 跑法:node --test tests/utopinn-generate-e2e.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,7 +18,7 @@ import { startMockLLM } from './e2e/_lib/mockLLM.js';
 import { markOnboarded, bootstrapCustomBackend, writeCharacter, writePreset } from './e2e/_lib/fixtures.js';
 
 const HANDLE = 'default-user';
-const CHAT = 'uberge-e2e';
+const CHAT = 'utopinn-e2e';
 const REPLY = '*Ash lifts the lantern, angling its light across the reef.* "Three breakers where the moon says none should be. We watch until dawn."';
 
 /** 复用 scratch 里已有的 webpack 产物跳过首启编译(~60s+);无则正常编译 */
@@ -55,12 +55,12 @@ async function post(baseURL, path, session, body) {
     });
 }
 
-test('/api/uberge/generate e2e — assemble→dispatch→job→persist', async (t) => {
+test('/api/utopinn/generate e2e — assemble→dispatch→job→persist', async (t) => {
     const mock = await startMockLLM({ scriptedReplies: [REPLY] });
     const prebuilt = findPrebuiltBundles();
     const server = await startServer({
         batchKey: 'generation',
-        scenarioId: 'uberge-generate',
+        scenarioId: 'utopinn-generate',
         extraEnv: {
             ...(prebuilt ? { LUKER_PREBUILT_BUNDLES_DIR: prebuilt } : {}),
             // 子进程继承壳层代理;本地回环/出站全部绕过,防启动期外呼挂死
@@ -73,7 +73,7 @@ test('/api/uberge/generate e2e — assemble→dispatch→job→persist', async (
         bootstrapCustomBackend({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
         const avatarFile = writeCharacter({ dataRoot: server.dataRoot });
         const charDir = avatarFile.replace(/\.png$/, '');
-        const presetName = writePreset({ dataRoot: server.dataRoot, name: 'uberge-e2e-preset' });
+        const presetName = writePreset({ dataRoot: server.dataRoot, name: 'utopinn-e2e-preset' });
 
         // 手写聊天 JSONL(header 行 + 时序消息行)
         const chatsDir = resolve(server.dataRoot, HANDLE, 'chats', charDir);
@@ -88,7 +88,7 @@ test('/api/uberge/generate e2e — assemble→dispatch→job→persist', async (
         const jobId = randomUUID();
 
         await t.test('generate returns job handle', async () => {
-            const res = await post(server.baseURL, '/api/uberge/generate', session, {
+            const res = await post(server.baseURL, '/api/utopinn/generate', session, {
                 charDir, chatName: CHAT, presetName,
                 chat_completion_source: 'custom',
                 luker_generation: { job_id: jobId },

@@ -4323,13 +4323,13 @@ function isChatCompletionResponseEmpty(data) {
 }
 
 // —— 服务端大脑改道(TASK-030)——
-// chat 域生成走 /api/uberge/generate(服务端组装+派发+落盘);浏览器内
+// chat 域生成走 /api/utopinn/generate(服务端组装+派发+落盘);浏览器内
 // openai.js 组装链成为死路径(留码停用,行为对照用)。generateTask /
 // orchestrator / custom-request 等 requestScope!=='chat' 的调用不走此路。
 
 /** 组装面覆盖:目前仅 quiet → overrides.quietPrompt;continue 的 cyclePrompt
  * 由服务端按末层推导;skipWIAN/quietImage/quietToLoud 为已知残留。 */
-function buildUbergeAssemblyOverrides(type) {
+function buildUtopinnAssemblyOverrides(type) {
     const overrides = {};
     if (type === 'quiet') {
         const quietPrompt = extension_prompts?.[inject_ids.QUIET_PROMPT]?.value;
@@ -4338,8 +4338,8 @@ function buildUbergeAssemblyOverrides(type) {
     return overrides;
 }
 
-/** @returns {object|null} uberge 请求体;group/解析失败 → null 回退 legacy。 */
-function buildUbergeGenerateBody(type, requestBody) {
+/** @returns {object|null} utopinn 请求体;group/解析失败 → null 回退 legacy。 */
+function buildUtopinnGenerateBody(type, requestBody) {
     if (selected_group) return null; // group 聊天服务端未接(deps.group 断)
     const character = characters[this_chid];
     const charDir = String(character?.avatar || '').replace(/\.png$/i, '');
@@ -4356,7 +4356,7 @@ function buildUbergeGenerateBody(type, requestBody) {
         // tools/tool_choice/json_schema/n/user_name…)整包透传;
         // 浏览器组装的 messages 丢弃——服务端重新组装。
         generation_overrides: dispatchOverrides,
-        overrides: buildUbergeAssemblyOverrides(type),
+        overrides: buildUtopinnAssemblyOverrides(type),
         luker_generation: {
             ...(luker_generation ?? {}),
             persist_target: persistTypes.has(type)
@@ -4368,33 +4368,33 @@ function buildUbergeGenerateBody(type, requestBody) {
 }
 
 /**
- * @param {object} ubergeBody buildUbergeGenerateBody 产出
+ * @param {object} utopinnBody buildUtopinnGenerateBody 产出
  * @param {AbortSignal?} signal
  * @returns {Promise<PostChatCompletionResult>}
  */
-async function postUbergeGenerateRequest(ubergeBody, signal, { apiPresetName = '' } = {}) {
+async function postUtopinnGenerateRequest(utopinnBody, signal, { apiPresetName = '' } = {}) {
     const requestTimeoutMs = getRequestTimeoutMs(apiPresetName);
     if (requestTimeoutMs > 0) {
-        ubergeBody = {
-            ...ubergeBody,
+        utopinnBody = {
+            ...utopinnBody,
             luker_generation: {
-                ...(ubergeBody.luker_generation || {}),
+                ...(utopinnBody.luker_generation || {}),
                 request_timeout_ms: requestTimeoutMs,
             },
         };
     }
     // ws-delivery 代理把该 fetch 变成 job 事件驱动的等价 SSE/JSON Response。
     const response = await withProfileRetry(async () => {
-        return await fetch('/api/uberge/generate', {
+        return await fetch('/api/utopinn/generate', {
             method: 'POST',
-            body: JSON.stringify(ubergeBody),
+            body: JSON.stringify(utopinnBody),
             headers: getRequestHeaders(),
             signal,
         });
     }, {
         profileName: apiPresetName,
         signal,
-        label: 'uberge-generate',
+        label: 'utopinn-generate',
         onAttempt: (attempt, _err, _delay, maxRetries) => {
             toastr.info(t`Retrying request… (${attempt}/${maxRetries})`, t`Request failed`, { timeOut: 3000 });
         },
@@ -4402,7 +4402,7 @@ async function postUbergeGenerateRequest(ubergeBody, signal, { apiPresetName = '
 
     if (!response.ok) {
         const responseBody = await response.text();
-        console.error(`[uberge] ${response.status} from ${response.url}`, {
+        console.error(`[utopinn] ${response.status} from ${response.url}`, {
             status: response.status, statusText: response.statusText,
             body: responseBody.substring(0, 500),
         });
@@ -4753,13 +4753,13 @@ async function sendOpenAIRequest(type, messages, signal, {
             });
         }
     }
-    // TASK-030:chat 域一次性全切服务端大脑——body 换 uberge 契约,
+    // TASK-030:chat 域一次性全切服务端大脑——body 换 utopinn 契约,
     // 客户端组装的 messages 不再上 wire(服务端重新组装,权威源)。
-    const ubergeBody = requestScope === 'chat'
-        ? buildUbergeGenerateBody(type, requestBody)
+    const utopinnBody = requestScope === 'chat'
+        ? buildUtopinnGenerateBody(type, requestBody)
         : null;
-    const { response } = ubergeBody
-        ? await postUbergeGenerateRequest(ubergeBody, signal, { apiPresetName })
+    const { response } = utopinnBody
+        ? await postUtopinnGenerateRequest(utopinnBody, signal, { apiPresetName })
         : await postChatCompletionGenerateRequest(requestBody, signal, { apiPresetName });
     const generationIdHeader = response.headers.get('x-luker-generation-id');
     if (shouldTrackLukerGenerationState && generationIdHeader) {
@@ -7640,8 +7640,8 @@ async function onDeletePresetClick() {
         $('#settings_preset_openai').trigger('change');
     }
 
-    // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/uberge/presets/:name
-    const response = await fetch(`/api/uberge/presets/${encodeURIComponent(nameToDelete)}?apiId=openai`, {
+    // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/utopinn/presets/:name
+    const response = await fetch(`/api/utopinn/presets/${encodeURIComponent(nameToDelete)}?apiId=openai`, {
         method: 'DELETE',
         headers: getRequestHeaders(),
     });

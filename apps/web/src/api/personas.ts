@@ -1,4 +1,4 @@
-// Personas via /api/uberge/personas (TASK-024).
+// Personas via /api/utopinn/personas (TASK-024).
 // avatar 文件名兼任主键(personas = {avatar: name} + persona_descriptions
 // = {avatar: {description,position,title}} 双表,服务端做嵌套合并)。
 // 写操作 PUT/DELETE 走 apiFetch —— CSRF 头在 client.ts 内置。
@@ -26,7 +26,7 @@ export interface PersonaList {
 /**
  * 当前会话生效的人设选择(舞台头快切)。服务端没有 per-chat persona
  * 端点 —— 选择态存本地,生成时以 user:{name,description} 携带进
- * /api/uberge/generate(uberge-generate.js body.user → substCtx.name1)。
+ * /api/utopinn/generate(utopinn-generate.js body.user → substCtx.name1)。
  */
 export interface ActivePersona {
     /** personas 主键(头像文件名);mock/手填兜底可为 null。 */
@@ -56,12 +56,12 @@ export interface PersonaSaved {
 }
 
 export async function listPersonas(): Promise<PersonaList> {
-    return apiGet<PersonaList>('/api/uberge/personas');
+    return apiGet<PersonaList>('/api/utopinn/personas');
 }
 
 /** 创建与更新同一条路:PUT /personas/:avatar(avatar 前端生成即新建)。 */
 export async function savePersona(avatar: string, patch: PersonaPatch): Promise<PersonaSaved> {
-    const res = await apiFetch(`/api/uberge/personas/${encodeURIComponent(avatar)}`, {
+    const res = await apiFetch(`/api/utopinn/personas/${encodeURIComponent(avatar)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(patch),
@@ -72,6 +72,6 @@ export async function savePersona(avatar: string, patch: PersonaPatch): Promise<
 
 /** 204;删的是默认人设时服务端一并清默认位(前端先提示再调)。 */
 export async function deletePersona(avatar: string): Promise<void> {
-    const res = await apiFetch(`/api/uberge/personas/${encodeURIComponent(avatar)}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/utopinn/personas/${encodeURIComponent(avatar)}`, { method: 'DELETE' });
     await assertOk(res);
 }

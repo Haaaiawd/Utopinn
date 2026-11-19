@@ -1,7 +1,7 @@
 /**
- * uberge-library —— 首个 kernel 路由插件(B 步小面先行)。
+ * utopinn-library —— 首个 kernel 路由插件(B 步小面先行)。
  *
- * 原来 uberge-library.js 的 10 个只读 GET 全部经 webServer.register()
+ * 原来 utopinn-library.js 的 10 个只读 GET 全部经 webServer.register()
  * 贡献;写路径(DELETE chat / PATCH settings)仍由 legacy Express router
  * 挂在同前缀下 —— dispatcher 未命中时 next() 落回,按面切不翻桌。
  *
@@ -225,7 +225,7 @@ const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']
 // 路由注册
 // ---------------------------------------------------------------------------
 
-const P = '/api/uberge';
+const P = '/api/utopinn';
 
 export function apply(ctx) {
     const ws = ctx.webServer;
@@ -292,7 +292,7 @@ export function apply(ctx) {
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length });
         } catch (error) {
-            return sendError(response, error, 'uberge/characters list');
+            return sendError(response, error, 'utopinn/characters list');
         }
     });
 
@@ -306,7 +306,7 @@ export function apply(ctx) {
             }
             return response.send(card);
         } catch (error) {
-            return sendError(response, error, 'uberge/characters get');
+            return sendError(response, error, 'utopinn/characters get');
         }
     });
 
@@ -340,7 +340,7 @@ export function apply(ctx) {
             }
             return response.send({ items, total: items.length });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats list');
+            return sendError(response, error, 'utopinn/chats list');
         }
     });
 
@@ -364,7 +364,7 @@ export function apply(ctx) {
                 createdAt: chat.createdAt,
             });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats get');
+            return sendError(response, error, 'utopinn/chats get');
         }
     });
 
@@ -382,7 +382,7 @@ export function apply(ctx) {
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length, apiId });
         } catch (error) {
-            return sendError(response, error, 'uberge/presets list');
+            return sendError(response, error, 'utopinn/presets list');
         }
     });
 
@@ -397,7 +397,7 @@ export function apply(ctx) {
             }
             return response.send({ name, apiId, doc });
         } catch (error) {
-            return sendError(response, error, 'uberge/presets get');
+            return sendError(response, error, 'utopinn/presets get');
         }
     });
 
@@ -418,7 +418,7 @@ export function apply(ctx) {
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length });
         } catch (error) {
-            return sendError(response, error, 'uberge/worlds list');
+            return sendError(response, error, 'utopinn/worlds list');
         }
     });
 
@@ -435,7 +435,7 @@ export function apply(ctx) {
             const canonical = await repo.resolveName(handle, requested);
             return response.send({ name: canonical ?? requested, doc });
         } catch (error) {
-            return sendError(response, error, 'uberge/worlds get');
+            return sendError(response, error, 'utopinn/worlds get');
         }
     });
 
@@ -480,7 +480,7 @@ export function apply(ctx) {
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length, defaultPersona: defaultPersona || null });
         } catch (error) {
-            return sendError(response, error, 'uberge/personas list');
+            return sendError(response, error, 'utopinn/personas list');
         }
     });
 
@@ -496,7 +496,7 @@ export function apply(ctx) {
             if (error instanceof SyntaxError) {
                 return response.status(422).send({ error: 'Settings document is not valid JSON' });
             }
-            return sendError(response, error, 'uberge/settings get');
+            return sendError(response, error, 'utopinn/settings get');
         }
     });
 
@@ -515,7 +515,7 @@ export function apply(ctx) {
             await repo.delete(handle, charDir, chatName);
             return response.sendStatus(204);
         } catch (error) {
-            return sendError(response, error, 'uberge/chats delete');
+            return sendError(response, error, 'utopinn/chats delete');
         }
     });
 
@@ -558,7 +558,7 @@ export function apply(ctx) {
             await repo.save(handle, next);
             return response.send({ settings: sanitizeSettingsDoc(next) });
         } catch (error) {
-            return sendError(response, error, 'uberge/settings patch');
+            return sendError(response, error, 'utopinn/settings patch');
         }
     });
 
@@ -580,7 +580,7 @@ export function apply(ctx) {
             await getPresetRepo().save(request.user.profile.handle, apiId, name, doc);
             return response.send({ ok: true, name, apiId });
         } catch (error) {
-            return sendError(response, error, 'uberge/presets put');
+            return sendError(response, error, 'utopinn/presets put');
         }
     });
 
@@ -595,7 +595,7 @@ export function apply(ctx) {
             }
             return response.sendStatus(204);
         } catch (error) {
-            return sendError(response, error, 'uberge/presets delete');
+            return sendError(response, error, 'utopinn/presets delete');
         }
     });
 
@@ -617,7 +617,7 @@ export function apply(ctx) {
             const canonical = await repo.resolveName(handle, name);
             return response.send({ ok: true, name: canonical ?? name });
         } catch (error) {
-            return sendError(response, error, 'uberge/worlds put');
+            return sendError(response, error, 'utopinn/worlds put');
         }
     });
 
@@ -631,7 +631,7 @@ export function apply(ctx) {
             }
             return response.sendStatus(204);
         } catch (error) {
-            return sendError(response, error, 'uberge/worlds delete');
+            return sendError(response, error, 'utopinn/worlds delete');
         }
     });
 
@@ -691,7 +691,7 @@ export function apply(ctx) {
                 isDefault: powerUser.default_persona === avatar,
             });
         } catch (error) {
-            return sendError(response, error, 'uberge/personas put');
+            return sendError(response, error, 'utopinn/personas put');
         }
     });
 
@@ -730,7 +730,7 @@ export function apply(ctx) {
             await repo.save(handle, { ...base, power_user: powerUser });
             return response.sendStatus(204);
         } catch (error) {
-            return sendError(response, error, 'uberge/personas delete');
+            return sendError(response, error, 'utopinn/personas delete');
         }
     });
 
@@ -746,7 +746,7 @@ export function apply(ctx) {
             const state = new SecretManager(request.user.directories).getSecretState();
             return response.send({ secrets: state });
         } catch (error) {
-            return sendError(response, error, 'uberge/secrets get');
+            return sendError(response, error, 'utopinn/secrets get');
         }
     });
 
@@ -770,7 +770,7 @@ export function apply(ctx) {
             const state = manager.getSecretState();
             return response.send({ ok: true, id, key, entries: state[key] ?? null });
         } catch (error) {
-            return sendError(response, error, 'uberge/secrets put');
+            return sendError(response, error, 'utopinn/secrets put');
         }
     });
 
@@ -785,7 +785,7 @@ export function apply(ctx) {
             new SecretManager(request.user.directories).deleteSecret(key, id);
             return response.sendStatus(204);
         } catch (error) {
-            return sendError(response, error, 'uberge/secrets delete');
+            return sendError(response, error, 'utopinn/secrets delete');
         }
     });
 
@@ -813,7 +813,7 @@ export function apply(ctx) {
             const { integrity } = await repo.save(handle, charDir, chatName, header ?? { chat_metadata: {} }, []);
             return response.status(201).send({ ok: true, name: chatName, fileName: `${chatName}.jsonl`, integrity });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats create');
+            return sendError(response, error, 'utopinn/chats create');
         }
     });
 
@@ -830,7 +830,7 @@ export function apply(ctx) {
             await getChatRepo().rename(handle, charDir, chatName, newName);
             return response.send({ ok: true, name: newName, fileName: `${newName}.jsonl` });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats rename');
+            return sendError(response, error, 'utopinn/chats rename');
         }
     });
 
@@ -868,7 +868,7 @@ export function apply(ctx) {
                     const headerWithIntegrity = { ...header, chat_metadata: applyIntegrityToMetadata(header?.chat_metadata, integrity) };
                     getBackupFunction(handle, charDir)(request.user.directories.backups, charDir,
                         [headerWithIntegrity, ...floors].map(m => JSON.stringify(m)).join('\n'));
-                } catch (e) { console.error('Chat backup after uberge append failed', e); }
+                } catch (e) { console.error('Chat backup after utopinn append failed', e); }
             };
 
             if (slugRaw && !force && existing && existing.integrity !== slugRaw) {
@@ -926,7 +926,7 @@ export function apply(ctx) {
             await settleMvuAfterAppend(writeReq);
             return response.send({ ok: true, appended: deduped.length, created: false, skipped: cleanedMessages.length - deduped.length, matched_existing_generation_id: matchedGenId, integrity: newIntegrity });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats append');
+            return sendError(response, error, 'utopinn/chats append');
         }
     });
 
@@ -1002,13 +1002,13 @@ export function apply(ctx) {
                 const headerWithIntegrity = { ...(post?.header ?? {}), chat_metadata: applyIntegrityToMetadata(post?.header?.chat_metadata, result.integrity) };
                 getBackupFunction(handle, charDir)(request.user.directories.backups, charDir,
                     [headerWithIntegrity, ...(post?.body ?? [])].map(m => JSON.stringify(m)).join('\n'));
-            } catch (e) { console.error('Chat backup after uberge patch failed', e); }
+            } catch (e) { console.error('Chat backup after utopinn patch failed', e); }
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
             acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? hint : null);
             await resettleMvuAfterWrite(writeReq);
             return response.send({ ok: true, applied: sanitizedOps.length, total_messages: post?.body?.length ?? null, integrity: result.integrity });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats patch');
+            return sendError(response, error, 'utopinn/chats patch');
         }
     });
 
@@ -1078,7 +1078,7 @@ export function apply(ctx) {
                 const jsonlData = [headerWithIntegrity, ...doc.messages].map(m => JSON.stringify(m)).join('\n');
                 getBackupFunction(handle, charDir)(request.user.directories.backups, charDir, jsonlData);
             } catch (backupErr) {
-                console.error('Chat backup after uberge doc-save failed', backupErr);
+                console.error('Chat backup after utopinn doc-save failed', backupErr);
             }
 
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
@@ -1091,12 +1091,12 @@ export function apply(ctx) {
             await resettleMvuAfterWrite(writeReq);
             return response.send({ ok: true, integrity });
         } catch (error) {
-            return sendError(response, error, 'uberge/chats document');
+            return sendError(response, error, 'utopinn/chats document');
         }
     });
 
     // -----------------------------------------------------------------------
-    // state sidecar 三族(TASK-032 收尾增量):/api/uberge/state/{chat|char|preset}
+    // state sidecar 三族(TASK-032 收尾增量):/api/utopinn/state/{chat|char|preset}
     // 对应 legacy /api/{chats,characters,presets}/state/* —— target 字段、
     // namespace 归一、patch 语义、错误面逐义对齐,helper 全部从 legacy 端点
     // export 复用,sidecar 文件同一批,不存在第二套写盘逻辑。

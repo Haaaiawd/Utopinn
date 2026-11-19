@@ -1,7 +1,7 @@
-// Generation transport — POST /api/uberge/generate then WS job stream.
-// Server contract (apps/server/src/plugins/uberge-generate.js +
-// uberge-delivery.js, verified in tests/e2e/uberge-stream-delivery.mjs):
-//   POST /api/uberge/generate → 200 + `x-luker-generation-id` header;
+// Generation transport — POST /api/utopinn/generate then WS job stream.
+// Server contract (apps/server/src/plugins/utopinn-generate.js +
+// utopinn-delivery.js, verified in tests/e2e/utopinn-stream-delivery.mjs):
+//   POST /api/utopinn/generate → 200 + `x-luker-generation-id` header;
 //   the job runs in background, events arrive over /api/ws-delivery.
 //   POST /api/ws-ticket → {ticket}; the ticket travels in the WS
 //   subprotocol `luker-ws-ticket.<ticket>` because WS can't set headers.
@@ -29,7 +29,7 @@ export interface GenerateBody {
 }
 
 export async function postGenerate(body: GenerateBody): Promise<{ jobId: string }> {
-    const res = await session.apiFetch('/api/uberge/generate', {
+    const res = await session.apiFetch('/api/utopinn/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ ...body, stream: true }),

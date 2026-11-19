@@ -1,5 +1,5 @@
 // Composer — host chrome under the reading zone. Sending is a local draft
-// append in the skeleton: /api/uberge/generate wiring is the next slice, the
+// append in the skeleton: /api/utopinn/generate wiring is the next slice, the
 // button is labelled honestly via the status hint.
 import { useRef, useState } from 'react';
 import { useI18n } from '../../i18n';

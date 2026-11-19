@@ -1460,8 +1460,8 @@ class PresetManager {
         // the picker disagreeing with the server whenever the request was
         // rejected: the preset vanished from the list but still existed on
         // disk, and no undo was offered because the caller saw a failure.
-        // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/uberge/presets/:name
-        const response = await fetch(`/api/uberge/presets/${encodeURIComponent(nameToDelete)}?apiId=${encodeURIComponent(this.apiId)}`, {
+        // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/utopinn/presets/:name
+        const response = await fetch(`/api/utopinn/presets/${encodeURIComponent(nameToDelete)}?apiId=${encodeURIComponent(this.apiId)}`, {
             method: 'DELETE',
             headers: getRequestHeaders(),
         });

@@ -7,7 +7,7 @@ export const shellFeature: Feature = {
     apply(ctx) {
         ctx.locale('shell', {
             'zh-CN': {
-                'app.name': 'Uberge',
+                'app.name': 'Utopinn',
                 'menu.user': '账户',
                 'menu.view.toggleSidebar': '切换侧栏',
                 'menu.view.toggleTheme': '切换主题',
@@ -16,7 +16,7 @@ export const shellFeature: Feature = {
                 'common.mockData': '模拟数据 — 服务器未连接',
             },
             en: {
-                'app.name': 'Uberge',
+                'app.name': 'Utopinn',
                 'menu.user': 'Account',
                 'menu.view.toggleSidebar': 'Toggle sidebar',
                 'menu.view.toggleTheme': 'Toggle theme',

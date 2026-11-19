@@ -1,11 +1,11 @@
-// ctxApi — 'uberge-panel' bridge method → server dispatch (TASK-009).
+// ctxApi — 'utopinn-panel' bridge method → server dispatch (TASK-009).
 // Same thin delegation as apps/web/src/cardapp/ctxApi.ts: the panel shim
 // calls th.* methods; the host forwards them verbatim to
-// POST /api/uberge/th/call, whose method table is the single source of
+// POST /api/utopinn/th/call, whose method table is the single source of
 // truth for what the server actually implements. Methods outside the
 // table come back {unsupported:true} — surfaced here as an explicit
 // `unsupported_method` error, never a silent stub.
-import { ApiError } from '@uberge/api-client';
+import { ApiError } from '@utopinn/api-client';
 import { client } from '../api/client';
 
 export interface PanelCallArgs {
@@ -41,7 +41,7 @@ export async function dispatchPanelCall(method: string, args: PanelCallArgs, ctx
     const serverMethod = method.slice(3);
     let res: ThCallResult;
     try {
-        res = await client().request<ThCallResult>('/api/uberge/th/call', {
+        res = await client().request<ThCallResult>('/api/utopinn/th/call', {
             method: 'POST',
             body: {
                 method: serverMethod,

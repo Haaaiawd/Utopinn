@@ -6,7 +6,7 @@
         "Human confirmed: brain moves fully server-side; no offline requirement since LLM API calls need network anyway ('全部上云').",
         "Mobile app: React Native + Expo thin client. Advanced features stay web-only or hidden; heavy UIs get dedicated pages not mixed into chat.",
         "'重UI' = card-embedded HTML apps (inventory/quest/status panels, 状态栏, CardApp in Luker terms). Mobile hosts them in a dedicated bottom-nav '面板' page via react-native-webview sandbox + postMessage ctx bridge.",
-        "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @uberge/core output on real cards).",
+        "World book / card import-export compatibility is a hard requirement; mechanism = golden-diff corpus tests (original ST engine output vs @utopinn/core output on real cards).",
         "Third-party frontend extensions (public/scripts/extensions/third-party) will NOT be compatible; accepted.",
         "Local on-device storage of cards/world books is dropped as a v1 requirement; mobile keeps read cache + file import/export only."
     ],

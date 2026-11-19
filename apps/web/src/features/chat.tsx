@@ -34,7 +34,7 @@ export const chatFeature: Feature = {
 
                 'chat.tabs.conversation': '对话',
                 'chat.tabs.preview': '提示词预览',
-                'chat.preview.empty': '还没有预览。切到此 tab 会按需跑一次 /api/uberge/preview。',
+                'chat.preview.empty': '还没有预览。切到此 tab 会按需跑一次 /api/utopinn/preview。',
                 'chat.preview.mock': '模拟数据 — 服务器未连接',
                 'chat.preview.failed': '预览失败',
                 'chat.send': '发送',
@@ -100,7 +100,7 @@ export const chatFeature: Feature = {
 
                 'chat.tabs.conversation': 'Conversation',
                 'chat.tabs.preview': 'Prompt preview',
-                'chat.preview.empty': 'No preview yet. Switching here runs /api/uberge/preview on demand.',
+                'chat.preview.empty': 'No preview yet. Switching here runs /api/utopinn/preview on demand.',
                 'chat.preview.mock': 'mock data — server unreachable',
                 'chat.preview.failed': 'Preview failed',
                 'chat.send': 'Send',

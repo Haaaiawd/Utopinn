@@ -6,7 +6,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const require = createRequire(import.meta.url);
-const { UbergeClient, createPanelT0Handler } = await import(
+const { UtopinnClient, createPanelT0Handler } = await import(
     join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.js'));
 
 const CHAT = {
@@ -34,7 +34,7 @@ function mockFetch(routes) {
 
 function makeDeps(routes, extra = {}) {
     const f = mockFetch(routes);
-    const client = new UbergeClient({ baseUrl: 'http://x', fetch: f });
+    const client = new UtopinnClient({ baseUrl: 'http://x', fetch: f });
     const handle = createPanelT0Handler({
         client, avatarUrl: 'c.png', chatFileName: 'chat', mountMessageId: 0,
         initializedGlobals: new Set(['Mvu']), ...extra,

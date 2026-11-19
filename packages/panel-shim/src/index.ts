@@ -1,4 +1,4 @@
-import type { PanelBootstrap } from '@uberge/protocol';
+import type { PanelBootstrap } from '@utopinn/protocol';
 
 /**
  * Path to the injectable runtime, relative to this package root.
@@ -14,8 +14,8 @@ export const RUNTIME_RELATIVE_PATH = 'src/runtime.js';
 export function renderBootstrapSnippet(bootstrap: PanelBootstrap): string {
     const nonceJson = JSON.stringify(bootstrap.nonce);
     const bootJson = JSON.stringify(bootstrap).replace(/</g, '\\u003c');
-    return `window.__UBERGE_PANEL_NONCE__=${nonceJson};\n` +
-        `window.__UBERGE_PANEL_BOOTSTRAP__=${bootJson};\n`;
+    return `window.__UTOPINN_PANEL_NONCE__=${nonceJson};\n` +
+        `window.__UTOPINN_PANEL_BOOTSTRAP__=${bootJson};\n`;
 }
 
 /**

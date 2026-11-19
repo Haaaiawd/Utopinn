@@ -3076,9 +3076,9 @@ export async function loadWorldInfo(name) {
 }
 
 export async function updateWorldInfoList() {
-    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/utopinn/worlds
     // ({items:[{name, displayName, extensions}]} vs legacy [{file_id, extensions}]).
-    const result = await fetch('/api/uberge/worlds', {
+    const result = await fetch('/api/utopinn/worlds', {
         method: 'GET',
         headers: getRequestHeaders(),
         cache: 'no-cache',
@@ -5525,8 +5525,8 @@ async function promptWorldInfoTags(name) {
 }
 
 async function refreshWorldInfoManagerMetadata() {
-    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
-    const result = await fetch('/api/uberge/worlds', {
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/utopinn/worlds
+    const result = await fetch('/api/utopinn/worlds', {
         method: 'GET',
         headers: getRequestHeaders(),
         cache: 'no-cache',
@@ -8168,7 +8168,7 @@ async function saveWorldInfoInternal(name, data, options = {}) {
         if (operations.length === 0) {
             saved = true;
         } else {
-            // TASK-033 keep-legacy: no PATCH route exists on the uberge worlds
+            // TASK-033 keep-legacy: no PATCH route exists on the utopinn worlds
             // surface (only GET/list + PUT doc + DELETE) — incremental diffs
             // still go through the ops-capable legacy endpoint.
             const patchResult = await fetch('/api/worldinfo/patch', {
@@ -8181,9 +8181,9 @@ async function saveWorldInfoInternal(name, data, options = {}) {
     }
 
     if (!saved) {
-        // TASK-033 reroute: legacy /api/worldinfo/edit → PUT /api/uberge/worlds/:name
+        // TASK-033 reroute: legacy /api/worldinfo/edit → PUT /api/utopinn/worlds/:name
         // (the world doc IS the request body; name moves into the path).
-        const fullSaveResult = await fetch(`/api/uberge/worlds/${encodeURIComponent(name)}`, {
+        const fullSaveResult = await fetch(`/api/utopinn/worlds/${encodeURIComponent(name)}`, {
             method: 'PUT',
             headers: getRequestHeaders(),
             body: JSON.stringify(payload),
@@ -8440,8 +8440,8 @@ export async function deleteWorldInfo(worldInfoName) {
     }
     invalidateWorldInfoRequestCache([resolvedWorldInfoName]);
 
-    // TASK-033 reroute: legacy /api/worldinfo/delete → DELETE /api/uberge/worlds/:name
-    const response = await fetch(`/api/uberge/worlds/${encodeURIComponent(resolvedWorldInfoName)}`, {
+    // TASK-033 reroute: legacy /api/worldinfo/delete → DELETE /api/utopinn/worlds/:name
+    const response = await fetch(`/api/utopinn/worlds/${encodeURIComponent(resolvedWorldInfoName)}`, {
         method: 'DELETE',
         headers: getRequestHeaders(),
     });

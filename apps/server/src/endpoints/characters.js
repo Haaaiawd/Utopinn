@@ -2838,7 +2838,7 @@ function mapCharacterStatePatchError(error, response) {
     return null;
 }
 
-// TASK-032 state sidecar 复用口:/api/uberge/state/char/* 插件路由与
+// TASK-032 state sidecar 复用口:/api/utopinn/state/char/* 插件路由与
 // legacy /api/characters/state/* 共用同一组 avatar 校验/sidecar 读写判定。
 export {
     getQueryCharacterAvatar,

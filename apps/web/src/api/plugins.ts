@@ -1,6 +1,6 @@
-// Server plugin manager via /api/uberge/plugins(TASK-021 管理面)。
+// Server plugin manager via /api/utopinn/plugins(TASK-021 管理面)。
 // list() = profile × patch × 运行时合并态;enable/disable 落 patch.yaml,
-// reload = dispose + cache-bust 重导入。uberge-plugins 自锁:它的
+// reload = dispose + cache-bust 重导入。utopinn-plugins 自锁:它的
 // disable/reload 被服务端 400 拒(关了自己就没路可开)。
 import { apiFetch, apiGet, assertOk } from './client';
 
@@ -21,11 +21,11 @@ export interface PluginActResult {
 }
 
 export async function listPlugins(): Promise<{ items: PluginItem[] }> {
-    return apiGet('/api/uberge/plugins');
+    return apiGet('/api/utopinn/plugins');
 }
 
 async function act(id: string, verb: 'enable' | 'disable' | 'reload'): Promise<PluginActResult> {
-    const res = await apiFetch(`/api/uberge/plugins/${encodeURIComponent(id)}/${verb}`, { method: 'POST' });
+    const res = await apiFetch(`/api/utopinn/plugins/${encodeURIComponent(id)}/${verb}`, { method: 'POST' });
     await assertOk(res);
     return (await res.json()) as PluginActResult;
 }

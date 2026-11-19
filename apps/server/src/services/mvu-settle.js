@@ -20,7 +20,7 @@
  */
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
-import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@uberge/core';
+import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@utopinn/core';
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
 import { loadCard } from './stscript-env.js';
@@ -153,7 +153,7 @@ function floorSwipeInitTargets(floor) {
  * @param {string} args.handle
  * @param {string} [args.charDir] 角色目录名(group 聊天传 '')
  * @param {object} [args.directories] 用户目录集合(需要 .characters 读卡)
- * @returns {Promise<{lorebooks:import('@uberge/core').MvuInitLorebook[], primaryLorebookName:string}>}
+ * @returns {Promise<{lorebooks:import('@utopinn/core').MvuInitLorebook[], primaryLorebookName:string}>}
  */
 export async function resolveMvuInitLorebooks({ handle, charDir = '', directories } = {}) {
     const settings = await getSettingsRepo().get(handle).catch(() => null);
@@ -229,7 +229,7 @@ function mvuSignalPresent({ card, chatMetadata, lorebooks, floorText } = {}) {
  * @param {string} args.name
  * @param {boolean} [args.isGroup]
  * @param {string} [args.groupId]
- * @param {import('@uberge/core').MvuInitLorebook[]} [args.lorebooks] 预解书目;
+ * @param {import('@utopinn/core').MvuInitLorebook[]} [args.lorebooks] 预解书目;
  *   缺省时走 resolveMvuInitLorebooks(需要 args.directories)。
  * @param {string} [args.primaryLorebookName]
  * @param {object} [args.directories]
@@ -346,7 +346,7 @@ export async function initializeMvuChat(args) {
  *   (upstream 「更新到聊天变量」开关;默认 true——MVU 卡普遍依赖 getvar 读它)。
  * @param {boolean} [args.autoInit] no_baseline 且 body[0] 存在时先跑
  *   initializeMvuChat(floor-0 初始化),再重试本 settle;每调用最多触发一次。
- * @param {import('@uberge/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
+ * @param {import('@utopinn/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
  * @param {string} [args.primaryLorebookName] autoInit 主书名。
  * @param {object} [args.directories] autoInit 自解书目所需用户目录(.characters 读卡)。
  * @param {(s:string)=>string} [args.substitute] 透传给 init/settle 的宏替换。

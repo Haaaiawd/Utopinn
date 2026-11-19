@@ -1,5 +1,5 @@
 // JobsSection — TASK-017 生成任务监视/回放面(diag 板块内一段)。
-// 列表=/api/uberge/jobs 摘要;点行展开=详情(状态/文本回放/trace 分块数
+// 列表=/api/utopinn/jobs 摘要;点行展开=详情(状态/文本回放/trace 分块数
 // /sources 关键字段)。job 是服务端权威回放源 —— events 经 WS resume,
 // 这里只画详情面有的东西。
 import { useEffect, useState } from 'react';

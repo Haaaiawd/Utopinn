@@ -1,4 +1,4 @@
-# CLI 薄客户端(uberge)——agent-first 命令行全操控面
+# CLI 薄客户端(utopinn)——agent-first 命令行全操控面
 
 > 设计构思文档 v2(全面重写 v1 草稿)。TASK-031 附产。
 > 本文是唯一规格:实现者不需要读任何代码即可按此落地;
@@ -7,12 +7,12 @@
 ## 定位与动机
 
 **第一个真正的薄客户端 dogfood,第一消费者是 AI Agent 不是人。**
-TASK-030 把旧 UI 的 chat 域生成切到 `/api/uberge/generate` 之后,服务端
+TASK-030 把旧 UI 的 chat 域生成切到 `/api/utopinn/generate` 之后,服务端
 已是唯一大脑——CLI 是验证「协议面足够撑起一个独立客户端」的最小代价
 试验场,同时替代 playwright 做日常驱动/回归。
 
 Agent 场景的成功定义:**零文档查阅、最少往返、最少 token、断链可恢复**。
-Agent 用 `uberge` 完成「选卡→看历史→发消息→收流→看轨迹→swipe→诊断」
+Agent 用 `utopinn` 完成「选卡→看历史→发消息→收流→看轨迹→swipe→诊断」
 全链,不需要读 --help,不需要猜下一步命令,不需要担心中途断掉丢上下文。
 
 不做:UI 美化、交互式 TUI(v1 是 unix 风格子命令,不是 ink/blessed 全屏
@@ -20,7 +20,7 @@ Agent 用 `uberge` 完成「选卡→看历史→发消息→收流→看轨迹�
 
 ## agent-first 设计铁律
 
-1. **无参 `uberge` ≠ help**。裸跑输出「当前状态 + 建议下一步」,不输出
+1. **无参 `utopinn` ≠ help**。裸跑输出「当前状态 + 建议下一步」,不输出
    说明书。Agent 不读 help;状态本身就是导航。
 2. **每条命令尾部都有 `next` 建议**。human 模式一行 `· next: …`;JSON 模式
    `next: [{cmd, why}]`。Agent 永远知道现在能干什么,不用回读帮助。
@@ -39,8 +39,8 @@ Agent 用 `uberge` 完成「选卡→看历史→发消息→收流→看轨迹�
 ## 架构决定
 
 - **零依赖单文件**:Node ≥22 原生 `fetch` + `WebSocket`(22.4 起稳定),
-  不用 ws/node-fetch/extra deps。`apps/cli/uberge-cli.mjs` + 薄
-  `package.json`(bin `uberge`)。这个工具要能 `node uberge-cli.mjs …`
+  不用 ws/node-fetch/extra deps。`apps/cli/utopinn-cli.mjs` + 薄
+  `package.json`(bin `utopinn`)。这个工具要能 `node utopinn-cli.mjs …`
   随手跑,不该有构建链。
 - **不走 api-client 包**:api-client 当前是骨架(TS,需构建,无 cookie
   罐)。CLI 先自铺薄层;等 api-client 长全(WS 面+cookie)再迁。两者
@@ -61,8 +61,8 @@ Agent 用 `uberge` 完成「选卡→看历史→发消息→收流→看轨迹�
 | 面 | 浏览器 | CLI |
 |---|---|---|
 | CSRF | `GET /csrf-token` → `X-CSRF-Token` 头 | 同 + `Cookie` 头(set-cookie 罐,内存态) |
-| 生成 | `POST /api/uberge/generate` + `x-luker-request-id` 头 | 同;`job_id` 自铸 UUID 放 `luker_generation.job_id` |
-| 响应 | 200 + 空 body `{}`;真实结果走 job 帧 | 同;`x-luker-generation-id` 头回显 job id;`x-uberge-perf` 头带组装耗时 |
+| 生成 | `POST /api/utopinn/generate` + `x-luker-request-id` 头 | 同;`job_id` 自铸 UUID 放 `luker_generation.job_id` |
+| 响应 | 200 + 空 body `{}`;真实结果走 job 帧 | 同;`x-luker-generation-id` 头回显 job id;`x-utopinn-perf` 头带组装耗时 |
 | 流式 | ws-delivery PROXY 拦截 fetch → POST 后 `subscribe`(实为 `resume from_seq:1`)→ head/chunk/end → 合成 SSE Response | **POST 先返回 200** → `POST /api/ws-ticket` → `new WebSocket(ws://…/api/ws-delivery,'luker-ws-ticket.'+t)` → 发 `{type:'resume',request_id,from_seq:1}` → 同帧 |
 | 帧语义 | head=上游 status/headers;chunk=base64 SSE 字节;end=流完;error=结构化错(`code: aborted/forbidden/not_found/internal`) | 同;`ping` 必须回 `{type:'pong',ts}`(30s 心跳,70s 无 pong 服务端 terminate) |
 | 落盘 | 客户端 save/patch 聊天 + gen-id ack;服务端 persist_target 仅崩溃兜底(15s grace) | 同语义:append/patch 写楼 + `extra.luker_generation_id` ack |
@@ -70,8 +70,8 @@ Agent 用 `uberge` 完成「选卡→看历史→发消息→收流→看轨迹�
 
 ### WS 顺序是硬约束(v0 踩过的坑)
 
-**必须先 `POST /api/uberge/generate` 拿到 200,再取 ticket 连 WS 发
-`resume from_seq:1`。** 服务端 `uberge-delivery.js:175-179`:job 不存在
+**必须先 `POST /api/utopinn/generate` 拿到 200,再取 ticket 连 WS 发
+`resume from_seq:1`。** 服务端 `utopinn-delivery.js:175-179`:job 不存在
 时 subscribe/resume 直接回 `error not_found` 且**不注册订阅**——ticket/
 WS/resume 先于 POST 时序 = 永远收不到帧。runner 在 `response.json({})` 前
 已 `createGenerationJob`(runner.js:41),dispatch 在 setImmediate——POST
@@ -125,9 +125,9 @@ append 之后重发 send 不会产生双楼**。patch 对顶层 `add /N` 的等�
 
 ## 命令面契约表(v1)
 
-通用:`-s/--server <url>`|`UBERGE_SERVER`(默认 `http://127.0.0.1:8000`);
-`--state <file>`|`UBERGE_STATE`(默认 `~/.uberge-cli.json`);
-`--json`|`UBERGE_JSON=1`;`--timeout <ms>`(单请求,默认 30000);
+通用:`-s/--server <url>`|`UTOPINN_SERVER`(默认 `http://127.0.0.1:8000`);
+`--state <file>`|`UTOPINN_STATE`(默认 `~/.utopinn-cli.json`);
+`--json`|`UTOPINN_JSON=1`;`--timeout <ms>`(单请求,默认 30000);
 `--wait <ms>`(生成等待上限,默认 180000);`--full`(不截断);
 `--out <file>`(大载荷落盘);`-n N`(条数);`--force`(跳过 integrity CAS);
 `--stdin`/位置参数 `-`(从 stdin 读文本,解决多行/转义)。
@@ -140,97 +140,97 @@ append 之后重发 send 不会产生双楼**。patch 对顶层 `add /N` 的等�
 
 | 命令 | 输入 | 正常输出 | 副作用 |
 |---|---|---|---|
-| `uberge`(裸) | — | 缓存快照:ctx + floors(估算) + lastJob + `next` 建议。**零网络**,瞬时 | 无 |
-| `uberge status` | — | 在线刷新:ctx + floors + integrity + active jobs(`jobs/active`)+ preset/persona | 刷新 state.integrity/floors |
-| `uberge doctor` | — | 逐项 ✓/✗:server 可达 → csrf/session(打一发 `characters/all`)→ WS(ticket+connect+ping/pong ≤5s)→ ctx 有效(char/chat 存在)→ active-job 泄漏。每 ✗ 带修复 hint | 无 |
-| `uberge schema` | — | 自描述 JSON:命令目录(语法/flag/输出契约)+ 错误码表 + 退出码表 + 状态 schema。**Agent 一次读完即可,永远不查 help** | 无 |
-| `uberge sync` | — | 重读当前 chat,回 ctx/integrity/floors/末楼 swipe 摘要 | 刷新 state |
+| `utopinn`(裸) | — | 缓存快照:ctx + floors(估算) + lastJob + `next` 建议。**零网络**,瞬时 | 无 |
+| `utopinn status` | — | 在线刷新:ctx + floors + integrity + active jobs(`jobs/active`)+ preset/persona | 刷新 state.integrity/floors |
+| `utopinn doctor` | — | 逐项 ✓/✗:server 可达 → csrf/session(打一发 `characters/all`)→ WS(ticket+connect+ping/pong ≤5s)→ ctx 有效(char/chat 存在)→ active-job 泄漏。每 ✗ 带修复 hint | 无 |
+| `utopinn schema` | — | 自描述 JSON:命令目录(语法/flag/输出契约)+ 错误码表 + 退出码表 + 状态 schema。**Agent 一次读完即可,永远不查 help** | 无 |
+| `utopinn sync` | — | 重读当前 chat,回 ctx/integrity/floors/末楼 swipe 摘要 | 刷新 state |
 
 ### 发现与选择
 
 | 命令 | 输入 | 正常输出 | 错误 | 副作用 |
 |---|---|---|---|---|
-| `uberge chars` | `-n,--full,--out` | `dir │ name │ 当前 chat │ fav`,每行一卡 | — | 无 |
-| `uberge chats [--char d]` | `-n,--full,--out` | `name │ floors │ 末楼摘要(≤80ch) │ 时间`,当前 chat 标 `*` | `no_ctx` | 无 |
-| `uberge recent` | `-n` | 跨角色最近聊天:`char │ chat │ 时间` | — | 无 |
-| `uberge use <c> [chat]` | 模糊可 | `→ <name> @ <chat> · floors N`(chat 缺省:`char.chat` 服务端指针 → 否则 sort_time 最新) | `not_found`(列候选)/`ambiguous`(列全部候选) | 写 state ctx+floors;**不拉 integrity**(首写时懒取) |
-| `uberge persona [name]` | `--desc` | 无参 → 显示;有参 → 设定 | — | 写 state.persona(进 generate `user.name` 与 user 楼 name) |
-| `uberge presets` | — | openai apiId 预设名列表(`GET /api/presets/list?apiId=openai` → `{names[]}`) | — | 无 |
-| `uberge preset <n>|--off` | 名 | `preset = <name>` | `not_found` | 写 state.preset(进 generate `presetName`;--off 回落服务端 `settings.preset_settings_openai`) |
+| `utopinn chars` | `-n,--full,--out` | `dir │ name │ 当前 chat │ fav`,每行一卡 | — | 无 |
+| `utopinn chats [--char d]` | `-n,--full,--out` | `name │ floors │ 末楼摘要(≤80ch) │ 时间`,当前 chat 标 `*` | `no_ctx` | 无 |
+| `utopinn recent` | `-n` | 跨角色最近聊天:`char │ chat │ 时间` | — | 无 |
+| `utopinn use <c> [chat]` | 模糊可 | `→ <name> @ <chat> · floors N`(chat 缺省:`char.chat` 服务端指针 → 否则 sort_time 最新) | `not_found`(列候选)/`ambiguous`(列全部候选) | 写 state ctx+floors;**不拉 integrity**(首写时懒取) |
+| `utopinn persona [name]` | `--desc` | 无参 → 显示;有参 → 设定 | — | 写 state.persona(进 generate `user.name` 与 user 楼 name) |
+| `utopinn presets` | — | openai apiId 预设名列表(`GET /api/presets/list?apiId=openai` → `{names[]}`) | — | 无 |
+| `utopinn preset <n>|--off` | 名 | `preset = <name>` | `not_found` | 写 state.preset(进 generate `presetName`;--off 回落服务端 `settings.preset_settings_openai`) |
 
 ### 聊天生命周期
 
 | 命令 | 输入 | 正常输出 | 错误 | 副作用 |
 |---|---|---|---|---|
-| `uberge chat-new <name>` | 名 | `chat = <name>(空,首条 send 建文件)` | `exists`(列相似名) | state.chatName;不建文件(append 自建) |
-| `uberge chat-rename <new>` | 新名 | `renamed → <sanitized>` | `no_ctx`/400 | `POST /api/chats/rename {avatar_url,original_file,renamed_file}`;同步 state |
-| `uberge chat-delete <name>` | 名(必显式) | `deleted <name>` | `not_found` | `POST /api/chats/delete {avatar_url,chatfile}`;删当前 chat 则清 ctx.chatName |
+| `utopinn chat-new <name>` | 名 | `chat = <name>(空,首条 send 建文件)` | `exists`(列相似名) | state.chatName;不建文件(append 自建) |
+| `utopinn chat-rename <new>` | 新名 | `renamed → <sanitized>` | `no_ctx`/400 | `POST /api/chats/rename {avatar_url,original_file,renamed_file}`;同步 state |
+| `utopinn chat-delete <name>` | 名(必显式) | `deleted <name>` | `not_found` | `POST /api/chats/delete {avatar_url,chatfile}`;删当前 chat 则清 ctx.chatName |
 
 ### 生成动词
 
 | 命令 | 输入 | 正常输出(human) | 错误 | 副作用 |
 |---|---|---|---|---|
-| `uberge send <text>` | `--empty,--stdin,--no-stream,--quiet,--set k=v,--user n,--preset n,--out` | 流式 AI 文本 → 空行 → footer(`floors/job/chars/elapsed` + `next`) | `no_ctx`/`active_job`/`integrity_conflict`/`upstream` | user 楼 + job + AI 楼;state(lastJob/floors/integrity/lastReplyPreview) |
-| `uberge say <text>` | 同 send 文本参 | `→ floor #N` | 同上(无 upstream) | 只 append user 楼 |
-| `uberge regen` | `--no-stream,--quiet,--wait` | 流式文本 + footer | `no_ctx`/`no_ai_floor`(末楼非 AI 时 regen=normal,自动降级并提示)/`active_job` | patch remove 末楼 → 生成 → append AI 楼 |
-| `uberge swipe [N]` | `--list,--full` | 无参=生成新 swipe(流式);`N`=导航(`swipe N/总, mes 摘要`);`--list`=候选表 | `no_ctx`/`no_swipe`(末楼不可 swipe:user 楼或无 swipes)/`active_job` | patch 末楼 swipes/swipe_id/mes |
-| `uberge continue` | `--no-stream` | 流式增量文本 + footer | `no_ctx`/`no_floor`(空聊天;末楼是 user 仍可续——续的是末楼,不卡 user/AI) | patch 末楼 mes/delta |
-| `uberge impersonate [--write]` | `--no-stream` | 流式草稿文本 + footer(注明「未落盘,`--write` 或 `say` 提交」) | `no_ctx` | 默认无;`--write` 时 append user 楼 |
-| `uberge quiet <prompt>` | 位置参/`--stdin` | 最终文本(quiet 服务端强制非流式)+ footer | `no_ctx`/`usage`(无 prompt) | 无(job 15s 后 cosmetic failed,输出已注明) |
+| `utopinn send <text>` | `--empty,--stdin,--no-stream,--quiet,--set k=v,--user n,--preset n,--out` | 流式 AI 文本 → 空行 → footer(`floors/job/chars/elapsed` + `next`) | `no_ctx`/`active_job`/`integrity_conflict`/`upstream` | user 楼 + job + AI 楼;state(lastJob/floors/integrity/lastReplyPreview) |
+| `utopinn say <text>` | 同 send 文本参 | `→ floor #N` | 同上(无 upstream) | 只 append user 楼 |
+| `utopinn regen` | `--no-stream,--quiet,--wait` | 流式文本 + footer | `no_ctx`/`no_ai_floor`(末楼非 AI 时 regen=normal,自动降级并提示)/`active_job` | patch remove 末楼 → 生成 → append AI 楼 |
+| `utopinn swipe [N]` | `--list,--full` | 无参=生成新 swipe(流式);`N`=导航(`swipe N/总, mes 摘要`);`--list`=候选表 | `no_ctx`/`no_swipe`(末楼不可 swipe:user 楼或无 swipes)/`active_job` | patch 末楼 swipes/swipe_id/mes |
+| `utopinn continue` | `--no-stream` | 流式增量文本 + footer | `no_ctx`/`no_floor`(空聊天;末楼是 user 仍可续——续的是末楼,不卡 user/AI) | patch 末楼 mes/delta |
+| `utopinn impersonate [--write]` | `--no-stream` | 流式草稿文本 + footer(注明「未落盘,`--write` 或 `say` 提交」) | `no_ctx` | 默认无;`--write` 时 append user 楼 |
+| `utopinn quiet <prompt>` | 位置参/`--stdin` | 最终文本(quiet 服务端强制非流式)+ footer | `no_ctx`/`usage`(无 prompt) | 无(job 15s 后 cosmetic failed,输出已注明) |
 
 生成动词共享护栏:**任何写盘/POST 之前**先查
 `POST /api/backends/chat-completions/jobs/active`
 `{persist_target:{avatar_url,file_name}}` ——本 chat 有
 `running|queued|persisting|awaiting_ack` job 时**整条命令拒发**
 (user 楼也不写,不留半成品),exit 3,
-hint = `uberge attach <id>` 或 `uberge abort <id>`。防双楼层并发,
+hint = `utopinn attach <id>` 或 `utopinn abort <id>`。防双楼层并发,
 是「链条稳定」的哨兵,不开放跳过。
 
 ### 读取与诊断
 
 | 命令 | 输入 | 正常输出 | 错误 | 副作用 |
 |---|---|---|---|---|
-| `uberge history` | `-n`(默认 5)`--floor i`,`--full`,`--out` | 楼层回放:`#i <name>[user/ai/sys] swipe k/m` + mes(≤300ch 截断标 `…+Nch`) | `no_ctx`/`new_chat` | 刷新 integrity/floors |
-| `uberge edit <floor> <text>` | `--stdin`,`--force` | `floor #i updated` | `no_ctx`/`bad_floor`/`integrity_conflict` | patch `replace /i/mes`;楼层有 swipes 时同步 `replace /i/swipes/<swipe_id>`(syncMesToSwipe 语义) |
-| `uberge jobs` | `-n`(默认 10)`--out` | `id8 │ status │ chatKey │ textPreview(≤60ch) │ persisted │ age`(`GET /api/uberge/jobs`) | — | 无 |
-| `uberge inspect [jobId]` | `--section sources|trace|text`,`--full`,`--out` | 默认摘要:status/persisted/model/preset + WI activated 计数 + 按书直方图 + 条目前 15;`--section` 单面展开;`--full` 全部 | `not_found` | jobId 缺省=state.lastJob |
-| `uberge preview` | `--type normal|continue|swipe`(默认 normal)`-n`(默认 8)`--full`,`--out` | `messages: N · perf xMS` + 逐条 `[role:name] ≤150ch` | `no_ctx`/4xx | 无 |
-| `uberge attach [jobId]` | `--from <seq>`,`--wait` | job 在跑 → WS resume 流式增量 → footer;已终态 → 直接吐 `status.text` 全文 + footer | `not_found`/`timeout` | 无;末态恒以 `status.text` 对账(events 超 8000 会被裁,帧流可能不全) |
-| `uberge abort [jobId]` | — | `aborted <id8>` | `not_found`/`409 not_running` | `POST /api/generation/:id/abort` |
+| `utopinn history` | `-n`(默认 5)`--floor i`,`--full`,`--out` | 楼层回放:`#i <name>[user/ai/sys] swipe k/m` + mes(≤300ch 截断标 `…+Nch`) | `no_ctx`/`new_chat` | 刷新 integrity/floors |
+| `utopinn edit <floor> <text>` | `--stdin`,`--force` | `floor #i updated` | `no_ctx`/`bad_floor`/`integrity_conflict` | patch `replace /i/mes`;楼层有 swipes 时同步 `replace /i/swipes/<swipe_id>`(syncMesToSwipe 语义) |
+| `utopinn jobs` | `-n`(默认 10)`--out` | `id8 │ status │ chatKey │ textPreview(≤60ch) │ persisted │ age`(`GET /api/utopinn/jobs`) | — | 无 |
+| `utopinn inspect [jobId]` | `--section sources|trace|text`,`--full`,`--out` | 默认摘要:status/persisted/model/preset + WI activated 计数 + 按书直方图 + 条目前 15;`--section` 单面展开;`--full` 全部 | `not_found` | jobId 缺省=state.lastJob |
+| `utopinn preview` | `--type normal|continue|swipe`(默认 normal)`-n`(默认 8)`--full`,`--out` | `messages: N · perf xMS` + 逐条 `[role:name] ≤150ch` | `no_ctx`/4xx | 无 |
+| `utopinn attach [jobId]` | `--from <seq>`,`--wait` | job 在跑 → WS resume 流式增量 → footer;已终态 → 直接吐 `status.text` 全文 + footer | `not_found`/`timeout` | 无;末态恒以 `status.text` 对账(events 超 8000 会被裁,帧流可能不全) |
+| `utopinn abort [jobId]` | — | `aborted <id8>` | `not_found`/`409 not_running` | `POST /api/generation/:id/abort` |
 
 ### 组件面(cordis fiber ↔ CLI 动词)
 
-CLI 命令族与服务端 fiber 一一对应;`uberge kernel` 打出的路由表
+CLI 命令族与服务端 fiber 一一对应;`utopinn kernel` 打出的路由表
 就是这套映射的远端清单。kernel 路由表 47 条全部由具名命令覆盖
 (doctor `capability coverage` 差集=0);`raw` 逃生舱保留作任意
 REST 直达与 kernel 表面外 legacy 端点。
 
 | fiber | 命令 | 输入 | 输出 |
 |---|---|---|---|
-| uberge-library | `uberge worlds` | — | `name (displayName)` 每行一书 |
-| uberge-library | `uberge wi <book>` | `-n,--full,--out` | `❗/off uid comment keys` 条目表 |
-| uberge-library | `uberge world-edit <n>` | `--json-file\|--stdin\|json` | 世界书整文档写回 `{entries:{}}`(upsert) |
-| uberge-library | `uberge world-delete <n>` | 显式名 | 删书(204) |
-| uberge-library | `uberge preset-get\|preset-edit\|preset-delete <n>` | `--api`,`--json-file` | 预设 doc 读/整档写回/删 |
-| uberge-library | `uberge personas` / `persona-edit <av>` / `persona-delete <av>` | `--set k=v`,`--json-file` | 人设表/写字段/删 |
-| uberge-library | `uberge settings` / `settings-set` | `--json-file\|--stdin\|json` | 脱敏读;PATCH 仅 power_user\|extension_settings |
-| uberge-library | `uberge secrets` / `secret-set <k>` / `secret-delete <k> <id>` | `--value\|--stdin` | 脱敏态;写新(PUT 铸 id)/按 id 删——值永不回显 |
-| uberge-library | `uberge char <n>` / `chat-get [c]` / `chat-create <n>` | — | 卡全文/uberge doc/立即建空聊天 |
-| uberge-diag | `uberge kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
-| uberge-plugins | `uberge plugins` | — | `● id` fiber 状态表 |
-| uberge-plugins | `uberge plugin <id> <enable\|disable\|reload>` | — | 生命周期操作(admin;uberge-plugins 自锁) |
-| uberge-mvu | `uberge mvu [state]` | `-n,--full,--out` | chat 变量表 + settle 回执数(=悬浮窗/状态板数据源) |
-| uberge-mvu | `uberge mvu settle [--floor i]` | `--floor` | 手动重结算目标楼层 |
-| uberge-mvu | `uberge mvu resettle` | — | 全量重放投影(编辑/删楼/换 swipe 后重建) |
-| uberge-mvu | `uberge mvu panel <tpl\|--file\|--stdin>` | `--out`,`--html` | 模板×chat变量→面板 HTML |
-| uberge-script | `uberge script <st\|--stdin>` | 位置参/stdin | `pipe` + `ops/notify/popup` 计数(服务端 STscript) |
-| uberge-import | `uberge import-scan <dir>` / `import-preview\|commit <f>` | `--file,--stdin,--conflict,--as` | ST 目录扫描(admin)/探测预览/落库 |
-| uberge-data | `uberge backup [--out]` / `lan-offer` / `lan-import <url>` | `--set cat=bool,--mode` | zip 快照/LAN 迁移 offer/拉入恢复 |
-| — | `uberge raw <M> </path> [json\|--stdin]` | — | `{status,data}` —— 任意 REST 端点(含 legacy/kernel 表外) |
+| utopinn-library | `utopinn worlds` | — | `name (displayName)` 每行一书 |
+| utopinn-library | `utopinn wi <book>` | `-n,--full,--out` | `❗/off uid comment keys` 条目表 |
+| utopinn-library | `utopinn world-edit <n>` | `--json-file\|--stdin\|json` | 世界书整文档写回 `{entries:{}}`(upsert) |
+| utopinn-library | `utopinn world-delete <n>` | 显式名 | 删书(204) |
+| utopinn-library | `utopinn preset-get\|preset-edit\|preset-delete <n>` | `--api`,`--json-file` | 预设 doc 读/整档写回/删 |
+| utopinn-library | `utopinn personas` / `persona-edit <av>` / `persona-delete <av>` | `--set k=v`,`--json-file` | 人设表/写字段/删 |
+| utopinn-library | `utopinn settings` / `settings-set` | `--json-file\|--stdin\|json` | 脱敏读;PATCH 仅 power_user\|extension_settings |
+| utopinn-library | `utopinn secrets` / `secret-set <k>` / `secret-delete <k> <id>` | `--value\|--stdin` | 脱敏态;写新(PUT 铸 id)/按 id 删——值永不回显 |
+| utopinn-library | `utopinn char <n>` / `chat-get [c]` / `chat-create <n>` | — | 卡全文/utopinn doc/立即建空聊天 |
+| utopinn-diag | `utopinn kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
+| utopinn-plugins | `utopinn plugins` | — | `● id` fiber 状态表 |
+| utopinn-plugins | `utopinn plugin <id> <enable\|disable\|reload>` | — | 生命周期操作(admin;utopinn-plugins 自锁) |
+| utopinn-mvu | `utopinn mvu [state]` | `-n,--full,--out` | chat 变量表 + settle 回执数(=悬浮窗/状态板数据源) |
+| utopinn-mvu | `utopinn mvu settle [--floor i]` | `--floor` | 手动重结算目标楼层 |
+| utopinn-mvu | `utopinn mvu resettle` | — | 全量重放投影(编辑/删楼/换 swipe 后重建) |
+| utopinn-mvu | `utopinn mvu panel <tpl\|--file\|--stdin>` | `--out`,`--html` | 模板×chat变量→面板 HTML |
+| utopinn-script | `utopinn script <st\|--stdin>` | 位置参/stdin | `pipe` + `ops/notify/popup` 计数(服务端 STscript) |
+| utopinn-import | `utopinn import-scan <dir>` / `import-preview\|commit <f>` | `--file,--stdin,--conflict,--as` | ST 目录扫描(admin)/探测预览/落库 |
+| utopinn-data | `utopinn backup [--out]` / `lan-offer` / `lan-import <url>` | `--set cat=bool,--mode` | zip 快照/LAN 迁移 offer/拉入恢复 |
+| — | `utopinn raw <M> </path> [json\|--stdin]` | — | `{status,data}` —— 任意 REST 端点(含 legacy/kernel 表外) |
 
 ## 上下文链与状态文件
 
-路径:`~/.uberge-cli.json`(`UBERGE_STATE`/`--state` 覆盖;WSL 与
+路径:`~/.utopinn-cli.json`(`UTOPINN_STATE`/`--state` 覆盖;WSL 与
 Windows 各写各家 home——跨边界跑时显式 `--state` 共享一份)。
 写 = 读-改-写整文件,JSON parse 失败 → 备份 `.bak` 后重建。
 **非多进程安全**:并行 agent 各自 `--state` 隔离。
@@ -258,7 +258,7 @@ history` 顺手刷新;写时拿缓存值发 CAS,409 → 自动 `chats/get` 重�
 + 重试**一次**;再 409 → exit 3 + hint(`--force` 或 `sync` 后重试)。
 
 上下文链断点自检:任何需要 ctx 的命令在 state 缺 char/chat 时报
-`no_ctx` + hint `uberge use <char> [chat]`,不猜。
+`no_ctx` + hint `utopinn use <char> [chat]`,不猜。
 
 ## 输出契约
 
@@ -267,9 +267,9 @@ history` 顺手刷新;写时拿缓存值发 CAS,409 → 自动 `chats/get` 重�
 - 结构:`<主内容>` + 空行 + footer 块:
   ```
   ── <charName> @ <chatName> · floors N · job <id8>:<status> · <extra>
-  · next: uberge <cmd> · uberge <cmd> · uberge <cmd>
+  · next: utopinn <cmd> · utopinn <cmd> · utopinn <cmd>
   ```
-- `next` 单行 ≤3 条,按可能性排序,**整条可粘贴执行**(含 `uberge` 前缀)。
+- `next` 单行 ≤3 条,按可能性排序,**整条可粘贴执行**(含 `utopinn` 前缀)。
 - 流式:delta 原文写 stdout(markdown 不渲染);诊断/警告写 stderr
   (`[cli] …`),不混进文本流。
 - 截断一律标 `…+Nch`,且给出放大路径(`--full`/`--out`/`--floor`)。
@@ -281,7 +281,7 @@ history` 顺手刷新;写时拿缓存值发 CAS,409 → 自动 `chats/get` 重�
   { "ok": true, "cmd": "chats", "data": { /* 命令专属 */ },
     "ctx": { "server","charDir","charName","chatName","floors",
              "integrity","persona","preset","job":{"id","status","type"} },
-    "next": [ { "cmd": "uberge send \"…\"", "why": "…" } ] }
+    "next": [ { "cmd": "utopinn send \"…\"", "why": "…" } ] }
   ```
 - 生成动词:NDJSON,每行一帧:
   ```
@@ -322,8 +322,8 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 
 - **Ctrl+C / 进程被杀**:job 服务端存活(runner 刻意不绑 close→abort,
   runner.js:62-77)。CLI 捕获 SIGINT → 打
-  `job <id> still running — uberge attach <id>` 后退出(exit 6),
-  **不**调 abort。中止是显式 `uberge abort`。
+  `job <id> still running — utopinn attach <id>` 后退出(exit 6),
+  **不**调 abort。中止是显式 `utopinn abort`。
 - **WS 中断**:自动重连一次(新 ticket + `resume from_seq:lastSeq+1`);
   再失败 → 降 `jobs/status` 轮询(1s),按 `status.text` 差分补增量,
   直到终态或 `--wait`。链路不因为 socket 抖一下断掉。
@@ -359,7 +359,7 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 
 - REPL / TUI / 交互选择器(一切状态化,无交互问答)
 - swipe 的非末楼操作、per-floor 多 swipe 管理 UI
-- group 聊天(服务端 `/api/uberge/generate` 未接,buildUbergeGenerateBody
+- group 聊天(服务端 `/api/utopinn/generate` 未接,buildUtopinnGenerateBody
   selected_group → null 即弃)
 - 多 handle/多用户、登录流、远端部署凭证
 - persona description 写入面(persona 只带 name;description 走服务端
@@ -368,7 +368,7 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
   留给 web 管理端需求驱动)
 - `panel`(chat_state sidecar,`/api/chats/state/*` 已存在——CardApp
   联调面,归 CardApp 任务)
-- `th`(TH-compat `/api/uberge/th/call` 直连,酒助脚本调试)
+- `th`(TH-compat `/api/utopinn/th/call` 直连,酒助脚本调试)
 - api-client 包迁移(等包长全,CLI 届时变纯壳)
 
 ## 实现自检清单(照此做不踩坑)
@@ -390,7 +390,7 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
    (header 不算),`history` 的 `#i` 同下标对齐。
 9. `characters/chats` 默认形有 `chat_items/mes/sort_time`;`simple:true`
    只有名——列目录用前者,`use` 的 chat 缺省用 `char.chat` 指针优先。
-10. jobs 面:`/api/uberge/jobs/:id` 有 trace/sources;`/jobs/status`、
+10. jobs 面:`/api/utopinn/jobs/:id` 有 trace/sources;`/jobs/status`、
     `/jobs/events`(REST 陷阱见上)、`/jobs/active` 在
     `/api/backends/chat-completions/` 下;abort 在 `/api/generation/:id/abort`。
 11. floor `send_date`/`gen_*` 用 ISO 字符串(与 `persistGeneratedReply`
@@ -401,7 +401,7 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 ## v1 之后的生长方向(登记,不做)
 
 - `panel` 命令:chat_state sidecar 读写(CardApp/掌门卡状态面联调)
-- `th` 命令:TH-compat `/api/uberge/th/call` 直连(酒馆助手脚本调试)
+- `th` 命令:TH-compat `/api/utopinn/th/call` 直连(酒馆助手脚本调试)
 - 交互 REPL 模式(readline 逐轮对话,比一次性 send 更像「玩」)
 - `wi`/`books` 世界书专查与启停
 - api-client 包补齐后迁移,CLI 变纯壳

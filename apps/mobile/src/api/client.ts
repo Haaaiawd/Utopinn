@@ -1,21 +1,21 @@
-// Typed /api/uberge/* surface on top of @uberge/api-client's UbergeClient.
+// Typed /api/utopinn/* surface on top of @utopinn/api-client's UtopinnClient.
 // The package's request() handles JSON + errors (ApiError); transport
 // security (session cookie + CSRF + 403 rotation) lives in session.ts and
-// is injected as the fetch impl — the package doesn't ship the uberge
+// is injected as the fetch impl — the package doesn't ship the utopinn
 // endpoints yet, so they are declared here against the server contract
-// (apps/server/src/plugins/uberge-library.js, uberge-generate.js).
-import { UbergeClient } from '@uberge/api-client';
-import { MVU_STATUS_PLACEHOLDER } from '@uberge/protocol';
-import type { MessageViewModel, SwipeView } from '@uberge/protocol';
+// (apps/server/src/plugins/utopinn-library.js, utopinn-generate.js).
+import { UtopinnClient } from '@utopinn/api-client';
+import { MVU_STATUS_PLACEHOLDER } from '@utopinn/protocol';
+import type { MessageViewModel, SwipeView } from '@utopinn/protocol';
 import { session } from './session';
 
-let cached: UbergeClient | null = null;
+let cached: UtopinnClient | null = null;
 let cachedBase = '';
 
 /** Session-bound client; rebuilt when baseUrl changes. */
-export function client(): UbergeClient {
+export function client(): UtopinnClient {
     if (!cached || cachedBase !== session.baseUrl) {
-        cached = new UbergeClient({ baseUrl: session.baseUrl, fetch: session.fetchBound });
+        cached = new UtopinnClient({ baseUrl: session.baseUrl, fetch: session.fetchBound });
         cachedBase = session.baseUrl;
     }
     return cached;
@@ -26,7 +26,7 @@ const enc = encodeURIComponent;
 /** Hermes has no Intl/`localeCompare` — plain `</>` compare (number 或 ISO 串都序正确)。 */
 const cmpStr = (a: string | number, b: string | number): number => (a < b ? -1 : a > b ? 1 : 0);
 
-// ---------- wire shapes (server: plugins/uberge-library.js) ----------
+// ---------- wire shapes (server: plugins/utopinn-library.js) ----------
 
 export interface CharacterItem {
     charDir: string;
@@ -82,13 +82,13 @@ export interface ChatSummary {
 // ---------- endpoints ----------
 
 export async function listCharacters(): Promise<CharacterItem[]> {
-    const d = await client().request<{ items: CharacterItem[]; total: number }>('/api/uberge/characters');
+    const d = await client().request<{ items: CharacterItem[]; total: number }>('/api/utopinn/characters');
     return d.items ?? [];
 }
 
 export async function listChats(charDir: string): Promise<ChatItem[]> {
     const d = await client().request<{ items: ChatItemWire[]; total: number }>(
-        `/api/uberge/characters/${enc(charDir)}/chats`,
+        `/api/utopinn/characters/${enc(charDir)}/chats`,
     );
     // wire lastMessage 是整条楼层对象 —— 这里归一成 mes 文本,UI 统一当 string 用。
     return (d.items ?? []).map((it) => ({ ...it, lastMessage: mesPreview(it.lastMessage) }));
@@ -138,13 +138,13 @@ export async function listAllChats(): Promise<ChatSummary[]> {
 
 export async function getChat(charDir: string, chatName: string): Promise<ChatDetail> {
     return client().request<ChatDetail>(
-        `/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`,
+        `/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}`,
     );
 }
 
 /** PUT creates an empty chat (409 if it already exists). */
 export async function createChat(charDir: string, chatName: string): Promise<void> {
-    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
+    await client().request(`/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
         method: 'PUT',
         body: {},
     });
@@ -155,7 +155,7 @@ export async function appendMessages(
     chatName: string,
     messages: { name: string; is_user: boolean; mes: string; send_date: number; extra?: Record<string, unknown> }[],
 ): Promise<void> {
-    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}/messages`, {
+    await client().request(`/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}/messages`, {
         method: 'POST',
         body: { messages },
     });
@@ -179,7 +179,7 @@ export interface CardInfo {
 
 export async function getCharacter(charDir: string): Promise<CardInfo | null> {
     const card = await client().request<Record<string, unknown>>(
-        `/api/uberge/characters/${enc(charDir)}`,
+        `/api/utopinn/characters/${enc(charDir)}`,
     ).catch(() => null);
     if (!card) return null;
     const data = (card.data && typeof card.data === 'object' && !Array.isArray(card.data)
@@ -196,7 +196,7 @@ export async function getCharacter(charDir: string): Promise<CardInfo | null> {
     };
 }
 
-// ---------- writes (uberge PATCH / rename / delete / append — TASK-023 surface) ----------
+// ---------- writes (utopinn PATCH / rename / delete / append — TASK-023 surface) ----------
 
 export interface JsonPatchOp {
     op: 'add' | 'remove' | 'replace' | 'test';
@@ -207,24 +207,24 @@ export interface JsonPatchOp {
 /**
  * RFC6902-lite ops on the {header, body} chat doc — e.g.
  * swipe switch: {op:'replace', path:'/body/<i>/swipe_id', value:n}.
- * Server: PATCH /api/uberge/characters/:charDir/chats/:chatName.
+ * Server: PATCH /api/utopinn/characters/:charDir/chats/:chatName.
  */
 export async function patchChatOps(charDir: string, chatName: string, ops: JsonPatchOp[]): Promise<void> {
-    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
+    await client().request(`/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
         method: 'PATCH',
         body: { ops },
     });
 }
 
 export async function deleteChat(charDir: string, chatName: string): Promise<void> {
-    await client().request(`/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
+    await client().request(`/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}`, {
         method: 'DELETE',
     });
 }
 
 export async function renameChat(charDir: string, chatName: string, newName: string): Promise<void> {
     await client().request(
-        `/api/uberge/characters/${enc(charDir)}/chats/${enc(chatName)}/rename`,
+        `/api/utopinn/characters/${enc(charDir)}/chats/${enc(chatName)}/rename`,
         { method: 'POST', body: { newName } },
     );
 }
@@ -245,7 +245,7 @@ export async function branchChat(
     await createChat(charDir, newName);
     if (slice.length) {
         await client().request(
-            `/api/uberge/characters/${enc(charDir)}/chats/${enc(newName)}/messages`,
+            `/api/utopinn/characters/${enc(charDir)}/chats/${enc(newName)}/messages`,
             { method: 'POST', body: { messages: slice } },
         );
     }

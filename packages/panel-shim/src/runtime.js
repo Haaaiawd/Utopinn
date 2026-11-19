@@ -1,20 +1,20 @@
 /**
- * Uberge panel shim — TavernHelper-compatible T0 face.
+ * Utopinn panel shim — TavernHelper-compatible T0 face.
  * Injected into the card sandbox (RN WebView / iframe). Speaks the
- * 'uberge-panel' postMessage protocol to the host; never touches the
+ * 'utopinn-panel' postMessage protocol to the host; never touches the
  * network or host DOM directly.
  *
  * Host contract:
- *   out: {channel:'uberge-panel',direction:'request',nonce,requestId,method,args}
- *   in : window.__ubergePanelReceive({direction:'response'|'push',...})
+ *   out: {channel:'utopinn-panel',direction:'request',nonce,requestId,method,args}
+ *   in : window.__utopinnPanelReceive({direction:'response'|'push',...})
  *        (also accepts 'message' events carrying the same envelope)
- *   bootstrap: window.__UBERGE_PANEL_NONCE__ + window.__UBERGE_PANEL_BOOTSTRAP__
+ *   bootstrap: window.__UTOPINN_PANEL_NONCE__ + window.__UTOPINN_PANEL_BOOTSTRAP__
  */
 (function () {
     'use strict';
 
-    var NONCE = (typeof window.__UBERGE_PANEL_NONCE__ === 'string') ? window.__UBERGE_PANEL_NONCE__ : '';
-    var BOOTSTRAP = window.__UBERGE_PANEL_BOOTSTRAP__ || {};
+    var NONCE = (typeof window.__UTOPINN_PANEL_NONCE__ === 'string') ? window.__UTOPINN_PANEL_NONCE__ : '';
+    var BOOTSTRAP = window.__UTOPINN_PANEL_BOOTSTRAP__ || {};
 
     var pending = {};
     var seq = 0;
@@ -23,7 +23,7 @@
 
     // ── transport ─────────────────────────────────────────────────────────
     function post(msg) {
-        if (typeof window.__ubergePanelPost === 'function') { window.__ubergePanelPost(msg); return; }
+        if (typeof window.__utopinnPanelPost === 'function') { window.__utopinnPanelPost(msg); return; }
         if (window.ReactNativeWebView && typeof window.ReactNativeWebView.postMessage === 'function') {
             window.ReactNativeWebView.postMessage(JSON.stringify(msg)); return;
         }
@@ -38,7 +38,7 @@
             var id = 'r' + (++seq);
             pending[id] = { resolve: resolve, reject: reject };
             try {
-                post({ channel: 'uberge-panel', direction: 'request', nonce: NONCE, requestId: id, method: method, args: args || {} });
+                post({ channel: 'utopinn-panel', direction: 'request', nonce: NONCE, requestId: id, method: method, args: args || {} });
             } catch (e) {
                 delete pending[id];
                 reject(e);
@@ -47,7 +47,7 @@
     }
 
     function receive(msg) {
-        if (!msg || msg.channel !== 'uberge-panel') return;
+        if (!msg || msg.channel !== 'utopinn-panel') return;
         if (msg.direction === 'response') {
             var p = pending[msg.requestId];
             if (!p) return;
@@ -61,7 +61,7 @@
         }
     }
 
-    window.__ubergePanelReceive = receive;
+    window.__utopinnPanelReceive = receive;
     if (typeof window.addEventListener === 'function') {
         window.addEventListener('message', function (e) {
             try { receive(typeof e.data === 'string' ? JSON.parse(e.data) : e.data); } catch (_) { /* not ours */ }

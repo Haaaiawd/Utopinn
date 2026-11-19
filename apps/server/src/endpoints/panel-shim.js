@@ -1,6 +1,6 @@
 // Serves the card-panel shim runtime to panel hosts (RN WebView / web iframe).
 // `GET /api/panel-shim/t0.js` → the TH-face T0 IIFE, verbatim from
-// @uberge/panel-shim. Cached in-process; ETag'd by content hash.
+// @utopinn/panel-shim. Cached in-process; ETag'd by content hash.
 import express from 'express';
 import { createRequire } from 'node:module';
 import { readFileSync } from 'node:fs';
@@ -14,7 +14,7 @@ let cache = null;
 function loadRuntime() {
     if (cache) return cache;
     const require = createRequire(import.meta.url);
-    const pkgDir = path.dirname(require.resolve('@uberge/panel-shim/package.json'));
+    const pkgDir = path.dirname(require.resolve('@utopinn/panel-shim/package.json'));
     const source = readFileSync(path.join(pkgDir, 'src', 'runtime.js'), 'utf8');
     const etag = `W/"${createHash('sha256').update(source).digest('hex').slice(0, 24)}"`;
     cache = { source, etag };

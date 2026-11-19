@@ -105,24 +105,24 @@ export const GATED_ROUTES = Object.freeze([
     route(/^\/api\/extensions\/(switch|move|delete)$/i, ['extensions']),
     route(/^\/api\/stats\/recreate$/i, ['stats']),
     route(/^\/api\/data-maid\/delete$/i, ALL_CATEGORY_IDS, { wholesale: true }),
-    // Uberge kernel-plugin surface. The webServer dispatcher mounts inside
+    // Utopinn kernel-plugin surface. The webServer dispatcher mounts inside
     // setupPrivateEndpoints, so these requests already traverse this
     // middleware — but without a table entry they took no reader slot and a
     // sync writer could tear a generation/chat persist mid-flight.
-    route(/^\/api\/uberge\/generate$/i, ['chats']),
-    route(/^\/api\/uberge\/preview$/i, ['chats'], { dirty: false }),
-    route(/^\/api\/uberge\/mvu\/(settle|resettle)$/i, ['chats']),
-    route(/^\/api\/uberge\/mvu\/panel\/render$/i, ['chats'], { dirty: false }),
-    route(/^\/api\/uberge\/(th\/call|script\/run)$/i, ['chats', 'characters', 'worlds', 'settings']),
-    route(/^\/api\/uberge\/settings$/i, ['settings']),
-    route(/^\/api\/uberge\/presets\/[^/]+$/i, PRESET_CATEGORY_IDS),
-    route(/^\/api\/uberge\/worlds\/[^/]+$/i, ['worlds']),
-    route(/^\/api\/uberge\/personas\/[^/]+$/i, ['settings']),
-    route(/^\/api\/uberge\/secrets(\/[^/]+)+$/i, ['secrets']),
-    route(/^\/api\/uberge\/characters\/[^/]+\/chats\/[^/]+(\/rename|\/messages)?$/i, ['chats']),
-    route(/^\/api\/uberge\/import\/commit$/i, ALL_CATEGORY_IDS, { wholesale: true }),
-    route(/^\/api\/uberge\/lan\/import$/i, ALL_CATEGORY_IDS, { wholesale: true }),
-    route(/^\/api\/uberge\/(import\/(preview|scan-st)|backup|lan\/offer)$/i, ALL_CATEGORY_IDS, { dirty: false }),
+    route(/^\/api\/utopinn\/generate$/i, ['chats']),
+    route(/^\/api\/utopinn\/preview$/i, ['chats'], { dirty: false }),
+    route(/^\/api\/utopinn\/mvu\/(settle|resettle)$/i, ['chats']),
+    route(/^\/api\/utopinn\/mvu\/panel\/render$/i, ['chats'], { dirty: false }),
+    route(/^\/api\/utopinn\/(th\/call|script\/run)$/i, ['chats', 'characters', 'worlds', 'settings']),
+    route(/^\/api\/utopinn\/settings$/i, ['settings']),
+    route(/^\/api\/utopinn\/presets\/[^/]+$/i, PRESET_CATEGORY_IDS),
+    route(/^\/api\/utopinn\/worlds\/[^/]+$/i, ['worlds']),
+    route(/^\/api\/utopinn\/personas\/[^/]+$/i, ['settings']),
+    route(/^\/api\/utopinn\/secrets(\/[^/]+)+$/i, ['secrets']),
+    route(/^\/api\/utopinn\/characters\/[^/]+\/chats\/[^/]+(\/rename|\/messages)?$/i, ['chats']),
+    route(/^\/api\/utopinn\/import\/commit$/i, ALL_CATEGORY_IDS, { wholesale: true }),
+    route(/^\/api\/utopinn\/lan\/import$/i, ALL_CATEGORY_IDS, { wholesale: true }),
+    route(/^\/api\/utopinn\/(import\/(preview|scan-st)|backup|lan\/offer)$/i, ALL_CATEGORY_IDS, { dirty: false }),
 ]);
 
 /** @typedef {{ readers: number, writerHeld: boolean, readerWaiters: Array<() => void>, writerWaiters: Array<() => void> }} Gate */

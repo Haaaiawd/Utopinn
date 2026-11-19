@@ -83,13 +83,13 @@ export async function loadSettingsEnvelope({ bootstrap = false, signal } = {}) {
 
 /**
  * TASK-033 reroute: settings document via the kernel route
- * GET /api/uberge/settings ({settings:<doc>}) instead of POST /api/settings/get
+ * GET /api/utopinn/settings ({settings:<doc>}) instead of POST /api/settings/get
  * or the /api/settings/fields granular channel. The envelope around the
  * document is identical to loadSettingsEnvelope's, so getSettings() consumers
  * see no shape change.
  */
-export async function loadUbergeSettingsEnvelope({ bootstrap = false, signal } = {}) {
-    const response = await fetch('/api/uberge/settings', {
+export async function loadUtopinnSettingsEnvelope({ bootstrap = false, signal } = {}) {
+    const response = await fetch('/api/utopinn/settings', {
         method: 'GET',
         credentials: 'same-origin',
         cache: 'no-store',
@@ -97,7 +97,7 @@ export async function loadUbergeSettingsEnvelope({ bootstrap = false, signal } =
         signal,
     });
     if (!response.ok) {
-        throw new Error(`uberge settings read failed with HTTP ${response.status}`);
+        throw new Error(`utopinn settings read failed with HTTP ${response.status}`);
     }
     const payload = await response.json();
     const settingsDocument = (payload?.settings && typeof payload.settings === 'object' && !Array.isArray(payload.settings))

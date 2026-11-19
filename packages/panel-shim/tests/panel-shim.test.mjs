@@ -14,9 +14,9 @@ function makeEnv(bootstrap = {}) {
     const sent = [];
     const listeners = {};
     const win = {
-        __UBERGE_PANEL_NONCE__: 'nonce-1',
-        __UBERGE_PANEL_BOOTSTRAP__: { nonce: 'nonce-1', face: 'th', stateNamespaces: [], assets: {}, ...bootstrap },
-        __ubergePanelPost: (msg) => sent.push(msg),
+        __UTOPINN_PANEL_NONCE__: 'nonce-1',
+        __UTOPINN_PANEL_BOOTSTRAP__: { nonce: 'nonce-1', face: 'th', stateNamespaces: [], assets: {}, ...bootstrap },
+        __utopinnPanelPost: (msg) => sent.push(msg),
         addEventListener: (t, fn) => { (listeners[t] = listeners[t] || []).push(fn); },
         console,
         setTimeout,
@@ -36,7 +36,7 @@ function makeEnv(bootstrap = {}) {
     vm.runInContext(RUNTIME, win);
     const lastRequest = () => sent[sent.length - 1];
     const respond = (requestId, result, ok = true) => {
-        win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'response', nonce: 'nonce-1', requestId, ok, result });
+        win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'response', nonce: 'nonce-1', requestId, ok, result });
     };
     return { win, sent, listeners, lastRequest, respond };
 }
@@ -59,7 +59,7 @@ test('getVariables marshals scope args into a bridge request', async () => {
     const { win, lastRequest, respond } = makeEnv();
     const p = win.getVariables({ type: 'chat' });
     const req = lastRequest();
-    assert.deepEqual(JSON.parse(JSON.stringify(req)),{channel:"uberge-panel",direction:"request",nonce:"nonce-1",requestId:req.requestId,method:"th.getVariables",args:{type:"chat"}});
+    assert.deepEqual(JSON.parse(JSON.stringify(req)),{channel:"utopinn-panel",direction:"request",nonce:"nonce-1",requestId:req.requestId,method:"th.getVariables",args:{type:"chat"}});
     respond(req.requestId, { hp: 10 });
     assert.deepEqual(JSON.parse(JSON.stringify(await p)),{hp:10});
 });
@@ -83,7 +83,7 @@ test('eventOn registers locally + notifies host; pushed th.event dispatches', as
     const req = lastRequest();
     assert.equal(req.method, 'th.eventOn');
     respond(req.requestId, { subscribed: 'message_received' });
-    win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'message_received', args: [{ id: 3 }] } });
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'message_received', args: [{ id: 3 }] } });
     assert.deepEqual(JSON.parse(JSON.stringify(got)),{id:3});
 });
 
@@ -91,7 +91,7 @@ test('eventOnce fires once then unregisters', () => {
     const { win } = makeEnv();
     let count = 0;
     win.eventOnce('x', () => { count++; });
-    const push = () => win.__ubergePanelReceive({ channel: 'uberge-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'x', args: [] } });
+    const push = () => win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'x', args: [] } });
     push(); push();
     assert.equal(count, 1);
 });

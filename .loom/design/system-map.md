@@ -1,4 +1,4 @@
-# Uberge 系统地图——端口 / CLI / 数据流 全索引
+# Utopinn 系统地图——端口 / CLI / 数据流 全索引
 
 > 2026-11-19 TASK-030/031 实弹期整理。唯一事实源是代码;本文当导航。
 > 端口面以 `apps/server` 实跑为准;CLI 契约以 `.loom/capabilities/cli-client/capability.md` 为准。
@@ -7,7 +7,7 @@
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
-│ 浏览器旧 UI   │   │ uberge CLI   │   │ (未来)手机端  │   ← 薄客户端,无大脑
+│ 浏览器旧 UI   │   │ utopinn CLI   │   │ (未来)手机端  │   ← 薄客户端,无大脑
 │ public/*.js  │   │ apps/cli/    │   │ apps/mobile/ │
 └──────┬───────┘   └──────┬───────┘   └──────┬───────┘
        │ 同一套 wire:CSRF cookie + REST + WS 帧流 │
@@ -16,7 +16,7 @@
         ┌─────────────────────────────────────┐
         │  apps/server (Express + cordis 内核) │  唯一大脑
         │                                      │
-        │  ┌─ cordis 新面 /api/uberge/* ─────┐ │
+        │  ┌─ cordis 新面 /api/utopinn/* ─────┐ │
         │  │ generate / preview / jobs      │ │  ← 生成编排
         │  │ library (characters/presets/   │ │  ← 资产 CRUD
         │  │   worlds/personas/settings/    │ │
@@ -64,17 +64,17 @@
 | `/api/chats/recent` | POST | `{}` | 跨角色最近聊天 |
 | `/api/chats/get` | POST | `{avatar_url,file_name:'<n>.jsonl'}` | `[header, ...floors]`;新聊天 `{new_chat:true}`;**`header.chat_metadata.integrity` = CAS 令牌** |
 
-### 2b. cordis library 新面(`/api/uberge`,REST 风格)
+### 2b. cordis library 新面(`/api/utopinn`,REST 风格)
 
 | 端点 | 方法 | 用途 |
 |---|---|---|
-| `/api/uberge/characters` `/:charDir` | GET | 角色列表/详情 |
-| `/api/uberge/characters/:charDir/chats` `/…/:chatName` | GET/PUT/PATCH/DELETE/POST | 聊天 CRUD + `…/rename` + `…/messages` |
-| `/api/uberge/presets` `/:name` | GET/PUT/DELETE | 预设 |
-| `/api/uberge/worlds` `/:name` | GET/PUT/DELETE | 世界书 |
-| `/api/uberge/personas` `/…` | GET/PUT/DELETE | 人设 |
-| `/api/uberge/settings` | GET/PATCH | settings |
-| `/api/uberge/secrets` `/:key` `/:key/:id` | GET/PUT/DELETE | 密钥库(dispatch `ctx.secrets` 读这里) |
+| `/api/utopinn/characters` `/:charDir` | GET | 角色列表/详情 |
+| `/api/utopinn/characters/:charDir/chats` `/…/:chatName` | GET/PUT/PATCH/DELETE/POST | 聊天 CRUD + `…/rename` + `…/messages` |
+| `/api/utopinn/presets` `/:name` | GET/PUT/DELETE | 预设 |
+| `/api/utopinn/worlds` `/:name` | GET/PUT/DELETE | 世界书 |
+| `/api/utopinn/personas` `/…` | GET/PUT/DELETE | 人设 |
+| `/api/utopinn/settings` | GET/PATCH | settings |
+| `/api/utopinn/secrets` `/:key` `/:key/:id` | GET/PUT/DELETE | 密钥库(dispatch `ctx.secrets` 读这里) |
 | `/api/presets/list?apiId=openai` | GET | `{names[]}`(CLI `presets` 用这个 legacy 口) |
 
 **两套资产面并存是过渡态**:library 面是给新客户端的,cordis 插件;legacy 面是旧 UI 遗产。CLI v1 混用——读走 legacy(形状直接可用),写走 chats(带 CAS)。
@@ -83,17 +83,17 @@
 
 | 端点 | 方法 | 用途 | 关键字段 |
 |---|---|---|---|
-| `/api/uberge/generate` | POST | **主口**:组装→dispatch→job | `charDir,chatName,type,stream,presetName,user,generation_overrides,overrides,luker_generation{job_id,persist_target}` |
-| `/api/uberge/preview` | POST | 干跑组装,不派发不写盘 | 同上;回 `{messages[],sources,perf}` |
-| `/api/uberge/jobs` | GET | job 列表(running 面) | |
-| `/api/uberge/jobs/:id` | GET | job 明细:trace/sources/WI 激活/perf | CLI `inspect` |
-| `/api/uberge/script/run` | POST | STscript 执行 | |
-| `/api/uberge/th/call` | POST | 酒馆助手 TH-compat 直连 | |
-| `/api/uberge/mvu/settle` `/resettle` `/state` `/panel/render` | POST/GET | MVU 结算/状态/面板渲染 | |
-| `/api/uberge/import/preview` `/commit` | POST | 卡/资产导入 | |
-| `/api/uberge/backup` `/lan/offer` `/lan/import` `/import/scan-st` | POST | 数据迁移/局域网互导 | |
-| `/api/uberge/plugins` `/:id/enable|disable|reload` | GET/POST | cordis 插件管理 | |
-| `/api/uberge/_kernel` | GET | 内核自检(插件状态) | |
+| `/api/utopinn/generate` | POST | **主口**:组装→dispatch→job | `charDir,chatName,type,stream,presetName,user,generation_overrides,overrides,luker_generation{job_id,persist_target}` |
+| `/api/utopinn/preview` | POST | 干跑组装,不派发不写盘 | 同上;回 `{messages[],sources,perf}` |
+| `/api/utopinn/jobs` | GET | job 列表(running 面) | |
+| `/api/utopinn/jobs/:id` | GET | job 明细:trace/sources/WI 激活/perf | CLI `inspect` |
+| `/api/utopinn/script/run` | POST | STscript 执行 | |
+| `/api/utopinn/th/call` | POST | 酒馆助手 TH-compat 直连 | |
+| `/api/utopinn/mvu/settle` `/resettle` `/state` `/panel/render` | POST/GET | MVU 结算/状态/面板渲染 | |
+| `/api/utopinn/import/preview` `/commit` | POST | 卡/资产导入 | |
+| `/api/utopinn/backup` `/lan/offer` `/lan/import` `/import/scan-st` | POST | 数据迁移/局域网互导 | |
+| `/api/utopinn/plugins` `/:id/enable|disable|reload` | GET/POST | cordis 插件管理 | |
+| `/api/utopinn/_kernel` | GET | 内核自检(插件状态) | |
 
 **generate 的 `type`**:`normal|regenerate|swipe|continue|impersonate|quiet`——服务端组装语义各不相同(swipe 自弹末楼、continue 接 cycle prompt、quiet 强制非流)。
 
@@ -155,11 +155,11 @@ running → awaiting_ack →(15s grace)→ persisting → completed | failed | c
 **幂等**:append 对末楼 deep-equal 消息 `skipped`;gen-id sidecar 命中也跳过——断网重发不产双楼。
 **patch 下标**:`/i` 是 body 下标(header 不算),`history #i` 同基。
 
-## 6. CLI 命令 → 端点映射(`apps/cli/uberge-cli.mjs`)
+## 6. CLI 命令 → 端点映射(`apps/cli/utopinn-cli.mjs`)
 
 | 命令 | 打的端点 | 写盘 |
 |---|---|---|
-| `uberge`(裸) | 无(零网络快照) | — |
+| `utopinn`(裸) | 无(零网络快照) | — |
 | `status` | chats/get + jobs/active | 刷新 state |
 | `doctor` | csrf-token + characters/all + ws-ticket+WS | — |
 | `schema` | 无(自描述 JSON) | — |
@@ -172,7 +172,7 @@ running → awaiting_ack →(15s grace)→ persisting → completed | failed | c
 | `chat-delete` | POST /api/chats/delete | ctx |
 | `history` | POST /api/chats/get | 刷 integrity/floors |
 | `edit <i> <t>` | chats/get → POST /api/chats/patch | replace mes+swipes |
-| **`send <t>`** | jobs/active → chats/append(user) → **uberge/generate** → ws-ticket → WS resume → chats/append(AI+gen-id ack) → jobs/status | user+AI 两楼 |
+| **`send <t>`** | jobs/active → chats/append(user) → **utopinn/generate** → ws-ticket → WS resume → chats/append(AI+gen-id ack) → jobs/status | user+AI 两楼 |
 | `say <t>` | chats/append(user) | user 楼 |
 | **`regen`** | jobs/active → chats/patch(remove 末楼) → generate(regenerate) → append(AI) | 删+AI 楼 |
 | **`swipe`** | jobs/active → chats/get → generate(swipe) → patch(swipes/-,swipe_id,mes) | 末楼 swipe |
@@ -180,9 +180,9 @@ running → awaiting_ack →(15s grace)→ persisting → completed | failed | c
 | **`continue`** | jobs/active → chats/get → generate(continue) → patch(mes 合流,swipes) | 续写同楼 |
 | **`impersonate`** | generate(impersonate, persist none) [--write → append user] | 默认不落 |
 | **`quiet <p>`** | generate(quiet, persist none, overrides.quietPrompt) | 不落 |
-| `jobs` | GET /api/uberge/jobs | — |
-| `inspect [id]` | GET /api/uberge/jobs/:id | — |
-| `preview` | POST /api/uberge/preview | — |
+| `jobs` | GET /api/utopinn/jobs | — |
+| `inspect [id]` | GET /api/utopinn/jobs/:id | — |
+| `preview` | POST /api/utopinn/preview | — |
 | `attach [id]` | jobs/status →(跑中)ws-ticket+WS resume | — |
 | `abort [id]` | POST /api/generation/:id/abort | — |
 | `persona [n]` | — | state.persona |
@@ -193,7 +193,7 @@ running → awaiting_ack →(15s grace)→ persisting → completed | failed | c
 
 ```
 jobs/active 护栏 → append user 楼(CAS)
-→ POST /api/uberge/generate {job_id 自铸, persist_target:character}
+→ POST /api/utopinn/generate {job_id 自铸, persist_target:character}
    ← 200 + x-luker-generation-id(job 已建,dispatch setImmediate)
 → POST /api/ws-ticket → WS /api/ws-delivery(resume from_seq:1)
 → head/chunk/end 帧,SSE 解析 delta.content(+reasoning_content 展示,不进楼层)

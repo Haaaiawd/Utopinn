@@ -1,5 +1,5 @@
 {
-    "name": "@uberge/core",
+    "name": "@utopinn/core",
     "version": "0.0.0",
     "private": true,
     "type": "module",
@@ -17,7 +17,7 @@
         "test": "node --test tests/*.test.mjs"
     },
     "devDependencies": {
-        "@uberge/formats": "workspace:*",
+        "@utopinn/formats": "workspace:*",
         "typescript": "^5.9.3"
     },
     "dependencies": {

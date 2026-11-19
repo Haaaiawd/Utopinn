@@ -1,4 +1,4 @@
-// 角色 — GET /api/uberge/characters 列表,点进 → 该角色的会话列表。
+// 角色 — GET /api/utopinn/characters 列表,点进 → 该角色的会话列表。
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { FlatList, Image, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';

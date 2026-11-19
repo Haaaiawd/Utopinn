@@ -5,7 +5,7 @@ import { useCallback, useSyncExternalStore } from 'react';
 
 export type Theme = 'dark' | 'light';
 
-const STORAGE_KEY = 'uberge.theme';
+const STORAGE_KEY = 'utopinn.theme';
 const listeners = new Set<() => void>();
 
 export function getTheme(): Theme {

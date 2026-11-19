@@ -10,7 +10,7 @@
  *   script → chat_state ns `thvars.<script_id>` (per-script sidecar)
  */
 
-import type { JsonPatchOp, UbergeClient } from './index.js';
+import type { JsonPatchOp, UtopinnClient } from './index.js';
 import type {
     PanelMethodTHT0,
     ThChatMessageView,
@@ -18,10 +18,10 @@ import type {
     ThGetVariablesArgs,
     ThInjectedPrompt,
     ThVariableScope,
-} from '@uberge/protocol';
+} from '@utopinn/protocol';
 
 export interface PanelT0Deps {
-    client: UbergeClient;
+    client: UtopinnClient;
     /** chat identity: avatar filename + chat file (no .jsonl). */
     avatarUrl: string;
     chatFileName: string;

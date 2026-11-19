@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 /**
- * uberge-delivery —— WS 交付通道的 kernel 插件化(B 步 socket 面)。
+ * utopinn-delivery —— WS 交付通道的 kernel 插件化(B 步 socket 面)。
  *
  * 原 ws-delivery.js:createDeliveryServer() 挂 httpServer 'upgrade';
  * 现改经 ctx.webServer.registerUpgrade({path:'/api/ws-delivery'})

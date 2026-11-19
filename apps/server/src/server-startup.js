@@ -138,7 +138,7 @@ export function setupPrivateEndpoints(app) {
     // CardApp mount admin: mints the capability ids that the session-free
     // /card-runtime/m/<id>/ surface (mounted pre-login in server-main) accepts.
     app.use('/api/card-runtime', cardRuntimeApiRouter);
-    // kernel webServer dispatcher:/api/uberge 面已 100% 插件化;
+    // kernel webServer dispatcher:/api/utopinn 面已 100% 插件化;
     // 未命中 next() 继续向后走(docs/skills 等后续挂载不受影响)。
     app.use(webServer.middleware());
     app.use('/api/docs', docsRouter);

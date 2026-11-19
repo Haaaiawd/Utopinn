@@ -1,5 +1,5 @@
 // repro-close.mjs — 最小复现 + CDP 事件全转录,定位页面 target 被谁销毁
-process.env.E2E_SCRATCH_ROOT ||= '/tmp/uberge-e2e-scratch';
+process.env.E2E_SCRATCH_ROOT ||= '/tmp/utopinn-e2e-scratch';
 process.env.E2E_READY_TIMEOUT_MS ||= '300000';
 for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy']) delete process.env[k];
 

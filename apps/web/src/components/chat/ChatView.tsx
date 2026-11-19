@@ -3,14 +3,14 @@
 // is delegated to `renderer` (default: prose). A bubble renderer swaps in
 // with zero changes here — same props, different chrome (design §2).
 //
-// View tabs: 对话 (the conversation) | 提示词预览 (/api/uberge/preview output
+// View tabs: 对话 (the conversation) | 提示词预览 (/api/utopinn/preview output
 // rendered through the SAME renderer — the assembled prompt is just a
 // message list, which is exactly what the seam consumes).
 //
 // 舞台头(TASK-026):角色头像/名/会话名 + persona 徽标(快切,本地选择态,
 // 生成时以 body.user 携带)+ 绑定书/预设 chip(有则显示,无为空态)。
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ConversationView, MessageViewModel, RendererActions, RendererMessageRole } from '@uberge/protocol';
+import type { ConversationView, MessageViewModel, RendererActions, RendererMessageRole } from '@utopinn/protocol';
 import { useI18n } from '../../i18n';
 import { MOCK_MESSAGES, MOCK_PERSONAS } from '../../api/mock';
 import { cardData, charImageUrl, getCharacter, type CardDoc } from '../../api/characters';
@@ -31,7 +31,7 @@ import { Composer } from './Composer';
 const USER_NAME = '旅人';
 
 /** per-chat persona 选择态的本地键(服务端无 per-chat 端点,TASK-026 诚实路径)。 */
-const personaKey = (chatId: string) => `uberge.persona.${chatId}`;
+const personaKey = (chatId: string) => `utopinn.persona.${chatId}`;
 
 /** Assembled-prompt rows → floors. Preview messages carry {role,content,name}. */
 function previewToView(data: PreviewResponse): ConversationView {
@@ -210,7 +210,7 @@ export function ChatView() {
     };
 
     /**
-     * Real send: append user floor → /api/uberge/generate → WS stream folds
+     * Real send: append user floor → /api/utopinn/generate → WS stream folds
      * deltas into a live assistant floor → on end the server has persisted
      * the reply, so we reload the chat for ground truth (swipes/receipts).
      * persona 选择经 body.user 进组装(服务端唯一生效路径)。

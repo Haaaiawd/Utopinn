@@ -60,7 +60,7 @@ export interface ChatMessageInput {
     } & Record<string, unknown>;
 }
 
-export const IGNORE_SYMBOL = Symbol.for('uberge.ignore_message');
+export const IGNORE_SYMBOL = Symbol.for('utopinn.ignore_message');
 
 /** setOpenAIMessages 产出的中间消息(注入前) */
 export interface PromptMessage {

@@ -1,16 +1,16 @@
 // Connection session: baseUrl persistence (SecureStore) + mini cookie jar
 // (RN fetch has NO cookie jar) + CSRF token lifecycle. Mirrors the web
 // client (apps/web/src/api/client.ts) and the e2e req() pattern in
-// tests/e2e/uberge-*.mjs:
+// tests/e2e/utopinn-*.mjs:
 //   GET /csrf-token → {token} + session cookie;
 //   non-GET requests send `x-csrf-token` + `cookie` headers manually;
 //   set-cookie is harvested off every response.
-// `fetchBound` is injected into UbergeClient so the whole api layer shares
+// `fetchBound` is injected into UtopinnClient so the whole api layer shares
 // one session; `apiFetch` is used directly where response headers matter
-// (x-luker-generation-id on /api/uberge/generate).
+// (x-luker-generation-id on /api/utopinn/generate).
 import * as SecureStore from 'expo-secure-store';
 
-const BASE_URL_KEY = 'uberge.server.baseUrl';
+const BASE_URL_KEY = 'utopinn.server.baseUrl';
 /** Android emulator → host loopback. Physical device: use the LAN IP instead. */
 export const DEFAULT_BASE_URL = 'http://10.0.2.2:8000';
 
@@ -152,7 +152,7 @@ class ServerSession {
     }
 
     /**
-     * Session-bound fetch (injected into UbergeClient). Primes the CSRF token
+     * Session-bound fetch (injected into UtopinnClient). Primes the CSRF token
      * before the call; on 403 rotates it once — the session cookie may have
      * been refreshed server-side (same policy as apps/web apiFetch).
      */
@@ -184,12 +184,12 @@ class ServerSession {
         return (text ? JSON.parse(text) : {}) as T;
     }
 
-    /** Connectivity probe — /api/uberge/_kernel proves the plugin is mounted. */
+    /** Connectivity probe — /api/utopinn/_kernel proves the plugin is mounted. */
     async check(): Promise<boolean> {
         this._conn = 'checking';
         this.emit();
         try {
-            const res = await this.apiFetch('/api/uberge/_kernel');
+            const res = await this.apiFetch('/api/utopinn/_kernel');
             this._conn = res.ok ? 'online' : 'offline';
         } catch {
             this._conn = 'offline';

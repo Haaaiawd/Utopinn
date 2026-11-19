@@ -69,20 +69,20 @@ function namedRoute(bucket) {
 }
 
 export async function listPresetDocuments(apiId, { signal } = {}) {
-    // TASK-033 reroute: legacy /api/presets/list → GET /api/uberge/presets
+    // TASK-033 reroute: legacy /api/presets/list → GET /api/utopinn/presets
     // ({items:[{name}]} vs legacy {names:[...]}).
     const query = new URLSearchParams({ apiId: String(apiId ?? 'openai') });
-    const { value } = await readResourceJson(`/api/uberge/presets?${query}`, { signal });
+    const { value } = await readResourceJson(`/api/utopinn/presets?${query}`, { signal });
     return Array.isArray(value?.items)
         ? value.items.map(item => item?.name).filter(name => typeof name === 'string' && name)
         : [];
 }
 
 export async function readPresetDocument(apiId, name, { signal } = {}) {
-    // TASK-033 reroute: legacy /api/presets/get → GET /api/uberge/presets/:name
+    // TASK-033 reroute: legacy /api/presets/get → GET /api/utopinn/presets/:name
     // ({name, apiId, doc} vs legacy bare doc).
     const query = new URLSearchParams({ apiId: String(apiId ?? 'openai') });
-    const { value } = await readResourceJson(`/api/uberge/presets/${encodeURIComponent(name)}?${query}`, { signal });
+    const { value } = await readResourceJson(`/api/utopinn/presets/${encodeURIComponent(name)}?${query}`, { signal });
     return value?.doc;
 }
 
@@ -130,18 +130,18 @@ export async function loadPresetDocumentEntries(apiId, { signal } = {}) {
 }
 
 export async function listWorldInfoNames({ signal } = {}) {
-    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/utopinn/worlds
     // ({items:[{name,displayName,extensions}]} vs legacy {names:[...]}).
-    const { value } = await readResourceJson('/api/uberge/worlds', { signal });
+    const { value } = await readResourceJson('/api/utopinn/worlds', { signal });
     return Array.isArray(value?.items)
         ? value.items.map(item => item?.name).filter(name => typeof name === 'string' && name)
         : [];
 }
 
 export async function readWorldInfoDocument(name, { signal } = {}) {
-    // TASK-033 reroute: legacy /api/worldinfo/get → GET /api/uberge/worlds/:name
+    // TASK-033 reroute: legacy /api/worldinfo/get → GET /api/utopinn/worlds/:name
     // ({name, doc} vs legacy bare doc).
-    const { value } = await readResourceJson(`/api/uberge/worlds/${encodeURIComponent(name)}`, { signal });
+    const { value } = await readResourceJson(`/api/utopinn/worlds/${encodeURIComponent(name)}`, { signal });
     return value?.doc;
 }
 

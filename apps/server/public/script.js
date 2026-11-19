@@ -356,7 +356,7 @@ import { setRequestCompressionConfig } from './scripts/request-compression.js';
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bootSelfProfilerFromStorage } from './scripts/self-profiler.js';
 import { createLukerDelivery, installFetchProxy, installFetchProxyForAllIframes, installLifecycleHooks } from './scripts/ws-delivery.js';
-import { loadSettingsEnvelope, loadUbergeSettingsEnvelope } from './scripts/settings-resource-read.js';
+import { loadSettingsEnvelope, loadUtopinnSettingsEnvelope } from './scripts/settings-resource-read.js';
 import { listPresetDocuments, loadPresetResources, readPresetDocument } from './scripts/named-resource-read.js';
 
 installFrontendLogCapture();
@@ -2935,11 +2935,11 @@ export async function getCharacters() {
     let getData = Array.isArray(primedCharacterPayload) ? primedCharacterPayload : null;
 
     if (!getData) {
-        // TASK-033 reroute: legacy /api/characters/all → uberge list + per-card
-        // fan-out. uberge's list is thin ({charDir,name,fileName,...}); the
+        // TASK-033 reroute: legacy /api/characters/all → utopinn list + per-card
+        // fan-out. utopinn's list is thin ({charDir,name,fileName,...}); the
         // shallow objects /all returned carry data.* projections + the .chat
         // pointer, so each PNG card is fetched and reshaped here.
-        const response = await fetch('/api/uberge/characters', {
+        const response = await fetch('/api/utopinn/characters', {
             method: 'GET',
             headers: getRequestHeaders(),
             cache: 'no-cache',
@@ -2962,11 +2962,11 @@ export async function getCharacters() {
 
         getData = (await Promise.all(items.map(async (item) => {
             try {
-                const charDir = String(item?.charDir || ubergeCharDirFromAvatar(item?.fileName || item?.avatar || ''));
+                const charDir = String(item?.charDir || utopinnCharDirFromAvatar(item?.fileName || item?.avatar || ''));
                 if (!charDir) {
                     return null;
                 }
-                const cardResponse = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}`, {
+                const cardResponse = await fetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}`, {
                     method: 'GET',
                     headers: getRequestHeaders(),
                     cache: 'no-cache',
@@ -2978,7 +2978,7 @@ export async function getCharacters() {
                 if (!card || typeof card !== 'object' || Array.isArray(card)) {
                     return null;
                 }
-                return buildShallowCharacterFromUbergeCard(item, card);
+                return buildShallowCharacterFromUtopinnCard(item, card);
             } catch (error) {
                 console.warn('Failed to fetch character card for list rebuild:', item?.charDir || item?.fileName, error);
                 return null;
@@ -3038,41 +3038,41 @@ export async function getCharacters() {
 
 // ---------------------------------------------------------------------------
 // TASK-033 reroute adapters: character-chat call sites now hit the kernel
-// library surface (/api/uberge/*). The uberge shapes differ from the legacy
+// library surface (/api/utopinn/*). The utopinn shapes differ from the legacy
 // /api/chats/* wire forms, so these helpers translate paths + payloads and
 // re-shape responses back into the forms the surrounding code was written
 // against.
 // ---------------------------------------------------------------------------
 
-/** charDir = avatar file name with its extension stripped (legacy avatar_url → uberge :charDir). */
-function ubergeCharDirFromAvatar(avatarUrl) {
+/** charDir = avatar file name with its extension stripped (legacy avatar_url → utopinn :charDir). */
+function utopinnCharDirFromAvatar(avatarUrl) {
     return String(avatarUrl || '').trim().replace(/\.(png|webp|json)$/i, '');
 }
 
-/** chatName = chat file name without the .jsonl extension (legacy file_name → uberge :chatName). */
-function ubergeChatNameFromFile(fileName) {
+/** chatName = chat file name without the .jsonl extension (legacy file_name → utopinn :chatName). */
+function utopinnChatNameFromFile(fileName) {
     return String(fileName || '').trim().replace(/\.jsonl$/i, '');
 }
 
-function ubergeChatRoute(charDir, chatName, suffix = '') {
-    return `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}${suffix}`;
+function utopinnChatRoute(charDir, chatName, suffix = '') {
+    return `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}${suffix}`;
 }
 
 /**
- * TASK-033 reroute: legacy /api/chats/get → GET /api/uberge/characters/:charDir/chats/:chatName.
- * uberge returns {header, messages, integrity} and 404 on a miss, while the
+ * TASK-033 reroute: legacy /api/chats/get → GET /api/utopinn/characters/:charDir/chats/:chatName.
+ * utopinn returns {header, messages, integrity} and 404 on a miss, while the
  * legacy endpoint answered [header, ...messages] / {new_chat:true}. The legacy
  * endpoint also injected the live CAS token into header.chat_metadata.integrity
  * — do the same here so downstream integrity guards keep working.
  * @returns {Promise<{ok:boolean, status:number, data:*}>}
  */
-async function fetchCharacterChatUberge(avatarUrl, fileName) {
-    const charDir = ubergeCharDirFromAvatar(avatarUrl);
-    const chatName = ubergeChatNameFromFile(fileName);
+async function fetchCharacterChatUtopinn(avatarUrl, fileName) {
+    const charDir = utopinnCharDirFromAvatar(avatarUrl);
+    const chatName = utopinnChatNameFromFile(fileName);
     if (!charDir || !chatName) {
         return { ok: true, status: 200, data: { new_chat: true } };
     }
-    const response = await fetch(ubergeChatRoute(charDir, chatName), {
+    const response = await fetch(utopinnChatRoute(charDir, chatName), {
         method: 'GET',
         headers: getRequestHeaders(),
         cache: 'no-cache',
@@ -3099,12 +3099,12 @@ async function fetchCharacterChatUberge(avatarUrl, fileName) {
 }
 
 /**
- * TASK-033 reroute: legacy /api/characters/chats → GET /api/uberge/characters/:charDir/chats.
- * uberge items are {name, fileName, messageCount, byteSize, lastMessage,
+ * TASK-033 reroute: legacy /api/characters/chats → GET /api/utopinn/characters/:charDir/chats.
+ * utopinn items are {name, fileName, messageCount, byteSize, lastMessage,
  * chatMetadata, updatedAt, createdAt, integrity}; legacy items were
  * {file_id, file_name, file_size, chat_items, mes, last_mes, sort_time, ...}.
  */
-function adaptUbergeChatListItem(item) {
+function adaptUtopinnChatListItem(item) {
     const lastSendDate = item?.lastMessage?.send_date;
     const updatedAt = item?.updatedAt;
     const updatedAtMs = typeof updatedAt === 'number'
@@ -3128,12 +3128,12 @@ function adaptUbergeChatListItem(item) {
 }
 
 /** @returns {Promise<{ok:boolean, status:number, data:Array}>} legacy-shaped chat list items */
-async function fetchCharacterChatListUberge(avatarUrl) {
-    const charDir = ubergeCharDirFromAvatar(avatarUrl);
+async function fetchCharacterChatListUtopinn(avatarUrl) {
+    const charDir = utopinnCharDirFromAvatar(avatarUrl);
     if (!charDir) {
         return { ok: false, status: 400, data: [] };
     }
-    const response = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+    const response = await fetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/chats`, {
         method: 'GET',
         headers: getRequestHeaders(),
         cache: 'no-cache',
@@ -3143,14 +3143,14 @@ async function fetchCharacterChatListUberge(avatarUrl) {
     }
     const payload = await response.json().catch(() => null);
     const items = Array.isArray(payload?.items) ? payload.items : [];
-    return { ok: true, status: response.status, data: items.map(adaptUbergeChatListItem) };
+    return { ok: true, status: response.status, data: items.map(adaptUtopinnChatListItem) };
 }
 
 /**
  * TASK-033: rebase legacy /api/chats/patch ops (rooted at the message array,
- * e.g. '/3/mes') onto the uberge {header, body} chat document ('/body/3/mes').
+ * e.g. '/3/mes') onto the utopinn {header, body} chat document ('/body/3/mes').
  */
-function rebaseChatMessageOpsToUbergeDoc(operations) {
+function rebaseChatMessageOpsToUtopinnDoc(operations) {
     return (Array.isArray(operations) ? operations : []).map((op) => (
         op && typeof op === 'object' && typeof op.path === 'string'
             ? { ...op, path: `/body${op.path}` }
@@ -3160,10 +3160,10 @@ function rebaseChatMessageOpsToUbergeDoc(operations) {
 
 /**
  * TASK-033: legacy /api/chats/patch merged body.chat_metadata into the header
- * server-side; the uberge PATCH only applies JSON-Patch ops, so the metadata
+ * server-side; the utopinn PATCH only applies JSON-Patch ops, so the metadata
  * diff is carried as explicit '/header/chat_metadata/*' ops.
  */
-function buildUbergeHeaderMetadataOps(previousMetadata, nextMetadata) {
+function buildUtopinnHeaderMetadataOps(previousMetadata, nextMetadata) {
     return buildChatMetadataPatchOperations(previousMetadata, nextMetadata).map((op) => (
         op && typeof op === 'object' && typeof op.path === 'string'
             ? { ...op, path: `/header/chat_metadata${op.path}` }
@@ -3173,12 +3173,12 @@ function buildUbergeHeaderMetadataOps(previousMetadata, nextMetadata) {
 
 /**
  * TASK-033: rebuild the shallow character objects legacy POST /api/characters/all
- * produced (CharacterStore.toShallow + .chat pointer) from an uberge list item
- * plus the full card JSON returned by GET /api/uberge/characters/:charDir.
+ * produced (CharacterStore.toShallow + .chat pointer) from an utopinn list item
+ * plus the full card JSON returned by GET /api/utopinn/characters/:charDir.
  * Degraded vs legacy: date_added/date_last_chat/chat_size are unavailable on the
- * uberge surface → 0 (chat_size was already a 0 stand-in server-side).
+ * utopinn surface → 0 (chat_size was already a 0 stand-in server-side).
  */
-function buildShallowCharacterFromUbergeCard(item, card) {
+function buildShallowCharacterFromUtopinnCard(item, card) {
     const data = isPlainObject(card?.data) ? card.data : {};
     const extensions = isPlainObject(data.extensions) ? data.extensions : {};
     const lukerExt = isPlainObject(extensions.luker) ? extensions.luker : {};
@@ -3215,8 +3215,8 @@ function buildShallowCharacterFromUbergeCard(item, card) {
 }
 
 async function getReplacementCharacterChatName(character) {
-    // TASK-033 reroute: legacy /api/characters/chats → uberge
-    const chatsResponse = await fetchCharacterChatListUberge(character.avatar);
+    // TASK-033 reroute: legacy /api/characters/chats → utopinn
+    const chatsResponse = await fetchCharacterChatListUtopinn(character.avatar);
     const chats = Object.values(chatsResponse.data);
     chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
     return chats.length && typeof chats[0] === 'object'
@@ -3232,8 +3232,8 @@ async function getRawCharacterChatSnapshot(characterId, fileName) {
         return null;
     }
 
-    // TASK-033 reroute: legacy /api/chats/get → uberge
-    const { ok, data } = await fetchCharacterChatUberge(character.avatar, fileName);
+    // TASK-033 reroute: legacy /api/chats/get → utopinn
+    const { ok, data } = await fetchCharacterChatUtopinn(character.avatar, fileName);
     if (!ok) {
         return null;
     }
@@ -3245,14 +3245,14 @@ async function restoreCharacterChatSnapshot(characterId, fileName, chatFile) {
     await unshallowCharacter(characterId);
 
     const character = characters[characterId];
-    const chatName = ubergeChatNameFromFile(fileName);
+    const chatName = utopinnChatNameFromFile(fileName);
     if (!character || !Array.isArray(chatFile) || !chatName) {
         return false;
     }
 
-    // TASK-033 reroute: legacy /api/chats/save → uberge document PUT
+    // TASK-033 reroute: legacy /api/chats/save → utopinn document PUT
     // (accepts the legacy {chat:[header, ...messages]} body shape)
-    const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(character.avatar), chatName)}/document`, {
+    const response = await fetch(`${utopinnChatRoute(utopinnCharDirFromAvatar(character.avatar), chatName)}/document`, {
         method: 'PUT',
         cache: 'no-cache',
         headers: getRequestHeaders(),
@@ -3390,14 +3390,14 @@ async function restoreDeletedCharacterSnapshot(snapshot, { refreshCharacters = t
 
         for (const chatSnapshot of snapshot.chats || []) {
             const fileName = String(chatSnapshot?.fileName || '').trim();
-            const chatName = ubergeChatNameFromFile(fileName);
+            const chatName = utopinnChatNameFromFile(fileName);
             if (!fileName || !chatName || !Array.isArray(chatSnapshot?.chat)) {
                 continue;
             }
 
-            // TASK-033 reroute: legacy /api/chats/save → uberge document PUT
+            // TASK-033 reroute: legacy /api/chats/save → utopinn document PUT
             // (accepts the legacy {chat:[header, ...messages]} body shape)
-            const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatarUrl), chatName)}/document`, {
+            const response = await fetch(`${utopinnChatRoute(utopinnCharDirFromAvatar(avatarUrl), chatName)}/document`, {
                 method: 'PUT',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
@@ -3549,8 +3549,8 @@ async function deleteCharacterChatInternal(characterId, fileName, { mediaPrompt 
     const previousSelectedChat = String(character.chat || '');
     const deletedCurrentChat = previousSelectedChat.replace(/\.jsonl$/i, '') === String(fileName).replace(/\.jsonl$/i, '');
 
-    // TASK-033 reroute: legacy /api/chats/delete → uberge DELETE chat
-    const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(character.avatar), ubergeChatNameFromFile(fileName)), {
+    // TASK-033 reroute: legacy /api/chats/delete → utopinn DELETE chat
+    const response = await fetch(utopinnChatRoute(utopinnCharDirFromAvatar(character.avatar), utopinnChatNameFromFile(fileName)), {
         method: 'DELETE',
         headers: getRequestHeaders(),
     });
@@ -3640,8 +3640,8 @@ export async function deleteCharacterChatByName(characterId, fileName, options =
 export async function replaceCurrentChat() {
     await clearChat({ clearData: true });
 
-    // TASK-033 reroute: legacy /api/characters/chats → uberge
-    const chatsResponse = await fetchCharacterChatListUberge(characters[this_chid].avatar);
+    // TASK-033 reroute: legacy /api/characters/chats → utopinn
+    const chatsResponse = await fetchCharacterChatListUtopinn(characters[this_chid].avatar);
 
     if (chatsResponse.ok) {
         const chats = Object.values(chatsResponse.data);
@@ -3907,8 +3907,8 @@ async function getChatBoundLorebookName(chatFile, groupId = null, { avatarUrl = 
             return '';
         }
 
-        // TASK-033 reroute: legacy /api/chats/get → uberge
-        const { ok, data } = await fetchCharacterChatUberge(resolvedAvatarUrl, normalizedFileName);
+        // TASK-033 reroute: legacy /api/chats/get → utopinn
+        const { ok, data } = await fetchCharacterChatUtopinn(resolvedAvatarUrl, normalizedFileName);
         if (!ok) {
             return '';
         }
@@ -3927,7 +3927,7 @@ function hasWorldInfoFile(lorebookName) {
         return false;
     }
     // TASK-033: the legacy /api/worldinfo/get probe synthesised `{entries:{}}`
-    // for missing files; the uberge GET now 404s, but the in-memory
+    // for missing files; the utopinn GET now 404s, but the in-memory
     // `world_names` (kept in sync via updateWorldInfoList) remains the cheaper
     // existence check — match through the canonical resolver to handle
     // case/whitespace quirks either way.
@@ -12187,8 +12187,8 @@ async function renamePastChats(oldAvatar, newAvatar, newName) {
     for (const { file_name } of pastChats) {
         try {
             const fileNameWithoutExtension = file_name.replace(/\.jsonl$/i, '');
-            // TASK-033 reroute: legacy /api/chats/get → uberge
-            const getChatResponse = await fetchCharacterChatUberge(newAvatar, fileNameWithoutExtension);
+            // TASK-033 reroute: legacy /api/chats/get → utopinn
+            const getChatResponse = await fetchCharacterChatUtopinn(newAvatar, fileNameWithoutExtension);
 
             if (!getChatResponse.ok) {
                 continue;
@@ -12221,19 +12221,19 @@ async function renamePastChats(oldAvatar, newAvatar, newName) {
 
             await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, currentChat, oldAvatar, newAvatar);
 
-            // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH. Ops are
+            // TASK-033 reroute: legacy /api/chats/patch → utopinn PATCH. Ops are
             // rebased onto the {header, body} doc and the metadata write is an
             // explicit /header/chat_metadata upsert (the metadata round-trips
             // the GET-injected live integrity token, so this is self-consistent).
-            const ubergeOps = [
-                ...rebaseChatMessageOpsToUbergeDoc(operations),
+            const utopinnOps = [
+                ...rebaseChatMessageOpsToUtopinnDoc(operations),
                 { op: 'add', path: '/header/chat_metadata', value: currentChat?.[0]?.chat_metadata || {} },
             ];
-            const patchResponse = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(newAvatar), fileNameWithoutExtension), {
+            const patchResponse = await fetch(utopinnChatRoute(utopinnCharDirFromAvatar(newAvatar), fileNameWithoutExtension), {
                 method: 'PATCH',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
-                    ops: ubergeOps,
+                    ops: utopinnOps,
                     integrity: currentChat?.[0]?.chat_metadata?.integrity,
                 }),
                 cache: 'no-cache',
@@ -13026,8 +13026,8 @@ async function fetchCurrentServerChatSnapshot(target = resolveChatStateTarget())
             return null;
         }
 
-        // TASK-033 reroute: legacy /api/chats/get → uberge
-        const { ok, data: payload } = await fetchCharacterChatUberge(resolvedTarget.avatar_url, resolvedTarget.file_name);
+        // TASK-033 reroute: legacy /api/chats/get → utopinn
+        const { ok, data: payload } = await fetchCharacterChatUtopinn(resolvedTarget.avatar_url, resolvedTarget.file_name);
         if (!ok) {
             return null;
         }
@@ -14200,11 +14200,11 @@ export async function resolveChatWriteConflictForTarget(response, target = null,
 
     const payload = await readChatWriteConflictPayload(response);
     const errorType = String(payload?.error || '').trim().toLowerCase();
-    // TASK-033: uberge PATCH/append CAS failures surface as 'integrity_mismatch'
+    // TASK-033: utopinn PATCH/append CAS failures surface as 'integrity_mismatch'
     // (ConflictError message via sendError) rather than legacy
     // {error:'integrity', current_integrity}. Normalize to the integrity branch;
     // a missing current_integrity falls into the existing force-overwrite
-    // recovery, which the uberge `force` flag honours the same way.
+    // recovery, which the utopinn `force` flag honours the same way.
     const normalizedErrorType = errorType === 'integrity_mismatch' ? 'integrity' : errorType;
     const currentIntegrity = typeof payload?.current_integrity === 'string'
         ? payload.current_integrity.trim()
@@ -14424,12 +14424,12 @@ async function appendChatMessagesInternal(messages, retryCount = 0, context = nu
             return false;
         }
 
-        // TASK-033 reroute: legacy /api/chats/append → uberge messages POST.
-        // uberge reports `accepted` (plus `dedupedGenIds`/`skipped`) where the
+        // TASK-033 reroute: legacy /api/chats/append → utopinn messages POST.
+        // utopinn reports `accepted` (plus `dedupedGenIds`/`skipped`) where the
         // legacy endpoint reported `appended`; CAS + luker_generation_id dedup
         // behave the same. A 404 (missing chat) falls to the caller's full-save
         // fallback, which recreates the chat like the legacy create-path did.
-        const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName))}/messages`, {
+        const response = await fetch(`${utopinnChatRoute(utopinnCharDirFromAvatar(avatar), utopinnChatNameFromFile(fileName))}/messages`, {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),
@@ -14605,21 +14605,21 @@ async function patchChatMessagesInternal(operations, retryCount = 0, context = n
             return false;
         }
 
-        // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH. The uberge
+        // TASK-033 reroute: legacy /api/chats/patch → utopinn PATCH. The utopinn
         // doc is rooted at {header, body}, so message-array ops rebase to
         // '/body/*' and the legacy server-side chat_metadata merge becomes
         // explicit '/header/chat_metadata/*' diff ops (built against the last
         // metadata snapshot, which mirrors the legacy merge semantics).
-        const ubergeOps = [
-            ...rebaseChatMessageOpsToUbergeDoc(guardedOperations),
-            ...buildUbergeHeaderMetadataOps(getChatMetadataSnapshot(target), metadata),
+        const utopinnOps = [
+            ...rebaseChatMessageOpsToUtopinnDoc(guardedOperations),
+            ...buildUtopinnHeaderMetadataOps(getChatMetadataSnapshot(target), metadata),
         ];
-        const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName)), {
+        const response = await fetch(utopinnChatRoute(utopinnCharDirFromAvatar(avatar), utopinnChatNameFromFile(fileName)), {
             method: 'PATCH',
             cache: 'no-cache',
             headers: getRequestHeaders(),
             body: JSON.stringify({
-                ops: ubergeOps,
+                ops: utopinnOps,
                 integrity: metadata.integrity,
                 luker_generation_id: getLastLukerGenerationIdForApi(),
             }),
@@ -14853,21 +14853,21 @@ async function saveChatMetadataInternal(withMetadata = undefined, retryCount = 0
                 return false;
             }
             refreshSnapshotIntegrityFromActiveLive(target, metadata);
-            // TASK-033 reroute: legacy /api/chats/meta/patch → uberge PATCH.
+            // TASK-033 reroute: legacy /api/chats/meta/patch → utopinn PATCH.
             // Meta ops root at the chat_metadata object → rebase to
-            // '/header/chat_metadata/*'; uberge has no `force` flag — omitting
+            // '/header/chat_metadata/*'; utopinn has no `force` flag — omitting
             // `integrity` skips the CAS check, same effect.
-            const ubergeMetaOps = (operations || []).map((op) => (
+            const utopinnMetaOps = (operations || []).map((op) => (
                 op && typeof op === 'object' && typeof op.path === 'string'
                     ? { ...op, path: `/header/chat_metadata${op.path}` }
                     : op
             ));
-            const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(target.avatar_url), ubergeChatNameFromFile(target.file_name)), {
+            const response = await fetch(utopinnChatRoute(utopinnCharDirFromAvatar(target.avatar_url), utopinnChatNameFromFile(target.file_name)), {
                 method: 'PATCH',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
-                    ops: ubergeMetaOps,
+                    ops: utopinnMetaOps,
                     ...(effectiveForce ? {} : { integrity: metadata?.integrity }),
                 }),
             });
@@ -15052,19 +15052,19 @@ async function saveChatInternal({ chatName, withMetadata, mesId, force = false, 
                 // snapshot reflects what BE will hold once it applies our ops, not whatever chat[]
                 // has been mutated into by plugins while we await.
                 rememberChatMessageSnapshot(writeTarget, trimmedChat);
-                // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH (ops
+                // TASK-033 reroute: legacy /api/chats/patch → utopinn PATCH (ops
                 // rebased to '/body/*', chat_metadata merge → '/header/chat_metadata/*'
                 // diff ops; `force` maps to omitting the CAS token).
-                const ubergePatchOps = [
-                    ...rebaseChatMessageOpsToUbergeDoc(operations),
-                    ...buildUbergeHeaderMetadataOps(getChatMetadataSnapshot(writeTarget), metadata),
+                const utopinnPatchOps = [
+                    ...rebaseChatMessageOpsToUtopinnDoc(operations),
+                    ...buildUtopinnHeaderMetadataOps(getChatMetadataSnapshot(writeTarget), metadata),
                 ];
-                const patchResult = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName)), {
+                const patchResult = await fetch(utopinnChatRoute(utopinnCharDirFromAvatar(avatar), utopinnChatNameFromFile(fileName)), {
                     method: 'PATCH',
                     cache: 'no-cache',
                     headers: getRequestHeaders(),
                     body: JSON.stringify({
-                        ops: ubergePatchOps,
+                        ops: utopinnPatchOps,
                         ...(effectiveForce ? {} : { integrity: metadata?.integrity }),
                         luker_generation_id: getLastLukerGenerationIdForApi(),
                     }),
@@ -15104,11 +15104,11 @@ async function saveChatInternal({ chatName, withMetadata, mesId, force = false, 
         // Same pre-await commit as the patch path: snapshot must represent what we are sending,
         // not whatever chat[] looks like after plugins mutate it during the round-trip.
         rememberChatMessageSnapshot(writeTarget, trimmedChat);
-        // TASK-033 reroute: legacy /api/chats/save → uberge document PUT. The
+        // TASK-033 reroute: legacy /api/chats/save → utopinn document PUT. The
         // route accepts the legacy {chat:[header, ...messages]} body; CAS still
         // reads the integrity token out of chat[0].chat_metadata, and `force`
         // skips it exactly like the legacy endpoint.
-        const result = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName))}/document`, {
+        const result = await fetch(`${utopinnChatRoute(utopinnCharDirFromAvatar(avatar), utopinnChatNameFromFile(fileName))}/document`, {
             method: 'PUT',
             cache: 'no-cache',
             headers: getRequestHeaders(),
@@ -15349,8 +15349,8 @@ export async function getChat() {
     try {
         await unshallowCharacter(this_chid);
 
-        // TASK-033 reroute: legacy /api/chats/get → uberge
-        const { ok, data } = await fetchCharacterChatUberge(characters[this_chid].avatar, characters[this_chid].chat);
+        // TASK-033 reroute: legacy /api/chats/get → utopinn
+        const { ok, data } = await fetchCharacterChatUtopinn(characters[this_chid].avatar, characters[this_chid].chat);
 
         if (!ok) {
             throw new Error('Chat could not be loaded');
@@ -15935,8 +15935,8 @@ function installSettingsGetRequestInterceptor() {
 }
 
 // TASK-033: fetchSettingsPayload(POST /api/settings/{get,bootstrap}) removed —
-// getSettings now reads the document via GET /api/uberge/settings and rebuilds
-// the envelope client-side (see loadUbergeSettingsEnvelope).
+// getSettings now reads the document via GET /api/utopinn/settings and rebuilds
+// the envelope client-side (see loadUtopinnSettingsEnvelope).
 
 async function fetchBootstrapSnapshot() {
     try {
@@ -16003,11 +16003,11 @@ export async function ensureFullSettingsLoaded() {
 export async function getSettings(options = {}) {
     let onboardingTask = null;
     const useBootstrap = options?.bootstrap === true;
-    // TASK-033 reroute: settings doc reads → GET /api/uberge/settings, with the
+    // TASK-033 reroute: settings doc reads → GET /api/utopinn/settings, with the
     // legacy envelope (presets/world names/themes/enable_* flags) rebuilt around
     // it. Covers both the old POST /api/settings/get and the bootstrap fallback;
     // the primed bootstrap call arrives via options.payload and never fetches.
-    const data = options?.payload ?? await loadUbergeSettingsEnvelope({ bootstrap: useBootstrap });
+    const data = options?.payload ?? await loadUtopinnSettingsEnvelope({ bootstrap: useBootstrap });
 
     if (!useBootstrap) {
         hydrateFullSettingsPresetData(data);
@@ -16264,17 +16264,17 @@ function buildSettingsPayload() {
 }
 
 /**
- * TASK-033: convert a settings op-set into a PATCH /api/uberge/settings body
- * when every op stays inside the two uberge-patchable top-level sections
- * (power_user / extension_settings). The uberge route shallow-merges
+ * TASK-033: convert a settings op-set into a PATCH /api/utopinn/settings body
+ * when every op stays inside the two utopinn-patchable top-level sections
+ * (power_user / extension_settings). The utopinn route shallow-merges
  * {section:{...}} — ops are applied to the previous snapshot's section and the
  * resulting section object becomes the merge value. Returns null when the
  * patch is ineligible: ops touch other sections, or carry remove/move/copy
  * semantics a shallow merge can't express (merges can set but never delete).
  */
-const UBERGE_PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']);
+const UTOPINN_PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']);
 
-function buildUbergeSettingsPatchBody(operations, previousSnapshot) {
+function buildUtopinnSettingsPatchBody(operations, previousSnapshot) {
     if (!Array.isArray(operations) || operations.length === 0) {
         return null;
     }
@@ -16285,7 +16285,7 @@ function buildUbergeSettingsPatchBody(operations, previousSnapshot) {
             return null;
         }
         const topKey = decodeJsonPointerSegment(path.split('/')[1] ?? '');
-        if (!UBERGE_PATCHABLE_SETTINGS_SECTIONS.has(topKey)) {
+        if (!UTOPINN_PATCHABLE_SETTINGS_SECTIONS.has(topKey)) {
             return null;
         }
         const opName = String(operation?.op ?? '').toLowerCase();
@@ -16341,20 +16341,20 @@ async function saveSettingsInternal(loopCounter = 0, options = {}) {
                 // Use ops count (not byte comparison) to decide patch vs full save —
                 // avoids JSON.stringify-ing the entire settings payload just to
                 // measure its length when the patch is obviously the smaller body.
-                const ubergePatch = buildUbergeSettingsPatchBody(operations, previousSnapshot);
-                if (ubergePatch) {
-                    // TASK-033 reroute: legacy /api/settings/patch → uberge
+                const utopinnPatch = buildUtopinnSettingsPatchBody(operations, previousSnapshot);
+                if (utopinnPatch) {
+                    // TASK-033 reroute: legacy /api/settings/patch → utopinn
                     // PATCH (section merge for power_user/extension_settings)
-                    const patchResult = await fetch('/api/uberge/settings', {
+                    const patchResult = await fetch('/api/utopinn/settings', {
                         method: 'PATCH',
                         headers: getRequestHeaders(),
-                        body: JSON.stringify(ubergePatch),
+                        body: JSON.stringify(utopinnPatch),
                         cache: 'no-cache',
                     });
                     saved = patchResult.ok;
                 } else {
                     // TASK-033 keep-legacy: ops touch settings sections outside
-                    // the uberge PATCH whitelist (power_user/extension_settings)
+                    // the utopinn PATCH whitelist (power_user/extension_settings)
                     // or carry remove/move semantics the section merge can't
                     // express — must stay on the ops-capable legacy endpoint.
                     const patchResult = await fetch('/api/settings/patch', {
@@ -16371,7 +16371,7 @@ async function saveSettingsInternal(loopCounter = 0, options = {}) {
 
         if (!saved) {
             // TASK-033 keep-legacy: /api/settings/save writes the FULL settings
-            // document — the uberge settings surface only offers a whitelisted
+            // document — the utopinn settings surface only offers a whitelisted
             // section PATCH (power_user/extension_settings), so there is no
             // equivalent route for whole-document saves.
             const result = await fetch('/api/settings/save', {
@@ -16819,10 +16819,10 @@ export async function getChatsFromFiles(data, isGroupChat) {
     let chat_promise = chat_list.map(({ file_name }) => {
         return new Promise(async (res, rej) => {
             try {
-                // TASK-033 reroute: character half → uberge GET chat; the group
-                // half keeps the legacy group endpoint (no uberge group surface).
+                // TASK-033 reroute: character half → utopinn GET chat; the group
+                // half keeps the legacy group endpoint (no utopinn group surface).
                 if (!isGroupChat) {
-                    const { ok, data: currentChat } = await fetchCharacterChatUberge(
+                    const { ok, data: currentChat } = await fetchCharacterChatUtopinn(
                         characters[context.characterId]?.avatar,
                         file_name,
                     );
@@ -16877,8 +16877,8 @@ export async function getPastCharacterChats(characterId = null) {
     characterId = characterId ?? parseInt(this_chid);
     if (!characters[characterId]) return [];
 
-    // TASK-033 reroute: legacy /api/characters/chats → uberge
-    const { ok, data } = await fetchCharacterChatListUberge(characters[characterId].avatar);
+    // TASK-033 reroute: legacy /api/characters/chats → utopinn
+    const { ok, data } = await fetchCharacterChatListUtopinn(characters[characterId].avatar);
 
     if (!ok) {
         return [];
@@ -19661,8 +19661,8 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
     }) : null;
 
     try {
-        // TASK-033 reroute: character half → uberge rename POST; the group half
-        // keeps the legacy endpoint (no uberge group surface). uberge answers
+        // TASK-033 reroute: character half → utopinn rename POST; the group half
+        // keeps the legacy endpoint (no utopinn group surface). utopinn answers
         // {ok, name, fileName} — `name` fills the role of legacy
         // `sanitizedFileName` (the on-disk id form).
         const response = body.is_group
@@ -19671,9 +19671,9 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
                 body: JSON.stringify(body),
                 headers: getRequestHeaders(),
             })
-            : await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(body.avatar_url), ubergeChatNameFromFile(body.original_file))}/rename`, {
+            : await fetch(`${utopinnChatRoute(utopinnCharDirFromAvatar(body.avatar_url), utopinnChatNameFromFile(body.original_file))}/rename`, {
                 method: 'POST',
-                body: JSON.stringify({ newName: ubergeChatNameFromFile(body.renamed_file) }),
+                body: JSON.stringify({ newName: utopinnChatNameFromFile(body.renamed_file) }),
                 headers: getRequestHeaders(),
             });
 
@@ -22521,10 +22521,10 @@ jQuery(async function () {
                 let previousLorebookSnapshot = null;
                 if (previousBookName) {
                     try {
-                        // TASK-033 reroute: legacy /api/worldinfo/get → uberge
+                        // TASK-033 reroute: legacy /api/worldinfo/get → utopinn
                         // GET /worlds/:name ({name, doc}); 404 maps to the legacy
                         // missing-file `{entries:{}}` answer.
-                        const response = await fetch(`/api/uberge/worlds/${encodeURIComponent(previousBookName)}`, {
+                        const response = await fetch(`/api/utopinn/worlds/${encodeURIComponent(previousBookName)}`, {
                             method: 'GET',
                             headers: getRequestHeaders(),
                             cache: 'no-cache',
@@ -22558,12 +22558,12 @@ jQuery(async function () {
                         if (previousAvatar) {
                             try {
                                 // TASK-033 reroute: legacy /api/characters/get →
-                                // uberge card read. uberge returns the raw stored
+                                // utopinn card read. utopinn returns the raw stored
                                 // card JSON (v2 cards carry data.* inline); the
                                 // event consumers need `.avatar` + `.data.*`, so
                                 // the avatar filename is restored onto the card.
-                                const charDir = ubergeCharDirFromAvatar(previousAvatar);
-                                const response = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}`, {
+                                const charDir = utopinnCharDirFromAvatar(previousAvatar);
+                                const response = await fetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}`, {
                                     method: 'GET',
                                     headers: getRequestHeaders(),
                                     cache: 'no-cache',

@@ -13,9 +13,11 @@ import { fileURLToPath } from 'node:url';
 import { startServer } from './e2e/_lib/server.js';
 import { markOnboarded } from './e2e/_lib/fixtures.js';
 
-const { UBERGE_TEST_API_URL, UBERGE_TEST_API_KEY, UBERGE_TEST_MODEL } = process.env;
-if (!UBERGE_TEST_API_URL || !UBERGE_TEST_API_KEY || !UBERGE_TEST_MODEL) {
-    console.error('need UBERGE_TEST_API_URL / UBERGE_TEST_API_KEY / UBERGE_TEST_MODEL in env');
+const UTOPINN_TEST_API_URL = process.env.UTOPINN_TEST_API_URL || process.env.UBERGE_TEST_API_URL;
+const UTOPINN_TEST_API_KEY = process.env.UTOPINN_TEST_API_KEY || process.env.UBERGE_TEST_API_KEY;
+const UTOPINN_TEST_MODEL = process.env.UTOPINN_TEST_MODEL || process.env.UBERGE_TEST_MODEL;
+if (!UTOPINN_TEST_API_URL || !UTOPINN_TEST_API_KEY || !UTOPINN_TEST_MODEL) {
+    console.error('need UTOPINN_TEST_API_URL / UTOPINN_TEST_API_KEY / UTOPINN_TEST_MODEL in env');
     process.exit(2);
 }
 
@@ -50,10 +52,10 @@ const sdoc = existsSync(settingsPath) ? JSON.parse(readFileSync(settingsPath, 'u
 sdoc.oai_settings = {
     ...(sdoc.oai_settings ?? {}),
     chat_completion_source: 'openai',
-    reverse_proxy: UBERGE_TEST_API_URL,
-    proxy_password: UBERGE_TEST_API_KEY,
-    model: UBERGE_TEST_MODEL,
-    openai_model: UBERGE_TEST_MODEL,
+    reverse_proxy: UTOPINN_TEST_API_URL,
+    proxy_password: UTOPINN_TEST_API_KEY,
+    model: UTOPINN_TEST_MODEL,
+    openai_model: UTOPINN_TEST_MODEL,
 };
 sdoc.world_info_settings = {
     ...(sdoc.world_info_settings ?? {}),
@@ -70,8 +72,8 @@ mkdirSync(resolve(userRoot, 'characters'), { recursive: true });
 const presetDst = resolve(userRoot, 'OpenAI Settings', 'Meowssiah.json');
 copyFileSync(PRESET_SRC, presetDst);
 const presetDoc = JSON.parse(readFileSync(presetDst, 'utf8'));
-presetDoc.openai_model = UBERGE_TEST_MODEL;
-if ('model' in presetDoc) presetDoc.model = UBERGE_TEST_MODEL;
+presetDoc.openai_model = UTOPINN_TEST_MODEL;
+if ('model' in presetDoc) presetDoc.model = UTOPINN_TEST_MODEL;
 writeFileSync(presetDst, JSON.stringify(presetDoc, null, 4));
 copyFileSync(CARD_SRC, resolve(userRoot, 'characters', `${CHAR_DIR}.png`));
 mkdirSync(resolve(userRoot, 'worlds'), { recursive: true });

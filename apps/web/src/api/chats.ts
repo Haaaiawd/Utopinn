@@ -1,11 +1,11 @@
-// Library chats via /api/uberge (TASK-018) + user-message append via
+// Library chats via /api/utopinn (TASK-018) + user-message append via
 // /api/chats/append (legacy endpoint, still the server's write path).
 // ST wire message shape: {name, is_user, is_system, mes, send_date, swipe_id,
 // swipes:[...], extra} — mapped here into the renderer contract
 // (MessageViewModel) so renderers never see storage fields.
 import { apiFetch, apiGet, apiPost, assertOk } from './client';
-import { MVU_STATUS_PLACEHOLDER } from '@uberge/protocol';
-import type { MessageViewModel, SwipeView } from '@uberge/protocol';
+import { MVU_STATUS_PLACEHOLDER } from '@utopinn/protocol';
+import type { MessageViewModel, SwipeView } from '@utopinn/protocol';
 
 /** 剥离 MVU 状态占位符 —— 存储层保留(卡 shim 定位用),视图层不渲染。 */
 const stripStatusPlaceholder = (s: string) =>
@@ -53,23 +53,23 @@ export function stToView(m: StChatMessage, id: number): MessageViewModel {
 /** Load a chat's floors. 404 bubbles up so the caller can show the honest path. */
 export async function getChat(charDir: string, chatName: string): Promise<{ header: Record<string, unknown>; messages: MessageViewModel[] }> {
     const d = await apiGet<ChatDetail>(
-        `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`,
+        `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`,
     );
     return { header: d.header, messages: d.messages.map(stToView) };
 }
 
 /**
  * Append one user message to the chat file, then the caller typically fires
- * /api/uberge/generate. Mirrors the old client's /api/chats/append call.
+ * /api/utopinn/generate. Mirrors the old client's /api/chats/append call.
  */
 /** Sidebar list: every character's chats flattened to ChatSummary. */
 export async function listAllChats(): Promise<import('../types').ChatSummary[]> {
-    const { items: chars } = await apiGet<{ items: { charDir: string; name: string; readable: boolean }[] }>('/api/uberge/characters');
+    const { items: chars } = await apiGet<{ items: { charDir: string; name: string; readable: boolean }[] }>('/api/utopinn/characters');
     const out: import('../types').ChatSummary[] = [];
     for (const c of chars.filter((x) => x.readable !== false)) {
         try {
             const { items: chats } = await apiGet<{ items: { name: string; messageCount: number; updatedAt: string }[] }>(
-                `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats`,
+                `/api/utopinn/characters/${encodeURIComponent(c.charDir)}/chats`,
             );
             for (const ch of chats) {
                 out.push({
@@ -104,7 +104,7 @@ export interface CharChatItem {
 }
 
 export async function listChatsForChar(charDir: string): Promise<{ items: CharChatItem[]; total: number }> {
-    return apiGet(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`);
+    return apiGet(`/api/utopinn/characters/${encodeURIComponent(charDir)}/chats`);
 }
 
 /** Create a chat file (server saves header + the seed system message). */
@@ -143,7 +143,7 @@ export async function appendUserMessage(charDir: string, chatName: string, name:
 }
 
 /**
- * Rename a chat file. Uses the legacy /api/chats/rename route (the uberge
+ * Rename a chat file. Uses the legacy /api/chats/rename route (the utopinn
  * router has no rename yet) — body fields are `original_file`/`renamed_file`
  * WITH the .jsonl suffix; `avatar_url` carries the charDir + .png, matching
  * append/patch above. Resolves to the server's sanitized new base name so the
@@ -158,10 +158,10 @@ export async function renameChat(charDir: string, oldName: string, newName: stri
     return res.sanitizedFileName ?? newName;
 }
 
-/** Delete a chat file via the uberge library route (204; 404 bubbles as ApiError). */
+/** Delete a chat file via the utopinn library route (204; 404 bubbles as ApiError). */
 export async function deleteChat(charDir: string, chatName: string): Promise<void> {
     const res = await apiFetch(
-        `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`,
+        `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`,
         { method: 'DELETE' },
     );
     await assertOk(res);

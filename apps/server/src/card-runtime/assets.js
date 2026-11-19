@@ -50,7 +50,7 @@ function setSecurityHeaders(request, response, mount) {
 export function injectShimTag(html, shimUrl, mount) {
     // bridge bootstrap 先于 shim 源下发:nonce 由 mount 服务端持有,卡代码
     // 可读但不可伪造来源(ev.source / RN 侧 nonce 校验各自消费)。
-    const bootstrap = mount?.bridgeNonce ? `<script data-card-runtime-bootstrap>window.__UBERGE_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UBERGE_PANEL_BOOTSTRAP__=${JSON.stringify({
+    const bootstrap = mount?.bridgeNonce ? `<script data-card-runtime-bootstrap>window.__UTOPINN_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UTOPINN_PANEL_BOOTSTRAP__=${JSON.stringify({
         face: 'th',
         mountId: mount.id,
         charId: mount.charId,
@@ -85,7 +85,7 @@ export function buildModuleShell(mount, shimUrl = null) {
     // module 入口与 document 同待遇:shim 前下发 bootstrap(nonce+face),
     // 否则宿主 nonce 门全拒——桥死。
     const bootstrap = shimUrl && mount?.bridgeNonce
-        ? `<script data-card-runtime-bootstrap>window.__UBERGE_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UBERGE_PANEL_BOOTSTRAP__=${JSON.stringify({
+        ? `<script data-card-runtime-bootstrap>window.__UTOPINN_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UTOPINN_PANEL_BOOTSTRAP__=${JSON.stringify({
             face: 'th',
             mountId: mount.id,
             charId: mount.charId,
@@ -188,7 +188,7 @@ export function assetHandler(request, response) {
 }
 
 // ---------- host-side shim (public, session-free) ----------
-// The TH-face T0 runtime from @uberge/panel-shim, re-served on the public
+// The TH-face T0 runtime from @utopinn/panel-shim, re-served on the public
 // surface so WebViews without a session can load it (mirrors
 // endpoints/panel-shim.js, which stays on the authenticated side for admin use).
 
@@ -197,7 +197,7 @@ let shimCache = null;
 function loadShimRuntime() {
     if (shimCache) return shimCache;
     const require = createRequire(import.meta.url);
-    const pkgDir = path.dirname(require.resolve('@uberge/panel-shim/package.json'));
+    const pkgDir = path.dirname(require.resolve('@utopinn/panel-shim/package.json'));
     const source = fs.readFileSync(path.join(pkgDir, 'src', 'runtime.js'), 'utf8');
     const etag = `W/"${crypto.createHash('sha256').update(source).digest('hex').slice(0, 24)}"`;
     shimCache = { source, etag };

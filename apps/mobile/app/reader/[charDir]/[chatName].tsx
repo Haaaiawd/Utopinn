@@ -19,7 +19,7 @@ import { StatusBar } from 'expo-status-bar';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LegendListRef } from '@legendapp/list/react-native';
-import type { MessageViewModel } from '@uberge/protocol';
+import type { MessageViewModel } from '@utopinn/protocol';
 import { getCharacter, type CardInfo } from '../../../src/api/client';
 import { useChatSession } from '../../../src/state/conversation';
 import { reading, useReading } from '../../../src/state/reading';

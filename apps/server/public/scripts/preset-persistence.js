@@ -16,9 +16,9 @@ export async function persistPreset(options) {
         ? options.preset
         : {};
 
-    // TASK-033 reroute: legacy /api/presets/save → PUT /api/uberge/presets/:name
+    // TASK-033 reroute: legacy /api/presets/save → PUT /api/utopinn/presets/:name
     // (apiId moves to a query param; the preset doc IS the request body).
-    const response = await fetch(`/api/uberge/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(apiId)}`, {
+    const response = await fetch(`/api/utopinn/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(apiId)}`, {
         method: 'PUT',
         headers: getRequestHeaders(),
         body: JSON.stringify(preset),

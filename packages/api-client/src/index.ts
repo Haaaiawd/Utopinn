@@ -1,5 +1,5 @@
 /**
- * @uberge/api-client — typed client for the Uberge server.
+ * @utopinn/api-client — typed client for the Utopinn server.
  * Transport: fetch (HTTP) + injectable event subscription (WS ticket stream).
  * No Node/Browser-specific APIs beyond `fetch` — runs in RN/Expo, browsers, node≥18.
  */
@@ -31,7 +31,7 @@ interface RequestOptions {
     query?: Record<string, string | number | boolean | undefined>;
 }
 
-export class UbergeClient {
+export class UtopinnClient {
     readonly baseUrl: string;
     private csrfToken?: string;
     private headers: Record<string, string>;

@@ -1,19 +1,19 @@
 /**
- * uberge-script —— STscript/QuickReply 服务端 runner(TASK-019)。
+ * utopinn-script —— STscript/QuickReply 服务端 runner(TASK-019)。
  *
- *   POST /api/uberge/script/run
+ *   POST /api/utopinn/script/run
  *   body:{charDir?, chatName?, script}
  *
- * env 构造在 services/stscript-env.js(与 uberge-th 的 triggerSlash 共享,
+ * env 构造在 services/stscript-env.js(与 utopinn-th 的 triggerSlash 共享,
  * seam 语义单点)。ops/UI sink 回执随响应返回。
  */
 import {
     executeSlashCommandsWithOptions,
     registerBuiltinCommands,
-} from '@uberge/core';
+} from '@utopinn/core';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
-import { safeName, sendError } from './uberge-library.js';
+import { safeName, sendError } from './utopinn-library.js';
 import { buildStscriptEnv } from '../services/stscript-env.js';
 
 export const inject = ['webServer'];
@@ -24,7 +24,7 @@ export function apply(ctx) {
     const reg = (path, handler) =>
         ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
 
-    reg('/api/uberge/script/run', async function (request, response) {
+    reg('/api/utopinn/script/run', async function (request, response) {
         try {
             const body = request.body ?? {};
             const script = String(body.script ?? '');
@@ -57,9 +57,9 @@ export function apply(ctx) {
             });
         } catch (error) {
             if (error instanceof InvalidArgumentError || error instanceof NotFoundError) {
-                return sendError(response, error, 'uberge/script run');
+                return sendError(response, error, 'utopinn/script run');
             }
-            console.error('uberge/script run failed:', error);
+            console.error('utopinn/script run failed:', error);
             return response.status(500).send({ error: String(error?.message ?? error) });
         }
     });

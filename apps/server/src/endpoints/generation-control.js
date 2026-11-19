@@ -54,7 +54,7 @@ generationControlRouter.post('/:request_id/abort', (req, res) => {
 
     // 默认路径与 inspector 路径同守卫:只有真在跑的 job 可 abort——
     // 已 completed/failed/awaiting_ack 的 job 被翻 failed 是状态机污染
-    // (`uberge abort` 无参默认打 lastJob,一次成功生成后随手 abort
+    // (`utopinn abort` 无参默认打 lastJob,一次成功生成后随手 abort
     // 会把刚完成的 job 改写 failed)。
     if (!['running', 'queued'].includes(String(job.status || ''))) {
         return res.status(409).json({ aborted: false, error: 'not_running' });

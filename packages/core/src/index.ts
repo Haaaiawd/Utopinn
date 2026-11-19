@@ -1,4 +1,4 @@
-// @uberge/core — server-side brain: WI engine, macros, variables.
+// @utopinn/core — server-side brain: WI engine, macros, variables.
 // Pure TS, zero DOM/fs/network. All platform access is injected.
 
 export * from './utils.js';

@@ -1,17 +1,17 @@
 /**
- * uberge-data —— TASK-016 补刀:备份快照 + ST 目录扫描 + LAN 发现。
+ * utopinn-data —— TASK-016 补刀:备份快照 + ST 目录扫描 + LAN 发现。
  *
- *   POST /api/uberge/backup          备份快照:createBackupArchive 复用
+ *   POST /api/utopinn/backup          备份快照:createBackupArchive 复用
  *                                    users.js 全量归档机(selection 分类可选)
- *   POST /api/uberge/import/scan-st  {dir} 扫 ST default-user 目录 →
+ *   POST /api/utopinn/import/scan-st  {dir} 扫 ST default-user 目录 →
  *                                    可导入清单(characters/worlds/presets/
  *                                    quickReplies/personas/themes)
- *   POST /api/uberge/lan/offer       {handle,selection} → {url,expiresAt}
+ *   POST /api/utopinn/lan/offer       {handle,selection} → {url,expiresAt}
  *                                    与 legacy /api/users/lan-migration/offer 同语义
- *   POST /api/uberge/lan/import      {handle,url,selection,mode} →
+ *   POST /api/utopinn/lan/import      {handle,url,selection,mode} →
  *                                    loopback 代理到 legacy 流式 import(不复制语义)
- *   UDP <httpPort>                   LAN 发现:对 'uberge-discover' /
- *                                    {"probe":"uberge"} 探头回 JSON pong;
+ *   UDP <httpPort>                   LAN 发现:对 'utopinn-discover' /
+ *                                    {"probe":"utopinn"} 探头回 JSON pong;
  *                                    socket 挂 ctx.effect,插件 dispose 即收
  *
  * 备份面只代理——归档/恢复重活在 legacy users-private 面上,不重复造。
@@ -67,19 +67,19 @@ export function apply(ctx) {
         ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path: path_, handler }));
 
     /** 备份快照——复用 createBackupArchive(handle,response,selection)。 */
-    reg('/api/uberge/backup', async function (request, response) {
+    reg('/api/utopinn/backup', async function (request, response) {
         try {
             const selection = request.body?.selection && typeof request.body.selection === 'object'
                 ? request.body.selection : undefined;
             await createBackupArchive(request.user.profile.handle, response, selection);
         } catch (error) {
-            console.error('[uberge/backup] failed:', error);
+            console.error('[utopinn/backup] failed:', error);
             if (!response.headersSent) return response.status(500).send({ error: 'backup failed' });
         }
     });
 
     /** LAN 迁移 offer——与 legacy 同语义:selection 消毒 + token + offer URL。 */
-    reg('/api/uberge/lan/offer', async function (request, response) {
+    reg('/api/utopinn/lan/offer', async function (request, response) {
         const handle = String(request.body?.handle ?? request.user.profile.handle).trim();
         if (!handle) return response.status(400).send({ error: 'Missing required fields' });
         if (handle !== request.user.profile.handle && !request.user.profile.admin) {
@@ -99,7 +99,7 @@ export function apply(ctx) {
     });
 
     /** LAN 迁移 import——薄代理:转发会话凭据到 legacy 流式端点,语义不复制。 */
-    reg('/api/uberge/lan/import', async function (request, response) {
+    reg('/api/utopinn/lan/import', async function (request, response) {
         const port = Number(getConfigValue('port', 8000));
         const headers = { 'content-type': 'application/json' };
         for (const h of ['cookie', 'x-csrf-token', 'accept']) {
@@ -123,7 +123,7 @@ export function apply(ctx) {
     });
 
     /** ST 目录扫描——清单化,不导入;导入走 /import/preview+commit。 */
-    reg('/api/uberge/import/scan-st', async function (request, response) {
+    reg('/api/utopinn/import/scan-st', async function (request, response) {
         if (!request.user?.profile?.admin) {
             return response.status(403).send({ error: 'Unauthorized' });
         }
@@ -142,19 +142,19 @@ export function apply(ctx) {
     ctx.effect(() => {
         const port = Number(getConfigValue('port', 8000));
         const socket = dgram.createSocket('udp4');
-        socket.on('error', (e) => console.warn('[uberge/discover] udp error:', e.message));
+        socket.on('error', (e) => console.warn('[utopinn/discover] udp error:', e.message));
         socket.on('message', (msg, rinfo) => {
             const text = msg.toString('utf-8').trim();
-            if (text !== 'uberge-discover' && !text.includes('"uberge"')) return;
+            if (text !== 'utopinn-discover' && !text.includes('"utopinn"')) return;
             const payload = JSON.stringify({
-                app: 'uberge', name: os.hostname(),
+                app: 'utopinn', name: os.hostname(),
                 httpPort: port,
                 version: process.env.npm_package_version ?? 'dev',
             });
             socket.send(payload, rinfo.port, rinfo.address, () => {});
         });
         socket.bind(port);
-        console.log(`[uberge/discover] udp responder on :${port}`);
+        console.log(`[utopinn/discover] udp responder on :${port}`);
         return () => { try { socket.close(); } catch { /* already closed */ } };
     });
 }

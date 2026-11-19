@@ -14,7 +14,7 @@ const LIB = join(ROOT, 'apps/server/tests/e2e/_lib');
 const imp = (m) => import(pathToFileURL(join(LIB, m)).href);
 
 // WSL /mnt/d 慢盘:scratch 挪到原生 fs,超时放宽——必须在 server.js 模块加载前设置
-process.env.E2E_SCRATCH_ROOT ||= '/tmp/uberge-e2e-scratch';
+process.env.E2E_SCRATCH_ROOT ||= '/tmp/utopinn-e2e-scratch';
 process.env.E2E_READY_TIMEOUT_MS ||= '300000';
 // 本机环境代理会把 127.0.0.1 请求转发到死代理(502)——本地链路全直连
 for (const k of ['HTTP_PROXY','HTTPS_PROXY','http_proxy','https_proxy']) delete process.env[k];
@@ -75,7 +75,7 @@ if (!nativeOk && existsSync(WIN_CHROME)) {
         '/c', 'start', '/b', '', `"${WIN_CHROME.replace(/\//g, '\\')}"`,
         `--remote-debugging-port=${CDP_PORT}`, '--remote-debugging-address=0.0.0.0',
         '--remote-allow-origins=*', '--headless=new', '--no-first-run',
-        '--disable-gpu', '--user-data-dir=C:\\Users\\11341\\AppData\\Local\\Temp\\uberge-pw',
+        '--disable-gpu', '--user-data-dir=C:\\Users\\11341\\AppData\\Local\\Temp\\utopinn-pw',
     ].map(a => a.includes(' ') ? `"${a}"` : a), { stdio: 'ignore', detached: true });
     chromeProc.unref();
     let ok = false;

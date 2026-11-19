@@ -1,4 +1,4 @@
-# Uberge
+# Utopinn(乌有馆 / U馆)
 
 重构 SillyTavern:服务端大脑 + 薄客户端。Web 管理端(全功能)+ RN/Expo 手机端(精简 UI + 重 UI 专属页)。
 
@@ -6,7 +6,7 @@
 
 - **基底**:`ref/Luker`(SillyTavern 激进 fork,已含存储引擎层/多设备同步/服务端生成任务/CardApp 体系)。上游 `ref/SillyTavern` 作行为对照。
 - **大脑在服务端**:prompt 组装、世界书引擎、正则管线、宏/STscript 全部跑在 server(`packages/core`)。理由:API 调用必然联网,无离线场景;ChatGPT/Claude 均为原生薄客户端、零共享大脑。
-- **手机端**:React Native + Expo,薄客户端。只消费 `@uberge/protocol`(类型)+ `@uberge/formats`(导入导出)+ `@uberge/api-client`。
+- **手机端**:React Native + Expo,薄客户端。只消费 `@utopinn/protocol`(类型)+ `@utopinn/formats`(导入导出)+ `@utopinn/api-client`。
 - **重 UI = CardApp/状态栏面板**:卡里预设的 HTML 应用(背包/任务卡/状态面板)。移动端用底导航"面板"专属页承载,`react-native-webview` 沙箱渲染,ctx API 经 postMessage 桥接到 api-client。状态存服务端 chat_state sidecar(Luker 已有)。
 
 ## 布局
@@ -25,7 +25,7 @@ ref/            参考代码(Luker 原 fork、SillyTavern 上游、GuiXu 等参�
 
 ## 兼容策略(世界书/卡面/故事卡)
 
-1. **格式层**:复用 Luker 服务端解析器(`src/{charx,byaf,character-card-parser}.js`、`src/png/`、`validator/TavernCardValidator.js`)移植进 `@uberge/formats`,fixture 测试钉死。
+1. **格式层**:复用 Luker 服务端解析器(`src/{charx,byaf,character-card-parser}.js`、`src/png/`、`validator/TavernCardValidator.js`)移植进 `@utopinn/formats`,fixture 测试钉死。
 2. **行为层**:golden-diff 测试——同一卡+聊天,原版 ST 前端引擎产出的组装结果 vs `core` 产出,逐字段 diff。语料在 `tests/corpus/cards/`(丢 .png/.json/.charx)。
 3. **HTML/JS 面板**:WebView 沙箱 + 兼容 shim;老式正则状态栏里戳 ST 内部全局(`getContext()` 等)的 JS 会退化,接受并降级处理。
 4. **第三方扩展**(`public/scripts/extensions/third-party`):不兼容,接受。

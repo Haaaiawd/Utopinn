@@ -59,7 +59,7 @@ export interface RendererSettingField {
 }
 
 export interface RendererManifest {
-    /** Stable id, lowercase dotted (`uberge.prose`). Registration rejects dupes. */
+    /** Stable id, lowercase dotted (`utopinn.prose`). Registration rejects dupes. */
     id: string;
     name: string;
     version: string;

@@ -209,7 +209,7 @@ export type AnyPanelMethod = PanelMethod | PanelMethodTH;
 
 /** Card → host request. Nonce minted per mount; host drops mismatches. */
 export interface PanelRequest {
-    channel: 'uberge-panel';
+    channel: 'utopinn-panel';
     direction: 'request';
     nonce: string;
     requestId: string;
@@ -219,7 +219,7 @@ export interface PanelRequest {
 
 /** Host → card response correlated by requestId. */
 export interface PanelResponse {
-    channel: 'uberge-panel';
+    channel: 'utopinn-panel';
     direction: 'response';
     nonce: string;
     requestId: string;
@@ -230,7 +230,7 @@ export interface PanelResponse {
 
 /** Host → card unsolicited events (chat updated, swipe changed, state changed). */
 export interface PanelPush {
-    channel: 'uberge-panel';
+    channel: 'utopinn-panel';
     direction: 'push';
     nonce: string;
     event: 'chat.updated' | 'swipe.changed' | 'state.changed' | 'lifecycle.unmount' | 'th.event';
@@ -242,7 +242,7 @@ export type PanelWireMessage = PanelRequest | PanelResponse | PanelPush;
 
 /** Bootstrap payload the host injects before the app's init() runs. */
 export interface PanelBootstrap {
-    channel: 'uberge-panel';
+    channel: 'utopinn-panel';
     direction: 'bootstrap';
     nonce: string;
     /** Which API face the shim injected: 'ctx' (CardApp) or 'th' (TavernHelper compat). */
@@ -264,7 +264,7 @@ export function isPanelMethod(v: unknown): v is AnyPanelMethod {
 
 export function isPanelRequest(v: unknown): v is PanelRequest {
     const m = v as Partial<PanelRequest> | null;
-    return !!m && m.channel === 'uberge-panel' && m.direction === 'request' &&
+    return !!m && m.channel === 'utopinn-panel' && m.direction === 'request' &&
         typeof m.nonce === 'string' && typeof m.requestId === 'string' &&
         isPanelMethod(m.method);
 }

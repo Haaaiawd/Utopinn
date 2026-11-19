@@ -1,9 +1,9 @@
-// Character cards via /api/uberge/characters(TASK-026)。
+// Character cards via /api/utopinn/characters(TASK-026)。
 // 列表行只带展示元;完整 CCv2 卡(data.* 持字段)是单独 GET ——
 // 角色页要 first_mes / extensions.world(绑定书)/ character_book(内嵌书)。
 import { apiGet } from './client';
 
-/** /api/uberge/characters 行 —— 卡格、侧栏组头、舞台头共用的展示面。 */
+/** /api/utopinn/characters 行 —— 卡格、侧栏组头、舞台头共用的展示面。 */
 export interface CardItem {
     charDir: string;
     name: string;
@@ -55,10 +55,10 @@ export function charImageUrl(fileName: string): string {
 }
 
 export async function listCharacters(): Promise<{ items: CardItem[]; total: number }> {
-    return apiGet('/api/uberge/characters');
+    return apiGet('/api/utopinn/characters');
 }
 
 /** 单卡完整文档;404/解析失败时 apiGet 抛 ApiError,调用方给空态。 */
 export async function getCharacter(charDir: string): Promise<CardDoc> {
-    return apiGet(`/api/uberge/characters/${encodeURIComponent(charDir)}`);
+    return apiGet(`/api/utopinn/characters/${encodeURIComponent(charDir)}`);
 }
