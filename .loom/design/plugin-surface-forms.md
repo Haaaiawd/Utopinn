@@ -55,6 +55,16 @@ generate+delivery+state 三族+mvu+th 覆盖。无结构性缺口,剩 polish。
 插件市场、模型清单、/attach 写面、正则专属面 —— 随对应形态/面板用到再补,
 不提前建。
 
+## 附:CLI 人体工学整合层(构想,TASK-044 旁挂)
+
+现状:CLI 动词按 Cordis 插件域切(library/generate/mvu/th/state/diag…)——
+覆盖全但导航粒度偏机械。Agent/人在工作流里要的是**任务型动词**:
+- `utopinn play <card>` = use+chat-new(无聊天时)一步到位
+- `utopinn card-doctor <card>` = doctor+char+scripts+WI 命中预检聚合
+- `utopinn watch` = logs tail -f + jobs 活跃轮询合一
+实现方向:CLI 内部加一层「编排动词」——不动域动词,只在它之上组合
+(ctx 感知+流程闭环+next 提示链)。待观测面落地后做,届时 watch/logs 都有了底座。
+
 ## 排期建议
 1. TASK-043 观测面(在飞)→ stats 插件有了数据底座
 2. 壳还原完 → novel 章目录 sidecar(轻,先做)
