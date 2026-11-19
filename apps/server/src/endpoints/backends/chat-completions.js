@@ -381,6 +381,7 @@ router.post('/jobs/status', async function (request, response) {
             last_seq: job.lastSeq,
             persisted: Boolean(job.persisted),
             error: job.error || '',
+            model: job.sources?.model ?? job.model ?? null,
             created_at: job.createdAt,
             updated_at: job.updatedAt,
             finished_at: job.finishedAt || null,
