@@ -7800,13 +7800,43 @@ export async function simulateWorldInfoActivation({
         ? { ...globalScanData, trigger: normalizeGenerationTrigger(globalScanData.trigger || type) }
         : buildWorldInfoGlobalScanData(type);
 
-    const worldInfoResolution = await getWorldInfoPrompt(resolvedChatForWI, resolvedMaxContext, dryRun, resolvedGlobalScanData);
-    return {
-        ...worldInfoResolution,
-        chatForWI: resolvedChatForWI,
-        maxContext: resolvedMaxContext,
-        globalScanData: resolvedGlobalScanData,
-    };
+    // TASK-034:timed effects 单写者在服务端(persistWorldInfoTimedEffects)。
+    // 会话被 utopinn 托管时(main_api=openai + target 可解析 + 非 legacy 回滚),
+    // 浏览器侧任何非 dryRun 的 WI 扫描一律按假想模拟处理:换入
+    // chat_metadata.timedWorldInfo 克隆跑真扫描——sticky/cooldown 照常参与
+    // 判定,结果与真实扫描一致——扫完还原。活字段只由 job.timedWorldInfo
+    // reconcile 改写,浏览器不再本地推进。探针用 'normal':判定的是
+    // "本会话是否服务端托管",与调用方本次模拟的 type 无关。
+    // (GENERATION_* 事件 payload.simulateWorldInfo、st-context
+    // resolveWorldInfoForMessages、扩展直调 simulateWorldInfoActivation
+    // 全部汇聚于此;dryRun 语义不变——本来就不写。)
+    const isolateTimedEffects = !dryRun && shouldUseUtopinnAssembly('normal', { dryRun: false });
+    const timedWorldInfoBackup = isolateTimedEffects ? chat_metadata.timedWorldInfo : undefined;
+    const timedWorldInfoClone = isolateTimedEffects
+        ? (cloneAsJsonWire(timedWorldInfoBackup ?? {}) ?? {})
+        : null;
+    if (timedWorldInfoClone) {
+        chat_metadata.timedWorldInfo = timedWorldInfoClone;
+    }
+    try {
+        const worldInfoResolution = await getWorldInfoPrompt(resolvedChatForWI, resolvedMaxContext, dryRun, resolvedGlobalScanData);
+        return {
+            ...worldInfoResolution,
+            chatForWI: resolvedChatForWI,
+            maxContext: resolvedMaxContext,
+            globalScanData: resolvedGlobalScanData,
+        };
+    } finally {
+        // 字段仍挂着我们换入的克隆才还原;扫描期间若权威写者
+        // (reconcile/会话重载)已换上新对象,保留新值不覆盖。
+        if (timedWorldInfoClone && chat_metadata.timedWorldInfo === timedWorldInfoClone) {
+            if (timedWorldInfoBackup === undefined) {
+                delete chat_metadata.timedWorldInfo;
+            } else {
+                chat_metadata.timedWorldInfo = timedWorldInfoBackup;
+            }
+        }
+    }
 }
 
 function normalizeWorldInfoEntries(entries) {
@@ -9805,6 +9835,23 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
                 getMessage = continue_mag + getMessage;
             }
 
+            // TASK-034:流式生成后回同步服务端组装现场——刻意放在
+            // onFinishStreaming(内含 append/saveChatConditional 存档)之前:
+            // 服务端派发前已落 timed effects,先把 chat_metadata 回同步到
+            // 服务端事实,后续存档写出的都是同一份值(幂等);若存档先跑,
+            // 409 自愈路径可能把推进前的陈旧 timedWorldInfo 盖回去。
+            // 楼层在 onStartStreaming 已落位 → promptChatLength 扣掉本次
+            // 新层;swipe/regenerate/continue/impersonate 不加层,
+            // impersonate 无楼层(mesId=-1 → itemized 重建自动跳过)。
+            if (serverAssembled) {
+                await reconcileUtopinnServerState({
+                    type,
+                    jobIdAtDispatchStart,
+                    promptChatLength: chat.length - (type === 'normal' ? 1 : 0),
+                    mesId: streamingProcessor?.messageId ?? -1,
+                });
+            }
+
             const isStreamFinished = streamingProcessor && !streamingProcessor.isStopped && streamingProcessor.isFinished;
             const isStreamWithToolCalls = streamingProcessor && Array.isArray(streamingProcessor.toolCalls) && streamingProcessor.toolCalls.length;
             if (canPerformToolCalls && isStreamFinished && isStreamWithToolCalls) {
@@ -9876,17 +9923,6 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
                     return Generate('continue', { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, depth: depth + 1 }, dryRun);
                 }
                 await streamingProcessor.onFinishStreaming(streamingProcessor.messageId, getMessage);
-                // TASK-034:流式成功后回同步服务端组装现场(楼层已落 →
-                // promptChatLength 需扣掉本次新落的一层;swipe/regenerate/
-                // continue/impersonate 不加层,quiet 产物不进楼层)。
-                if (serverAssembled) {
-                    await reconcileUtopinnServerState({
-                        type,
-                        jobIdAtDispatchStart,
-                        promptChatLength: chat.length - (type === 'normal' ? 1 : 0),
-                        mesId: streamingProcessor.messageId,
-                    });
-                }
                 streamingProcessor = null;
                 triggerAutoContinue(messageChunk, isImpersonate);
                 return Object.defineProperties(new String(getMessage), {
@@ -10137,7 +10173,19 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
      * @param {Error|object} exception Error or response JSON
      * @throws {Error|object} Re-throws the exception
      */
-    function onError(exception) {
+    async function onError(exception) {
+        // TASK-034:派发途中抛错/中止的 job 同样已在服务端推进 timed effects
+        // (persistWorldInfoTimedEffects 在 LLM 派发前落库)——照常回同步,
+        // 避免陈旧 timedWorldInfo 被后续存档盖回服务端。reconcile 内部
+        // 全宽容,失败只 warn。
+        if (serverAssembled) {
+            await reconcileUtopinnServerState({
+                type,
+                jobIdAtDispatchStart,
+                promptChatLength: chat.length - (type === 'normal' && streamingProcessor ? 1 : 0),
+                mesId: streamingProcessor?.messageId ?? getNextMessageId(type),
+            });
+        }
         clearMessageProgressNotification();
 
         const isAbortedError = abortController?.signal?.aborted
