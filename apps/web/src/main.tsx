@@ -4,8 +4,6 @@ import App from './App';
 import './styles/tokens.css';
 import './styles/base.css';
 import './styles/spec.css';
-import './styles/shell.css';
-import './styles/chat.css';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('#root missing');

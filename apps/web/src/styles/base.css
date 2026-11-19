@@ -6,19 +6,22 @@
     * { box-sizing: border-box; margin: 0; }
     html, body, #root { height: 100%; }
     body {
-        font-family: var(--font-ui);
-        font-size: var(--fs-ui);
-        background: var(--bg);
-        color: var(--ink);
+        /* 规范稿:font-sans 族 + cv* feature 设置 + 画布色 */
+        font-family: var(--font-sans);
+        background: var(--bg-chrome);
+        color: var(--fg-primary);
         overflow: hidden;
         -webkit-font-smoothing: antialiased;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     }
     button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
     input, select, textarea { font: inherit; color: inherit; }
-    ::placeholder { color: var(--ink3); opacity: 1; }
-    ::-webkit-scrollbar { width: 9px; height: 9px; }
-    ::-webkit-scrollbar-thumb { background: var(--line2); border-radius: 9px; border: 2px solid var(--bg); }
+    ::placeholder { color: var(--fg-faint); opacity: 1; }
+    /* 规范稿:5px 细条、默认透明、hover 才显 thumb */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: transparent; border-radius: 999px; }
+    *:hover::-webkit-scrollbar-thumb { background: rgba(161, 161, 170, 0.2); }
 
     /* Radix ScrollArea viewport 的横向测量子是 display:table —— 纯纵向列表钉回 block。 */
     [data-slot="scroll-area-viewport"] > div { display: block !important; }
