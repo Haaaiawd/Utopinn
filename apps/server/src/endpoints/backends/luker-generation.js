@@ -707,6 +707,20 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             return false;
         }
 
+        // TASK-037 群楼层字段(getFirstCharacterMessage/saveReply 同形):
+        // original_avatar = 发言成员 avatar 文件名;force_avatar = 缩略图 URL;
+        // extra.gen_id = 群批次 id(客户端 swipe/重放对账用)。全部由
+        // persistTarget 透传——缺省不写,保持旧兜底楼层形。
+        if (persistTarget.original_avatar) {
+            message.original_avatar = String(persistTarget.original_avatar);
+        }
+        if (persistTarget.force_avatar) {
+            message.force_avatar = String(persistTarget.force_avatar);
+        }
+        if (persistTarget.gen_id !== undefined && persistTarget.gen_id !== null) {
+            message.extra.gen_id = persistTarget.gen_id;
+        }
+
         const chatFilePath = path.join(groupChatsDirectory, sanitize(`${groupId}.jsonl`));
         await appendMessagesToChatFile({
             filePath: chatFilePath,

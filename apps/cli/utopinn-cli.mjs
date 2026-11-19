@@ -1047,6 +1047,7 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName/document',
     'POST|pattern|/api/utopinn/characters/:charDir/chats/:chatName/rename',
     'DELETE|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
+    'POST|pattern|/api/utopinn/chats/recent',
     'GET|pattern|/api/utopinn/worlds',
     'GET|pattern|/api/utopinn/worlds/:name',
     'PUT|pattern|/api/utopinn/worlds/:name',
@@ -1286,7 +1287,7 @@ async function cmdChats() {
 }
 
 async function cmdRecent() {
-    const { data } = await req('POST', '/api/chats/recent', {});
+    const { data } = await req('POST', '/api/utopinn/chats/recent', {});
     const rows = (Array.isArray(data) ? data : []).slice(0, flags.n ?? 10).map(c => ({
         char: stripExt(c.avatar_url ?? c.avatar ?? '', 'png'),
         chat: stripExt(c.file_name ?? '', 'jsonl'),
