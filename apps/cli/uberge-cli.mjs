@@ -765,6 +765,16 @@ const SCHEMA = {
         { cmd: 'uberge persona [name]', desc: '查看/设定 persona', out: 'persona' },
         { cmd: 'uberge presets', desc: 'openai 预设列表', out: '[name]' },
         { cmd: 'uberge preset <name>|--off', desc: '绑定预设进 generate.presetName', out: 'preset' },
+        { cmd: 'uberge worlds', desc: '[library] 世界书列表', out: '[{name,displayName}]' },
+        { cmd: 'uberge wi <book> [-n N] [--full] [--out f]', desc: '[library] 世界书条目(uid/keys/constant/off)', out: '[entry]' },
+        { cmd: 'uberge kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
+        { cmd: 'uberge plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
+        { cmd: 'uberge plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
+        { cmd: 'uberge mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
+        { cmd: 'uberge mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
+        { cmd: 'uberge mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
+        { cmd: 'uberge script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
+        { cmd: 'uberge raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
     flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UBERGE_SERVER'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
@@ -1106,6 +1116,158 @@ async function cmdSwipe() {
     await runGeneration('swipe');
 }
 
+// ═══ 组件面(cordis fiber ↔ CLI 动词一一对应)═══
+// uberge-library  → worlds / wi
+// uberge-mvu      → mvu(状态板=卡内悬浮窗的数据源)
+// uberge-diag     → kernel(路由+服务清单)
+// uberge-plugins  → plugins / plugin(生命周期:enable|disable|reload)
+// uberge-script   → script(服务端 STscript runner)
+
+async function cmdWorlds() {
+    const { data } = await req('GET', '/api/uberge/worlds');
+    const items = data?.items ?? [];
+    if (JSON_MODE) return out(items, [{ cmd: 'uberge wi <name>', why: '看条目' }]);
+    for (const w of items) console.log(` ${w.name}${w.displayName !== w.name ? `  (${w.displayName})` : ''}`);
+    console.log(`\n${items.length} world books`);
+    next('uberge wi <name>');
+    footer();
+}
+
+async function cmdWi() {
+    const name = positional[1];
+    if (!name) return void fail('usage', 'uberge wi <book>', { hint: 'uberge worlds 看列表', rc: 2 });
+    const { data, status } = await req('GET', `/api/uberge/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('not_found', `world book: ${name}`, { hint: 'uberge worlds 看列表' });
+    const entries = Object.entries(data?.doc?.entries ?? {});
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data.doc, null, 2)); warn(`wrote ${flags.out}`); }
+    const rows = entries.map(([uid, e]) => ({
+        uid,
+        keys: (e.key ?? e.keys ?? []).join(','),
+        comment: e.comment ?? e.keyprimary?.join(',') ?? '',
+        pos: e.position, constant: !!e.constant, depth: e.depth ?? null,
+        disabled: !!(e.disable ?? e.disabled),
+    }));
+    if (JSON_MODE) return out({ book: data.name, count: rows.length, entries: flags.full ? rows : rows.slice(0, flags.n ?? 25) });
+    console.log(`${data.name} — ${rows.length} entries`);
+    for (const r of rows.slice(0, flags.n ?? 25)) {
+        const marks = [r.constant ? '❗' : ' ', r.disabled ? '·off' : ''].join('');
+        console.log(` ${marks} ${String(r.uid).padEnd(4)} ${trunc(r.comment || r.keys, 50)}  ${r.keys ? `\x1b[2m${trunc(r.keys, 40)}\x1b[0m` : ''}`);
+    }
+    if (!flags.full && rows.length > (flags.n ?? 25)) console.log(`  …+${rows.length - (flags.n ?? 25)}(--full/--out 展开)`);
+    footer();
+}
+
+async function cmdKernel() {
+    const { data } = await req('GET', '/api/uberge/_kernel');
+    const routes = data?.routes ?? [];
+    const services = data?.services ?? [];
+    if (JSON_MODE) return out(data);
+    console.log(`routes: ${routes.length}`);
+    for (const r of routes) console.log(`  ${typeof r === 'string' ? r : `${r.method ?? '?'} ${r.path ?? ''}`}`);
+    console.log(`services: ${services.length}`);
+    for (const s of services) console.log(`  ${typeof s === 'string' ? s : s.name ?? JSON.stringify(s)}`);
+    footer();
+}
+
+async function cmdPlugins() {
+    const { data, status } = await req('GET', '/api/uberge/plugins', undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `plugins 列表失败:${data?.error ?? 'denied?'}`, { hint: '需要 admin profile' });
+    const items = data?.items ?? [];
+    if (JSON_MODE) return out(items, [{ cmd: 'uberge plugin <id> <enable|disable|reload>' }]);
+    for (const p of items) console.log(` ${p.disabled ? '\x1b[2m○\x1b[0m' : '\x1b[32m●\x1b[0m'} ${p.id ?? p.name}${p.version ? ` v${p.version}` : ''}${p.disabled ? ' (disabled)' : ''}`);
+    console.log(`\n${items.length} fibers`);
+    next('uberge plugin <id> <enable|disable|reload>');
+    footer();
+}
+
+async function cmdPlugin() {
+    const id = positional[1], verb = positional[2];
+    if (!id || !['enable', 'disable', 'reload'].includes(verb)) {
+        return void fail('usage', 'uberge plugin <id> <enable|disable|reload>', { hint: 'uberge plugins 看清单', rc: 2 });
+    }
+    const { data, status } = await req('POST', `/api/uberge/plugins/${encodeURIComponent(id)}/${verb}`, {}, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `${verb} ${id} 失败:${data?.error ?? 'unknown'}`, { hint: id === 'uberge-plugins' ? '插件管理器自锁,改 profile.patch.yaml' : undefined });
+    if (JSON_MODE) return out(data);
+    console.log(`${verb} → ${id}: ${data?.ok ? 'ok' : JSON.stringify(data)}`);
+    footer();
+}
+
+function mvuTarget() {
+    const c = needCtx();
+    if (!c) return null;
+    return { avatar_url: `${c.charDir}.png`, file_name: `${c.chatName}.jsonl` };
+}
+
+async function cmdMvu() {
+    const sub = positional[1] ?? 'state';
+    const t = mvuTarget();
+    if (!t) return;
+    if (sub === 'state') {
+        const q = `avatar_url=${encodeURIComponent(t.avatar_url)}&file_name=${encodeURIComponent(t.file_name)}`;
+        const { data, status } = await req('GET', `/api/uberge/mvu/state?${q}`, undefined, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `mvu state 失败:${data?.error ?? ''}`, { hint: '卡可能无 MVU 变量——send 生成一轮后再看' });
+        const vars = data?.chatVariables ?? data?.variables ?? {};
+        const keys = Object.keys(vars);
+        if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+        if (JSON_MODE) return out(data);
+        console.log(`chat variables: ${keys.length}`);
+        for (const k of keys.slice(0, flags.n ?? 30)) {
+            const v = vars[k];
+            const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+            console.log(`  ${k} = ${trunc(s, 90)}`);
+        }
+        if (!flags.full && keys.length > (flags.n ?? 30)) console.log(`  …+${keys.length - (flags.n ?? 30)}(--out 全量)`);
+        const receipts = data?.receipts ?? data?.log ?? [];
+        if (receipts.length) console.log(`mvu receipts: ${receipts.length}(--out 看明细)`);
+        footer();
+        return;
+    }
+    if (sub === 'settle' || sub === 'resettle') {
+        const body = { ...t };
+        if (sub === 'settle' && flags.floor != null) body.message_index = flags.floor;
+        const { data, status } = await req('POST', `/api/uberge/mvu/${sub}`, body, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `mvu ${sub} 失败:${JSON.stringify(data?.error ?? data)}`);
+        if (JSON_MODE) return out(data);
+        console.log(`mvu ${sub}: ${data?.ok ? 'ok' : 'done'} ${trunc(JSON.stringify(data).slice(0, 200), 200)}`);
+        footer();
+        return;
+    }
+    fail('usage', 'uberge mvu [state|settle [--floor i]|resettle]', { rc: 2 });
+}
+
+async function cmdScript() {
+    const script = await readTextArg(positional.slice(1));
+    if (!script) return void fail('usage', 'uberge script <stscript|--stdin>', { hint: '例:uberge script "/echo hi"', rc: 2 });
+    const c = needCtx() ?? {};
+    const { data, status } = await req('POST', '/api/uberge/script/run', {
+        script,
+        ...(c.charDir ? { charDir: c.charDir } : {}),
+        ...(c.chatName ? { chatName: c.chatName } : {}),
+    }, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `script run 失败:${data?.error ?? ''}`);
+    if (JSON_MODE) return out(data);
+    if (data.pipe != null && data.pipe !== '') console.log(typeof data.pipe === 'string' ? data.pipe : JSON.stringify(data.pipe, null, 2));
+    const side = [data.ops?.length ? `ops:${data.ops.length}` : null, data.notifications?.length ? `notify:${data.notifications.length}` : null, data.popups?.length ? `popup:${data.popups.length}` : null, data.isAborted ? 'aborted' : null].filter(Boolean).join(' · ');
+    if (side) console.log(`\x1b[2m${side}\x1b[0m`);
+    footer();
+}
+
+async function cmdRaw() {
+    // 逃生舱:kernel 路由表上任何端点都能直达——写动词(PUT/PATCH/DELETE)
+    // 不必为每条 REST 面单开命令。读面优先用具名命令(输出已整理)。
+    const method = String(positional[1] ?? 'GET').toUpperCase();
+    const path = positional[2];
+    if (!path?.startsWith('/')) return void fail('usage', 'uberge raw <METHOD> </path> [json|--stdin]', { hint: 'uberge kernel 看路由表', rc: 2 });
+    let body;
+    if (flags.stdin) { const t = await readTextArg([]); try { body = JSON.parse(t); } catch { body = t; } }
+    else if (positional[3] !== undefined) { try { body = JSON.parse(positional.slice(3).join(' ')); } catch { body = positional.slice(3).join(' '); } }
+    const { data, status } = await req(method, path, body, { allowFail: true });
+    if (JSON_MODE) return out({ status, data });
+    if (status >= 400) return void fail('server', `${method} ${path} → ${status}`, { detail: typeof data === 'string' ? trunc(data, 200) : data });
+    console.log(typeof data === 'string' ? data : JSON.stringify(data, null, 2).slice(0, flags.full ? 1e9 : 8000));
+    footer(`${method} ${path} → ${status}`);
+}
+
 // ═══ dispatch ═══
 try {
     switch (CMD) {
@@ -1142,6 +1304,14 @@ try {
             break;
         }
         case 'swipe': await cmdSwipe(); break;
+        case 'worlds': await cmdWorlds(); break;
+        case 'wi': await cmdWi(); break;
+        case 'kernel': case 'caps': await cmdKernel(); break;
+        case 'plugins': await cmdPlugins(); break;
+        case 'plugin': await cmdPlugin(); break;
+        case 'mvu': await cmdMvu(); break;
+        case 'script': case 'stscript': await cmdScript(); break;
+        case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
             console.log('uberge — agent-first CLI。裸跑看状态,`uberge schema` 看自描述目录,`uberge doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
             break;
