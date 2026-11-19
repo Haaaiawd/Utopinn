@@ -241,3 +241,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: work/掌门卡/02_card_工作区/cardapp/index.js, work/掌门卡/02_card_工作区/cardapp/style.css, work/掌门卡/02_card_工作区/_prepare_portraits.py
 - Recorded: 2026-11-16T08:28:08.920Z
+
+## D-020: Cordis 迁移路线重排——写盘面统一优先,按「机制移植→调用改道→组装短路→物理删除」四步退役旧架构
+
+- Current decision: TASK-030/031 done 后,主线改为 TASK-032(ack/integrity/gen-id/settle 机制从 legacy chats.js 移植进 uberge fiber,三写盘面收成一套)→ TASK-033(浏览器残存调用改道 uberge REST)→ TASK-034(浏览器组装空跑短路)→ TASK-035(旧端点物理删除)。支线:TASK-036(CLI 具名覆盖 30 raw-only)、TASK-037(group/textgen/kobold 接入)、TASK-038(CLI 验收矩阵+golden-diff 复跑)。TASK-026/028 保持停泊不启动。
+- Rationale: 当前最大风险是双写盘面并存——ack/integrity 机制长在 legacy chats.js 里而新 uberge chat 路由不触发它;任何经新面的写都会绕过结算/去重。必须先统写盘才能谈删旧。TASK-026/028 与 cordis 迁移无关,继续停泊。
+- Source: conversation + subagent 审查(34 条,5527db1 已修阻塞项)
+- Supersedes: none
+- Affects: .loom/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/uberge-cli.mjs
+- Recorded: 2026-11-19T06:00:00.000Z
