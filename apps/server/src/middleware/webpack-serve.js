@@ -67,6 +67,15 @@ export default function getWebpackServeMiddleware() {
             return;
         }
 
+        // Kernel-only mode: CLI/headless consumers never touch the legacy
+        // frontend — skip the webpack compiler entirely so startup does not
+        // stall on toolchain I/O.
+        if (process.env.LUKER_SKIP_WEBPACK) {
+            console.log();
+            console.log('Skipping frontend bundle compilation (LUKER_SKIP_WEBPACK set).');
+            return;
+        }
+
         console.log();
         console.log('Compiling frontend libraries...');
 
