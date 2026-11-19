@@ -112,6 +112,9 @@ import {
     setupChatCompletionPromptManager,
     prepareOpenAIMessages,
     sendOpenAIRequest,
+    shouldUseUtopinnAssembly,
+    fetchUtopinnPreviewMessages,
+    getLastUtopinnGenerationId,
     isLastOpenAIReplyPersistedByServer,
     getLastOpenAIGenerationId,
     hydrateOpenAIPresetData,
@@ -3087,6 +3090,11 @@ async function fetchCharacterChatUtopinn(avatarUrl, fileName) {
     if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
         return { ok: false, status: response.status, data: null };
     }
+    // utopinn GET 对"盘上有文件但读不出"回 {corrupted:true}——透传给
+    // 调用方的 data?.corrupted 损坏分支,别让空 header 伪装成正常会话。
+    if (doc.corrupted === true) {
+        return { ok: true, status: response.status, data: { corrupted: true } };
+    }
     const header = isPlainObject(doc.header) ? structuredClone(doc.header) : {};
     if (!isPlainObject(header.chat_metadata)) {
         header.chat_metadata = {};
@@ -3175,8 +3183,8 @@ function buildUtopinnHeaderMetadataOps(previousMetadata, nextMetadata) {
  * TASK-033: rebuild the shallow character objects legacy POST /api/characters/all
  * produced (CharacterStore.toShallow + .chat pointer) from an utopinn list item
  * plus the full card JSON returned by GET /api/utopinn/characters/:charDir.
- * Degraded vs legacy: date_added/date_last_chat/chat_size are unavailable on the
- * utopinn surface → 0 (chat_size was already a 0 stand-in server-side).
+ * Degraded vs legacy: chat_size stays 0 (already a 0 stand-in server-side);
+ * date_added/date_last_chat 由 utopinn list item 的 dateAdded/dateLastChat 供给。
  */
 function buildShallowCharacterFromUtopinnCard(item, card) {
     const data = isPlainObject(card?.data) ? card.data : {};
@@ -3184,7 +3192,17 @@ function buildShallowCharacterFromUtopinnCard(item, card) {
     const lukerExt = isPlainObject(extensions.luker) ? extensions.luker : {};
     const dedicatedPersonas = Array.isArray(lukerExt.dedicated_personas)
         ? lukerExt.dedicated_personas.filter(entry => entry && typeof entry === 'object')
-            .map(entry => ({ personaName: String(entry.persona_name || entry.personaName || ''), lockName: String(entry.lock_name || entry.lockName || '') }))
+            .map(entry => ({
+                avatar: String(entry.avatar ?? '').trim(),
+                name: String(entry.name ?? '').trim(),
+                description: String(entry.description ?? ''),
+                position: Number.isFinite(Number(entry.position)) ? Number(entry.position) : undefined,
+                depth: Number.isFinite(Number(entry.depth)) ? Number(entry.depth) : undefined,
+                role: Number.isFinite(Number(entry.role)) ? Number(entry.role) : undefined,
+                lorebook: String(entry.lorebook ?? ''),
+                title: String(entry.title ?? ''),
+            }))
+            .filter(entry => entry.avatar && entry.name)
         : [];
     const cardTags = Array.isArray(data.tags) ? data.tags : (Array.isArray(card?.tags) ? card.tags : []);
     return {
@@ -3193,9 +3211,10 @@ function buildShallowCharacterFromUtopinnCard(item, card) {
         avatar: String(item?.fileName || item?.avatar || ''),
         chat: String(card?.chat ?? ''),
         fav: extensions.fav ?? card?.fav ?? false,
-        date_added: 0,
-        create_date: card?.create_date,
-        date_last_chat: 0,
+        // TASK-033 复核:服务端 list item 现带 dateAdded(ctime)/dateLastChat(会话 max updatedAt)
+        date_added: Number(item?.dateAdded ?? 0),
+        create_date: card?.create_date ?? (item?.dateAdded ? new Date(item.dateAdded).toISOString() : undefined),
+        date_last_chat: Number(item?.dateLastChat ?? 0),
         chat_size: 0,
         data_size: Object.values(data).reduce((acc, value) => acc + String(value).length, 0),
         tags: cardTags.length ? cardTags : (Array.isArray(item?.tags) ? item.tags : []),
@@ -8146,6 +8165,18 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         await sendMessageAsUser(oai_settings.send_if_empty.trim(), messageBias);
     }
 
+    // TASK-034:服务端组装短路谓词——true 时跳过下面全部浏览器 prompt 组装
+    // (产物在 openai.js 派发前被显式丢弃,纯 CPU 浪费);WI/GENERATION_* 事件
+    // 照常发射(payload 带 serverAssembled:true),生成后 reconcile 补回
+    // itemizedPrompts/lastInContext/timedWorldInfo/WI snapshot。
+    const serverAssembled = shouldUseUtopinnAssembly(type, { dryRun });
+    const browserAssemblyStart = performance.now();
+    /** takeover 供料:/preview 组装的 messages;仅 takeover 监听存在时取。 */
+    let previewMessages = null;
+
+    // TASK-034:cardFields 解析(baseChatReplace ×9)只进组装与 WI 扫描输入,
+    // 短路时全量跳过;消费方(组装区/globalScanData/itemize 兜底)拿空串。
+    // [REVIEW] 若扩展监听在 WI 事件里读 globalScanData 的实卡字段,会看到空值。
     let {
         description,
         personality,
@@ -8156,10 +8187,25 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         jailbreak,
         charDepthPrompt,
         creatorNotes,
-    } = getCharacterCardFields();
+    } = serverAssembled
+        ? {
+            description: '',
+            personality: '',
+            persona: '',
+            scenario: '',
+            mesExamples: '',
+            system: '',
+            jailbreak: '',
+            charDepthPrompt: '',
+            creatorNotes: '',
+        }
+        : getCharacterCardFields();
 
     // Depth prompt (character-specific A/N)
+    // TASK-034:removeDepthPrompts 无条件跑(清上一轮 legacy 残留);
+    // 注入本体只在旧路写——服务端同源注入,extension_prompts 不再暂存。
     removeDepthPrompts();
+    if (!serverAssembled) {
     const groupDepthPrompts = getGroupDepthPrompts(selected_group, Number(this_chid));
 
     if (selected_group && Array.isArray(groupDepthPrompts) && groupDepthPrompts.length > 0) {
@@ -8173,6 +8219,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         const depthPromptRole = getExtensionPromptRoleByName(characters[this_chid]?.data?.extensions?.depth_prompt?.role ?? depth_prompt_role_default);
         setExtensionPrompt(inject_ids.DEPTH_PROMPT, depthPromptText, extension_prompt_types.IN_CHAT, depthPromptDepth, extension_settings.note.allowWIScan, depthPromptRole);
     }
+    }
 
     // First message in fresh 1-on-1 chat reacts to user/character settings changes
     if (chat.length) {
@@ -8182,11 +8229,16 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     // Collect messages with usable content
     const canUseTools = ToolManager.isToolCallingSupported();
     const canPerformToolCalls = !dryRun && ToolManager.canPerformToolCalls(type) && depth < ToolManager.RECURSE_LIMIT;
+    // TASK-034:短路时 coreChat 只保留"素拷贝"(is_system/tool_invocations
+    // 过滤 + swipe 弹层)——供拦截器与 WI/GENERATION_* 事件 payload;
+    // regex/appendFile/工具合并/reasoning 回填只服务浏览器组装产物,跳过。
     let coreChat = chat.filter(x => !x.is_system || (canUseTools && Array.isArray(x.extra?.tool_invocations)));
     if (type === 'swipe') {
         coreChat.pop();
     }
 
+    const promptReasoning = new PromptReasoning();
+    if (!serverAssembled) {
     // Tool invocation summaries are persisted as compact system display messages
     // that get merged back into their owning assistant turn at prompt-build time
     // (see below). When that owner turn is hidden — via /hide (is_system), the
@@ -8294,7 +8346,6 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
             .map(x => coreChatByIndex.get(x.index) ?? x);
     }
 
-    const promptReasoning = new PromptReasoning();
     for (let i = coreChat.length - 1; i >= 0; i--) {
         const depth = coreChat.length - i - (isContinue ? 2 : 1);
         const isPrefix = isContinue && i === coreChat.length - 1;
@@ -8336,6 +8387,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
             break;
         }
     }
+    }
 
     // Determine token limit
     let this_max_context = getMaxPromptTokens();
@@ -8354,7 +8406,13 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Adjust token limit for Horde
+    // TASK-034:horde 调整/CFG 扣减只影响浏览器组装预算,短路时跳过。
+    // (cfgGuidanceScale/useCfgPrompt 的消费者全在 textgen/horde 旧路,
+    // 变量提升声明以保持块外可及。)
     let adjustedParams;
+    let cfgGuidanceScale = null;
+    let useCfgPrompt = false;
+    if (!serverAssembled) {
     if (main_api == 'koboldhorde' && (horde_settings.auto_adjust_context_length || horde_settings.auto_adjust_response_length)) {
         try {
             adjustedParams = await adjustHordeGenerationParams(max_context, amount_gen);
@@ -8368,8 +8426,8 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Fetches the combined prompt for both negative and positive prompts
-    const cfgGuidanceScale = getGuidanceScale();
-    const useCfgPrompt = cfgGuidanceScale && cfgGuidanceScale.value !== 1;
+    cfgGuidanceScale = getGuidanceScale();
+    useCfgPrompt = cfgGuidanceScale && cfgGuidanceScale.value !== 1;
 
     // Adjust max context based on CFG prompt to prevent overfitting
     if (useCfgPrompt) {
@@ -8383,6 +8441,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
             console.log(`Max context reduced by ${decrement} tokens of CFG prompt (${previousMaxContext} -> ${this_max_context})`);
         }
     }
+    }
 
     const generationContextPayload = {
         type,
@@ -8391,6 +8450,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         isImpersonate,
         coreChat,
         maxContext: this_max_context,
+        serverAssembled,
     };
     await eventSource.emit(event_types.GENERATION_CONTEXT_READY, generationContextPayload);
     if (Array.isArray(generationContextPayload.coreChat)) {
@@ -8410,10 +8470,13 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         force_name2 = false;
     }
 
-    let mesExamplesArray = parseMesExamples(mesExamples, isInstruct);
+    let mesExamplesArray = serverAssembled ? [] : parseMesExamples(mesExamples, isInstruct);
 
     // Set non-WI AN
-    setFloatingPrompt();
+    // TASK-034:AN 暂存只服务浏览器组装,短路时跳过(服务端同源注入)。
+    if (!serverAssembled) {
+        setFloatingPrompt();
+    }
 
     // Add WI to prompt (and also inject WI to AN value via hijack)
     // Make quiet prompt available for WIAN
@@ -8450,6 +8513,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         globalScanData,
         requestRescan: false,
         worldInfoResolutionOverride: null,
+        serverAssembled,
         simulateWorldInfo: async (overrides = {}) => await runWIScan(overrides),
     };
     await eventSource.emit(event_types.GENERATION_BEFORE_WORLD_INFO_SCAN, wiScanPayload);
@@ -8471,14 +8535,21 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         globalScanData = wiScanPayload.globalScanData;
     }
 
-    const initialWorldInfoResult = await runWIScan();
-    if (exitAbortedGenerationIfNeeded()) {
-        return Promise.resolve();
+    // TASK-034:WI 扫描本体由服务端跑(timed effects 单写者);事件照常发射,
+    // payload 的 worldInfoResolution=null + serverAssembled:true。
+    // requestRescan/worldInfoResolutionOverride 在短路下不再触发重扫——
+    // 服务端已扫完(见 rescan 分支注释)。
+    let worldInfoResolution = null;
+    if (!serverAssembled) {
+        const initialWorldInfoResult = await runWIScan();
+        if (exitAbortedGenerationIfNeeded()) {
+            return Promise.resolve();
+        }
+        chatForWI = initialWorldInfoResult.chatForWI;
+        this_max_context = initialWorldInfoResult.maxContext;
+        globalScanData = initialWorldInfoResult.globalScanData;
+        worldInfoResolution = initialWorldInfoResult;
     }
-    chatForWI = initialWorldInfoResult.chatForWI;
-    this_max_context = initialWorldInfoResult.maxContext;
-    globalScanData = initialWorldInfoResult.globalScanData;
-    let worldInfoResolution = initialWorldInfoResult;
 
     const wiAfterPayload = {
         ...wiScanPayload,
@@ -8492,10 +8563,13 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         simulateWorldInfo: async (overrides = {}) => await runWIScan(overrides),
     };
     // Expose latest WI prompt snapshot before AFTER_WORLD_INFO_SCAN hooks run.
-    setActiveWorldInfoPromptSnapshot({
-        worldInfoBeforeEntries: Array.isArray(wiAfterPayload.worldInfoBeforeEntries) ? wiAfterPayload.worldInfoBeforeEntries : [],
-        worldInfoAfterEntries: Array.isArray(wiAfterPayload.worldInfoAfterEntries) ? wiAfterPayload.worldInfoAfterEntries : [],
-    });
+    // TASK-034:短路时快照由生成后 reconcile 从 job.sources.worldInfo 回填。
+    if (!serverAssembled) {
+        setActiveWorldInfoPromptSnapshot({
+            worldInfoBeforeEntries: Array.isArray(wiAfterPayload.worldInfoBeforeEntries) ? wiAfterPayload.worldInfoBeforeEntries : [],
+            worldInfoAfterEntries: Array.isArray(wiAfterPayload.worldInfoAfterEntries) ? wiAfterPayload.worldInfoAfterEntries : [],
+        });
+    }
     await eventSource.emit(event_types.GENERATION_AFTER_WORLD_INFO_SCAN, wiAfterPayload);
     if (exitAbortedGenerationIfNeeded()) {
         return Promise.resolve();
@@ -8517,7 +8591,10 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     let worldInfoRescanned = false;
-    if (wiAfterPayload.worldInfoResolutionOverride && typeof wiAfterPayload.worldInfoResolutionOverride === 'object') {
+    if (serverAssembled) {
+        // TASK-034:requestRescan / worldInfoResolutionOverride 短路下作废——
+        // 服务端已扫完;字段保留在 payload 供监听方读取,但不再触发浏览器重扫。
+    } else if (wiAfterPayload.worldInfoResolutionOverride && typeof wiAfterPayload.worldInfoResolutionOverride === 'object') {
         worldInfoResolution = wiAfterPayload.worldInfoResolutionOverride;
     } else if (wiAfterPayload.requestRescan === true) {
         worldInfoResolution = await runWIScan();
@@ -8543,10 +8620,13 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         anAfter,
     } = normalizeWorldInfoResolutionData(worldInfoResolution);
 
-    setActiveWorldInfoPromptSnapshot({
-        worldInfoBeforeEntries,
-        worldInfoAfterEntries,
-    });
+    // TASK-034:短路时快照由生成后 reconcile 从 job.sources.worldInfo 回填。
+    if (!serverAssembled) {
+        setActiveWorldInfoPromptSnapshot({
+            worldInfoBeforeEntries,
+            worldInfoAfterEntries,
+        });
+    }
 
     const wiFinalizedPayload = {
         ...wiAfterPayload,
@@ -8600,12 +8680,16 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         ...wiFinalizedPayload,
     }));
 
-    setActiveWorldInfoPromptSnapshot({
-        worldInfoBeforeEntries,
-        worldInfoAfterEntries,
-    });
+    // TASK-034:快照/AN 注入只服务浏览器组装;QUIET_PROMPT 清空无条件跑
+    // (与上方 setExtensionPrompt(QUIET_PROMPT,...) 配对——设了就必须清)。
+    if (!serverAssembled) {
+        setActiveWorldInfoPromptSnapshot({
+            worldInfoBeforeEntries,
+            worldInfoAfterEntries,
+        });
 
-    applyFinalizedAuthorsNoteInjections(anBefore, anAfter);
+        applyFinalizedAuthorsNoteInjections(anBefore, anAfter);
+    }
     setExtensionPrompt(inject_ids.QUIET_PROMPT, '', extension_prompt_types.IN_PROMPT, 0, true);
     const worldInfoBefore = joinWorldInfoEntries(worldInfoBeforeEntries);
     const worldInfoAfter = joinWorldInfoEntries(worldInfoAfterEntries);
@@ -8636,6 +8720,9 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         mesExamplesArray = formatInstructModeExamples(mesExamplesArray, name1, name2);
     }
 
+    // TASK-034:WIAN/AN/persona 注入本体由服务端同源完成;extension_prompts
+    // 在短路下不再暂存浏览器侧注入。
+    if (!serverAssembled) {
     if (skipWIAN !== true) {
         console.log('skipWIAN not active, adding WIAN');
         // Add all depth WI entries to prompt
@@ -8657,7 +8744,17 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
 
     // Add persona description to prompt
     addPersonaDescriptionExtensionPrompt();
+    }
 
+    // TASK-034:sysprompt/storyString/anchor/doChatInject/jailbreak 全部是
+    // 浏览器组装产物(textgen 路),短路时跳过;消费者(generate_data
+    // 旧路分支/itemize payload)拿空值,变量提升声明保持块外可及。
+    let beforeScenarioAnchor = '';
+    let afterScenarioAnchor = '';
+    let storyString = '';
+    let combinedStoryString = '';
+    let injectedIndices = [];
+    if (!serverAssembled) {
     // Prepare the system prompt for Text Completion APIs
     if (main_api !== 'openai') {
         if (power_user.sysprompt.enabled) {
@@ -8672,8 +8769,8 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Collect before / after story string injections
-    const beforeScenarioAnchor = await getExtensionPrompt(extension_prompt_types.BEFORE_PROMPT);
-    const afterScenarioAnchor = await getExtensionPrompt(extension_prompt_types.IN_PROMPT);
+    beforeScenarioAnchor = await getExtensionPrompt(extension_prompt_types.BEFORE_PROMPT);
+    afterScenarioAnchor = await getExtensionPrompt(extension_prompt_types.IN_PROMPT);
 
     const storyStringParams = {
         description: description,
@@ -8694,8 +8791,8 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     };
 
     // Render the story string and combine with injections
-    const storyString = renderStoryString(storyStringParams);
-    let combinedStoryString = isInstruct ? formatInstructModeStoryString(storyString) : storyString;
+    storyString = renderStoryString(storyStringParams);
+    combinedStoryString = isInstruct ? formatInstructModeStoryString(storyString) : storyString;
 
     // Inject the story string as in-chat prompt (if needed)
     const applyStoryStringInject = main_api !== 'openai' && power_user.context.story_string_position === extension_prompt_types.IN_CHAT;
@@ -8715,7 +8812,6 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Inject all Depth prompts. Chat Completion does it separately
-    let injectedIndices = [];
     if (main_api !== 'openai') {
         injectedIndices = await doChatInject(coreChat, isContinue);
     }
@@ -8738,9 +8834,28 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
             }
         }
     }
+    }
 
     let chat2 = [];
     let continue_mag = '';
+    let cyclePrompt = '';
+    let oaiMessages = [];
+    let oaiMessageExamples = [];
+    let examplesString = '';
+    let pinExmString;
+    let count_exm_add = 0;
+    let arrMes = [];
+    let chatString = '';
+    // TASK-034:chat2/oaiMessages/arrMes/tokenize 循环只服务浏览器组装产物;
+    // 短路时仅 continue 需要 continue_mag/cyclePrompt(回复拼接契约——
+    // saveReply appendFinal 把生成文本续到这条前缀上),从素拷贝尾层取。
+    if (serverAssembled) {
+        if (isContinue) {
+            const tailMessage = coreChat[coreChat.length - 1];
+            continue_mag = String(tailMessage?.mes ?? '');
+            cyclePrompt = continue_mag;
+        }
+    } else {
     let userMessageIndices = [];
     const lastUserMessageIndex = coreChat.findLastIndex(x => x.is_user);
 
@@ -8802,9 +8917,6 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         userAlignmentMessage = formatMessageHistoryItem(alignmentMessage, isInstruct, force_output_sequence.FIRST);
     }
 
-    let oaiMessages = [];
-    let oaiMessageExamples = [];
-
     if (main_api === 'openai') {
         oaiMessages = setOpenAIMessages(coreChat);
         oaiMessageExamples = setOpenAIMessageExamples(mesExamplesArray);
@@ -8815,9 +8927,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         chat2.push('');
     }
 
-    let examplesString = '';
-    let chatString = addChatsPreamble(addChatsSeparator(''));
-    let cyclePrompt = '';
+    chatString = addChatsPreamble(addChatsSeparator(''));
 
     async function getMessagesTokenCount() {
         const encodeString = [
@@ -8832,7 +8942,6 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Force pinned examples into the context
-    let pinExmString;
     if (power_user.pin_examples) {
         pinExmString = examplesString = mesExamplesArray.join('');
     }
@@ -8846,7 +8955,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     // Collect enough messages to fill the context
-    let arrMes = new Array(chat2.length);
+    arrMes = new Array(chat2.length);
     let tokenCount = await getMessagesTokenCount();
     let lastAddedIndex = 0;
 
@@ -8931,7 +9040,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
 
     // Estimate how many unpinned example messages fit in the context
     tokenCount = await getMessagesTokenCount();
-    let count_exm_add = 0;
+    count_exm_add = 0;
     if (!power_user.pin_examples) {
         for (let example of mesExamplesArray) {
             tokenCount += await getTokenCountAsync(example.replace(/\r/gm, ''));
@@ -8942,6 +9051,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
                 break;
             }
         }
+    }
     }
 
     let mesSend = [];
@@ -9214,7 +9324,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
 
     let finalPrompt = await getCombinedPrompt(false);
 
-    const eventData = { prompt: finalPrompt, dryRun: dryRun };
+    const eventData = { prompt: finalPrompt, dryRun: dryRun, serverAssembled };
     await eventSource.emit(event_types.GENERATE_AFTER_COMBINE_PROMPTS, eventData);
     finalPrompt = eventData.prompt;
 
@@ -9257,6 +9367,15 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
             break;
         }
         case 'openai': {
+            // TASK-034:短路时浏览器组装的 messages 本就会在派发前被丢弃;
+            // 空 prompt 派发,takeover 监听存在时由 finishGenerating 里的
+            // /preview 桥供料(覆写 generate_data.prompt)。
+            if (serverAssembled) {
+                // 注意:generate_data 字段会被克隆进 requestBody.generation_overrides
+                // 上 wire —— serverAssembled 标志只挂事件 payload,不挂这里。
+                generate_data = { prompt: previewMessages ?? [] };
+                break;
+            }
             let [prompt, counts] = await prepareOpenAIMessages({
                 name2: name2,
                 charDescription: description,
@@ -9291,6 +9410,7 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
     }
 
     await eventSource.emit(event_types.GENERATE_AFTER_DATA, generate_data, dryRun);
+    console.info(`[perf] browserAssembly=${(performance.now() - browserAssemblyStart).toFixed(1)}ms serverAssembled=${serverAssembled}`);
 
     if (dryRun) {
         return Promise.resolve();
@@ -9302,6 +9422,10 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
      * @throws {Error|object} Error with message text, or Error with response JSON (OAI/Horde), or the actual response JSON (novel|textgenerationwebui|kobold)
      */
     async function finishGenerating() {
+        // TASK-034:reconcile 新鲜度锚——若 finishGenerating 结束后
+        // lastUtopinnGenerationId 没变,说明本次没产生新 job
+        // (takeover 抢走/请求未发出),不回同步。
+        const jobIdAtDispatchStart = getLastUtopinnGenerationId();
         if (power_user.console_log_prompts) {
             console.log(generate_data.prompt);
         }
@@ -9355,6 +9479,18 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         }
 
         console.debug(`pushed prompt bits to itemizedPrompts array. Length is now: ${itemizedPrompts.length}`);
+
+        // ── TASK-034 takeover 供料桥 ──
+        // GENERATE_TAKEOVER_DISPATCH 有监听时,插件会读 generateData.prompt
+        // (orchestrator director 空 prompt 会 warn);短路后浏览器不组装,
+        // /preview 干跑供一份 server 组装产物。无监听零成本跳过。
+        if (serverAssembled && type !== 'quiet' && type !== 'impersonate'
+            && (eventSource.events?.[event_types.GENERATE_TAKEOVER_DISPATCH]?.length ?? 0) > 0) {
+            previewMessages = await fetchUtopinnPreviewMessages(type, abortController?.signal);
+            if (Array.isArray(previewMessages)) {
+                generate_data.prompt = previewMessages;
+            }
+        }
 
         // ── Plugin takeover hook ──
         // Allow extensions to claim message production before the LLM is
@@ -9740,6 +9876,17 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
                     return Generate('continue', { automatic_trigger, force_name2, quiet_prompt, quietToLoud, skipWIAN, force_chid, signal, quietImage, quietName, depth: depth + 1 }, dryRun);
                 }
                 await streamingProcessor.onFinishStreaming(streamingProcessor.messageId, getMessage);
+                // TASK-034:流式成功后回同步服务端组装现场(楼层已落 →
+                // promptChatLength 需扣掉本次新落的一层;swipe/regenerate/
+                // continue/impersonate 不加层,quiet 产物不进楼层)。
+                if (serverAssembled) {
+                    await reconcileUtopinnServerState({
+                        type,
+                        jobIdAtDispatchStart,
+                        promptChatLength: chat.length - (type === 'normal' ? 1 : 0),
+                        mesId: streamingProcessor.messageId,
+                    });
+                }
                 streamingProcessor = null;
                 triggerAutoContinue(messageChunk, isImpersonate);
                 return Object.defineProperties(new String(getMessage), {
@@ -9777,6 +9924,19 @@ async function generateInternal(type, { automatic_trigger, force_name2, quiet_pr
         if (data?.fromTakeover) {
             unblockGeneration(type);
             return data;
+        }
+
+        // TASK-034:非流式生成后回同步服务端组装现场。刻意放在 data.error
+        // 检查之前——上游失败的 job 其 WI 扫描/timed effects 照样在服务端
+        // 落库,回同步让浏览器与服务端事实一致;此刻回复楼层尚未
+        // saveReply,chat.length 与组装时一致(与 legacy 时序等价)。
+        if (serverAssembled) {
+            await reconcileUtopinnServerState({
+                type,
+                jobIdAtDispatchStart,
+                promptChatLength: chat.length,
+                mesId: getNextMessageId(type),
+            });
         }
 
         let messageChunk = '';
@@ -10666,6 +10826,151 @@ function setInContextMessages(msgInContextCount, type) {
     // Update last id to chat. No metadata save on purpose, gets hopefully saved via another call
     const lastMessageId = Math.max(0, chat.length - msgInContextCount);
     chat_metadata.lastInContextMessageId = lastMessageId;
+}
+
+/**
+ * TASK-034:短路后由 job.trace.chatHistoryCount 重建 lastInContext 标记。
+ * 与 setInContextMessages 同语义(msgInContextCount = 进上下文的聊天层数;
+ * swipe/regenerate/continue 需 +1 给"被替换/续写的"槽位),但按
+ * promptChatLength(组装时楼层数)精确落 mesid,而非按 DOM 倒序数。
+ * @param {number} msgInContextCount 服务端 trace.chatHistoryCount
+ * @param {string} type
+ * @param {number} promptChatLength 组装时 chat.length(回复楼层未落前的值)
+ */
+function applyServerInContextMarker(msgInContextCount, type, promptChatLength) {
+    chatElement.find('.mes').removeClass('lastInContext');
+
+    if (type === 'swipe' || type === 'regenerate' || type === 'continue') {
+        msgInContextCount++;
+    }
+
+    const lastMessageId = Math.max(0, promptChatLength - msgInContextCount);
+    chat_metadata.lastInContextMessageId = lastMessageId;
+
+    const target = chatElement.find(`.mes[mesid="${lastMessageId}"]`);
+    if (target.length) {
+        target.addClass('lastInContext');
+        return;
+    }
+    const firstMessageId = getFirstDisplayedMessageId();
+    chatElement.find(`.mes[mesid="${firstMessageId}"]`).addClass('lastInContext');
+}
+
+/**
+ * TASK-034:job → additionalPromptStuff 适配器(itemizedPrompts 弹窗消费形状)。
+ * token 分块从 job.trace.collections(identifier→tokens)重映射进
+ * parseTokenCounts 的 counts 形状;原始 messages 快照做 rawPrompt;
+ * 文本字段尽力而为(卡字段现读,WI 来自 sources,锚点串缺省为空)。
+ * 服务端补件未落地时字段全可空,调用方宽容跳过。
+ * @param {{job: object, type: string, mesId: number}} params
+ */
+async function buildServerAssembledPromptStuff({ job, type, mesId }) {
+    const fields = getCharacterCardFields();
+    const counts = {};
+    for (const collection of job?.trace?.collections ?? []) {
+        if (collection?.identifier && Number.isFinite(Number(collection.tokens))) {
+            counts[collection.identifier] = Number(collection.tokens);
+        }
+    }
+    const thisPromptBits = [];
+    parseTokenCounts(counts, thisPromptBits);
+    const wiBefore = Array.isArray(job?.sources?.worldInfo?.beforeEntries) ? job.sources.worldInfo.beforeEntries : [];
+    const wiAfter = Array.isArray(job?.sources?.worldInfo?.afterEntries) ? job.sources.worldInfo.afterEntries : [];
+    return {
+        ...(thisPromptBits[0] ?? {}),
+        rawPrompt: Array.isArray(job?.promptMessages) ? job.promptMessages : [],
+        mesId,
+        allAnchors: await getAllExtensionPrompts(),
+        chatInjects: '',
+        authorsNoteString: (extension_prompts['2_floating_prompt']?.value || ''),
+        smartContextString: (extension_prompts.chromadb?.value || ''),
+        chatVectorsString: (extension_prompts['3_vectors']?.value || ''),
+        dataBankVectorsString: (extension_prompts['4_vectors_data_bank']?.value || ''),
+        worldInfoString: [...wiBefore, ...wiAfter].join('\n'),
+        storyString: '',
+        beforeScenarioAnchor: '',
+        afterScenarioAnchor: '',
+        examplesString: '',
+        mesSendString: '',
+        generatedPromptCache: '',
+        promptBias: '',
+        finalPrompt: '',
+        charDescription: fields.description ?? '',
+        charPersonality: fields.personality ?? '',
+        scenarioText: fields.scenario ?? '',
+        this_max_context: getMaxPromptTokens(),
+        padding: power_user.token_padding,
+        main_api: main_api,
+        instruction: '',
+        userPersona: (power_user.persona_description_position == persona_description_positions.IN_PROMPT ? (fields.persona || '') : ''),
+        tokenizer: getFriendlyTokenizerName(main_api).tokenizerName || '',
+        presetName: job?.sources?.presetName || getPresetManager()?.getSelectedPresetName() || '',
+        messagesCount: Number(job?.trace?.chatHistoryCount) || (Array.isArray(job?.promptMessages) ? job.promptMessages.length : 0),
+        examplesCount: 0,
+    };
+}
+
+/**
+ * TASK-034:服务端组装短路后,用本次 job 记录回同步全部 UI 面数据:
+ * itemizedPrompts(promptItemize 弹窗)、lastInContext 标记、
+ * chat_metadata.timedWorldInfo(timed effects 服务端单写 → 防陈旧 PATCH)、
+ * activeWorldInfoPromptSnapshot(st-context 快照)。
+ * 字段全可空(job 由补件前/legacy 创建 → null),缺省宽容跳过;永不抛出。
+ * @param {{type: string, jobIdAtDispatchStart: string, promptChatLength: number, mesId: number}} params
+ */
+async function reconcileUtopinnServerState({ type, jobIdAtDispatchStart, promptChatLength, mesId }) {
+    try {
+        const jobId = getLastUtopinnGenerationId();
+        if (!jobId || jobId === jobIdAtDispatchStart) {
+            return;
+        }
+
+        const response = await fetch(`/api/utopinn/jobs/${encodeURIComponent(jobId)}`, {
+            headers: getRequestHeaders(),
+            cache: 'no-cache',
+        });
+        if (!response.ok) {
+            return;
+        }
+        const job = await response.json();
+        if (!job || typeof job !== 'object') {
+            return;
+        }
+        // 并行 quiet/后台 job 可能顶掉 tracker——verb 不符说明拿错了 job。
+        if (job.verb !== null && job.verb !== undefined && job.verb !== type) {
+            console.warn('[utopinn] reconcile skipped: job verb mismatch', { jobId, verb: job.verb, type });
+            return;
+        }
+
+        if (job.timedWorldInfo && typeof job.timedWorldInfo === 'object') {
+            chat_metadata.timedWorldInfo = job.timedWorldInfo;
+        }
+
+        const wiSources = job.sources?.worldInfo;
+        if (wiSources && (Array.isArray(wiSources.beforeEntries) || Array.isArray(wiSources.afterEntries))) {
+            setActiveWorldInfoPromptSnapshot({
+                worldInfoBeforeEntries: Array.isArray(wiSources.beforeEntries) ? wiSources.beforeEntries : [],
+                worldInfoAfterEntries: Array.isArray(wiSources.afterEntries) ? wiSources.afterEntries : [],
+            });
+        }
+
+        const chatHistoryCount = Number(job.trace?.chatHistoryCount);
+        if (Number.isFinite(chatHistoryCount) && chatHistoryCount > 0 && Number.isFinite(promptChatLength)) {
+            applyServerInContextMarker(chatHistoryCount, type, promptChatLength);
+        }
+
+        if (Array.isArray(job.promptMessages) && Number.isFinite(mesId) && mesId >= 0) {
+            const promptStuff = await buildServerAssembledPromptStuff({ job, type, mesId });
+            const itemizedIndex = itemizedPrompts.findIndex((item) => item.mesId === promptStuff.mesId);
+            if (itemizedIndex !== -1) {
+                itemizedPrompts[itemizedIndex] = promptStuff;
+            } else {
+                itemizedPrompts.push(promptStuff);
+            }
+        }
+    } catch (error) {
+        console.warn('[utopinn] post-generation reconcile failed', error);
+    }
 }
 
 /**
@@ -14443,6 +14748,7 @@ async function appendChatMessagesInternal(messages, retryCount = 0, context = nu
             headers: getRequestHeaders(),
             body: JSON.stringify({
                 messages: messages,
+                chat_metadata: { ...metadata },
                 integrity: metadata.integrity,
                 luker_generation_id: getLastLukerGenerationIdForApi(),
             }),
