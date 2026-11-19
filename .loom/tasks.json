@@ -2859,14 +2859,21 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [
+          "全量盘点入库:~504 调用点,47 可改道/457 保留(.loom/eval/browser-legacy-calls-inventory-2026-11-19.md,3fb43e3)",
+          "前置 unblocked:document 整写路由已落地(c8ad7f4),/api/chats/save 有了 uberge 等价"
+        ],
+        "current": "Top-10 高热调用改道中(子代理):chats get/save/append/patch/delete/rename + characters all/get + presets/worldinfo/settings CRUD",
+        "next": "子代理收口后逐点验收;state sidecar 路由(并行中)落地后补 state 调用改道;settings PATCH 白名单外的节保留 legacy 标记"
+      },
       "evidence": [],
       "outcome": "旧 UI 所有数据面调用都走 uberge REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
       "boundaries": [
         "jQuery 渲染层不动",
         "group 聊天依赖 TASK-037"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-19T06:47:18.148Z"
     },
     {
       "id": "TASK-034",
