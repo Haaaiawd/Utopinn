@@ -3017,14 +3017,24 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [
+          "全部验收达成(待 TASK-032 让位后补 done):doctor 47/47 named,raw-only=0(fdd8d90)",
+          "22 新动词:读面 char/chat-get/personas/preset-get/settings/secrets;写面 world|preset|persona|secret|settings|chat-create;mvu panel;import 三段;backup zip;lan 两态",
+          "既有动词切 kernel:chat-rename/delete/presets/chats/chars",
+          "实弹 round-trip 全绿 + 错误路径干净封套;secrets 客户端脱敏",
+          "追加:c8ad7f4 chat-put(document 路由)具名——48/48"
+        ],
+        "current": "功能完成;loom 单 active 模型,形式 done 等 TASK-032 收口",
+        "next": "TASK-032 done 后对本任务补正式 done(证据已备 /tmp/t036done.json 内容)"
+      },
       "evidence": [],
       "outcome": "CLI 对 kernel 47 路由全具名覆盖;raw 退为兜底逃生舱。",
       "boundaries": [
         "不加 TUI/交互式",
         "不改服务端路由(纯 CLI 消费面)"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-19T06:43:13.213Z"
     },
     {
       "id": "TASK-037",
