@@ -1287,6 +1287,8 @@ function buildSplitSegments(source, splitPoints, targetNames, nowIso, sourceName
 }
 
 export { buildMergedBodyAndHeader, buildSplitSegments, resolveAvailableTargetName };  // for jest tests
+// TASK-032 doc-save 复用:uberge document 路由与 /save 同源。
+export { getBackupFunction, writeChatSyncState, applyIntegrityToMetadata, sendRepoIntegrityConflict, createChatHeader, checkIntegrity };
 
 /**
  * Appends new chat names to a group's `chats[]` array via GroupRepo. This is

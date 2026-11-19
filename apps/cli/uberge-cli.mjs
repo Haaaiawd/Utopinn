@@ -781,6 +781,7 @@ const NAMED_UBERGE_ROUTES = new Set([
     'GET|pattern|/api/uberge/characters/:charDir/chats/:chatName',
     // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
     'PUT|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    'PUT|pattern|/api/uberge/characters/:charDir/chats/:chatName/document',
     'POST|pattern|/api/uberge/characters/:charDir/chats/:chatName/rename',
     'DELETE|pattern|/api/uberge/characters/:charDir/chats/:chatName',
     'GET|pattern|/api/uberge/worlds',
@@ -885,6 +886,7 @@ const SCHEMA = {
         { cmd: 'uberge use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
         { cmd: 'uberge chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
         { cmd: 'uberge chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
+        { cmd: 'uberge chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
         { cmd: 'uberge chat-get [chat]', desc: '[library] uberge doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'uberge chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
         { cmd: 'uberge chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
@@ -1553,6 +1555,41 @@ async function cmdChatCreate() {
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
 }
 
+// —— 整文档替换(legacy /save 等价;edit/swipe 是增量,这个是全量)——
+async function cmdChatPut() {
+    const c = needCtx(); if (!c) return;
+    const doc = await readJsonBody(positional.slice(1), 'chat-put 需要 {header,messages} 或 legacy [header,...floors](--json-file f|--stdin|inline)');
+    if (doc === undefined) return;
+    const payload = Array.isArray(doc) ? { chat: doc } : { ...doc };
+    const floors = Array.isArray(doc) ? Math.max(0, doc.length - 1)
+        : (Array.isArray(doc.messages) ? doc.messages.length : null);
+    if (flags.force) payload.force = true;
+    else if (state.integrity && payload.integrity === undefined) payload.integrity = state.integrity;
+    const route = `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/document`;
+    const attempt = async () => req('PUT', route, payload, { allowFail: true });
+    let { data, status } = await attempt();
+    // 409 重锚一次:document 路由回 {error:'integrity', current_integrity}
+    if (status === 409 && !flags.force) {
+        const fresh = String(data?.current_integrity || data?.actual || '');
+        if (fresh) {
+            warn('integrity 409 — 重锚后重试一次');
+            saveState({ integrity: fresh });
+            payload.integrity = fresh;
+            ({ data, status } = await attempt());
+        }
+    }
+    if (status >= 400 || data?.error) {
+        return void fail('server', `chat-put 失败:${data?.error ?? status}`, { status, detail: data?.current_integrity ? `current=${data.current_integrity.slice(0, 12)}…` : undefined });
+    }
+    if (data?.integrity) saveState({ integrity: data.integrity, ...(floors !== null ? { floors } : {}) });
+    const n = [{ cmd: 'uberge history -n 3', why: '核对写回' }, { cmd: 'uberge send "…"', why: '继续' }];
+    if (JSON_MODE) return out({ ok: true, integrity: data?.integrity, floors }, n);
+    console.log(`chat document saved — floors ${floors ?? '?'} · integrity ${String(data?.integrity ?? '').slice(0, 8)}…`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
 // —— worlds 写面 ——
 async function cmdWorldEdit() {
     const name = positional[1];
@@ -1993,6 +2030,7 @@ try {
         case 'use': await cmdUse(); break;
         case 'chat-new': await cmdChatNew(); break;
         case 'chat-create': await cmdChatCreate(); break;
+        case 'chat-put': await cmdChatPut(); break;
         case 'chat-get': await cmdChatGet(); break;
         case 'chat-rename': await cmdChatRename(); break;
         case 'chat-delete': await cmdChatDelete(); break;
