@@ -15,7 +15,18 @@ export const PRESET_FOLDER_BY_API_ID = Object.freeze({
 });
 
 export class PresetRepo {
-    constructor({ engine }) { this._engine = engine; }
+    constructor({ engine }) {
+        this._engine = engine;
+        // listWithDocs 缓存:生成路径每轮都要 instruct/context 全量 docs
+        // (activation_regex 匹配),FS 引擎上 = 每次 N 次文件读。所有 API 写
+        // 都经本实例的 save/patch/delete,写即失效;TTL 兜底手工改盘文件。
+        this._docsCache = new Map();
+        this._docsCacheTtlMs = 60_000;
+    }
+
+    _docsCacheKey(handle, apiId) { return `${handle}::${apiId}`; }
+
+    _invalidateDocsCache(handle, apiId) { this._docsCache.delete(this._docsCacheKey(handle, apiId)); }
 
     _key(handle, apiId, name) {
         const dirKey = PRESET_FOLDER_BY_API_ID[apiId];
@@ -31,6 +42,7 @@ export class PresetRepo {
         assertWritable();
         await this._engine.withTransaction(handle, (tx) =>
             tx.putResource(this._key(handle, apiId, name), { doc }));
+        this._invalidateDocsCache(handle, apiId);
     }
 
     // Document deletion resolves ownership before namespace cleanup, including
@@ -45,6 +57,7 @@ export class PresetRepo {
             for (const ns of namespaces) {
                 await tx.deletePresetState(key, ns);
             }
+            if (deleted) this._invalidateDocsCache(handle, apiId);
             return deleted;
         });
     }
@@ -66,6 +79,7 @@ export class PresetRepo {
             if (existing == null) throw new NotFoundError('preset', { handle, apiId, name });
             const next = applyJsonPatch(existing, ops);
             await tx.putResource(key, { doc: next });
+            this._invalidateDocsCache(handle, apiId);
             return next;
         });
     }
@@ -143,6 +157,9 @@ export class PresetRepo {
     async listWithDocs(handle, apiId) {
         const dirKey = PRESET_FOLDER_BY_API_ID[apiId];
         if (!dirKey) throw new Error(`PresetRepo.listWithDocs: invalid apiId ${apiId}`);
+        const cacheKey = this._docsCacheKey(handle, apiId);
+        const hit = this._docsCache.get(cacheKey);
+        if (hit && hit.expiresAt > Date.now()) return hit.docs;
         return this._engine.withTransaction(handle, async (tx) => {
             const entries = await tx.listResources({ kind: 'preset', handle, apiId, dirKey });
             const out = [];
@@ -153,6 +170,7 @@ export class PresetRepo {
                 if (doc != null) out.push({ name, doc });
             }
             out.sort((a, b) => a.name.localeCompare(b.name));
+            this._docsCache.set(cacheKey, { docs: out, expiresAt: Date.now() + this._docsCacheTtlMs });
             return out;
         });
     }
