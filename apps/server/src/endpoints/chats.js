@@ -199,7 +199,7 @@ function normalizeRecentChatSortTime(timestamp, fallback = 0) {
     return Number.isFinite(parsedTime) ? parsedTime : fallback;
 }
 
-function getRecentChatSortTime(chatInfo) {
+export function getRecentChatSortTime(chatInfo) {
     return normalizeRecentChatSortTime(chatInfo?.sort_time ?? chatInfo?.last_mes, 0);
 }
 
@@ -334,7 +334,7 @@ async function buildRecentChatIndexEntries(request) {
     return entries;
 }
 
-async function ensureRecentChatIndex(request) {
+export async function ensureRecentChatIndex(request) {
     const state = getOrCreateRecentChatIndexState(request);
     if (state.entries) {
         return state.entries;
