@@ -9,6 +9,7 @@
  * (dispatcher 挂在全部路由中间件之后、legacy 挂载之前)。
  */
 import { buildGenerationContext, logPerfLine, persistWorldInfoTimedEffects } from '../services/generate-context.js';
+import { buildTextgenDispatchBody, resolveTextgenModel, resolveTextgenServer, unescapeMacroBraces } from '../services/textgen-body.js';
 import { selectChatCompletionDispatch } from '../endpoints/backends/chat-completions.js';
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
 import { TEXTGEN_TYPES } from '../constants.js';
@@ -59,9 +60,26 @@ function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
  *   user/assistant 消息经 engine.formatChat 包 input/output 序列;
  *   system 段(WI/作者注/jailbreak)原样并入 story(ST 同款);
  *   尾段 engine.formatPrompt 接 output_sequence + name2 前缀。
- * tgSettings 里剥离连接层字段(type/server_urls/preset 等非生成参数)。
+ * tgSettings 剥离连接层 + 塑形产物同键的设置态字段(防原始值混进 wire;
+ * 塑形字段清单见 textgen-body.js,与前端 createTextGenGenerationData 对齐)。
  */
 const TEXTGEN_CONN_KEYS = new Set(['type', 'server_urls', 'server', 'preset', 'legacy']);
+
+/**
+ * 设置态键 → wire 形由 buildTextgenDispatchBody 产出,这里只防透传撞键:
+ * 门控型(type 分流才上行)、改名型(stopping_strings→stop 等)、加工型
+ * (logit_bias 设置形 {text,value}[] ≠ wire 形;dry_sequence_breakers 串→数组)。
+ * 其余同名同值的采样键(top_p/rep_pen/…)继续透传,与上游 pickBy 自滤互补。
+ */
+const TEXTGEN_SETTINGS_ONLY_KEYS = new Set([
+    'stopping_strings', 'stop', 'logit_bias', 'seed', 'n', 'min_length',
+    'epsilon_cutoff', 'eta_cutoff', 'no_repeat_ngram_size', 'penalty_alpha',
+    'encoder_rep_pen', 'do_sample', 'early_stopping', 'num_beams', 'length_penalty',
+    'negative_prompt', 'speculative_ngram', 'spaces_between_special_tokens',
+    'temperature_last', 'dry_sequence_breakers', 'guidance_scale', 'grammar_string',
+    'sampler_priority', 'samplers', 'samplers_priorities', 'sampler_order',
+    'json_schema', 'banned_tokens', 'global_banned_tokens',
+]);
 
 function messagesToTextgenPrompt(messages, engine, substCtx) {
     const { name1, name2 } = substCtx;
@@ -138,6 +156,10 @@ export function apply(ctx) {
             eventCount: Array.isArray(job.events) ? job.events.length : 0,
             trace: job.trace ?? null,
             sources: job.sources ?? null,
+            // TASK-034 生成后 reconcile:派发 messages 快照 + timed effects 落库态。
+            // 可空 —— legacy 派发与补件前创建的老 job 恒 null,消费方按缺省处理。
+            promptMessages: job.promptMessages ?? null,
+            timedWorldInfo: job.timedWorldInfo ?? null,
             created_at: job.createdAt,
             updated_at: job.updatedAt,
         });
@@ -156,7 +178,7 @@ export function apply(ctx) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
 
-            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, trace, sources, perf, chatMetadata, chatIntegrity } = await buildGenerationContext({
+            const { builtPrompt, presetDoc, oaiSettings, tgSettings, instructEngine, substCtx, powerUser, amountGen, bannedInMacros, trace, sources, perf, chatMetadata, chatIntegrity } = await buildGenerationContext({
                 request,
                 charDir,
                 chatName,
@@ -165,6 +187,9 @@ export function apply(ctx) {
                 user: body.user ?? { name: request.user.profile.name },
                 type: body.type ?? 'normal',
                 overrides: body.overrides ?? {},
+                // text 派发时 main_api 同位量为 'textgenerationwebui'
+                // (mesExamples 块头/instruct 样例走 instruct 形态,design TASK-037 §1.8)
+                mainApi: String(body.api ?? 'chat') === 'text' ? 'textgenerationwebui' : 'openai',
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
@@ -173,11 +198,19 @@ export function apply(ctx) {
             // 生成前楼层计数);失败不阻断生成——下个周期自愈。
             try {
                 await persistWorldInfoTimedEffects({ request, charDir, chatName, chatMetadata, expectedIntegrity: chatIntegrity });
+                // TASK-034:落库后快照挂 job(GET /jobs/:id 回传),浏览器生成后
+                // 回同步 chat_metadata.timedWorldInfo。只在 persist 成功后挂 ——
+                // 失败时回灌会让浏览器拿得比服务端还"新";不挂,下个周期自愈语义不变。
+                request.utopinnTimedWorldInfo = chatMetadata?.timedWorldInfo ?? null;
             } catch (persistErr) {
                 console.warn('utopinn/generate timedWorldInfo persist skipped:', persistErr?.message);
             }
 
             // ---- TASK-020 textgen 分叉:body.api==='text' → 单串 prompt + text-completions 派发 ----
+            // 塑形语义对照前端 createTextGenGenerationData(textgen-settings.js:1664):
+            // 停止串四层/dynatemp/rep_pen 系/per-type 袋/禁词与 logit_bias 编码
+            // 全部由 textgen-body.js 同构实现;这里只解连接面(api_server/model/
+            // api_type)+ 响应长度/上下文上限,再按「透传 → 塑形 → 显式覆盖 → 固定键」合并。
             if (String(body.api ?? 'chat') === 'text') {
                 const apiType = body.api_type ?? tgSettings?.type;
                 if (!apiType || !Object.values(TEXTGEN_TYPES).includes(apiType)) {
@@ -185,34 +218,56 @@ export function apply(ctx) {
                         error: `api_type must be one of TEXTGEN_TYPES (got: ${apiType ?? 'none'})`,
                     });
                 }
+                // getTextGenServer 语义:六家托管源走常量端点(server_urls 对它们无效),
+                // 其余读 server_urls;body.api_server 显式传入优先(代理/自建兼容层)
                 const apiServer = body.api_server
-                    ?? tgSettings?.server_urls?.[apiType]
+                    ?? resolveTextgenServer(apiType, tgSettings)
                     ?? tgSettings?.server;
                 if (!apiServer) {
                     return response.status(400).send({ error: 'api_server missing (body.api_server or settings.textgenerationwebui_settings.server_urls)' });
                 }
-                const prompt = messagesToTextgenPrompt(builtPrompt.messages, instructEngine, substCtx);
-                const tgParams = Object.fromEntries(
-                    Object.entries(tgSettings ?? {}).filter(([k]) => !TEXTGEN_CONN_KEYS.has(k)),
-                );
-                // ST 键 → 规范键别名(OpenAI 系 upstream 认 canonical;
-                // 原生键一并透传,provider pickBy 自滤)。显式 body 字段仍可覆盖。
-                const aliases = {
-                    temperature: tgSettings?.temp,
-                    stop: tgSettings?.stopping_strings,
-                    repetition_penalty: tgSettings?.rep_pen,
-                    max_tokens: tgSettings?.max_tokens ?? tgSettings?.genamt,
-                };
-                for (const [k, v] of Object.entries(aliases)) {
-                    if (v !== undefined && tgParams[k] === undefined) tgParams[k] = v;
+                // getTextGenModel 语义:ollama 缺模型前端抛错 → 这里转 400;
+                // body.model / overrides.model 显式覆盖(settings.json api_type_model 兜底)
+                let model = body.model ?? body.overrides?.model ?? null;
+                if (model === null) {
+                    try {
+                        model = resolveTextgenModel(apiType, tgSettings) ?? null;
+                    } catch (modelErr) {
+                        return response.status(400).send({ error: modelErr?.message ?? String(modelErr) });
+                    }
                 }
+                const prompt = unescapeMacroBraces(messagesToTextgenPrompt(builtPrompt.messages, instructEngine, substCtx));
+                const tgParams = Object.fromEntries(
+                    Object.entries(tgSettings ?? {}).filter(([k]) => !TEXTGEN_CONN_KEYS.has(k) && !TEXTGEN_SETTINGS_ONLY_KEYS.has(k)),
+                );
+                // maxTokens=前端 amount_gen(settings.amount_gen 全局响应长度);
+                // maxContext=前端 max_context(oai_settings.openai_max_context 活值,预设兜底)
+                const maxTokens = body.overrides?.maxTokens ?? amountGen ?? tgSettings?.max_tokens ?? tgSettings?.genamt;
+                const maxContext = oaiSettings?.openai_max_context ?? presetDoc?.openai_max_context;
+                const shaped = await buildTextgenDispatchBody({
+                    tgSettings,
+                    apiType,
+                    apiServer,
+                    prompt,
+                    model,
+                    maxTokens,
+                    maxContext,
+                    powerUser,
+                    substCtx,
+                    instructEngine,
+                    type: body.type ?? 'normal',
+                    bannedInMacros,
+                });
                 request.body = {
                     ...tgParams,
+                    ...shaped,
                     ...(body.generation_overrides ?? {}),
                     api_type: apiType,
                     api_server: apiServer,
                     prompt,
-                    stream: body.stream !== false,
+                    // 前端:isStreamingEnabled() 时 data.stream=true,否则该键不上行
+                    // (≠false);tgSettings.streaming 是开关源,body.stream 显式覆盖
+                    stream: body.stream ?? tgSettings?.streaming ?? false,
                     luker_generation: {
                         ...(body.luker_generation ?? {}),
                         persist_target: body.luker_generation?.persist_target ?? {
@@ -224,6 +279,9 @@ export function apply(ctx) {
                 };
                 request.utopinnTrace = trace;
                 request.utopinnSources = sources;
+                // TASK-034:textgen 派发体是单串 prompt,组装 messages 另挂快照 ——
+                // runner 的 job.promptMessages 兜底源(chat 路在 body.messages 上)。
+                request.utopinnPromptMessages = builtPrompt.messages;
                 response.setHeader('x-utopinn-perf', JSON.stringify(perf));
                 return runLukerDispatch(request, response, {
                     endpoint: 'utopinn-generate',

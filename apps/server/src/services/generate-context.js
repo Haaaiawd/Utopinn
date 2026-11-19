@@ -185,6 +185,8 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  * @param {string} [input.type] 生成类型
  * @param {object} [input.overrides] 直接覆盖请求字段(cyclePrompt/quietPrompt/extensionPrompts 等)
  * @param {boolean} [input.dryRun] preview/干跑:true → WI 不写 timed effects、返回值不含持久化义务
+ * @param {string} [input.mainApi] 上游 main_api 同位量('openai'|'textgenerationwebui'|…);
+ *   影响 substCtx.mainApi → mesExamples 块头/instruct 样例格式化路径(缺省 'openai')
  * @returns {Promise<{builtPrompt, request, trace, sources, perf, chatMetadata, chatIntegrity}>}
  *   perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs;
  *   chatMetadata/chatIntegrity 供调用方持久化 timedWorldInfo(仅非 dryRun)。
@@ -199,6 +201,7 @@ export async function buildGenerationContext({
     type = 'normal',
     overrides = {},
     dryRun = false,
+    mainApi = 'openai',
 }) {
     // —— perf 打表(server 包裹层,core 签名不动)——
     // cardMs 由调用方补(loadCharacterCard 在 endpoint);totalMs 为 buildGenerationContext 总耗。
@@ -264,7 +267,7 @@ export async function buildGenerationContext({
         }
         worldCache.set(name, doc?.doc ?? doc ?? undefined);
     }));
-    const entries = mergeLoreSources({
+    let entries = mergeLoreSources({
         ...loreInput,
         getWorldData: (name) => worldCache.get(name),
     });
@@ -311,8 +314,13 @@ export async function buildGenerationContext({
         warn: (m) => console.warn(m),
     });
     substCtx.instruct = powerUserInstruct;
-    substCtx.mainApi = 'openai';
+    substCtx.mainApi = mainApi;
+    substCtx.contextTemplate = powerUser?.context;
     substCtx.formatInstructExamples = instructEngine.formatInstructExamples;
+    // {{banned}} 宏收集槽(textgen banned words 通道,evaluate.ts ctx.bannedWords)。
+    // 收集范围 = 本次组装内所有 substituteParams 调用;非 textgen 派发读了也不用。
+    const bannedInMacros = [];
+    substCtx.bannedWords = { collect: true, push: (w) => bannedInMacros.push(w) };
     const subst = (content) => substituteParams(content, substCtx);
 
     // —— extension prompts:settings 顶层 extension_prompts + chat_metadata.script_injects
@@ -349,6 +357,15 @@ export async function buildGenerationContext({
     };
 
     const extPromptSource = { ...(settingsDoc ?? {}), extension_prompts: mergedExtPrompts };
+
+    // skipWIAN(上游 generateQuietPrompt 契约:quiet 任务不进 WI/AN):
+    // 扫描输入清空 → checkWorldInfo 走空结果短路,不激活不推进 timed;
+    // AN 槽位整键删除 → base AN 与 WI→AN/persona→AN 合并一并失效
+    // (extPromptSource 持 mergedExtPrompts 引用,删除即贯通全注入面)。
+    if (overrides?.skipWIAN) {
+        entries = [];
+        delete mergedExtPrompts[NOTE_MODULE_NAME];
+    }
 
     // WI 扫描:chat 必须新到旧序(engine 约定 index 0 = newest);
     // globalScanData 是卡/人设字段,进扫描缓冲(原版 scanState 同位)
@@ -504,6 +521,11 @@ export async function buildGenerationContext({
         tgSettings: settingsDoc?.textgenerationwebui_settings ?? {},
         instructEngine,
         substCtx,
+        // textgen 派发塑形输入(TASK-037):power_user 开关面、amount_gen 响应长度、
+        // 组装期 {{banned}} 宏收集串
+        powerUser,
+        amountGen: settingsDoc?.amount_gen ?? null,
+        bannedInMacros,
         trace: builtPrompt.trace,
         sources: {
             presetName: resolvedPresetName,
@@ -527,6 +549,11 @@ export async function buildGenerationContext({
                         outlet: e.outletName,
                     }))
                     .sort((a, b) => String(a.world ?? '').localeCompare(String(b.world ?? '')) || a.uid - b.uid),
+                // TASK-034:st-context 快照(getActiveWorldInfoPromptFields 等价物)——
+                // 浏览器短路后由 job.sources 重建 activeWorldInfoPromptSnapshot;
+                // 与 activated 不同,这里要的是注入本体内容(string[])。
+                beforeEntries: wiActivated.worldInfoBeforeEntries ?? [],
+                afterEntries: wiActivated.worldInfoAfterEntries ?? [],
             },
             chatCount: chatMessages.length,
         },
