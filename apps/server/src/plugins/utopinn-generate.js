@@ -28,9 +28,11 @@ import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
 import { safeName, sendError } from './utopinn-library.js';
+import { emit as diagEmit } from '../services/diag-bus.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
+import { randomUUID } from 'node:crypto';
 
 export const inject = ['webServer'];
 
@@ -267,6 +269,13 @@ export function apply(ctx) {
     reg('/api/utopinn/generate', async function (request, response) {
         try {
             const body = request.body ?? {};
+            // 认亲键:与 runner 的 requestId 同源(job_id > x-luker-request-id >
+            // 现造 uuid)——组装期 inject 事件比 job 先出生,靠它挂回 job。
+            request.utopinnDiagId = String(
+                body.luker_generation?.job_id
+                || request.headers?.['x-luker-request-id']
+                || randomUUID(),
+            );
             const directories = request.user.directories;
             const cardStart = performance.now();
 
@@ -328,6 +337,7 @@ export function apply(ctx) {
             });
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
+            request.utopinnPerf = perf; // runner 挂 job.perf → trace 面回放
             logPerfLine('utopinn/generate', perf, { charDir, chatName });
             // WI timed effects 写回必须排在 dispatch 写楼层之前(effects 锚定的是
             // 生成前楼层计数);失败不阻断生成——下个周期自愈。
@@ -508,6 +518,15 @@ export function apply(ctx) {
                 select: (b) => selectChatCompletionDispatch(b),
             });
         } catch (error) {
+            diagEmit({
+                lvl: 'error', kind: 'generate', code: 'generate_failed',
+                msg: `generate failed: ${String(error?.message ?? error).slice(0, 280)}`,
+                ctx: {
+                    charDir: request.body?.charDir, chatId: request.body?.chatName,
+                    groupId: request.body?.groupId, verb: request.body?.type,
+                    diagId: request.utopinnDiagId, route: '/api/utopinn/generate',
+                },
+            });
             sendError(response, error, 'utopinn/generate');
         }
     });
@@ -516,6 +535,7 @@ export function apply(ctx) {
     reg('/api/utopinn/preview', async function (request, response) {
         try {
             const body = request.body ?? {};
+            request.utopinnDiagId ??= randomUUID(); // 干跑无 job,认亲键独立
             const directories = request.user.directories;
             const cardStart = performance.now();
 

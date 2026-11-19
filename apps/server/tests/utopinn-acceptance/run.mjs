@@ -466,6 +466,32 @@ try {
     r = cli(['state', 'chat', 'frobnicate']);
     expect('state 非法 op rc2', r, { rc: 2, err: 'usage' });
 
+    // ──────────────── J. diag 事件总线(events/errors/stats/trace) ────────────────
+    // 事件源已由上面各组自然产出:plugin_active(boot)/http_4xx(404/409/400)/
+    // inject(preview+generate 组装)/job_running(generate 派发)。
+    group('diag 总线:events/errors/stats/trace/client');
+    r = cli(['logs']);
+    expect('logs 全量有事件', r, { rc: 0 }, (data) =>
+        (Array.isArray(data) && data.length > 0 && data.every(e => e.seq && e.ts && e.kind && e.lvl)) || 'empty/shape');
+    r = cli(['logs', '--kind', 'inject']);
+    expect('logs --kind inject 过滤', r, { rc: 0 }, (data) =>
+        (Array.isArray(data) && data.length > 0 && data.every(e => e.kind === 'inject')) || `kinds=${[...new Set((data ?? []).map(e => e.kind))]}`);
+    r = cli(['errors']);
+    expect('errors 含 http_404', r, { rc: 0 }, (data) =>
+        (Array.isArray(data) && data.some(e => e.kind === 'http' && String(e.code ?? '').includes('404'))) || 'http_404 未入总线');
+    if (jobId) {
+        r = cli(['trace', jobId]);
+        expect('trace 聚合 job+injections', r, { rc: 0 }, (data) =>
+            (data?.id === jobId && Array.isArray(data?.injections) && data.injections.some(s => s.stage === 'worldinfo') && Array.isArray(data?.events))
+            || `id=${data?.id} inj=${data?.injections?.length}`);
+    }
+    r = cli(['raw', 'GET', '/api/utopinn/diag/stats']);
+    expect('diag stats 计数', r, { rc: 0 }, (data) =>
+        (data?.status === 200 && (data?.data?.byKind?.job ?? 0) >= 1 && (data?.data?.byKind?.http ?? 0) >= 1 && (data?.data?.byKind?.inject ?? 0) >= 1)
+        || JSON.stringify(data?.data).slice(0, 140));
+    r = cli(['diag-client', 'acc-probe', '--code', 'probe']);
+    expect('diag-client 上报', r, { rc: 0 }, (data) => data?.ok === true && typeof data?.seq === 'number' || JSON.stringify(data));
+
 } catch (e) {
     console.error(`\nSETUP FAIL: ${e?.message ?? e}`);
     rec('setup', false, String(e?.message ?? e));

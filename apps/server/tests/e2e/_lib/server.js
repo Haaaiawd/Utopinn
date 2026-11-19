@@ -360,7 +360,11 @@ async function spawnAt(port, batchKey, scenarioId, extraEnv, extraConfig, useExi
             output += s;
             stderr += s;
             for (const notify of stderrWaiters) notify();
-            if (s.includes('listen port is already in use') || s.includes('EADDRINUSE')) {
+            // 只把"本端口"的 TCP bind 失败当作致命。discover 插件的 UDP 广播
+            // (0.0.0.0:8000) 在别的实例存活时也会打 EADDRINUSE,不该误杀起服。
+            if (s.includes('listen port is already in use')
+                || s.includes('is already in use. Another')
+                || new RegExp(`EADDRINUSE.*:${port}\\b`).test(s)) {
                 bindInUse = true;
             }
             process.stderr.write(`[srv:${port}] ${d}`);
