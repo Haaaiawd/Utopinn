@@ -2923,7 +2923,10 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [],
+        "next": "短路+timedWI 已收(047f9c1);尾巴:preset=20s(listWithDocs全量→active两份)+每轮409(job携带新integrity),待 037b 格域释放后修"
+      },
       "evidence": [],
       "outcome": "浏览器彻底薄客户端:组装代码死路径化可删,「改善性能」目标兑现。",
       "boundaries": [
@@ -2954,7 +2957,7 @@
         "apps/server/public/scripts/"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "parked",
       "acceptance": [
         {
           "criterion": "legacy /api/chats、/api/backends/chat-completions 生成/状态端点删除或降为纯转发",
@@ -2975,7 +2978,10 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [],
+        "next": "挂起:legacy 端点仍是浏览器/CLI fallback,TASK-038 验收矩阵全绿后再谈物理删除(2026-11-19 拍板)"
+      },
       "evidence": [],
       "outcome": "旧架构物理删除:服务端只剩 fiber 面,前端只剩薄壳。",
       "boundaries": [
@@ -3045,7 +3051,7 @@
     },
     {
       "id": "TASK-037",
-      "title": "旁路接入:group 聊天 + textgen/kobold/novel 源进 utopinn 管道",
+      "title": "旁路接入:textgen/kobold/novel 源进 utopinn 管道(group 最小可用后封存)",
       "depends_on": [
         "TASK-032"
       ],
@@ -3084,7 +3090,10 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [],
+        "next": "group 生成:037b 格落地「发言成员正确+能生成能落盘」即提交封存(用户拍板 group 低频不深挖,自然轮次边缘语义标 TODO);textgen body 塑形已完(4750223);kobold/novelai 分流为下一刀"
+      },
       "evidence": [],
       "outcome": "非 openai-chat 源与 group 也走服务端大脑,无旁路遗留。",
       "boundaries": [
@@ -3135,7 +3144,10 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": {
+        "completed": [],
+        "next": "state 族 15 动词落地(1bcf4d9,doctor 66/66);剩:每面可重跑验收脚本 + golden-diff 复跑"
+      },
       "evidence": [],
       "outcome": "「后端坚不可破」可证明:全组件面 CLI 验收脚本绿 + 混沌用例过。",
       "boundaries": [
