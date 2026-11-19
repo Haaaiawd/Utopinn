@@ -61,6 +61,9 @@ import {
     isJsonPatchValidationError,
     deleteRecentChatIndexEntry,
     deleteAllChatStateSidecars,
+    // recent-chats 读面:/chats/recent 与 legacy /api/chats/recent 同一索引与排序源。
+    ensureRecentChatIndex,
+    getRecentChatSortTime,
 } from '../endpoints/chats.js';
 import {
     getQueryCharacterAvatar,
@@ -1134,6 +1137,42 @@ export function apply(ctx) {
             return response.send({ ok: true, integrity });
         } catch (error) {
             return sendError(response, error, 'utopinn/chats document');
+        }
+    });
+
+    /**
+     * POST /chats/recent —— 最近会话列表(legacy POST /api/chats/recent 逐义搬运)。
+     * body:{pinned?:[{file_name,avatar?,group?}], max?}
+     *   pinned 判定同字段(file_name + avatar|group)置顶 → sort_time desc →
+     *   slice(0, requested + pinned.length) → 滤 file_name;异常 500 兜底照 legacy。
+     *   索引与排序直接复用 chats.js 导出的 ensureRecentChatIndex /
+     *   getRecentChatSortTime —— 行为面只有一个事实源,不重抄。
+     */
+    regPost(`${P}/chats/recent`, 'POST', async function (request, response) {
+        try {
+            /** @type {import('../../public/scripts/welcome-screen.js').PinnedChat[]} */
+            const pinnedChats = Array.isArray(request.body?.pinned) ? request.body.pinned : [];
+            const requestedMax = Number.parseInt(String(request.body?.max ?? ''), 10);
+            const requested = Number.isFinite(requestedMax) && requestedMax > 0 ? requestedMax : Number.MAX_SAFE_INTEGER;
+            const max = requested + pinnedChats.length;
+            const entries = await ensureRecentChatIndex(request);
+            const recentChats = Array.from(entries.values());
+            const isPinned = (chatFile) => pinnedChats.some(p => p.file_name === chatFile.file_name && (p.avatar === chatFile.avatar || p.group === chatFile.group));
+            const sortedChats = recentChats.sort((a, b) => {
+                const isAPinned = isPinned(a);
+                const isBPinned = isPinned(b);
+
+                if (isAPinned && !isBPinned) return -1;
+                if (!isAPinned && isBPinned) return 1;
+
+                return getRecentChatSortTime(b) - getRecentChatSortTime(a);
+            }).slice(0, max);
+            const validFiles = sortedChats.filter(chatFile => chatFile.file_name);
+
+            return response.send(validFiles);
+        } catch (error) {
+            console.error(error);
+            return response.sendStatus(500);
         }
     });
 
