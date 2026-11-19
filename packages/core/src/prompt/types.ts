@@ -162,6 +162,8 @@ export interface BuiltPrompt {
         tokenBudget: number;
         remainingBudget: number;
         droppedChatCount: number;
+        /** 进上下文的聊天层数(TASK-034,浏览器 lastInContext 重建用;可选,旧产出无此键) */
+        chatHistoryCount?: number;
         injectedCount: number;
     };
 }

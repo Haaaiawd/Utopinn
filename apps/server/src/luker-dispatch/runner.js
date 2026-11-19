@@ -56,6 +56,13 @@ export async function runLukerDispatch(request, response, { endpoint, select }) 
     // 回放「本次生成的 prompt 组装现场」,不靠 preview 重算。
     job.trace = request.utopinnTrace ?? null;
     job.sources = request.utopinnSources ?? null;
+    // TASK-034 生成后 reconcile 数据源:promptMessages = 本次实际派发的
+    // messages(chat 路 = 组装产物 postProcess 后上线体;textgen 路 body 是
+    // 单串 prompt,组装 messages 由 endpoint 挂 request.utopinnPromptMessages
+    // 顶上);timedWorldInfo = persistWorldInfoTimedEffects 落库后快照,
+    // 浏览器回同步 chat_metadata 用。两字段可空 —— legacy 派发无挂载即 null。
+    job.promptMessages = request.body?.messages ?? request.utopinnPromptMessages ?? null;
+    job.timedWorldInfo = request.utopinnTimedWorldInfo ?? null;
     const abortController = new AbortController();
     job.abortController = abortController;
 

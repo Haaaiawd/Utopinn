@@ -89,7 +89,9 @@ export async function loadSettingsEnvelope({ bootstrap = false, signal } = {}) {
  * see no shape change.
  */
 export async function loadUtopinnSettingsEnvelope({ bootstrap = false, signal } = {}) {
-    const response = await fetch('/api/utopinn/settings', {
+    // raw=1:旧前端是完整文档消费者并会全量回写——脱敏视图会造成
+    // read→sanitized→save 的凭据清除回路(代理密码/自定义头/扩展密钥)。
+    const response = await fetch('/api/utopinn/settings?raw=1', {
         method: 'GET',
         credentials: 'same-origin',
         cache: 'no-store',
