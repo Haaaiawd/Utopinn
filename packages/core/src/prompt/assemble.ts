@@ -842,6 +842,9 @@ export async function buildPromptMessages(
             tokenBudget: req.contextTokens - req.responseTokens,
             remainingBudget: chatCompletion.tokenBudget,
             droppedChatCount: Math.max(0, chatCount - historyCount),
+            // TASK-034:进上下文的聊天层数(openai_messages_count 等价物)——
+            // 浏览器短路后由 job.trace 回填 lastInContext,变量现成只差导出。
+            chatHistoryCount: historyCount,
             injectedCount,
         },
     };

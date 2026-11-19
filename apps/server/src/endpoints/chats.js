@@ -471,7 +471,7 @@ export async function refreshRecentChatIndexEntry(request, filePath, overrides =
     state.entries.set(path.resolve(descriptor.filePath), entry);
 }
 
-async function deleteRecentChatIndexEntry(request, filePath) {
+export async function deleteRecentChatIndexEntry(request, filePath) {
     const state = await getReadyRecentChatIndexState(request);
     if (!state?.entries) {
         return;
@@ -1382,7 +1382,7 @@ function getAllChatStateSidecarPaths(chatFilePath) {
  * Deletes all state sidecars bound to a chat file.
  * @param {string} chatFilePath Chat jsonl file path.
  */
-function deleteAllChatStateSidecars(chatFilePath) {
+export function deleteAllChatStateSidecars(chatFilePath) {
     const sidecars = getAllChatStateSidecarPaths(chatFilePath);
     for (const sidecar of sidecars) {
         tryDeleteFile(sidecar);

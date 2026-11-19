@@ -59,6 +59,8 @@ import {
     applyChatStatePatch,
     isChatStatePatchConflictError,
     isJsonPatchValidationError,
+    deleteRecentChatIndexEntry,
+    deleteAllChatStateSidecars,
 } from '../endpoints/chats.js';
 import {
     getQueryCharacterAvatar,
@@ -258,6 +260,7 @@ export function apply(ctx) {
                     stems.set(stem, {
                         fileName: entry.name,
                         fileSize: stat?.size ?? 0,
+                        ctimeMs: stat?.ctimeMs ?? 0,
                         isImage: true,
                     });
                 }
@@ -270,14 +273,26 @@ export function apply(ctx) {
                 stems.set(stem, {
                     fileName: entry.name,
                     fileSize: stat?.size ?? 0,
+                    ctimeMs: stat?.ctimeMs ?? 0,
                     isImage: false,
                 });
             }
 
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
             const items = [];
             for (const [charDir, info] of stems) {
                 const card = await loadCharacterDoc(request.user.directories, charDir);
                 const fields = card ? cardFields(card) : { name: '', tags: [] };
+                // legacy /api/characters/all 语义:date_last_chat = 该角色全部会话 updatedAt 最大值
+                let dateLastChat = 0;
+                try {
+                    const chatEntries = await repo.listForCharacter(handle, charDir, { orderBy: 'name' });
+                    for (const entry of chatEntries) {
+                        const updatedAt = Number(entry?.updatedAt ?? 0);
+                        if (updatedAt > dateLastChat) dateLastChat = updatedAt;
+                    }
+                } catch { /* 列表 enrich 失败不阻塞角色列出 */ }
                 items.push({
                     charDir,
                     name: fields.name || charDir,
@@ -287,6 +302,9 @@ export function apply(ctx) {
                     tags: fields.tags,
                     // 卡文件存在但解析失败时仍列出,名字退化回 charDir
                     readable: card != null,
+                    // legacy:date_added = 卡文件 ctime;date_last_chat = 最近会话活跃
+                    dateAdded: info.ctimeMs ?? 0,
+                    dateLastChat,
                 });
             }
             items.sort((a, b) => a.name.localeCompare(b.name));
@@ -352,6 +370,13 @@ export function apply(ctx) {
             const handle = request.user.profile.handle;
             const chat = await getChatRepo().get(handle, charDir, chatName);
             if (!chat) {
+                // legacy /api/chats/get 语义:文件在盘上但 repo 读不出(unreadable/refused)
+                // → corrupted:true;浏览器据此走损坏提示分支而非 new_chat 覆盖。
+                const chatFilePath = path.join(request.user.directories.chats, charDir, `${chatName}.jsonl`);
+                if (fs.existsSync(chatFilePath)) {
+                    console.warn(`Chat file exists but is unreadable (corrupted): ${chatFilePath}`);
+                    return response.send({ corrupted: true });
+                }
                 return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
             }
             return response.send({
@@ -484,14 +509,15 @@ export function apply(ctx) {
         }
     });
 
-    /** GET /settings —— 脱敏后的完整 settings 文档。 */
+    /** GET /settings —— 脱敏后的完整 settings 文档;?raw=1 返回未脱敏(旧前端是完整文档消费者,薄客户端别用)。 */
     reg(`${P}/settings`, async function (request, response) {
         try {
             const doc = await getSettingsRepo().get(request.user.profile.handle) ?? {};
             if (typeof doc !== 'object' || Array.isArray(doc) || doc === null) {
                 return response.status(422).send({ error: 'Settings document is not a JSON object' });
             }
-            return response.send({ settings: sanitizeSettingsDoc(doc) });
+            const raw = request.query?.raw === '1' || request.query?.raw === 'true';
+            return response.send({ settings: raw ? doc : sanitizeSettingsDoc(doc) });
         } catch (error) {
             if (error instanceof SyntaxError) {
                 return response.status(422).send({ error: 'Settings document is not valid JSON' });
@@ -513,6 +539,9 @@ export function apply(ctx) {
                 return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
             }
             await repo.delete(handle, charDir, chatName);
+            const chatFilePath = path.join(request.user.directories.chats, charDir, `${chatName}.jsonl`);
+            deleteAllChatStateSidecars(chatFilePath);
+            await deleteRecentChatIndexEntry(request, chatFilePath);
             return response.sendStatus(204);
         } catch (error) {
             return sendError(response, error, 'utopinn/chats delete');
@@ -828,6 +857,12 @@ export function apply(ctx) {
             const newName = safeName(stripJsonlExt(request.body?.newName), 'newName');
             const handle = request.user.profile.handle;
             await getChatRepo().rename(handle, charDir, chatName, newName);
+            const oldFilePath = path.join(request.user.directories.chats, charDir, `${chatName}.jsonl`);
+            const newFilePath = path.join(request.user.directories.chats, charDir, `${newName}.jsonl`);
+            await deleteRecentChatIndexEntry(request, oldFilePath);
+            await refreshRecentChatIndexEntry(request, newFilePath, {
+                avatar: String(request.body?.avatar_url || ''),
+            });
             return response.send({ ok: true, name: newName, fileName: `${newName}.jsonl` });
         } catch (error) {
             return sendError(response, error, 'utopinn/chats rename');
@@ -993,6 +1028,13 @@ export function apply(ctx) {
                 result = await repo.patch(handle, charDir, chatName, sanitizedOps, slugRaw || undefined);
             } catch (err) {
                 if (err instanceof ConflictError) return sendRepoIntegrityConflict(response, err);
+                if (err instanceof PatchTestFailedError || err instanceof PatchMissingParentError) {
+                    // test/add 守卫失败=内容漂移:给 current_integrity 让浏览器走
+                    // 标准 409 rebase+retry,而不是空 current 的 force-overwrite 歧义分支。
+                    const current = await repo.get(handle, charDir, chatName).catch(() => null);
+                    console.warn(err.message);
+                    return response.status(409).send({ error: 'integrity', current_integrity: current?.integrity ?? '' });
+                }
                 throw err;
             }
             if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
