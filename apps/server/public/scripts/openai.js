@@ -108,7 +108,7 @@ import { accountStorage } from './util/AccountStorage.js';
 import { AbortReason } from './util/AbortReason.js';
 import { pushReasoningDetails } from './util/reasoning-details.js';
 import { resolveChatCompletionRequestProfile } from './extensions/connection-manager/profile-resolver.js';
-import { COMETAPI_IGNORE_PATTERNS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
+import { COMETAPI_IGNORE_PATTERNS, GENERATION_TYPE_TRIGGERS, IGNORE_SYMBOL, inject_ids, MEDIA_DISPLAY, MEDIA_TYPE } from './constants.js';
 import { maybeDeleteLinkedLorebookForPresetDeletion } from './world-info.js';
 import { showUndoToast } from './undo-toast.js';
 import {
@@ -163,6 +163,9 @@ export {
     setOpenAIMessageExamples,
     setupChatCompletionPromptManager,
     sendOpenAIRequest,
+    shouldUseUtopinnAssembly,
+    fetchUtopinnPreviewMessages,
+    getLastUtopinnGenerationId,
     isLastOpenAIReplyPersistedByServer,
     getLastOpenAIGenerationId,
     bindCurrentChatCompletionPresetToCharacter,
@@ -255,6 +258,11 @@ let biasCache = undefined;
 export let model_list = [];
 let lastOpenAIReplyPersistedByServer = false;
 let lastOpenAIGenerationId = '';
+// TASK-034:最近一次 /api/utopinn/generate 的 job id(不限于 persist 类型 ——
+// swipe/continue/impersonate/quiet 的服务端 job 也是 reconcile 数据源)。
+// 与 lastOpenAIGenerationId 分开:后者是 "服务端落盘追踪" 语义,只在
+// normal/regenerate 更新;本字段在每次 utopinn 派发后更新。
+let lastUtopinnGenerationId = '';
 let openAIPresetChangeNotificationToken = 0;
 
 // Tracks the in-flight remote status check for the current chat-completion
@@ -635,6 +643,15 @@ function isLastOpenAIReplyPersistedByServer() {
 
 function getLastOpenAIGenerationId() {
     return lastOpenAIGenerationId;
+}
+
+/**
+ * TASK-034:最近一次 utopinn 派发的 job id(所有 chat-scope 类型,不只是
+ * persist 类型)。生成后 reconcile(GET /api/utopinn/jobs/:id)的数据源。
+ * @returns {string}
+ */
+function getLastUtopinnGenerationId() {
+    return lastUtopinnGenerationId;
 }
 
 const character_names_behavior = {
@@ -4338,18 +4355,87 @@ function buildUtopinnAssemblyOverrides(type) {
     return overrides;
 }
 
-/** @returns {object|null} utopinn 请求体;group/解析失败 → null 回退 legacy。 */
-function buildUtopinnGenerateBody(type, requestBody) {
+/**
+ * utopinn 目标解析:本次派发要打到哪个角色的哪条会话。
+ * group/解析失败 → null(回退 legacy 路径的唯一闸门)。
+ * shouldUseUtopinnAssembly / buildUtopinnGenerateBody / fetchUtopinnPreviewMessages
+ * 共用,防止"浏览器短路了但服务端又装不上"的条件漂移。
+ * @returns {{charDir: string, chatName: string}|null}
+ */
+function resolveUtopinnTarget() {
     if (selected_group) return null; // group 聊天服务端未接(deps.group 断)
     const character = characters[this_chid];
     const charDir = String(character?.avatar || '').replace(/\.png$/i, '');
     const chatName = String(character?.chat || getCurrentChatId() || '').replace(/\.jsonl$/i, '');
     if (!charDir || !chatName) return null;
+    return { charDir, chatName };
+}
+
+/**
+ * TASK-034 浏览器组装短路谓词。true = generateInternal 应跳过全部 prompt
+ * 组装(产物在 sendOpenAIRequest 被显式丢弃,纯 CPU 浪费),直派
+ * /api/utopinn/generate 由服务端组装;事件照常发射(payload 带
+ * serverAssembled:true),生成后 reconcile 补回 UI 面数据。
+ *
+ * 与 utopinn 派发的 null 条件同源:resolveUtopinnTarget 非 null 时
+ * sendOpenAIRequest(requestScope==='chat') 一定走服务端组装。dryRun /
+ * main_api!=='openai' / 非 GENERATION_TYPE_TRIGGERS 一律旧路。
+ * localStorage['utopinn.browser_assembly']==='legacy' 是回滚口。
+ * @param {string} type Generate() 的 type(normal/continue/impersonate/swipe/regenerate/quiet)
+ * @param {{dryRun?: boolean}} [options]
+ * @returns {boolean}
+ */
+function shouldUseUtopinnAssembly(type, { dryRun = false } = {}) {
+    if (localStorage.getItem('utopinn.browser_assembly') === 'legacy') return false;
+    if (dryRun || main_api !== 'openai') return false;
+    if (!GENERATION_TYPE_TRIGGERS.includes(type)) return false;
+    return resolveUtopinnTarget() !== null;
+}
+
+/**
+ * TASK-034 takeover 供料桥:POST /api/utopinn/preview 干跑组装,回 messages
+ * 数组(takeover 插件读 eventData.generateData.prompt,短路后那里是空的)。
+ * 与 /generate 同 target body;失败/非数组 → null,调用方保持空 prompt 不发。
+ * @param {string} type
+ * @param {AbortSignal?} [signal]
+ * @returns {Promise<Array|null>}
+ */
+async function fetchUtopinnPreviewMessages(type, signal = null) {
+    const target = resolveUtopinnTarget();
+    if (!target) return null;
+    try {
+        const response = await fetch('/api/utopinn/preview', {
+            method: 'POST',
+            headers: getRequestHeaders(),
+            signal,
+            body: JSON.stringify({
+                ...target,
+                type,
+                overrides: buildUtopinnAssemblyOverrides(type),
+            }),
+        });
+        if (!response.ok) {
+            console.warn(`[utopinn] preview ${response.status} from ${response.url}`, (await response.text().catch(() => '')).substring(0, 200));
+            return null;
+        }
+        const data = await response.json();
+        return Array.isArray(data?.messages) ? data.messages : null;
+    } catch (error) {
+        if (error?.name === 'AbortError') throw error;
+        console.warn('[utopinn] preview fetch failed', error);
+        return null;
+    }
+}
+
+/** @returns {object|null} utopinn 请求体;group/解析失败 → null 回退 legacy。 */
+function buildUtopinnGenerateBody(type, requestBody) {
+    const target = resolveUtopinnTarget();
+    if (!target) return null;
     const persistTypes = new Set(['normal', 'regenerate']);
     const { messages: _discarded, luker_generation, type: _typeDiscarded, ...dispatchOverrides } = requestBody;
     return {
-        charDir,
-        chatName,
+        charDir: target.charDir,
+        chatName: target.chatName,
         type,
         stream: Boolean(requestBody.stream),
         // 客户端派生的 canonical 派发字段(model/max_tokens/stop/logit_bias/
@@ -4758,10 +4844,26 @@ async function sendOpenAIRequest(type, messages, signal, {
     const utopinnBody = requestScope === 'chat'
         ? buildUtopinnGenerateBody(type, requestBody)
         : null;
+    // TASK-034 兜底:chat 域组装被浏览器短路后,messages 恒空是合法的
+    // (utopinnBody 非 null → 服务端重组装);但 utopinn 目标也缺席时,
+    // 带空 messages 发 legacy 上游只会得到垃圾回复——宁可早错。
+    if (requestScope === 'chat' && !utopinnBody) {
+        const hasPromptMessages = Array.isArray(messages)
+            ? messages.length > 0
+            : String(messages ?? '').length > 0;
+        if (!hasPromptMessages) {
+            throw new Error('[utopinn] chat-scope request has neither a utopinn target nor assembled messages — refusing to dispatch an empty legacy request');
+        }
+    }
     const { response } = utopinnBody
         ? await postUtopinnGenerateRequest(utopinnBody, signal, { apiPresetName })
         : await postChatCompletionGenerateRequest(requestBody, signal, { apiPresetName });
     const generationIdHeader = response.headers.get('x-luker-generation-id');
+    // TASK-034:job id 对 reconcile 是全类型数据源(swipe/continue/quiet 的
+    // timedWorldInfo/lastInContext 也要回同步),不限 persist 类型。
+    if (utopinnBody && generationIdHeader) {
+        lastUtopinnGenerationId = generationIdHeader;
+    }
     if (shouldTrackLukerGenerationState && generationIdHeader) {
         lastOpenAIGenerationId = generationIdHeader;
         logOpenAILukerPersistenceDebug('response_header_meta', {
@@ -4869,6 +4971,10 @@ async function sendOpenAIRequest(type, messages, signal, {
                 tryParseStreamingError(response, rawData);
                 let parsed = JSON.parse(rawData);
                 if (parsed?.luker && typeof parsed.luker === 'object') {
+                    // TASK-034:trailer 里的 job id 是全类型 reconcile 数据源。
+                    if (utopinnBody && typeof parsed.luker.generation_id === 'string' && parsed.luker.generation_id) {
+                        lastUtopinnGenerationId = parsed.luker.generation_id;
+                    }
                     if (shouldTrackLukerGenerationState) {
                         const logPayload = {};
                         if (typeof parsed.luker.generation_id === 'string' && parsed.luker.generation_id) {
