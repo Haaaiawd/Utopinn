@@ -70,7 +70,7 @@ export function ChatView() {
     const { t } = useI18n();
     const {
         chat, preview, previewLoading, runPreview, hint, live,
-        cards, persona, setPersona, setView,
+        cards, persona, setPersona, setView, models, activeModel, setActiveModel,
     } = useShell();
     const ctbarActions = useContribs('ctbar.chat');
     const Renderer = useRenderer();
@@ -309,9 +309,28 @@ export function ChatView() {
                         <span className="stage-chip-lbl">{presetName}</span>
                     </span>
                 )}
+                {/* 模型胶囊(规范稿 context capsule)—— SPEC-DATA: 待接,
+                    目录是 ctx mock;生成时未携带进 body。 */}
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button type="button" className="stage-chip stage-model" title={t('stage.model')}>
+                            <Icon name="sparkles" size={12} />
+                            <span className="stage-chip-lbl">{models.find((m) => m.id === activeModel)?.name ?? '—'}</span>
+                            <Icon name="chevronDown" size={10} />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="bottom" align="start">
+                        <DropdownMenuLabel>{t('stage.model')}</DropdownMenuLabel>
+                        {models.map((m) => (
+                            <DropdownMenuItem key={m.id} onClick={() => setActiveModel(m.id)}>
+                                <Icon name={m.id === activeModel ? 'check' : 'sparkles'} size={12} />
+                                <span className="stage-persona-item">{m.name}</span>
+                                <span className="mut ml-auto">{m.context}</span>
+                            </DropdownMenuItem>
+                        ))}
+                    </DropdownMenuContent>
+                </DropdownMenu>
                 <span className="grow" />
-                {/* mock 徽标只保留右栏诊断卡那一处 —— 它是数据可信度的本职位置,
-                    ctbar 只留标题 + tabs + 图标。 */}
                 <Tabs value={tab} onValueChange={(v) => {
                     setTab(v as typeof tab);
                     // 预览按需装配:首次切到 preview tab 才打 /preview,不做常驻请求
