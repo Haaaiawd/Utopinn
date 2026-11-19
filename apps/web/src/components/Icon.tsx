@@ -5,13 +5,13 @@
 // 规范组件与老组件共用同一个 <Icon name=…> 组件。
 import { UtopinnIcon, type UtopinnIconName } from '../icons/UtopinnIcons';
 import {
-    ArrowClockwise, ArrowCounterClockwise, ArrowLeft, ArrowSquareOut, ArrowUp, Book, BookBookmark,
+    ArrowClockwise, ArrowCounterClockwise, ArrowLeft, ArrowRight, ArrowSquareOut, ArrowUp, Book, BookBookmark,
     BookOpen, Books, Brain, Broadcast, Cards, CaretDown, CaretLeft, CaretRight, ChartLine,
-    Chats, ChatsCircle, Check, Clock, Code, Command, Copy, CornersIn, CornersOut, Database,
-    DiceFive, DotsThree, DownloadSimple, Eye, FastForward, Feather, File, GearSix, Globe,
-    GridFour, House, Image, Layout, Lightning, Link, List, MagicWand, MagnifyingGlass, Minus,
-    Moon, MusicNote, NotePencil, Paperclip, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
-    ShieldCheck, SidebarSimple, Divide, SlidersHorizontal, Sparkle, Square, Stack, Sun,
+    Chats, ChatsCircle, Check, Clock, Code, Command, Copy, CornersIn, CornersOut, Cpu, Database,
+    DeviceMobile, DiceFive, DotsThree, DownloadSimple, Eye, EyeClosed, FastForward, Feather, File, Folder, GearSix, GitFork, Globe,
+    GridFour, House, Image, Layout, Lightning, Link, List, ListNumbers, MagicWand, MagnifyingGlass, Minus, Monitor,
+    Moon, MusicNote, Note, NotePencil, Notebook, Paperclip, PenNib, PencilSimple, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
+    ShieldCheck, SidebarSimple, SignOut, Divide, SlidersHorizontal, Sparkle, Square, Stack, Storefront, Sun,
     Terminal, Trash, UploadSimple, User, Warning, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
@@ -92,6 +92,25 @@ const MAP = {
     dice: DiceFive,
     music: MusicNote,
     brain: Brain,
+    /* —— 补:规范稿组件用到的其余键 —— */
+    monitor: Monitor,
+    smartphone: DeviceMobile,
+    gear: GearSix,
+    chart: ChartLine,
+    signOut: SignOut,
+    arrowRight: ArrowRight,
+    cpu: Cpu,
+    pencil: PencilSimple,
+    gitFork: GitFork,
+    eyeClosed: EyeClosed,
+    note: Note,
+    notebook: Notebook,
+    listNumbers: ListNumbers,
+    cards: Cards,
+    folder: Folder,
+    store: Storefront,
+    puzzle: PuzzlePiece,
+    penNib: PenNib,
 } as const satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof MAP | 'persona' | 'branch' | 'compass' | 'bookmark' | 'flame';
@@ -106,6 +125,7 @@ const BRAND = {
     layers: 'layers', sliders: 'sliders', shield: 'shield',
     bookOpen: 'bookOpen', radio: 'radio', code: 'code',
     copy: 'copy', rewind: 'undo', search: 'search', x: 'close',
+    gear: 'settings', gitFork: 'branch',
     /* v2 增补:MAP 里已有对位的品牌键 */
     feather: 'feather', messages: 'messages', sparkles: 'sparkles',
     dice: 'dice', music: 'music', brain: 'brain', wand: 'wand',
