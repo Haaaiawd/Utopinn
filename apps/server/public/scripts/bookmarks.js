@@ -110,15 +110,23 @@ async function getExistingChatNames() {
         return [];
     }
 
-    const response = await fetch('/api/characters/chats', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ avatar_url: character.avatar, simple: true }),
-    });
+    // TASK-033 reroute: legacy /api/characters/chats → uberge chats list
+    // ({items:[{name, fileName, ...}]} — only the names are needed here).
+    const charDir = String(character.avatar || '').trim().replace(/\.(png|webp|json)$/i, '');
+    const response = charDir
+        ? await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+            method: 'GET',
+            headers: getRequestHeaders(),
+            cache: 'no-cache',
+        })
+        : { ok: false };
 
     if (response.ok) {
         const data = await response.json();
-        const chats = Object.values(data).map(x => x.file_name.replace(/\.jsonl$/i, ''));
+        const items = Array.isArray(data?.items) ? data.items : [];
+        const chats = items
+            .map(x => String(x?.fileName || '').replace(/\.jsonl$/i, ''))
+            .filter(Boolean);
         return [...chats];
     }
 

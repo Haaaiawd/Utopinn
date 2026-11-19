@@ -9,7 +9,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { writeCardToPng } from '@uberge/formats';
 import {
     getChatRepo,
@@ -18,7 +21,9 @@ import {
     getWorldInfoRepo,
     initStorage,
 } from '../src/storage/index.js';
-import { router as ubergeLibraryRouter } from '../src/endpoints/uberge-library.js';
+import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
+// 插件经 secrets.js 在模块级读 config —— 静态 import 会抢在 setConfigFilePath 前
+// 炸掉,改在 test.before 里动态 import(config 就绪后)。
 
 const HANDLE = 'u1';
 const PNG_1PX = Buffer.from(
@@ -87,6 +92,25 @@ async function api(pathname, { method = 'GET', body } = {}) {
 }
 
 test.before(async () => {
+    // 插件的传递依赖(secrets.js 等)模块级读 config —— 必须在 import 前就绪
+    if (!getConfigFilePath()) {
+        setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
+    }
+    reloadConfigCache();
+    // 关磁盘卡缓存:node-persist 的 setInterval 会吊着进程退不出
+    process.env.LUKER_PERFORMANCE_USEDISKCACHE = 'false';
+    process.env.LUKER_PERFORMANCE_USE_DISK_CACHE = 'false';
+
+    const { apply: applyUbergeLibrary } = await import('../src/plugins/uberge-library.js');
+    const ubergeLibraryRouter = express.Router();
+    const ws = {
+        register: (spec) => {
+            ubergeLibraryRouter[String(spec.method || 'GET').toLowerCase()](spec.path, spec.handler);
+            return () => {};
+        },
+    };
+    applyUbergeLibrary({ webServer: ws, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) });
+
     ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'uberge-lib-'));
     dirs = {};
     for (const [key, rel] of Object.entries(USER_DIRS)) {
@@ -154,7 +178,7 @@ test.before(async () => {
         request.user = { profile: { handle: HANDLE, name: 'User' }, directories: dirs };
         next();
     });
-    app.use('/api/uberge', ubergeLibraryRouter);
+    app.use(ubergeLibraryRouter); // 插件注册的是 /api/uberge/* 全路径,根挂
     await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
     BASE = `http://127.0.0.1:${server.address().port}`;
 });

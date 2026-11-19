@@ -1460,10 +1460,10 @@ class PresetManager {
         // the picker disagreeing with the server whenever the request was
         // rejected: the preset vanished from the list but still existed on
         // disk, and no undo was offered because the caller saw a failure.
-        const response = await fetch('/api/presets/delete', {
-            method: 'POST',
+        // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/uberge/presets/:name
+        const response = await fetch(`/api/uberge/presets/${encodeURIComponent(nameToDelete)}?apiId=${encodeURIComponent(this.apiId)}`, {
+            method: 'DELETE',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ name: nameToDelete, apiId: this.apiId }),
         });
 
         if (!response.ok) {

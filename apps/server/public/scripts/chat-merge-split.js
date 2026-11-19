@@ -130,17 +130,21 @@ async function fetchChatListForContext({ isGroup, avatarUrl, groupId }) {
         }
         return results;
     }
-    const res = await fetch('/api/characters/chats', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/characters/chats → uberge chats list
+    // ({items:[{name, fileName, messageCount, ...}]}).
+    const charDir = String(avatarUrl || '').trim().replace(/\.(png|webp|json)$/i, '');
+    if (!charDir) return [];
+    const res = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+        method: 'GET',
         headers,
-        body: JSON.stringify({ avatar_url: avatarUrl }),
+        cache: 'no-cache',
     });
     if (!res.ok) return [];
     const data = await res.json();
-    if (!data || data.error === true) return [];
-    return Object.values(data).map(c => ({
-        file_name: String(c.file_name || '').replace(/\.jsonl$/i, ''),
-        messageCount: Number(c.mes_count ?? c.message_count ?? c.chat_items ?? 0),
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map(c => ({
+        file_name: String(c?.fileName || '').replace(/\.jsonl$/i, ''),
+        messageCount: Number(c?.messageCount ?? 0),
     }));
 }
 

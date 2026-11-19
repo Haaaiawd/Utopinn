@@ -33,9 +33,8 @@ async function loadAdvancedPreset(apiId, { signal } = {}) {
     return stampNamedDocuments(await loadPresetDocumentEntries(apiId, { signal }));
 }
 
-export async function loadSettingsEnvelope({ bootstrap = false, signal } = {}) {
+async function buildSettingsEnvelopeFromDocument(settingsDocument, { bootstrap = false, signal } = {}) {
     const metadata = await loadResourceBootstrap({ signal });
-    const settingsDocument = await loadSettingsDocument({ signal });
     const selected = selectedPresetNames(settingsDocument);
 
     const [
@@ -75,4 +74,34 @@ export async function loadSettingsEnvelope({ bootstrap = false, signal } = {}) {
         enable_extensions_auto_update: metadata.enable_extensions_auto_update,
         enable_accounts: metadata.enable_accounts,
     };
+}
+
+export async function loadSettingsEnvelope({ bootstrap = false, signal } = {}) {
+    const settingsDocument = await loadSettingsDocument({ signal });
+    return buildSettingsEnvelopeFromDocument(settingsDocument, { bootstrap, signal });
+}
+
+/**
+ * TASK-033 reroute: settings document via the kernel route
+ * GET /api/uberge/settings ({settings:<doc>}) instead of POST /api/settings/get
+ * or the /api/settings/fields granular channel. The envelope around the
+ * document is identical to loadSettingsEnvelope's, so getSettings() consumers
+ * see no shape change.
+ */
+export async function loadUbergeSettingsEnvelope({ bootstrap = false, signal } = {}) {
+    const response = await fetch('/api/uberge/settings', {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { Accept: 'application/json' },
+        signal,
+    });
+    if (!response.ok) {
+        throw new Error(`uberge settings read failed with HTTP ${response.status}`);
+    }
+    const payload = await response.json();
+    const settingsDocument = (payload?.settings && typeof payload.settings === 'object' && !Array.isArray(payload.settings))
+        ? payload.settings
+        : {};
+    return buildSettingsEnvelopeFromDocument(settingsDocument, { bootstrap, signal });
 }

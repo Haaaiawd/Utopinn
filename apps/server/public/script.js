@@ -356,7 +356,7 @@ import { setRequestCompressionConfig } from './scripts/request-compression.js';
 import { canJumpToSwipeForMessage, canOpenSwipePickerForMessage, initSwipePicker } from './scripts/swipe-picker.js';
 import { bootSelfProfilerFromStorage } from './scripts/self-profiler.js';
 import { createLukerDelivery, installFetchProxy, installFetchProxyForAllIframes, installLifecycleHooks } from './scripts/ws-delivery.js';
-import { loadSettingsEnvelope } from './scripts/settings-resource-read.js';
+import { loadSettingsEnvelope, loadUbergeSettingsEnvelope } from './scripts/settings-resource-read.js';
 import { listPresetDocuments, loadPresetResources, readPresetDocument } from './scripts/named-resource-read.js';
 
 installFrontendLogCapture();
@@ -2935,10 +2935,14 @@ export async function getCharacters() {
     let getData = Array.isArray(primedCharacterPayload) ? primedCharacterPayload : null;
 
     if (!getData) {
-        const response = await fetch('/api/characters/all', {
-            method: 'POST',
+        // TASK-033 reroute: legacy /api/characters/all → uberge list + per-card
+        // fan-out. uberge's list is thin ({charDir,name,fileName,...}); the
+        // shallow objects /all returned carry data.* projections + the .chat
+        // pointer, so each PNG card is fetched and reshaped here.
+        const response = await fetch('/api/uberge/characters', {
+            method: 'GET',
             headers: getRequestHeaders(),
-            body: JSON.stringify({}),
+            cache: 'no-cache',
         });
 
         if (!response.ok) {
@@ -2950,7 +2954,36 @@ export async function getCharacters() {
             return;
         }
 
-        getData = await response.json();
+        const listPayload = await response.json().catch(() => null);
+        const items = (Array.isArray(listPayload?.items) ? listPayload.items : [])
+            // Match the legacy .png-only scan; .json/.webp card stubs are skipped
+            // just like /api/characters/all ignored them.
+            .filter(item => String(item?.fileName || item?.avatar || '').toLowerCase().endsWith('.png'));
+
+        getData = (await Promise.all(items.map(async (item) => {
+            try {
+                const charDir = String(item?.charDir || ubergeCharDirFromAvatar(item?.fileName || item?.avatar || ''));
+                if (!charDir) {
+                    return null;
+                }
+                const cardResponse = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}`, {
+                    method: 'GET',
+                    headers: getRequestHeaders(),
+                    cache: 'no-cache',
+                });
+                if (!cardResponse.ok) {
+                    return null;
+                }
+                const card = await cardResponse.json().catch(() => null);
+                if (!card || typeof card !== 'object' || Array.isArray(card)) {
+                    return null;
+                }
+                return buildShallowCharacterFromUbergeCard(item, card);
+            } catch (error) {
+                console.warn('Failed to fetch character card for list rebuild:', item?.charDir || item?.fileName, error);
+                return null;
+            }
+        }))).filter(Boolean);
     }
 
     if (Array.isArray(getData)) {
@@ -3003,13 +3036,188 @@ export async function getCharacters() {
     }
 }
 
-async function getReplacementCharacterChatName(character) {
-    const chatsResponse = await fetch('/api/characters/chats', {
-        method: 'POST',
+// ---------------------------------------------------------------------------
+// TASK-033 reroute adapters: character-chat call sites now hit the kernel
+// library surface (/api/uberge/*). The uberge shapes differ from the legacy
+// /api/chats/* wire forms, so these helpers translate paths + payloads and
+// re-shape responses back into the forms the surrounding code was written
+// against.
+// ---------------------------------------------------------------------------
+
+/** charDir = avatar file name with its extension stripped (legacy avatar_url → uberge :charDir). */
+function ubergeCharDirFromAvatar(avatarUrl) {
+    return String(avatarUrl || '').trim().replace(/\.(png|webp|json)$/i, '');
+}
+
+/** chatName = chat file name without the .jsonl extension (legacy file_name → uberge :chatName). */
+function ubergeChatNameFromFile(fileName) {
+    return String(fileName || '').trim().replace(/\.jsonl$/i, '');
+}
+
+function ubergeChatRoute(charDir, chatName, suffix = '') {
+    return `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}${suffix}`;
+}
+
+/**
+ * TASK-033 reroute: legacy /api/chats/get → GET /api/uberge/characters/:charDir/chats/:chatName.
+ * uberge returns {header, messages, integrity} and 404 on a miss, while the
+ * legacy endpoint answered [header, ...messages] / {new_chat:true}. The legacy
+ * endpoint also injected the live CAS token into header.chat_metadata.integrity
+ * — do the same here so downstream integrity guards keep working.
+ * @returns {Promise<{ok:boolean, status:number, data:*}>}
+ */
+async function fetchCharacterChatUberge(avatarUrl, fileName) {
+    const charDir = ubergeCharDirFromAvatar(avatarUrl);
+    const chatName = ubergeChatNameFromFile(fileName);
+    if (!charDir || !chatName) {
+        return { ok: true, status: 200, data: { new_chat: true } };
+    }
+    const response = await fetch(ubergeChatRoute(charDir, chatName), {
+        method: 'GET',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ avatar_url: character.avatar }),
+        cache: 'no-cache',
     });
-    const chats = Object.values(await chatsResponse.json());
+    if (response.status === 404) {
+        return { ok: true, status: 200, data: { new_chat: true } };
+    }
+    if (!response.ok) {
+        return { ok: false, status: response.status, data: null };
+    }
+    const doc = await response.json().catch(() => null);
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        return { ok: false, status: response.status, data: null };
+    }
+    const header = isPlainObject(doc.header) ? structuredClone(doc.header) : {};
+    if (!isPlainObject(header.chat_metadata)) {
+        header.chat_metadata = {};
+    }
+    if (typeof doc.integrity === 'string' && doc.integrity) {
+        header.chat_metadata.integrity = doc.integrity;
+    }
+    const messages = Array.isArray(doc.messages) ? doc.messages : [];
+    return { ok: true, status: response.status, data: [header, ...messages] };
+}
+
+/**
+ * TASK-033 reroute: legacy /api/characters/chats → GET /api/uberge/characters/:charDir/chats.
+ * uberge items are {name, fileName, messageCount, byteSize, lastMessage,
+ * chatMetadata, updatedAt, createdAt, integrity}; legacy items were
+ * {file_id, file_name, file_size, chat_items, mes, last_mes, sort_time, ...}.
+ */
+function adaptUbergeChatListItem(item) {
+    const lastSendDate = item?.lastMessage?.send_date;
+    const updatedAt = item?.updatedAt;
+    const updatedAtMs = typeof updatedAt === 'number'
+        ? updatedAt
+        : (Date.parse(String(updatedAt ?? '')) || 0);
+    const sortTime = typeof lastSendDate === 'number'
+        ? lastSendDate
+        : (Date.parse(String(lastSendDate ?? '')) || updatedAtMs);
+    return {
+        file_id: String(item?.name ?? ''),
+        file_name: String(item?.fileName ?? `${item?.name ?? ''}.jsonl`),
+        file_size: humanFileSize(Number(item?.byteSize ?? 0) || 0),
+        chat_items: Number(item?.messageCount ?? 0) || 0,
+        mes: item?.lastMessage?.mes || '[The chat is empty]',
+        last_mes: lastSendDate || new Date(updatedAtMs || Date.now()).toISOString(),
+        sort_time: sortTime,
+        chat_metadata: isPlainObject(item?.chatMetadata) ? item.chatMetadata : undefined,
+        integrity: item?.integrity,
+        match: true,
+    };
+}
+
+/** @returns {Promise<{ok:boolean, status:number, data:Array}>} legacy-shaped chat list items */
+async function fetchCharacterChatListUberge(avatarUrl) {
+    const charDir = ubergeCharDirFromAvatar(avatarUrl);
+    if (!charDir) {
+        return { ok: false, status: 400, data: [] };
+    }
+    const response = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, {
+        method: 'GET',
+        headers: getRequestHeaders(),
+        cache: 'no-cache',
+    });
+    if (!response.ok) {
+        return { ok: false, status: response.status, data: [] };
+    }
+    const payload = await response.json().catch(() => null);
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return { ok: true, status: response.status, data: items.map(adaptUbergeChatListItem) };
+}
+
+/**
+ * TASK-033: rebase legacy /api/chats/patch ops (rooted at the message array,
+ * e.g. '/3/mes') onto the uberge {header, body} chat document ('/body/3/mes').
+ */
+function rebaseChatMessageOpsToUbergeDoc(operations) {
+    return (Array.isArray(operations) ? operations : []).map((op) => (
+        op && typeof op === 'object' && typeof op.path === 'string'
+            ? { ...op, path: `/body${op.path}` }
+            : op
+    ));
+}
+
+/**
+ * TASK-033: legacy /api/chats/patch merged body.chat_metadata into the header
+ * server-side; the uberge PATCH only applies JSON-Patch ops, so the metadata
+ * diff is carried as explicit '/header/chat_metadata/*' ops.
+ */
+function buildUbergeHeaderMetadataOps(previousMetadata, nextMetadata) {
+    return buildChatMetadataPatchOperations(previousMetadata, nextMetadata).map((op) => (
+        op && typeof op === 'object' && typeof op.path === 'string'
+            ? { ...op, path: `/header/chat_metadata${op.path}` }
+            : op
+    ));
+}
+
+/**
+ * TASK-033: rebuild the shallow character objects legacy POST /api/characters/all
+ * produced (CharacterStore.toShallow + .chat pointer) from an uberge list item
+ * plus the full card JSON returned by GET /api/uberge/characters/:charDir.
+ * Degraded vs legacy: date_added/date_last_chat/chat_size are unavailable on the
+ * uberge surface → 0 (chat_size was already a 0 stand-in server-side).
+ */
+function buildShallowCharacterFromUbergeCard(item, card) {
+    const data = isPlainObject(card?.data) ? card.data : {};
+    const extensions = isPlainObject(data.extensions) ? data.extensions : {};
+    const lukerExt = isPlainObject(extensions.luker) ? extensions.luker : {};
+    const dedicatedPersonas = Array.isArray(lukerExt.dedicated_personas)
+        ? lukerExt.dedicated_personas.filter(entry => entry && typeof entry === 'object')
+            .map(entry => ({ personaName: String(entry.persona_name || entry.personaName || ''), lockName: String(entry.lock_name || entry.lockName || '') }))
+        : [];
+    const cardTags = Array.isArray(data.tags) ? data.tags : (Array.isArray(card?.tags) ? card.tags : []);
+    return {
+        shallow: true,
+        name: data.name || card?.name || item?.name || '',
+        avatar: String(item?.fileName || item?.avatar || ''),
+        chat: String(card?.chat ?? ''),
+        fav: extensions.fav ?? card?.fav ?? false,
+        date_added: 0,
+        create_date: card?.create_date,
+        date_last_chat: 0,
+        chat_size: 0,
+        data_size: Object.values(data).reduce((acc, value) => acc + String(value).length, 0),
+        tags: cardTags.length ? cardTags : (Array.isArray(item?.tags) ? item.tags : []),
+        data: {
+            name: data.name || '',
+            character_version: data.character_version || '',
+            creator: data.creator || '',
+            creator_notes: data.creator_notes || '',
+            tags: cardTags,
+            extensions: {
+                fav: Boolean(extensions.fav),
+                luker: { dedicated_personas: dedicatedPersonas },
+                world: extensions.world || '',
+            },
+        },
+    };
+}
+
+async function getReplacementCharacterChatName(character) {
+    // TASK-033 reroute: legacy /api/characters/chats → uberge
+    const chatsResponse = await fetchCharacterChatListUberge(character.avatar);
+    const chats = Object.values(chatsResponse.data);
     chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
     return chats.length && typeof chats[0] === 'object'
         ? chats[0].file_name.replace(/\.jsonl$/i, '')
@@ -3024,22 +3232,12 @@ async function getRawCharacterChatSnapshot(characterId, fileName) {
         return null;
     }
 
-    const response = await fetch('/api/chats/get', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        cache: 'no-cache',
-        body: JSON.stringify({
-            ch_name: getCharacterName(character),
-            file_name: fileName,
-            avatar_url: character.avatar,
-        }),
-    });
-
-    if (!response.ok) {
+    // TASK-033 reroute: legacy /api/chats/get → uberge
+    const { ok, data } = await fetchCharacterChatUberge(character.avatar, fileName);
+    if (!ok) {
         return null;
     }
 
-    const data = await response.json();
     return Array.isArray(data) ? structuredClone(data) : null;
 }
 
@@ -3047,19 +3245,19 @@ async function restoreCharacterChatSnapshot(characterId, fileName, chatFile) {
     await unshallowCharacter(characterId);
 
     const character = characters[characterId];
-    if (!character || !Array.isArray(chatFile)) {
+    const chatName = ubergeChatNameFromFile(fileName);
+    if (!character || !Array.isArray(chatFile) || !chatName) {
         return false;
     }
 
-    const response = await fetch('/api/chats/save', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/chats/save → uberge document PUT
+    // (accepts the legacy {chat:[header, ...messages]} body shape)
+    const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(character.avatar), chatName)}/document`, {
+        method: 'PUT',
         cache: 'no-cache',
         headers: getRequestHeaders(),
         body: JSON.stringify({
-            ch_name: getCharacterName(character),
-            file_name: fileName,
             chat: structuredClone(chatFile),
-            avatar_url: character.avatar,
             force: true,
         }),
     });
@@ -3192,19 +3390,19 @@ async function restoreDeletedCharacterSnapshot(snapshot, { refreshCharacters = t
 
         for (const chatSnapshot of snapshot.chats || []) {
             const fileName = String(chatSnapshot?.fileName || '').trim();
-            if (!fileName || !Array.isArray(chatSnapshot?.chat)) {
+            const chatName = ubergeChatNameFromFile(fileName);
+            if (!fileName || !chatName || !Array.isArray(chatSnapshot?.chat)) {
                 continue;
             }
 
-            const response = await fetch('/api/chats/save', {
-                method: 'POST',
+            // TASK-033 reroute: legacy /api/chats/save → uberge document PUT
+            // (accepts the legacy {chat:[header, ...messages]} body shape)
+            const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatarUrl), chatName)}/document`, {
+                method: 'PUT',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
-                    ch_name: snapshot.characterName,
-                    file_name: fileName,
                     chat: structuredClone(chatSnapshot.chat),
-                    avatar_url: avatarUrl,
                     force: true,
                 }),
             });
@@ -3351,13 +3549,10 @@ async function deleteCharacterChatInternal(characterId, fileName, { mediaPrompt 
     const previousSelectedChat = String(character.chat || '');
     const deletedCurrentChat = previousSelectedChat.replace(/\.jsonl$/i, '') === String(fileName).replace(/\.jsonl$/i, '');
 
-    const response = await fetch('/api/chats/delete', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/chats/delete → uberge DELETE chat
+    const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(character.avatar), ubergeChatNameFromFile(fileName)), {
+        method: 'DELETE',
         headers: getRequestHeaders(),
-        body: JSON.stringify({
-            chatfile: `${String(fileName).replace(/\.jsonl$/i, '')}.jsonl`,
-            avatar_url: character.avatar,
-        }),
     });
 
     if (!response.ok) {
@@ -3445,14 +3640,11 @@ export async function deleteCharacterChatByName(characterId, fileName, options =
 export async function replaceCurrentChat() {
     await clearChat({ clearData: true });
 
-    const chatsResponse = await fetch('/api/characters/chats', {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({ avatar_url: characters[this_chid].avatar }),
-    });
+    // TASK-033 reroute: legacy /api/characters/chats → uberge
+    const chatsResponse = await fetchCharacterChatListUberge(characters[this_chid].avatar);
 
     if (chatsResponse.ok) {
-        const chats = Object.values(await chatsResponse.json());
+        const chats = Object.values(chatsResponse.data);
         chats.sort((a, b) => sortMoments(timestampToMoment(a.last_mes), timestampToMoment(b.last_mes)));
 
         if (chats.length && typeof chats[0] === 'object') {
@@ -3715,21 +3907,12 @@ async function getChatBoundLorebookName(chatFile, groupId = null, { avatarUrl = 
             return '';
         }
 
-        const response = await fetch('/api/chats/get', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ch_name: String(characterName || getCharacterName(characters?.[this_chid]) || name2 || ''),
-                file_name: normalizedFileName,
-                avatar_url: resolvedAvatarUrl,
-            }),
-        });
-
-        if (!response.ok) {
+        // TASK-033 reroute: legacy /api/chats/get → uberge
+        const { ok, data } = await fetchCharacterChatUberge(resolvedAvatarUrl, normalizedFileName);
+        if (!ok) {
             return '';
         }
 
-        const data = await response.json();
         const metadata = Array.isArray(data) ? data?.[0]?.chat_metadata : data?.chat_metadata;
         return typeof metadata?.world_info === 'string' ? metadata.world_info.trim() : '';
     } catch (error) {
@@ -3743,10 +3926,11 @@ function hasWorldInfoFile(lorebookName) {
     if (!safeName) {
         return false;
     }
-    // /api/worldinfo/get synthesises `{entries:{}}` + 200 for missing files,
-    // so a network probe can't tell "missing" from "empty but present". Use
-    // the in-memory `world_names` (kept in sync via updateWorldInfoList) and
-    // match through the canonical resolver to handle case/whitespace quirks.
+    // TASK-033: the legacy /api/worldinfo/get probe synthesised `{entries:{}}`
+    // for missing files; the uberge GET now 404s, but the in-memory
+    // `world_names` (kept in sync via updateWorldInfoList) remains the cheaper
+    // existence check — match through the canonical resolver to handle
+    // case/whitespace quirks either way.
     return Boolean(findCanonicalNameInList(Array.isArray(world_names) ? world_names : [], safeName));
 }
 
@@ -12003,22 +12187,14 @@ async function renamePastChats(oldAvatar, newAvatar, newName) {
     for (const { file_name } of pastChats) {
         try {
             const fileNameWithoutExtension = file_name.replace(/\.jsonl$/i, '');
-            const getChatResponse = await fetch('/api/chats/get', {
-                method: 'POST',
-                headers: getRequestHeaders(),
-                body: JSON.stringify({
-                    ch_name: newName,
-                    file_name: fileNameWithoutExtension,
-                    avatar_url: newAvatar,
-                }),
-                cache: 'no-cache',
-            });
+            // TASK-033 reroute: legacy /api/chats/get → uberge
+            const getChatResponse = await fetchCharacterChatUberge(newAvatar, fileNameWithoutExtension);
 
             if (!getChatResponse.ok) {
                 continue;
             }
 
-            const currentChat = await getChatResponse.json();
+            const currentChat = getChatResponse.data;
             if (!Array.isArray(currentChat) || currentChat.length === 0) {
                 continue;
             }
@@ -12045,15 +12221,19 @@ async function renamePastChats(oldAvatar, newAvatar, newName) {
 
             await eventSource.emit(event_types.CHARACTER_RENAMED_IN_PAST_CHAT, currentChat, oldAvatar, newAvatar);
 
-            const patchResponse = await fetch('/api/chats/patch', {
-                method: 'POST',
+            // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH. Ops are
+            // rebased onto the {header, body} doc and the metadata write is an
+            // explicit /header/chat_metadata upsert (the metadata round-trips
+            // the GET-injected live integrity token, so this is self-consistent).
+            const ubergeOps = [
+                ...rebaseChatMessageOpsToUbergeDoc(operations),
+                { op: 'add', path: '/header/chat_metadata', value: currentChat?.[0]?.chat_metadata || {} },
+            ];
+            const patchResponse = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(newAvatar), fileNameWithoutExtension), {
+                method: 'PATCH',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
-                    ch_name: newName,
-                    file_name: fileNameWithoutExtension,
-                    avatar_url: newAvatar,
-                    operations,
-                    chat_metadata: currentChat?.[0]?.chat_metadata || {},
+                    ops: ubergeOps,
                     integrity: currentChat?.[0]?.chat_metadata?.integrity,
                 }),
                 cache: 'no-cache',
@@ -12846,22 +13026,12 @@ async function fetchCurrentServerChatSnapshot(target = resolveChatStateTarget())
             return null;
         }
 
-        const response = await fetch('/api/chats/get', {
-            method: 'POST',
-            cache: 'no-cache',
-            headers: getRequestHeaders(),
-            body: JSON.stringify({
-                ch_name: charName,
-                file_name: resolvedTarget.file_name,
-                avatar_url: resolvedTarget.avatar_url,
-            }),
-        });
-
-        if (!response.ok) {
+        // TASK-033 reroute: legacy /api/chats/get → uberge
+        const { ok, data: payload } = await fetchCharacterChatUberge(resolvedTarget.avatar_url, resolvedTarget.file_name);
+        if (!ok) {
             return null;
         }
 
-        const payload = await response.json().catch(() => null);
         if (!Array.isArray(payload) || payload.length === 0) {
             return {
                 target: resolvedTarget,
@@ -14030,6 +14200,12 @@ export async function resolveChatWriteConflictForTarget(response, target = null,
 
     const payload = await readChatWriteConflictPayload(response);
     const errorType = String(payload?.error || '').trim().toLowerCase();
+    // TASK-033: uberge PATCH/append CAS failures surface as 'integrity_mismatch'
+    // (ConflictError message via sendError) rather than legacy
+    // {error:'integrity', current_integrity}. Normalize to the integrity branch;
+    // a missing current_integrity falls into the existing force-overwrite
+    // recovery, which the uberge `force` flag honours the same way.
+    const normalizedErrorType = errorType === 'integrity_mismatch' ? 'integrity' : errorType;
     const currentIntegrity = typeof payload?.current_integrity === 'string'
         ? payload.current_integrity.trim()
         : '';
@@ -14058,7 +14234,7 @@ export async function resolveChatWriteConflictForTarget(response, target = null,
         }
     }
 
-    if (errorType === 'integrity') {
+    if (normalizedErrorType === 'integrity') {
         if (currentIntegrity) {
             if (metadata && typeof metadata === 'object') {
                 metadata.integrity = currentIntegrity;
@@ -14248,16 +14424,17 @@ async function appendChatMessagesInternal(messages, retryCount = 0, context = nu
             return false;
         }
 
-        const response = await fetch('/api/chats/append', {
+        // TASK-033 reroute: legacy /api/chats/append → uberge messages POST.
+        // uberge reports `accepted` (plus `dedupedGenIds`/`skipped`) where the
+        // legacy endpoint reported `appended`; CAS + luker_generation_id dedup
+        // behave the same. A 404 (missing chat) falls to the caller's full-save
+        // fallback, which recreates the chat like the legacy create-path did.
+        const response = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName))}/messages`, {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),
             body: JSON.stringify({
-                ch_name: charName,
-                file_name: fileName,
                 messages: messages,
-                avatar_url: avatar,
-                chat_metadata: { ...metadata },
                 integrity: metadata.integrity,
                 luker_generation_id: getLastLukerGenerationIdForApi(),
             }),
@@ -14265,7 +14442,7 @@ async function appendChatMessagesInternal(messages, retryCount = 0, context = nu
 
         if (response.ok) {
             const payload = await response.json().catch(() => null);
-            const appendedCount = Number(payload?.appended || 0);
+            const appendedCount = Number(payload?.accepted ?? payload?.appended ?? 0);
             const skippedCount = Number(payload?.skipped || 0);
             console.debug('[ChatWrite]', {
                 phase: 'append_result',
@@ -14428,16 +14605,21 @@ async function patchChatMessagesInternal(operations, retryCount = 0, context = n
             return false;
         }
 
-        const response = await fetch('/api/chats/patch', {
-            method: 'POST',
+        // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH. The uberge
+        // doc is rooted at {header, body}, so message-array ops rebase to
+        // '/body/*' and the legacy server-side chat_metadata merge becomes
+        // explicit '/header/chat_metadata/*' diff ops (built against the last
+        // metadata snapshot, which mirrors the legacy merge semantics).
+        const ubergeOps = [
+            ...rebaseChatMessageOpsToUbergeDoc(guardedOperations),
+            ...buildUbergeHeaderMetadataOps(getChatMetadataSnapshot(target), metadata),
+        ];
+        const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName)), {
+            method: 'PATCH',
             cache: 'no-cache',
             headers: getRequestHeaders(),
             body: JSON.stringify({
-                ch_name: charName,
-                file_name: fileName,
-                operations: guardedOperations,
-                avatar_url: avatar,
-                chat_metadata: { ...metadata },
+                ops: ubergeOps,
                 integrity: metadata.integrity,
                 luker_generation_id: getLastLukerGenerationIdForApi(),
             }),
@@ -14671,17 +14853,22 @@ async function saveChatMetadataInternal(withMetadata = undefined, retryCount = 0
                 return false;
             }
             refreshSnapshotIntegrityFromActiveLive(target, metadata);
-            const response = await fetch('/api/chats/meta/patch', {
-                method: 'POST',
+            // TASK-033 reroute: legacy /api/chats/meta/patch → uberge PATCH.
+            // Meta ops root at the chat_metadata object → rebase to
+            // '/header/chat_metadata/*'; uberge has no `force` flag — omitting
+            // `integrity` skips the CAS check, same effect.
+            const ubergeMetaOps = (operations || []).map((op) => (
+                op && typeof op === 'object' && typeof op.path === 'string'
+                    ? { ...op, path: `/header/chat_metadata${op.path}` }
+                    : op
+            ));
+            const response = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(target.avatar_url), ubergeChatNameFromFile(target.file_name)), {
+                method: 'PATCH',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
                 body: JSON.stringify({
-                    ch_name: charName,
-                    file_name: target.file_name,
-                    avatar_url: target.avatar_url,
-                    operations,
-                    integrity: metadata?.integrity,
-                    force: effectiveForce,
+                    ops: ubergeMetaOps,
+                    ...(effectiveForce ? {} : { integrity: metadata?.integrity }),
                 }),
             });
 
@@ -14865,18 +15052,20 @@ async function saveChatInternal({ chatName, withMetadata, mesId, force = false, 
                 // snapshot reflects what BE will hold once it applies our ops, not whatever chat[]
                 // has been mutated into by plugins while we await.
                 rememberChatMessageSnapshot(writeTarget, trimmedChat);
-                const patchResult = await fetch('/api/chats/patch', {
-                    method: 'POST',
+                // TASK-033 reroute: legacy /api/chats/patch → uberge PATCH (ops
+                // rebased to '/body/*', chat_metadata merge → '/header/chat_metadata/*'
+                // diff ops; `force` maps to omitting the CAS token).
+                const ubergePatchOps = [
+                    ...rebaseChatMessageOpsToUbergeDoc(operations),
+                    ...buildUbergeHeaderMetadataOps(getChatMetadataSnapshot(writeTarget), metadata),
+                ];
+                const patchResult = await fetch(ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName)), {
+                    method: 'PATCH',
                     cache: 'no-cache',
                     headers: getRequestHeaders(),
                     body: JSON.stringify({
-                        ch_name: charName,
-                        file_name: fileName,
-                        operations,
-                        avatar_url: avatar,
-                        chat_metadata: metadata,
-                        integrity: metadata?.integrity,
-                        force: effectiveForce,
+                        ops: ubergePatchOps,
+                        ...(effectiveForce ? {} : { integrity: metadata?.integrity }),
                         luker_generation_id: getLastLukerGenerationIdForApi(),
                     }),
                 });
@@ -14915,15 +15104,16 @@ async function saveChatInternal({ chatName, withMetadata, mesId, force = false, 
         // Same pre-await commit as the patch path: snapshot must represent what we are sending,
         // not whatever chat[] looks like after plugins mutate it during the round-trip.
         rememberChatMessageSnapshot(writeTarget, trimmedChat);
-        const result = await fetch('/api/chats/save', {
-            method: 'POST',
+        // TASK-033 reroute: legacy /api/chats/save → uberge document PUT. The
+        // route accepts the legacy {chat:[header, ...messages]} body; CAS still
+        // reads the integrity token out of chat[0].chat_metadata, and `force`
+        // skips it exactly like the legacy endpoint.
+        const result = await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(avatar), ubergeChatNameFromFile(fileName))}/document`, {
+            method: 'PUT',
             cache: 'no-cache',
             headers: getRequestHeaders(),
             body: JSON.stringify({
-                ch_name: charName,
-                file_name: fileName,
                 chat: [chatHeader, ...trimmedChat],
-                avatar_url: avatar,
                 force: effectiveForce,
             }),
         });
@@ -15159,22 +15349,12 @@ export async function getChat() {
     try {
         await unshallowCharacter(this_chid);
 
-        const response = await fetch('/api/chats/get', {
-            method: 'POST',
-            headers: getRequestHeaders(),
-            cache: 'no-cache',
-            body: JSON.stringify({
-                ch_name: getCharacterName(characters[this_chid]),
-                file_name: characters[this_chid].chat,
-                avatar_url: characters[this_chid].avatar,
-            }),
-        });
+        // TASK-033 reroute: legacy /api/chats/get → uberge
+        const { ok, data } = await fetchCharacterChatUberge(characters[this_chid].avatar, characters[this_chid].chat);
 
-        if (!response.ok) {
+        if (!ok) {
             throw new Error('Chat could not be loaded');
         }
-
-        const data = await response.json();
 
         // Corrupted chat file — do NOT overwrite server data
         if (data?.corrupted) {
@@ -15754,24 +15934,9 @@ function installSettingsGetRequestInterceptor() {
     settingsGetRequestInterceptorInstalled = true;
 }
 
-async function fetchSettingsPayload(endpoint, { silent = false } = {}) {
-    const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: getRequestHeaders(),
-        body: JSON.stringify({}),
-        cache: 'no-cache',
-    });
-
-    if (!response.ok) {
-        if (!silent) {
-            reloadLoop();
-            toastr.error(t`Settings could not be loaded after multiple attempts. Please try again later.`);
-        }
-        throw new Error(`Error getting settings from ${endpoint}`);
-    }
-
-    return response.json();
-}
+// TASK-033: fetchSettingsPayload(POST /api/settings/{get,bootstrap}) removed —
+// getSettings now reads the document via GET /api/uberge/settings and rebuilds
+// the envelope client-side (see loadUbergeSettingsEnvelope).
 
 async function fetchBootstrapSnapshot() {
     try {
@@ -15838,7 +16003,11 @@ export async function ensureFullSettingsLoaded() {
 export async function getSettings(options = {}) {
     let onboardingTask = null;
     const useBootstrap = options?.bootstrap === true;
-    const data = options?.payload ?? await fetchSettingsPayload(useBootstrap ? '/api/settings/bootstrap' : '/api/settings/get');
+    // TASK-033 reroute: settings doc reads → GET /api/uberge/settings, with the
+    // legacy envelope (presets/world names/themes/enable_* flags) rebuilt around
+    // it. Covers both the old POST /api/settings/get and the bootstrap fallback;
+    // the primed bootstrap call arrives via options.payload and never fetches.
+    const data = options?.payload ?? await loadUbergeSettingsEnvelope({ bootstrap: useBootstrap });
 
     if (!useBootstrap) {
         hydrateFullSettingsPresetData(data);
@@ -16094,6 +16263,50 @@ function buildSettingsPayload() {
     });
 }
 
+/**
+ * TASK-033: convert a settings op-set into a PATCH /api/uberge/settings body
+ * when every op stays inside the two uberge-patchable top-level sections
+ * (power_user / extension_settings). The uberge route shallow-merges
+ * {section:{...}} — ops are applied to the previous snapshot's section and the
+ * resulting section object becomes the merge value. Returns null when the
+ * patch is ineligible: ops touch other sections, or carry remove/move/copy
+ * semantics a shallow merge can't express (merges can set but never delete).
+ */
+const UBERGE_PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']);
+
+function buildUbergeSettingsPatchBody(operations, previousSnapshot) {
+    if (!Array.isArray(operations) || operations.length === 0) {
+        return null;
+    }
+    const sectionOps = new Map();
+    for (const operation of operations) {
+        const path = String(operation?.path ?? '');
+        if (!path.startsWith('/')) {
+            return null;
+        }
+        const topKey = decodeJsonPointerSegment(path.split('/')[1] ?? '');
+        if (!UBERGE_PATCHABLE_SETTINGS_SECTIONS.has(topKey)) {
+            return null;
+        }
+        const opName = String(operation?.op ?? '').toLowerCase();
+        if (opName !== 'add' && opName !== 'replace' && opName !== 'test') {
+            return null;
+        }
+        const nestedPath = path.slice(topKey.length + 1);
+        if (!sectionOps.has(topKey)) {
+            sectionOps.set(topKey, []);
+        }
+        sectionOps.get(topKey).push({ ...operation, path: nestedPath });
+    }
+    const patch = {};
+    for (const [key, ops] of sectionOps) {
+        const base = isPlainObject(previousSnapshot?.[key]) ? structuredClone(previousSnapshot[key]) : {};
+        const applyResult = applyJsonPatch(base, ops, false, false);
+        patch[key] = applyResult?.newDocument ?? base;
+    }
+    return Object.keys(patch).length > 0 ? patch : null;
+}
+
 //MARK: saveSettings()
 async function saveSettingsInternal(loopCounter = 0, options = {}) {
     if (!settingsReady) {
@@ -16128,18 +16341,39 @@ async function saveSettingsInternal(loopCounter = 0, options = {}) {
                 // Use ops count (not byte comparison) to decide patch vs full save —
                 // avoids JSON.stringify-ing the entire settings payload just to
                 // measure its length when the patch is obviously the smaller body.
-                const patchResult = await fetch('/api/settings/patch', {
-                    method: 'POST',
-                    headers: getRequestHeaders(),
-                    body: JSON.stringify({ operations }),
-                    cache: 'no-cache',
-                });
-                saved = patchResult.ok;
+                const ubergePatch = buildUbergeSettingsPatchBody(operations, previousSnapshot);
+                if (ubergePatch) {
+                    // TASK-033 reroute: legacy /api/settings/patch → uberge
+                    // PATCH (section merge for power_user/extension_settings)
+                    const patchResult = await fetch('/api/uberge/settings', {
+                        method: 'PATCH',
+                        headers: getRequestHeaders(),
+                        body: JSON.stringify(ubergePatch),
+                        cache: 'no-cache',
+                    });
+                    saved = patchResult.ok;
+                } else {
+                    // TASK-033 keep-legacy: ops touch settings sections outside
+                    // the uberge PATCH whitelist (power_user/extension_settings)
+                    // or carry remove/move semantics the section merge can't
+                    // express — must stay on the ops-capable legacy endpoint.
+                    const patchResult = await fetch('/api/settings/patch', {
+                        method: 'POST',
+                        headers: getRequestHeaders(),
+                        body: JSON.stringify({ operations }),
+                        cache: 'no-cache',
+                    });
+                    saved = patchResult.ok;
+                }
             }
             // else: too many ops or overflow sentinel — fall through to full save below.
         }
 
         if (!saved) {
+            // TASK-033 keep-legacy: /api/settings/save writes the FULL settings
+            // document — the uberge settings surface only offers a whitelisted
+            // section PATCH (power_user/extension_settings), so there is no
+            // equivalent route for whole-document saves.
             const result = await fetch('/api/settings/save', {
                 method: 'POST',
                 headers: getRequestHeaders(),
@@ -16585,19 +16819,26 @@ export async function getChatsFromFiles(data, isGroupChat) {
     let chat_promise = chat_list.map(({ file_name }) => {
         return new Promise(async (res, rej) => {
             try {
-                const endpoint = isGroupChat ? '/api/chats/group/get' : '/api/chats/get';
-                const requestBody = isGroupChat
-                    ? JSON.stringify({ id: file_name })
-                    : JSON.stringify({
-                        ch_name: getCharacterName(characters[context.characterId]),
-                        file_name: file_name.replace(/\.jsonl$/i, ''),
-                        avatar_url: characters[context.characterId].avatar,
-                    });
+                // TASK-033 reroute: character half → uberge GET chat; the group
+                // half keeps the legacy group endpoint (no uberge group surface).
+                if (!isGroupChat) {
+                    const { ok, data: currentChat } = await fetchCharacterChatUberge(
+                        characters[context.characterId]?.avatar,
+                        file_name,
+                    );
+                    // remove the first entry, which is the chat header metadata
+                    if (!ok || !Array.isArray(currentChat)) {
+                        return res();
+                    }
+                    currentChat.shift();
+                    chat_dict[file_name] = currentChat;
+                    return res();
+                }
 
-                const chatResponse = await fetch(endpoint, {
+                const chatResponse = await fetch('/api/chats/group/get', {
                     method: 'POST',
                     headers: getRequestHeaders(),
-                    body: requestBody,
+                    body: JSON.stringify({ id: file_name }),
                     cache: 'no-cache',
                 });
 
@@ -16607,10 +16848,6 @@ export async function getChatsFromFiles(data, isGroupChat) {
                 }
 
                 const currentChat = await chatResponse.json();
-                if (!isGroupChat) {
-                    // remove the first message, which is metadata, only for individual chats
-                    currentChat.shift();
-                }
                 chat_dict[file_name] = currentChat;
             } catch (error) {
                 console.error(error);
@@ -16640,18 +16877,10 @@ export async function getPastCharacterChats(characterId = null) {
     characterId = characterId ?? parseInt(this_chid);
     if (!characters[characterId]) return [];
 
-    const response = await fetch('/api/characters/chats', {
-        method: 'POST',
-        body: JSON.stringify({ avatar_url: characters[characterId].avatar }),
-        headers: getRequestHeaders(),
-    });
+    // TASK-033 reroute: legacy /api/characters/chats → uberge
+    const { ok, data } = await fetchCharacterChatListUberge(characters[characterId].avatar);
 
-    if (!response.ok) {
-        return [];
-    }
-
-    const data = await response.json();
-    if (typeof data === 'object' && data.error === true) {
+    if (!ok) {
         return [];
     }
 
@@ -19432,11 +19661,21 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
     }) : null;
 
     try {
-        const response = await fetch('/api/chats/rename', {
-            method: 'POST',
-            body: JSON.stringify(body),
-            headers: getRequestHeaders(),
-        });
+        // TASK-033 reroute: character half → uberge rename POST; the group half
+        // keeps the legacy endpoint (no uberge group surface). uberge answers
+        // {ok, name, fileName} — `name` fills the role of legacy
+        // `sanitizedFileName` (the on-disk id form).
+        const response = body.is_group
+            ? await fetch('/api/chats/rename', {
+                method: 'POST',
+                body: JSON.stringify(body),
+                headers: getRequestHeaders(),
+            })
+            : await fetch(`${ubergeChatRoute(ubergeCharDirFromAvatar(body.avatar_url), ubergeChatNameFromFile(body.original_file))}/rename`, {
+                method: 'POST',
+                body: JSON.stringify({ newName: ubergeChatNameFromFile(body.renamed_file) }),
+                headers: getRequestHeaders(),
+            });
 
         if (!response.ok) {
             throw new Error('Unsuccessful request.');
@@ -19448,8 +19687,9 @@ export async function renameGroupOrCharacterChat({ characterId, groupId, oldFile
             throw new Error('Server returned an error.');
         }
 
-        if (data.sanitizedFileName) {
-            newFileName = data.sanitizedFileName;
+        const sanitizedName = data.sanitizedFileName ?? data.name;
+        if (sanitizedName) {
+            newFileName = sanitizedName;
         }
 
         if (groupId) {
@@ -22281,14 +22521,18 @@ jQuery(async function () {
                 let previousLorebookSnapshot = null;
                 if (previousBookName) {
                     try {
-                        const response = await fetch('/api/worldinfo/get', {
-                            method: 'POST',
+                        // TASK-033 reroute: legacy /api/worldinfo/get → uberge
+                        // GET /worlds/:name ({name, doc}); 404 maps to the legacy
+                        // missing-file `{entries:{}}` answer.
+                        const response = await fetch(`/api/uberge/worlds/${encodeURIComponent(previousBookName)}`, {
+                            method: 'GET',
                             headers: getRequestHeaders(),
-                            body: JSON.stringify({ name: previousBookName }),
                             cache: 'no-cache',
                         });
-                        if (response.ok) {
-                            const payload = await response.json();
+                        const payload = response.ok
+                            ? (await response.json().catch(() => null))?.doc ?? null
+                            : (response.status === 404 ? { entries: {} } : null);
+                        if (payload) {
                             const entries = payload && typeof payload === 'object' && payload.entries && typeof payload.entries === 'object'
                                 ? payload.entries
                                 : {};
@@ -22313,14 +22557,22 @@ jQuery(async function () {
                         let replacedCharacter = null;
                         if (previousAvatar) {
                             try {
-                                const response = await fetch('/api/characters/get', {
-                                    method: 'POST',
+                                // TASK-033 reroute: legacy /api/characters/get →
+                                // uberge card read. uberge returns the raw stored
+                                // card JSON (v2 cards carry data.* inline); the
+                                // event consumers need `.avatar` + `.data.*`, so
+                                // the avatar filename is restored onto the card.
+                                const charDir = ubergeCharDirFromAvatar(previousAvatar);
+                                const response = await fetch(`/api/uberge/characters/${encodeURIComponent(charDir)}`, {
+                                    method: 'GET',
                                     headers: getRequestHeaders(),
-                                    body: JSON.stringify({ avatar_url: previousAvatar }),
                                     cache: 'no-cache',
                                 });
                                 if (response.ok) {
-                                    replacedCharacter = await response.json();
+                                    const card = await response.json().catch(() => null);
+                                    replacedCharacter = card && typeof card === 'object' && !Array.isArray(card)
+                                        ? { ...card, avatar: card.avatar ?? previousAvatar, name: card?.data?.name ?? card?.name }
+                                        : null;
                                 }
                             } catch (error) {
                                 // A dropped connection or unreadable body must not

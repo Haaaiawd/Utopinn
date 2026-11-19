@@ -58,6 +58,10 @@ function mapStatePatchError(error, response) {
     return null;
 }
 
+// TASK-032 state sidecar 复用口:/api/uberge/state/preset/* 插件路由与
+// legacy /api/presets/state/* 共用同一组 apiId/namespace/patch 判定。
+export { isValidApiId, normalizePresetStateNamespace, mapStatePatchError };
+
 router.get('/list', async function (request, response) {
     const apiId = String(request.query?.apiId || '');
     if (!isValidApiId(apiId)) {

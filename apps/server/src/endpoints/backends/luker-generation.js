@@ -433,6 +433,7 @@ export function notifyJobTextProgress(job) {
 
 function buildGenerationJobRequestMeta(request, persistTarget) {
     return {
+        verb: String(request.body?.type || ''),
         api: String(request.body?.chat_completion_source || request.body?.api_type || request.body?.api || 'unknown'),
         char_name: String(persistTarget?.char_name || request.body?.char_name || 'Assistant'),
         model: String(request.body?.model || ''),
@@ -1122,6 +1123,8 @@ export function listGenerationJobsForRequest(request) {
         .map(job => ({
             id: job.id,
             status: job.status,
+            verb: job.requestMeta?.verb ?? null,
+            model: job.modelName || job.requestMeta?.model || '',
             chatKey: job.chatKey ?? null,
             textPreview: String(job.text ?? '').slice(0, 120),
             error: job.error || null,
