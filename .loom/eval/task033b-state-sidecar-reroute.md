@@ -135,3 +135,10 @@ the 9caa2eb `utopinnChatRoute` adapters.
 - ai-chat.js prompt text now names the utopinn path; if the assistant
   extension ever emits direct legacy fetches they still work (legacy
   mounted), so worst case is a doc inconsistency, not breakage.
+
+## 浏览器实证补记 (2026-11-19 Playwright 真烟)
+
+- 点开「诡异修仙人生模拟器」聊天后,浏览器发出 10+ 个 state GET,全部命中 /api/utopinn/state/chat/get 与 /api/utopinn/state/char/get
+- query keys 全保留: account/avatar_url/file_name/is_group/namespace
+- XHR+fetch 拦截核对: 0 个 legacy chat_state/char_state/preset_state 调用
+- 等价性此前仅靠共享 handler 论证,现已真链过 HTTP 观察确认
