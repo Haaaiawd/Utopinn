@@ -2692,6 +2692,16 @@
     "不恢复 apps/web/apps/mobile 工作(仍 parked)"
    ],
    "updated_at": "2026-11-10T02:29:53.123Z"
+  },
+  {
+   "id": "TASK-031",
+   "status": "open",
+   "title": "CLI 薄客户端 uberge-cli:命令行全操控面(会话/生成流式/楼层/诊断)",
+   "depends_on": [
+    "TASK-030"
+   ],
+   "notes": "capability doc: .loom/capabilities/cli-client/capability.md。零依赖单文件 Node≥22;会话/WS 帧与浏览器同 wire;v1: use/chars/chats/send/regen/swipe/continue/history/inspect/preview。驱动 10 轮诡异修仙实测+前端展示核对。",
+   "progress": "构思文档入库"
   }
  ],
  "milestones": [

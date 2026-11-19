@@ -248,8 +248,10 @@ async function writeOp(op, body, { retried = false } = {}) {
         if (data?.integrity) saveState({ integrity: data.integrity });
         return data;
     } catch (e) {
-        // 409 自动重锚一次(生成中 WI timed effects CAS 推进 integrity 是正常路径)
-        if ((e.status === 409 || e.code === 'integrity_conflict') && !retried && !flags.force) {
+        // 409 分两种:integrity CAS(可重锚重试)vs patch op 冲突(重试无用)。
+        // 只在前者重试——op 冲突(e.g. replace 缺键)是代码 bug,重试同样挂。
+        const isIntegrity409 = e.status === 409 && /integrity/i.test(JSON.stringify(e.data ?? '') + e.message);
+        if (isIntegrity409 && !retried && !flags.force) {
             warn('integrity 409 — 重锚后重试一次');
             const cur = await getChat(charDir, chatName);
             const fresh = cur?.[0]?.chat_metadata?.integrity ?? '';
@@ -542,7 +544,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             if (!swipeInfo.length) ops.push({ op: 'add', path: `/${bodyIdx}/swipe_info`, value: [{ send_date: last.send_date, gen_started: last.gen_started, gen_finished: last.gen_finished, extra: last.extra ?? {} }] });
             ops.push({ op: 'add', path: `/${bodyIdx}/swipes/-`, value: text });
             ops.push({ op: 'add', path: `/${bodyIdx}/swipe_info/-`, value: { send_date: isoNow(), gen_started: new Date(started).toISOString(), gen_finished: genFinished, extra: { api: 'cli', model: status?.model ?? '' } } });
-            ops.push({ op: 'replace', path: `/${bodyIdx}/swipe_id`, value: swipes.length });
+            ops.push({ op: 'add', path: `/${bodyIdx}/swipe_id`, value: swipes.length || 1 });
             ops.push({ op: 'replace', path: `/${bodyIdx}/mes`, value: text });
             writeResult = await patchFloors(ops, { luker_generation_id: jobId });
             ndjson({ type: 'write', op: 'patch-swipe', applied: writeResult?.applied ?? ops.length });
@@ -556,8 +558,14 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             const swipeId = Number.isInteger(last.swipe_id) ? last.swipe_id : null;
             if (swipes && swipeId != null && swipeId < swipes.length) {
                 ops.push({ op: 'replace', path: `/${bodyIdx}/swipes/${swipeId}`, value: merged });
+            } else if (!swipes) {
+                // 服务端兜底 persist 的楼层没有 swipe 结构 —— 补全(上游 normalize 语义)
+                ops.push({ op: 'add', path: `/${bodyIdx}/swipes`, value: [merged] });
+                ops.push({ op: 'add', path: `/${bodyIdx}/swipe_id`, value: 0 });
+                ops.push({ op: 'add', path: `/${bodyIdx}/swipe_info`, value: [{ send_date: last.send_date ?? isoNow(), gen_started: last.gen_started ?? isoNow(), gen_finished: genFinished, extra: last.extra ?? {} }] });
             }
-            ops.push({ op: 'replace', path: `/${bodyIdx}/gen_finished`, value: genFinished });
+            // add 对缺键/已存在都成立;replace 遇缺键直接 409
+            ops.push({ op: 'add', path: `/${bodyIdx}/gen_finished`, value: genFinished });
             writeResult = await patchFloors(ops, { luker_generation_id: jobId });
             ndjson({ type: 'write', op: 'patch-continue', applied: writeResult?.applied ?? ops.length });
         } else if (verb === 'impersonate' && flags.write) {
@@ -569,7 +577,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     // ⑤收尾:ack 后 job 应翻 completed;轮一次终态兜底
     const finalStatus = await pollStatus(jobId, { waitMs: 20_000 }) ?? status;
     const elapsed = Date.now() - started;
-    const cosmetic = ['impersonate', 'quiet'].includes(verb) && finalStatus?.status === 'failed';
+    const cosmetic = ['impersonate', 'quiet', 'continue', 'swipe'].includes(verb) && finalStatus?.status === 'failed';
     saveState({
         lastJob: { id: jobId, type, status: finalStatus?.status ?? 'unknown', at: Date.now(), chars: text.length },
         lastReplyPreview: trunc(text, 80),
@@ -1080,12 +1088,12 @@ async function cmdSwipe() {
         }
         const info = Array.isArray(m.swipe_info) ? m.swipe_info[n] : null;
         const ops = [
-            { op: 'replace', path: `/${idx - 1}/swipe_id`, value: n },
+            { op: 'add', path: `/${idx - 1}/swipe_id`, value: n },
             { op: 'replace', path: `/${idx - 1}/mes`, value: swipes[n] },
         ];
         if (info) {
             for (const k of ['send_date', 'gen_started', 'gen_finished', 'extra']) {
-                if (info[k] !== undefined) ops.push({ op: 'replace', path: `/${idx - 1}/${k}`, value: info[k] });
+                if (info[k] !== undefined) ops.push({ op: 'add', path: `/${idx - 1}/${k}`, value: info[k] });
             }
         }
         await patchFloors(ops);
