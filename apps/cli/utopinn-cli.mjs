@@ -1475,8 +1475,9 @@ async function cmdJobs() {
 async function cmdInspect() {
     const id = positional[1] || state.lastJob?.id;
     if (!id) return void fail('usage', 'utopinn inspect <jobId>(或先生成一次)', { rc: 2 });
-    const { data: d } = await req('GET', `/api/utopinn/jobs/${id}`, undefined, { allowFail: true });
-    if (!d || d.error) return void fail('not_found', `job not found: ${id}`, { hint: 'utopinn jobs 看列表' });
+    const { data: d, status } = await req('GET', `/api/utopinn/jobs/${id}`, undefined, { allowFail: true });
+    // failed job 自带 error 字段——别把 job 状态误判成 404;not_found 只认 HTTP 404。
+    if (!d || status === 404) return void fail('not_found', `job not found: ${id}`, { hint: 'utopinn jobs 看列表' });
     saveState({ lastJob: { id, type: d.type ?? state.lastJob?.type, status: d.status, at: Date.now(), chars: (d.text ?? '').length } });
     const src = d.sources ?? {};
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(d, null, 2)); warn(`wrote ${flags.out}`); }
@@ -2709,4 +2710,13 @@ try {
     });
 }
 ring(CMD ?? '?', exitCode);
-process.exit(exitCode);
+// 大 envelope(~140KB)写管道时 console.log 只进缓冲——直接 exit 会截断 stdout。
+// 等 writableLength 排空再走;3s 兜底防 drain 卡死。
+const drainExit = () => {
+    if (process.stdout.writableLength > 0 || process.stdout.writableNeedDrain) {
+        return void setTimeout(drainExit, 10);
+    }
+    process.exit(exitCode);
+};
+setTimeout(() => process.exit(exitCode), 3000).unref();
+drainExit();
