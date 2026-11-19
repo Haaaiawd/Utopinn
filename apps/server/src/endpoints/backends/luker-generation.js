@@ -957,6 +957,19 @@ async function persistGenerationJobIfUnacked(job) {
         return false;
     }
 
+    // kind:'none' 目标由客户端拥有写盘(swipe/continue/impersonate/quiet):
+    // 服务端无可落盘对象,兜底触发即「客户端未在 grace 内写盘+ack」——
+    // 不是上游生成失败,错误信息要说清是谁的责任。
+    if (!job.persistTarget || job.persistTarget.kind !== 'character' && job.persistTarget.kind !== 'group') {
+        job.status = 'failed';
+        job.error = 'Client-owned persist target was not written/acknowledged within grace (kind: none).';
+        job.updatedAt = Date.now();
+        job.finishedAt = Date.now();
+        job.persisted = false;
+        notifyJobStatus(job);
+        return false;
+    }
+
     job.status = 'persisting';
     job.persistenceInFlight = true;
     job.updatedAt = Date.now();
