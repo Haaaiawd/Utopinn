@@ -7640,10 +7640,10 @@ async function onDeletePresetClick() {
         $('#settings_preset_openai').trigger('change');
     }
 
-    const response = await fetch('/api/presets/delete', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/presets/delete → DELETE /api/uberge/presets/:name
+    const response = await fetch(`/api/uberge/presets/${encodeURIComponent(nameToDelete)}?apiId=openai`, {
+        method: 'DELETE',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ apiId: 'openai', name: nameToDelete }),
     });
 
     if (!response.ok) {

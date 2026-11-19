@@ -3076,21 +3076,22 @@ export async function loadWorldInfo(name) {
 }
 
 export async function updateWorldInfoList() {
-    const result = await fetch('/api/worldinfo/list', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
+    // ({items:[{name, displayName, extensions}]} vs legacy [{file_id, extensions}]).
+    const result = await fetch('/api/uberge/worlds', {
+        method: 'GET',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        cache: 'no-cache',
     });
 
     if (result.ok) {
-        const data = await result.json();
+        const payload = await result.json();
+        const data = Array.isArray(payload?.items) ? payload.items : [];
         const editorSelected = getSelectedWorldEditorName();
         worldInfoManagerMetadata.clear();
-        world_names = Array.isArray(data)
-            ? data
-                .map((entry) => String(entry?.file_id || '').trim())
-                .filter(Boolean)
-            : [];
+        world_names = data
+            .map((entry) => String(entry?.name || entry?.file_id || '').trim())
+            .filter(Boolean);
         selected_world_info = selected_world_info
             .map((name) => resolveWorldInfoName(name))
             .filter(Boolean)
@@ -3121,14 +3122,12 @@ export async function updateWorldInfoList() {
             }
         }
 
-        if (Array.isArray(data)) {
-            data.forEach((entry) => {
-                const name = String(entry?.file_id || '').trim();
-                if (name) {
-                    setWorldInfoManagerMetadata(name, entry?.extensions);
-                }
-            });
-        }
+        data.forEach((entry) => {
+            const name = String(entry?.name || entry?.file_id || '').trim();
+            if (name) {
+                setWorldInfoManagerMetadata(name, entry?.extensions);
+            }
+        });
     }
 
     invalidateWorldInfoManagerEntrySearch();
@@ -5526,27 +5525,27 @@ async function promptWorldInfoTags(name) {
 }
 
 async function refreshWorldInfoManagerMetadata() {
-    const result = await fetch('/api/worldinfo/list', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
+    const result = await fetch('/api/uberge/worlds', {
+        method: 'GET',
         headers: getRequestHeaders(),
-        body: JSON.stringify({}),
+        cache: 'no-cache',
     });
 
     if (!result.ok) {
         return false;
     }
 
-    const data = await result.json();
+    const payload = await result.json();
+    const data = Array.isArray(payload?.items) ? payload.items : [];
     worldInfoManagerMetadata.clear();
-    if (Array.isArray(data)) {
-        data.forEach((entry) => {
-            const name = String(entry?.file_id || entry?.name || '').trim();
-            if (!name) {
-                return;
-            }
-            setWorldInfoManagerMetadata(name, entry?.extensions);
-        });
-    }
+    data.forEach((entry) => {
+        const name = String(entry?.name || entry?.file_id || '').trim();
+        if (!name) {
+            return;
+        }
+        setWorldInfoManagerMetadata(name, entry?.extensions);
+    });
 
     renderWorldInfoManager();
     return true;
@@ -8169,6 +8168,9 @@ async function saveWorldInfoInternal(name, data, options = {}) {
         if (operations.length === 0) {
             saved = true;
         } else {
+            // TASK-033 keep-legacy: no PATCH route exists on the uberge worlds
+            // surface (only GET/list + PUT doc + DELETE) — incremental diffs
+            // still go through the ops-capable legacy endpoint.
             const patchResult = await fetch('/api/worldinfo/patch', {
                 method: 'POST',
                 headers: getRequestHeaders(),
@@ -8179,10 +8181,12 @@ async function saveWorldInfoInternal(name, data, options = {}) {
     }
 
     if (!saved) {
-        const fullSaveResult = await fetch('/api/worldinfo/edit', {
-            method: 'POST',
+        // TASK-033 reroute: legacy /api/worldinfo/edit → PUT /api/uberge/worlds/:name
+        // (the world doc IS the request body; name moves into the path).
+        const fullSaveResult = await fetch(`/api/uberge/worlds/${encodeURIComponent(name)}`, {
+            method: 'PUT',
             headers: getRequestHeaders(),
-            body: JSON.stringify({ name: name, data: payload }),
+            body: JSON.stringify(payload),
         });
         if (!fullSaveResult.ok) {
             throw new Error(`Failed to save world info: ${fullSaveResult.status}`);
@@ -8436,10 +8440,10 @@ export async function deleteWorldInfo(worldInfoName) {
     }
     invalidateWorldInfoRequestCache([resolvedWorldInfoName]);
 
-    const response = await fetch('/api/worldinfo/delete', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/worldinfo/delete → DELETE /api/uberge/worlds/:name
+    const response = await fetch(`/api/uberge/worlds/${encodeURIComponent(resolvedWorldInfoName)}`, {
+        method: 'DELETE',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ name: resolvedWorldInfoName }),
     });
 
     if (!response.ok) {

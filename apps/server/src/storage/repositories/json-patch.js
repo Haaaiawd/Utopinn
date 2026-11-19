@@ -1,6 +1,6 @@
 import _ from 'lodash';
 
-import { PatchTestFailedError, PatchMissingParentError, UnsupportedPatchOpError, UnsafePatchPathError } from '../errors.js';
+import { ConflictError, PatchTestFailedError, PatchMissingParentError, UnsupportedPatchOpError, UnsafePatchPathError } from '../errors.js';
 
 export function applyJsonPatch(doc, ops) {
     const result = _.cloneDeep(doc);
@@ -8,13 +8,14 @@ export function applyJsonPatch(doc, ops) {
         const segs = op.path.split('/').slice(1).map(decode);
         assertSafePath(result, segs, op.path);
         if (op.op === 'test') {
-            if (!_.isEqual(getAt(result, segs), op.value)) {
+            // 不存在的位置即失败(不能拿 undefined 跟缺省 value 对成 true)
+            if (!hasAt(result, segs) || !_.isEqual(getAt(result, segs), op.value)) {
                 throw new PatchTestFailedError(op.path);
             }
             continue;
         }
         if (op.op === 'replace') { setAt(result, segs, op.value, op.path); continue; }
-        if (op.op === 'add')     { addAt(result, segs, op.value); continue; }
+        if (op.op === 'add')     { addAt(result, segs, op.value, op.path); continue; }
         if (op.op === 'remove')  { removeAt(result, segs, op.path); continue; }
         throw new UnsupportedPatchOpError(op.op);
     }
@@ -40,27 +41,44 @@ function assertSafePath(doc, segs, path) {
     }
 }
 function getAt(o, segs) { return segs.reduce((c, s) => (c == null ? c : c[s]), o); }
-function setAt(o, segs, v, path) {
-    const p = getAt(o, segs.slice(0, -1));
-    if (p == null) throw new PatchMissingParentError('replace', path);
-    p[segs[segs.length - 1]] = v;
+function hasAt(o, segs) {
+    let c = o;
+    for (const s of segs) {
+        if (c === null || typeof c !== 'object' || !(s in c)) return false;
+        c = c[s];
+    }
+    return true;
 }
-function addAt(o, segs, v) {
-    const p = ensureParent(o, segs);
-    const k = segs[segs.length - 1];
-    if (Array.isArray(p)) { const i = k === '-' ? p.length : Number(k); p.splice(i, 0, v); } else p[k] = v;
+/** 数组下标校验:add 允许 0..len('-' 尾),replace/remove 只允许 0..len-1。 */
+function checkIndex(p, k, path, allowAppend) {
+    if (k === '-' && allowAppend) return p.length;
+    const i = Number(k);
+    const ok = Number.isInteger(i) && i >= 0 && (allowAppend ? i <= p.length : i < p.length);
+    if (!ok) throw new ConflictError('patch_index_out_of_bounds', { path });
+    return i;
 }
-function ensureParent(o, segs) {
+/** 严格父解析:任何中间段缺失/非对象 → PatchMissingParentError(不自增生)。 */
+function strictParent(o, segs, op, path) {
     let c = o;
     for (let i = 0; i < segs.length - 1; i++) {
-        if (c[segs[i]] == null) c[segs[i]] = {};
+        if (c === null || typeof c !== 'object') throw new PatchMissingParentError(op, path);
         c = c[segs[i]];
     }
+    if (c === null || typeof c !== 'object') throw new PatchMissingParentError(op, path);
     return c;
 }
-function removeAt(o, segs, path) {
-    const p = getAt(o, segs.slice(0, -1));
-    if (p == null) throw new PatchMissingParentError('remove', path);
+function setAt(o, segs, v, path) {
+    const p = strictParent(o, segs, 'replace', path);
     const k = segs[segs.length - 1];
-    if (Array.isArray(p)) p.splice(Number(k), 1); else delete p[k];
+    if (Array.isArray(p)) p[checkIndex(p, k, path, false)] = v; else p[k] = v;
+}
+function addAt(o, segs, v, path) {
+    const p = strictParent(o, segs, 'add', path);
+    const k = segs[segs.length - 1];
+    if (Array.isArray(p)) p.splice(checkIndex(p, k, path, true), 0, v); else p[k] = v;
+}
+function removeAt(o, segs, path) {
+    const p = strictParent(o, segs, 'remove', path);
+    const k = segs[segs.length - 1];
+    if (Array.isArray(p)) p.splice(checkIndex(p, k, path, false), 1); else delete p[k];
 }

@@ -128,6 +128,8 @@ export function apply(ctx) {
         return response.send({
             id: job.id,
             status: job.status,
+            verb: job.requestMeta?.verb ?? null,
+            model: job.modelName || job.requestMeta?.model || '',
             chatKey: job.chatKey ?? null,
             text: job.text ?? '',
             error: job.error || null,
@@ -238,6 +240,9 @@ export function apply(ctx) {
                 ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
                 ...presetToDispatchParams(presetDoc),
                 chat_completion_source: chatSource,
+                // verb 落 job.requestMeta——jobs/status、attach 写盘重建都靠它;
+                // provider pickBy 自滤,不会发给上游。
+                type: body.type ?? 'normal',
                 messages: builtPrompt.messages,
                 stream: (body.type === 'quiet' ? false : body.stream)
                     ?? ((oaiSettings?.stream_openai ?? presetDoc?.stream_openai) !== false),

@@ -16,10 +16,12 @@ export async function persistPreset(options) {
         ? options.preset
         : {};
 
-    const response = await fetch('/api/presets/save', {
-        method: 'POST',
+    // TASK-033 reroute: legacy /api/presets/save → PUT /api/uberge/presets/:name
+    // (apiId moves to a query param; the preset doc IS the request body).
+    const response = await fetch(`/api/uberge/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(apiId)}`, {
+        method: 'PUT',
         headers: getRequestHeaders(),
-        body: JSON.stringify({ apiId, name, preset }),
+        body: JSON.stringify(preset),
     });
 
     const data = response.ok ? await response.json() : null;

@@ -1289,6 +1289,8 @@ function buildSplitSegments(source, splitPoints, targetNames, nowIso, sourceName
 export { buildMergedBodyAndHeader, buildSplitSegments, resolveAvailableTargetName };  // for jest tests
 // TASK-032 doc-save 复用:uberge document 路由与 /save 同源。
 export { getBackupFunction, writeChatSyncState, applyIntegrityToMetadata, sendRepoIntegrityConflict, createChatHeader, checkIntegrity };
+// 审查修复:append 去重/完整性复用。
+export { stripLukerGenerationIdFromMessage, isChatMessageLike, createIntegrityMismatchError };
 
 /**
  * Appends new chat names to a group's `chats[]` array via GroupRepo. This is
@@ -1452,6 +1454,18 @@ function isJsonPatchValidationError(error) {
         || message.includes('Invalid JSON Patch path.')
         || message.includes('Unsupported JSON Patch operation:');
 }
+
+// TASK-032 state sidecar 复用口:/api/uberge/state/chat/* 插件路由与
+// legacy /api/chats/state/* 共用同一组 target/namespace/patch 判定 ——
+// 行为面只有一个事实源,插件侧不重抄。
+export {
+    chatStateTargetFromQuery,
+    resolveChatStateRepoKey,
+    normalizeChatStateNamespace,
+    applyChatStatePatch,
+    isChatStatePatchConflictError,
+    isJsonPatchValidationError,
+};
 
 /**
  * Reads the last non-header message from a JSONL chat file.
@@ -1980,6 +1994,16 @@ export async function patchChatMessagesInFile({ filePath, operations, chatMetada
  * - For add/replace ops whose value is a full message or an `extra` object,
  *   the lukgenid is stripped from value before the op gets applied.
  */
+function stripLukerGenerationIdDeep(node) {
+    if (Array.isArray(node)) {
+        for (const item of node) stripLukerGenerationIdDeep(item);
+        return;
+    }
+    if (!_.isObjectLike(node)) return;
+    if (Object.hasOwn(node, 'luker_generation_id')) delete node.luker_generation_id;
+    for (const v of Object.values(node)) stripLukerGenerationIdDeep(v);
+}
+
 export function sanitizeOperationsAgainstLukerGenerationId(operations) {
     /** @type {object[]} */
     const result = [];
@@ -1994,13 +2018,8 @@ export function sanitizeOperationsAgainstLukerGenerationId(operations) {
         const opName = String(op.op || '').trim().toLowerCase();
         if ((opName === 'add' || opName === 'replace') && _.isObjectLike(op.value)) {
             const cloned = _.cloneDeep(op);
-            // Either it's a whole message at /N, or it's an `extra` blob at /N/extra.
-            if (cloned.value && _.isObjectLike(cloned.value.extra) && 'luker_generation_id' in cloned.value.extra) {
-                delete cloned.value.extra.luker_generation_id;
-            }
-            if (op.path.endsWith('/extra') && _.isObjectLike(cloned.value) && 'luker_generation_id' in cloned.value) {
-                delete cloned.value.luker_generation_id;
-            }
+            // Protocol-layer gen-ids never reach disk; strip at any depth.
+            stripLukerGenerationIdDeep(cloned.value);
             result.push(cloned);
         } else {
             result.push(op);

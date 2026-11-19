@@ -69,15 +69,21 @@ function namedRoute(bucket) {
 }
 
 export async function listPresetDocuments(apiId, { signal } = {}) {
-    const query = await resourceQuery({ apiId });
-    const { value } = await readResourceJson(`/api/presets/list?${query}`, { signal });
-    return Array.isArray(value?.names) ? value.names : [];
+    // TASK-033 reroute: legacy /api/presets/list → GET /api/uberge/presets
+    // ({items:[{name}]} vs legacy {names:[...]}).
+    const query = new URLSearchParams({ apiId: String(apiId ?? 'openai') });
+    const { value } = await readResourceJson(`/api/uberge/presets?${query}`, { signal });
+    return Array.isArray(value?.items)
+        ? value.items.map(item => item?.name).filter(name => typeof name === 'string' && name)
+        : [];
 }
 
 export async function readPresetDocument(apiId, name, { signal } = {}) {
-    const query = await resourceQuery({ apiId, name });
-    const { value } = await readResourceJson(`/api/presets/get?${query}`, { signal });
-    return value;
+    // TASK-033 reroute: legacy /api/presets/get → GET /api/uberge/presets/:name
+    // ({name, apiId, doc} vs legacy bare doc).
+    const query = new URLSearchParams({ apiId: String(apiId ?? 'openai') });
+    const { value } = await readResourceJson(`/api/uberge/presets/${encodeURIComponent(name)}?${query}`, { signal });
+    return value?.doc;
 }
 
 export async function loadNamedDocumentEntries(bucket, { signal } = {}) {
@@ -124,15 +130,19 @@ export async function loadPresetDocumentEntries(apiId, { signal } = {}) {
 }
 
 export async function listWorldInfoNames({ signal } = {}) {
-    const query = await resourceQuery();
-    const { value } = await readResourceJson(`/api/worldinfo/list?${query}`, { signal });
-    return Array.isArray(value?.names) ? value.names : [];
+    // TASK-033 reroute: legacy /api/worldinfo/list → GET /api/uberge/worlds
+    // ({items:[{name,displayName,extensions}]} vs legacy {names:[...]}).
+    const { value } = await readResourceJson('/api/uberge/worlds', { signal });
+    return Array.isArray(value?.items)
+        ? value.items.map(item => item?.name).filter(name => typeof name === 'string' && name)
+        : [];
 }
 
 export async function readWorldInfoDocument(name, { signal } = {}) {
-    const query = await resourceQuery({ name });
-    const { value } = await readResourceJson(`/api/worldinfo/get?${query}`, { signal });
-    return value;
+    // TASK-033 reroute: legacy /api/worldinfo/get → GET /api/uberge/worlds/:name
+    // ({name, doc} vs legacy bare doc).
+    const { value } = await readResourceJson(`/api/uberge/worlds/${encodeURIComponent(name)}`, { signal });
+    return value?.doc;
 }
 
 export function stampNamedDocuments(entries) {

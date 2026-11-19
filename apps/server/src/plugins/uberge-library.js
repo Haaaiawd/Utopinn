@@ -13,17 +13,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import _ from 'lodash';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
+
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
+import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
+import { applyJsonPatch } from '../storage/repositories/json-patch.js';
 import {
     ConflictError,
     InvalidArgumentError,
     NotFoundError,
+    PatchMissingParentError,
     PatchTestFailedError,
+    StorageReadOnlyError,
     UnsupportedPatchOpError,
 } from '../storage/errors.js';
-import { stripJsonlExt } from '../storage/name-validation.js';
+import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
+import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
+import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
 // TASK-032 写盘面统一:ack/integrity/gen-id/settle 机制与 legacy /api/chats 同源。
 import sanitize from 'sanitize-filename';
@@ -41,7 +49,29 @@ import {
     sendRepoIntegrityConflict,
     createChatHeader,
     checkIntegrity,
+    stripLukerGenerationIdFromMessage,
+    isChatMessageLike,
+    createIntegrityMismatchError,
+    // state sidecar 三族:chat_state 判定链与 legacy /api/chats/state/* 同源。
+    chatStateTargetFromQuery,
+    resolveChatStateRepoKey,
+    normalizeChatStateNamespace,
+    applyChatStatePatch,
+    isChatStatePatchConflictError,
+    isJsonPatchValidationError,
 } from '../endpoints/chats.js';
+import {
+    getQueryCharacterAvatar,
+    normalizeCharacterStateNamespace,
+    getCharacterStateSidecarPath,
+    readCharacterStateSidecar,
+    mapCharacterStatePatchError,
+} from '../endpoints/characters.js';
+import {
+    isValidApiId,
+    normalizePresetStateNamespace,
+    mapStatePatchError,
+} from '../endpoints/presets.js';
 
 export const inject = ['webServer'];
 
@@ -76,11 +106,14 @@ export function sendError(response, error, logPrefix) {
     if (error instanceof NotFoundError) {
         return response.status(404).send({ error: error.message });
     }
-    if (error instanceof ConflictError || error instanceof PatchTestFailedError) {
+    if (error instanceof ConflictError || error instanceof PatchTestFailedError || error instanceof PatchMissingParentError) {
         return response.status(409).send({ error: error.message });
     }
     if (error instanceof UnsupportedPatchOpError) {
         return response.status(400).send({ error: error.message });
+    }
+    if (error instanceof StorageReadOnlyError) {
+        return response.status(503).send({ error: 'storage_read_only' });
     }
     console.error(`${logPrefix} failed:`, error);
     return response.status(500).send({ error: String(error?.message ?? error) });
@@ -115,6 +148,20 @@ async function loadCharacterDoc(directories, charDir) {
     } catch {
         return null;
     }
+}
+
+/**
+ * persist-target hint 用的真实头像文件名:<charDir>.png/.webp 顺序探测,
+ * 都不存在回退 .png。硬编码 .png 会让 webp 卡的 ack/settle chatKey 漂移(M8)。
+ */
+async function resolveAvatarFileName(directories, charDir) {
+    for (const ext of ['.png', '.webp']) {
+        try {
+            await fs.promises.access(path.join(directories.characters, `${charDir}${ext}`));
+            return `${charDir}${ext}`;
+        } catch { /* 下一个扩展名 */ }
+    }
+    return `${charDir}.png`;
 }
 
 /** 从卡对象提取展示名与标签(兼容 v1 平铺与 v2 data.*)。 */
@@ -788,63 +835,109 @@ export function apply(ctx) {
     });
 
     /**
-     * POST /characters/:charDir/chats/:chatName/messages —— 追加消息。
-     * body:{messages:[...], integrity?}
-     *   消息原样入库(swipe_id/swipes 字段随之持久化 —— swipe 写在这层,
-     *   切 swipe 的改动走 PATCH /body/:i/swipe_id)。
-     *   gen_id 去重(重发安全),integrity 乐观锁不匹配 → 409。
-     * 响应:{integrity, accepted, dedupedGenIds}
+     * POST /characters/:charDir/chats/:chatName/messages —— 追加消息(legacy /append 逐义)。
+     * body:{messages[]|message, integrity?, force?, chat_metadata?, luker_generation_id?}
+     *   缺失即建(create + autoInit settle);双去重:队首内容等值 + body 级
+     *   gen-id 命中侧车;内嵌 extra.luker_generation_id 入库前剥离。
+     *   integrity 乐观锁不匹配 → {error:'integrity', current_integrity} 409。
+     * 响应:{ok, appended, created, skipped, matched_existing_generation_id, integrity}
      */
     regPost(`${P}/characters/:charDir/chats/:chatName/messages`, 'POST', async function (request, response) {
         try {
             const charDir = safeName(request.params.charDir, 'charDir');
             const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
-            const messages = request.body?.messages;
-            if (!Array.isArray(messages) || messages.length === 0) {
-                return response.status(400).send({ error: 'Expected body.messages non-empty array' });
-            }
             const handle = request.user.profile.handle;
             const body = request.body ?? {};
-            const incomingId = String(body.luker_generation_id || '').trim();
+            const slugRaw = typeof body.integrity === 'string' ? body.integrity.trim() : '';
+            const incomingId = typeof body.luker_generation_id === 'string' ? body.luker_generation_id.trim() : '';
+            const force = Boolean(body.force);
+            const messages = Array.isArray(body.messages) ? body.messages
+                : (body.message && typeof body.message === 'object' ? [body.message] : []);
+            if (messages.length === 0) {
+                return response.status(400).send({ error: 'No message payload found. Expected body.messages or body.message.' });
+            }
             const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
-            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            const hint = { kind: 'character', avatar_url: await resolveAvatarFileName(request.user.directories, charDir), file_name: `${chatName}.jsonl` };
             // settle/ack 机制读 body.avatar_url|file_name —— 合成写盘上下文
             const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+            const repo = getChatRepo();
+            const existing = await repo.get(handle, charDir, chatName);
+            const hasAiFloor = messages.some(m => m && m.is_user === false);
+            const backup = (header, floors, integrity) => {
+                try {
+                    const headerWithIntegrity = { ...header, chat_metadata: applyIntegrityToMetadata(header?.chat_metadata, integrity) };
+                    getBackupFunction(handle, charDir)(request.user.directories.backups, charDir,
+                        [headerWithIntegrity, ...floors].map(m => JSON.stringify(m)).join('\n'));
+                } catch (e) { console.error('Chat backup after uberge append failed', e); }
+            };
 
-            // gen-id 侧车去重(legacy 同语义):重试同一生成只剥队首匹配
-            const sidecarLast = readLastChatGenerationId(chatFilePath);
-            const toWrite = messages.slice();
-            let skipped = 0;
-            while (toWrite.length && sidecarLast && String(toWrite[0]?.extra?.luker_generation_id || '') === sidecarLast) {
-                toWrite.shift(); skipped++;
+            if (slugRaw && !force && existing && existing.integrity !== slugRaw) {
+                return sendRepoIntegrityConflict(response, createIntegrityMismatchError(chatFilePath, slugRaw));
             }
-            let result;
-            if (toWrite.length) {
-                result = await getChatRepo().append(
-                    handle, charDir, chatName, toWrite,
-                    typeof body.integrity === 'string' ? body.integrity : undefined,
-                );
+            const cleanedMessages = messages.map(m => stripLukerGenerationIdFromMessage(_.cloneDeep(m)));
+
+            // legacy「缺失即建」:首写/吞楼层依赖——create + autoInit settle
+            if (!existing) {
+                const header = createChatHeader(body.chat_metadata && typeof body.chat_metadata === 'object' ? body.chat_metadata : {});
+                const { integrity: newIntegrity } = await repo.save(handle, charDir, chatName, header, cleanedMessages, null);
+                writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
                 if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
-            } else {
-                const cur = await getChatRepo().get(handle, charDir, chatName).catch(() => null);
-                result = { integrity: cur?.integrity ?? null, accepted: 0, dedupedGenIds: [] };
+                backup(header, cleanedMessages, newIntegrity);
+                await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+                acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
+                await settleMvuAfterAppend(writeReq, { autoInit: true });
+                return response.send({ ok: true, appended: cleanedMessages.length, created: true, integrity: newIntegrity });
             }
-            // ack(append 里没 AI 层不许吞孤儿 job)+ settle + recents —— 与 legacy 同步序
-            acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, messages.some(m => m?.is_user === false) ? hint : null);
-            await settleMvuAfterAppend(writeReq, { autoInit: true });
+
+            // legacy 双去重:队首内容等值剥离 → body 级 gen-id 命中侧车剥离
+            const deduped = cleanedMessages.slice();
+            const lastStored = existing.body.length ? existing.body[existing.body.length - 1] : null;
+            const sidecarLast = readLastChatGenerationId(chatFilePath);
+            let matchedGenId = false;
+            while (deduped.length) {
+                const lastStripped = isChatMessageLike(lastStored)
+                    ? stripLukerGenerationIdFromMessage(_.cloneDeep(lastStored)) : null;
+                if (lastStripped && isChatMessageLike(deduped[0]) && _.isEqual(lastStripped, deduped[0])) {
+                    deduped.shift(); continue;
+                }
+                if (!sidecarLast || !incomingId || incomingId !== sidecarLast) break;
+                matchedGenId = true; deduped.shift();
+            }
+            if (!deduped.length) {
+                await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+                acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
+                return response.send({ ok: true, appended: 0, created: false, skipped: cleanedMessages.length, matched_existing_generation_id: matchedGenId, integrity: existing.integrity });
+            }
+
+            const mergedBody = existing.body.concat(deduped);
+            const expectedForSave = (slugRaw && !force) ? slugRaw : null;
+            let newIntegrity;
+            try {
+                ({ integrity: newIntegrity } = await repo.save(handle, charDir, chatName, existing.header, mergedBody, expectedForSave));
+            } catch (err) {
+                if (err instanceof ConflictError) return sendRepoIntegrityConflict(response, err);
+                throw err;
+            }
+            writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
+            if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+            backup(existing.header, mergedBody, newIntegrity);
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
-            return response.send({ ...result, skipped });
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
+            await settleMvuAfterAppend(writeReq);
+            return response.send({ ok: true, appended: deduped.length, created: false, skipped: cleanedMessages.length - deduped.length, matched_existing_generation_id: matchedGenId, integrity: newIntegrity });
         } catch (error) {
             return sendError(response, error, 'uberge/chats append');
         }
     });
 
     /**
-     * PATCH /characters/:charDir/chats/:chatName —— JSON-Patch 局部改。
-     * body:{ops:[{op,path,value?}], integrity?}
+     * PATCH /characters/:charDir/chats/:chatName —— JSON-Patch 局部改(legacy /patch 语义)。
+     * body:{ops:[{op,path,value?}], integrity?, chat_metadata?, luker_generation_id?}
      *   doc 形状 {header, body:messages[]};swipe 切换 =
-     *   {op:'replace', path:'/body/<i>/swipe_id', value:<n>}。
-     *   integrity 不匹配 / test op 失败 → 409;op 非法/路径越权 → 400。
+     *   {op:'replace', path:'/body/<i>/swipe_id', value:<n>};顶层 /N 路径拒绝(命名空间外)。
+     *   chat_metadata 顶键展成 /header/chat_metadata/<k> 合并。
+     *   integrity 冲突 → {error:'integrity', current_integrity} 409;op 非法 → 400。
+     * 响应:{ok, applied, total_messages, integrity}
      */
     regPost(`${P}/characters/:charDir/chats/:chatName`, 'PATCH', async function (request, response) {
         try {
@@ -856,26 +949,64 @@ export function apply(ctx) {
             }
             const handle = request.user.profile.handle;
             const body = request.body ?? {};
-            const incomingId = String(body.luker_generation_id || '').trim();
+            const slugRaw = typeof body.integrity === 'string' ? body.integrity.trim() : '';
+            const incomingId = typeof body.luker_generation_id === 'string' ? body.luker_generation_id.trim() : '';
             const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
-            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            const hint = { kind: 'character', avatar_url: await resolveAvatarFileName(request.user.directories, charDir), file_name: `${chatName}.jsonl` };
             const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+            const repo = getChatRepo();
 
-            // 防 gen-id 伪造注入 + hint-ack 末楼门(与 legacy patch 同规则)
+            // op 形状先拦:对象 + path 为 '/' 前缀字符串 + 顶层数字段(裸 /5 命名空间外)拒绝
+            for (const op of ops) {
+                if (!op || typeof op !== 'object' || typeof op.path !== 'string' || !op.path.startsWith('/')) {
+                    return response.status(400).send({ error: 'Invalid patch op: expected {op,path:"/..."}' });
+                }
+                if (/^\/\d+(\/|$)/.test(op.path)) {
+                    return response.status(400).send({ error: `Patch path must address /body/<i>/… or /header/…, got "${op.path}"` });
+                }
+            }
             const sanitizedOps = sanitizeOperationsAgainstLukerGenerationId(ops);
-            const existing = await getChatRepo().get(handle, charDir, chatName).catch(() => null);
+            let existing = null;
+            try { existing = await repo.get(handle, charDir, chatName); }
+            catch (e) { if (!(e instanceof NotFoundError)) throw e; }
             const lastIdx = Math.max(0, (existing?.body?.length ?? 0) - 1);
+            // hint-ack 末楼门:doc 命名空间下只有 /body/<lastIdx> 算末楼(整层与子路径都算)
             const hitsLast = ops.some(op => typeof op?.path === 'string'
-                && (op.path.startsWith(`/body/${lastIdx}/`) || op.path.startsWith(`/${lastIdx}/`)));
-            const result = await getChatRepo().patch(
-                handle, charDir, chatName, sanitizedOps,
-                typeof body.integrity === 'string' ? body.integrity : undefined,
-            );
+                && (op.path === `/body/${lastIdx}` || op.path.startsWith(`/body/${lastIdx}/`)));
+
+            // 纯 gen-id 记账 patch(全被 sanitize 剥):早退——只写侧车+ack,不轮 integrity
+            if (sanitizedOps.length === 0) {
+                if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+                acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? hint : null);
+                return response.send({ ok: true, applied: 0, total_messages: existing?.body?.length ?? 0, integrity: existing?.integrity ?? null });
+            }
+
+            // chat_metadata 顶键合并(legacy /patch 语义):展成 /header/chat_metadata/<k> 的 add/replace
+            if (body.chat_metadata && typeof body.chat_metadata === 'object' && !Array.isArray(body.chat_metadata)) {
+                for (const [k, v] of Object.entries(body.chat_metadata)) {
+                    sanitizedOps.push({ op: 'add', path: `/header/chat_metadata/${k.replace(/~/g, '~0').replace(/\//g, '~1')}`, value: v });
+                }
+            }
+
+            let result;
+            try {
+                result = await repo.patch(handle, charDir, chatName, sanitizedOps, slugRaw || undefined);
+            } catch (err) {
+                if (err instanceof ConflictError) return sendRepoIntegrityConflict(response, err);
+                throw err;
+            }
             if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+            writeChatSyncState(chatFilePath, { integrity: result.integrity, updated_at: Date.now() });
+            const post = await repo.get(handle, charDir, chatName).catch(() => null);
+            try {
+                const headerWithIntegrity = { ...(post?.header ?? {}), chat_metadata: applyIntegrityToMetadata(post?.header?.chat_metadata, result.integrity) };
+                getBackupFunction(handle, charDir)(request.user.directories.backups, charDir,
+                    [headerWithIntegrity, ...(post?.body ?? [])].map(m => JSON.stringify(m)).join('\n'));
+            } catch (e) { console.error('Chat backup after uberge patch failed', e); }
+            await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
             acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? hint : null);
             await resettleMvuAfterWrite(writeReq);
-            await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
-            return response.send(result);
+            return response.send({ ok: true, applied: sanitizedOps.length, total_messages: post?.body?.length ?? null, integrity: result.integrity });
         } catch (error) {
             return sendError(response, error, 'uberge/chats patch');
         }
@@ -895,19 +1026,28 @@ export function apply(ctx) {
             const charDir = safeName(request.params.charDir, 'charDir');
             const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
             const reqBody = request.body ?? {};
-            // 双形状:{header,messages} 或 legacy {chat:[header,...floors]}
+            // 双形状:{header,messages} 或 legacy {chat:[header,...floors]}。
+            // chat[] 形状用 looksLikeHeader 判定(同 /group/save):普通楼层不当 header 吞掉 floor-0。
+            const looksLikeHeader = (v) => v && typeof v === 'object' && !Array.isArray(v)
+                && ('chat_metadata' in v || 'user_name' in v || 'character_name' in v);
             const doc = Array.isArray(reqBody.chat)
-                ? { header: reqBody.chat[0], messages: reqBody.chat.slice(1) }
+                ? (looksLikeHeader(reqBody.chat[0])
+                    ? { header: reqBody.chat[0], messages: reqBody.chat.slice(1) }
+                    : { header: null, messages: reqBody.chat })
                 : { header: reqBody.header, messages: reqBody.messages };
             if (!Array.isArray(doc.messages)) {
                 return response.status(400).send({ error: 'Expected body.messages array (or legacy body.chat array)' });
             }
+            if (!doc.messages.every(m => m && typeof m === 'object' && !Array.isArray(m))) {
+                return response.status(422).send({ error: 'Every floor in messages must be an object' });
+            }
             const handle = request.user.profile.handle;
             const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
-            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            const hint = { kind: 'character', avatar_url: await resolveAvatarFileName(request.user.directories, charDir), file_name: `${chatName}.jsonl` };
             const writeReq = { ...request, body: { ...reqBody, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+            const incomingId = typeof reqBody.luker_generation_id === 'string' ? reqBody.luker_generation_id.trim() : '';
 
-            const headerInput = (doc.header && typeof doc.header === 'object') ? doc.header : createChatHeader({});
+            const headerInput = (doc.header && typeof doc.header === 'object' && !Array.isArray(doc.header)) ? doc.header : createChatHeader({});
             const force = Boolean(reqBody.force);
             const doIntegrityCheck = checkIntegrity && !force;
             const expectedIntegrity = !doIntegrityCheck ? null
@@ -929,6 +1069,7 @@ export function apply(ctx) {
             }
 
             writeChatSyncState(chatFilePath, { integrity, updated_at: Date.now() });
+            if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
             try {
                 const headerWithIntegrity = {
                     ...headerInput,
@@ -941,14 +1082,698 @@ export function apply(ctx) {
             }
 
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
-            // ack:整写里末楼非 AI 层 = 本次写并非生成落盘(同 legacy /save 门)
+            // ack:整写里末楼非 AI 层 = 本次写并非生成落盘(同 legacy /save 门);
+            // body 级 gen-id 不在楼层里,并入收集值让显式 ack 通道吃得到(M7)。
             const chatData = [headerInput, ...doc.messages];
+            if (incomingId) chatData.push({ extra: { luker_generation_id: incomingId } });
             const lastFloor = doc.messages.length ? doc.messages[doc.messages.length - 1] : null;
             acknowledgeGenerationFromValueOrPersistTarget(writeReq, chatData, lastFloor && lastFloor.is_user === false ? hint : null);
             await resettleMvuAfterWrite(writeReq);
             return response.send({ ok: true, integrity });
         } catch (error) {
             return sendError(response, error, 'uberge/chats document');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // state sidecar 三族(TASK-032 收尾增量):/api/uberge/state/{chat|char|preset}
+    // 对应 legacy /api/{chats,characters,presets}/state/* —— target 字段、
+    // namespace 归一、patch 语义、错误面逐义对齐,helper 全部从 legacy 端点
+    // export 复用,sidecar 文件同一批,不存在第二套写盘逻辑。
+    //
+    // 三族公共动作集:get(GET+POST)/ get-batch / patch / delete。
+    // 不对称处照 legacy 实际面:
+    //   - char 独有 set(整态覆写,写 .state.<ns>.json);chat/preset 无对应物。
+    //   - preset 独有 delete-all / rename(随预设批量清档/改名迁移 ns);
+    //     chat/char 的等价物挂在父资源 delete/rename 里,不出 state 子面。
+    //   - GET get 走 sendJsonResource(ETag 私有化读,需 ?account=<handle>);
+    //     POST 写面仍是普通 JSON 应答。
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /state/chat/get —— chat_state 读(ETag 资源读)。
+     * query: is_group('true'|'false') + (id | avatar_url+file_name[+char_name]),
+     *        namespace, account。
+     */
+    reg(`${P}/state/chat/get`, async function (request, response) {
+        const target = chatStateTargetFromQuery(request.query);
+        const repoKey = target ? resolveChatStateRepoKey(request, target) : null;
+        const namespace = normalizeChatStateNamespace(request.query?.namespace);
+        const resource = `chat-state:${target?.is_group ? 'group' : 'chat'}:${target?.is_group ? target?.id : `${target?.avatar_url}:${target?.file_name}`}:${namespace}`;
+        if (!repoKey) {
+            return sendResourceReadError(response, {
+                code: 'invalid_args',
+                resource,
+                detail: 'Expected a valid chat state target.',
+                status: 400,
+            });
+        }
+        if (!namespace) {
+            return sendResourceReadError(response, {
+                code: 'invalid_args',
+                resource,
+                detail: 'Expected a state namespace.',
+                status: 400,
+            });
+        }
+        try {
+            const data = await getChatRepo().getState(
+                repoKey.handle,
+                repoKey.charDir,
+                repoKey.name,
+                namespace,
+                { isGroup: repoKey.isGroup, groupId: repoKey.groupId },
+            );
+            return sendJsonResource(request, response, {
+                resource,
+                value: { ok: true, data },
+            });
+        } catch (error) {
+            console.error('Error reading chat state sidecar:', error);
+            return sendResourceReadError(response, {
+                code: 'read_failed',
+                resource,
+                detail: 'Failed to read chat state.',
+                status: 500,
+            });
+        }
+    });
+
+    /** POST /state/chat/get —— body 版 chat_state 读。 */
+    regPost(`${P}/state/chat/get`, 'POST', async function (request, response) {
+        try {
+            const target = request.body || {};
+            const repoKey = resolveChatStateRepoKey(request, target);
+            const namespace = normalizeChatStateNamespace(target?.namespace);
+            if (!repoKey) {
+                return response.status(400).send({ error: 'Invalid state target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+            const data = await getChatRepo().getState(
+                repoKey.handle,
+                repoKey.charDir,
+                repoKey.name,
+                namespace,
+                { isGroup: repoKey.isGroup, groupId: repoKey.groupId },
+            );
+            return response.send({ ok: true, data });
+        } catch (error) {
+            console.error('Error reading chat state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /** POST /state/chat/get-batch —— 单 target 多 namespace 一次取。 */
+    regPost(`${P}/state/chat/get-batch`, 'POST', async function (request, response) {
+        try {
+            const target = request.body || {};
+            const repoKey = resolveChatStateRepoKey(request, target);
+            const namespaces = [...new Set((Array.isArray(target?.namespaces) ? target.namespaces : [])
+                .map((namespace) => normalizeChatStateNamespace(namespace))
+                .filter(Boolean))];
+            if (!repoKey) {
+                return response.status(400).send({ error: 'Invalid state target payload.' });
+            }
+            if (!namespaces.length) {
+                return response.status(400).send({ error: 'Expected body.namespaces array.' });
+            }
+
+            const data = await getChatRepo().getStateBatch(
+                repoKey.handle,
+                repoKey.charDir,
+                repoKey.name,
+                namespaces,
+                { isGroup: repoKey.isGroup, groupId: repoKey.groupId },
+            );
+
+            return response.send({ ok: true, data });
+        } catch (error) {
+            console.error('Error reading chat state sidecars:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /**
+     * POST /state/chat/patch —— JSON-Patch 合并写 chat_state sidecar。
+     * body:{target…, namespace, operations[]|operation}。
+     * 与 legacy 同:绕过 Repo.setState 的父档存在性门(engine tx 直写,
+     * 允许父聊天缺席的宽容 sidecar 写);写完触发一次聊天备份(父档缺席静默跳过)。
+     */
+    regPost(`${P}/state/chat/patch`, 'POST', async function (request, response) {
+        try {
+            const target = request.body || {};
+            const repoKey = resolveChatStateRepoKey(request, target);
+            const namespace = normalizeChatStateNamespace(target?.namespace);
+            if (!repoKey) {
+                return response.status(400).send({ error: 'Invalid state target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+            const operations = Array.isArray(target?.operations)
+                ? target.operations
+                : (_.isObjectLike(target?.operations)
+                    ? [target.operations]
+                    : (_.isObjectLike(target?.operation) ? [target.operation] : []));
+            if (operations.length === 0) {
+                return response.status(400).send({ error: 'No state patch operations found. Expected body.operations or body.operation.' });
+            }
+
+            // Use the storage engine transaction directly: legacy behavior is permissive and
+            // allows writing a sidecar even when the parent chat does not exist, which the
+            // ChatRepo.setState wrapper guards against with a NotFoundError.
+            const engine = getStorageEngine();
+            const repoKeyForEngine = {
+                kind: 'chat',
+                handle: repoKey.handle,
+                charDir: repoKey.charDir,
+                name: repoKey.name,
+                isGroup: repoKey.isGroup,
+                groupId: repoKey.groupId,
+            };
+            const { applied, created } = await engine.withTransaction(repoKey.handle, async (tx) => {
+                const existing = await tx.getChatState(repoKeyForEngine, namespace);
+                const existed = existing !== null && existing !== undefined;
+                const state = (_.isObjectLike(existing) && !Array.isArray(existing)) ? existing : {};
+                const result = applyChatStatePatch(state, operations);
+                await tx.putChatState(repoKeyForEngine, namespace, result.state);
+                return { applied: result.applied, created: !existed };
+            });
+
+            // State-only mutations don't change the chat document itself, but we
+            // still trigger a backup so any state change has a recoverable point
+            // (the backup payload is the current chat doc at the moment of the
+            // state patch). Re-read the chat to serialize. If the parent chat
+            // doesn't exist (legacy permissive sidecar write), skip silently.
+            try {
+                const chatDoc = await getChatRepo().get(
+                    repoKey.handle, repoKey.charDir ?? '', repoKey.name,
+                    { isGroup: repoKey.isGroup, groupId: repoKey.groupId },
+                );
+                if (chatDoc) {
+                    const headerWithIntegrity = {
+                        ...(chatDoc.header ?? {}),
+                        chat_metadata: applyIntegrityToMetadata(chatDoc.header?.chat_metadata, chatDoc.integrity),
+                    };
+                    const backupName = repoKey.isGroup ? repoKey.groupId : (repoKey.charDir ?? '');
+                    if (backupName) {
+                        const jsonlData = [headerWithIntegrity, ...(chatDoc.body ?? [])].map(m => JSON.stringify(m)).join('\n');
+                        getBackupFunction(repoKey.handle, backupName)(request.user.directories.backups, backupName, jsonlData);
+                    }
+                }
+            } catch (backupErr) {
+                console.error('Chat backup after state/patch failed', backupErr);
+            }
+
+            return response.send({ ok: true, applied, created });
+        } catch (error) {
+            if (isChatStatePatchConflictError(error)) {
+                return response.status(409).send({ error: 'Chat state patch conflict.' });
+            }
+            if (isJsonPatchValidationError(error)) {
+                return response.status(400).send({ error: 'Invalid chat state patch payload.' });
+            }
+            console.error('Error patching chat state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /** POST /state/chat/delete —— 删一个 chat_state sidecar(缺失也算成功,deleted:true)。 */
+    regPost(`${P}/state/chat/delete`, 'POST', async function (request, response) {
+        try {
+            const target = request.body || {};
+            const repoKey = resolveChatStateRepoKey(request, target);
+            const namespace = normalizeChatStateNamespace(target?.namespace);
+            if (!repoKey) {
+                return response.status(400).send({ error: 'Invalid state target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+            // deleteState returns void; report `deleted: true` on success to preserve the
+            // legacy contract — the frontend reads `response.ok` only.
+            await getChatRepo().deleteState(
+                repoKey.handle,
+                repoKey.charDir,
+                repoKey.name,
+                namespace,
+                { isGroup: repoKey.isGroup, groupId: repoKey.groupId },
+            );
+            return response.send({ ok: true, deleted: true });
+        } catch (error) {
+            console.error('Error deleting chat state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // char_state:<charName>.state.<ns>.json 与卡同目录(characters.js 同步 fs 面)。
+    // POST 体里 avatar_url 经 validateAvatarUrlMiddleware —— 与 legacy 链同款,
+    // 命中禁止字符(含 /\x00,Windows 再加 \\)直接 400,不进 handler。
+    // -----------------------------------------------------------------------
+
+    const withAvatarUrlValidation = (handler) => function (request, response) {
+        return validateAvatarUrlMiddleware(request, response, () => handler(request, response));
+    };
+
+    /**
+     * GET /state/char/get —— char_state 读(ETag 资源读)。
+     * query: avatar|avatar_url + namespace + account(账号隔离由 getQueryCharacterAvatar 判)。
+     */
+    reg(`${P}/state/char/get`, function (request, response) {
+        const target = getQueryCharacterAvatar(request, response);
+        if (!target) {
+            return;
+        }
+        const namespace = normalizeCharacterStateNamespace(request.query?.namespace);
+        if (!namespace) {
+            return sendResourceReadError(response, {
+                code: 'invalid_args',
+                resource: `character-state:${target.avatar}:`,
+                detail: 'Expected a state namespace.',
+                status: 400,
+            });
+        }
+        const resource = `character-state:${target.avatar}:${namespace}`;
+        try {
+            const data = readCharacterStateSidecar(target.imagePath, namespace);
+            return sendJsonResource(request, response, { resource, value: { ok: true, data } });
+        } catch (error) {
+            console.error('Error reading character state sidecar:', error);
+            return sendResourceReadError(response, {
+                code: 'read_failed',
+                resource,
+                detail: 'Failed to read character state.',
+                status: 500,
+            });
+        }
+    });
+
+    /** POST /state/char/get —— body:{avatar_url, namespace} → {ok,data|null}。 */
+    regPost(`${P}/state/char/get`, 'POST', withAvatarUrlValidation(function (request, response) {
+        try {
+            const avatarUrl = sanitize(String(request.body?.avatar_url || '').trim());
+            const namespace = normalizeCharacterStateNamespace(request.body?.namespace);
+            if (!avatarUrl) {
+                return response.status(400).send({ error: 'Expected body.avatar_url string.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            return response.send({ ok: true, data: readCharacterStateSidecar(characterPath, namespace) });
+        } catch (error) {
+            console.error('Error reading character state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    }));
+
+    /** POST /state/char/get-batch —— body:{avatar_url, namespaces[]} → {ok,data:{ns:doc|null}}。 */
+    regPost(`${P}/state/char/get-batch`, 'POST', withAvatarUrlValidation(function (request, response) {
+        try {
+            const avatarUrl = sanitize(String(request.body?.avatar_url || '').trim());
+            if (!avatarUrl) {
+                return response.status(400).send({ error: 'Expected body.avatar_url string.' });
+            }
+            const rawNamespaces = Array.isArray(request.body?.namespaces) ? request.body.namespaces : [];
+            const seen = new Set();
+            const normalized = [];
+            for (const ns of rawNamespaces) {
+                const n = normalizeCharacterStateNamespace(ns);
+                if (!n || seen.has(n)) continue;
+                seen.add(n);
+                normalized.push(n);
+            }
+            if (normalized.length === 0) {
+                return response.status(400).send({ error: 'Expected body.namespaces to be a non-empty array of strings.' });
+            }
+
+            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            const data = {};
+            for (const ns of normalized) {
+                data[ns] = readCharacterStateSidecar(characterPath, ns);
+            }
+            return response.send({ ok: true, data });
+        } catch (error) {
+            console.error('Error reading character state sidecars:', error);
+            return response.status(500).send({ error: true });
+        }
+    }));
+
+    /**
+     * POST /state/char/set —— char 独有:整态覆写一个 namespace。
+     * body:{avatar_url, namespace, data:object};卡不存在 → 404。
+     */
+    regPost(`${P}/state/char/set`, 'POST', withAvatarUrlValidation(function (request, response) {
+        try {
+            const avatarUrl = sanitize(String(request.body?.avatar_url || '').trim());
+            const namespace = normalizeCharacterStateNamespace(request.body?.namespace);
+            const state = request.body?.data;
+            if (!avatarUrl) {
+                return response.status(400).send({ error: 'Expected body.avatar_url string.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+            if (!_.isObjectLike(state) || Array.isArray(state)) {
+                return response.status(400).send({ error: 'Expected body.data object.' });
+            }
+
+            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            if (!fs.existsSync(characterPath)) {
+                return response.status(404).send({ error: 'Character not found.' });
+            }
+            const stateFilePath = getCharacterStateSidecarPath(characterPath, namespace);
+            if (!stateFilePath) {
+                return response.status(400).send({ error: 'Invalid namespace for state sidecar path.' });
+            }
+
+            fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
+            writeFileAtomicSync(stateFilePath, JSON.stringify(state), 'utf8');
+            return response.send({ ok: true });
+        } catch (error) {
+            console.error('Error writing character state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    }));
+
+    /**
+     * POST /state/char/patch —— JSON-Patch 合并写 char_state。
+     * body:{avatar_url, namespace, operations[]|operation};卡不存在 → 404;
+     * patch 结果非对象 → 400;test/missing-parent → 409;op 非法 → 400。
+     */
+    regPost(`${P}/state/char/patch`, 'POST', withAvatarUrlValidation(function (request, response) {
+        try {
+            const avatarUrl = sanitize(String(request.body?.avatar_url || '').trim());
+            const namespace = normalizeCharacterStateNamespace(request.body?.namespace);
+            if (!avatarUrl) {
+                return response.status(400).send({ error: 'Expected body.avatar_url string.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const operations = Array.isArray(request.body?.operations)
+                ? request.body.operations
+                : (_.isObjectLike(request.body?.operation) ? [request.body.operation] : []);
+            if (operations.length === 0) {
+                return response.status(400).send({ error: 'No character state patch operations found. Expected body.operations or body.operation.' });
+            }
+
+            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            if (!fs.existsSync(characterPath)) {
+                return response.status(404).send({ error: 'Character not found.' });
+            }
+            const stateFilePath = getCharacterStateSidecarPath(characterPath, namespace);
+            if (!stateFilePath) {
+                return response.status(400).send({ error: 'Invalid namespace for state sidecar path.' });
+            }
+
+            const existing = readCharacterStateSidecar(characterPath, namespace);
+            const seed = existing ?? {};
+
+            let next;
+            try {
+                next = applyJsonPatch(seed, operations);
+            } catch (error) {
+                const mapped = mapCharacterStatePatchError(error, response);
+                if (mapped) {
+                    return mapped;
+                }
+                throw error;
+            }
+
+            if (!_.isObjectLike(next) || Array.isArray(next)) {
+                return response.status(400).send({ error: 'Character state patch result must be an object.' });
+            }
+
+            fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
+            writeFileAtomicSync(stateFilePath, JSON.stringify(next), 'utf8');
+            return response.send({
+                ok: true,
+                applied: operations.length,
+                created: existing == null,
+            });
+        } catch (error) {
+            console.error('Error patching character state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    }));
+
+    /** POST /state/char/delete —— 删一个 char_state sidecar;缺失 → {ok,deleted:false}。 */
+    regPost(`${P}/state/char/delete`, 'POST', withAvatarUrlValidation(function (request, response) {
+        try {
+            const avatarUrl = sanitize(String(request.body?.avatar_url || '').trim());
+            const namespace = normalizeCharacterStateNamespace(request.body?.namespace);
+            if (!avatarUrl) {
+                return response.status(400).send({ error: 'Expected body.avatar_url string.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            const stateFilePath = getCharacterStateSidecarPath(characterPath, namespace);
+            if (!stateFilePath || !fs.existsSync(stateFilePath)) {
+                return response.send({ ok: true, deleted: false });
+            }
+
+            fs.unlinkSync(stateFilePath);
+            return response.send({ ok: true, deleted: true });
+        } catch (error) {
+            console.error('Error deleting character state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    }));
+
+    // -----------------------------------------------------------------------
+    // preset_state:per-(apiId,name) 的 state namespace(PresetRepo 引擎面)。
+    // target={apiId,name};独有 delete-all(清全 ns)/ rename(随名迁移 ns)。
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /state/preset/get —— preset_state 读(ETag 资源读)。
+     * query: apiId + name + namespace + account。
+     */
+    reg(`${P}/state/preset/get`, async function (request, response) {
+        const apiId = String(request.query?.apiId || '');
+        const name = sanitize(String(request.query?.name || ''));
+        const namespace = normalizePresetStateNamespace(request.query?.namespace);
+        const resource = `preset-state:${apiId}:${name}:${namespace}`;
+        if (!isValidApiId(apiId) || !name) {
+            return sendResourceReadError(response, {
+                code: 'invalid_args',
+                resource,
+                detail: 'Expected an API id and preset name.',
+                status: 400,
+            });
+        }
+        if (!namespace) {
+            return sendResourceReadError(response, {
+                code: 'invalid_args',
+                resource,
+                detail: 'Expected a state namespace.',
+                status: 400,
+            });
+        }
+        try {
+            const data = await getPresetRepo().getState(request.user.profile.handle, apiId, name, namespace);
+            return sendJsonResource(request, response, {
+                resource,
+                value: { ok: true, data },
+            });
+        } catch (error) {
+            console.error('Error reading preset state sidecar:', error);
+            return sendResourceReadError(response, {
+                code: 'read_failed',
+                resource,
+                detail: 'Failed to read preset state.',
+                status: 500,
+            });
+        }
+    });
+
+    /** POST /state/preset/get —— body 版 preset_state 读。 */
+    regPost(`${P}/state/preset/get`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const name = sanitize(String(request.body?.name || ''));
+            const namespace = normalizePresetStateNamespace(request.body?.namespace);
+            if (!isValidApiId(apiId) || !name) {
+                return response.status(400).send({ error: 'Invalid preset target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const handle = request.user.profile.handle;
+            const data = await getPresetRepo().getState(handle, apiId, name, namespace);
+            return response.send({ ok: true, data });
+        } catch (error) {
+            console.error('Error reading preset state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /** POST /state/preset/get-batch —— body:{apiId,name,namespaces[]} → {ok,data:{ns:doc|null}}。 */
+    regPost(`${P}/state/preset/get-batch`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const name = sanitize(String(request.body?.name || ''));
+            if (!isValidApiId(apiId) || !name) {
+                return response.status(400).send({ error: 'Invalid preset target payload.' });
+            }
+
+            const namespaces = [...new Set((Array.isArray(request.body?.namespaces) ? request.body.namespaces : [])
+                .map((ns) => normalizePresetStateNamespace(ns))
+                .filter(Boolean))];
+            if (!namespaces.length) {
+                return response.status(400).send({ error: 'Expected body.namespaces array.' });
+            }
+
+            const handle = request.user.profile.handle;
+            const repo = getPresetRepo();
+            const data = {};
+            for (const ns of namespaces) {
+                data[ns] = await repo.getState(handle, apiId, name, ns);
+            }
+
+            return response.send({ ok: true, data });
+        } catch (error) {
+            console.error('Error reading preset state sidecars:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /**
+     * POST /state/preset/patch —— JSON-Patch 合并写 preset_state。
+     * body:{apiId,name,namespace,operations[]|operation};
+     * test/missing-parent → 409;op 非法 → 400。
+     */
+    regPost(`${P}/state/preset/patch`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const name = sanitize(String(request.body?.name || ''));
+            const namespace = normalizePresetStateNamespace(request.body?.namespace);
+            if (!isValidApiId(apiId) || !name) {
+                return response.status(400).send({ error: 'Invalid preset target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const operations = Array.isArray(request.body?.operations)
+                ? request.body.operations
+                : (request.body?.operation && typeof request.body.operation === 'object' ? [request.body.operation] : []);
+            if (operations.length === 0) {
+                return response.status(400).send({ error: 'No preset state patch operations found. Expected body.operations or body.operation.' });
+            }
+
+            const handle = request.user.profile.handle;
+            const repo = getPresetRepo();
+            const existing = await repo.getState(handle, apiId, name, namespace);
+            const seed = existing ?? {};
+
+            let next;
+            try {
+                next = applyJsonPatch(seed, operations);
+            } catch (error) {
+                const mapped = mapStatePatchError(error, response);
+                if (mapped) {
+                    return mapped;
+                }
+                throw error;
+            }
+
+            await repo.setState(handle, apiId, name, namespace, next);
+            return response.send({
+                ok: true,
+                applied: operations.length,
+                created: existing == null,
+            });
+        } catch (error) {
+            console.error('Error patching preset state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /** POST /state/preset/delete —— 删一个 preset_state namespace → {ok,deleted}。 */
+    regPost(`${P}/state/preset/delete`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const name = sanitize(String(request.body?.name || ''));
+            const namespace = normalizePresetStateNamespace(request.body?.namespace);
+            if (!isValidApiId(apiId) || !name) {
+                return response.status(400).send({ error: 'Invalid preset target payload.' });
+            }
+            if (!namespace) {
+                return response.status(400).send({ error: 'Expected body.namespace string.' });
+            }
+
+            const handle = request.user.profile.handle;
+            const deleted = await getPresetRepo().deleteState(handle, apiId, name, namespace);
+            return response.send({ ok: true, deleted });
+        } catch (error) {
+            console.error('Error deleting preset state sidecar:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /** POST /state/preset/delete-all —— preset 独有:清空该预设全 ns → {ok,deleted:<count>}。 */
+    regPost(`${P}/state/preset/delete-all`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const name = sanitize(String(request.body?.name || ''));
+            if (!isValidApiId(apiId) || !name) {
+                return response.status(400).send({ error: 'Invalid preset target payload.' });
+            }
+
+            const handle = request.user.profile.handle;
+            const deleted = await getPresetRepo().deleteAllStates(handle, apiId, name);
+            return response.send({ ok: true, deleted });
+        } catch (error) {
+            console.error('Error deleting preset state sidecars:', error);
+            return response.status(500).send({ error: true });
+        }
+    });
+
+    /**
+     * POST /state/preset/rename —— preset 独有:ns 面随名迁移。
+     * body:{apiId, oldName, newName};同名 → {ok,renamed:0};
+     * 目标 ns 撞档 → 409 'Preset state rename collision.'。
+     */
+    regPost(`${P}/state/preset/rename`, 'POST', async function (request, response) {
+        try {
+            const apiId = request.body?.apiId;
+            const oldName = sanitize(String(request.body?.oldName || ''));
+            if (!isValidApiId(apiId) || !oldName) {
+                return response.status(400).send({ error: 'Invalid preset state rename payload.' });
+            }
+            let newName;
+            try {
+                newName = assertSafeRepoName(request.body?.newName, { field: 'newName' });
+            } catch (err) {
+                if (err instanceof InvalidArgumentError) {
+                    return response.status(400).send({ error: err.message });
+                }
+                throw err;
+            }
+            if (oldName === newName) {
+                return response.send({ ok: true, renamed: 0 });
+            }
+
+            const handle = request.user.profile.handle;
+            const renamed = await getPresetRepo().renameStates(handle, apiId, oldName, newName);
+            return response.send({ ok: true, renamed });
+        } catch (error) {
+            if (error instanceof ConflictError && error.code === 'preset_state_rename_collision') {
+                return response.status(409).send({ error: 'Preset state rename collision.' });
+            }
+            console.error('Error renaming preset state sidecars:', error);
+            return response.status(500).send({ error: true });
         }
     });
 }
