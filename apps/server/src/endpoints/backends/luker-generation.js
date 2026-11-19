@@ -806,6 +806,23 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
     const finalText = String(text || '');
     job.text = finalText || job.text || '';
     job.modelName = String(modelName || job.modelName || request.body?.model || '');
+    if (!job.text) {
+        // 上游空产出不许假 completed:provider !resp.ok 分支内部消化掉
+        // HTTP 错(4xx/网络)后正常返回 → runner 走到这,空 text 之前会
+        // 挂 awaiting_ack → 15s 后兜底把 job 标 completed,错误被吞。
+        // 空产出即失败(含上游真回空,如推理 token 吃光预算)——诚实
+        // failed + 明确 error,客户端/CLI 才能提示 attach/diagnose。
+        job.status = 'failed';
+        job.error = 'Generation produced no output.';
+        job.updatedAt = Date.now();
+        job.finishedAt = Date.now();
+        job.persisted = false;
+        job.persistenceInFlight = false;
+        job.abortController = null;
+        clearGenerationJobPersistenceTimer(job);
+        notifyJobStatus(job);
+        return false;
+    }
     job.status = 'awaiting_ack';
     job.updatedAt = Date.now();
     job.finishedAt = null;
@@ -918,7 +935,9 @@ async function persistGenerationJobIfUnacked(job) {
     clearGenerationJobPersistenceTimer(job);
 
     if (!job.text) {
-        job.status = 'completed';
+        // 与 completeGenerationJobFromText 的空产出分支一致:无内容即 failed。
+        job.status = 'failed';
+        job.error = job.error || 'Generation produced no output.';
         job.updatedAt = Date.now();
         job.finishedAt = Date.now();
         notifyJobStatus(job);

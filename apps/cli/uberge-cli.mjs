@@ -690,6 +690,27 @@ async function cmdStatus() {
     return c2;
 }
 
+// doctor 覆盖差集用:具名命令已绑的 kernel 路由(kernel list() 的
+// "METHOD|kind|path" 串格式)。未列的 = raw-only,doctor --full 会打印差集。
+const NAMED_UBERGE_ROUTES = new Set([
+    'GET|exact|/api/uberge/_kernel',
+    'GET|pattern|/api/uberge/jobs',
+    'GET|pattern|/api/uberge/jobs/:id',
+    'POST|pattern|/api/uberge/generate',
+    'POST|pattern|/api/uberge/preview',
+    'GET|pattern|/api/uberge/worlds',
+    'GET|pattern|/api/uberge/worlds/:name',
+    'GET|pattern|/api/uberge/plugins',
+    'POST|pattern|/api/uberge/plugins/:id/enable',
+    'POST|pattern|/api/uberge/plugins/:id/disable',
+    'POST|pattern|/api/uberge/plugins/:id/reload',
+    'POST|pattern|/api/uberge/mvu/settle',
+    'POST|pattern|/api/uberge/mvu/resettle',
+    'GET|pattern|/api/uberge/mvu/state',
+    'POST|pattern|/api/uberge/script/run',
+    'POST|pattern|/api/uberge/th/call',
+]);
+
 async function cmdDoctor() {
     const steps = [];
     const step = async (name, fn) => {
@@ -725,6 +746,15 @@ async function cmdDoctor() {
     } else {
         steps.push({ name: 'ctx', ok: true, detail: '未选(ctx 空不阻塞)' });
     }
+    // cordis 覆盖差集:kernel 路由表 vs CLI 具名命令。具名=输出已整理的动词;
+    // 其余由 raw 逃生舱兜底(可达但不友好)。差集清单就是 CLI 待补面。
+    await step('capability coverage', async () => {
+        const { data } = await req('GET', '/api/uberge/_kernel');
+        const routes = (data?.routes ?? []).map(r => String(r));
+        const named = NAMED_UBERGE_ROUTES;
+        const uncovered = routes.filter(r => !named.has(r) && !r.startsWith('upgrade|'));
+        return `${routes.length} routes · named ${routes.length - uncovered.length} · raw-only ${uncovered.length}${flags.full && uncovered.length ? ` (${uncovered.join(', ')})` : ''}`;
+    });
     const allOk = steps.every(s => s.ok);
     if (JSON_MODE) return out({ steps, ok: allOk }, allOk ? bareNext() : [{ cmd: 'uberge doctor', why: '修完重验' }]);
     for (const s of steps) {
@@ -774,6 +804,7 @@ const SCHEMA = {
         { cmd: 'uberge mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
         { cmd: 'uberge mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
         { cmd: 'uberge script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
+        { cmd: 'uberge th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
         { cmd: 'uberge raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
     flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UBERGE_SERVER'],
@@ -1252,6 +1283,29 @@ async function cmdScript() {
     footer();
 }
 
+async function cmdTh() {
+    // uberge-th fiber:TavernHelper 兼容调用面。METHODS 见插件源码。
+    const method = positional[1];
+    if (!method) return void fail('usage', 'uberge th <method> [json-args|--stdin]', {
+        detail: 'getVariables|replaceVariables|insertOrAssignVariables|deleteVariable|getChatMessages|triggerSlash|getCharacter|getCurrentCharacterName|getLastMessageId|getCurrentMessageId|getEmbeddedScripts',
+        rc: 2,
+    });
+    let args = {};
+    if (flags.stdin) { try { args = JSON.parse(await readTextArg([])) ?? {}; } catch { args = {}; } }
+    else if (positional[2] !== undefined) { try { args = JSON.parse(positional.slice(2).join(' ')) ?? {}; } catch { return void fail('usage', 'args 必须是 JSON', { rc: 2 }); } }
+    const c = needCtx() ?? {};
+    const { data, status } = await req('POST', '/api/uberge/th/call', {
+        method,
+        target: { ...(c.charDir ? { charDir: c.charDir } : {}), ...(c.chatName ? { chatName: c.chatName } : {}) },
+        args,
+    }, { allowFail: true });
+    if (data?.unsupported) return void fail('not_found', `th method unsupported: ${method}`, { hint: '方法名拼写——见 usage detail' });
+    if (status >= 400 || data?.ok === false) return void fail('server', `th ${method} 失败:${data?.error ?? status}`, { detail: data });
+    if (JSON_MODE) return out(data);
+    console.log(JSON.stringify(data?.result ?? data, null, 2).slice(0, flags.full ? 1e9 : 8000));
+    footer();
+}
+
 async function cmdRaw() {
     // 逃生舱:kernel 路由表上任何端点都能直达——写动词(PUT/PATCH/DELETE)
     // 不必为每条 REST 面单开命令。读面优先用具名命令(输出已整理)。
@@ -1311,6 +1365,7 @@ try {
         case 'plugin': await cmdPlugin(); break;
         case 'mvu': await cmdMvu(); break;
         case 'script': case 'stscript': await cmdScript(); break;
+        case 'th': await cmdTh(); break;
         case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
             console.log('uberge — agent-first CLI。裸跑看状态,`uberge schema` 看自描述目录,`uberge doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
