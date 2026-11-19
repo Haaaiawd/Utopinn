@@ -59,6 +59,8 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--as') flags.as = argv[++i];
     else if (a === '--mode') flags.mode = argv[++i];
     else if (a === '--handle') flags.handle = argv[++i];
+    else if (a === '--chat') flags.chat = argv[++i];
+    else if (a === '--via') flags.via = argv[++i];
     else if (a === '--set') {
         const kv = String(argv[++i]).split('=');
         const raw = kv.slice(1).join('=');
@@ -770,6 +772,25 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'POST|pattern|/api/utopinn/backup',
     'POST|pattern|/api/utopinn/lan/offer',
     'POST|pattern|/api/utopinn/lan/import',
+    // —— state sidecar 三族(state <family> <op>;get 的 GET/POST 双形都占具名位)——
+    'GET|pattern|/api/utopinn/state/chat/get',
+    'POST|pattern|/api/utopinn/state/chat/get',
+    'POST|pattern|/api/utopinn/state/chat/get-batch',
+    'POST|pattern|/api/utopinn/state/chat/patch',
+    'POST|pattern|/api/utopinn/state/chat/delete',
+    'GET|pattern|/api/utopinn/state/char/get',
+    'POST|pattern|/api/utopinn/state/char/get',
+    'POST|pattern|/api/utopinn/state/char/get-batch',
+    'POST|pattern|/api/utopinn/state/char/set',
+    'POST|pattern|/api/utopinn/state/char/patch',
+    'POST|pattern|/api/utopinn/state/char/delete',
+    'GET|pattern|/api/utopinn/state/preset/get',
+    'POST|pattern|/api/utopinn/state/preset/get',
+    'POST|pattern|/api/utopinn/state/preset/get-batch',
+    'POST|pattern|/api/utopinn/state/preset/patch',
+    'POST|pattern|/api/utopinn/state/preset/delete',
+    'POST|pattern|/api/utopinn/state/preset/delete-all',
+    'POST|pattern|/api/utopinn/state/preset/rename',
 ]);
 
 async function cmdDoctor() {
@@ -890,9 +911,13 @@ const SCHEMA = {
         { cmd: 'utopinn backup [--out f|dir] [--set cat=bool]', desc: '[data] zip 快照下载落盘(默认 cwd 用服务端文件名)', out: '{file,bytes}' },
         { cmd: 'utopinn lan-offer [--set cat=bool|--json-file sel]', desc: '[data] LAN 迁移 offer→一次性 url', out: '{url,expiresAt}' },
         { cmd: 'utopinn lan-import <url|--code c> [--mode merge|overwrite]', desc: '[data] 拉对端 zip 恢复(慢,--wait)', out: '{mode,restored}' },
+        { cmd: 'utopinn state chat <get|get-batch|patch|delete> <ns…> [ops|--json-file|--stdin]', desc: '[state] chat_state sidecar(目标=ctx 或 --char/--chat;patch=JSON-Patch;get 默认 POST,--via get 走 ETag 资源读)', out: '{ok,data|applied|deleted}' },
+        { cmd: 'utopinn state char <get|get-batch|set|patch|delete> <ns…> [doc]', desc: '[state] char_state sidecar(--char|ctx;set=整态覆写,data 必须 JSON 对象)', out: '{ok,data|deleted}' },
+        { cmd: 'utopinn state preset <get|get-batch|patch|delete> <name> <ns…> [--api id]', desc: '[state] preset_state sidecar(显式名;--api 族默认 openai)', out: '{ok,data|deleted}' },
+        { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
@@ -2054,6 +2079,152 @@ async function cmdRaw() {
     footer(`${method} ${path} → ${status}`);
 }
 
+// ═══ state sidecar 三族(TASK-038):/api/utopinn/state/<family>/<op> ═══
+// 命名域照抄 kernel 路由(utopinn-library.js state 段)。
+//   - get 默认 POST body 形;--via get 走 GET+query 的 ETag 私有化读
+//     (?account 必须=认证 handle,默认 default-user,--handle 覆盖)。
+//   - patch 收 JSON-Patch:ops 数组 | {operations:[…]} | {operation:{…}} | 裸单 op。
+//   - char 独有 set(整态覆写;body.data 先验对象形);preset 独有 delete-all/rename。
+//   - delete 类恒显式点名;chat 目标 = ctx 或 --char/--chat 显式覆盖
+//     (群聊 is_group 目标待 --group flag 统一收,本格不加)。
+const STATE_OPS = {
+    chat: ['get', 'get-batch', 'patch', 'delete'],
+    char: ['get', 'get-batch', 'set', 'patch', 'delete'],
+    preset: ['get', 'get-batch', 'patch', 'delete', 'delete-all', 'rename'],
+};
+
+const stateUsage = (detail) => fail('usage', 'utopinn state <chat|char|preset> <op> [args] [json|--json-file|--stdin]', {
+    detail: detail ?? 'chat:get|get-batch|patch|delete <ns…>(ctx|--char/--chat) · char:+set <ns> <doc> · preset:<op> <name> [ns…]|delete-all <name>|rename <old> <new>(--api 族,默认 openai)',
+    rc: 2,
+});
+
+/** patch 载荷归一 → operations 数组;不认得的形状回 null。 */
+function asPatchOps(doc) {
+    if (Array.isArray(doc)) return doc;
+    if (doc && typeof doc === 'object') {
+        if (Array.isArray(doc.operations)) return doc.operations;
+        if (doc.operation && typeof doc.operation === 'object' && !Array.isArray(doc.operation)) return [doc.operation];
+        if (typeof doc.op === 'string' && typeof doc.path === 'string') return [doc];
+    }
+    return null;
+}
+
+/** state 面统一错误映射:409→integrity_conflict/exists rc3,404→not_found,403→session,400→usage。 */
+function stateFail(family, op, status, data) {
+    const errTxt = data?.error ?? data?.detail ?? (typeof data === 'string' ? trunc(data, 160) : JSON.stringify(data));
+    if (status === 409) return fail(op === 'rename' ? 'exists' : 'integrity_conflict', `state ${family} ${op} 冲突: ${errTxt}`, { status, rc: 3 }), true;
+    if (status === 404) return fail('not_found', `state ${family} ${op}: ${errTxt}`, { status }), true;
+    if (status === 403) return fail('session', `state ${family} ${op} forbidden: ${errTxt}`, { status, hint: '--via get 需要 ?account=认证 handle(默认 default-user,--handle 覆盖)', rc: 4 }), true;
+    if (status === 400) return fail('usage', `state ${family} ${op} 被拒: ${errTxt}`, { status, rc: 2 }), true;
+    if (status >= 400 || (data && typeof data === 'object' && data.error)) return fail('server', `state ${family} ${op} 失败(${status}): ${errTxt}`, { status }), true;
+    return false;
+}
+
+function stateShow(data, tag) {
+    if (JSON_MODE) return out(data);
+    console.log(JSON.stringify(data, null, 2).slice(0, flags.full ? 1e9 : 8000));
+    footer(tag);
+    return data;
+}
+
+async function cmdState() {
+    const family = positional[1], op = positional[2];
+    if (!STATE_OPS[family]?.includes(op ?? '')) return void stateUsage();
+    const via = String(flags.via ?? 'post').toLowerCase();
+    if (!['post', 'get'].includes(via)) return void fail('usage', '--via 只认 post|get', { rc: 2 });
+    if (via === 'get' && op !== 'get') return void fail('usage', '--via get 只对 state <family> get 有效', { rc: 2 });
+    const rest = positional.slice(3);
+    const account = flags.handle ?? 'default-user';
+
+    // ── target 形状:chat={avatar_url,file_name},char={avatar_url},preset={apiId,name} ──
+    let body = {}, query = null, argCursor = 0;
+    if (family === 'chat') {
+        const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
+        const chatName = stripExt(flags.chat ?? state.chat?.name ?? '', 'jsonl');
+        if (!charDir || !chatName) {
+            return void fail('no_ctx', 'state chat 需要 char+chat 目标', { hint: 'utopinn use <char> <chat>,或 --char d --chat n 显式给', rc: 2 });
+        }
+        body = { avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+        query = { is_group: 'false', avatar_url: body.avatar_url, file_name: body.file_name };
+    } else if (family === 'char') {
+        const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
+        if (!charDir) {
+            return void fail('no_ctx', 'state char 需要 char 目标', { hint: 'utopinn use <char> 或 --char d 显式给', rc: 2 });
+        }
+        body = { avatar_url: `${charDir}.png` };
+        query = { avatar: body.avatar_url };
+    } else { // preset:name 是首个位置参(显式点名,delete 族铁律同款)
+        if (!rest[0]) return void stateUsage(`state preset ${op} 需要显式 <name>`);
+        body = { apiId: flags.api ?? 'openai', name: rest[0] };
+        query = { apiId: body.apiId, name: body.name };
+        argCursor = 1;
+    }
+    const nsArgs = rest.slice(argCursor);
+    const route = (tail) => `/api/utopinn/state/${family}/${tail}`;
+
+    if (op === 'get') {
+        const ns = nsArgs[0];
+        if (!ns) return void stateUsage(`state ${family} get <ns>`);
+        let data, status;
+        if (via === 'get') {
+            const q = new URLSearchParams({ ...query, namespace: ns, account });
+            ({ data, status } = await req('GET', `${route('get')}?${q}`, undefined, { allowFail: true }));
+        } else {
+            ({ data, status } = await req('POST', route('get'), { ...body, namespace: ns }, { allowFail: true }));
+        }
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state ${family} get ${ns}${via === 'get' ? ' (GET)' : ''} → ${data?.data == null ? 'null' : 'doc'}`);
+    }
+    if (op === 'get-batch') {
+        if (!nsArgs.length) return void stateUsage(`state ${family} get-batch <ns…>`);
+        const { data, status } = await req('POST', route('get-batch'), { ...body, namespaces: nsArgs }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state ${family} get-batch ×${nsArgs.length}`);
+    }
+    if (op === 'patch') {
+        const ns = nsArgs[0];
+        if (!ns) return void stateUsage(`state ${family} patch <ns> [ops|--json-file f|--stdin]`);
+        const doc = await readJsonBody(nsArgs.slice(1), `state ${family} patch 需要 JSON-Patch ops(数组|单 op|{operations|operation})`);
+        if (doc === undefined) return;
+        const operations = asPatchOps(doc);
+        if (!operations?.length) return void fail('usage', 'patch ops 空或形状不对(数组|单 op|{operations|operation})', { rc: 2 });
+        const { data, status } = await req('POST', route('patch'), { ...body, namespace: ns, operations }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state ${family} patch ${ns}: applied ${data?.applied ?? '?'}${data?.created ? ' · created' : ''}`);
+    }
+    if (op === 'delete') {
+        const ns = nsArgs[0];
+        if (!ns) return void stateUsage(`state ${family} delete <ns>(显式点名)`);
+        const { data, status } = await req('POST', route('delete'), { ...body, namespace: ns }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state ${family} delete ${ns}: ${data?.deleted ? 'deleted' : 'absent'}`);
+    }
+    if (op === 'set') { // char 独有(STATE_OPS 已门住其余 family)
+        const ns = nsArgs[0];
+        if (!ns) return void stateUsage('state char set <ns> [doc|--json-file f|--stdin]');
+        const doc = await readJsonBody(nsArgs.slice(1), 'state char set 需要整态 doc(JSON 对象)');
+        if (doc === undefined) return;
+        if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+            return void fail('usage', 'state char set 的 doc 必须是 JSON 对象(整态覆写,不收数组/标量)', { rc: 2 });
+        }
+        const { data, status } = await req('POST', route('set'), { ...body, namespace: ns, data: doc }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state char set ${ns} → ok`);
+    }
+    if (op === 'delete-all') { // preset 独有
+        const { data, status } = await req('POST', route('delete-all'), { apiId: body.apiId, name: body.name }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state preset delete-all ${body.name}: ${data?.deleted ?? 0} ns cleared`);
+    }
+    if (op === 'rename') { // preset 独有;body.name 此时是 oldName,newName 是下一个位置参
+        const newName = nsArgs[0];
+        if (!newName) return void stateUsage('state preset rename <old> <new>');
+        const { data, status } = await req('POST', route('rename'), { apiId: body.apiId, oldName: body.name, newName }, { allowFail: true });
+        if (stateFail(family, op, status, data)) return;
+        return stateShow(data, `state preset rename ${body.name} → ${newName}: ${data?.renamed ?? 0} ns moved`);
+    }
+}
+
 // ═══ dispatch ═══
 try {
     switch (CMD) {
@@ -2121,6 +2292,7 @@ try {
         case 'backup': await cmdBackup(); break;
         case 'lan-offer': await cmdLanOffer(); break;
         case 'lan-import': await cmdLanImport(); break;
+        case 'state': await cmdState(); break;
         case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
             console.log('utopinn — agent-first CLI。裸跑看状态,`utopinn schema` 看自描述目录,`utopinn doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
