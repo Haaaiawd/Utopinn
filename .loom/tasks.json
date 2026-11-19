@@ -2792,14 +2792,14 @@
           "verified": ""
         }
       ],
-      "progress": "",
+      "progress": " | 首增量(b31f898):chats.js 机制函数已导出,uberge append/patch 路由全套接入(sidecar dedup/ack/settle/resettle/recents/sanitize);CLI writeOp 已切 uberge REST,/body/ 命名空间;实弹 send→completed+persisted、swipe→completed(409重锚+gen-id ack)。另修时序:awaiting_ack 即到即写防 grace 超时。",
       "evidence": [],
       "outcome": "三套写盘面收成一套:ack/integrity/gen-id/settle 机制归 fiber 所有,uberge chats REST 成为唯一权威写盘接口;legacy /api/chats 退化为兼容转发。",
       "boundaries": [
         "不删 legacy 端点(转 TASK-035)",
         "行为语义以 legacy 为准做 parity diff,不自由发挥"
       ],
-      "updated_at": "2026-11-19T05:41:24.488Z"
+      "updated_at": "2026-11-19T06:05:05.960Z"
     },
     {
       "id": "TASK-033",
