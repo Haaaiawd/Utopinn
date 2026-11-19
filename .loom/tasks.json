@@ -3123,7 +3123,7 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
@@ -3144,11 +3144,10 @@
           "verified": ""
         }
       ],
-      "progress": {
-        "completed": [],
-        "next": "state 族 15 动词落地(1bcf4d9,doctor 66/66);剩:每面可重跑验收脚本 + golden-diff 复跑"
-      },
-      "evidence": [],
+      "progress": 100,
+      "evidence": [
+        "utopinn-acceptance 74/74 pass(run.mjs 可重跑);顺手修 CLI 两 bug:process.exit 截断大 envelope→drain 感知退出;inspect 对 failed job 误报 not_found→认 HTTP 404"
+      ],
       "outcome": "「后端坚不可破」可证明:全组件面 CLI 验收脚本绿 + 混沌用例过。",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
@@ -3194,7 +3193,9 @@
         }
       ],
       "progress": 0,
-      "evidence": [],
+      "evidence": [
+        "a879692 壳落地:四层壳+Cordis域 feature 组织+品牌图标v2+U馆命名/视口入设置"
+      ],
       "outcome": "设计稿 u_ui_codex_linear_shadcn_ui.html 的三层壳(托盘轨/侧栏/舞台/右工作台)+设计token+移动端抽屉底sheet 落进现有 React 栈;chat 舞台真接 src/api,其余形态留 typed 结构",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
