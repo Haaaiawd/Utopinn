@@ -1,200 +1,148 @@
-// 规范稿主区视图:home(资产画廊)/ studio(资产管理域)/ plugins(插件域)/ hub(移动)。
-// home/hub 用真 cards;studio 子页按 studioNav 分面,library 子页复用 LibraryView;
-// plugins.installed 复用 ExtensionsView(真插件管理),market 走 mock 目录。
-import { useMemo } from 'react';
-import { useI18n } from '../../i18n';
+// 规范稿视图体:home(资产画廊)/ studio(世界书双栏)/ plugins(内置+市场)。
+// 走 view 贡献点注册;数据一律 useShell + SPEC-DATA mock。
 import { useShell } from '../../kernel/context';
-import { Icon, type IconName } from '../Icon';
-import { CardTile } from '../CardTile';
-import { charImageUrl } from '../../api/characters';
-import { LibraryView } from './LibraryView';
-import { ExtensionsView } from './ExtensionsView';
+import { useI18n } from '../../i18n';
+import { Icon } from '../Icon';
 
-function PageHead({ title, sub }: { title: string; sub?: string }) {
-    return (
-        <div className="mb-5">
-            <h1 className="heading-tight text-[18px] text-[color:var(--fg-primary)]">{title}</h1>
-            {sub && <p className="mt-0.5 text-[12px] text-[color:var(--fg-muted)]">{sub}</p>}
-        </div>
-    );
-}
+const lbl = 'mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
 
-/* ================= home:问候 + 继续 + 卡格(真 cards/chats) ================= */
-export function HomeGallery() {
+/** home:卡画廊 —— 点击卡面选中该卡最新会话(规范稿画廊网格)。 */
+export function HomeView() {
     const { t } = useI18n();
-    const { cards, chats, selectChat, openCharacter, cardsMock } = useShell();
-    const cardList = useMemo(() => [...cards.values()], [cards]);
-    const recent = chats.slice(0, 4);
+    const s = useShell();
+    const cards = [...s.cards.values()];
     return (
-        <div className="no-scrollbar h-full overflow-y-auto px-8 py-8">
-            <PageHead title={t('home.greeting')} sub={t('home.sub')} />
-            {recent.length > 0 && (
-                <>
-                    <div className="mb-2 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('home.continue')}</div>
-                    <div className="inset-group mb-6">
-                        {recent.map((c) => {
-                            const card = cards.get(c.charDir);
-                            return (
-                                <button key={c.id} type="button" className="inset-row inset-row-btn" onClick={() => selectChat(c.id)}>
-                                    <span className="flex min-w-0 items-center gap-2.5">
-                                        <span className="char-avatar-ring flex h-7 w-7 items-center justify-center overflow-hidden text-[11px] text-[color:var(--fg-muted)]">
-                                            {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-full w-full object-cover" /> : (card?.name ?? c.title).slice(0, 1)}
-                                        </span>
-                                        <span className="min-w-0">
-                                            <span className="block truncate text-[13px] text-[color:var(--fg-primary)]">{c.title}</span>
-                                            <span className="block truncate text-[10px] text-[color:var(--fg-faint)]">{card?.name ?? c.charDir} · {c.updatedAt}</span>
-                                        </span>
-                                    </span>
-                                    {c.unread && <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--brand)]" />}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </>
-            )}
-            <div className="mb-2 flex items-center justify-between">
-                <span className="text-[11px] font-medium text-[color:var(--fg-muted)]">{t('home.cards')}</span>
-                {cardsMock && <span className="text-[10px] text-[color:var(--fg-faint)]">{t('tree.mockNote')}</span>}
-            </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <h1 className="heading-tight mb-1 text-[18px] text-[color:var(--fg-primary)]">{t('nav.home')}</h1>
+            <p className="mb-5 text-[12px] text-[color:var(--fg-muted)]">{t('home.sub')}</p>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-                {cardList.map((c) => (
-                    <CardTile key={c.charDir} card={c}
-                        chatCount={chats.filter((x) => x.charDir === c.charDir).length}
-                        onOpen={() => openCharacter(c.charDir)} />
-                ))}
+                {cards.map((c) => {
+                    const chat = s.chats.find((x) => x.charDir === c.charDir);
+                    return (
+                        <button
+                            key={c.charDir}
+                            className="inset-group inset-row-btn overflow-hidden text-left"
+                            onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
+                        >
+                            <div className="flex h-[150px] items-center justify-center bg-[color:var(--bg-active)] text-[28px]" style={{ color: 'var(--brand)' }}>
+                                {c.avatar ? <img src={`/api/utopinn/characters/${encodeURIComponent(c.charDir)}/image`} alt="" className="h-full w-full object-cover" /> : (c.name?.[0] ?? c.charDir[0])}
+                            </div>
+                            <div className="p-2.5">
+                                <div className="truncate text-[12px] font-medium text-[color:var(--fg-primary)]">{c.name || c.charDir}</div>
+                                <div className="mt-0.5 truncate text-[10px] text-[color:var(--fg-faint)]">{chat?.title ?? c.charDir}</div>
+                            </div>
+                        </button>
+                    );
+                })}
             </div>
-            {cardList.length === 0 && <p className="py-10 text-center text-[12px] text-[color:var(--fg-faint)]">{t('home.empty')}</p>}
+            {s.cardsMock && <p className="mt-4 text-[10.5px] text-[color:var(--fg-faint)]">{t('common.mockData')}</p>}
         </div>
     );
 }
 
-/* ================= studio:左树选中分面 ================= */
+/** studio:世界书双栏(规范稿 lore 双栏 —— 左条目列表右详情),其余 nav 诚实占位。 */
 export function StudioView() {
     const { t } = useI18n();
-    const { studioNav } = useShell();
-    if (studioNav === 'library') return <div className="h-full overflow-hidden"><LibraryView /></div>;
+    const s = useShell();
+    const sel = s.worldbook.find((w) => w.id === s.selectedLoreId) ?? s.worldbook[0];
+    if (s.studioNav !== 'lore') {
+        return (
+            <div className="flex h-full items-center justify-center text-[12px] text-[color:var(--fg-faint)]">
+                {t(`studio.nav.${s.studioNav}`)} · SPEC-DATA
+            </div>
+        );
+    }
     return (
-        <div className="no-scrollbar h-full overflow-y-auto px-8 py-8">
-            <PageHead title={t(`studio.${studioNav}`)} sub={t('studio.stubSub')} />
-            {studioNav === 'presets' && <StudioPresets />}
-            {studioNav === 'worlds' && <StudioWorlds />}
-            {studioNav === 'secrets' && <StubBlock k="studio.secrets.stub" icon="shield" />}
-            {studioNav === 'recent' && <StubBlock k="studio.recent.stub" icon="clock" />}
-        </div>
-    );
-}
-
-function StubBlock({ k, icon }: { k: string; icon: IconName }) {
-    const { t } = useI18n();
-    return (
-        <div className="flex flex-col items-center gap-2 py-16 text-[color:var(--fg-faint)]">
-            <Icon name={icon} size={26} />
-            <p className="text-[12px]">{t(k)}</p>
-        </div>
-    );
-}
-
-function StudioPresets() {
-    const { t } = useI18n();
-    const { presets, activePresetId, setActivePreset } = useShell();
-    return (
-        <div className="inset-group max-w-[560px]">
-            {presets.map((p) => (
-                <button key={p.id} type="button" className="inset-row inset-row-btn" onClick={() => setActivePreset(p.id)}>
-                    <span className="flex min-w-0 items-center gap-2.5">
-                        <Icon name="zap" size={14} className={p.id === activePresetId ? 'text-[color:var(--brand)]' : 'text-[color:var(--fg-faint)]'} />
+        <div className="flex min-h-0 flex-1">
+            <div className="w-[240px] shrink-0 overflow-y-auto border-r border-[color:var(--border-hairline)] p-2">
+                {s.worldbook.map((w) => (
+                    <button
+                        key={w.id}
+                        className="inset-row-btn mb-1 flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left"
+                        style={w.id === s.selectedLoreId ? { background: 'var(--bg-active)' } : undefined}
+                        onClick={() => s.setSelectedLoreId(w.id)}
+                    >
                         <span className="min-w-0">
-                            <span className="block truncate text-[13px] text-[color:var(--fg-primary)]">{p.name}</span>
-                            <span className="block truncate text-[11px] text-[color:var(--fg-faint)]">{p.desc} · T{p.temp} · {p.source}</span>
+                            <span className="block truncate text-[11.5px] text-[color:var(--fg-primary)]">{w.title}</span>
+                            <span className="mt-0.5 block text-[9.5px] text-[color:var(--fg-faint)]">{w.type} · P{w.priority}</span>
                         </span>
-                    </span>
-                    {p.id === activePresetId && <Icon name="check" size={14} className="text-[color:var(--brand)]" />}
-                </button>
-            ))}
-            <div className="inset-row"><span className="text-[10px] text-[color:var(--fg-faint)]">{t('panel.preset.mockNote')}</span></div>
-        </div>
-    );
-}
-
-function StudioWorlds() {
-    const { t } = useI18n();
-    const { globalLore, toggleGlobalLore } = useShell();
-    return (
-        <div className="inset-group max-w-[560px]">
-            {globalLore.map((g) => (
-                <div key={g.id} className="inset-row">
-                    <span className="flex min-w-0 items-center gap-2.5">
-                        <Icon name="book" size={14} className="text-[color:var(--fg-muted)]" />
-                        <span className="min-w-0">
-                            <span className="block truncate text-[13px] text-[color:var(--fg-primary)]">{g.name}</span>
-                            <span className="block text-[11px] text-[color:var(--fg-faint)]">{t('studio.entries').replace('{n}', String(g.entries))}</span>
-                        </span>
-                    </span>
-                    <button type="button" className="sh-switch" data-checked={g.enabled} onClick={() => toggleGlobalLore(g.id)}>
-                        <span className="sh-switch-thumb" />
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: w.enabled ? 'var(--status-ok)' : 'var(--fg-faint)' }} />
                     </button>
-                </div>
-            ))}
+                ))}
+            </div>
+            <div className="min-w-0 flex-1 overflow-y-auto p-5">
+                {sel && (
+                    <>
+                        <h2 className="heading-tight text-[15px] text-[color:var(--fg-primary)]">{sel.title}</h2>
+                        <div className="mb-3 mt-1 text-[10.5px] text-[color:var(--fg-muted)]">{sel.type} · 优先级 {sel.priority} · {sel.tokens} tokens</div>
+                        <div className="inset-group p-4 text-[12.5px] leading-relaxed text-[color:var(--fg-secondary)]">{sel.content}</div>
+                    </>
+                )}
+            </div>
         </div>
     );
 }
 
-/* ================= plugins:installed(真) + market(mock) ================= */
+/** plugins:installed = 内置 cordis-* + 市场已装;market = 目录网格。 */
 export function PluginsView() {
     const { t } = useI18n();
-    const { pluginsNav, marketPlugins, toggleMarketPlugin } = useShell();
-    if (pluginsNav === 'installed') return <div className="h-full overflow-hidden"><ExtensionsView /></div>;
+    const s = useShell();
+    const installed = s.pluginsNav === 'installed';
     return (
-        <div className="no-scrollbar h-full overflow-y-auto px-8 py-8">
-            <PageHead title={t('plugins.market')} sub={t('plugins.marketSub')} />
-            <div className="inset-group max-w-[640px]">
-                {marketPlugins.map((m) => (
-                    <div key={m.id} className="inset-row">
-                        <span className="flex min-w-0 items-start gap-2.5">
-                            <Icon name="plug" size={15} className="mt-0.5 text-[color:var(--fg-muted)]" />
-                            <span className="min-w-0">
-                                <span className="block truncate text-[13px] text-[color:var(--fg-primary)]">
-                                    {m.name} <span className="text-[10px] text-[color:var(--fg-faint)]">· {m.author} · ⬇{m.installs}</span>
-                                </span>
-                                <span className="block text-[11px] leading-relaxed text-[color:var(--fg-muted)]">{m.desc}</span>
+        <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <h1 className="heading-tight mb-5 text-[18px] text-[color:var(--fg-primary)]">{t(`plugins.nav.${s.pluginsNav}`)}</h1>
+            {installed ? (
+                <div className="flex flex-col gap-2.5">
+                    {s.builtinPlugins.map((p) => (
+                        <div key={p.id} className="inset-group flex items-center gap-3 p-3.5">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: p.bg, color: p.color }}>
+                                <Icon name={p.icon as never} size={16} />
                             </span>
-                        </span>
-                        <button type="button"
-                            className={`shrink-0 rounded-[7px] px-2.5 py-1 text-[11px] ${m.installed ? 'border border-[color:var(--border-subtle)] text-[color:var(--fg-muted)]' : 'bg-[color:var(--brand)] text-[color:var(--brand-fg)]'}`}
-                            onClick={() => toggleMarketPlugin(m.id)}>
-                            {m.installed ? t('plugins.installedBtn') : t('plugins.install')}
-                        </button>
-                    </div>
-                ))}
-                <div className="inset-row"><span className="text-[10px] text-[color:var(--fg-faint)]">{t('plugins.mockNote')}</span></div>
-            </div>
-        </div>
-    );
-}
-
-/* ================= hub:移动资产工坊 ================= */
-export function HubView() {
-    const { t } = useI18n();
-    const { cards, chats, selectChat, openCharacter } = useShell();
-    return (
-        <div className="no-scrollbar h-full overflow-y-auto px-4 py-4">
-            <div className="mb-3 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('hub.recent')}</div>
-            <div className="inset-group mb-4">
-                {chats.slice(0, 3).map((c) => (
-                    <button key={c.id} type="button" className="inset-row inset-row-btn" onClick={() => selectChat(c.id)}>
-                        <span className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--fg-primary)]">{c.title}</span>
-                        <Icon name="chevronRight" size={12} className="text-[color:var(--fg-faint)]" />
-                    </button>
-                ))}
-            </div>
-            <div className="mb-2 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('home.cards')}</div>
-            <div className="grid grid-cols-2 gap-2.5">
-                {[...cards.values()].map((c) => (
-                    <CardTile key={c.charDir} card={c}
-                        chatCount={chats.filter((x) => x.charDir === c.charDir).length}
-                        onOpen={() => openCharacter(c.charDir)} />
-                ))}
-            </div>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{p.name}</span>
+                                <span className="mt-0.5 block truncate text-[10.5px] text-[color:var(--fg-muted)]">{p.desc}</span>
+                            </span>
+                            <button className="sh-switch" data-checked={p.enabled || undefined} onClick={() => s.toggleBuiltinPlugin(p.id)}><span className="sh-switch-thumb" /></button>
+                        </div>
+                    ))}
+                    {s.marketPlugins.filter((p) => p.installed).map((p) => (
+                        <div key={p.id} className="inset-group flex items-center gap-3 p-3.5">
+                            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: p.bg, color: p.color }}>
+                                <Icon name={p.icon as never} size={16} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{p.name}</span>
+                                <span className="mt-0.5 block truncate text-[10.5px] text-[color:var(--fg-muted)]">{p.desc}</span>
+                            </span>
+                            <button className="ghost-btn h-7 rounded-md px-2.5 text-[10.5px] text-[color:var(--fg-muted)]" onClick={() => s.toggleMarketPlugin(p.id)}>{t('plugins.remove')}</button>
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-3">
+                    {s.marketPlugins.map((p) => (
+                        <div key={p.id} className="inset-group p-3.5">
+                            <div className="flex items-start gap-2.5">
+                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]" style={{ background: p.bg, color: p.color }}>
+                                    <Icon name={p.icon as never} size={16} />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{p.name}</div>
+                                    <div className="text-[9.5px] text-[color:var(--fg-faint)]">{p.category}</div>
+                                </div>
+                            </div>
+                            <p className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-[color:var(--fg-muted)]">{p.desc}</p>
+                            <button
+                                className="mt-2.5 w-full rounded-lg py-1.5 text-[11px]"
+                                style={p.installed ? { background: 'var(--bg-active)', color: 'var(--fg-secondary)' } : { background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                                onClick={() => s.toggleMarketPlugin(p.id)}
+                            >
+                                {p.installed ? t('plugins.installed') : t('plugins.install')}
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }

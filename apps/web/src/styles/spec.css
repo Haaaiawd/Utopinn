@@ -275,3 +275,22 @@ input[type="range"] { accent-color: var(--brand); }
     background: var(--bg-elevated); color: var(--fg-primary);
     box-shadow: var(--shadow-pop);
 }
+
+/* 浮动提示胶囊(规范稿 toast:fixed bottom center z 60)。 */
+.hint-pill {
+    position: fixed; bottom: 22px; left: 50%; translate: -50% 0; z-index: 60;
+    border-radius: 999px; padding: 8px 18px;
+    font-size: 12.5px; color: var(--fg-primary);
+    animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.hint-pill.err { color: var(--status-danger); }
+
+/* 全局导入幕帘 —— 事件穿透,enter/leave 计数归 App。 */
+.drop-veil {
+    position: fixed; inset: 10px; z-index: 70;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+    background: color-mix(in srgb, var(--bg-canvas) 82%, transparent);
+    border: 1px dashed var(--brand); border-radius: 12px;
+    color: var(--fg-primary); font-size: 15px; font-weight: 500;
+    pointer-events: none; animation: popIn 0.15s cubic-bezier(0.22, 1, 0.36, 1);
+}

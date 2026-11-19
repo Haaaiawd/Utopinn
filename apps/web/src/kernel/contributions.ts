@@ -5,11 +5,10 @@
 import type { ComponentType } from 'react';
 import type { IconName } from '../components/Icon';
 import type { StageKind, ViewId } from '../types';
-import type { ConversationRendererComponent } from '../components/chat/renderers/types';
 
-/** 板块类型是不透明字符串(同 dockkit:kind 不归宿主解释)。 */
+/** 板块类型是不透明字符串(同 dockkit:kind 不归宿主解释)。
+ *  规范稿 openTabs/activeTab 语义:板块实例即类型本身,同类型同时至多一页。 */
 export type PanelType = string;
-export interface PanelInst { id: string; type: PanelType }
 
 export interface NavRailContribution {
     view: ViewId;
@@ -31,6 +30,8 @@ export interface PanelTypeContribution {
     wired: boolean;
     /** 板块本体 —— 无 props,数据走 useShell()。 */
     Body: ComponentType;
+    /** wb-tab 显示名 —— i18n 键(t() 回落键名);规范稿 PANEL_CATALOG.title。 */
+    title?: string;
     /** launcher 目录元数据:desc/badge 是 i18n 键(t() 回落键名);
      *  category 决定落在 launcher 的「新键」格还是「建议」组。 */
     desc?: string;
@@ -59,7 +60,7 @@ export interface StageFormContribution {
 export interface RendererContribution {
     id: string;
     order: number;
-    Component: ConversationRendererComponent;
+    Component: ComponentType;
 }
 
 /** ctbar 右侧动作位(chat 视图)。 */

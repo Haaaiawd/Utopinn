@@ -1,172 +1,23 @@
-// feature:chat — 聊天域。注册 nav、视图、session/diag 板块、
-// prose 渲染器、ctbar 沉浸动作、本域词条。壳不认识它,只认贡献点。
-import { useI18n } from '../i18n';
-import type { Feature, FeatureCtx } from '../kernel/kernel';
-import { useShell } from '../kernel/context';
-import { ChatView } from '../components/chat/ChatView';
+// feature:chat — 聊天域:rail 项 + chat view(CenterStage 出口)+ 会话树。
+import type { Feature } from '../kernel/kernel';
 import { CenterStage } from '../components/stage/CenterStage';
-import { ProseRenderer } from '../components/chat/renderers/ProseRenderer';
-import { SessionBody, DiagBody } from '../components/panels/bodies';
-import { Icon } from '../components/Icon';
-import { IconButton } from '../components/ui/icon-button';
-
-function ImmersiveAction() {
-    const { t } = useI18n();
-    const { immersive } = useShell();
-    return <IconButton label={t('menu.view.immersive')} icon={<Icon name="focus" size={16} />} onClick={immersive} />;
-}
+import { ChatTree } from '../components/sidebar/trees';
+import { HomeView } from '../components/views/SpecViews';
 
 export const chatFeature: Feature = {
     name: 'chat',
-    apply(ctx: FeatureCtx) {
+    apply(ctx) {
         ctx.add('nav.rail', { view: 'chat', icon: 'chat', order: 10 });
-        // 'chat' 视图 = 中央舞台出口:会话 stage 形态 → 'stage.form' 贡献。
+        ctx.add('nav.rail', { view: 'home', icon: 'cards', order: 20 });
         ctx.add('view', { view: 'chat', Component: CenterStage });
-        // 兜底形态:'chat' 会话落 ChatView(真数据链:messages→generate→WS 流)。
-        ctx.add('stage.form', { kind: 'chat', order: 10, Component: ChatView });
-        ctx.add('panel.type', { type: 'session', icon: 'user', wired: true, Body: SessionBody });
-        ctx.add('panel.type', { type: 'diag', icon: 'pulse', wired: true, Body: DiagBody });
-        ctx.add('renderer', { id: 'prose', order: 10, Component: ProseRenderer });
-        ctx.add('ctbar.chat', { id: 'immersive', order: 90, Component: ImmersiveAction });
+        ctx.add('view', { view: 'home', Component: HomeView });
+        ctx.add('sidebar.tree', { rail: 'chat', order: 10, Component: ChatTree });
         ctx.locale('chat', {
             'zh-CN': {
-                'nav.chat': '聊天',
-                'nav.chat.rail': '聊天',
-                'sidebar.newChat': '新会话',
-                'sidebar.search': '搜索',
-                'sidebar.recent': '最近',
-                'menu.view.immersive': '沉浸模式',
-
-                'chat.tabs.conversation': '对话',
-                'chat.tabs.preview': '提示词预览',
-                'chat.preview.empty': '还没有预览。切到此 tab 会按需跑一次 /api/utopinn/preview。',
-                'chat.preview.mock': '模拟数据 — 服务器未连接',
-                'chat.preview.failed': '预览失败',
-                'chat.send': '发送',
-                'chat.send.draftOnly': '本地草稿 — 服务器离线或生成中',
-                'chat.send.failed': '发送失败',
-                'chat.input.placeholder': '输入消息…(Enter 发送,Shift+Enter 换行)',
-                'chat.attach': '附件',
-                'chat.swipe': '版本',
-                'chat.action.edit': '编辑',
-                'chat.action.regen': '重新生成',
-                'chat.action.more': '更多',
-                'chat.action.unwired': '未接线',
-                'chat.rename': '重命名会话',
-                'chat.rename.failed': '重命名失败',
-                'chat.delete': '删除会话',
-                'chat.delete.failed': '删除失败',
-                'chat.delete.confirm': '删除这个会话?此操作不可撤销。',
-                'chat.noChat': '还没有会话 —— 从门厅或故事库挑一张卡开始。',
-
-                'stage.model': '模型',
-                'stage.persona': '人设',
-                'stage.persona.pick': '切换人设',
-                'stage.persona.manage': '管理人设',
-                'stage.persona.none': '暂无人设 —— 去设置页建一个',
-                'stage.world': '绑定世界书',
-                'stage.preset': '生成预设',
-                'stage.book.embedded': '内嵌书',
-
-                'panel.type.session': '本局',
-                'panel.type.diag': '诊断',
-                'panel.session.authorNote': '作者注',
-                'panel.session.cfg': 'CFG',
-                'panel.session.logprobs': 'Logprobs',
-                'panel.session.unwired': '会话级注入位 — 骨架占位',
-                'panel.diag.noData': '跑一次「提示词预览」后,这里显示 sources 与 trace。',
-                'diag.sources': '来源',
-                'diag.trace': '组装轨迹',
-                'diag.preset': '预设',
-                'diag.model': '模型',
-                'diag.wi': '世界书命中',
-                'diag.chatCount': '历史消息',
-                'diag.budget': 'Token 预算',
-                'diag.remaining': '剩余预算',
-                'diag.dropped': '丢弃历史',
-                'diag.injected': '注入条数',
-                'diag.collections': '集合',
-                'diag.col.tokens': 'tokens',
-                'diag.col.count': '条数',
-                'diag.messages': '组装消息',
-                'diag.raw': '原始 JSON',
-                'diag.jobs': '生成任务',
-                'diag.job.status': '状态',
-                'diag.job.persisted': '已落盘',
-                'diag.job.events': '事件数',
-                'diag.job.error': '错误',
-                'diag.job.loading': '展开读取详情…',
-                'diag.job.loadFailed': '读不到这个任务',
+                'home.sub': '角色卡画廊 —— 点卡进会话',
+                'common.mockData': '模拟数据 — 服务器未连接',
             },
-            en: {
-                'nav.chat': 'Chat',
-                'nav.chat.rail': 'Chat',
-                'sidebar.newChat': 'New chat',
-                'sidebar.search': 'Search',
-                'sidebar.recent': 'Recent',
-                'menu.view.immersive': 'Immersive mode',
-
-                'chat.tabs.conversation': 'Conversation',
-                'chat.tabs.preview': 'Prompt preview',
-                'chat.preview.empty': 'No preview yet. Switching here runs /api/utopinn/preview on demand.',
-                'chat.preview.mock': 'mock data — server unreachable',
-                'chat.preview.failed': 'Preview failed',
-                'chat.send': 'Send',
-                'chat.send.draftOnly': 'local draft — server offline or streaming',
-                'chat.send.failed': 'send failed',
-                'chat.input.placeholder': 'Type a message… (Enter to send, Shift+Enter for newline)',
-                'chat.attach': 'Attach',
-                'chat.swipe': 'swipe',
-                'chat.action.edit': 'Edit',
-                'chat.action.regen': 'Regenerate',
-                'chat.action.more': 'More',
-                'chat.action.unwired': 'not wired',
-                'chat.rename': 'Rename chat',
-                'chat.rename.failed': 'rename failed',
-                'chat.delete': 'Delete chat',
-                'chat.delete.failed': 'delete failed',
-                'chat.delete.confirm': 'Delete this chat? This cannot be undone.',
-                'chat.noChat': 'No chats yet — pick a card from the foyer or library to begin.',
-
-                'stage.model': 'Model',
-                'stage.persona': 'Persona',
-                'stage.persona.pick': 'Switch persona',
-                'stage.persona.manage': 'Manage personas',
-                'stage.persona.none': 'No personas yet — create one in Settings',
-                'stage.world': 'Bound world book',
-                'stage.preset': 'Generation preset',
-                'stage.book.embedded': 'Embedded',
-
-                'panel.type.session': 'Session',
-                'panel.type.diag': 'Diagnostics',
-                'panel.session.authorNote': "Author's note",
-                'panel.session.cfg': 'CFG',
-                'panel.session.logprobs': 'Logprobs',
-                'panel.session.unwired': 'Session-level injection slots — skeleton placeholder',
-                'panel.diag.noData': 'Run "Prompt preview" and sources + trace land here.',
-                'diag.sources': 'Sources',
-                'diag.trace': 'Assembly trace',
-                'diag.preset': 'Preset',
-                'diag.model': 'Model',
-                'diag.wi': 'WI injected',
-                'diag.chatCount': 'History',
-                'diag.budget': 'Token budget',
-                'diag.remaining': 'Remaining',
-                'diag.dropped': 'Dropped history',
-                'diag.injected': 'Injected',
-                'diag.collections': 'Collections',
-                'diag.col.tokens': 'tokens',
-                'diag.col.count': 'msgs',
-                'diag.messages': 'Assembled messages',
-                'diag.raw': 'Raw JSON',
-                'diag.jobs': 'Generation jobs',
-                'diag.job.status': 'Status',
-                'diag.job.persisted': 'Persisted',
-                'diag.job.events': 'Events',
-                'diag.job.error': 'Error',
-                'diag.job.loading': 'Expand to load detail…',
-                'diag.job.loadFailed': 'Could not load this job',
-            },
+            en: {},
         });
     },
 };

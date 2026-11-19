@@ -7,15 +7,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import {
-    MOCK_CARDS, MOCK_CHATS, MOCK_MODELS, MOCK_PRESETS, MOCK_GLOBAL_LORE,
-    MOCK_MARKET_PLUGINS, MOCK_MVU,
+    MOCK_BUILTIN_PLUGINS, MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
+    MOCK_IM_CHANNELS, MOCK_MARKET_PLUGINS, MOCK_MODELS, MOCK_MVU,
+    MOCK_NOTES_TEXT, MOCK_NOVEL_CHAPTERS, MOCK_PRESET_BLOCKS, MOCK_PRESETS,
+    MOCK_STAGE_SESSIONS, MOCK_VN, MOCK_WORLDBOOK,
 } from './api/mock';
-import { postPreviewWithFallback } from './api/preview';
 import { listCharacters, type CardItem } from './api/characters';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import type { ActivePersona } from './api/personas';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
-import { RAIL_VIEWS, type ChatSummary, type PreviewResult, type ServerStatus, type ViewId } from './types';
+import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
 import { TopChrome, LeftChrome } from './components/shell/Chrome';
 import { Workbench, FloatingWin } from './components/shell/Workbench';
@@ -23,36 +24,32 @@ import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
     ShellProvider, useContribs, useShell,
-    type ChatSettings, type PresetParams, type SheetSnap, type ShellCtx, type VpMode,
+    type ChatSettings, type PresetParams, type SheetSnap, type ShellCtx,
+    type StageData, type VpMode,
 } from './kernel/context';
 import { Kernel } from './kernel/kernel';
-import type { PanelInst, PanelType } from './kernel/contributions';
+import type { PanelType } from './kernel/contributions';
 import { shellFeature } from './features/shell';
-import { libraryFeature } from './features/library';
 import { chatFeature } from './features/chat';
 import { studioFeature } from './features/studio';
 import { pluginsFeature } from './features/plugins';
 import { panelsFeature } from './features/panels';
 import { stagepackFeature } from './features/stagepack';
-import { domainsFeature } from './features/domains';
 
 /** 内建 feature 装配 —— kernel 即壳的全部表面;feature 顺序即词条/导航序。 */
 const kernel = new Kernel();
 const registry = kernel.registry;
 kernel.applyFeature(shellFeature);
-kernel.applyFeature(libraryFeature);
 kernel.applyFeature(chatFeature);
 kernel.applyFeature(studioFeature);
 kernel.applyFeature(pluginsFeature);
 kernel.applyFeature(panelsFeature);
 kernel.applyFeature(stagepackFeature);
-kernel.applyFeature(domainsFeature);
 
 /** 主区出口:按当前 view 从 view 贡献点找组件,壳不 if/switch。 */
 function ViewOutlet() {
     const { view } = useShell();
-    const views = useContribs('view');
-    const C = views.find((v) => v.view === view)?.Component;
+    const C = useContribs('view').find((v) => v.view === view)?.Component;
     return C ? <C /> : null;
 }
 
@@ -60,30 +57,23 @@ const MOBILE_BP = 680;
 
 function Shell() {
     const { t } = useI18n();
-    // 默认落点:home(资产画廊);规范稿落点即 rail 第一域。
-    const [view, setView] = useState<ViewId>('home');
-    const [chats, setChats] = useState<ChatSummary[]>(MOCK_CHATS);
-    const [activeChat, setActiveChat] = useState(chats[0]?.id ?? '');
+    // 规范稿默认落点:掌门线聊天会话 + 总簿 tab;view=chat,rail 第一域。
+    const [view, setView] = useState<ViewId>('chat');
+    const [chats, setChats] = useState<ChatSummary[]>([...MOCK_CHATS, ...MOCK_STAGE_SESSIONS]);
+    const [activeChat, setActiveChat] = useState('c1');
     const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
     const [cardsMock, setCardsMock] = useState(false);
-    const [storiesFocus, setStoriesFocus] = useState<string | null>(null);
     const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
     const [dropVeil, setDropVeil] = useState(false);
     const [persona, setPersona] = useState<ActivePersona | null>(null);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => window.innerWidth <= 920);
-    const [panelHidden, setPanelHidden] = useState(() => window.innerWidth <= 1180);
-    const [launcherOpen, setLauncherOpen] = useState(true);
-    const [panels, setPanels] = useState<PanelInst[]>([
-        { id: 'p-diag', type: 'diag' },
-        { id: 'p-mvu', type: 'mvu' },
-    ]);
-    const [activePanel, setActivePanel] = useState<string | null>('p-mvu');
-    const [floating, setFloating] = useState<PanelInst | null>(null);
+    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 920);
+    const [workbenchOpen, setWorkbenchOpen] = useState(() => window.innerWidth > 1180);
+    const [openTabs, setOpenTabs] = useState<PanelType[]>(['ledger']);
+    const [activeTab, setActiveTab] = useState<string>('ledger');
+    const [floatingType, setFloatingType] = useState<PanelType | null>(null);
     const [floatingPos, setFloatingPos] = useState({ x: 96, y: 96 });
-    const panelSeq = useRef(0);
+    const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
-    const [preview, setPreview] = useState<PreviewResult | null>(null);
-    const [previewLoading, setPreviewLoading] = useState(false);
     const [hintState, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
     const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -91,36 +81,45 @@ function Shell() {
     const [contextOpen, setContextOpen] = useState(false);
     const [composerMenuOpen, setComposerMenuOpen] = useState(false);
     const [presetPopOpen, setPresetPopOpen] = useState(false);
+    const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const [accountPopOpen, setAccountPopOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
-    const [settingsTab, setSettingsTab] = useState('chat');
+    const [settingsTab, setSettingsTab] = useState('api');
     const [cmdkOpen, setCmdkOpen] = useState(false);
     const [mobileDrawer, setMobileDrawer] = useState(false);
     const [sheetSnap, setSheetSnap] = useState<SheetSnap>('closed');
     const [vpMode, setVpMode] = useState<VpMode>('auto');
     const [narrow, setNarrow] = useState(() => window.innerWidth <= MOBILE_BP);
-    const [studioNav, setStudioNav] = useState('library');
+    const [studioNav, setStudioNav] = useState('lore');
     const [pluginsNav, setPluginsNav] = useState<'installed' | 'market'>('installed');
 
     /* ——— SPEC-DATA 目录态(待接:目录全是 mock 种子,消费面已标) ——— */
     const [activeModel, setActiveModel] = useState(MOCK_MODELS[0]!.id);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
     const [presetParams, setPresetParams] = useState<PresetParams>({
-        temp: 0.9, topP: 0.95, ctxLen: 32768, maxReply: 800,
-        blocks: [
-            { id: 'b-main', name: '主提示词', enabled: true },
-            { id: 'b-world', name: '世界书', enabled: true },
-            { id: 'b-author', name: '作者注', enabled: false },
-        ],
+        temp: 0.85, topP: 0.92, ctxLen: 200000, maxReply: 8192,
+        blocks: MOCK_PRESET_BLOCKS.map((b) => ({ ...b })),
     });
     const [globalLore, setGlobalLore] = useState(MOCK_GLOBAL_LORE);
+    const [worldbook, setWorldbook] = useState(MOCK_WORLDBOOK);
+    const [selectedLoreId, setSelectedLoreId] = useState(MOCK_WORLDBOOK[0]!.id);
+    const [builtinPlugins, setBuiltinPlugins] = useState(MOCK_BUILTIN_PLUGINS);
     const [marketPlugins, setMarketPlugins] = useState(MOCK_MARKET_PLUGINS);
+    const [notesText, setNotesText] = useState(MOCK_NOTES_TEXT);
     const [mvu, setMvu] = useState<Record<string, string | number>>(MOCK_MVU);
     const [echoMvu, setEchoMvu] = useState(false);
+    const [stageData, setStageData] = useState<StageData>({
+        chapters: MOCK_NOVEL_CHAPTERS,
+        selParaId: null,
+        channels: MOCK_IM_CHANNELS,
+        activeChannel: MOCK_IM_CHANNELS[0]!.id,
+        vn: MOCK_VN,
+    });
     const [chatSettings, setChatSettings] = useState<ChatSettings>({
-        renderCount: 50, streamFps: 24, autoParseThink: true, autoExpandThink: false,
-        showFloorNum: true, confirmDelete: true, fontSize: 14.5, bgMode: 'default',
-        customCss: '', apiTab: 'openai', endpoint: '',
+        renderCount: 20, streamFps: 30, autoParseThink: true, autoExpandThink: false,
+        showFloorNum: true, confirmDelete: true, fontSize: 14.5, bgMode: 'none',
+        customCss: '.msg-bubble { border-radius: 10px; }', apiTab: 'chat',
+        endpoint: 'https://gcli.ggchan.dev/',
     });
 
     useEffect(() => {
@@ -138,20 +137,6 @@ function Shell() {
         if (hintTimer.current) clearTimeout(hintTimer.current);
         hintTimer.current = setTimeout(() => setHint(null), 3200);
     }, []);
-
-    const runPreview = useCallback(async () => {
-        if (!chat) return;
-        setPreviewLoading(true);
-        const result = await postPreviewWithFallback({
-            charDir: chat.charDir,
-            chatName: chat.chatName,
-            type: 'normal',
-            user: persona ?? { name: '旅人' },
-        });
-        setPreview(result);
-        setServerStatus(result.mock ? 'mock' : 'online');
-        setPreviewLoading(false);
-    }, [chat, persona]);
 
     const refreshChats = useCallback(async () => {
         try {
@@ -186,7 +171,6 @@ function Shell() {
     const queueImport = useCallback((drafts: ImportDraft[]) => {
         if (!drafts.length) return;
         setImportDrafts((prev) => [...prev, ...drafts]);
-        setView('import');
     }, []);
     const dismissImportDraft = useCallback((id: string) => {
         setImportDrafts((prev) => prev.filter((d) => d.id !== id));
@@ -199,7 +183,7 @@ function Shell() {
             drafts.push(await fileToDraft(f));
         }
         if (skipped) showHint(t('imp.tooLarge'), true);
-        if (drafts.length) queueImport(drafts);
+        if (drafts.length) { queueImport(drafts); showHint(t('imp.queued')); }
     }, [queueImport, showHint, t]);
 
     useEffect(() => {
@@ -231,11 +215,6 @@ function Shell() {
             window.removeEventListener('drop', onDrop);
         };
     }, [enqueueFiles]);
-
-    const openCharacter = useCallback((charDir: string) => {
-        setStoriesFocus(charDir);
-        setView('stories');
-    }, []);
 
     const onNewChat = useCallback((charDir?: string) => {
         const targetDir = charDir ?? chat?.charDir ?? 'default_Seraphina';
@@ -274,38 +253,31 @@ function Shell() {
             .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
 
-    const addPanel = useCallback((type: string) => {
-        const id = `p-${++panelSeq.current}-${type}`;
-        setPanels((prev) => [...prev, { id, type }]);
-        setActivePanel(id);
-        setPanelHidden(false);
-        setLauncherOpen(false);
-    }, []);
-
-    const closePanel = useCallback((id: string) => {
-        setPanels((prev) => {
-            const next = prev.filter((p) => p.id !== id);
-            setActivePanel((a) => (a === id ? (next[next.length - 1]?.id ?? null) : a));
-            return next;
-        });
-        setFloating((f) => (f?.id === id ? null : f));
-    }, []);
-
-    /** 面板入口:移动端拉起 vaul-sheet,桌面进工作台。 */
-    const openPanelSurface = useCallback((type?: PanelType) => {
-        if (isMobile) {
-            if (type) addPanel(type);
-            setSheetSnap('half');
-        } else if (type) addPanel(type);
-        else { setPanelHidden(false); setLauncherOpen(true); }
-    }, [isMobile, addPanel]);
+    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。 */
+    const openPanel = useCallback((type: PanelType) => {
+        if (type === 'newtab') {
+            setActiveTab('newtab');
+        } else {
+            setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
+            setActiveTab(type);
+        }
+        if (isMobile) setSheetSnap('half');
+        else setWorkbenchOpen(true);
+        setLauncherSearch('');
+    }, [isMobile]);
 
     const mvuStep = useCallback((key: string, d: number) => {
         setMvu((prev) => ({ ...prev, [key]: typeof prev[key] === 'number' ? (prev[key] as number) + d : prev[key]! }));
-        // echo-pulse:跨面板联动的诚实回显(规范稿 echoPulse)
         setEchoMvu(true);
         setTimeout(() => setEchoMvu(false), 500);
     }, []);
+
+    /** 规范稿 bridgeOp:总簿三动作 —— 写 MVU 快照 + echo pulse。 */
+    const bridgeOp = useCallback((op: string) => {
+        if (op === 'repair') mvuStep('大殿耐久', 15);
+        else if (op === 'stipend') mvuStep('宗门声望', 2);
+        else if (op === 'levy') mvuStep('灵石', 5);
+    }, [mvuStep]);
 
     const shell = useMemo<ShellCtx>(() => ({
         registry,
@@ -313,44 +285,62 @@ function Shell() {
         chats, activeChat, chat,
         selectChat: (id) => {
             setActiveChat(id);
-            // 会话落点永远是 'chat' 视图 —— CenterStage 按 stage 形态分发。
             setView('chat');
-            if (window.innerWidth <= 920) setSidebarCollapsed(true);
+            if (window.innerWidth <= 920) setSidebarOpen(false);
+            // 规范稿 s.defaultTabs —— 会话自带板块,选中即补开。
+            const s = chats.find((c) => c.id === id);
+            if (s?.defaultTabs?.length) {
+                setOpenTabs((prev) => {
+                    const next = [...prev];
+                    for (const t of s.defaultTabs!) if (!next.includes(t)) next.push(t);
+                    return next;
+                });
+                setActiveTab(s.defaultTabs[0]!);
+                setWorkbenchOpen(true);
+            }
         },
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
         cards, cardsMock, refreshCards,
         importDrafts, queueImport, dismissImportDraft,
-        storiesFocus, openCharacter,
-        clearStoriesFocus: () => setStoriesFocus(null),
         persona, setPersona,
-        sidebarCollapsed,
-        toggleSidebar: () => setSidebarCollapsed((v) => !v),
-        panels, activePanel, panelHidden,
-        selectPanel: (id) => { setActivePanel(id); setLauncherOpen(false); },
-        closePanel, addPanel,
-        toggleWorkbench: () => setPanelHidden((v) => !v),
-        launcherOpen,
-        openLauncher: () => { setPanelHidden(false); setLauncherOpen(true); },
-        floating, floatingPos, setFloatingPos,
-        detachPanel: (id) => {
-            const p = panels.find((x) => x.id === id);
-            if (!p) return;
-            setFloating(p);
-            setPanels((prev) => prev.filter((x) => x.id !== id));
-            setActivePanel((a) => (a === id ? null : a));
+        sidebarOpen,
+        toggleSidebar: () => setSidebarOpen((v) => !v),
+        workbenchOpen,
+        toggleWorkbench: () => setWorkbenchOpen((v) => !v),
+        openTabs, activeTab,
+        selectTab: (id) => setActiveTab(id),
+        openNewTab: () => { setActiveTab('newtab'); setWorkbenchOpen(true); },
+        closeTab: (id) => {
+            if (id === 'newtab') { setActiveTab((a) => (a === 'newtab' ? (openTabs[openTabs.length - 1] ?? '') : a)); return; }
+            setOpenTabs((prev) => {
+                const next = prev.filter((x) => x !== id);
+                setActiveTab((a) => (a === id ? (next[next.length - 1] ?? '') : a));
+                if (floatingType === id) setFloatingType(null);
+                return next;
+            });
         },
-        dockPanel: () => {
-            if (!floating) return;
-            setPanels((prev) => [...prev, floating]);
-            setActivePanel(floating.id);
-            setFloating(null);
-            setLauncherOpen(false);
+        openPanel,
+        detachPanel: (type) => {
+            setFloatingType(type);
+            setOpenTabs((prev) => prev.filter((x) => x !== type));
+            setActiveTab((a) => (a === type ? '' : a));
         },
+        dockBack: () => {
+            if (!floatingType) return;
+            setOpenTabs((prev) => [...prev, floatingType]);
+            setActiveTab(floatingType);
+            setFloatingType(null);
+            setWorkbenchOpen(true);
+        },
+        closeFloat: () => setFloatingType(null),
+        floatingType, floatingPos, setFloatingPos,
+        launcherSearch, setLauncherSearch,
         contextOpen, setContextOpen,
         composerMenuOpen, setComposerMenuOpen,
         presetPopOpen, setPresetPopOpen,
+        openDropdown, setOpenDropdown,
         accountPopOpen, setAccountPopOpen,
         settingsOpen, settingsTab,
         openSettings: (tab?: string) => { if (tab) setSettingsTab(tab); setSettingsOpen(true); },
@@ -359,39 +349,43 @@ function Shell() {
         cmdkOpen, setCmdkOpen,
         mobileDrawer, setMobileDrawer,
         sheetSnap, setSheetSnap,
-        vpMode, setVpMode, isMobile, openPanelSurface,
+        vpMode, setVpMode, isMobile,
         studioNav, setStudioNav, pluginsNav, setPluginsNav,
         models: MOCK_MODELS, activeModel, setActiveModel,
-        presets: MOCK_PRESETS, activePresetId, setActivePreset,
+        presets: MOCK_PRESETS, activePresetId,
+        pickPreset: (id) => {
+            setActivePreset(id);
+            const p = MOCK_PRESETS.find((x) => x.id === id);
+            if (p) setPresetParams((prev) => ({ ...prev, temp: p.temp, topP: p.topP, ctxLen: p.ctxLen, maxReply: p.maxReply }));
+        },
         presetParams,
         setPresetParam: (k, v) => setPresetParams((prev) => ({ ...prev, [k]: v })),
         togglePresetBlock: (id) => setPresetParams((prev) => ({
             ...prev, blocks: prev.blocks.map((b) => (b.id === id ? { ...b, enabled: !b.enabled } : b)),
         })),
         globalLore, toggleGlobalLore: (id) => setGlobalLore((prev) => prev.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g))),
+        worldbook, selectedLoreId, setSelectedLoreId,
+        builtinPlugins, toggleBuiltinPlugin: (id) => setBuiltinPlugins((prev) => prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))),
         marketPlugins, toggleMarketPlugin: (id) => setMarketPlugins((prev) => prev.map((m) => (m.id === id ? { ...m, installed: !m.installed } : m))),
+        notesText, setNotesText,
         chatSettings,
         setChatSetting: (k, v) => setChatSettings((prev) => ({ ...prev, [k]: v })),
-        mvu, mvuStep, echoMvu,
-        immersive: () => {
-            const next = !(sidebarCollapsed && panelHidden);
-            setSidebarCollapsed(next);
-            setPanelHidden(next);
-        },
-        preview, previewLoading, runPreview,
+        mvu, setMvu, mvuStep, echoMvu, bridgeOp,
+        stageData, patchStageData: (p) => setStageData((prev) => ({ ...prev, ...p })),
         hint: showHint,
         live: serverStatus === 'online',
         serverStatus,
     }), [
-        view, railTab, chats, chat, activeChat, sidebarCollapsed, panels, activePanel,
-        panelHidden, launcherOpen, floating, floatingPos, preview, previewLoading,
-        runPreview, showHint, serverStatus, onNewChat, onRenameChat, onDeleteChat,
-        closePanel, addPanel, openPanelSurface, cards, cardsMock, refreshCards,
-        importDrafts, queueImport, dismissImportDraft, storiesFocus, openCharacter,
-        persona, contextOpen, composerMenuOpen, presetPopOpen, accountPopOpen,
-        settingsOpen, settingsTab, cmdkOpen, mobileDrawer, sheetSnap, vpMode,
-        isMobile, studioNav, pluginsNav, activeModel, activePresetId, presetParams,
-        globalLore, marketPlugins, chatSettings, mvu, mvuStep, echoMvu,
+        view, railTab, chats, chat, activeChat, sidebarOpen, workbenchOpen,
+        openTabs, activeTab, floatingType, floatingPos, launcherSearch,
+        showHint, serverStatus, onNewChat, onRenameChat, onDeleteChat, openPanel,
+        cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
+        persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,
+        accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
+        sheetSnap, vpMode, isMobile, studioNav, pluginsNav, activeModel,
+        activePresetId, presetParams, globalLore, worldbook, selectedLoreId,
+        builtinPlugins, marketPlugins, notesText, chatSettings, mvu, mvuStep,
+        echoMvu, bridgeOp, stageData,
     ]);
 
     return (

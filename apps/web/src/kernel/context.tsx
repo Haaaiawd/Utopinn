@@ -1,16 +1,19 @@
 // Shell context — 壳持有的领域状态 + registry,经 Provider 下发;
-// 领域组件(视图/板块/ctbar 动作/舞台形态)无 props,一律 useShell() 取数。
+// 领域组件(视图/板块/舞台形态)无 props,一律 useShell() 取数。
 // props 消失是刻意的:接线归注册表,数据归上下文,App 不再做逐件对接。
-// 规范稿 561 行的单文件 state 在这里按域拆开:会话/卡库/导入/persona/
-// 板块(工作台)/浮层位/弹层开关/生成参数/mock 目录,各归各的字段。
+// 字段语义逐条对齐规范稿(u_ui_codex)单文件 state:openTabs/activeTab/
+// workbenchOpen/floatingPanelId/selectedLoreId/notesText/stageData。
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { CardItem } from '../api/characters';
 import type { ImportDraft } from '../api/import';
 import type { ActivePersona } from '../api/personas';
-import type { GlobalLoreItem, MarketPluginItem, ModelItem, PresetItem } from '../api/mock';
-import type { ChatSummary, PreviewResult, ServerStatus, ViewId } from '../types';
-import type { Contributions, PanelInst, PanelType } from './contributions';
+import type {
+    BuiltinPluginItem, GlobalLoreItem, ImChannel, MarketPluginItem, ModelItem,
+    NovelChapter, PresetItem, VnData, WorldbookItem,
+} from '../api/mock';
+import type { ChatSummary, ServerStatus, ViewId } from '../types';
+import type { Contributions, PanelType } from './contributions';
 import { Registry } from './registry';
 
 export type SheetSnap = 'closed' | 'half' | 'full';
@@ -25,7 +28,7 @@ export interface PresetParams {
     blocks: { id: string; name: string; enabled: boolean }[];
 }
 
-/** 聊天与消息设置(规范稿 stSettings 子集;SPEC-DATA: 本地态)。 */
+/** 聊天与消息设置(规范稿 stSettings;SPEC-DATA: 本地态)。 */
 export interface ChatSettings {
     renderCount: number;
     streamFps: number;
@@ -40,6 +43,16 @@ export interface ChatSettings {
     endpoint: string;
 }
 
+/** 舞台形态会话的展示数据(规范稿 s.chapters/s.channels/s.vn 落地位)。
+ *  SPEC-DATA: 待接 —— 内容是 mock 种子;聊天形态不在此列。 */
+export interface StageData {
+    chapters: NovelChapter[];
+    selParaId: string | null;
+    channels: ImChannel[];
+    activeChannel: string;
+    vn: VnData;
+}
+
 export interface ShellCtx {
     registry: Registry;
 
@@ -49,58 +62,51 @@ export interface ShellCtx {
     railTab: string;
 
     chats: ChatSummary[];
-    /** 当前选中会话的 id(行高亮用);chat 是它解析出的对象。 */
+    /** 当前选中会话的 id(规范稿 activeSessionId);chat 是它解析出的对象。 */
     activeChat: string;
     chat: ChatSummary | null;
     selectChat: (id: string) => void;
-    /** charDir 可指定开新会话的角色页上下文;缺省走当前会话的卡。 */
     newChat: (charDir?: string) => void;
     renameChat: (c: ChatSummary) => void;
     deleteChat: (c: ChatSummary) => void;
 
-    /** 角色卡展示面(charDir → 行),App 单次拉取供侧栏/库/舞台头共用。 */
+    /** 角色卡展示面(charDir → 行),App 单次拉取供侧栏/主区共用。 */
     cards: Map<string, CardItem>;
-    /** cards 是 mock 回退时为 true(视图据此挂诚实徽标)。 */
     cardsMock: boolean;
-    /** 导入卡后重拉展示面(新卡立刻出现在库/门厅)。 */
     refreshCards: () => Promise<void>;
-    /** 导入中心的待办队列:全局拖放/选文件/URL 都落成 draft 往这里塞,ImportView 逐卡消费。 */
     importDrafts: ImportDraft[];
-    /** 追加待办并跳导入中心(全局 drop 的唯一入口)。 */
     queueImport: (drafts: ImportDraft[]) => void;
-    /** 出队 —— 提交落定或手动移除。 */
     dismissImportDraft: (id: string) => void;
-    /** 门厅/库外跳角色页的中转:置位 → stories 视图打开该卡详情后清除。 */
-    storiesFocus: string | null;
-    openCharacter: (charDir: string) => void;
-    clearStoriesFocus: () => void;
 
-    /** 当前会话生效的 persona(舞台头快切;生成时携带进 body.user)。 */
+    /** 当前会话生效的 persona(生成时携带进 body.user)。 */
     persona: ActivePersona | null;
     setPersona: (p: ActivePersona | null) => void;
 
-    sidebarCollapsed: boolean;
+    /** 规范稿 sidebarOpen —— logo 按钮切换。 */
+    sidebarOpen: boolean;
     toggleSidebar: () => void;
-    /** 沉浸:内容栏+右面板同收,只留 rail+阅读列。 */
-    immersive: () => void;
 
-    /* ——— 右工作台(规范稿 workbench):板块实例 tabs + launcher + 悬浮窗 ——— */
-    panels: PanelInst[];
-    activePanel: string | null;
-    panelHidden: boolean;
-    selectPanel: (id: string) => void;
-    closePanel: (id: string) => void;
-    addPanel: (type: PanelType) => void;
+    /* ——— 右工作台(规范稿 workbenchOpen + openTabs/activeTab + 悬浮窗) ——— */
+    workbenchOpen: boolean;
     toggleWorkbench: () => void;
-    /** 「新标签页」启动器页(workbench body 切换到目录面)。 */
-    launcherOpen: boolean;
-    openLauncher: () => void;
-    /** 可拆悬浮窗:非 null 时该板块从 wb tab 移到 floating-win。 */
-    floating: PanelInst | null;
+    /** 已开板块类型列表(规范稿 openTabs —— 同类型至多一页)。 */
+    openTabs: PanelType[];
+    /** 激活页:板块类型或 'newtab'(launcher 页,规范稿 activeTab)。 */
+    activeTab: string;
+    selectTab: (id: string) => void;
+    openNewTab: () => void;
+    closeTab: (id: string) => void;
+    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。 */
+    openPanel: (type: PanelType) => void;
+    /** 拆出为受控悬浮窗(规范稿 detach-panel)。 */
+    detachPanel: (type: PanelType) => void;
+    dockBack: () => void;
+    closeFloat: () => void;
+    floatingType: PanelType | null;
     floatingPos: { x: number; y: number };
-    detachPanel: (id: string) => void;
-    dockPanel: () => void;
     setFloatingPos: (p: { x: number; y: number }) => void;
+    launcherSearch: string;
+    setLauncherSearch: (s: string) => void;
 
     /* ——— 弹层与全局 chrome 状态(规范稿 overlay flags) ——— */
     contextOpen: boolean;
@@ -109,6 +115,9 @@ export interface ShellCtx {
     setComposerMenuOpen: (v: boolean) => void;
     presetPopOpen: boolean;
     setPresetPopOpen: (v: boolean) => void;
+    /** 预设 popover/panel 共享的下拉态(规范稿 openDropdown:'model'|'preset')。 */
+    openDropdown: string | null;
+    setOpenDropdown: (v: string | null) => void;
     accountPopOpen: boolean;
     setAccountPopOpen: (v: boolean) => void;
     settingsOpen: boolean;
@@ -126,12 +135,9 @@ export interface ShellCtx {
     setSheetSnap: (s: SheetSnap) => void;
     vpMode: VpMode;
     setVpMode: (m: VpMode) => void;
-    /** 派生:vpMode=mobile 或 auto 且窗口 ≤680px。 */
     isMobile: boolean;
-    /** 面板入口(移动 = 拉起 vaul-sheet;桌面 = 加板块并展开右栏)。 */
-    openPanelSurface: (type?: PanelType) => void;
 
-    /* ——— studio/plugins 域内导航(侧栏树写入,主区读取) ——— */
+    /* ——— studio/plugins 域内导航 ——— */
     studioNav: string;
     setStudioNav: (v: string) => void;
     pluginsNav: 'installed' | 'market';
@@ -143,28 +149,38 @@ export interface ShellCtx {
     setActiveModel: (id: string) => void;
     presets: PresetItem[];
     activePresetId: string;
-    setActivePreset: (id: string) => void;
+    /** 规范稿 pick-preset:装载即把 temp/topP/ctxLen/maxReply 倒进 presetParams。 */
+    pickPreset: (id: string) => void;
     presetParams: PresetParams;
     setPresetParam: (k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => void;
     togglePresetBlock: (id: string) => void;
     globalLore: GlobalLoreItem[];
     toggleGlobalLore: (id: string) => void;
+    worldbook: WorldbookItem[];
+    selectedLoreId: string;
+    setSelectedLoreId: (id: string) => void;
+    builtinPlugins: BuiltinPluginItem[];
+    toggleBuiltinPlugin: (id: string) => void;
     marketPlugins: MarketPluginItem[];
     toggleMarketPlugin: (id: string) => void;
+    notesText: string;
+    setNotesText: (s: string) => void;
     chatSettings: ChatSettings;
     setChatSetting: <K extends keyof ChatSettings>(k: K, v: ChatSettings[K]) => void;
 
-    /* ——— MVU 快照(SPEC-DATA: 服务端 MVU 端点未出,种子值见 api/mock) ——— */
+    /* ——— MVU 快照(规范稿 s.mvu 全局化;SPEC-DATA: 服务端 MVU 端点未出) ——— */
     mvu: Record<string, string | number>;
+    setMvu: (m: Record<string, string | number>) => void;
     mvuStep: (key: string, d: number) => void;
     echoMvu: boolean;
+    /** 规范稿 bridgeOp:总簿拨款/月俸/征收三动作。 */
+    bridgeOp: (op: string) => void;
 
-    preview: PreviewResult | null;
-    previewLoading: boolean;
-    runPreview: () => void;
+    /* ——— 舞台形态会话数据(SPEC-DATA:mock 种子,面板与舞台共享) ——— */
+    stageData: StageData;
+    patchStageData: (p: Partial<StageData>) => void;
 
     hint: (msg: string, err?: boolean) => void;
-    /** 后端可达(mock/离线时为 false,视图据此给诚实降级)。 */
     live: boolean;
     serverStatus: ServerStatus;
 }

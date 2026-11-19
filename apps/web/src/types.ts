@@ -26,8 +26,12 @@ export interface ChatSummary {
     group?: string;
     updatedAt?: string;
     unread?: boolean;
+    /** 规范稿 s.pinned —— 侧栏「置顶」分区的会话。 */
+    pinned?: boolean;
     /** 舞台形态绑定;缺省 'chat'。SPEC-DATA: 待接 —— 卡面 extensions 声明位未定。 */
     stage?: StageKind;
+    /** 规范稿 s.defaultTabs —— 选中会话时工作台自动开出的板块类型列表。 */
+    defaultTabs?: string[];
 }
 
 /** Server reachability — drives status bar + mock badge. */
