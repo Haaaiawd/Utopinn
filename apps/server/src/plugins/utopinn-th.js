@@ -236,7 +236,10 @@ const METHODS = {
         if (!ctx2.charDir) return { ok: false, status: 400, error: 'target.charDir required' };
         const card = await loadCard(ctx2.directories, ctx2.charDir);
         if (!card) return { ok: false, status: 404, error: 'card not found' };
-        const raw = card?.data?.extensions?.th_scripts ?? [];
+        // 生态里的真实键:TavernHelper_scripts(数组)/tavern_helper.scripts(对象)
+        // ——th_scripts 是早期误记的键,保留兜底。
+        const ext = card?.data?.extensions ?? {};
+        const raw = ext.TavernHelper_scripts ?? ext.tavern_helper?.scripts ?? ext.th_scripts ?? [];
         const list = (Array.isArray(raw) ? raw : [raw])
             .map((s, i) => typeof s === 'string'
                 ? { name: `script-${i}`, script: s }
