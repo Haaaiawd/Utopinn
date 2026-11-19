@@ -51,19 +51,31 @@ export interface EphemeralDocument {
     document: WorldBook | Record<string, unknown>;
 }
 
-/** 生成落点:dispatch 完成后把 assistant 楼层写回哪个会话。 */
-export interface PersistTarget {
-    /** 'char' = 单卡会话;group 暂不在 utopinn 面。 */
-    kind?: 'char';
-    avatar_url?: string;
-    file_name?: string;
-    char_name?: string;
-}
+/**
+ * 生成落点:dispatch 完成后把 assistant 楼层写回哪个会话。
+ * 以服务端 wire 为准(luker-generation.js getPersistChatKey / persistTargetDefault):
+ *   - 'none'      客户端自有写盘(swipe/continue/impersonate/quiet)——必须纯 {kind:'none'},
+ *                 带上 avatar_url+file_name 会被当真 persist 目标,误替客户端写整楼。
+ *   - 'character' 服务端兜底写盘到单卡会话(send/regen 默认)。
+ *   - 'group'     群聊持久化目标(id = 群聊文件 id,成员楼层字段随 target 走)。
+ */
+export type PersistTarget =
+    | { kind: 'none' }
+    | { kind: 'character'; avatar_url: string; file_name: string; char_name?: string }
+    | {
+        kind: 'group'; id: string; char_name?: string;
+        original_avatar?: string; force_avatar?: string; gen_id?: number;
+        chat_metadata?: Record<string, unknown>;
+    }
+    /** 容错形:服务端只读 kind/avatar_url/file_name/id,其余字段透传。 */
+    | ({ kind?: string; avatar_url?: string; file_name?: string; id?: string } & Record<string, unknown>);
 
 /** POST /api/utopinn/generate 请求体(核心字段;dispatch 参数按源透传)。 */
 export interface GenerateRequest {
-    charDir: string;
-    chatName: string;
+    /** 单卡路必填;群路(给 groupId)时服务端自解析发言成员卡。 */
+    charDir?: string;
+    /** 单卡路必填;群路下服务端用群聊文件 id。 */
+    chatName?: string;
     presetName?: string;
     /** 本次用户面;缺省取 request.user.profile.name。 */
     user?: { name: string; description?: string };
@@ -72,7 +84,21 @@ export interface GenerateRequest {
     /** 'chat'(默认,chat completions)|'text'(textgen 单串)。 */
     api?: 'chat' | 'text';
     api_type?: string;
+    /** textgen 路显式覆盖 api_server(缺省按 api_type+settings 解析)。 */
+    api_server?: string;
+    /** 显式模型覆盖(textgen:body.model;chat:经 generation_overrides)。 */
+    model?: string;
+    /** 流式开关(缺省取 settings/preset 的 stream_openai);quiet 强转 false。 */
+    stream?: boolean;
+    /** 群路目标:给 groupId 即走群生成(charDir/chatName 服务端自解析)。 */
+    groupId?: string;
+    /** 群聊文件 id;缺省取群 doc.chat_id ?? doc.id。 */
+    chatId?: string;
+    /** 群路成员 force token(legacy force_chid 语义)。 */
+    member?: string;
     overrides?: GenerationOverrides;
+    /** 派发体最后并入的显式覆盖(优先级高于 preset/settings,会发给上游)。 */
+    generation_overrides?: Record<string, unknown>;
     ephemeralDocs?: EphemeralDocument[];
     /** 预生成 job id —— 与 WS subscribe 的 request_id 对齐。 */
     luker_generation?: {
@@ -85,30 +111,63 @@ export interface GenerateRequest {
 
 /**
  * 响应:`200 {}` 空 JSON 体;job id 走头部。
+ * 群路成员空(activatedMembers=[])= 不派发,直接回
+ * `{ok:true, skipped:'no_activated_member', group:{groupId,chatId,queue:[]}}`。
  *   x-luker-generation-id     —— request_id(WS subscribe / jobs/:id / abort 同值)
  *   x-luker-server-persisted  —— '0' 初始快照;真正 persisted 态经 WS/SSE 或轮询获知
+ *   x-utopinn-perf            —— JSON:组装耗时分解(perf)
+ *   x-utopinn-group           —— JSON:群路成员选择轨迹(仅 groupId 请求)
  */
+export interface GenerateResponse {
+    ok?: boolean;
+    /** 'no_activated_member'(群路空队列,无 job 产生)。 */
+    skipped?: string;
+    group?: { groupId: string; chatId: string; queue: unknown[] };
+    [key: string]: unknown;
+}
+
 export interface GenerateAcceptedHeaders {
     'x-luker-generation-id': string;
     'x-luker-server-persisted': '0' | '1';
+    'x-utopinn-perf'?: string;
+    'x-utopinn-group'?: string;
 }
 
 // ---------- Jobs (REST) ----------
 
+/**
+ * Job 生命周期(server:luker-generation.js)。
+ * 'awaiting_ack' = dispatch 收尾后等客户端写盘 ack(15s grace);
+ * 'persisting'   = 服务端兜底写盘中。
+ */
 export const JOB_STATUSES = [
     'queued',
     'running',
     'streaming',
+    'awaiting_ack',
+    'persisting',
     'completed',
     'failed',
     'cancelled',
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+/** 终态集合 —— 轮询/waitForJob 的默认停机面。 */
+export const JOB_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const;
+export type JobTerminalStatus = (typeof JOB_TERMINAL_STATUSES)[number];
+
 /** GET /api/utopinn/jobs → { items: GenerationJobSummary[] }(新→旧)。 */
+export interface GenerationJobsResponse {
+    items: GenerationJobSummary[];
+}
+
 export interface GenerationJobSummary {
     id: string;
     status: JobStatus | (string & {});
+    /** 生成动词(requestMeta.verb;send/regen/swipe/…),旧 job 可 null。 */
+    verb: string | null;
+    /** 派发模型(job.modelName ?? requestMeta.model)。 */
+    model: string;
     chatKey: string | null;
     textPreview: string;
     error: string | null;
@@ -123,6 +182,8 @@ export interface GenerationJobSummary {
 export interface GenerationJobDetail {
     id: string;
     status: JobStatus | (string & {});
+    verb: string | null;
+    model: string;
     chatKey: string | null;
     text: string;
     error: string | null;
@@ -133,6 +194,14 @@ export interface GenerationJobDetail {
     trace: unknown | null;
     /** WI 激活轨迹:uid/world/comment/key/position/depth/outlet 条目数组。 */
     sources: unknown | null;
+    /**
+     * TASK-034 reconcile:派发给上游的 messages 快照。
+     * chat 路在 body.messages;textgen 路挂 request.utopinnPromptMessages。
+     * 可空 —— legacy 派发与补件前创建的老 job 恒 null。
+     */
+    promptMessages: { role: string; content: string; name?: string }[] | null;
+    /** TASK-034:WI timed effects 落库后快照(回同步 chat_metadata.timedWorldInfo)。可空。 */
+    timedWorldInfo: unknown | null;
     created_at: number;
     updated_at: number;
 }
@@ -162,8 +231,10 @@ export interface WsUnsubscribe {
     type: 'unsubscribe';
     request_id: string;
 }
+/** client→server:app 心跳回包;ts 回显 ping 的 ts(服务端只看 type)。 */
 export interface WsPong {
     type: 'pong';
+    ts?: number;
 }
 export type WsClientMessage = WsSubscribe | WsResume | WsUnsubscribe | WsPong;
 
@@ -244,11 +315,20 @@ export interface SseEventEntry {
 
 // ---------- Preview ----------
 
+/**
+ * POST /api/utopinn/preview 请求体 —— 与 /generate 同形目标/组装字段
+ * (charDir|chatName|groupId|chatId|member|presetName|user|type|overrides);
+ * dispatch-only 字段被忽略,dryRun 恒 true。
+ */
+export type GeneratePreviewRequest = GenerateRequest;
+
 /** POST /api/utopinn/preview → 干跑产物;dryRun 不写 timed effects/楼层。 */
 export interface PreviewResponse {
-    messages: { role: 'system' | 'user' | 'assistant'; content: string; name?: string }[];
+    messages: { role: 'system' | 'user' | 'assistant' | (string & {}); content: string; name?: string }[];
     trace: unknown;
+    /** 群路附加 {group:{groupId,chatId,mode,strategy,member,queue}}。 */
     sources: unknown;
+    /** 群路空队列 skipped 时 perf 为 null。 */
     perf: {
         cardMs: number;
         loadMs: number;
@@ -259,5 +339,7 @@ export interface PreviewResponse {
         populateMs: number;
         tokenMs: number;
         totalMs: number;
-    };
+    } | null;
+    /** 'no_activated_member'(群路空队列)。 */
+    skipped?: string;
 }
