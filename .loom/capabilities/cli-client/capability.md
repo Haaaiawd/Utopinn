@@ -198,6 +198,27 @@ hint = `uberge attach <id>` 或 `uberge abort <id>`。防双楼层并发,
 | `uberge attach [jobId]` | `--from <seq>`,`--wait` | job 在跑 → WS resume 流式增量 → footer;已终态 → 直接吐 `status.text` 全文 + footer | `not_found`/`timeout` | 无;末态恒以 `status.text` 对账(events 超 8000 会被裁,帧流可能不全) |
 | `uberge abort [jobId]` | — | `aborted <id8>` | `not_found`/`409 not_running` | `POST /api/generation/:id/abort` |
 
+### 组件面(cordis fiber ↔ CLI 动词)
+
+CLI 命令族与服务端 fiber 一一对应;`uberge kernel` 打出的路由表
+就是这套映射的远端清单。读面用具名命令(输出已整理),写面/低频面
+走 `raw` 逃生舱(kernel 表 47 条路由全部可达)。
+
+| fiber | 命令 | 输入 | 输出 |
+|---|---|---|---|
+| uberge-library | `uberge worlds` | — | `name (displayName)` 每行一书 |
+| uberge-library | `uberge wi <book>` | `-n,--full,--out` | `❗/off uid comment keys` 条目表 |
+| uberge-library | `uberge raw PUT /api/uberge/worlds/:n` | json/--stdin | 世界书整文档写回(自由编辑) |
+| uberge-library | `uberge raw PUT /api/uberge/presets/:n` | json | 预设整文档写回(自由编辑) |
+| uberge-diag | `uberge kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
+| uberge-plugins | `uberge plugins` | — | `● id` fiber 状态表 |
+| uberge-plugins | `uberge plugin <id> <enable\|disable\|reload>` | — | 生命周期操作(admin;uberge-plugins 自锁) |
+| uberge-mvu | `uberge mvu [state]` | `-n,--full,--out` | chat 变量表 + settle 回执数(=悬浮窗/状态板数据源) |
+| uberge-mvu | `uberge mvu settle [--floor i]` | `--floor` | 手动重结算目标楼层 |
+| uberge-mvu | `uberge mvu resettle` | — | 全量重放投影(编辑/删楼/换 swipe 后重建) |
+| uberge-script | `uberge script <st\|--stdin>` | 位置参/stdin | `pipe` + `ops/notify/popup` 计数(服务端 STscript) |
+| — | `uberge raw <M> </path> [json\|--stdin]` | — | `{status,data}` —— kernel 路由表上任意端点 |
+
 ## 上下文链与状态文件
 
 路径:`~/.uberge-cli.json`(`UBERGE_STATE`/`--state` 覆盖;WSL 与
