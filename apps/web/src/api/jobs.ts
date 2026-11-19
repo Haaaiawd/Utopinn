@@ -1,7 +1,7 @@
 // Generation jobs via /api/utopinn/jobs(TASK-017 监视/回放面)。
 // 列表=摘要(新→旧);详情=状态/文本/trace(组装分块)/sources(WI轨迹)。
 // events 不回传 —— 事件流走 WS resume 通道,详情面回放的是落盘文本。
-import { apiGet } from './client';
+import { ApiError, apiFetch, apiGet } from './client';
 
 export interface JobSummary {
     id: string;
@@ -48,4 +48,22 @@ export async function listJobs(): Promise<{ items: JobSummary[] }> {
 
 export async function getJob(id: string): Promise<JobDetail> {
     return apiGet(`/api/utopinn/jobs/${encodeURIComponent(id)}`);
+}
+
+/**
+ * POST /api/generation/:id/abort —— 中止在跑的生成任务。
+ * 注意:这是 legacy 路由(endpoints/generation-control.js,挂在 /api/generation),
+ * 矩阵记的 POST /api/utopinn/jobs/:id/abort 插件面并不存在 —— 服务端没有
+ * utopinn 孪生,别硬打。
+ * 应答:{aborted:true};job 不在 → ApiError(404 'not_found');
+ * 非 running/queued(已完成/失败/awaiting_ack)→ ApiError(409 'not_running')。
+ */
+export async function abortJob(id: string): Promise<{ aborted: boolean }> {
+    const res = await apiFetch(`/api/generation/${encodeURIComponent(id)}/abort`, { method: 'POST' });
+    const body = (await res.json().catch(() => null)) as { aborted?: boolean; error?: string } | null;
+    if (!res.ok) {
+        const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
+        throw new ApiError(unreachable ? 'upstream_unavailable' : (body?.error || res.statusText), res.status);
+    }
+    return { aborted: body?.aborted === true };
 }

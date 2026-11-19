@@ -166,3 +166,28 @@ export async function deleteChat(charDir: string, chatName: string): Promise<voi
     );
     await assertOk(res);
 }
+
+/**
+ * POST /api/utopinn/chats/recent —— 最近会话(utopinn-library.js L1151,
+ * 与 legacy POST /api/chats/recent 同一索引与排序源)。
+ * body:{pinned?:[{file_name,avatar?,group?}], max?} → 数组回包:
+ * pinned 命中(file_name + avatar|group 同字段判定)置顶 → sort_time desc。
+ * home「继续你的故事」与侧栏置顶序的数据源 —— 不用 listAllChats 全量扫。
+ */
+export interface RecentChatItem {
+    file_name: string;
+    avatar?: string;
+    group?: string;
+    sort_time?: number;
+    [k: string]: unknown;
+}
+
+export async function listRecentChats(opts?: {
+    pinned?: Pick<RecentChatItem, 'file_name' | 'avatar' | 'group'>[];
+    max?: number;
+}): Promise<RecentChatItem[]> {
+    return apiPost('/api/utopinn/chats/recent', {
+        pinned: opts?.pinned ?? [],
+        ...(opts?.max !== undefined ? { max: opts.max } : {}),
+    });
+}
