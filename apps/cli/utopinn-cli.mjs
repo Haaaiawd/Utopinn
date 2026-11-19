@@ -61,6 +61,10 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--handle') flags.handle = argv[++i];
     else if (a === '--chat') flags.chat = argv[++i];
     else if (a === '--via') flags.via = argv[++i];
+    else if (a === '--group') flags.group = argv[++i];
+    else if (a === '--gchat') flags.gchat = argv[++i];
+    else if (a === '--member') flags.member = argv[++i];
+    else if (a === '--no-chain') flags.noChain = true;
     else if (a === '--set') {
         const kv = String(argv[++i]).split('=');
         const raw = kv.slice(1).join('=');
@@ -215,12 +219,22 @@ async function listChars() {
     return Array.isArray(data) ? data : [];
 }
 async function listChats(charDir, { simple = false } = {}) {
-    const { data } = await req('POST', '/api/characters/chats', { avatar_url: `${charDir}.png`, simple });
-    return Array.isArray(data) ? data : [];
+    // kernel GET chats:{items:[{fileName,messageCount,lastMessage,updatedAt,…}]}
+    // → legacy 别名原位映射(file_name/sort_time/mes/chat_items),调用方不动。
+    const url = '/api/utopinn/characters/' + encodeURIComponent(charDir) + '/chats';
+    const { data } = await req('GET', url, undefined, { allowFail: true });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map(i => ({ ...i, file_name: i.fileName, sort_time: i.updatedAt, mes: i.lastMessage?.mes ?? '', chat_items: i.messageCount }));
 }
 async function getChat(charDir, chatName) {
-    const { data } = await req('POST', '/api/chats/get', { avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` });
-    return data; // [header, ...floors] | {new_chat:true} | {corrupted:true}
+    // kernel GET chat:{header,messages,…};missing→404,unreadable→{corrupted:true}
+    // → legacy 线形 [header, …floors] | {new_chat:true} | {corrupted:true}(调用方契约不动)
+    const url = '/api/utopinn/characters/' + encodeURIComponent(charDir) + '/chats/' + encodeURIComponent(chatName);
+    const { data, status } = await req('GET', url, undefined, { allowFail: true });
+    if (data?.corrupted) return { corrupted: true };
+    if (status === 404) return { new_chat: true };
+    if (status !== 200) { const e = new Error(`chat get → ${status}`); e.status = status; e.code = 'server'; throw e; }
+    return [data.header ?? {}, ...(Array.isArray(data.messages) ? data.messages : [])];
 }
 async function resolveChar(fuzzy) {
     const chars = await listChars();
@@ -329,6 +343,112 @@ async function checkNoActiveJob(charDir, chatName) {
         return active.id;
     }
     return null;
+}
+
+// ═══ TASK-037 群聊:ctx 解析 + 群写盘(/api/chats/group/* 同 /group/get|append|patch 契约)═══
+// persist key = {kind:'group', id:chatId}——chatId 是群聊文件名(=群 doc.chat_id,
+// 群档多聊时可 ≠ groupId);--gchat 显式覆盖,缺省取 doc.chat_id ?? doc.id。
+async function resolveGroup(fuzzy) {
+    const { data } = await req('POST', '/api/groups/all');
+    const groups = Array.isArray(data) ? data : [];
+    const token = String(fuzzy ?? '');
+    const exact = groups.find(g => String(g.id) === token || g.name === token);
+    if (exact) return exact;
+    const partial = groups.filter(g => String(g.id).includes(token) || g.name?.includes(token));
+    if (partial.length === 1) return partial[0];
+    if (partial.length > 1) {
+        fail('ambiguous', `"${token}" matches ${partial.length} groups`, { detail: partial.map(g => `${g.id}:${g.name}`).join(' | '), hint: '用完整 id 或更长的名' });
+        return null;
+    }
+    fail('not_found', `group not found: "${token}"`, { detail: groups.map(g => `${g.id}:${g.name}`).slice(0, 12).join(' | '), hint: 'utopinn groups 看全表' });
+    return null;
+}
+
+/**
+ * 群 ctx:--group 显式 | state.group 绑定。chatId 三级:--gchat > state.group.chatId >
+ * doc.chat_id ?? doc.id。member 透传服务端 force 选择(--member > state.group.member)。
+ * 返回 null 且已 fail 时调用方直接 return。
+ */
+async function needGroupCtx() {
+    const token = flags.group ?? state.group?.id;
+    if (!token) {
+        fail('no_ctx', 'no active group', { hint: 'utopinn guse <group> 绑定,或 --group <id|name> 单次', rc: 2 });
+        return null;
+    }
+    const doc = await resolveGroup(token);
+    if (!doc) return null;
+    const chatId = stripExt(flags.gchat ?? state.group?.chatId ?? doc.chat_id ?? doc.id, 'jsonl');
+    return {
+        groupId: String(doc.id),
+        groupName: doc.name ?? String(doc.id),
+        chatId: String(chatId),
+        member: flags.member ?? state.group?.member ?? null,
+        doc,
+    };
+}
+
+async function getGroupChat(chatId) {
+    const { data } = await req('POST', '/api/chats/group/get', { id: chatId });
+    return data; // [header+meta, ...floors] | [] (缺档)
+}
+
+/** group/append|patch:与 writeOp 同款 integrity CAS 重锚重试;payload 命名域 = legacy 契约。 */
+async function groupWriteOp(op, chatId, body, { retried = false } = {}) {
+    const isAppend = op === 'append';
+    const payload = isAppend
+        ? { id: chatId, messages: body.messages, ...(body.luker_generation_id ? { luker_generation_id: body.luker_generation_id } : {}) }
+        : { id: chatId, operations: body.operations ?? body.ops, ...(body.luker_generation_id ? { luker_generation_id: body.luker_generation_id } : {}) };
+    if (!flags.force && state.integrity) payload.integrity = state.integrity;
+    if (flags.force) payload.force = true;
+    try {
+        const { data } = await req('POST', `/api/chats/group/${op}`, payload);
+        if (data?.integrity) saveState({ integrity: data.integrity });
+        return data;
+    } catch (e) {
+        const isIntegrity409 = e.status === 409 && /integrity/i.test(JSON.stringify(e.data ?? '') + e.message);
+        if (isIntegrity409 && !retried && !flags.force) {
+            warn('integrity 409 — 重锚后重试一次');
+            const fresh = String(e.data?.actual || '') || (await getGroupChat(chatId))?.[0]?.chat_metadata?.integrity || '';
+            if (fresh) saveState({ integrity: fresh });
+            payload.integrity = fresh;
+            const { data } = await req('POST', `/api/chats/group/${op}`, payload);
+            if (data?.integrity) saveState({ integrity: data.integrity });
+            return data;
+        }
+        throw e;
+    }
+}
+const groupAppendFloors = (chatId, messages, extra = {}) => groupWriteOp('append', chatId, { messages, ...extra });
+const groupPatchFloors = (chatId, operations, extra = {}) => groupWriteOp('patch', chatId, { operations, ...extra });
+
+async function checkNoActiveGroupJob(chatId) {
+    const { data } = await req('POST', '/api/backends/chat-completions/jobs/active', {
+        persist_target: { kind: 'group', id: chatId },
+    }, { allowFail: true });
+    const jobs = Array.isArray(data?.jobs) ? data.jobs : (Array.isArray(data) ? data : []);
+    const active = jobs.find(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
+    if (active) {
+        fail('active_job', `group chat has active job ${active.id}`, {
+            detail: `status=${active.status}`,
+            hint: '等它完,或恢复/中止',
+            nexts: [{ cmd: `utopinn attach ${active.id}` }, { cmd: `utopinn abort ${active.id}` }],
+            rc: 3,
+        });
+        return active.id;
+    }
+    return null;
+}
+
+/** 群 AI 楼层形:getFirstCharacterMessage/saveReply 同位(name+original_avatar+force_avatar+extra.gen_id)。 */
+function groupAssistantFloor({ member, text, jobId, model, genStarted, genFinished, genId }) {
+    return {
+        name: member?.name ?? 'Assistant',
+        is_user: false, is_system: false,
+        send_date: isoNow(), mes: text,
+        ...(member?.avatar ? { original_avatar: member.avatar, force_avatar: `/thumbnail?type=avatar&file=${encodeURIComponent(member.avatar)}` } : {}),
+        gen_started: genStarted ?? isoNow(), gen_finished: genFinished ?? isoNow(),
+        extra: { api: 'cli', model: model ?? '', ...(jobId ? { luker_generation_id: jobId } : {}), ...(genId != null ? { gen_id: genId } : {}) },
+    };
 }
 
 // ═══ 生成引擎(POST → ticket → WS resume → 帧 → 写盘 → 状态轮询)═══
@@ -457,6 +577,11 @@ function ndjson(obj) { if (JSON_MODE) console.log(JSON.stringify(obj)); }
  * ①护栏 ②前置写盘(regen 删楼)③POST+WS 流 ④写盘+ack ⑤状态轮询
  */
 async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {}) {
+    // 群路由:--group 或 guse 绑定 → 群生成面(成员选择在服务端,
+    // 单卡 ctx 缺失不算错——群与单卡是两套 ctx)
+    if (flags.group !== undefined || state.group?.id) {
+        return runGroupGeneration(verb, { promptText });
+    }
     const ctx = needCtx();
     if (!ctx) return null;
     const { charDir, chatName, charName } = ctx;
@@ -615,6 +740,190 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         exitCode = 5;
         return null;
     }
+    return data;
+}
+
+/**
+ * TASK-037 群生成主流程。与 runGeneration 同构,但:
+ * - 成员选择完全在服务端(body.groupId);--member → force(legacy force_chid)
+ * - send 的用户楼先经 /group/append 落盘(legacy 契约:用户楼是客户端写的)
+ * - regen 在群里 = normal 追加生成(legacy generateType 映射),不删楼
+ * - send/regen 省 persist_target → 服务端填成员楼层字段自动落盘;
+ *   swipe/continue/impersonate/quiet → kind:'none',客户端写盘(成员字段
+ *   取自 x-utopinn-group 头)
+ * - x-utopinn-group.queue 是本轮激活队列:queue[1..] 逐个 member force
+ *   接力(一成员一 job,TASK-037 契约),--no-chain 只发第一人
+ */
+async function runGroupGeneration(verb, { promptText = null } = {}) {
+    const gctx = await needGroupCtx();
+    if (!gctx) return null;
+    const { groupId, chatId, member } = gctx;
+
+    if (await checkNoActiveGroupJob(chatId)) return null;
+
+    const typeMap = { send: 'normal', regen: 'regenerate', swipe: 'swipe', continue: 'continue', impersonate: 'impersonate', quiet: 'quiet' };
+    const type = typeMap[verb] ?? 'normal';
+    let floorsData = null;
+    if (verb === 'send') {
+        const cur = await getGroupChat(chatId).catch(() => null);
+        if (Array.isArray(cur) && cur.length) {
+            saveState({ integrity: cur[0]?.chat_metadata?.integrity ?? state.integrity, floors: cur.length - 1 });
+        }
+        if (!flags.empty) {
+            const wr = await groupAppendFloors(chatId, [userFloor({ persona: flags.user ?? state.persona ?? 'User', text: promptText ?? '' })]);
+            saveState({ floors: (state.floors ?? 0) + 1 });
+            ndjson({ type: 'write', op: 'append-user', appended: wr?.appended ?? 1, integrity: wr?.integrity });
+            if (!JSON_MODE) console.log(`\x1b[36m${flags.user ?? state.persona ?? 'User'}\x1b[0m\n${promptText}\n`);
+        }
+    } else if (verb === 'say') {
+        const wr = await groupAppendFloors(chatId, [userFloor({ persona: flags.user ?? state.persona ?? 'User', text: promptText })]);
+        saveState({ floors: (state.floors ?? 0) + 1 });
+        ndjson({ type: 'done', ok: true, data: { said: true, appended: wr?.appended ?? 1 }, ctx: ctxSummary() });
+        if (!JSON_MODE) footer('said');
+        return { said: true };
+    } else if (verb === 'swipe' || verb === 'continue') {
+        floorsData = await getGroupChat(chatId);
+        saveState({ integrity: floorsData[0]?.chat_metadata?.integrity ?? state.integrity, floors: floorsData.length - 1 });
+        const last = floorsData.at(-1);
+        if (verb === 'swipe' && (!last || last.is_user)) {
+            fail('no_swipe', '末楼不可 swipe(user 楼或空聊天)', { hint: 'swipe 作用在成员楼上' });
+            return null;
+        }
+        if (verb === 'continue' && (!Array.isArray(floorsData) || floorsData.length < 2)) {
+            fail('no_floor', '空聊天无可续楼层', {});
+            return null;
+        }
+    } else if (verb === 'regen') {
+        // legacy:群 regen 映射 normal——不删楼、不 swipe,纯追加。预取只为锚 integrity。
+        floorsData = await getGroupChat(chatId);
+        saveState({ integrity: floorsData[0]?.chat_metadata?.integrity ?? state.integrity, floors: floorsData.length - 1 });
+    }
+
+    // 单次群派发:成员在服务端选(或 member force);返回 {text,status,groupReport,streamed}
+    const runOne = async ({ memberToken = null, typeOverride = null, quietOverrides = null }) => {
+        const jobId = randomUUID();
+        const body = {
+            groupId,
+            chatId,
+            type: typeOverride ?? type,
+            stream: !flags.noStream,
+            presetName: flags.preset ?? state.preset ?? undefined,
+            user: { name: flags.user ?? state.persona ?? 'User' },
+            generation_overrides: flags.set ?? {},
+            luker_generation: { job_id: jobId },
+        };
+        if (memberToken) body.member = memberToken;
+        if (quietOverrides) body.overrides = quietOverrides;
+        // kind:'none' 动词客户端写盘;持久动词省 persist_target → 服务端
+        // persistTargetDefault 已带 kind:group+成员楼层字段(original_avatar/
+        // force_avatar/gen_id),自动落盘——比客户端手填更权威。
+        const memberType = ['swipe', 'continue', 'impersonate', 'quiet'].includes(typeOverride ?? type);
+        if (memberType) body.luker_generation.persist_target = { kind: 'none' };
+        ndjson({ type: 'meta', cmd: verb, job_id: jobId, group: groupId, chat: chatId });
+        const started = Date.now();
+        saveState({ lastJob: { id: jobId, type: typeOverride ?? type, status: 'running', at: Date.now() } });
+        const { data: postData, headers } = await req('POST', '/api/utopinn/generate', body, { timeout: flags.wait ?? DEFAULT_WAIT_MS });
+        if (postData?.skipped === 'no_activated_member') {
+            return { jobId, text: '', skipped: true, groupReport: postData?.group ?? null, streamed: '' };
+        }
+        const groupReport = (() => { try { return JSON.parse(headers.get('x-utopinn-group') ?? 'null'); } catch { return null; } })();
+        const stream = await streamJob(jobId, {
+            onDelta: (d) => {
+                if (JSON_MODE) { if (flags.stream) ndjson({ type: 'delta', text: d }); }
+                else if (!flags.quietMode) process.stdout.write(d);
+            },
+            onReasoning: (d) => {
+                if (JSON_MODE) { if (flags.stream) ndjson({ type: 'reasoning', text: d }); }
+                else if (!flags.quietMode) process.stdout.write(`\x1b[2m${d}\x1b[0m`);
+            },
+        });
+        if (!JSON_MODE) process.stdout.write('\n');
+        const status = await pollStatus(jobId, { waitMs: 4_000, breakOn: ['awaiting_ack'] }) ?? {};
+        const text = String(status?.text ?? '') || stream.streamed;
+        return { jobId, text, status, groupReport, streamed: stream.streamed, elapsed: Date.now() - started };
+    };
+
+    const first = await runOne({
+        memberToken: member,
+        quietOverrides: verb === 'quiet' && promptText ? { quietPrompt: promptText } : null,
+    });
+    if (first.skipped) {
+        ndjson({ type: 'done', ok: true, data: { job_id: null, skipped: 'no_activated_member', group: first.groupReport } });
+        if (!JSON_MODE) footer('queue empty — 只有用户楼落盘');
+        return { skipped: true, group: first.groupReport };
+    }
+    const speakerName = first.groupReport?.member?.name;
+    if (!JSON_MODE && speakerName) process.stdout.write(`\x1b[2m—— ${speakerName}\x1b[0m\n`);
+
+    // kind:'none' 动词:客户端按群楼层形写盘(ack 由 luker_generation_id 走)
+    const failedUpstream = first.status?.status === 'failed' || first.status?.status === 'cancelled';
+    if (!failedUpstream && first.text && !first.status?.persisted) {
+        if (verb === 'swipe' || verb === 'continue') {
+            const lastIdx = floorsData.length - 1;
+            const last = floorsData[lastIdx];
+            const bodyIdx = lastIdx - 1;
+            if (verb === 'swipe') {
+                const oldSwipes = Array.isArray(last.swipes) ? last.swipes : [];
+                const oldInfo = Array.isArray(last.swipe_info) ? last.swipe_info : [];
+                const floorEntry = { send_date: last.send_date, gen_started: last.gen_started, gen_finished: last.gen_finished, extra: last.extra ?? {} };
+                const baseSwipes = oldSwipes.length ? oldSwipes : [last.mes ?? ''];
+                const baseInfo = baseSwipes.map((_, i) => oldInfo[i] ?? floorEntry);
+                await groupPatchFloors(chatId, [
+                    { op: 'add', path: `/body/${bodyIdx}/swipes`, value: [...baseSwipes, first.text] },
+                    { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: new Date().toISOString(), gen_finished: isoNow(), extra: { api: 'cli', model: first.status?.model ?? '', luker_generation_id: first.jobId } }] },
+                    { op: 'add', path: `/body/${bodyIdx}/swipe_id`, value: baseSwipes.length },
+                    { op: 'add', path: `/body/${bodyIdx}/mes`, value: first.text },
+                ], { luker_generation_id: first.jobId });
+            } else {
+                const merged = String(last.mes ?? '') + first.text;
+                const ops = [{ op: 'add', path: `/body/${bodyIdx}/mes`, value: merged }];
+                const swipes = Array.isArray(last.swipes) ? last.swipes : null;
+                const swipeId = Number.isInteger(last.swipe_id) ? last.swipe_id : null;
+                if (swipes && swipeId != null && swipeId < swipes.length) {
+                    ops.push({ op: 'add', path: `/body/${bodyIdx}/swipes/${swipeId}`, value: merged });
+                }
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/gen_finished`, value: isoNow() });
+                await groupPatchFloors(chatId, ops, { luker_generation_id: first.jobId });
+            }
+            ndjson({ type: 'write', op: `patch-${verb}`, applied: true });
+        } else if (verb === 'impersonate' && flags.write) {
+            await groupAppendFloors(chatId, [userFloor({ persona: first.text ? (flags.user ?? state.persona ?? 'User') : 'User', text: first.text })], { luker_generation_id: first.jobId });
+            saveState({ floors: (state.floors ?? 0) + 1 });
+        }
+    }
+
+    // 队列接力:queue[1..] 每成员一个独立 job(force member + 服务端落盘)
+    const queueTail = (!member && !flags.noChain && ['send', 'regen'].includes(verb))
+        ? (first.groupReport?.queue ?? []).slice(1)
+        : [];
+    const chained = [];
+    for (const avatar of queueTail) {
+        const step = await runOne({ memberToken: avatar, typeOverride: 'normal' });
+        chained.push({ avatar, name: step.groupReport?.member?.name ?? null, job_id: step.jobId, chars: step.text.length });
+        if (!JSON_MODE) process.stdout.write(`\x1b[2m—— ${step.groupReport?.member?.name ?? avatar}\x1b[0m\n`);
+    }
+
+    const finalStatus = first.status;
+    saveState({
+        lastJob: { id: first.jobId, type, status: finalStatus?.status ?? 'unknown', at: Date.now(), chars: first.text.length },
+        lastReplyPreview: trunc(first.text, 80),
+        floors: (state.floors ?? 0) + (first.status?.persisted ? 1 : 0) + chained.filter(c => c.name).length,
+    });
+    ring(CMD, failedUpstream ? 5 : 0, { job: first.jobId.slice(0, 8) });
+    const data = {
+        job_id: first.jobId, text: first.text,
+        member: first.groupReport?.member ?? null,
+        group: { groupId, chatId, queue: first.groupReport?.queue ?? [] },
+        chained: chained.length ? chained : undefined,
+        status: finalStatus?.status, persisted: Boolean(finalStatus?.persisted), elapsed_ms: first.elapsed,
+    };
+    if (JSON_MODE) {
+        ndjson({ type: 'done', ok: !failedUpstream, data, ctx: ctxSummary() });
+    } else {
+        if (failedUpstream) warn(`upstream failed: ${finalStatus?.error ?? 'unknown'}`);
+        footer(`${first.elapsed}ms · ${first.text.length}ch${chained.length ? ` · +${chained.length} members` : ''}`);
+    }
+    if (failedUpstream) { exitCode = 5; return null; }
     return data;
 }
 
@@ -857,6 +1166,8 @@ const SCHEMA = {
         { cmd: 'utopinn chats [--char d]', desc: '当前/指定角色聊天列表', out: '[{name,floors,last}]' },
         { cmd: 'utopinn recent [-n N]', desc: '跨角色最近聊天', out: '[{char,chat,time}]' },
         { cmd: 'utopinn use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
+        { cmd: 'utopinn groups', desc: '群列表(id/name/members/chat_id/strategy)', out: '[{id,name,members,chat_id}]' },
+        { cmd: 'utopinn guse <id|name> [chatId]', desc: '绑群 ctx(send/regen/swipe 等自动走群路由;--member 点名,--gchat 换聊,--no-chain 只发第一人)', out: 'ctx' },
         { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
         { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
         { cmd: 'utopinn chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
@@ -917,7 +1228,7 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
@@ -993,10 +1304,44 @@ async function cmdUse() {
     const charDir = stripExt(char.avatar, 'png');
     const chatName = await resolveChatForUse(charDir, positional[2], char.chat);
     if (!chatName) return;
-    saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: { name: chatName }, floors: null, integrity: null });
+    saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: { name: chatName }, group: null, floors: null, integrity: null });
     const n = [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: '发消息' }];
     if (JSON_MODE) return out({ charDir, charName: char.name, chatName }, n);
     console.log(`→ ${char.name ?? charDir} @ ${chatName}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdGroups() {
+    const { data } = await req('POST', '/api/groups/all');
+    const groups = Array.isArray(data) ? data : [];
+    if (JSON_MODE) return out(groups.map(g => ({ id: g.id, name: g.name, members: g.members?.length ?? 0, chat_id: g.chat_id })), [{ cmd: 'utopinn guse <id|name>', why: '绑群 ctx' }]);
+    console.log(`\n${'id'.padEnd(14)}  ${'name'.padEnd(20)}  members  chat_id  strategy/mode`);
+    for (const g of groups) {
+        console.log(`${String(g.id).padEnd(14)}  ${String(g.name ?? '').padEnd(20)}  ${String(g.members?.length ?? 0).padEnd(7)}  ${String(g.chat_id ?? g.id)}  a${g.activation_strategy ?? 0}/g${g.generation_mode ?? 0}`);
+    }
+    footer(`${groups.length} groups`);
+    next([{ cmd: 'utopinn guse <id|name>', why: '绑群 ctx' }]);
+    console.log(`\x1b[2m· next: utopinn guse <id|name>\x1b[0m`);
+}
+
+/** guse <id|name> [chatId] —— 绑群 ctx 进 state;send 等动词自动走群路由 */
+async function cmdGuse() {
+    const doc = await resolveGroup(positional[1]);
+    if (!doc) return;
+    const chatId = stripExt(positional[2] ?? flags.gchat ?? doc.chat_id ?? doc.id, 'jsonl');
+    saveState({
+        group: { id: String(doc.id), name: doc.name ?? String(doc.id), chatId: String(chatId), member: flags.member ?? null },
+        floors: null, integrity: null,
+    });
+    const n = [
+        { cmd: 'utopinn send "…"', why: '用户楼+成员生成' },
+        { cmd: 'utopinn send --member <avatar|name> "…"', why: '点名成员' },
+        { cmd: 'utopinn use <char> [chat]', why: '回单卡 ctx' },
+    ];
+    if (JSON_MODE) return out({ groupId: String(doc.id), groupName: doc.name, chatId: String(chatId), members: doc.members ?? [] }, n);
+    console.log(`→ group ${doc.name ?? doc.id} @ chat ${chatId}(${doc.members?.length ?? 0} members)`);
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
@@ -1334,6 +1679,46 @@ async function cmdPresetsQuiet() {
 }
 
 async function cmdSwipe() {
+    // 群路由:导航模式走 group/patch(message-relative path),生成模式进群主流程
+    if (flags.group !== undefined || state.group?.id) {
+        const gctx = await needGroupCtx();
+        if (!gctx) return;
+        if (positional[1] !== undefined || flags.list) {
+            const cur = await getGroupChat(gctx.chatId);
+            if (!Array.isArray(cur) || !cur.length) return void fail('not_found', 'group chat unreadable');
+            saveState({ integrity: cur[0]?.chat_metadata?.integrity ?? state.integrity });
+            const idx = cur.length - 1;
+            const m = cur[idx];
+            const swipes = Array.isArray(m?.swipes) ? m.swipes : [];
+            if (!swipes.length) return void fail('no_swipe', '末楼无 swipes', { hint: '先 utopinn swipe 生成一版' });
+            if (flags.list) {
+                if (JSON_MODE) return out({ swipe_id: m.swipe_id ?? 0, total: swipes.length, swipes: swipes.map(s => trunc(s, 120)) });
+                swipes.forEach((s, i) => console.log(`${i === (m.swipe_id ?? 0) ? '*' : ' '} ${i}: ${trunc(s, 100)}`));
+                return;
+            }
+            const n = Number(positional[1]);
+            if (!Number.isInteger(n) || n < 0 || n >= swipes.length) {
+                return void fail('usage', `swipe N ∈ [0,${swipes.length - 1}]`, { detail: swipes.map((s, i) => `${i}: ${trunc(s, 40)}`).join(' | '), rc: 2 });
+            }
+            const info = Array.isArray(m.swipe_info) ? m.swipe_info[n] : null;
+            const ops = [
+                { op: 'add', path: `/${idx - 1}/swipe_id`, value: n },
+                { op: 'replace', path: `/${idx - 1}/mes`, value: swipes[n] },
+            ];
+            if (info) {
+                for (const k of ['send_date', 'gen_started', 'gen_finished', 'extra']) {
+                    if (info[k] !== undefined) ops.push({ op: 'add', path: `/${idx - 1}/${k}`, value: info[k] });
+                }
+            }
+            await groupPatchFloors(gctx.chatId, ops);
+            if (JSON_MODE) return out({ swipe_id: n, total: swipes.length, mes: swipes[n] });
+            console.log(`swipe ${n + 1}/${swipes.length}\n${swipes[n]}`);
+            footer();
+            return;
+        }
+        await runGroupGeneration('swipe');
+        return;
+    }
     const c = needCtx(); if (!c) return;
     // 导航模式(不生成)
     if (positional[1] !== undefined || flags.list) {
@@ -2236,6 +2621,8 @@ try {
         case 'chats': await cmdChats(); break;
         case 'recent': await cmdRecent(); break;
         case 'use': await cmdUse(); break;
+        case 'groups': await cmdGroups(); break;
+        case 'guse': await cmdGuse(); break;
         case 'chat-new': await cmdChatNew(); break;
         case 'chat-create': await cmdChatCreate(); break;
         case 'chat-put': await cmdChatPut(); break;
