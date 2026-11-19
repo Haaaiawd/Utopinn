@@ -55,6 +55,10 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--html') flags.html = true;
     else if (a === '--api') flags.api = argv[++i];
     else if (a === '--kind') flags.kind = argv[++i];
+    else if (a === '--lvl') flags.lvl = argv[++i];
+    else if (a === '--since') flags.since = argv[++i];
+    else if (a === '--tail') flags.n = Number(argv[++i]);
+    else if (a === '--job') flags.job = argv[++i];
     else if (a === '--conflict') flags.conflict = argv[++i];
     else if (a === '--as') flags.as = argv[++i];
     else if (a === '--mode') flags.mode = argv[++i];
@@ -929,9 +933,10 @@ async function runGroupGeneration(verb, { promptText = null } = {}) {
 }
 
 function genNextFor(verb, failed) {
-    if (failed) return [{ cmd: 'utopinn inspect', why: '看 job 错误与 WI 轨迹' }, { cmd: `utopinn attach ${state.lastJob?.id ?? ''}`.trim(), why: '对账终态' }];
+    const traceHint = { cmd: `utopinn trace ${state.lastJob?.id ?? ''}`.trim(), why: '注入时序' };
+    if (failed) return [{ cmd: 'utopinn inspect', why: '看 job 错误与 WI 轨迹' }, traceHint, { cmd: `utopinn attach ${state.lastJob?.id ?? ''}`.trim(), why: '对账终态' }];
     switch (verb) {
-        case 'send': return [{ cmd: 'utopinn send "…"', why: '继续' }, { cmd: 'utopinn swipe', why: '换一版' }, { cmd: 'utopinn inspect', why: '看 WI/轨迹' }];
+        case 'send': return [{ cmd: 'utopinn send "…"', why: '继续' }, { cmd: 'utopinn swipe', why: '换一版' }, traceHint];
         case 'regen': case 'swipe': return [{ cmd: 'utopinn swipe', why: '再换一版' }, { cmd: 'utopinn send "…"', why: '接着聊' }];
         case 'continue': return [{ cmd: 'utopinn continue', why: '再续' }, { cmd: 'utopinn send "…"' }];
         default: return [{ cmd: 'utopinn history -n 3' }, { cmd: 'utopinn send "…"' }];
@@ -1032,6 +1037,12 @@ async function cmdStatus() {
 // "METHOD|kind|path" 串格式)。未列的 = raw-only,doctor --full 会打印差集。
 const NAMED_UTOPINN_ROUTES = new Set([
     'GET|exact|/api/utopinn/_kernel',
+    // —— diag 观测面(logs/errors/trace/diag-client)——
+    'GET|pattern|/api/utopinn/diag/events',
+    'GET|pattern|/api/utopinn/diag/errors',
+    'GET|pattern|/api/utopinn/diag/stats',
+    'POST|pattern|/api/utopinn/diag/client',
+    'GET|pattern|/api/utopinn/diag/jobs/:id/trace',
     'GET|pattern|/api/utopinn/jobs',
     'GET|pattern|/api/utopinn/jobs/:id',
     'POST|pattern|/api/utopinn/jobs/:id/abort',
@@ -1212,6 +1223,10 @@ const SCHEMA = {
         { cmd: 'utopinn world-edit <name> [json|--json-file|--stdin]', desc: '[library] 世界书整档写回{entries:{}}(upsert)', out: '{ok,name}' },
         { cmd: 'utopinn world-delete <name>', desc: '[library] 删世界书(显式名)', out: '204' },
         { cmd: 'utopinn kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
+        { cmd: 'utopinn logs [--kind k] [--lvl l] [-n N|--tail n] [--since ts] [--code c] [--job id]', desc: '[diag] 事件总线日志(http/job/generate/inject/th/plugin/client)', out: '[{seq,ts,lvl,kind,code,msg,ctx,data}]' },
+        { cmd: 'utopinn errors [-n N]', desc: '[diag] warn+ 事件快捷面(http_4xx/5xx/job_failed/th/…)', out: '[{…}]' },
+        { cmd: 'utopinn trace <jobId>', desc: '[diag] job 聚合回放:状态+注入时序表(preset/charbook/worldinfo/regex/instruct/macro/assemble)+perf+事件', out: '{job,injections,events,perf}' },
+        { cmd: 'utopinn diag-client <msg> [--kind k] [--code c] [json|--stdin]', desc: '[diag] 客户端错误上报进服务端总线', out: '{ok,seq}' },
         { cmd: 'utopinn plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
         { cmd: 'utopinn plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
         { cmd: 'utopinn mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
@@ -1232,7 +1247,7 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
@@ -1507,6 +1522,118 @@ async function cmdInspect() {
     const show = flags.full ? entries : entries.slice(0, 15);
     for (const e of show) console.log(`  - [${e.world}] ${trunc(e.comment ?? e.key ?? '', 58)} pos=${e.position} depth=${e.depth ?? '-'}`);
     if (!flags.full && entries.length > 15) console.log(`  …+${entries.length - 15} entries(--full 展开)`);
+    footer();
+}
+
+// ═══ diag 观测面(diag-bus):logs/errors/trace ═══
+const DIAG_CTX_SHOW = ['jobId', 'diagId', 'charDir', 'chatId', 'route', 'status', 'verb', 'stage'];
+function fmtDiagTs(ts) {
+    const t = new Date(ts ?? 0);
+    return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}:${String(t.getSeconds()).padStart(2, '0')}.${String(t.getMilliseconds()).padStart(3, '0')}`;
+}
+function fmtDiagEvent(e) {
+    const color = e.lvl === 'error' ? '\x1b[31m' : e.lvl === 'warn' ? '\x1b[33m' : e.lvl === 'debug' ? '\x1b[2m' : '\x1b[0m';
+    const ctxBits = e.ctx
+        ? DIAG_CTX_SHOW.filter(k => e.ctx[k] !== undefined).map(k => `${k}=${String(e.ctx[k]).slice(0, 24)}`).join(' ')
+        : '';
+    let line = `\x1b[2m${fmtDiagTs(e.ts)}\x1b[0m ${color}${String(e.lvl ?? '?').padEnd(5)}\x1b[0m ${String(e.kind ?? '?').padEnd(8)} ${(e.code ?? '').padEnd(18)} ${e.msg ?? ''}`;
+    if (ctxBits) line += `  \x1b[2m${ctxBits}\x1b[0m`;
+    if (flags.full && e.data !== undefined) line += `\n    \x1b[2m${trunc(JSON.stringify(e.data), 400)}\x1b[0m`;
+    return line;
+}
+function printDiagEvents(items, tag) {
+    for (const e of items) console.log(fmtDiagEvent(e));
+    footer(`${items.length} events${tag ? ` · ${tag}` : ''}`);
+}
+
+async function cmdLogs() {
+    const params = new URLSearchParams();
+    if (flags.kind) params.set('kind', flags.kind);
+    if (flags.lvl) params.set('lvl', flags.lvl);
+    if (flags.code) params.set('code', flags.code);
+    if (flags.since) params.set('since', flags.since);
+    if (flags.job) params.set('job', flags.job);
+    params.set('limit', String(flags.n ?? 50));
+    const { data, status } = await req('GET', `/api/utopinn/diag/events?${params}`, undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `diag events → ${status}`, { status, detail: data });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(items, [{ cmd: 'utopinn errors' }, { cmd: 'utopinn trace <jobId>' }]);
+    printDiagEvents(items, `seq→${data?.seq ?? '?'} size ${data?.size ?? '?'}`);
+    return items;
+}
+
+async function cmdErrors() {
+    const params = new URLSearchParams();
+    if (flags.kind) params.set('kind', flags.kind);
+    if (flags.since) params.set('since', flags.since);
+    params.set('limit', String(flags.n ?? 50));
+    const { data, status } = await req('GET', `/api/utopinn/diag/errors?${params}`, undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `diag errors → ${status}`, { status, detail: data });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (JSON_MODE) return out(items, [{ cmd: 'utopinn logs --lvl warn' }]);
+    if (!items.length) console.log('no warn+ events');
+    printDiagEvents(items);
+    return items;
+}
+
+async function cmdTrace() {
+    const id = positional[1] || flags.job || state.lastJob?.id;
+    if (!id) return void fail('usage', 'utopinn trace <jobId>(或先生成一次)', { rc: 2 });
+    const { data: d, status } = await req('GET', `/api/utopinn/diag/jobs/${encodeURIComponent(id)}/trace`, undefined, { allowFail: true });
+    if (!d || status === 404) return void fail('not_found', `job not found: ${id}`, { hint: 'utopinn jobs 看列表' });
+    if (status >= 400) return void fail('server', `trace → ${status}`, { status, detail: d });
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(d, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(d);
+    const inj = Array.isArray(d.injections) ? d.injections : [];
+    console.log(`job ${String(d.id).slice(0, 8)} · ${d.status} · verb=${d.verb ?? '-'} · model=${d.model || '-'} · chat=${d.chatKey ?? '-'}`);
+    if (d.error) console.log(`\x1b[31merror: ${d.error}\x1b[0m`);
+    if (inj.length) {
+        const SKIP = new Set(['ts', 'seq', 'stage', 'injected', 'tokens', 'ms', 'entries']);
+        console.log(`\n\x1b[1m  ${'stage'.padEnd(10)} ${'injected'.padStart(8)} ${'tokens'.padStart(7)} ${'ms'.padStart(7)}\x1b[0m  detail`);
+        for (const s of inj) {
+            const entries = Array.isArray(s.entries) ? ` entries:${s.entries.length}` : '';
+            const detail = Object.entries(s)
+                .filter(([k, v]) => !SKIP.has(k) && v !== undefined && v !== null)
+                .map(([k, v]) => `${k}=${typeof v === 'object' ? trunc(JSON.stringify(v), 60) : v}`)
+                .join(' ');
+            console.log(`  ${String(s.stage ?? '?').padEnd(10)} ${String(s.injected ?? '').padStart(8)} ${String(s.tokens ?? '').padStart(7)} ${String(s.ms ?? '').padStart(7)}  ${trunc(detail + entries, 100)}`);
+        }
+    }
+    if (d.perf) {
+        const p = d.perf, r1 = (v) => (v == null ? '-' : Math.round(v * 10) / 10);
+        console.log(`\nperf: card=${r1(p.cardMs)} load=${r1(p.loadMs)} preset=${r1(p.presetMs)} wi=${r1(p.wiMs)} assemble=${r1(p.assembleMs)} total=${r1(p.totalMs)}ms`);
+    }
+    const evts = (Array.isArray(d.events) ? d.events : []).filter(e => e.kind !== 'inject');
+    if (evts.length) {
+        console.log(`\nevents:`);
+        for (const e of evts) console.log(`  ${fmtDiagEvent(e)}`);
+    }
+    footer();
+}
+
+async function cmdDiagClient() {
+    // 把一条"客户端错误"打进服务端总线——验证 POST /diag/client 面,
+    // 也是 CLI 自身/脚本报错挂观测面的通道。
+    let extra = {};
+    if (flags.stdin || positional[2] !== undefined) {
+        const doc = await readJsonBody(positional.slice(2), 'diag-client <msg> [json-ctx|--stdin]');
+        if (doc === undefined) return;
+        extra = doc;
+    }
+    const msg = positional[1] ?? extra.msg;
+    if (!msg) return void fail('usage', 'utopinn diag-client <msg> [--kind k] [--code c] [json|--stdin]', { rc: 2 });
+    const { data, status } = await req('POST', '/api/utopinn/diag/client', {
+        msg,
+        lvl: flags.lvl ?? 'warn',
+        kind: flags.kind ?? 'client',
+        code: flags.code,
+        ctx: { cli: CMD, charDir: state.char?.dir, chatName: state.chat?.name },
+        data: extra,
+    }, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `diag-client → ${status}`, { status, detail: data });
+    if (JSON_MODE) return out(data);
+    console.log(`reported seq=${data?.seq}`);
     footer();
 }
 
@@ -2648,6 +2775,10 @@ try {
         case 'edit': await cmdEdit(); break;
         case 'jobs': await cmdJobs(); break;
         case 'inspect': await cmdInspect(); break;
+        case 'logs': await cmdLogs(); break;
+        case 'errors': await cmdErrors(); break;
+        case 'trace': await cmdTrace(); break;
+        case 'diag-client': await cmdDiagClient(); break;
         case 'preview': await cmdPreview(); break;
         case 'attach': await cmdAttach(); break;
         case 'abort': await cmdAbort(); break;

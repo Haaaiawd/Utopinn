@@ -137,11 +137,14 @@ export function createWorldInfoRegexHook(settingsDoc, substCtx, opts = {}) {
     const ext = settingsDoc?.extension_settings ?? {};
     const disabledExt = Array.isArray(ext.disabledExtensions) ? ext.disabledExtensions : [];
     const scripts = disabledExt.includes('regex') ? [] : collectRegexScripts(settingsDoc, opts);
-    return function applyWorldInfoRegex(content, regexOpts = {}) {
+    function applyWorldInfoRegex(content, regexOpts = {}) {
         if (typeof content !== 'string') return '';
         if (!content || !scripts.length) return content;
         return applyWorldInfoRegexCore(scripts, content, { depth: regexOpts.depth, role: regexOpts.role }, substCtx);
-    };
+    }
+    // 观测面只读属性:收集到的脚本数(全局+preset+scoped 三层放行后)。
+    applyWorldInfoRegex.scriptCount = scripts.length;
+    return applyWorldInfoRegex;
 }
 
 // —— Author's Note / 卡 depth_prompt / persona 注入通道(audit H4/H5/M1/M2)——

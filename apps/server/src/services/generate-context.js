@@ -35,6 +35,8 @@ import {
 } from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { performance } from 'node:perf_hooks';
+import { randomUUID } from 'node:crypto';
+import { emit as diagEmit } from './diag-bus.js';
 
 /** 毫秒保留 1 位小数(打表口径) */
 const ms = (v) => Math.round(v * 10) / 10;
@@ -198,7 +200,24 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  *   perf:cardMs(调用方补)/loadMs/presetMs/wiMs/assembleMs/collectionMs/populateMs/tokenMs/totalMs;
  *   chatMetadata/chatIntegrity 供调用方持久化 timedWorldInfo(仅非 dryRun)。
  */
-export async function buildGenerationContext({
+export async function buildGenerationContext(input) {
+    // 诊断面外层:任何组装失败 → generate 错误事件(assemble_failed),
+    // 成功路径的阶段时序由 impl 内 inject 事件承担。diagId 认亲规则
+    // 见 utopinn-generate 的 request.utopinnDiagId 挂点。
+    const { request, charDir, chatName, type = 'normal' } = input ?? {};
+    try {
+        return await buildGenerationContextImpl(input);
+    } catch (error) {
+        diagEmit({
+            lvl: 'error', kind: 'generate', code: 'assemble_failed',
+            msg: `assemble failed ${charDir}/${chatName}: ${String(error?.message ?? error).slice(0, 280)}`,
+            ctx: { charDir, chatId: chatName, verb: type, diagId: request?.utopinnDiagId },
+        });
+        throw error;
+    }
+}
+
+async function buildGenerationContextImpl({
     request,
     charDir,
     chatName,
@@ -219,6 +238,20 @@ export async function buildGenerationContext({
     };
     const t0 = performance.now();
     let seg = t0;
+
+    // —— 诊断:注入时序事件(kind:'inject',code=stage)——
+    // diagId = 本次组装的认亲键:endpoint 提前挂 request.utopinnDiagId
+    // (有 job_id 时同值,job 诞生后 trace 面双键合并);缺省现造。
+    // 凝练:data 只放计数/条目指针(uid+key+depth),正文与全量明细
+    // 由 job.trace/sources 承担。
+    const diagId = request.utopinnDiagId ?? (request.utopinnDiagId = randomUUID());
+    const diagCtx = { charDir, chatId: group ? String(group.chatId) : chatName, verb: type, diagId };
+    const injectEvt = (stage, data = {}) => diagEmit({
+        lvl: 'info', kind: 'inject', code: stage,
+        msg: `${stage} ${charDir}/${diagCtx.chatId}${dryRun ? ' (dry)' : ''}`,
+        ctx: { ...diagCtx, stage },
+        data: { stage, ...data },
+    });
 
     const handle = request.user.profile.handle;
     const chatRepo = getChatRepo();
@@ -244,11 +277,19 @@ export async function buildGenerationContext({
     const presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
     perf.presetMs += performance.now() - seg;
     if (!presetDoc) throw new Error(`Preset not found: openai/${resolvedPresetName}`);
+    injectEvt('preset', {
+        injected: 1, name: resolvedPresetName,
+        prompts: Array.isArray(presetDoc.prompts) ? presetDoc.prompts.length : 0,
+        contextTokens: presetDoc.openai_max_context ?? null,
+        responseTokens: presetDoc.openai_max_tokens ?? null,
+        ms: ms(perf.presetMs),
+    });
 
     const chatMessages = chatBodyToInput(chatDoc.body);
     // 上游 script.js:8000-8002:type==='swipe' 时弹出末层(swipe 槽
     // 重新生成旧楼层);WI 扫描缓冲同步不含该层。
     if (type === 'swipe' && chatMessages.length) chatMessages.pop();
+    injectEvt('load', { injected: chatMessages.length, floors: chatMessages.length, ms: ms(perf.loadMs) });
     const chatMetadata = chatDoc.header?.chat_metadata ?? {};
 
     // —— World Info:先取书名集 → 批量拉书 → mergeLoreSources 一次成型 ——
@@ -284,6 +325,13 @@ export async function buildGenerationContext({
         getWorldData: (name) => worldCache.get(name),
     });
     perf.wiMs += performance.now() - seg;
+    injectEvt('charbook', {
+        injected: entries.length,
+        books: worldNames.length,
+        loaded: [...worldCache.values()].filter(Boolean).length,
+        entries: entries.length,
+        ms: ms(perf.wiMs),
+    });
 
     const substCtx = {
         name1: user?.name ?? 'User',
@@ -329,11 +377,18 @@ export async function buildGenerationContext({
     substCtx.mainApi = mainApi;
     substCtx.contextTemplate = powerUser?.context;
     substCtx.formatInstructExamples = instructEngine.formatInstructExamples;
+    injectEvt('instruct', {
+        injected: powerUserInstruct.enabled ? 1 : 0,
+        enabled: !!powerUserInstruct.enabled,
+        instructPresets: instructPresetDocs.length,
+        contextPresets: contextPresetDocs.length,
+    });
     // {{banned}} 宏收集槽(textgen banned words 通道,evaluate.ts ctx.bannedWords)。
     // 收集范围 = 本次组装内所有 substituteParams 调用;非 textgen 派发读了也不用。
     const bannedInMacros = [];
     substCtx.bannedWords = { collect: true, push: (w) => bannedInMacros.push(w) };
-    const subst = (content) => substituteParams(content, substCtx);
+    let substCount = 0; // macro 阶段观测:本侧 subst 调用次数(core 内部替换不计)
+    const subst = (content) => { substCount++; return substituteParams(content, substCtx); };
 
     // —— TASK-037 group seams ——
     // deps.group(assemble.ts:selected/botNames)+ substCtx.groups/{{group}}/
@@ -479,6 +534,17 @@ export async function buildGenerationContext({
         ? chatMessages.map((m) => `${m.name}: ${String(m.mes ?? '')}`)
         : chatMessages.map((m) => String(m.mes ?? ''))
     ).reverse();
+    // WI 正则钩子 + 观测计数:scriptCount 由 createWorldInfoRegexHook 暴露,
+    // applied = 实际改写内容的次数(hook 幂等时原样返回不计)。
+    const wiRegexHookRaw = createWorldInfoRegexHook(extPromptSource, substCtx, {
+        card, charDir, presetDoc, presetName: resolvedPresetName,
+    });
+    let regexApplied = 0;
+    const wiRegexHook = (content, regexOpts = {}) => {
+        const out = wiRegexHookRaw(content, regexOpts);
+        if (out !== content) regexApplied++;
+        return out;
+    };
     const wiActivated = entries.length
         ? await checkWorldInfo(
             wiScanLines,
@@ -492,9 +558,7 @@ export async function buildGenerationContext({
                 substituteParams: subst,
                 // extension prompts 三面:scan 注入缓冲 + WI 内容正则钩子
                 scannableExtensionPrompts: scannableExtensionPrompts(extPromptSource, subst),
-                applyWorldInfoRegex: createWorldInfoRegexHook(extPromptSource, substCtx, {
-                    card, charDir, presetDoc, presetName: resolvedPresetName,
-                }),
+                applyWorldInfoRegex: wiRegexHook,
                 // characterFilter.names/tags(engine.ts 钩子):单卡 = 卡目录名;
                 // 群 = 发言成员目录名(getCharaFilename(this_chid) 同位)。
                 getCharacterFilename: () => charDir,
@@ -506,6 +570,21 @@ export async function buildGenerationContext({
         )
         : { worldInfoBeforeEntries: [], worldInfoAfterEntries: [], WIDepthEntries: [], EMEntries: [], ANBeforeEntries: [], ANAfterEntries: [], outletEntries: {} };
     perf.wiMs += performance.now() - seg;
+    const wiActivatedList = Array.from(wiActivated.allActivatedEntries ?? [])
+        .map((e) => ({ world: e.world, uid: e.uid, key: e.key, depth: e.depth, position: e.position }))
+        .sort((a, b) => String(a.world ?? '').localeCompare(String(b.world ?? '')) || Number(a.uid) - Number(b.uid));
+    injectEvt('worldinfo', {
+        injected: wiActivatedList.length,
+        scanned: entries.length,
+        before: wiActivated.worldInfoBeforeEntries?.length ?? 0,
+        after: wiActivated.worldInfoAfterEntries?.length ?? 0,
+        depthFloors: (wiActivated.WIDepthEntries ?? []).length,
+        em: (wiActivated.EMEntries ?? []).length,
+        an: (wiActivated.ANBeforeEntries ?? []).length + (wiActivated.ANAfterEntries ?? []).length,
+        entries: wiActivatedList,
+        ms: ms(perf.wiMs),
+    });
+    injectEvt('regex', { injected: regexApplied, scripts: wiRegexHookRaw.scriptCount ?? 0, applied: regexApplied });
 
     // —— WI 后注入通道(上游 script.js:4666-4684 同序)——
     // 1) ANTop/ANBottom 合并进 AN(上游 checkWorldInfo 内段,shouldWIAddPrompt 门控)
@@ -622,6 +701,27 @@ export async function buildGenerationContext({
     perf.populateMs = builtPrompt.perf?.populateMs ?? 0;
     perf.tokenMs = builtPrompt.perf?.tokenMs ?? 0;
     perf.totalMs = performance.now() - t0;
+
+    const usedTokens = builtPrompt.trace ? (builtPrompt.trace.tokenBudget ?? 0) - (builtPrompt.trace.remainingBudget ?? 0) : null;
+    injectEvt('assemble', {
+        injected: builtPrompt.messages.length,
+        messages: builtPrompt.messages.length,
+        tokens: usedTokens,
+        injectedCollections: builtPrompt.trace?.injectedCount ?? null,
+        droppedChat: builtPrompt.trace?.droppedChatCount ?? null,
+        ms: ms(perf.assembleMs),
+    });
+    injectEvt('macro', { injected: substCount, substitutions: substCount, banned: bannedInMacros.length });
+    diagEmit({
+        lvl: 'info', kind: 'generate', code: dryRun ? 'preview' : 'assembled',
+        msg: `${dryRun ? 'preview' : 'generate'} ${charDir}/${diagCtx.chatId}: ${builtPrompt.messages.length}msg ${usedTokens ?? '?'}tok ${ms(perf.totalMs)}ms`,
+        ctx: diagCtx,
+        data: {
+            preset: resolvedPresetName, model: presetDoc.openai_model,
+            messages: builtPrompt.messages.length, tokens: usedTokens,
+            wiActivated: wiActivatedList.length, dryRun, perf,
+        },
+    });
 
     return {
         builtPrompt,

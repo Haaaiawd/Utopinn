@@ -1,12 +1,13 @@
 /**
  * Utopinn · Brand Iconography System v3 (U馆 品牌图标系统 · 主导航精修版)
- * Total: 32 icons (P0: 9, P2: 6, P3: 6, P1: 7, Secondary 1.5px: 4) + Portal Spark Logo
+ * Total: 43 icons (P0: 10, P1: 9, P2: 6, P3: 6, Secondary 1.5px: 12) + Portal Spark Logo
+ * Built-in Aliases: gear -> settings, gitFork -> branch
  * Spec: 24x24 viewBox | core strokeWidth=1.85px | round caps/joins | #FF6B5B structural accents
  * Selected panelRight Concept: 方案 A · 推门光缝 (Portal Slit)
  */
 import React from 'react';
 
-export type UtopinnIconName =
+export type UtopinnCanonicalIconName =
   | 'home'
   | 'chat'
   | 'studio'
@@ -16,6 +17,7 @@ export type UtopinnIconName =
   | 'slash'
   | 'arrowUp'
   | 'menu'
+  | 'user'
   | 'feather'
   | 'messages'
   | 'sparkles'
@@ -35,10 +37,28 @@ export type UtopinnIconName =
   | 'bookOpen'
   | 'radio'
   | 'code'
+  | 'import'
+  | 'cpu'
   | 'copy'
   | 'undo'
   | 'search'
-  | 'close';
+  | 'close'
+  | 'plus'
+  | 'check'
+  | 'more'
+  | 'chevronDown'
+  | 'arrowRight'
+  | 'trash'
+  | 'pencil'
+  | 'list';
+
+export type UtopinnIconAlias = 'gear' | 'gitFork';
+export type UtopinnIconName = UtopinnCanonicalIconName | UtopinnIconAlias;
+
+const ICON_ALIAS_MAP: Record<UtopinnIconAlias, UtopinnCanonicalIconName> = {
+  gear: 'settings',
+  gitFork: 'branch',
+};
 
 export interface UtopinnIconProps extends React.SVGProps<SVGSVGElement> {
   name: UtopinnIconName;
@@ -85,7 +105,9 @@ export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
   ...rest
 }) => {
   const sw = strokeWidth;
-  const isGear = name === 'settings';
+  const resolvedName: UtopinnCanonicalIconName =
+    name in ICON_ALIAS_MAP ? ICON_ALIAS_MAP[name as UtopinnIconAlias] : (name as UtopinnCanonicalIconName);
+  const isGear = resolvedName === 'settings';
 
   const mergedStyle: React.CSSProperties = isGear
     ? {
@@ -97,7 +119,7 @@ export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
     : { ...style };
 
   const renderGlyph = () => {
-    switch (name) {
+    switch (resolvedName) {
     case 'home':
       return active ? (
         <>
@@ -229,6 +251,19 @@ export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
           <path d="M 3.8 6.5 H 15.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M 3.8 12.0 H 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M 3.8 17.5 H 13.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'user':
+      return active ? (
+        <>
+          <circle cx="12" cy="8.1" r="3.45" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.8 19.6 C 4.8 15.8 7.9 13.7 12.0 13.7 C 16.1 13.7 19.2 15.8 19.2 19.6 C 19.2 20.1 18.8 20.4 18.3 20.4 H 5.7 C 5.2 20.4 4.8 20.1 4.8 19.6 Z" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <circle cx="12" cy="8.1" r="3.45" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.8 19.8 C 4.8 15.9 7.9 13.8 12.0 13.8 C 16.1 13.8 19.2 15.9 19.2 19.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
         </>
       );
 
@@ -521,6 +556,38 @@ export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
         </>
       );
 
+    case 'import':
+      return active ? (
+        <>
+          <path d="M 4.2 13.8 V 17.5 C 4.2 18.88 5.32 20.0 6.7 20.0 H 17.3 C 18.68 20.0 19.8 18.88 19.8 17.5 V 13.8" fill="#FF6B5B" fillOpacity="0.16" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 4.0 V 14.3" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 8.0 10.6 L 12 14.6 L 16.0 10.6" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 4.2 13.8 V 17.5 C 4.2 18.88 5.32 20.0 6.7 20.0 H 17.3 C 18.68 20.0 19.8 18.88 19.8 17.5 V 13.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 4.0 V 14.3" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 8.0 10.6 L 12 14.6 L 16.0 10.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'cpu':
+      return active ? (
+        <>
+          <rect x="6.5" y="6.5" width="11.0" height="11.0" rx="2.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 9.6 3.5 V 6.5 M 14.4 3.5 V 6.5 M 9.6 17.5 V 20.5 M 14.4 17.5 V 20.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round"/>
+          <path d="M 3.5 9.6 H 6.5 M 3.5 14.4 H 6.5 M 17.5 9.6 H 20.5 M 17.5 14.4 H 20.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round"/>
+          <rect x="9.3" y="9.3" width="5.4" height="5.4" rx="1.35" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <rect x="6.5" y="6.5" width="11.0" height="11.0" rx="2.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 9.6 3.5 V 6.5 M 14.4 3.5 V 6.5 M 9.6 17.5 V 20.5 M 14.4 17.5 V 20.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round"/>
+          <path d="M 3.5 9.6 H 6.5 M 3.5 14.4 H 6.5 M 17.5 9.6 H 20.5 M 17.5 14.4 H 20.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round"/>
+          <rect x="9.6" y="9.6" width="4.8" height="4.8" rx="1.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
     case 'copy':
       return (
         <>
@@ -550,6 +617,73 @@ export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
         <>
           <path d="M 6.5 6.5 L 17.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
           <path d="M 17.5 6.5 L 6.5 17.5" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'plus':
+      return (
+        <>
+          <path d="M 12 5.2 V 18.8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round"/>
+          <path d="M 5.2 12 H 18.8" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round"/>
+        </>
+      );
+
+    case 'check':
+      return (
+        <>
+          <path d="M 5.0 12.6 L 9.6 17.2 L 19.0 7.4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'more':
+      return (
+        <>
+          <circle cx="5.8" cy="12" r="1.35" fill="currentColor"/>
+          <circle cx="12" cy="12" r="1.35" fill="currentColor"/>
+          <circle cx="18.2" cy="12" r="1.35" fill="currentColor"/>
+        </>
+      );
+
+    case 'chevronDown':
+      return (
+        <>
+          <path d="M 6.5 9.4 L 12 15.0 L 17.5 9.4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'arrowRight':
+      return (
+        <>
+          <path d="M 5.4 12 H 18.4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 13.4 7.0 L 18.6 12 L 13.4 17.0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'trash':
+      return (
+        <>
+          <path d="M 4.8 7.0 H 19.2" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 9.2 7.0 V 5.4 C 9.2 4.74 9.74 4.2 10.4 4.2 H 13.6 C 14.26 4.2 14.8 4.74 14.8 5.4 V 7.0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 6.6 7.0 L 7.4 18.0 C 7.5 19.12 8.43 20.0 9.55 20.0 H 14.45 C 15.57 20.0 16.5 19.12 16.6 18.0 L 17.4 7.0" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 10.2 10.8 V 16.2 M 13.8 10.8 V 16.2" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round"/>
+        </>
+      );
+
+    case 'pencil':
+      return (
+        <>
+          <path d="M 15.6 4.6 L 19.4 8.4 L 9.2 18.6 L 4.6 19.4 L 5.4 14.8 L 15.6 4.6 Z" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 13.4 6.8 L 17.2 10.6" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'list':
+      return (
+        <>
+          <circle cx="4.8" cy="6.8" r="1.05" fill="currentColor"/>
+          <circle cx="4.8" cy="12.0" r="1.05" fill="currentColor"/>
+          <circle cx="4.8" cy="17.2" r="1.05" fill="currentColor"/>
+          <path d="M 8.6 6.8 H 19.4 M 8.6 12.0 H 19.4 M 8.6 17.2 H 19.4" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round"/>
         </>
       );
       default:

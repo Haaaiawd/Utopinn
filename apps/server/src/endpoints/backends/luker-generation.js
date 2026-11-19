@@ -9,6 +9,7 @@ import { appendMessagesToChatFile } from '../chats.js';
 import { getConfigValue } from '../../util.js';
 import { stripJsonlExt } from '../../storage/name-validation.js';
 import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
+import { emit as diagEmit } from '../../services/diag-bus.js';
 
 const generationJobs = new Map();
 const LUKER_GENERATION_JOB_MAX_ITEMS = 128;
@@ -549,8 +550,12 @@ export function createGenerationJob(request, options) {
     }
     job.cancelledByUser = false;
     job.abortController = null;
+    // diag 认亲键在此挂(早于 runner 的 trace/sources 挂载点)——
+    // 'job_running' 事件本身也带 diagId,组装期 inject 事件可双键合并。
+    job.diagId = request.utopinnDiagId ?? job.diagId ?? null;
 
     generationJobs.set(jobId, job);
+    emitJobTransition(job); // job_running(重试回收同 id 时也会再翻 running)
     pruneGenerationJobs();
     return job;
 }
@@ -651,6 +656,41 @@ function notifyJobStatus(job) {
         error: job.error || '',
         finished_at: job.finishedAt || null,
     });
+    emitJobTransition(job);
+}
+
+/**
+ * diag-bus 统一挂钩:全部状态迁移都汇到 notifyJobStatus(创建/running/
+ * awaiting_ack/persisting/completed/failed/cancelled),这里按 status
+ * 去重发 job 事件——比逐个迁移点埋点少一圈挂点,且节流 progress 帧
+ * (status 不变)天然不重复发。
+ */
+function emitJobTransition(job) {
+    try {
+        const status = String(job?.status ?? '');
+        if (!status || job._diagStatus === status) return;
+        job._diagStatus = status;
+        diagEmit({
+            lvl: status === 'failed' ? 'error' : (status === 'cancelled' ? 'warn' : 'info'),
+            kind: 'job',
+            code: `job_${status}`,
+            msg: `job ${String(job.id).slice(0, 8)} → ${status}${job.error ? `: ${String(job.error).slice(0, 140)}` : ''}`,
+            ctx: {
+                jobId: job.id,
+                diagId: job.diagId ?? undefined,
+                chatKey: job.chatKey,
+                verb: job.requestMeta?.verb,
+                model: job.modelName || undefined,
+            },
+            data: {
+                status,
+                error: job.error ? String(job.error).slice(0, 400) : undefined,
+                persisted: Boolean(job.persisted),
+                textLen: String(job.text ?? '').length,
+                eventCount: Array.isArray(job.events) ? job.events.length : 0,
+            },
+        });
+    } catch { /* 观测面绝不炸 job 生命周期 */ }
 }
 
 export function failGenerationJob(job, errorMessage = 'Unknown error occurred') {

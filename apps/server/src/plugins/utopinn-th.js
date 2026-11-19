@@ -24,8 +24,21 @@ import { getChatRepo, getSettingsRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './utopinn-library.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
+import { emit as diagEmit } from '../services/diag-bus.js';
 
 export const inject = ['webServer'];
+
+/** TH 调用失败面 → th 事件(unsupported/方法内 error/scope 解析失败/未捕异常)。 */
+function thEvent(code, msg, { method, charDir, chatName, status, error } = {}) {
+    diagEmit({
+        lvl: status >= 500 || code === 'th_error' ? 'error' : 'warn',
+        kind: 'th',
+        code,
+        msg,
+        ctx: { charDir, chatId: chatName, verb: method, status },
+        data: { method, status, error: error ? String(error).slice(0, 300) : undefined },
+    });
+}
 
 /** lodash 式路径 → 段数组('a.b[0].c' → ['a','b','0','c'])。 */
 function pathSegs(p) {
@@ -263,13 +276,14 @@ export function apply(ctx) {
                 if (!method) {
                     return response.status(400).send({ ok: false, error: 'body.method required' });
                 }
-                const fn = METHODS[method];
-                if (!fn) {
-                    return response.send({ ok: false, unsupported: true, method });
-                }
                 const target = body.target ?? {};
                 const charDir = target.charDir ? safeName(target.charDir, 'target.charDir') : null;
                 const chatName = target.chatName ? safeName(stripJsonlExt(target.chatName), 'target.chatName') : null;
+                const fn = METHODS[method];
+                if (!fn) {
+                    thEvent('th_unsupported', `th unsupported: ${method}`, { method, charDir, chatName });
+                    return response.send({ ok: false, unsupported: true, method });
+                }
                 const ctx2 = {
                     handle: request.user.profile.handle,
                     directories: request.user.directories,
@@ -290,16 +304,21 @@ export function apply(ctx) {
                         charDir, chatName,
                         messageId: body.args?.message_id,
                     });
-                    if (r.error) return response.status(r.status ?? 500).send({ ok: false, error: r.error });
+                    if (r.error) {
+                        thEvent('th_scope_failed', `th ${method} scope: ${r.error}`, { method, charDir, chatName, status: r.status });
+                        return response.status(r.status ?? 500).send({ ok: false, error: r.error });
+                    }
                     scope = r;
                 }
 
                 const out = await fn(body.args ?? {}, scope, ctx2);
                 if (out.ok === false && out.status) {
+                    thEvent('th_call_failed', `th ${method} failed: ${out.error ?? out.status}`, { method, charDir, chatName, status: out.status, error: out.error });
                     return response.status(out.status).send(out);
                 }
                 return response.send(out);
             } catch (error) {
+                thEvent('th_error', `th call threw: ${String(error?.message ?? error).slice(0, 200)}`, { method: request.body?.method, charDir: request.body?.target?.charDir, chatName: request.body?.target?.chatName, status: 500, error });
                 return sendError(response, error, 'utopinn/th call');
             }
         },

@@ -63,6 +63,10 @@ export async function runLukerDispatch(request, response, { endpoint, select }) 
     // 浏览器回同步 chat_metadata 用。两字段可空 —— legacy 派发无挂载即 null。
     job.promptMessages = request.body?.messages ?? request.utopinnPromptMessages ?? null;
     job.timedWorldInfo = request.utopinnTimedWorldInfo ?? null;
+    // diag 认亲键(diag-bus):组装期 inject 事件早于 job 诞生时靠它合并;
+    // perf 挂 job → /diag/jobs/:id/trace 回放的时序段数据源。
+    job.diagId = request.utopinnDiagId ?? null;
+    job.perf = request.utopinnPerf ?? null;
     const abortController = new AbortController();
     job.abortController = abortController;
 

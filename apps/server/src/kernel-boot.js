@@ -30,10 +30,42 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { readFile, writeFile, rename } from 'node:fs/promises';
+import { emit as diagEmit } from './services/diag-bus.js';
 
 export const appCtx = createAppContext();
 
-appCtx.provide('webServer', new WebServer());
+const webServerInstance = new WebServer();
+// 诊断统一挂钩:所有经 webServer.register 的路由缠一层 finish 监听——
+// 响应落地时 statusCode>=400 即向 diag-bus 发 http 事件(路由+status)。
+// 单点挂载,路由 handler 与 middleware 的 4xx/5xx 产出路径全覆盖,
+// 插件不需要各自埋点;成功响应零事件(观测面只收异常)。
+const _registerRoute = webServerInstance.register.bind(webServerInstance);
+webServerInstance.register = (route) => _registerRoute({
+    ...route,
+    handler: (req, res) => {
+        try {
+            if (typeof res?.once === 'function') {
+                res.once('finish', () => {
+                    try {
+                        const status = Number(res.statusCode ?? 0);
+                        if (status >= 400) {
+                            const path = String(req.url ?? '').split('?')[0];
+                            diagEmit({
+                                lvl: status >= 500 ? 'error' : 'warn',
+                                kind: 'http',
+                                code: `http_${status}`,
+                                msg: `${req.method ?? 'GET'} ${path} → ${status}`,
+                                ctx: { route: route.path, method: req.method, path, status },
+                            });
+                        }
+                    } catch { /* 观测面绝不炸响应收尾 */ }
+                });
+            }
+        } catch { /* res 非 EventEmitter 的边角不炸路由 */ }
+        return route.handler(req, res);
+    },
+});
+appCtx.provide('webServer', webServerInstance);
 // cordis provide 管注入语义,catalog 管归属可见性 —— 两个都要
 appCtx.catalog.register({ role: 'core', name: 'webServer', providedBy: 'kernel-boot' });
 export const webServer = appCtx.webServer;
@@ -199,6 +231,14 @@ for (const row of loaded) {
     const line = `[kernel] plugin ${row.id}: ${row.status}${row.reason ? ` (${row.reason})` : ''}`;
     if (row.status === 'active') console.info(line);
     else console.warn(line);
+    diagEmit({
+        lvl: row.status === 'active' ? 'info' : 'warn',
+        kind: 'plugin',
+        code: `plugin_${row.status}`,
+        msg: line.replace(/^\[kernel\] /, ''),
+        ctx: { plugin: row.id },
+        ...(row.reason ? { data: { reason: String(row.reason).slice(0, 300) } } : {}),
+    });
 }
 for (const r of loaded) {
     results.set(r.id, r);
