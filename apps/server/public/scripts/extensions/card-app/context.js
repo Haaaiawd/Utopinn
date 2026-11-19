@@ -420,7 +420,7 @@ export function buildContext(container, charId, config) {
         /**
          * Read chat-bound sidecar state for a namespace. Same data the rest
          * of Luker reads via `getContext().getChatState` — chat-state is
-         * persisted server-side under `/api/chats/state/`, NOT in
+         * persisted server-side under `/api/utopinn/state/chat/`, NOT in
          * `chat_metadata`. Use `updateChatState` / `patchChatState` to write.
          *
          * For per-chat scalar state (HP, gold, affinity, inventory, quest

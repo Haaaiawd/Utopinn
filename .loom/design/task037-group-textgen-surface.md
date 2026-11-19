@@ -6,9 +6,9 @@ done_when:group 生成走服务端组装(deps.group 接入)+ textgen/kobold/nove
 
 ## 0. 结论速览
 
-- **派发层已齐**:dispatchTextCompletions(15 变体)、dispatchKobold、dispatchNovelAI
-  都是现成 Luker provider。缺的是 **body 整形**:legacy 前端在 generate_data 里做了
-  大量 per-source 采样/停止串/token-id 转换,utopinn 分叉只做别名映射。
+- **派发层已齐**:`dispatchTextCompletions`(15 变体)、`dispatchKobold`、
+  `dispatchNovelAI` 都是现成 provider。缺的是 **body 整形**:legacy 前端在
+  generate_data 里做了大量 per-source 采样/停止串/token-id 转换,utopinn 分叉只做别名映射。
 - **group 持久化已齐**:getPersistChatKey group 分支、persistGeneratedReply group
   分支、chat-state sidecar、MVU settle、ack hint 全部已识别 {is_group,id}——勿重写。
 - **group 缺的真核**:没有"成员选择→逐成员组装→逐成员生成"编排器;
@@ -19,16 +19,16 @@ done_when:group 生成走服务端组装(deps.group 接入)+ textgen/kobold/nove
 
 ## 1. Textgen 现状
 
-utopinn-generate.js  分叉已通 dispatchTextCompletions(TEXTGEN_TYPES
-15 值;kobold/novel 不在其中,是独立 main_api 源)。api_server/model 解析、
+utopinn-generate.js `body.api==='text'` 分叉已通 dispatchTextCompletions
+(TEXTGEN_TYPES 15 值;kobold/novel 不在其中,是独立 main_api 源)。api_server 解析、
 TEXTGEN_CONN_KEYS 剥除、4 别名已有。
 
 **与 legacy getTextGenGenerationData 的差距(全缺)**:
 1. 停止串四层:names_as_stop_strings(user/char+群其余成员)、instruct stopping
    sequences、custom_stopping_strings、single_line——现状只透传恒空的 stopping_strings。
 2. model 解析(getTextGenModel per-type);openrouter/ollama 缺 model 上游会拒。
-3. 派生参数:dynatemp 家族、seed、n(canMultiSwipe)、logit_bias(array-of-arrays
-   合并)、banned_tokens→custom_token_bans/banned_strings、dry_sequence_breakers、
+3. 派生参数:dynatemp 家族、seed、n、logit_bias(array-of-arrays 合并)、
+   banned_tokens→custom_token_bans/banned_strings、dry_sequence_breakers、
    grammar/json_schema 互斥。
 4. per-type 袋:openrouter provider/quantizations、aphrodite 全量袋、mancer
    epsilon/eta÷1000、koboldcpp grammar/trim_stop、huggingface clamp+seed+stop slice、
@@ -50,14 +50,14 @@ TEXTGEN_CONN_KEYS 剥除、4 别名已有。
 **路由两簇(无 /api/groupchats/*)**:
 - 群档 /api/groups/*(groups.js):all/create/edit/delete;members/disabled_members/
   activation_strategy/generation_mode/join prefix-suffix/chat_id/chats[]。
-- 群聊 /api/chats/group/*(chats.js:4092):get/info/append(含 CAS/gen-id/备份/
-  ack/MVU)/delete/rename/merge/split/import/save/patch/meta/search。
+- 群聊 /api/chats/group/*(chats.js):get/info/append(含 CAS/gen-id/备份/ack/MVU)/
+  delete/rename/merge/split/import/save/patch/meta/search。
 - 持久层:GroupRepo(doc)+ChatRepo{isGroup,groupId}(file)。**persist_target.id=
   群聊文件 id,非群 doc id**。
 
 **已就绪持久化(勿重写)**:getPersistChatKey→group:<id>;persistGeneratedReply
-group 分支(:704-751);resolveChatStateRepoKey/chatStateTargetFromQuery/
-resolveMvuChatTarget 全支持 {is_group,id};/api/utopinn/state/chat/* 直接可复用。
+group 分支;resolveChatStateRepoKey/chatStateTargetFromQuery/resolveMvuChatTarget
+全支持 {is_group,id};/api/utopinn/state/chat/* 直接可复用。
 
 **生成语义(在浏览器 group-chats.js)**:
 - activation_strategy:NATURAL(提及+talkativeness+随机+屏蔽上一位)/LIST/MANUAL/POOLED。
@@ -67,20 +67,11 @@ resolveMvuChatTarget 全支持 {is_group,id};/api/utopinn/state/chat/* 直接可
 - group 楼层字段:force_avatar(thumbnail url)、original_avatar(成员 avatar)、
   name=成员名、extra.gen_id(批号)。
 
-**character vs group 差异矩阵**:
-| 面 | 缺口 |
-|---|---|
-| 聊天加载 | generate-context.js:219 需 {isGroup,groupId} 分支 |
-| 卡 | SWAP=成员卡;APPEND=全体启用成员合并 |
-| 宏 | substCtx.groups/selectedGroup/characterNameForAvatar 未喂 |
-| 组装 | deps.group seam 存在未传 |
-| 编排 | 激活策略+串行逐成员 job |
-| 落盘 | original_avatar/force_avatar/name/extra.gen_id 透传缺 |
-| WI | SWAP 取成员 charLore 有面;APPEND 取书规则未实证(§6.1) |
-| depth | 非 SWAP 需 DEPTH_PROMPT_INDEX(i) |
-| 停止串 | 其余成员名 names_as_stop_strings |
-| 新群聊 | 需联动群 doc chats[]/chat_id |
-| 防重入 | 服务端需按 group:<id> chatKey 加生成锁 |
+**character vs group 差异矩阵**:聊天加载需 {isGroup,groupId} 分支;SWAP=成员卡,
+APPEND=联合卡;substCtx.groups/deps.group seam 存在未喂;激活策略+串行逐成员 job;
+落盘缺 original_avatar/force_avatar/name/extra.gen_id 透传;WI SWAP 取成员 charLore,
+APPEND 取书规则未实证;非 SWAP 需 DEPTH_PROMPT_INDEX(i);其余成员名 stop strings;
+新群聊需联动群 doc chats[]/chat_id;服务端需 group:<id> chatKey 生成锁。
 
 ## 3. 缺口清单
 
@@ -97,22 +88,19 @@ E. CLI:group list/get、generate --target group/--member、--api text --api-type
 
 ## 4-5. 依赖图与分阶段
 
-
+textgen body 整形(阶段1)→ group doc CRUD → 群聊读写(阶段2)→ SWAP 生成(阶段3)
+→ APPEND(阶段4)→ kobold+novel(阶段5)→ CLI 实弹(阶段6)。
 
 阶段0:核 persistTarget 透传字段集+APPEND WI 取书规则。
-阶段3 验收:generate --group --chat --member 落楼含 original_avatar;
-省略 member 按策略选并回报。
+阶段3 验收:generate --group --chat --member 落楼含 original_avatar;省略 member 按策略选并回报。
 
 ## 6. 不确定项(未实证)
 
-1. APPEND 模式 WI 取书规则(成员书并集?)——读 upstream group-chats
-   getWorldBooks 链再定。
+1. APPEND 模式 WI 取书规则(成员书并集?)——读 upstream group-chats getWorldBooks 链再定。
 2. kai_flags 服务端等价端点待核。
 3. NATURAL 提及正则细节移植时以源码为准。
 4. novel preamble/selectPrefix 细节按 nai-settings.js 核。
-5. force_avatar 是 thumbnail URL——服务端无 getThumbnailUrl,需定写 URL
-   还是 avatar 文件名。
+5. force_avatar 是 thumbnail URL——服务端无 getThumbnailUrl,需定写 URL 还是 avatar 文件名。
 6. 每成员一 job(推荐,复用 job/ack/WS)vs 单 job 多成员——未定可辩。
 7. textgen n>1 与 swipe 数组联动未确认,首版 n=1。
-8. 命名:/api/utopinn/groups(doc)+/api/utopinn/group-chats/:chatId(file)
-   与持久层键形自洽。
+8. 命名:/api/utopinn/groups(doc)+/api/utopinn/group-chats/:chatId(file)与持久层键形自洽。
