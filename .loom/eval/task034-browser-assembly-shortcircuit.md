@@ -14,3 +14,15 @@
 - 病灶:generate-context.js:301 presetRepo.listWithDocs(instruct)+listWithDocs(context) 每次生成**串行打开全部预设文档**(scratch 实测 41 instruct+34 context=75 个 JSON),WSL DrvFS 上每次 ~20s
 - 修法:只需要 active 的 powerUser.instruct.preset + powerUser.context.preset 两份(listWithDocs→get),或跨生成 memoize;engine 只用 active 预设做 formatInstructExamples
 - 影响面:generate-context.js(TASK-037b 格在飞,待其落地后补刀)
+
+## TASK-034c 验收(2026-11-19,047f9c1)
+
+- 双推进源确诊:simulateWorldInfoActivation 非 dryRun 时原地推进 chat_metadata.timedWorldInfo(事件payload/st-context/扩展三路可达)
+- 修复:utopinn 托管时换克隆跑真扫描+finally 还原(扫描语义保真,推进权归服务端);reconcile 前移到 onFinishStreaming 存档前;onError 补 reconcile
+- takeover 供料验证:仅 takeover 监听存在时打 /preview(dryRun 不推进),GENERATE_TAKEOVER_DISPATCH 前落 generate_data.prompt
+
+## 遗留结构性问题:每轮生成必一次 409
+
+- 服务端 persistWorldInfoTimedEffects/updateChatMetadata 每轮生成轮 doc integrity → 浏览器下一次写必 CAS 失败 → refresh+快照失效降级整文档 PUT(自愈但大聊天偏重,多付一次 GET+全量写)
+- 根治方向:job 携带新 integrity 让浏览器直接采纳(服务端改动,037b 格域,待其落地后收)
+- takeover 回合插件自持派发无 utopinn job → timed effects 不推进(行为差,非双写,记录)
