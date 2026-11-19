@@ -1,0 +1,582 @@
+/**
+ * Utopinn · Brand Iconography System v2 (U馆 品牌图标系统)
+ * Total: 32 icons (P2: 6, P3: 6, P0: 9, P1: 7, Secondary 1.65px: 4) + Portal Spark Logo
+ * Spec: 24x24 viewBox | core strokeWidth=2.4px | round caps/joins | #FF6B5B accent
+ * Selected panelRight Concept: 方案 C · 微倾叠卡 (Deck Peek)
+ *
+ * Strict Two-Tone Negative Space ("双色留白"):
+ *   - active = false : 100% pure currentColor skeleton (zero #FF6B5B nodes rendered)
+ *   - active = true  : Localized #FF6B5B brand accent illuminated
+ *   - settings       : Smooth 90deg spring rotation when active={true}
+ */
+import React from 'react';
+
+export type UtopinnIconName =
+  | 'feather'
+  | 'messages'
+  | 'sparkles'
+  | 'dice'
+  | 'music'
+  | 'brain'
+  | 'persona'
+  | 'branch'
+  | 'wand'
+  | 'compass'
+  | 'bookmark'
+  | 'flame'
+  | 'home'
+  | 'chat'
+  | 'studio'
+  | 'plugins'
+  | 'settings'
+  | 'slash'
+  | 'arrowUp'
+  | 'panelRight'
+  | 'menu'
+  | 'database'
+  | 'layers'
+  | 'sliders'
+  | 'shield'
+  | 'bookOpen'
+  | 'radio'
+  | 'code'
+  | 'copy'
+  | 'undo'
+  | 'search'
+  | 'close';
+
+export interface UtopinnIconProps extends React.SVGProps<SVGSVGElement> {
+  name: UtopinnIconName;
+  /** Toggle #FF6B5B focal accent (completely omitted from DOM when false) */
+  active?: boolean;
+  /** Rendered pixel dimension (default: 24) */
+  size?: number;
+  /** Override core P0–P3 stroke width (default: 2.4; secondary icons stay 1.65) */
+  strokeWidth?: number;
+}
+
+/** Finalized Utopinn "Portal Spark" Brand Logo */
+export const UtopinnLogo: React.FC<{ size?: number; className?: string }> = ({
+  size = 28,
+  className = '',
+}) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    viewBox="0 0 120 120"
+    width={size}
+    height={size}
+    fill="none"
+    className={className}
+    aria-label="Utopinn"
+  >
+    <path
+      d="M 24.5 44 L 24.5 71 A 25.5 25.5 0 0 0 75.36 73.67"
+      stroke="currentColor"
+      strokeWidth={14.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M 0 -24.2 C 3.1 -24.2 3.8 -9.6 6.7 -6.7 C 9.6 -3.8 24.2 -3.1 24.2 0 C 24.2 3.1 9.6 3.8 6.7 6.7 C 3.8 9.6 3.1 24.2 0 24.2 C -3.1 24.2 -3.8 9.6 -6.7 6.7 C -9.6 3.8 -24.2 3.1 -24.2 0 C -24.2 -3.1 -9.6 -3.8 -6.7 -6.7 C -3.8 -9.6 -3.1 -24.2 0 -24.2 Z"
+      fill="#FF6B5B"
+      transform="translate(81 36.5) rotate(14)"
+    />
+  </svg>
+);
+
+export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
+  name,
+  active = false,
+  size = 24,
+  strokeWidth = 2.4,
+  className = '',
+  style,
+  ...rest
+}) => {
+  const sw = strokeWidth;
+  const isGear = name === 'settings';
+
+  const mergedStyle: React.CSSProperties = isGear
+    ? {
+        transition: 'transform 0.44s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        transform: active ? 'rotate(90deg)' : 'rotate(0deg)',
+        transformOrigin: 'center',
+        ...style,
+      }
+    : { ...style };
+
+  const renderGlyph = () => {
+    switch (name) {
+    case 'feather':
+      return active ? (
+        <>
+          <path d="M 19.8 4.1 C 15.6 4.1 11.4 5.9 8.9 9.3 L 6.4 16.3 L 13.4 13.8 C 16.9 11.3 19.8 8.3 19.8 4.1 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 14.6 9.3 L 4.6 18.3" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.1 C 0.43 -3.1 0.47 -1.27 0.87 -0.87 C 1.27 -0.47 3.1 -0.43 3.1 0 C 3.1 0.43 1.27 0.47 0.87 0.87 C 0.47 1.27 0.43 3.1 0 3.1 C -0.43 3.1 -0.47 1.27 -0.87 0.87 C -1.27 0.47 -3.1 0.43 -3.1 0 C -3.1 -0.43 -1.27 -0.47 -0.87 -0.87 C -0.47 -1.27 -0.43 -3.1 0 -3.1 Z" fill="#FF6B5B" transform="translate(11.0 18.8) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 19.8 4.1 C 15.6 4.1 11.4 5.9 8.9 9.3 L 6.4 16.3 L 13.4 13.8 C 16.9 11.3 19.8 8.3 19.8 4.1 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 14.6 9.3 L 4.6 18.3" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'messages':
+      return active ? (
+        <>
+          <path d="M 4.4 16.8 C 3.7 15.8 3.3 14.6 3.3 13.3 C 3.3 10.1 6.1 7.6 9.6 7.6 C 13.1 7.6 15.9 10.1 15.9 13.3 C 15.9 16.5 13.1 19.0 9.6 19.0 C 8.5 19.0 7.45 18.75 6.55 18.3 L 3.8 19.4 L 4.4 16.8 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 10.2 7.6 C 10.9 5.2 13.2 3.7 15.9 3.7 C 19.0 3.7 21.1 5.8 21.1 8.6 C 21.1 9.8 20.7 10.9 20.0 11.8 L 20.5 14.2 L 18.0 13.3 C 17.3 13.55 16.6 13.7 15.9 13.7" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="14.9" cy="8.1" r="1.25" fill="#FF6B5B"/>
+          <circle cx="18.0" cy="8.1" r="1.25" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 4.4 16.8 C 3.7 15.8 3.3 14.6 3.3 13.3 C 3.3 10.1 6.1 7.6 9.6 7.6 C 13.1 7.6 15.9 10.1 15.9 13.3 C 15.9 16.5 13.1 19.0 9.6 19.0 C 8.5 19.0 7.45 18.75 6.55 18.3 L 3.8 19.4 L 4.4 16.8 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 10.2 7.6 C 10.9 5.2 13.2 3.7 15.9 3.7 C 19.0 3.7 21.1 5.8 21.1 8.6 C 21.1 9.8 20.7 10.9 20.0 11.8 L 20.5 14.2 L 18.0 13.3 C 17.3 13.55 16.6 13.7 15.9 13.7" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'sparkles':
+      return active ? (
+        <>
+          <path d="M 0 -5.9 C 0.83 -5.9 0.88 -2.42 1.65 -1.65 C 2.42 -0.88 5.9 -0.83 5.9 0 C 5.9 0.83 2.42 0.88 1.65 1.65 C 0.88 2.42 0.83 5.9 0 5.9 C -0.83 5.9 -0.88 2.42 -1.65 1.65 C -2.42 0.88 -5.9 0.83 -5.9 0 C -5.9 -0.83 -2.42 -0.88 -1.65 -1.65 C -0.88 -2.42 -0.83 -5.9 0 -5.9 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" transform="translate(9.6 13.6) rotate(14)"/>
+          <path d="M 0 -3.95 C 0.55 -3.95 0.6 -1.62 1.11 -1.11 C 1.62 -0.6 3.95 -0.55 3.95 0 C 3.95 0.55 1.62 0.6 1.11 1.11 C 0.6 1.62 0.55 3.95 0 3.95 C -0.55 3.95 -0.6 1.62 -1.11 1.11 C -1.62 0.6 -3.95 0.55 -3.95 0 C -3.95 -0.55 -1.62 -0.6 -1.11 -1.11 C -0.6 -1.62 -0.55 -3.95 0 -3.95 Z" fill="#FF6B5B" transform="translate(17.7 6.5) rotate(14)"/>
+          <circle cx="18.4" cy="15.5" r="1.45" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 0 -5.9 C 0.83 -5.9 0.88 -2.42 1.65 -1.65 C 2.42 -0.88 5.9 -0.83 5.9 0 C 5.9 0.83 2.42 0.88 1.65 1.65 C 0.88 2.42 0.83 5.9 0 5.9 C -0.83 5.9 -0.88 2.42 -1.65 1.65 C -2.42 0.88 -5.9 0.83 -5.9 0 C -5.9 -0.83 -2.42 -0.88 -1.65 -1.65 C -0.88 -2.42 -0.83 -5.9 0 -5.9 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" transform="translate(9.6 13.6) rotate(14)"/>
+          <path d="M 0 -3.1 C 0.43 -3.1 0.47 -1.27 0.87 -0.87 C 1.27 -0.47 3.1 -0.43 3.1 0 C 3.1 0.43 1.27 0.47 0.87 0.87 C 0.47 1.27 0.43 3.1 0 3.1 C -0.43 3.1 -0.47 1.27 -0.87 0.87 C -1.27 0.47 -3.1 0.43 -3.1 0 C -3.1 -0.43 -1.27 -0.47 -0.87 -0.87 C -0.47 -1.27 -0.43 -3.1 0 -3.1 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" transform="translate(17.7 6.5) rotate(14)"/>
+        </>
+      );
+
+    case 'dice':
+      return active ? (
+        <>
+          <rect x="4" y="4" width="16" height="16" rx="3.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="8.6" cy="15.4" r="1.35" fill="currentColor"/>
+          <circle cx="12" cy="12" r="1.35" fill="currentColor"/>
+          <path d="M 0 -2.65 C 0.37 -2.65 0.4 -1.08 0.74 -0.74 C 1.08 -0.4 2.65 -0.37 2.65 0 C 2.65 0.37 1.08 0.4 0.74 0.74 C 0.4 1.08 0.37 2.65 0 2.65 C -0.37 2.65 -0.4 1.08 -0.74 0.74 C -1.08 0.4 -2.65 0.37 -2.65 0 C -2.65 -0.37 -1.08 -0.4 -0.74 -0.74 C -0.4 -1.08 -0.37 -2.65 0 -2.65 Z" fill="#FF6B5B" transform="translate(15.5 8.5) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <rect x="4" y="4" width="16" height="16" rx="3.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="8.6" cy="15.4" r="1.35" fill="currentColor"/>
+          <circle cx="12" cy="12" r="1.35" fill="currentColor"/>
+          <circle cx="15.4" cy="8.6" r="1.35" fill="currentColor"/>
+        </>
+      );
+
+    case 'music':
+      return active ? (
+        <>
+          <path d="M 8.1 17.0 V 6.5 L 16.4 4.8 V 15.0" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="5.8" cy="17.4" r="2.45" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="14.1" cy="15.4" r="3.1" fill="#FF6B5B"/>
+          <path d="M 19.6 7.5 A 5.2 5.2 0 0 1 19.6 13.5" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 8.1 17.0 V 6.5 L 16.4 4.8 V 15.0" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="5.8" cy="17.4" r="2.45" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="14.1" cy="15.4" r="2.45" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'brain':
+      return active ? (
+        <>
+          <path d="M 12 5.6 C 11.3 4.4 9.9 3.8 8.5 4.0 C 6.6 4.3 5.2 5.9 5.3 7.9 C 4.1 8.8 3.6 10.4 4.0 12.1 C 4.3 13.3 5.0 14.2 5.8 14.8 C 5.5 16.8 6.8 18.8 8.8 19.3 C 10.1 19.6 11.4 19.1 12 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 5.6 C 12.7 4.4 14.1 3.8 15.5 4.0 C 17.4 4.3 18.8 5.9 18.7 7.9 C 19.9 8.8 20.4 10.4 20.0 12.1 C 19.7 13.3 19.0 14.2 18.2 14.8 C 18.5 16.8 17.2 18.8 15.2 19.3 C 13.9 19.6 12.6 19.1 12 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 5.6 V 7.5 M 12 16.3 V 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.3 C 0.46 -3.3 0.49 -1.35 0.92 -0.92 C 1.35 -0.49 3.3 -0.46 3.3 0 C 3.3 0.46 1.35 0.49 0.92 0.92 C 0.49 1.35 0.46 3.3 0 3.3 C -0.46 3.3 -0.49 1.35 -0.92 0.92 C -1.35 0.49 -3.3 0.46 -3.3 0 C -3.3 -0.46 -1.35 -0.49 -0.92 -0.92 C -0.49 -1.35 -0.46 -3.3 0 -3.3 Z" fill="#FF6B5B" transform="translate(12 11.9) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12 5.6 C 11.3 4.4 9.9 3.8 8.5 4.0 C 6.6 4.3 5.2 5.9 5.3 7.9 C 4.1 8.8 3.6 10.4 4.0 12.1 C 4.3 13.3 5.0 14.2 5.8 14.8 C 5.5 16.8 6.8 18.8 8.8 19.3 C 10.1 19.6 11.4 19.1 12 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 5.6 C 12.7 4.4 14.1 3.8 15.5 4.0 C 17.4 4.3 18.8 5.9 18.7 7.9 C 19.9 8.8 20.4 10.4 20.0 12.1 C 19.7 13.3 19.0 14.2 18.2 14.8 C 18.5 16.8 17.2 18.8 15.2 19.3 C 13.9 19.6 12.6 19.1 12 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 5.6 V 18.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'persona':
+      return active ? (
+        <>
+          <circle cx="9.2" cy="8.4" r="3.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 3.8 19.2 C 3.8 15.9 6.2 14.1 9.2 14.1 C 12.2 14.1 14.6 15.9 14.6 19.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 16.2 14.5 C 18.6 15.1 20.1 16.8 20.1 19.2" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -2.85 C 0.4 -2.85 0.43 -1.17 0.8 -0.8 C 1.17 -0.43 2.85 -0.4 2.85 0 C 2.85 0.4 1.17 0.43 0.8 0.8 C 0.43 1.17 0.4 2.85 0 2.85 C -0.4 2.85 -0.43 1.17 -0.8 0.8 C -1.17 0.43 -2.85 0.4 -2.85 0 C -2.85 -0.4 -1.17 -0.43 -0.8 -0.8 C -0.43 -1.17 -0.4 -2.85 0 -2.85 Z" fill="#FF6B5B" transform="translate(17.4 8.2) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <circle cx="9.2" cy="8.4" r="3.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 3.8 19.2 C 3.8 15.9 6.2 14.1 9.2 14.1 C 12.2 14.1 14.6 15.9 14.6 19.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 14.8 5.6 C 16.4 5.9 17.6 7.1 17.6 8.7 C 17.6 10.2 16.5 11.4 15.0 11.7" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 16.2 14.5 C 18.6 15.1 20.1 16.8 20.1 19.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'branch':
+      return active ? (
+        <>
+          <circle cx="7.2" cy="5.8" r="2.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="7.2" cy="18.2" r="2.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 7.2 8.2 V 15.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 7.2 15.3 C 7.2 12.2 17.0 12.8 17.0 9.6" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="17.0" cy="7.0" r="2.9" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <circle cx="7.2" cy="5.8" r="2.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="7.2" cy="18.2" r="2.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 7.2 8.2 V 15.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 7.2 15.3 C 7.2 12.2 17.0 12.8 17.0 9.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="17.0" cy="7.0" r="2.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'wand':
+      return active ? (
+        <>
+          <path d="M 4.6 19.4 L 15.2 8.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 11.2 10.0 L 14.0 12.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.95 C 0.55 -3.95 0.6 -1.62 1.11 -1.11 C 1.62 -0.6 3.95 -0.55 3.95 0 C 3.95 0.55 1.62 0.6 1.11 1.11 C 0.6 1.62 0.55 3.95 0 3.95 C -0.55 3.95 -0.6 1.62 -1.11 1.11 C -1.62 0.6 -3.95 0.55 -3.95 0 C -3.95 -0.55 -1.62 -0.6 -1.11 -1.11 C -0.6 -1.62 -0.55 -3.95 0 -3.95 Z" fill="#FF6B5B" transform="translate(17.6 6.4) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 4.6 19.4 L 15.2 8.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 11.2 10.0 L 14.0 12.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'compass':
+      return active ? (
+        <>
+          <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 10.2 10.2 L 8.2 15.8 L 13.8 13.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 16.0 8.0 L 13.8 13.8 L 10.2 10.2 Z" fill="#FF6B5B" stroke="#FF6B5B" strokeWidth={sw} strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.8 8.2 L 13.7 13.7 L 8.2 15.8 L 10.3 10.3 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'bookmark':
+      return active ? (
+        <>
+          <path d="M 6.2 6.2 C 6.2 4.8 7.3 3.8 8.7 3.8 H 15.3 C 16.7 3.8 17.8 4.8 17.8 6.2 V 19.6 C 17.8 19.6 15.8 16.4 12.0 16.4 C 8.2 16.4 6.2 19.6 6.2 19.6 V 6.2 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="9.8" r="2.1" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 6.2 6.2 C 6.2 4.8 7.3 3.8 8.7 3.8 H 15.3 C 16.7 3.8 17.8 4.8 17.8 6.2 V 19.6 C 17.8 19.6 15.8 16.4 12.0 16.4 C 8.2 16.4 6.2 19.6 6.2 19.6 V 6.2 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'flame':
+      return active ? (
+        <>
+          <path d="M 12.3 3.5 C 12.6 7.0 16.8 8.8 18.0 12.2 C 19.0 15.0 17.6 18.6 14.5 19.8 C 11.4 21.0 7.6 19.6 6.3 16.6 C 5.1 13.8 6.3 10.6 8.3 8.8 C 8.4 10.3 9.2 11.2 10.2 11.4 C 9.8 8.4 10.6 5.4 12.3 3.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12.1 11.7 C 13.4 13.1 14.3 14.3 14.1 15.7 C 13.9 16.9 13.0 17.6 11.9 17.6 C 10.8 17.6 9.9 16.7 9.9 15.6 C 9.9 14.3 10.9 13.1 12.1 11.7 Z" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12.3 3.5 C 12.6 7.0 16.8 8.8 18.0 12.2 C 19.0 15.0 17.6 18.6 14.5 19.8 C 11.4 21.0 7.6 19.6 6.3 16.6 C 5.1 13.8 6.3 10.6 8.3 8.8 C 8.4 10.3 9.2 11.2 10.2 11.4 C 9.8 8.4 10.6 5.4 12.3 3.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'home':
+      return active ? (
+        <>
+          <path d="M 3.2 10.6 L 11.2 4.3 C 11.68 3.92 12.32 3.92 12.8 4.3 L 20.8 10.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 5.2 9.4 V 18.5 C 5.2 19.38 5.92 20.1 6.8 20.1 H 8.8 V 16.2 A 3.2 3.2 0 0 1 15.2 16.2 V 20.1 H 17.2 C 18.08 20.1 18.8 19.38 18.8 18.5 V 9.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="17.5" r="1.75" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 3.2 10.6 L 11.2 4.3 C 11.68 3.92 12.32 3.92 12.8 4.3 L 20.8 10.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 5.2 9.4 V 18.5 C 5.2 19.38 5.92 20.1 6.8 20.1 H 8.8 V 16.2 A 3.2 3.2 0 0 1 15.2 16.2 V 20.1 H 17.2 C 18.08 20.1 18.8 19.38 18.8 18.5 V 9.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'chat':
+      return active ? (
+        <>
+          <path d="M 5.3 16.5 C 4.15 15.1 3.5 13.35 3.5 11.4 C 3.5 7.0 7.3 3.7 12 3.7 C 16.7 3.7 20.5 7.0 20.5 11.4 C 20.5 15.8 16.7 19.1 12 19.1 C 10.6 19.1 9.25 18.8 8.05 18.25 L 4.2 19.6 L 5.3 16.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.5 C 0.49 -3.5 0.52 -1.44 0.98 -0.98 C 1.44 -0.52 3.5 -0.49 3.5 0 C 3.5 0.49 1.44 0.52 0.98 0.98 C 0.52 1.44 0.49 3.5 0 3.5 C -0.49 3.5 -0.52 1.44 -0.98 0.98 C -1.44 0.52 -3.5 0.49 -3.5 0 C -3.5 -0.49 -1.44 -0.52 -0.98 -0.98 C -0.52 -1.44 -0.49 -3.5 0 -3.5 Z" fill="#FF6B5B" transform="translate(12.2 11.3) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 5.3 16.5 C 4.15 15.1 3.5 13.35 3.5 11.4 C 3.5 7.0 7.3 3.7 12 3.7 C 16.7 3.7 20.5 7.0 20.5 11.4 C 20.5 15.8 16.7 19.1 12 19.1 C 10.6 19.1 9.25 18.8 8.05 18.25 L 4.2 19.6 L 5.3 16.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'studio':
+      return active ? (
+        <>
+          <path d="M 12.6 4.4 H 16.2 V 11.1 C 16.2 11.48 15.74 11.68 15.46 11.42 L 14.4 10.42 L 13.34 11.42 C 13.06 11.68 12.6 11.48 12.6 11.1 V 4.4 Z" fill="#FF6B5B"/>
+          <path d="M 5.2 18.3 V 5.7 C 5.2 4.54 6.14 3.6 7.3 3.6 H 18.1 C 18.7 3.6 19.1 4.0 19.1 4.6 V 16.4 H 7.3 C 6.14 16.4 5.2 17.25 5.2 18.3 C 5.2 19.35 6.14 20.2 7.3 20.2 H 18.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 5.2 18.3 V 5.7 C 5.2 4.54 6.14 3.6 7.3 3.6 H 18.1 C 18.7 3.6 19.1 4.0 19.1 4.6 V 16.4 H 7.3 C 6.14 16.4 5.2 17.25 5.2 18.3 C 5.2 19.35 6.14 20.2 7.3 20.2 H 18.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'plugins':
+      return active ? (
+        <>
+          <rect x="3.8" y="3.8" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="3.8" y="14.1" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="14.1" y="14.1" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="13.5" y="2.8" width="7.8" height="7.8" rx="2.1" fill="#FF6B5B" transform="rotate(14 17.4 6.7)"/>
+        </>
+      ) : (
+        <>
+          <rect x="3.8" y="3.8" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="3.8" y="14.1" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="14.1" y="14.1" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="14.1" y="3.8" width="6.1" height="6.1" rx="1.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'settings':
+      return active ? (
+        <>
+          <path d="M 8.5 6.0 L 10.1 3.3 L 13.9 3.3 L 15.5 6.0 L 18.7 6.0 L 20.6 9.3 L 19.0 12.0 L 20.6 14.7 L 18.7 18.0 L 15.5 18.0 L 13.9 20.7 L 10.1 20.7 L 8.5 18.0 L 5.3 18.0 L 3.4 14.7 L 5.0 12.0 L 3.4 9.3 L 5.3 6.0 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="12" r="2.1" fill="#FF6B5B"/>
+          <circle cx="12" cy="12" r="3.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 8.5 6.0 L 10.1 3.3 L 13.9 3.3 L 15.5 6.0 L 18.7 6.0 L 20.6 9.3 L 19.0 12.0 L 20.6 14.7 L 18.7 18.0 L 15.5 18.0 L 13.9 20.7 L 10.1 20.7 L 8.5 18.0 L 5.3 18.0 L 3.4 14.7 L 5.0 12.0 L 3.4 9.3 L 5.3 6.0 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="12" r="3.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'slash':
+      return active ? (
+        <>
+          <path d="M 14.8 4.8 L 9.2 19.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.1 C 0.43 -3.1 0.47 -1.27 0.87 -0.87 C 1.27 -0.47 3.1 -0.43 3.1 0 C 3.1 0.43 1.27 0.47 0.87 0.87 C 0.47 1.27 0.43 3.1 0 3.1 C -0.43 3.1 -0.47 1.27 -0.87 0.87 C -1.27 0.47 -3.1 0.43 -3.1 0 C -3.1 -0.43 -1.27 -0.47 -0.87 -0.87 C -0.47 -1.27 -0.43 -3.1 0 -3.1 Z" fill="#FF6B5B" transform="translate(17.7 7.4) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 14.8 4.8 L 9.2 19.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'arrowUp':
+      return active ? (
+        <>
+          <circle cx="12" cy="12" r="10.2" fill="#FF6B5B"/>
+          <path d="M 12 16.7 V 7.5" stroke="#FFFFFF" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 7.8 11.4 L 12 7.2 L 16.2 11.4" stroke="#FFFFFF" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12 18.6 V 5.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 6.8 10.8 L 12 5.6 L 17.2 10.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    // panelRight variant: 方案 C · 微倾叠卡 (Deck Peek)
+    case 'panelRight':
+      return active ? (
+        <>
+          <path d="M 11.4 6.8 L 12.0 4.5 C 12.3 3.5 13.3 2.9 14.3 3.15 L 19.3 4.3 C 20.3 4.55 20.9 5.55 20.65 6.55 L 18.5 15.6 C 18.25 16.55 17.4 17.1 16.4 17.0 L 14.8 16.7" fill="#FF6B5B" fillOpacity="0.16" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <rect x="3.4" y="6.8" width="11.4" height="12.8" rx="2.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="17.5" cy="7.9" r="1.55" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <rect x="4.6" y="5.0" width="14.8" height="14.0" rx="3.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 8.4 9.6 H 13.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'menu':
+      return active ? (
+        <>
+          <path d="M 4 6.5 H 14.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 12 H 20" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 17.5 H 16.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="19.1" cy="6.5" r="1.85" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 4 6.5 H 14.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 12 H 20" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 17.5 H 16.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'database':
+      return active ? (
+        <>
+          <ellipse cx="12" cy="6.1" rx="7.5" ry="2.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.5 6.1 V 17.9 C 4.5 19.34 7.86 20.5 12 20.5 C 16.14 20.5 19.5 19.34 19.5 17.9 V 6.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.5 12 C 4.5 13.44 7.86 14.6 12 14.6 C 16.14 14.6 19.5 13.44 19.5 12" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="15.4" cy="17.1" r="1.55" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <ellipse cx="12" cy="6.1" rx="7.5" ry="2.6" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.5 6.1 V 17.9 C 4.5 19.34 7.86 20.5 12 20.5 C 16.14 20.5 19.5 19.34 19.5 17.9 V 6.1" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4.5 12 C 4.5 13.44 7.86 14.6 12 14.6 C 16.14 14.6 19.5 13.44 19.5 12" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'layers':
+      return active ? (
+        <>
+          <path d="M 12 3.8 L 20 8.1 L 12 12.4 L 4 8.1 Z" fill="#FF6B5B" fillOpacity="0.22" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 12.3 L 12 16.6 L 20 12.3" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 16.4 L 12 20.7 L 20 16.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12 3.8 L 20 8.1 L 12 12.4 L 4 8.1 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 12.3 L 12 16.6 L 20 12.3" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 4 16.4 L 12 20.7 L 20 16.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'sliders':
+      return active ? (
+        <>
+          <path d="M 3.6 6 H 6.4 M 10.6 6 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="8.5" cy="6" r="2.1" stroke="currentColor" strokeWidth={sw}/>
+          <path d="M 3.6 12 H 13.3 M 17.7 12 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="15.5" cy="12" r="2.2" fill="#FF6B5B" stroke="#FF6B5B" strokeWidth={sw}/>
+          <path d="M 3.6 18 H 8.9 M 13.1 18 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="11" cy="18" r="2.1" stroke="currentColor" strokeWidth={sw}/>
+        </>
+      ) : (
+        <>
+          <path d="M 3.6 6 H 6.4 M 10.6 6 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="8.5" cy="6" r="2.1" stroke="currentColor" strokeWidth={sw}/>
+          <path d="M 3.6 12 H 13.3 M 17.7 12 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="15.5" cy="12" r="2.1" stroke="currentColor" strokeWidth={sw}/>
+          <path d="M 3.6 18 H 8.9 M 13.1 18 H 20.4" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="11" cy="18" r="2.1" stroke="currentColor" strokeWidth={sw}/>
+        </>
+      );
+
+    case 'shield':
+      return active ? (
+        <>
+          <path d="M 12 3.5 C 14.8 4.85 17.35 5.5 19.15 5.7 C 19.55 5.75 19.8 6.1 19.8 6.5 V 11.4 C 19.8 15.85 16.55 19.05 12.45 20.45 C 12.16 20.55 11.84 20.55 11.55 20.45 C 7.45 19.05 4.2 15.85 4.2 11.4 V 6.5 C 4.2 6.1 4.45 5.75 4.85 5.7 C 6.65 5.5 9.2 4.85 12 3.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -3.3 C 0.46 -3.3 0.49 -1.35 0.92 -0.92 C 1.35 -0.49 3.3 -0.46 3.3 0 C 3.3 0.46 1.35 0.49 0.92 0.92 C 0.49 1.35 0.46 3.3 0 3.3 C -0.46 3.3 -0.49 1.35 -0.92 0.92 C -1.35 0.49 -3.3 0.46 -3.3 0 C -3.3 -0.46 -1.35 -0.49 -0.92 -0.92 C -0.49 -1.35 -0.46 -3.3 0 -3.3 Z" fill="#FF6B5B" transform="translate(12 11.7) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12 3.5 C 14.8 4.85 17.35 5.5 19.15 5.7 C 19.55 5.75 19.8 6.1 19.8 6.5 V 11.4 C 19.8 15.85 16.55 19.05 12.45 20.45 C 12.16 20.55 11.84 20.55 11.55 20.45 C 7.45 19.05 4.2 15.85 4.2 11.4 V 6.5 C 4.2 6.1 4.45 5.75 4.85 5.7 C 6.65 5.5 9.2 4.85 12 3.5 Z" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'bookOpen':
+      return active ? (
+        <>
+          <path d="M 12 6.8 C 10.6 5.25 8.2 4.65 4.8 4.85 C 4.12 4.9 3.6 5.45 3.6 6.15 V 17.25 C 3.6 17.95 4.15 18.5 4.85 18.5 C 8.1 18.4 10.5 19.0 12 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 6.8 C 13.4 5.25 15.8 4.65 19.2 4.85 C 19.88 4.9 20.4 5.45 20.4 6.15 V 17.25 C 20.4 17.95 19.85 18.5 19.15 18.5 C 15.9 18.4 13.5 19.0 12 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 6.8 V 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 0 -2.85 C 0.4 -2.85 0.43 -1.17 0.8 -0.8 C 1.17 -0.43 2.85 -0.4 2.85 0 C 2.85 0.4 1.17 0.43 0.8 0.8 C 0.43 1.17 0.4 2.85 0 2.85 C -0.4 2.85 -0.43 1.17 -0.8 0.8 C -1.17 0.43 -2.85 0.4 -2.85 0 C -2.85 -0.4 -1.17 -0.43 -0.8 -0.8 C -0.43 -1.17 -0.4 -2.85 0 -2.85 Z" fill="#FF6B5B" transform="translate(16.2 11.6) rotate(14)"/>
+        </>
+      ) : (
+        <>
+          <path d="M 12 6.8 C 10.6 5.25 8.2 4.65 4.8 4.85 C 4.12 4.9 3.6 5.45 3.6 6.15 V 17.25 C 3.6 17.95 4.15 18.5 4.85 18.5 C 8.1 18.4 10.5 19.0 12 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 6.8 C 13.4 5.25 15.8 4.65 19.2 4.85 C 19.88 4.9 20.4 5.45 20.4 6.15 V 17.25 C 20.4 17.95 19.85 18.5 19.15 18.5 C 15.9 18.4 13.5 19.0 12 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 12 6.8 V 20.2" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'radio':
+      return active ? (
+        <>
+          <path d="M 5.4 6.5 A 8.6 8.6 0 0 0 5.4 17.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 18.6 6.5 A 8.6 8.6 0 0 1 18.6 17.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 8.2 9.0 A 4.8 4.8 0 0 0 8.2 15.0" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.8 9.0 A 4.8 4.8 0 0 1 15.8 15.0" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="12" r="2.05" fill="#FF6B5B"/>
+        </>
+      ) : (
+        <>
+          <path d="M 5.4 6.5 A 8.6 8.6 0 0 0 5.4 17.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 18.6 6.5 A 8.6 8.6 0 0 1 18.6 17.5" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 8.2 9.0 A 4.8 4.8 0 0 0 8.2 15.0" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.8 9.0 A 4.8 4.8 0 0 1 15.8 15.0" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="12" cy="12" r="1.55" fill="currentColor"/>
+        </>
+      );
+
+    case 'code':
+      return active ? (
+        <>
+          <path d="M 8.1 7.2 L 3.8 12 L 8.1 16.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.9 7.2 L 20.2 12 L 15.9 16.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 13.4 6.5 L 10.6 17.5" stroke="#FF6B5B" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      ) : (
+        <>
+          <path d="M 8.1 7.2 L 3.8 12 L 8.1 16.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.9 7.2 L 20.2 12 L 15.9 16.8" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'copy':
+      return (
+        <>
+          <rect x="8.5" y="8.5" width="11" height="11" rx="2.2" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.5 8.5 V 6.7 C 15.5 5.48 14.52 4.5 13.3 4.5 H 6.7 C 5.48 4.5 4.5 5.48 4.5 6.7 V 13.3 C 4.5 14.52 5.48 15.5 6.7 15.5 H 8.5" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'undo':
+      return (
+        <>
+          <path d="M 8.5 7.3 L 4.8 11 L 8.5 14.7" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 5.2 11 H 14.3 C 17.0 11 19.2 12.95 19.2 15.35 C 19.2 17.4 17.6 19.0 15.4 19.0 H 11.8" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'search':
+      return (
+        <>
+          <circle cx="10.8" cy="10.8" r="6.2" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 15.4 15.4 L 19.6 19.6" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+
+    case 'close':
+      return (
+        <>
+          <path d="M 6.5 6.5 L 17.5 17.5" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M 17.5 6.5 L 6.5 17.5" stroke="currentColor" strokeWidth={1.65} strokeLinecap="round" strokeLinejoin="round"/>
+        </>
+      );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      className={className}
+      style={mergedStyle}
+      aria-hidden={rest['aria-label'] ? undefined : true}
+      {...rest}
+    >
+      {renderGlyph()}
+    </svg>
+  );
+};
+
+export default UtopinnIcon;

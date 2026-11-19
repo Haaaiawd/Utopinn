@@ -102,3 +102,119 @@ export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
         },
     };
 }
+
+/* =========================================================================
+   规范稿目录数据 —— SPEC-DATA: 待接。
+   下方目录在服务端没有对应端点(模型列表/预设库/全局世界书/插件市场/
+   舞台形态会话/MVU 快照/工作台板块目录),一律落在这里;接入时整体
+   换成 /api/utopinn/* 响应,消费面已在 view 里标 SPEC-DATA。
+   ========================================================================= */
+
+/** 生成模型目录项(规范稿 context capsule 的模型下拉)。 */
+export interface ModelItem {
+    id: string;
+    name: string;
+    provider: string;
+    desc: string;
+    context: string;
+}
+
+export const MOCK_MODELS: ModelItem[] = [
+    { id: 'm-aurora', name: 'Utopinn Aurora 1', provider: '官方端点', desc: '长上下文叙事旗舰,文风细腻', context: '200K' },
+    { id: 'm-scribe', name: 'Utopinn Scribe Mini', provider: '官方端点', desc: '轻量快速,适合改写与续写', context: '64K' },
+    { id: 'm-claude', name: 'Claude Sonnet 4.5', provider: 'Anthropic 兼容', desc: '均衡综合推理', context: '200K' },
+    { id: 'm-gpt', name: 'GPT-4o', provider: 'OpenAI 兼容', desc: '指令跟随稳定', context: '128K' },
+    { id: 'm-gemini', name: 'Gemini 2.5 Pro', provider: 'Gemini 代理', desc: '长上下文叙事', context: '1M' },
+    { id: 'm-local', name: '本地 Ollama · Qwen2.5', provider: '本地端点', desc: '离线可用,角色扮演微调版', context: '32K' },
+];
+
+/** 预设项(规范稿预设面板行)。 */
+export interface PresetItem {
+    id: string;
+    name: string;
+    desc: string;
+    temp: number;
+    source: '官方' | '用户';
+    updatedAt: string;
+    scene?: string;
+}
+
+export const MOCK_PRESETS: PresetItem[] = [
+    { id: 'p-immersive', name: '沉浸叙事 v3', desc: '长文叙事 / 文风优先', temp: 0.9, source: '官方', updatedAt: '昨天', scene: '场景 · 文字冒险' },
+    { id: 'p-writer', name: '简洁直陈', desc: '回复简短精炼,推进优先', temp: 0.4, source: '官方', updatedAt: '3 天前' },
+    { id: 'p-card', name: '角色卡 · 沉浸', desc: '对话氛围优先,保留余韵', temp: 0.75, source: '用户', updatedAt: '今天' },
+    { id: 'p-mm', name: '消息模式 · 日常', desc: '贴合即时通讯的节奏感', temp: 0.6, source: '用户', updatedAt: '上周' },
+    { id: 'p-rpg', name: '跑团审判官', desc: '强规则约束,dice 判定', temp: 0.3, source: '用户', updatedAt: '2 周前' },
+];
+
+/** 全局世界书行(规范稿 全局世界书 块)。 */
+export interface GlobalLoreItem {
+    id: string;
+    name: string;
+    entries: number;
+    enabled: boolean;
+}
+
+export const MOCK_GLOBAL_LORE: GlobalLoreItem[] = [
+    { id: 'gl-base', name: '世界观基底 v2', entries: 42, enabled: true },
+    { id: 'gl-forbid', name: '禁则清单', entries: 8, enabled: true },
+    { id: 'gl-adv', name: '冒险增补(草稿)', entries: 17, enabled: false },
+];
+
+/** 插件市场行(规范稿 市场 tab)。 */
+export interface MarketPluginItem {
+    id: string;
+    name: string;
+    desc: string;
+    author: string;
+    installs: string;
+    tags: string[];
+    installed: boolean;
+}
+
+export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
+    { id: 'mp-regen', name: '快捷重生成', desc: '给消息加一键重生成热键与上下文菜单', author: 'utopinn-team', installs: '1.2k', tags: ['效率'], installed: true },
+    { id: 'mp-map', name: '地图渲染器', desc: 'Markdown 地图语法 → 交互式地图面板', author: 'windcy', installs: '856', tags: ['可视化', '舞台'], installed: false },
+    { id: 'mp-rel', name: '关系图谱', desc: '从对话中提取人物关系并可视化', author: 'lumen', installs: '420', tags: ['分析'], installed: false },
+    { id: 'mp-tts', name: '语音朗读', desc: 'TTS 接入,支持角色音色', author: 'sora', installs: '2.1k', tags: ['语音'], installed: false },
+    { id: 'mp-import', name: '批量导入', desc: '文件夹批量扫描 + 卡面批量入库', author: 'utopinn-team', installs: '680', tags: ['工具'], installed: true },
+    { id: 'mp-chrono', name: '时间轴面板', desc: '把会话事件映射到可缩放时间轴', author: 'pale', installs: '233', tags: ['可视化'], installed: false },
+];
+
+/** 舞台形态会话行(规范稿侧栏 stage_sessions;真实会话由 API 来,
+ *  这里提供缺省形态会话用于占位/离线演示)。 */
+export const MOCK_STAGE_SESSIONS: ChatSummary[] = [
+    { id: 'st-novel', title: '长夜卷一 · 烬城', charDir: 'demo-card', chatName: 'ember-city', group: '舞台 · 小说', updatedAt: '第 12 章', stage: 'novel' },
+    { id: 'st-msg', title: '灯塔值班群', charDir: 'demo-card', chatName: 'watch-group', group: '舞台 · 消息', updatedAt: '3 条未读', unread: true, stage: 'messenger' },
+    { id: 'st-gal', title: '风信子航线', charDir: 'demo-card', chatName: 'hyacinth-route', group: '舞台 · Galgame', updatedAt: '存档 2/8', stage: 'galgame' },
+];
+
+/** MVU 变量面板种子(规范稿 mvu 面板数值)。 */
+export const MOCK_MVU: Record<string, string | number> = {
+    '好感度': 14,
+    '章节': 12,
+    '当前地点': '旧港灯塔 · 塔基小屋',
+    '持有物品': '铜钥匙 ×1',
+    '时间': '第三天 · 夜',
+};
+
+/** 世界书(lore)板块行。 */
+export const MOCK_LORE_ENTRIES = [
+    { id: 'le-1', name: '铜钥匙', keys: '铜钥匙, 钥匙', content: '传说能打开「潮下之门」的物件,进门的人会失去一段记忆作为过路费。', enabled: true, scope: '全局世界书' },
+    { id: 'le-2', name: '潮下之门', keys: '潮下之门, 海下', content: '旧港灯塔地基之下的一道石门,只在退潮后的第三级石阶下方显形。', enabled: true, scope: '世界观基底' },
+    { id: 'le-3', name: '归墟', keys: '归墟, 守灯人', content: '守灯塔的人,七年前接手的塔。话少,记性好,把每一场风暴都记进日志。', enabled: false, scope: '角色' },
+];
+
+/** 章节(novel)板块行。 */
+export const MOCK_CHAPTERS = [
+    { id: 'ch-10', n: 10, title: '潮声入梦', words: 3210, active: false },
+    { id: 'ch-11', n: 11, title: '钥匙与盐', words: 4022, active: false },
+    { id: 'ch-12', n: 12, title: '塔基之下', words: 2114, active: true },
+];
+
+/** 频道(messenger)板块行。 */
+export const MOCK_CHANNELS = [
+    { id: 'ch-gen', name: '通用', desc: '值班日志与杂物', unread: 0, active: true },
+    { id: 'ch-watch', name: '守灯记录', desc: '每夜灯的启熄记录', unread: 3, active: false },
+    { id: 'ch-dm', name: '归墟(私聊)', desc: '', unread: 1, active: false },
+];

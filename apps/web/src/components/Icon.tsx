@@ -1,23 +1,32 @@
-// Phosphor 单一家族(web-visual-system.md §icon 体系):
-// L1 rail 标 = duotone(有性格),L2/L3 = regular;尺寸 20/16/12 三档。
-// 新增图标先查 phosphor 词表,禁混第二套库。Emoji 只许出现在用户内容。
+// Phosphor 托底家族 + Utopinn 品牌族(assets/UtopinnIcons,BRAND 表优先)。
+// L1 rail 标 = duotone/active(点亮 #FF6B5B 焦段),L2/L3 = regular;尺寸 20/16/12 三档。
+// 新图标先查品牌 20 键,无对位再查 phosphor 词表。Emoji 只许出现在用户内容。
+// 规范稿(u_ui_codex)的内嵌 SVG 图标表在这里收编成同名键 ——
+// 规范组件与老组件共用同一个 <Icon name=…> 组件。
+import { UtopinnIcon, type UtopinnIconName } from '../icons/UtopinnIcons';
 import {
-    ArrowClockwise, ArrowUp, Book, BookBookmark, Cards, CaretDown, CaretLeft,
-    CaretRight, ChartLine, ChatsCircle, Check, Clock, Command, CornersOut, DotsThree,
-    DownloadSimple, Eye, File, GearSix, Globe, GridFour, House, Image, Layout, Lightning,
-    Link, List, MagnifyingGlass, Minus, Moon, NotePencil, Plus, Pulse, PuzzlePiece,
-    SidebarSimple, Square, Stack, Sun, Trash, UploadSimple, User, Warning, X,
+    ArrowClockwise, ArrowCounterClockwise, ArrowLeft, ArrowSquareOut, ArrowUp, Book, BookBookmark,
+    BookOpen, Books, Brain, Broadcast, Cards, CaretDown, CaretLeft, CaretRight, ChartLine,
+    Chats, ChatsCircle, Check, Clock, Code, Command, Copy, CornersIn, CornersOut, Database,
+    DiceFive, DotsThree, DownloadSimple, Eye, FastForward, Feather, File, GearSix, Globe,
+    GridFour, House, Image, Layout, Lightning, Link, List, MagicWand, MagnifyingGlass, Minus,
+    Moon, MusicNote, NotePencil, Paperclip, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
+    ShieldCheck, SidebarSimple, Divide, SlidersHorizontal, Sparkle, Square, Stack, Sun,
+    Terminal, Trash, UploadSimple, User, Warning, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 
 const MAP = {
     /* L1 主 tab 标(duotone)— 各域的表情 */
     foyer: House,
+    home: House,
     chat: ChatsCircle,
     stories: Cards,
     rules: BookBookmark,
     extensions: PuzzlePiece,
     settings: GearSix,
+    studio: Books,
+    plugins: GridFour,
     /* L2/L3 操作与行内标(regular) */
     search: MagnifyingGlass,
     plus: Plus,
@@ -28,6 +37,7 @@ const MAP = {
     chevronDown: CaretDown,
     chevronRight: CaretRight,
     chevronLeft: CaretLeft,
+    arrowLeft: ArrowLeft,
     edit: NotePencil,
     more: DotsThree,
     x: X,
@@ -44,10 +54,12 @@ const MAP = {
     layers: Stack,
     file: File,
     list: List,
+    menu: List,
     layout: Layout,
     grid: GridFour,
     check: Check,
     book: Book,
+    bookOpen: BookOpen,
     focus: CornersOut,
     pulse: Pulse,
     globe: Globe,
@@ -57,10 +69,50 @@ const MAP = {
     trash: Trash,
     warning: Warning,
     image: Image,
+    pin: PushPin,
+    /* —— 规范稿图标表的 phosphor 对位(规范组件直接用这些键) —— */
+    slash: Divide,
+    detach: ArrowSquareOut,
+    dockBack: CornersIn,
+    copy: Copy,
+    rewind: ArrowCounterClockwise,
+    fastForward: FastForward,
+    wand: MagicWand,
+    paperclip: Paperclip,
+    sliders: SlidersHorizontal,
+    code: Code,
+    terminal: Terminal,
+    plug: Plugs,
+    database: Database,
+    shield: ShieldCheck,
+    radio: Broadcast,
+    feather: Feather,
+    messages: Chats,
+    sparkles: Sparkle,
+    dice: DiceFive,
+    music: MusicNote,
+    brain: Brain,
 } as const satisfies Record<string, PhosphorIcon>;
 
-export type IconName = keyof typeof MAP;
+export type IconName = keyof typeof MAP | 'persona' | 'branch' | 'compass' | 'bookmark' | 'flame';
 
+/** 品牌族:Utopinn 自家图标(assets/UtopinnIcons),同名键优先于 phosphor。
+ *  双色留白规则:weight='duotone' → active=true 点亮 #FF6B5B 焦段;
+ *  rail 选中态天然走 duotone,正好吃这条规则。 */
+const BRAND = {
+    home: 'home', chat: 'chat', studio: 'studio', plugins: 'plugins',
+    settings: 'settings', slash: 'slash', send: 'arrowUp',
+    panelRight: 'panelRight', menu: 'menu', database: 'database',
+    layers: 'layers', sliders: 'sliders', shield: 'shield',
+    bookOpen: 'bookOpen', radio: 'radio', code: 'code',
+    copy: 'copy', rewind: 'undo', search: 'search', x: 'close',
+    /* v2 增补:MAP 里已有对位的品牌键 */
+    feather: 'feather', messages: 'messages', sparkles: 'sparkles',
+    dice: 'dice', music: 'music', brain: 'brain', wand: 'wand',
+    /* v2 品牌专属键(MAP 无对位,IconName 经下方联合补入) */
+    persona: 'persona', branch: 'branch', compass: 'compass',
+    bookmark: 'bookmark', flame: 'flame',
+} as const satisfies Record<string, UtopinnIconName>;
 export function Icon({ name, size = 17, weight = 'regular', mirrored = false, className }: {
     name: IconName;
     size?: number;
@@ -69,6 +121,11 @@ export function Icon({ name, size = 17, weight = 'regular', mirrored = false, cl
     mirrored?: boolean;
     className?: string;
 }) {
-    const C = MAP[name];
+    const brand = BRAND[name as keyof typeof BRAND];
+    if (brand) {
+        return <UtopinnIcon name={brand} active={weight === 'duotone'} size={size}
+            className={className} style={mirrored ? { transform: 'scaleX(-1)' } : undefined} />;
+    }
+    const C = MAP[name as keyof typeof MAP];
     return <C size={size} weight={weight} mirrored={mirrored} className={className} aria-hidden="true" />;
 }

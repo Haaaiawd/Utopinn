@@ -1,0 +1,191 @@
+{
+  "brand": "Utopinn",
+  "system": "Utopinn · Iconography System",
+  "spec": {
+    "viewBox": "0 0 24 24",
+    "coreStrokeWidth": 2.4,
+    "secondaryStrokeWidth": 1.65,
+    "linecap": "round",
+    "linejoin": "round",
+    "accentHex": "#FF6B5B",
+    "twoStateRule": "Default omits #FF6B5B elements completely; Active renders #FF6B5B focal accent."
+  },
+  "icons": {
+    "home": {
+      "tier": "P0",
+      "location": "最左轨 · 卡面大厅",
+      "note": "飞檐屋顶与底部 U 型门洞呼应“U馆”，选中时门洞内亮起暖色提灯圆点。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 3.2 10.6 L 11.2 4.3 C 11.68 3.92 12.32 3.92 12.8 4.3 L 20.8 10.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 5.2 9.4 V 18.5 C 5.2 19.38 5.92 20.1 6.8 20.1 H 8.8 V 16.2 A 3.2 3.2 0 0 1 15.2 16.2 V 20.1 H 17.2 C 18.08 20.1 18.8 19.38 18.8 18.5 V 9.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 3.2 10.6 L 11.2 4.3 C 11.68 3.92 12.32 3.92 12.8 4.3 L 20.8 10.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 5.2 9.4 V 18.5 C 5.2 19.38 5.92 20.1 6.8 20.1 H 8.8 V 16.2 A 3.2 3.2 0 0 1 15.2 16.2 V 20.1 H 17.2 C 18.08 20.1 18.8 19.38 18.8 18.5 V 9.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"12\" cy=\"17.5\" r=\"1.75\" fill=\"#FF6B5B\"/>\n</svg>"
+    },
+    "chat": {
+      "tier": "P0",
+      "location": "最左轨 · 对话与游玩",
+      "note": "饱满粗圆角气泡；未选中纯白留空，选中时浮现 14° 微倾品牌四芒星。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 5.3 16.5 C 4.15 15.1 3.5 13.35 3.5 11.4 C 3.5 7.0 7.3 3.7 12 3.7 C 16.7 3.7 20.5 7.0 20.5 11.4 C 20.5 15.8 16.7 19.1 12 19.1 C 10.6 19.1 9.25 18.8 8.05 18.25 L 4.2 19.6 L 5.3 16.5 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 5.3 16.5 C 4.15 15.1 3.5 13.35 3.5 11.4 C 3.5 7.0 7.3 3.7 12 3.7 C 16.7 3.7 20.5 7.0 20.5 11.4 C 20.5 15.8 16.7 19.1 12 19.1 C 10.6 19.1 9.25 18.8 8.05 18.25 L 4.2 19.6 L 5.3 16.5 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 0 -3.55 C 0.5 -3.55 0.53 -1.45 0.99 -0.99 C 1.45 -0.53 3.55 -0.5 3.55 0 C 3.55 0.5 1.45 0.53 0.99 0.99 C 0.53 1.45 0.5 3.55 0 3.55 C -0.5 3.55 -0.53 1.45 -0.99 0.99 C -1.45 0.53 -3.55 0.5 -3.55 0 C -3.55 -0.5 -1.45 -0.53 -0.99 -0.99 C -0.53 -1.45 -0.5 -3.55 0 -3.55 Z\" fill=\"#FF6B5B\" transform=\"translate(12.2 11.3) rotate(14)\"/>\n</svg>"
+    },
+    "studio": {
+      "tier": "P0",
+      "location": "最左轨 · 工坊",
+      "note": "圆润书脊合拢典籍，象征世界书与设定集；选中时封面垂落珊瑚书签。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 5.2 18.3 V 5.7 C 5.2 4.54 6.14 3.6 7.3 3.6 H 18.1 C 18.7 3.6 19.1 4.0 19.1 4.6 V 16.4 H 7.3 C 6.14 16.4 5.2 17.25 5.2 18.3 C 5.2 19.35 6.14 20.2 7.3 20.2 H 18.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12.6 4.4 H 16.2 V 11.1 C 16.2 11.48 15.74 11.68 15.46 11.42 L 14.4 10.42 L 13.34 11.42 C 13.06 11.68 12.6 11.48 12.6 11.1 V 4.4 Z\" fill=\"#FF6B5B\"/>\n  <path d=\"M 5.2 18.3 V 5.7 C 5.2 4.54 6.14 3.6 7.3 3.6 H 18.1 C 18.7 3.6 19.1 4.0 19.1 4.6 V 16.4 H 7.3 C 6.14 16.4 5.2 17.25 5.2 18.3 C 5.2 19.35 6.14 20.2 7.3 20.2 H 18.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "plugins": {
+      "tier": "P0",
+      "location": "最左轨 · 插件",
+      "note": "四宫格圆角积木；选中时右上角积木沿品牌 14° 倾角跃出并实心高亮。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <rect x=\"3.8\" y=\"3.8\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"3.8\" y=\"14.1\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"14.1\" y=\"14.1\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"14.1\" y=\"3.8\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <rect x=\"3.8\" y=\"3.8\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"3.8\" y=\"14.1\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"14.1\" y=\"14.1\" width=\"6.1\" height=\"6.1\" rx=\"1.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <rect x=\"13.5\" y=\"2.8\" width=\"7.8\" height=\"7.8\" rx=\"2.1\" fill=\"#FF6B5B\" transform=\"rotate(14 17.4 6.7)\"/>\n</svg>"
+    },
+    "settings": {
+      "tier": "P0",
+      "location": "左下角 · 90° 摆动齿轮",
+      "note": "六齿粗圆雕塑齿轮，24px 绝不糊团；选中时弹性旋转 90° 并点亮轴心。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": true,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 8.5 6.0 L 10.1 3.3 L 13.9 3.3 L 15.5 6.0 L 18.7 6.0 L 20.6 9.3 L 19.0 12.0 L 20.6 14.7 L 18.7 18.0 L 15.5 18.0 L 13.9 20.7 L 10.1 20.7 L 8.5 18.0 L 5.3 18.0 L 3.4 14.7 L 5.0 12.0 L 3.4 9.3 L 5.3 6.0 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"3.1\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\" style=\"transform: rotate(90deg);\">\n  <path d=\"M 8.5 6.0 L 10.1 3.3 L 13.9 3.3 L 15.5 6.0 L 18.7 6.0 L 20.6 9.3 L 19.0 12.0 L 20.6 14.7 L 18.7 18.0 L 15.5 18.0 L 13.9 20.7 L 10.1 20.7 L 8.5 18.0 L 5.3 18.0 L 3.4 14.7 L 5.0 12.0 L 3.4 9.3 L 5.3 6.0 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"2.1\" fill=\"#FF6B5B\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"3.1\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "slash": {
+      "tier": "P0",
+      "location": "输入框左下 · / 指令",
+      "note": "以雕塑粗斜杠替代传统 + 号作为特征位；激活时右上角跃出品牌四芒星。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 14.8 4.8 L 9.2 19.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 14.8 4.8 L 9.2 19.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 0 -3.15 C 0.44 -3.15 0.47 -1.29 0.88 -0.88 C 1.29 -0.47 3.15 -0.44 3.15 0 C 3.15 0.44 1.29 0.47 0.88 0.88 C 0.47 1.29 0.44 3.15 0 3.15 C -0.44 3.15 -0.47 1.29 -0.88 0.88 C -1.29 0.47 -3.15 0.44 -3.15 0 C -3.15 -0.44 -1.29 -0.47 -0.88 -0.88 C -0.47 -1.29 -0.44 -3.15 0 -3.15 Z\" fill=\"#FF6B5B\" transform=\"translate(17.7 7.4) rotate(14)\"/>\n</svg>"
+    },
+    "arrowUp": {
+      "tier": "P0",
+      "location": "输入框右下 · 发送",
+      "note": "空闲时克制纯线条向上箭头；就绪/选中时转为 #FF6B5B 实心圆底配反白箭头。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 18.6 V 5.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 6.8 10.8 L 12 5.6 L 17.2 10.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <circle cx=\"12\" cy=\"12\" r=\"10.2\" fill=\"#FF6B5B\"/>\n  <path d=\"M 12 16.7 V 7.5\" stroke=\"#FFFFFF\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 7.8 11.4 L 12 7.2 L 16.2 11.4\" stroke=\"#FFFFFF\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "panelRight": {
+      "tier": "P0",
+      "location": "顶栏右侧 · 工作台开关",
+      "note": "圆角矩形右分栏结构；展开工作台时右栏微弱珊瑚填充并亮起指示条。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 14.5 4.5 V 19.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 14.5 4.5 H 17.5 C 19.16 4.5 20.5 5.84 20.5 7.5 V 16.5 C 20.5 18.16 19.16 19.5 17.5 19.5 H 14.5 V 4.5 Z\" fill=\"#FF6B5B\" fill-opacity=\"0.24\"/>\n  <rect x=\"16.7\" y=\"8.8\" width=\"1.8\" height=\"6.4\" rx=\"0.9\" fill=\"#FF6B5B\"/>\n  <rect x=\"3.5\" y=\"4.5\" width=\"17\" height=\"15\" rx=\"3\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 14.5 4.5 V 19.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "menu": {
+      "tier": "P0",
+      "location": "移动端顶栏 · 抽屉开关",
+      "note": "不等长三道粗圆头横线带出轻快律动；激活时右上缺口补齐一枚珊瑚圆点。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 4 6.5 H 14.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 12 H 20\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 17.5 H 16.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 4 6.5 H 14.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 12 H 20\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 17.5 H 16.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"19.1\" cy=\"6.5\" r=\"1.85\" fill=\"#FF6B5B\"/>\n</svg>"
+    },
+    "database": {
+      "tier": "P1",
+      "location": "MVU 状态引擎 / 状态树面板",
+      "note": "雕塑感双层圆柱容器，象征变量快照与数值结算；激活时右下亮起快照指示灯。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <ellipse cx=\"12\" cy=\"6.1\" rx=\"7.5\" ry=\"2.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4.5 6.1 V 17.9 C 4.5 19.34 7.86 20.5 12 20.5 C 16.14 20.5 19.5 19.34 19.5 17.9 V 6.1\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4.5 12 C 4.5 13.44 7.86 14.6 12 14.6 C 16.14 14.6 19.5 13.44 19.5 12\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <ellipse cx=\"12\" cy=\"6.1\" rx=\"7.5\" ry=\"2.6\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4.5 6.1 V 17.9 C 4.5 19.34 7.86 20.5 12 20.5 C 16.14 20.5 19.5 19.34 19.5 17.9 V 6.1\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4.5 12 C 4.5 13.44 7.86 14.6 12 14.6 C 16.14 14.6 19.5 13.44 19.5 12\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"15.4\" cy=\"17.1\" r=\"1.55\" fill=\"#FF6B5B\"/>\n</svg>"
+    },
+    "layers": {
+      "tier": "P1",
+      "location": "全局常驻 JSON 世界书栈",
+      "note": "三层圆角叠片表现热挂载栈；激活时顶层卡片以 #FF6B5B 描边并微弱透亮。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 3.8 L 20 8.1 L 12 12.4 L 4 8.1 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 12.3 L 12 16.6 L 20 12.3\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 16.4 L 12 20.7 L 20 16.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 3.8 L 20 8.1 L 12 12.4 L 4 8.1 Z\" fill=\"#FF6B5B\" fill-opacity=\"0.22\" stroke=\"#FF6B5B\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 12.3 L 12 16.6 L 20 12.3\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 4 16.4 L 12 20.7 L 20 16.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "sliders": {
+      "tier": "P1",
+      "location": "预设与模型调参 / 预设管理",
+      "note": "博朗式三道错落粗滑竿；激活时中段核心旋钮实心点亮为珊瑚朱红。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 3.6 6 H 6.4 M 10.6 6 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"8.5\" cy=\"6\" r=\"2.1\" stroke=\"currentColor\" stroke-width=\"2.4\"/>\n  <path d=\"M 3.6 12 H 13.3 M 17.7 12 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"15.5\" cy=\"12\" r=\"2.1\" stroke=\"currentColor\" stroke-width=\"2.4\"/>\n  <path d=\"M 3.6 18 H 8.9 M 13.1 18 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"11\" cy=\"18\" r=\"2.1\" stroke=\"currentColor\" stroke-width=\"2.4\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 3.6 6 H 6.4 M 10.6 6 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"8.5\" cy=\"6\" r=\"2.1\" stroke=\"currentColor\" stroke-width=\"2.4\"/>\n  <path d=\"M 3.6 12 H 13.3 M 17.7 12 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"15.5\" cy=\"12\" r=\"2.2\" fill=\"#FF6B5B\" stroke=\"#FF6B5B\" stroke-width=\"2.4\"/>\n  <path d=\"M 3.6 18 H 8.9 M 13.1 18 H 20.4\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"11\" cy=\"18\" r=\"2.1\" stroke=\"currentColor\" stroke-width=\"2.4\"/>\n</svg>"
+    },
+    "shield": {
+      "tier": "P1",
+      "location": "酒馆助手沙箱桥（兼容隔离层）",
+      "note": "无尖刺的饱满圆润盾牌轮廓；启用沙箱隔离时盾心点亮一枚微型四芒星。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 3.5 C 14.8 4.85 17.35 5.5 19.15 5.7 C 19.55 5.75 19.8 6.1 19.8 6.5 V 11.4 C 19.8 15.85 16.55 19.05 12.45 20.45 C 12.16 20.55 11.84 20.55 11.55 20.45 C 7.45 19.05 4.2 15.85 4.2 11.4 V 6.5 C 4.2 6.1 4.45 5.75 4.85 5.7 C 6.65 5.5 9.2 4.85 12 3.5 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 3.5 C 14.8 4.85 17.35 5.5 19.15 5.7 C 19.55 5.75 19.8 6.1 19.8 6.5 V 11.4 C 19.8 15.85 16.55 19.05 12.45 20.45 C 12.16 20.55 11.84 20.55 11.55 20.45 C 7.45 19.05 4.2 15.85 4.2 11.4 V 6.5 C 4.2 6.1 4.45 5.75 4.85 5.7 C 6.65 5.5 9.2 4.85 12 3.5 Z\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 0 -3.35 C 0.47 -3.35 0.5 -1.38 0.94 -0.94 C 1.38 -0.5 3.35 -0.47 3.35 0 C 3.35 0.47 1.38 0.5 0.94 0.94 C 0.5 1.38 0.47 3.35 0 3.35 C -0.47 3.35 -0.5 1.38 -0.94 0.94 C -1.38 0.5 -3.35 0.47 -3.35 0 C -3.35 -0.47 -1.38 -0.5 -0.94 -0.94 C -0.5 -1.38 -0.47 -3.35 0 -3.35 Z\" fill=\"#FF6B5B\" transform=\"translate(12 11.7) rotate(14)\"/>\n</svg>"
+    },
+    "bookOpen": {
+      "tier": "P1",
+      "location": "世界书检索 v2",
+      "note": "左右摊开书页与柔和中缝，与工坊合拢书本明确区分；命中检索时右页星芒闪耀。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 6.8 C 10.6 5.25 8.2 4.65 4.8 4.85 C 4.12 4.9 3.6 5.45 3.6 6.15 V 17.25 C 3.6 17.95 4.15 18.5 4.85 18.5 C 8.1 18.4 10.5 19.0 12 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 12 6.8 C 13.4 5.25 15.8 4.65 19.2 4.85 C 19.88 4.9 20.4 5.45 20.4 6.15 V 17.25 C 20.4 17.95 19.85 18.5 19.15 18.5 C 15.9 18.4 13.5 19.0 12 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 12 6.8 V 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 12 6.8 C 10.6 5.25 8.2 4.65 4.8 4.85 C 4.12 4.9 3.6 5.45 3.6 6.15 V 17.25 C 3.6 17.95 4.15 18.5 4.85 18.5 C 8.1 18.4 10.5 19.0 12 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 12 6.8 C 13.4 5.25 15.8 4.65 19.2 4.85 C 19.88 4.9 20.4 5.45 20.4 6.15 V 17.25 C 20.4 17.95 19.85 18.5 19.15 18.5 C 15.9 18.4 13.5 19.0 12 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 12 6.8 V 20.2\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 0 -2.9 C 0.41 -2.9 0.43 -1.19 0.81 -0.81 C 1.19 -0.43 2.9 -0.41 2.9 0 C 2.9 0.41 1.19 0.43 0.81 0.81 C 0.43 1.19 0.41 2.9 0 2.9 C -0.41 2.9 -0.43 1.19 -0.81 0.81 C -1.19 0.43 -2.9 0.41 -2.9 0 C -2.9 -0.41 -1.19 -0.43 -0.81 -0.81 C -0.43 -1.19 -0.41 -2.9 0 -2.9 Z\" fill=\"#FF6B5B\" transform=\"translate(16.2 11.6) rotate(14)\"/>\n</svg>"
+    },
+    "radio": {
+      "tier": "P1",
+      "location": "SSE 断线续传",
+      "note": "对称双环圆头信号波纹；后台流式续传活跃时中心信标与内环波纹同步点亮。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 5.4 6.5 A 8.6 8.6 0 0 0 5.4 17.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 18.6 6.5 A 8.6 8.6 0 0 1 18.6 17.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 8.2 9.0 A 4.8 4.8 0 0 0 8.2 15.0\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.8 9.0 A 4.8 4.8 0 0 1 15.8 15.0\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"1.55\" fill=\"currentColor\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 5.4 6.5 A 8.6 8.6 0 0 0 5.4 17.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 18.6 6.5 A 8.6 8.6 0 0 1 18.6 17.5\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 8.2 9.0 A 4.8 4.8 0 0 0 8.2 15.0\" stroke=\"#FF6B5B\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.8 9.0 A 4.8 4.8 0 0 1 15.8 15.0\" stroke=\"#FF6B5B\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <circle cx=\"12\" cy=\"12\" r=\"2.05\" fill=\"#FF6B5B\"/>\n</svg>"
+    },
+    "code": {
+      "tier": "P1",
+      "location": "正则与兼容脚本",
+      "note": "宽松呼吸感的粗圆头 < > 尖括号；脚本激活时中央浮现品牌斜杠组成 </>。",
+      "strokeWidth": 2.4,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 8.1 7.2 L 3.8 12 L 8.1 16.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.9 7.2 L 20.2 12 L 15.9 16.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>",
+      "activeSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 8.1 7.2 L 3.8 12 L 8.1 16.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.9 7.2 L 20.2 12 L 15.9 16.8\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 13.4 6.5 L 10.6 17.5\" stroke=\"#FF6B5B\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "copy": {
+      "tier": "SEC",
+      "location": "次级工具 · 复制",
+      "note": "固定 1.65px 标准细线，纯 currentColor，与 2.4px 主地标形成主次节奏。",
+      "strokeWidth": 1.65,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <rect x=\"8.5\" y=\"8.5\" width=\"11\" height=\"11\" rx=\"2.2\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.5 8.5 V 6.7 C 15.5 5.48 14.52 4.5 13.3 4.5 H 6.7 C 5.48 4.5 4.5 5.48 4.5 6.7 V 13.3 C 4.5 14.52 5.48 15.5 6.7 15.5 H 8.5\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "undo": {
+      "tier": "SEC",
+      "location": "次级工具 · 回滚",
+      "note": "固定 1.65px 标准细线，用于消息回溯与快照撤销，保持克制轻量。",
+      "strokeWidth": 1.65,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 8.5 7.3 L 4.8 11 L 8.5 14.7\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 5.2 11 H 14.3 C 17.0 11 19.2 12.95 19.2 15.35 C 19.2 17.4 17.6 19.0 15.4 19.0 H 11.8\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "search": {
+      "tier": "SEC",
+      "location": "次级工具 · 搜索",
+      "note": "固定 1.65px 标准细线，服务于顶栏与面板内部检索入口。",
+      "strokeWidth": 1.65,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <circle cx=\"10.8\" cy=\"10.8\" r=\"6.2\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 15.4 15.4 L 19.6 19.6\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    },
+    "close": {
+      "tier": "SEC",
+      "location": "次级工具 · 关闭",
+      "note": "固定 1.65px 标准细线，用于弹窗与抽屉收起，零视觉噪点。",
+      "strokeWidth": 1.65,
+      "rotatesOnActive": false,
+      "defaultSvg": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" width=\"24\" height=\"24\" fill=\"none\">\n  <path d=\"M 6.5 6.5 L 17.5 17.5\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n  <path d=\"M 17.5 6.5 L 6.5 17.5\" stroke=\"currentColor\" stroke-width=\"1.65\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n</svg>"
+    }
+  }
+}

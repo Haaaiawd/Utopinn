@@ -1,27 +1,29 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Design tokens — GPT 式"非黑即白"双色调面。
-   dark: 侧栏/面板 #171717、主面 #212121;light: 主面 #fff、侧栏 #f7f7f8。
-   灰色只允许出现在:局部 hover/选中填充(--bubble/--sel)、发丝分隔线(--line/
-   --line2)、次级文字(--ink2/--ink3)、chip、composer 盒(--raised)。
-   唯一强调色 = 中华琥珀 #ca6924,仅落点睛位(发送钮/未读点/流式光标/mock 徽标)。
+/* Design tokens — U馆 flagship 规范(u_ui_codex_linear_shadcn_ui.html)直译。
+   规范 :root 暗色全套原样落 [data-theme="dark"];亮色系(羊皮象牙白)
+   落 [data-theme="light"]。命名沿用规范稿:canvas-bg、surface-1..3、
+   border 系、fg 系、brand #FF6B5B、status 三色 —— 规范组件直接引用这些变量。
 
-   shadcn 语义槽经 @theme inline 指到上面的手写变量:utility(bg-primary、
-   text-muted-foreground…)直接引用 var(--*),随 [data-theme] 翻转。
+   旧组件(shadcn 原语 + 老视图)仍走原语义槽(--bg/--ink/--line/--acc…),
+   这里把它们重指到规范变量 —— 一套事实源,两套表面共存不漂移。
+
+   shadcn 语义槽经 @theme inline 指到变量层:utility(bg-primary、
+   text-muted-foreground…)随 [data-theme] 翻转。
    注意命名错位:shadcn 的 --color-accent 在这里 = 中性 hover 填充;
-   琥珀色走 --color-primary / --color-amber,不要混用。
+   品牌色走 --color-primary / --color-brand,不要混用。
 
-   Theme via [data-theme] on <html>; dark default (IA §14). */
+   Theme via [data-theme] on <html>; dark default. */
 
 @theme inline {
-    /* surfaces */
+    /* shadcn 语义槽 → 规范变量 */
     --color-background: var(--bg);
     --color-foreground: var(--ink);
     --color-surface: var(--bg2);
     --color-card: var(--raised);
     --color-card-foreground: var(--ink);
-    --color-popover: var(--raised);
+    --color-popover: var(--bg-elevated);
     --color-popover-foreground: var(--ink);
     --color-muted: var(--bg2);
     --color-muted-foreground: var(--ink3);
@@ -40,6 +42,7 @@
     --color-primary: var(--acc);
     --color-primary-foreground: var(--acc-ink);
     --color-amber: var(--acc);
+    --color-brand: var(--brand);
     --color-quote: var(--quote);
     --color-destructive: var(--err);
     --color-warning: var(--warn);
@@ -50,21 +53,37 @@
     --color-input: var(--line2);
     --color-ring: var(--ring);
 
-    /* radius scale → 手写阶梯:6/10/14/22 */
+    /* 规范面 token 直出(规范组件 tailwind 侧可用):bg-surface-1 等 */
+    --color-canvas: var(--canvas-bg);
+    --color-surface-1: var(--surface-1);
+    --color-surface-2: var(--surface-2);
+    --color-surface-3: var(--surface-3);
+    --color-fg: var(--fg-primary);
+    --color-fg-2: var(--fg-secondary);
+    --color-fg-3: var(--fg-muted);
+    --color-fg-4: var(--fg-faint);
+    --color-ok: var(--status-ok);
+    --color-warn: var(--status-warn);
+    --color-danger: var(--status-danger);
+
+    /* radius scale → 手写阶梯:6/10/14/22(原料槽 --radius-* 在 :root) */
     --radius-sm: var(--radius-xs);
     --radius-md: var(--radius);
-    --radius-lg: var(--radius-lg);
-    --radius-xl: var(--radius-xl);
+    --radius-lg: var(--radius-lg-raw);
+    --radius-xl: var(--radius-xl-raw);
 
     --font-sans: var(--font-ui);
     --font-serif: var(--font-reading);
-    --font-mono: var(--font-mono);
+    --font-mono: var(--font-code);
 }
 
 :root {
-    --font-ui: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
-    --font-reading: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", serif;
-    --font-mono: ui-monospace, "SF Mono", Consolas, monospace;
+    /* === 规范字体栈(Inter / Noto Serif SC / JetBrains Mono) === */
+    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-reading: 'Noto Serif SC', 'Songti SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'STSong', Georgia, serif;
+    /* 原料槽叫 --font-code:@theme 生成的 --font-mono 才给 var(--font-mono) 用(避开自引用)。 */
+    --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --chat-font-size: 14.5px;
 
     /* 字号阶梯:caption(辅助/计数)< ui-sm(设置/诊断/表格)< ui < ui-lg < title < reading */
     --fs-caption: 12px;
@@ -79,68 +98,178 @@
     /* 半径阶梯:tag/小控件 → 行/输入 → 卡片 → 大容器(输入区) → 全圆 */
     --radius-xs: 6px;
     --radius: 10px;
-    --radius-lg: 14px;
-    --radius-xl: 22px;
+    /* 原料槽名加 -raw:@theme 产出的 --radius-lg/--radius-xl 供 var() 消费。 */
+    --radius-lg-raw: 14px;
+    --radius-lg: var(--radius-lg-raw);
+    --radius-xl-raw: 22px;
+    --radius-xl: var(--radius-xl-raw);
     --radius-pill: 999px;
 
-    --ease: cubic-bezier(.23, 1, .32, 1);
+    --ease: cubic-bezier(.22, 1, .36, 1);
 }
 
+/* =========================================================================
+   深邃黑(Hue ~215°~220° Cool Graphite)— 规范 dark 全套
+   ========================================================================= */
 [data-theme="dark"] {
-    /* 黑白双色压深:rail/侧栏近黑、主面再亮半档、raised 只给浮层。
-       灰阶带极轻冷调,纯中性灰在纯黑上发闷。 */
-    --bg: #141517;
-    --bg2: #0d0e10;
-    --raised: #1f2124;
-    --bubble: #ffffff10;
-    --sel: #ffffff1a;
-    --ink: #e8e9eb;
-    --ink2: #a4a8ad;
-    --ink3: #8b9097;        /* AA floor on --raised(≈4.5:1);图标/quiet 文本共用 */
-    --line: #ffffff12;
-    --line2: #ffffff22;
-    --ring: #ffffff30;
-    --acc: #ca6924;        /* 中华琥珀 — 全场唯一彩色,极少数点缀 */
-    --acc-ink: #fff7ef;
-    --acc-soft: #ca692422;
-    /* 引号对话色 = 琥珀同族提亮档(深色面上 acc 本体对比不足,
-       提亮后 ≈5.4:1);ST 主题的 quote 专色槽位对应物。 */
-    --quote: #d89468;
-    --ok: #6fae7e;
-    --warn: #d4a05a;
-    --err: #d0715f;
-    --shadow: 0 1px 2px #0008, 0 14px 34px -14px #000e;
-    --composer-shadow: 0 10px 34px -12px #000f;
+    --canvas-bg: #08090A;
+    --surface-1: #0F1011;
+    --surface-2: #141516;
+    --surface-3: #1C1D1F;
 
-    /* 侧栏行内操作底板的"实色"等效:行 hover/选中是透明填充盖 --bg2,
-       .row-acts 需要同效果的不透明色来遮住行尾文字。 */
-    --mix-row-hover: color-mix(in srgb, var(--bg2) 93%, #ffffff);
-    --mix-row-sel: color-mix(in srgb, var(--bg2) 89%, #ffffff);
+    --bg-chrome: var(--canvas-bg);
+    --bg-tray: var(--canvas-bg);
+    --bg-sidebar: var(--canvas-bg);
+    --bg-canvas: var(--surface-1);
+    --bg-workbench: var(--surface-1);
+    --bg-surface: var(--surface-2);
+    --bg-input: var(--surface-2);
+    --bg-surface-hover: var(--surface-3);
+    --bg-active: var(--surface-3);
+    --bg-elevated: var(--surface-3);
+    --bg-user-bubble: #181A1D;
+
+    --border-hairline: #23252A;
+    --border-inset: #23252A;
+    --border-subtle: #282B30;
+    --border-strong: #34343A;
+    --border-bold: #34343A;
+    --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+
+    --fg-primary: #F7F8F8;
+    --fg-secondary: #8A8F98;
+    --fg-muted: #62666D;
+    --fg-faint: #42464D;
+
+    --primary-bg: #F7F8F8;
+    --primary-fg: #08090A;
+    --primary-disabled-bg: #1C1D1F;
+    --primary-disabled-fg: #4F535B;
+
+    --status-ok: #34D399;
+    --status-warn: #F59E0B;
+    --status-danger: #F87171;
+
+    /* Utopinn Portal Spark 主题色 — 单点电压 */
+    --brand: #FF6B5B;
+    --brand-hover: #FF7F71;
+    --brand-soft: rgba(255, 107, 91, 0.14);
+    --brand-fg: #FFFFFF;
+    --logo-u-stroke: #E2E4E9;
+
+    /* 铁律:暗色严禁扩散黑影 = 明度抬升 + 1px 冷描边 + 顶部 1px 内高光 */
+    --shadow-card: inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
+    --shadow-composer: inset 0 1px 0 0 rgba(255, 255, 255, 0.045);
+    --shadow-pop: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 0 0 1px #34343A;
+    --shadow-float: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 0 0 1px #34343A;
+    --shadow: 0 0 0 1px #34343A, 0 14px 34px -14px #000e;
+    --composer-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.045), 0 10px 34px -12px #000f;
+
+    /* ==== 旧语义槽 → 规范变量(老组件零改动换肤) ==== */
+    --bg: var(--bg-canvas);
+    --bg2: var(--bg-chrome);
+    --raised: var(--bg-surface);
+    --bubble: var(--bg-surface);
+    --sel: var(--bg-active);
+    --ink: var(--fg-primary);
+    --ink2: var(--fg-secondary);
+    --ink3: var(--fg-muted);
+    --line: var(--border-hairline);
+    --line2: var(--border-subtle);
+    --ring: var(--border-strong);
+    --acc: var(--brand);
+    --acc-ink: var(--brand-fg);
+    --acc-soft: var(--brand-soft);
+    /* 引号对话色 = brand 同族提亮档(ST quote 槽位)。 */
+    --quote: #FFA294;
+    --ok: var(--status-ok);
+    --warn: var(--status-warn);
+    --err: var(--status-danger);
+
+    /* 侧栏行内操作底板的"实色"等效(hover/选中盖 --bg2 的不透明色)。 */
+    --mix-row-hover: #131416;
+    --mix-row-sel: var(--surface-3);
 }
 
+/* =========================================================================
+   羊皮象牙白(Parchment & Ivory 暖矿物棉纸)— 规范 light 全套
+   ========================================================================= */
 [data-theme="light"] {
-    --bg: #ffffff;
-    --bg2: #f7f7f8;
-    --raised: #ffffff;
-    --bubble: #0000000a;
-    --sel: #00000014;
-    --ink: #0d0d0d;
-    --ink2: #5d6167;
-    --ink3: #73787e;        /* AA floor on --bg2(≈4.5:1) */
-    --line: #00000012;
-    --line2: #00000024;
-    --ring: #0000002e;
-    --acc: #ca6924;        /* 中华琥珀 */
-    --acc-ink: #fff7ef;
-    --acc-soft: #ca69241c;
-    /* 亮面侧同族压深档(白底 ≈4.8:1)。 */
-    --quote: #9e5a1c;
-    --ok: #3d8453;
-    --warn: #a5712a;
-    --err: #b04a38;
-    --shadow: 0 1px 2px #00000010, 0 14px 32px -14px #00000022;
-    --composer-shadow: 0 10px 30px -12px #00000026;
+    --canvas-bg: #F5F4EF;
+    --surface-1: #FAF9F5;
+    --surface-2: #FFFFFF;
+    --surface-3: #ECEAE2;
 
-    --mix-row-hover: color-mix(in srgb, var(--bg2) 96%, #000000);
-    --mix-row-sel: color-mix(in srgb, var(--bg2) 92%, #000000);
+    --bg-chrome: #F5F4EF;
+    --bg-tray: #F5F4EF;
+    --bg-sidebar: #F5F4EF;
+    --bg-canvas: #FAF9F5;
+    --bg-workbench: #FAF9F5;
+    --bg-surface: #F2F0E8;
+    --bg-input: #FFFFFF;
+    --bg-surface-hover: #ECEAE2;
+    --bg-active: #ECEAE2;
+    --bg-elevated: #FFFFFF;
+    --bg-user-bubble: #ECEAE2;
+
+    --border-hairline: #E5E3DA;
+    --border-inset: #E5E3DA;
+    --border-subtle: #DDDAD0;
+    --border-strong: #D4D1C5;
+    /* 亮色粗边框专用暖陶土色:保留 2px 雕塑感 */
+    --border-bold: #D6D3C7;
+    --inner-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.85);
+
+    --fg-primary: #1C1B18;
+    --fg-secondary: #66645E;
+    --fg-muted: #96938B;
+    --fg-faint: #BCB8AE;
+
+    --primary-bg: #1C1B18;
+    --primary-fg: #FAF9F5;
+    --primary-disabled-bg: #E5E3DA;
+    --primary-disabled-fg: #96938B;
+
+    --status-ok: #2E7D5B;
+    --status-warn: #B86B1A;
+    --status-danger: #C94A38;
+
+    --brand: #FF6B5B;
+    --brand-hover: #EE5A4A;
+    --brand-soft: rgba(255, 107, 91, 0.12);
+    --brand-fg: #FFFFFF;
+    --logo-u-stroke: #1C1B18;
+
+    /* 亮色柔和暖炭微影与极淡 Ring */
+    --shadow-card: 0 0 0 1px rgba(28, 27, 24, 0.045), 0 2px 8px rgba(28, 27, 24, 0.025);
+    --shadow-composer: 0 2px 12px rgba(28, 27, 24, 0.045), 0 0 0 1px rgba(28, 27, 24, 0.03);
+    --shadow-pop: 0 8px 28px rgba(28, 27, 24, 0.085), 0 0 0 1px rgba(28, 27, 24, 0.075);
+    --shadow-float: 0 16px 44px rgba(28, 27, 24, 0.11), 0 0 0 1px rgba(28, 27, 24, 0.09);
+    --shadow: 0 0 0 1px rgba(28, 27, 24, 0.075), 0 14px 32px -14px rgba(28, 27, 24, 0.22);
+    --composer-shadow: 0 2px 12px rgba(28, 27, 24, 0.045), 0 0 0 1px rgba(28, 27, 24, 0.03);
+
+    /* ==== 旧语义槽 → 规范变量 ==== */
+    --bg: var(--bg-canvas);
+    --bg2: var(--bg-chrome);
+    --raised: var(--bg-input);
+    --bubble: var(--bg-surface);
+    --sel: var(--bg-active);
+    --ink: var(--fg-primary);
+    --ink2: var(--fg-secondary);
+    --ink3: var(--fg-muted);
+    --line: var(--border-hairline);
+    --line2: var(--border-subtle);
+    --ring: var(--border-strong);
+    --acc: var(--brand);
+    --acc-ink: var(--brand-fg);
+    --acc-soft: var(--brand-soft);
+    /* 亮面侧同族压深档(白底 ≈4.8:1)。 */
+    --quote: #D94F3F;
+    --ok: var(--status-ok);
+    --warn: var(--status-warn);
+    --err: var(--status-danger);
+    --err-soft: #C94A3814;
+
+    --mix-row-hover: #EDECE6;
+    --mix-row-sel: var(--surface-3);
 }

@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import type { Feature, FeatureCtx } from '../kernel/kernel';
 import { useShell } from '../kernel/context';
 import { ChatView } from '../components/chat/ChatView';
+import { CenterStage } from '../components/stage/CenterStage';
 import { ProseRenderer } from '../components/chat/renderers/ProseRenderer';
 import { SessionBody, DiagBody } from '../components/panels/bodies';
 import { Icon } from '../components/Icon';
@@ -19,7 +20,10 @@ export const chatFeature: Feature = {
     name: 'chat',
     apply(ctx: FeatureCtx) {
         ctx.add('nav.rail', { view: 'chat', icon: 'chat', order: 10 });
-        ctx.add('view', { view: 'chat', Component: ChatView });
+        // 'chat' 视图 = 中央舞台出口:会话 stage 形态 → 'stage.form' 贡献。
+        ctx.add('view', { view: 'chat', Component: CenterStage });
+        // 兜底形态:'chat' 会话落 ChatView(真数据链:messages→generate→WS 流)。
+        ctx.add('stage.form', { kind: 'chat', order: 10, Component: ChatView });
         ctx.add('panel.type', { type: 'session', icon: 'user', wired: true, Body: SessionBody });
         ctx.add('panel.type', { type: 'diag', icon: 'pulse', wired: true, Body: DiagBody });
         ctx.add('renderer', { id: 'prose', order: 10, Component: ProseRenderer });
@@ -27,6 +31,7 @@ export const chatFeature: Feature = {
         ctx.locale('chat', {
             'zh-CN': {
                 'nav.chat': '聊天',
+                'nav.chat.rail': '聊天',
                 'sidebar.newChat': '新会话',
                 'sidebar.search': '搜索',
                 'sidebar.recent': '最近',
@@ -41,6 +46,7 @@ export const chatFeature: Feature = {
                 'chat.send.draftOnly': '本地草稿 — 服务器离线或生成中',
                 'chat.send.failed': '发送失败',
                 'chat.input.placeholder': '输入消息…(Enter 发送,Shift+Enter 换行)',
+                'chat.attach': '附件',
                 'chat.swipe': '版本',
                 'chat.action.edit': '编辑',
                 'chat.action.regen': '重新生成',
@@ -53,6 +59,7 @@ export const chatFeature: Feature = {
                 'chat.delete.confirm': '删除这个会话?此操作不可撤销。',
                 'chat.noChat': '还没有会话 —— 从门厅或故事库挑一张卡开始。',
 
+                'stage.model': '模型',
                 'stage.persona': '人设',
                 'stage.persona.pick': '切换人设',
                 'stage.persona.manage': '管理人设',
@@ -93,6 +100,7 @@ export const chatFeature: Feature = {
             },
             en: {
                 'nav.chat': 'Chat',
+                'nav.chat.rail': 'Chat',
                 'sidebar.newChat': 'New chat',
                 'sidebar.search': 'Search',
                 'sidebar.recent': 'Recent',
@@ -107,6 +115,7 @@ export const chatFeature: Feature = {
                 'chat.send.draftOnly': 'local draft — server offline or streaming',
                 'chat.send.failed': 'send failed',
                 'chat.input.placeholder': 'Type a message… (Enter to send, Shift+Enter for newline)',
+                'chat.attach': 'Attach',
                 'chat.swipe': 'swipe',
                 'chat.action.edit': 'Edit',
                 'chat.action.regen': 'Regenerate',
@@ -119,6 +128,7 @@ export const chatFeature: Feature = {
                 'chat.delete.confirm': 'Delete this chat? This cannot be undone.',
                 'chat.noChat': 'No chats yet — pick a card from the foyer or library to begin.',
 
+                'stage.model': 'Model',
                 'stage.persona': 'Persona',
                 'stage.persona.pick': 'Switch persona',
                 'stage.persona.manage': 'Manage personas',

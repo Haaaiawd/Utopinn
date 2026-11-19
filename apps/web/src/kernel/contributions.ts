@@ -4,7 +4,7 @@
 // 不靠本文件扩枚举(槽位类型安全不变)。
 import type { ComponentType } from 'react';
 import type { IconName } from '../components/Icon';
-import type { ViewId } from '../types';
+import type { StageKind, ViewId } from '../types';
 import type { ConversationRendererComponent } from '../components/chat/renderers/types';
 
 /** 板块类型是不透明字符串(同 dockkit:kind 不归宿主解释)。 */
@@ -31,6 +31,29 @@ export interface PanelTypeContribution {
     wired: boolean;
     /** 板块本体 —— 无 props,数据走 useShell()。 */
     Body: ComponentType;
+    /** launcher 目录元数据:desc/badge 是 i18n 键(t() 回落键名);
+     *  category 决定落在 launcher 的「新键」格还是「建议」组。 */
+    desc?: string;
+    badge?: string;
+    category?: 'new' | 'suggested';
+}
+
+/** 左树面板贡献:归属 rail 域,壳按当前 railTab 渲染全部匹配贡献
+ *  (order 排序叠放)。侧栏 body 不再由壳 if/switch —— 树内容归 feature。 */
+export interface SidebarContribution {
+    /** 归属 rail 域('home' | 'chat' | 'studio' | 'plugins' | …)。 */
+    rail: string;
+    order: number;
+    Component: ComponentType;
+}
+
+/** 舞台形态贡献:ChatSummary.stage → 中央区内容组件。
+ *  'chat' 由 chat feature 兜底注册;novel/messenger/galgame 等
+ *  归 stage 插件 feature(stagepack)注册 —— 壳只认 kind 字符串。 */
+export interface StageFormContribution {
+    kind: StageKind;
+    order: number;
+    Component: ComponentType;
 }
 
 export interface RendererContribution {
@@ -57,6 +80,8 @@ export interface LocaleContribution {
 export interface Contributions {
     'nav.rail': NavRailContribution;
     'view': ViewContribution;
+    'sidebar.tree': SidebarContribution;
+    'stage.form': StageFormContribution;
     'panel.type': PanelTypeContribution;
     'renderer': RendererContribution;
     'ctbar.chat': CtbarActionContribution;
