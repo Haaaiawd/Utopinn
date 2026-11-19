@@ -213,7 +213,7 @@ import { downloadFromServer } from './scripts/luker-download.js';
 
 import { bootstrapExtensions, cancelDebouncedMetadataSave, doDailyExtensionUpdatesCheck, extension_settings, initExtensions, primeExtensionSettings, runGenerationInterceptors, saveMetadataDebounced } from './scripts/extensions.js';
 import { STATE_ERROR_REASONS, makeStateError, makeStateOk } from './scripts/state-errors.js';
-import { invalidateStateResources, normalizeStateNamespace, readStateEnvelope } from './scripts/state-resource.js';
+import { UTOPINN_CHAR_STATE_ROUTE, UTOPINN_CHAT_STATE_ROUTE, UTOPINN_PRESET_STATE_ROUTE, invalidateStateResources, normalizeStateNamespace, readStateEnvelope } from './scripts/state-resource.js';
 import {
     formatHttpErrorHint,
     formatTransportErrorHint,
@@ -3372,7 +3372,9 @@ async function restoreDeletedCharacterSnapshot(snapshot, { refreshCharacters = t
                 continue;
             }
 
-            const response = await fetch('/api/characters/state/set', {
+            // TASK-033 reroute: legacy /api/characters/state/set → utopinn char set
+            // ({avatar_url, namespace, data} body 与 {ok} 响应同源)。
+            const response = await fetch(UTOPINN_CHAR_STATE_ROUTE + '/set', {
                 method: 'POST',
                 headers: getRequestHeaders(),
                 cache: 'no-cache',
@@ -12370,7 +12372,7 @@ async function invalidatePresetStateRequestCache(target, namespaces = []) {
         presetStateRequestCache.delete(key);
         presetStateRequestGeneration.set(key, (presetStateRequestGeneration.get(key) || 0) + 1);
     }
-    await invalidateStateResources('/api/presets/state/get', {
+    await invalidateStateResources(UTOPINN_PRESET_STATE_ROUTE + '/get', {
         apiId: normalizePresetStateApiId(target.collection || target.apiId || target.type),
         name: target.name,
     }, normalizedNamespaces);
@@ -12388,7 +12390,7 @@ async function invalidateAllPresetStateRequestCache(target) {
             presetStateRequestGeneration.set(cacheKey, (presetStateRequestGeneration.get(cacheKey) || 0) + 1);
         }
     }
-    await invalidateStateResources('/api/presets/state/get', {
+    await invalidateStateResources(UTOPINN_PRESET_STATE_ROUTE + '/get', {
         apiId: normalizePresetStateApiId(target.collection || target.apiId || target.type),
         name: target.name,
     });
@@ -12424,7 +12426,7 @@ async function invalidateChatStateRequestCache(target, namespaces = []) {
         chatStateRequestCache.delete(key);
         chatStateRequestGeneration.set(key, (chatStateRequestGeneration.get(key) || 0) + 1);
     }
-    await invalidateStateResources('/api/chats/state/get', {
+    await invalidateStateResources(UTOPINN_CHAT_STATE_ROUTE + '/get', {
         is_group: target.is_group ? 'true' : 'false',
         id: target.id,
         avatar_url: target.avatar_url,
@@ -13219,7 +13221,7 @@ export async function getChatStateBatch(namespaces, options = {}) {
 
     let payloads;
     try {
-        payloads = await Promise.all(need.map((namespace) => readStateEnvelope('/api/chats/state/get', {
+        payloads = await Promise.all(need.map((namespace) => readStateEnvelope(UTOPINN_CHAT_STATE_ROUTE + '/get', {
             is_group: target.is_group ? 'true' : 'false',
             id: target.id,
             avatar_url: target.avatar_url,
@@ -13316,7 +13318,8 @@ export async function patchChatState(namespace, operations, options = {}) {
 
         const patchOnce = async (baseState) => {
             const guardedOperations = attachObjectPatchTests(baseState || {}, baseOperations);
-            return fetch('/api/chats/state/patch', {
+            // TASK-033 reroute: legacy /api/chats/state/patch → utopinn chat patch
+            return fetch(UTOPINN_CHAT_STATE_ROUTE + '/patch', {
                 method: 'POST',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
@@ -13469,7 +13472,8 @@ export async function deleteChatState(namespace, options = {}) {
                 formatValidationTargetHint('no active chat (chatId resolution failed)'));
         }
         await invalidateChatStateRequestCache(target, [stateNamespace]);
-        const response = await fetch('/api/chats/state/delete', {
+        // TASK-033 reroute: legacy /api/chats/state/delete → utopinn chat delete
+        const response = await fetch(UTOPINN_CHAT_STATE_ROUTE + '/delete', {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),
@@ -13546,7 +13550,7 @@ export async function getPresetStateBatch(namespaces, options = {}) {
 
     let payloads;
     try {
-        payloads = await Promise.all(need.map((namespace) => readStateEnvelope('/api/presets/state/get', {
+        payloads = await Promise.all(need.map((namespace) => readStateEnvelope(UTOPINN_PRESET_STATE_ROUTE + '/get', {
             apiId: target.apiId,
             name: target.name,
             namespace,
@@ -13641,7 +13645,8 @@ export async function patchPresetState(namespace, operations, options = {}) {
 
         const patchOnce = async (baseState) => {
             const guardedOperations = attachObjectPatchTests(baseState || {}, baseOperations);
-            return fetch('/api/presets/state/patch', {
+            // TASK-033 reroute: legacy /api/presets/state/patch → utopinn preset patch
+            return fetch(UTOPINN_PRESET_STATE_ROUTE + '/patch', {
                 method: 'POST',
                 cache: 'no-cache',
                 headers: getRequestHeaders(),
@@ -13795,7 +13800,8 @@ export async function deletePresetState(namespace, options = {}) {
                 formatValidationTargetHint('no active preset (apiId/name resolution failed)'));
         }
         await invalidatePresetStateRequestCache(target, [stateNamespace]);
-        const response = await fetch('/api/presets/state/delete', {
+        // TASK-033 reroute: legacy /api/presets/state/delete → utopinn preset delete
+        const response = await fetch(UTOPINN_PRESET_STATE_ROUTE + '/delete', {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),
@@ -13837,7 +13843,8 @@ export async function deleteAllPresetState(target = null) {
         }
         await invalidateAllPresetStateRequestCache(resolvedTarget);
 
-        const response = await fetch('/api/presets/state/delete-all', {
+        // TASK-033 reroute: legacy /api/presets/state/delete-all → utopinn preset delete-all
+        const response = await fetch(UTOPINN_PRESET_STATE_ROUTE + '/delete-all', {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),
@@ -13881,7 +13888,8 @@ export async function renamePresetStateTarget(sourceTarget = null, targetTarget 
         await invalidateAllPresetStateRequestCache(source);
         await invalidateAllPresetStateRequestCache(target);
 
-        const response = await fetch('/api/presets/state/rename', {
+        // TASK-033 reroute: legacy /api/presets/state/rename → utopinn preset rename
+        const response = await fetch(UTOPINN_PRESET_STATE_ROUTE + '/rename', {
             method: 'POST',
             cache: 'no-cache',
             headers: getRequestHeaders(),

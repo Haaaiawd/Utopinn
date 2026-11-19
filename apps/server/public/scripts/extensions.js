@@ -11,7 +11,7 @@ import { debounce_timeout } from './constants.js';
 import { accountStorage } from './util/AccountStorage.js';
 import { SimpleMutex } from './util/SimpleMutex.js';
 import { STATE_ERROR_REASONS, makeStateError, makeStateOk } from './state-errors.js';
-import { invalidateStateResources, readStateEnvelope } from './state-resource.js';
+import { UTOPINN_CHAR_STATE_ROUTE, invalidateStateResources, readStateEnvelope } from './state-resource.js';
 import {
     formatHttpErrorHint,
     formatTransportErrorHint,
@@ -2243,7 +2243,7 @@ export async function getCharacterState(avatar, namespace) {
             hint: formatValidationArgsHint('namespace', 'is required') };
     }
     try {
-        const payload = await readStateEnvelope('/api/characters/state/get', {
+        const payload = await readStateEnvelope(UTOPINN_CHAR_STATE_ROUTE + '/get', {
             avatar: safeAvatar,
             namespace: safeNamespace,
         });
@@ -2283,14 +2283,15 @@ export async function setCharacterState(avatar, namespace, data) {
     }
     let response;
     try {
-        response = await fetch('/api/characters/state/set', {
+        // TASK-033 reroute: legacy /api/characters/state/set → utopinn char set
+        response = await fetch(UTOPINN_CHAR_STATE_ROUTE + '/set', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({ avatar_url: safeAvatar, namespace: safeNamespace, data }),
             cache: 'no-cache',
         });
         if (response.ok) {
-            await invalidateStateResources('/api/characters/state/get', { avatar: safeAvatar }, [safeNamespace]);
+            await invalidateStateResources(UTOPINN_CHAR_STATE_ROUTE + '/get', { avatar: safeAvatar }, [safeNamespace]);
         }
     } catch (error) {
         return makeStateError(STATE_ERROR_REASONS.TRANSPORT_ERROR,
@@ -2336,14 +2337,15 @@ export async function patchCharacterState(avatar, namespace, operations) {
     }
     let response;
     try {
-        response = await fetch('/api/characters/state/patch', {
+        // TASK-033 reroute: legacy /api/characters/state/patch → utopinn char patch
+        response = await fetch(UTOPINN_CHAR_STATE_ROUTE + '/patch', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({ avatar_url: safeAvatar, namespace: safeNamespace, operations }),
             cache: 'no-cache',
         });
         if (response.ok) {
-            await invalidateStateResources('/api/characters/state/get', { avatar: safeAvatar }, [safeNamespace]);
+            await invalidateStateResources(UTOPINN_CHAR_STATE_ROUTE + '/get', { avatar: safeAvatar }, [safeNamespace]);
         }
     } catch (error) {
         return makeStateError(STATE_ERROR_REASONS.TRANSPORT_ERROR,
@@ -2392,7 +2394,7 @@ export async function getCharacterStateBatch(avatar, namespaces) {
 
     try {
         const payloads = await Promise.all(cleaned.map((namespace) =>
-            readStateEnvelope('/api/characters/state/get', {
+            readStateEnvelope(UTOPINN_CHAR_STATE_ROUTE + '/get', {
                 avatar: safeAvatar,
                 namespace,
             })));
@@ -2458,7 +2460,7 @@ export async function updateCharacterState(avatar, namespace, updater, options =
     let lastFailure = null;
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
-            await invalidateStateResources('/api/characters/state/get', { avatar: safeAvatar }, [safeNamespace]);
+            await invalidateStateResources(UTOPINN_CHAR_STATE_ROUTE + '/get', { avatar: safeAvatar }, [safeNamespace]);
         } catch (error) {
             return makeStateError(STATE_ERROR_REASONS.TRANSPORT_ERROR,
                 formatTransportErrorHint(error?.message || error));
@@ -2526,14 +2528,15 @@ export async function deleteCharacterState(avatar, namespace) {
     }
     let response;
     try {
-        response = await fetch('/api/characters/state/delete', {
+        // TASK-033 reroute: legacy /api/characters/state/delete → utopinn char delete
+        response = await fetch(UTOPINN_CHAR_STATE_ROUTE + '/delete', {
             method: 'POST',
             headers: getRequestHeaders(),
             body: JSON.stringify({ avatar_url: safeAvatar, namespace: safeNamespace }),
             cache: 'no-cache',
         });
         if (response.ok) {
-            await invalidateStateResources('/api/characters/state/get', { avatar: safeAvatar }, [safeNamespace]);
+            await invalidateStateResources(UTOPINN_CHAR_STATE_ROUTE + '/get', { avatar: safeAvatar }, [safeNamespace]);
         }
     } catch (error) {
         return makeStateError(STATE_ERROR_REASONS.TRANSPORT_ERROR,
