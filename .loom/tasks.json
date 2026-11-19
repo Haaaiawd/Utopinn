@@ -3154,6 +3154,198 @@
         "不引入外部测试框架(node:test + CLI 即可)"
       ],
       "updated_at": "2026-11-19T05:40:27.051Z"
+    },
+    {
+      "id": "TASK-040",
+      "title": "新前端壳落地:规范稿→apps/web React",
+      "depends_on": [
+        "TASK-032",
+        "TASK-036"
+      ],
+      "done_when": "pnpm typecheck 0错 + vite build 过;旧视图不删;SPEC-DATA 标记齐全",
+      "reads": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/"
+      ],
+      "touches": [
+        "apps/cli/",
+        "apps/server/tests/"
+      ],
+      "implements": "core-engine",
+      "status": "active",
+      "acceptance": [
+        {
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "WS 断流/重连/双写防护有针对性用例",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": 0,
+      "evidence": [],
+      "outcome": "设计稿 u_ui_codex_linear_shadcn_ui.html 的三层壳(托盘轨/侧栏/舞台/右工作台)+设计token+移动端抽屉底sheet 落进现有 React 栈;chat 舞台真接 src/api,其余形态留 typed 结构",
+      "boundaries": [
+        "不引入外部测试框架(node:test + CLI 即可)"
+      ],
+      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "created_at": "2026-11-19T12:06:57.938553Z",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-041",
+      "title": "api 层↔68路由对照表+补缺",
+      "depends_on": [
+        "TASK-032",
+        "TASK-036"
+      ],
+      "done_when": "矩阵文档落库;每个 UI 区块能查到「该调哪个方法/还是 mock」",
+      "reads": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/"
+      ],
+      "touches": [
+        "apps/cli/",
+        "apps/server/tests/"
+      ],
+      "implements": "core-engine",
+      "status": "active",
+      "acceptance": [
+        {
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "WS 断流/重连/双写防护有针对性用例",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": 0,
+      "evidence": [],
+      "outcome": "src/api/* 方法面与 /api/utopinn/* 68路由逐条对照,缺口补 typed 方法或显式标 mock;产出绑定矩阵文档供面板接线",
+      "boundaries": [
+        "不引入外部测试框架(node:test + CLI 即可)"
+      ],
+      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "created_at": "2026-11-19T12:06:57.938553Z",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-042",
+      "title": "headless CardApp 宿主(CLI 玩卡层)",
+      "depends_on": [
+        "TASK-032",
+        "TASK-036"
+      ],
+      "done_when": "设计文档+原型能跑通一张真卡(掌门卡)的一个真实 op:卡 JS 触发 th.* → 服务端落账",
+      "reads": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/"
+      ],
+      "touches": [
+        "apps/cli/",
+        "apps/server/tests/"
+      ],
+      "implements": "core-engine",
+      "status": "active",
+      "acceptance": [
+        {
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "WS 断流/重连/双写防护有针对性用例",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": 0,
+      "evidence": [],
+      "outcome": "jsdom/happy-dom 装卡 HTML + panel-shim + bridge→api-client,让卡 JS 以为自己在前端;成为前端 iframe 宿主的协议参照实现",
+      "boundaries": [
+        "不引入外部测试框架(node:test + CLI 即可)"
+      ],
+      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "created_at": "2026-11-19T12:06:57.938553Z",
+      "completed_at": null
+    },
+    {
+      "id": "TASK-043",
+      "title": "统一观测面:错误收集/日志/诊断 API",
+      "depends_on": [
+        "TASK-032",
+        "TASK-036"
+      ],
+      "done_when": "diag 插件暴露 errors+logs+jobs+traces 四类数据面;CLI diag 动词族齐",
+      "reads": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/"
+      ],
+      "touches": [
+        "apps/cli/",
+        "apps/server/tests/"
+      ],
+      "implements": "core-engine",
+      "status": "active",
+      "acceptance": [
+        {
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        },
+        {
+          "criterion": "WS 断流/重连/双写防护有针对性用例",
+          "verify_by": "验收脚本全绿",
+          "evidence": "",
+          "verified": ""
+        }
+      ],
+      "progress": 0,
+      "evidence": [],
+      "outcome": "utopinn-diag 现在只有 _kernel 自省;把 jobs 监视/WI trace/错误收集/日志环形缓冲收成统一诊断 API,供前端诊断板块与 CLI diag 动词消费",
+      "boundaries": [
+        "不引入外部测试框架(node:test + CLI 即可)"
+      ],
+      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "created_at": "2026-11-19T12:06:57.938553Z",
+      "completed_at": null
     }
   ],
   "milestones": [

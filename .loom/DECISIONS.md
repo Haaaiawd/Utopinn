@@ -259,3 +259,10 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: apps/cli/utopinn-cli.mjs, apps/server/src/plugins/, .loom/tasks.json(TASK-038 升级)
 - Recorded: 2026-11-19T09:30:00.000Z
+
+## D-022 CardApp/酒馆助手兼容形态 = 悬浮窗 + 右侧栏(整体优先,兼容后置)(拍板)
+
+- 先把整体前端(协议绑定/会话/舞台/工作台)做完,再做 CardApp 与酒馆助手兼容层。
+- 兼容层宿主形态:右侧栏标签页(wb-tab)+ 可拆出受控悬浮窗(float-win);移动端落底 sheet。
+- 设计稿 assets/u_ui_codex_linear_shadcn_ui.html 的 ledger 面板是 mock 复刻——真宿主需 cardapp 面板类型:sandboxed iframe + postMessage ctx 桥 → /api/utopinn/chats/:id/state/chat_state。
+- bridgeOp(op) 的"面板→MVU/状态→toast"通道形状即兼容层的目标契约,mock 时先按它接。
