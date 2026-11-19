@@ -4,7 +4,7 @@
     "name": "Uberge",
     "status": "building",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-10T02:22:34.673Z"
+    "updated_at": "2026-11-16T11:38:48.570Z"
   },
   "understanding": {
     "confirmed": [
@@ -181,6 +181,192 @@
         "text": "性能目标 = 分离本身:浏览器只做渲染/交互,组装全在服务端。",
         "source": "clarification",
         "at": "2026-11-10T02:22:28.008Z"
+      },
+      {
+        "id": "F-030",
+        "text": "掌门卡 CardApp 成品地图已接入：cardapp/maps/青州七郡舆图.webp(210KB) 与 宗门驻地手绘全图.webp(122KB)（浏览器 canvas 转码，源 PNG 留 前端资产/maps/）。REGIONS.rect 七郡热区与 SECT_ANCHORS 十二锚点已按 1536×1024 真图校准，mapbox 纵横比改 3:2。SVG 回退已由用户拍板删除，直接用成品。真机验证通过：8 弟子木牌全落对建筑、2 个 ! 徽标在位、7 郡热区贴合色块。",
+        "source": "conversation",
+        "at": "2026-11-14T07:37:45.946Z"
+      },
+      {
+        "id": "F-031",
+        "text": "掌门卡 tick 写入契约已接入：角色卡 v29 的「状态契约」条目新增【案头字段】段——模型在 prompt 中见到【案头灯】信号才写 _.set('stat_data.…') 结构字段（day/资源/宗门名/掌门像/主线/名册含像/待回话含像/牵扯/渠道队/行囊/山门事/脸池）；无灯环境只写四行文本。脸池种子键 12 弟子 + 10 众生已写入契约。CardApp index.js：注入 zongmen_desk=【案头灯】（zongmen_gate 之外第二条 extension prompt）；readState 改逐字段合并——stat_data 部分写入时核心字段落回 L2 文本行。",
+        "source": "conversation",
+        "at": "2026-11-14T07:52:20.146Z"
+      },
+      {
+        "id": "F-032",
+        "text": "掌门卡案头视觉升级：日报三渠道各有版式——青州日报=正统大报（报头/双线/期号/首字下沉/宋体衬线）、宗门周志=邸报体（黄纸楷体+{宗门名}週志报头）、暗线=密件（深墨底+墨条框+密朱印+末半句自动涂墨条）。揭页主钮移到底导航正中升起朱印圆钮（全页可点，与顶栏/页内钮同 advance 动作）。古风小图标 19 枚接入（game-icons.net CC-BY 去底+currentColor，CSS mask 随朱/青/墨变色）：背包物类 6 + 门环/盖印/递话/转转/坐馆/拟办等，署名 icons/NOTICE.md。",
+        "source": "conversation",
+        "at": "2026-11-14T08:08:10.476Z"
+      },
+      {
+        "id": "F-033",
+        "text": "掌门卡审计结论：v29 的 87 条世界书仅含 93 条一句话事件提要（压成5条池条目），_events_new/ 下 61 篇全文事件未编译进卡；first_mes 开场文已在（空山交接+零弟子+野猫梗），但 D1-28 空山期的 9 条弧间暗线（seed/shadow/debt，D8~D262）完全缺席。",
+        "source": "conversation",
+        "at": "2026-11-14T08:12:05.070Z"
+      },
+      {
+        "id": "F-034",
+        "text": "v30 已补 5 条缺失条目：弧间暗线（9 事件逐日表）、岁终年报 D365、伏笔台账机制、收尾期 D318-364、外界人物总档（裴世充为正典名，mock 数据里'裴世光'系笔误待改）。",
+        "source": "conversation",
+        "at": "2026-11-14T08:12:05.071Z"
+      },
+      {
+        "id": "F-035",
+        "text": "开局面板=如实空山态已写入规格 §六：名册空则无木牌、行囊仅契_001 遗产文书、暗线 tab 灰锁（安姐未结识）、青州日报照常发行做'世界不因你停摆'的反差。",
+        "source": "conversation",
+        "at": "2026-11-14T08:12:05.071Z"
+      },
+      {
+        "id": "F-036",
+        "text": "index.js 宗门名 fallback 已统一为'云栖宗'（原 云栖/雲棲 两处不一致），仅作 demo 占位，运行时以 stat_data.宗门名 为准。",
+        "source": "conversation",
+        "at": "2026-11-14T08:12:05.071Z"
+      },
+      {
+        "id": "F-037",
+        "text": "Luker 开局机制查实：CardApp 经 ctx.setVariable 可直写 chat_metadata.variables（与模型 _.set 同一个桶），另有 getChatState/updateChatState 走 /api/chats/state/ 侧车——'面板只读'的旧假设被推翻，面板可作为 stat_data 的初始化写入方。",
+        "source": "conversation",
+        "at": "2026-11-14T08:20:47.341Z"
+      },
+      {
+        "id": "F-038",
+        "text": "开局面板已实现为「受托登记」页：stat_data 空即整页切登记（道号输入+掌门男女真像二选一+宗名预填云栖宗），落印调 setVariable 写 D1 最小态（day:1、310/6/60、契_001+债_001、牵扯债行、渠道队1条青州日报、脸池22键全量），随后 mountDesk 翻案头。真机验证：听松观总簿+第1天+未了债务1。",
+        "source": "conversation",
+        "at": "2026-11-14T08:20:47.341Z"
+      },
+      {
+        "id": "F-039",
+        "text": "v30 卡（92条）状态契约已补'开局受托'段：模型读到已登记的 宗门名/掌门名/掌门像 就直接按登记演，不问第二遍。",
+        "source": "conversation",
+        "at": "2026-11-14T08:20:47.341Z"
+      },
+      {
+        "id": "F-040",
+        "text": "规格文档 §六 开局空山态+初始化时序已定稿；index.js 宗名 fallback 统一'云栖宗'。",
+        "source": "conversation",
+        "at": "2026-11-14T08:20:47.341Z"
+      },
+      {
+        "id": "F-041",
+        "text": "开局改三段式（模拟器向，打破第四面墙）：开卷页（剧本杀式幽默世界观速览+三铁律）→ 开局备录（道号/法相/宗名/出身4选1/欠债3档380·980·1980）→ 落印朱印动画→写 stat_data。出身各带加成：剑修旧剑+士气5/丹修半页丹方/商贾算盘+灵石120/田修米种+声望2，'出身'字段入 stat_data，v30 契约已认账。",
+        "source": "conversation",
+        "at": "2026-11-14T08:27:06.392Z"
+      },
+      {
+        "id": "F-042",
+        "text": "山门页劈双子页签：山门图（建筑事件照旧）｜弟子册（全员列表+星标钉顶）；星标存 zongmen_ui chat-state（UI偏好不占游戏真值），走 getChatState/updateChatState，preview 桩已补。",
+        "source": "conversation",
+        "at": "2026-11-14T08:27:06.392Z"
+      },
+      {
+        "id": "F-043",
+        "text": "案头灯携带身份：【案头灯】在册:宗门:X｜掌门:Y——模型每轮可见登记结果。渠道队源字段须用'周报/周志/暗报'（展示名≠字段值），initStatData 已改。",
+        "source": "conversation",
+        "at": "2026-11-14T08:27:06.392Z"
+      },
+      {
+        "id": "F-044",
+        "text": "动效节制原则已入规格：仅 transform/opacity（iniRise/sealSlam/paperShake），prefers-reduced-motion 全关。",
+        "source": "conversation",
+        "at": "2026-11-14T08:27:06.392Z"
+      },
+      {
+        "id": "F-045",
+        "text": "61+41=102 篇全文事件已编译进 v31（194 条）：每事件一条目 keys=[id]，池提要行内嵌 [id]（66 条原匹配 + 36 条按位置映射补，零冲突——印证位置映射即正典）。",
+        "source": "conversation",
+        "at": "2026-11-14T08:30:40.750Z"
+      },
+      {
+        "id": "F-046",
+        "text": "今日事点火链路实装：模型写 stat_data.今日事=id（裸卡写主线行尾段）→ CardApp 门线 scan 注入 → 世界书放全文 → 事了置 null。契约已补 _.set('stat_data.今日事') 写法。",
+        "source": "conversation",
+        "at": "2026-11-14T08:30:40.750Z"
+      },
+      {
+        "id": "F-047",
+        "text": "位置映射即正典：微其一=micro_01-20、微其二=micro_21-40、小=minor_01-21、中=mid_01-15+main_01/02/04/05、长=long_01-11+main_03/06——93 提要与 93 文件一一对应，另 9 条弧间暗线按 D 日对号。",
+        "source": "conversation",
+        "at": "2026-11-14T08:30:40.750Z"
+      },
+      {
+        "id": "F-048",
+        "text": "v31 为当前工作卡（v30 保留）：92 条原条目 + 102 事件条目。",
+        "source": "conversation",
+        "at": "2026-11-14T08:30:40.750Z"
+      },
+      {
+        "id": "F-049",
+        "text": "案头UI修订轮落地并实测：山门图撤弟子牌改为12个建筑透明热区(zb-bz)+事件!徽标，弟子只看弟子册；青州7郡rect与宗门12锚点按真webp重校；删除mapbox旧max-height(420/460)上限，地图按3:2吃满面板宽；新增zb-doit输入行挂在敲门卡/弟子详情/区域卡/物件详情/建筑事件卡/空建筑六处——玩家写的话原样进拟办托盘，按钮只做快捷短语；字号整轮抬升（正文14.5px，标题至19px，辅注10-13px）。实测：12热区全贴建筑、2事件徽标在位、输入入托盘、区域卡/弟子卡/事件卡均带输入、console干净（仅设计内onerror链404一次）。规格文档《前端资产与面板规格_v1.md》附「案头交互规范」段已同步。",
+        "source": "conversation",
+        "at": "2026-11-14T08:37:34.019Z"
+      },
+      {
+        "id": "F-050",
+        "text": "报纸供稿三层机制落地v31(200条)：H_news_pool.json 37条预写报文编译为6个世界书条目（常年池constant+5个弧池keys=弧名随门线点火）；契约补'供稿三层'(池料→事件公开面→即兴≤2)+出刊节奏(逢7或攒4条)+三副嗓子笔法正反例；渠道队可选键栏/题/头驱动报纸分版。preview mock已换成合格报文样例。",
+        "source": "conversation",
+        "at": "2026-11-14T08:58:20.055Z"
+      },
+      {
+        "id": "F-051",
+        "text": "2026-11-16 掌门卡 UI 重塑已在 work/掌门卡/02_card_工作区/cardapp 实现并重嵌 v31 JSON / 最终卡 v1 PNG；PNG 4302030 bytes，单一 chara 块、全 CRC 和 JSON 回读一致。",
+        "source": "conversation",
+        "at": "2026-11-16T07:08:03.450Z"
+      },
+      {
+        "id": "F-052",
+        "text": "本轮验证：node --check cardapp/index.js；node --test cardapp/ui.test.cjs 8/8；真实浏览器桩 430 项检查 / 125 张截图，覆盖 1280/1720/390、320 压力宽度、L1/L2/空态、Luker 原 scopeCSS 管线和真实 JSR shim 父页面挂载。证据位于 cardapp/_shots/ui-reshape/report.json；不等于真实酒馆或真实模型联调。",
+        "source": "conversation",
+        "at": "2026-11-16T07:08:03.450Z"
+      },
+      {
+        "id": "F-053",
+        "text": "开局日报缺失根因：D1 仅一条通报，既有新闻池最早 D28，常规出刊受七日或积稿门槛限制。本轮仅补四类 D1 公开底报与幂等的一次性契约例外；既有开场文案、其他世界书条目和 29 个资源文件保持一致。",
+        "source": "conversation",
+        "at": "2026-11-16T07:08:03.450Z"
+      },
+      {
+        "id": "F-054",
+        "text": "2026-11-16 续修进行中：用户指出上一轮视觉差别不足，关键是泛按钮缺少具体意图（如找他聊聊必须玩家输入），并要求山门热区重校。已在源码新增 openIntent/requestAction：人物谈事、回话、地域访问/打听、暗线、物品、账目需输入或审阅后确认才入拟办；act/queueDraft 等16个受保护函数仍原样，8单测通过。山门已按1536×1024原图逐栋改为SVG多边形，弟子房覆盖左右两组；新增可访问建筑名录。尚待真实浏览器点位/意图测试与重新打包，当前PNG仍是上轮版本，不可报新版本完成。另黑屏根因为预览根路径相对资源404，preview.html已加base=/cardapp/，原发布链接127.0.0.1:1770桌面和手机首屏已修好；入口回归脚本的手机点击被预览工具自己的底部工具条挡住，尚待以原生收起工具条或在直连8977补验证。",
+        "source": "conversation",
+        "at": "2026-11-16T07:17:06.891Z"
+      },
+      {
+        "id": "F-055",
+        "text": "2026-11-16 掌门卡续修已打包：最终PNG8232582 bytes，71个CardApp文件（40张派生真人立绘+原31文件）；PNG全CRC、唯一chara块、JSON回读、嵌入index/style与两套JSR脚本均与当前源一致。14单测含16个核心函数原SHA散列均通过；新交互定向186项/22截图、滚动回归10项、最终广回归460项/125截图均零浏览器异常，报告在cardapp/_shots/{followup,scrollguard,ui-reshape}/report.json。",
+        "source": "conversation",
+        "at": "2026-11-16T08:28:08.915Z"
+      },
+      {
+        "id": "F-056",
+        "text": "本轮负责人反馈修正了UI方向：上轮只换排版不足；泛按钮如找他聊聊需玩家输入具体意图；山门选区不准确；布局即信息、重要信息不得靠小字标签补救；日报需固定位置；原有真人头像必须显示。已实现：案头办事/读报两视图、宽屏左议程右报刊预览、680px/手机单栏；人物页大头像+事实+直接输入；泛动作确认后才入拟办；首件回话未确认文本在读报换渠道/切页后保留；后台render不抢其他页面滚动；地图改逐栋SVG多边形，弟子房左右两片不跨石阶，34个原图点含空白负例按实际DOM命中检查。",
+        "source": "conversation",
+        "at": "2026-11-16T08:28:08.919Z"
+      },
+      {
+        "id": "F-057",
+        "text": "真人头像缺失根因查实：旧portraitHtml把加载成功的SVG字牌放在WebP之前，阻断真实头像；双打包也未收WebP。已优先真人并打包40张384x576内等比派生图（原资产保留），Luker包内assets及JSR dataURI均验证。预览黑屏根因是/入口把相对JS/CSS指错路径，preview.html的base=/cardapp/已修；Windows浏览器在用户原1770根链接已亲验h1/双栏/真人图。窄屏代理自带工具条挡底栏，手机指针验证用直连8977；WSL curl502不能代替Windows目标判断，curl.exe及真实浏览器200。真实酒馆导入与模型端联调仍未验证。",
+        "source": "conversation",
+        "at": "2026-11-16T08:28:08.919Z"
+      },
+      {
+        "id": "F-058",
+        "text": "2026-11-16 用户继续指出新版预览地图/icon缺失及揭页不居中。已真实复现1770/?ui=desk2#ovl资源404：ASSET_ROOT走/api/card-app/preview-char/，_srv.cjs原无该路由；旧浏览器page.route资源替身掩盖问题。现_srv.cjs真正伺服该端点，__dirname定位/路径包含检查/完整MIME，删除两套浏览器测试中资源替身。真实1770/?ui=seal3#ovl由负责人浏览器亲验两图naturalWidth1536、拟办SVG解码150、朱印56x56且横向中心偏差0.016px。底栏五等宽格+中心双边方形朱印（手机52方），揭页仅开总览未发送。14单测、8入口案例、227定向检查/23截图、460广回归/125截图均通过；live-assets报告12检查零异常。最终PNG8230858 bytes已重包，71资源，CRC/唯一chara/JSON及双JSR与源一致。Windows8977服务PID116048、1770代理均保持运行；代理自身底部工具条仍会遮挡部分指针，手机实际点击在直连8977验证，不能把DOM dispatch当物理点击证据。证据cardapp/_shots/live-assets/。",
+        "source": "conversation",
+        "at": "2026-11-16T10:03:19.003Z"
+      },
+      {
+        "id": "F-059",
+        "text": "2026-11-16 牵扯账折叠+总簿换皮完成并打包：renderPack主页删去单列牵扯账块，账物归一化包含匹配（物名∈对方+内容或对方∈物名+物说，去白/小写，针≥2字），衍生凭据卡用it.led认领自家账不重复；物件条内显示『这笔账还牵着』各行+处置，未认领账并入格尾虚框『他账凭据』条（据印+N笔），处置仍走同一openIntent。预览数据5笔活账→2笔挂物件(北岭三十六宗→联营契书副本、裴府后账→留音玉符)+3笔他账，DOM计数核对一致。总簿浮钮改内嵌线装书SVG(ZB_BOOK_SVG+dressLaunch挂buildShell及init，登记页也上皮)：透明底纸面+左脊四道缝线+總簿签条+朱印，Luker经2ID作用域样式覆盖注入黑条、JSR经chrome CSS同步透明化，受保护adoptOverlayMode未动。14单测(16 SHA不变)/followup240/entry8/ui.browser460/scrollguard10全过；PNG 8253138 bytes重包校验全绿。证据cardapp/_shots/live-assets/(pack-*.png,launch-book-*.png,diff2/)。",
+        "source": "conversation",
+        "at": "2026-11-16T10:50:11.776Z"
+      },
+      {
+        "id": "F-060",
+        "text": "2026-11-16 总簿浮钮换用户生成素材：精致线装总簿 PNG(/mnt/c/Users/11341/Downloads)自带tRNS透明通道,裁边缩放421x420存cardapp/assets/ui/zongbu.webp(17KB)。dressLaunch改注入img走__zbp候选链:__ZB_PORTRAITS['ui/zongbu.webp']→ASSET_ROOT assets/ui/→assetBase,全挂退印章字;ZB_BOOK_SVG仅作无候选兜底。_bundle_jsr自动内联(资产walk含ui/)、_embed_app 72文件。agent-browser实测#ovl浮钮natural 421x420渲染正常;PNG 8348198 bytes校验全绿。技能升级盘点:npx skills check一键升9个(find-skills/humanizer-zh/copywriting/vercel-react-best-practices/skill-creator/agent-browser/zhangxuefeng-perspective/design-taste-frontend/skillhome);14个上游已删成孤儿(nexus-mapper/drawio-flowchart/taste-skill家12个)本地冻结;lark系+自研征文报告类无上游靠手改;skillhome状态97技能1346链接,agents目录10个Reals待sync。WSL无sudo→agent-browser/playwright浏览器跑不了,用Windows npx agent-browser验收。",
+        "source": "conversation",
+        "at": "2026-11-16T11:38:48.561Z"
       }
     ],
     "assumptions": [
@@ -244,6 +430,33 @@
         "clarify_round": 1,
         "resolution": "先做入口清单+覆盖矩阵(便宜的一步),全切按清单分批落地——清单是接线实施单,每批生成入口迁移后可独立验证。",
         "resolved_at": "2026-11-10T02:22:34.348Z"
+      },
+      {
+        "id": "Q-005",
+        "question": "_events_new 里 61 篇全文事件是否要逐条编译进世界书，还是维持'提要进书+全文留给写手/runtime 展开'的两层制？若两层制，runtime 展开时去哪取全文（聊天绑定书？tick 侧注入？）",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-14T08:12:05.071Z",
+        "resolution": "",
+        "resolved_at": "2026-11-14T08:30:40.750Z"
+      },
+      {
+        "id": "Q-006",
+        "question": "tick 侧 stat_data 的写入者未定：模型按【案头灯】契约自写 _.set，还是 server 侧 settle 逻辑接管 day/行囊/山门事/脸池 的增量？",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-14T08:12:05.071Z",
+        "resolution": "",
+        "resolved_at": "2026-11-14T08:20:47.341Z"
+      },
+      {
+        "id": "Q-007",
+        "question": "61篇全文事件编译进世界书：每事件=一条目、keys=[事件id]、状态行'今日事:id'点火——用户已拍板'93个事件全都要用上'，待执行（含池条目行内补 id、契约加今日事行）",
+        "impact": "high",
+        "status": "resolved",
+        "at": "2026-11-14T08:20:47.341Z",
+        "resolution": "",
+        "resolved_at": "2026-11-14T08:31:17.652Z"
       }
     ]
   },
@@ -293,7 +506,9 @@
     "D-014",
     "D-015",
     "D-016",
-    "D-017"
+    "D-017",
+    "D-018",
+    "D-019"
   ],
   "clarify": {
     "active": false,

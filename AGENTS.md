@@ -75,3 +75,11 @@ the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative 
 - 兼容语料：tests/corpus/cards/ 进 git（公开卡）；tests/corpus-private/ 已 gitignore（用户私有卡，由用户提供）；ref/cards/GuiXu 为本地参考样本。
 - golden 捕获用 `tests/golden-diff/capture.sh <card.png>`（自动备齐 Playwright 缺的系统库、设 LD_LIBRARY_PATH）。私有卡产物自动落 golden-private/(gitignore)。前置条件：server.js 的 E2E_SCRATCH_ROOT/E2E_READY_TIMEOUT_MS 已由脚本内置；前端不会自动连 API，捕获脚本会显式点 #api_button_openai。
 - pnpm 布局下 `apps/server/node_modules/base64-js` 不存在（依赖提升），js-tiktoken bundle 合成会 500——已从 .pnpm 实体拷贝兜底；升级依赖时注意复査。
+
+## 掌门卡 CardApp 工作区
+
+- 独立工程在 `work/掌门卡/02_card_工作区/`，当前交付源是 `我没想当掌门啊_角色卡_v31.json`；不要按工作区旧 README 的 v29 回退。
+- 在该目录运行 `node --check cardapp/index.js`、`node --test cardapp/ui.test.cjs`。浏览器回归用 `node cardapp/ui.browser.test.cjs`，需可解析的 Playwright；也可通过 `PLAYWRIGHT_MODULE` 指定既有安装的绝对路径，`PREVIEW_URL` 默认 `http://localhost:8977`（先运行 `node _srv.cjs`）。截图与检查记录落 `cardapp/_shots/ui-reshape/`。
+- 同源双打包顺序：有 Pillow 的 Python 运行 `_prepare_portraits.py`（本机用 `python.exe`，从原图生成 40 张面板立绘）→ `node _opening_news.cjs`（幂等补开局报契约）→ `node _embed_app.cjs`（Luker）→ `node _bundle_jsr.cjs`（JSR）→ Linux/WSL `node _pngcard.cjs`（最终 PNG）。PNG 脚本依赖 `/mnt/c/...` 本机桌面原封面路径；换机器先核实，不要凭空换封面。
+- 适配按容器而非视口判断；JSR 在宽视口仍是约 680px 小窗。`ui.test.cjs` 钉住状态读写、门线、拟办、发送和挂载等 16 个受保护函数的散列，纯 UI 改造不应改这些函数。浏览器桩回归不等于真实酒馆/助手的模型端联调。
+- 新交互定向回归为 `cardapp/followup.browser.test.cjs` 与 `cardapp/scrollguard.browser.test.cjs`，检查真人 WebP、先写后确认、办事/读报切换保留底稿、精确地图选区和后台刷新不抢滚动。入口回归为 `cardapp/preview-entry.browser.test.cjs`；必须测 `/`，不能只测 `/cardapp/preview.html`。本机浏览器预览代理会在窄屏注入遮挡底栏的工具条，手机指针验证用直连 `:8977`；判断服务状态以实际 Windows 浏览器/`curl.exe` 为准。

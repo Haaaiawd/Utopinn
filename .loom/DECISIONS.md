@@ -223,3 +223,21 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Changed: .loom/PROJECT.md, .loom/tasks.json
 - Affected tasks: TASK-026, TASK-028, TASK-030
 - At: 2026-11-10T02:23:32.616Z
+
+## D-018: 掌门卡独立 UI 重塑与服务端接线任务分开记录
+
+- Current decision: 本轮按用户当前卡片 UI 请求工作，不改变无关的活跃 TASK-030 状态。保留纸墨公文风，以真实待回话而非活跃主线判来客；期限排序、选项解释、弹窗和容器响应式仅改变呈现。状态读写、门线、拟办、发送、挂载等16个核心函数经 SHA256 锁定不变。
+- Rationale: 用户要求便于长期决策的渲染改造，并仅允许开局日报注入微调；不能借美化改变 tick 或世界裁决。
+- Source: conversation
+- Supersedes: none
+- Affects: work/掌门卡/02_card_工作区/cardapp/index.js, work/掌门卡/02_card_工作区/cardapp/style.css, work/掌门卡/02_card_工作区/_opening_news.cjs
+- Recorded: 2026-11-16T07:08:03.451Z
+
+## D-019: 掌门卡UI按可表达的决策结构重整，不以测试数量代替体验
+
+- Current decision: 日报是固定的读报视图而不是页尾折叠；宽屏办事页留报刊速览，窄窗用办事/读报切换。人物与建筑详情直接呈现已知事实和具体意图输入；完整脚本选项可直接记拟办，泛动作必须先表达再确认。保留世界裁决、门线、发送等16个核心函数，未改变游戏结算机制。
+- Rationale: 用户直接反馈上一轮变化不明显、操作空泛、框选失准和头像未显示；前端结构要解决实际使用，不用更多小标签补上。
+- Source: conversation
+- Supersedes: none
+- Affects: work/掌门卡/02_card_工作区/cardapp/index.js, work/掌门卡/02_card_工作区/cardapp/style.css, work/掌门卡/02_card_工作区/_prepare_portraits.py
+- Recorded: 2026-11-16T08:28:08.920Z

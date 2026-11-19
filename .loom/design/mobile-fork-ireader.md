@@ -42,6 +42,15 @@ rootProject.name = "Infinity"
 - 服务端协议零改动:uberge 源就是一个客户端,KMP 侧吃同一套 REST/WS。
 - TASK-008/009/027 已落代码转参照态;验收语义按新地基重排(同一批 done_when 在新栈上重新达成)。
 
+## 渲染器承接(用户 2026-11-04 拍板补充)
+
+壳=书,书内呈现=渲染器 seam(D-015 移动端实例):
+- **不用 cordis**(cordis 是服务端 Node DI 内核,不上端);KMP 侧等价物=`RendererRegistry`(Compose 界面工厂表),web 侧已有 `renderer` 贡献点——同一 seam 两端各自实现
+- 阅读器内容区 = `registry.get(card.stageScheme ?? userPref).render(messages, stream)`;chrome(Aa/void space/底栏/目录抽屉)恒属宿主,渲染器只画楼层流+不产生数据语义
+- 形态谱:prose(小说,主形态)= bubble(微信体)= galgame(横屏,renderer 申请 landscape 画立绘+对话框)。社区渲染器(论坛体/直播流)走注册不动宿主
+- 顺序:prose → bubble → galgame;每 renderer 是独立 UI 量,seam 让增量可行
+- CardApp 非渲染器(跑 JS),走 WebView sheet 桥,别混
+
 ## 开放问题(侦察待续)
 
 - source-api 的 Source 契约具体形状(接口面多大,uberge 源工作量)

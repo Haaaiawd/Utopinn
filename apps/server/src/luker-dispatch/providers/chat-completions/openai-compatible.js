@@ -250,6 +250,14 @@ async function resolveOpenAI(ctx) {
     if (getConfigValue('openai.randomizeUserId', false, 'boolean')) {
         bodyParams.user = uuidv4();
     }
+    // reverse_proxy 指向的可能是 vLLM/SGLang/DashScope 系网关 —— 思考开关族
+    // (enable_thinking / thinking={type:disabled} / chat_template_kwargs)
+    // 透传;官方 api.openai.com 保持 allowlist 原样不发。
+    if (body.reverse_proxy) {
+        if (body.enable_thinking !== undefined) bodyParams.enable_thinking = body.enable_thinking;
+        if (body.thinking !== undefined) bodyParams.thinking = body.thinking;
+        if (body.chat_template_kwargs !== undefined) bodyParams.chat_template_kwargs = body.chat_template_kwargs;
+    }
     embedOpenRouterMedia(body.messages, { audio: true, video: false });
     return { apiUrl, apiKey, headers, bodyParams };
 }
