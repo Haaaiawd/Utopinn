@@ -656,7 +656,9 @@ export function failGenerationJob(job, errorMessage = 'Unknown error occurred') 
     if (!job) {
         return;
     }
-    if (job.status === 'cancelled') {
+    // 终态不覆写:cancelled 保留(abort 语义),completed/failed 也保留——
+    // dispatch 晚到的错误抛给已终态 job 不该把成功/已定失败改写。
+    if (['cancelled', 'completed', 'failed'].includes(String(job.status || ''))) {
         return;
     }
     clearGenerationJobPersistenceTimer(job);
@@ -714,6 +716,9 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             // 拿它校验 = 结构性必挂。双写由 gen-id sidecar/幂等 dedup 兜底。
             integritySlug: '',
             force: Boolean(persistTarget.force),
+            // 兜底楼层也写 gen-id sidecar:迟到的客户端 append 带同 id
+            // 时 dedup 生效,防「客户端半截楼 + 兜底全量楼」双写。
+            incomingGenerationId: generationId,
             // Route through ChatRepo so writes land in the active engine,
             // not just the FS scratch directory. (filePath is still passed
             // so the sidecar gen-id helpers see a stable key.)
@@ -764,6 +769,7 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             // 同 group 分支:兜底 persist 不做 CAS(见上注)。
             integritySlug: '',
             force: Boolean(persistTarget.force),
+            incomingGenerationId: generationId,
             handle: job?.handle,
             charDir: avatar,
             name: baseName,
@@ -801,6 +807,13 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
         job.abortController = null;
         job.persisted = false;
         return false;
+    }
+
+    // 已终态 job 不许复活:ack 已标 completed(或兜底已 failed)后,
+    // dispatch 收尾再进来会把 job 拖回 awaiting_ack + 重武装 15s 定时器
+    // → 兜底 persist 再写一楼(双写)。cancelled 由下方专门分支处理。
+    if (['completed', 'failed'].includes(String(job.status || ''))) {
+        return Boolean(job.persisted);
     }
 
     const finalText = String(text || '');
@@ -952,8 +965,12 @@ async function persistGenerationJobIfUnacked(job) {
     try {
         const persisted = await persistGeneratedReply(job, job.text, job.id, job.modelName);
         job.persisted = Boolean(persisted);
-        job.status = persisted ? 'completed' : 'failed';
-        job.error = persisted ? '' : 'Generation could not be persisted on server.';
+        // persist 跨 await:期间用户 abort 会把 status 翻 cancelled——
+        // 不许被这里的终态赋值盖回 completed/failed。
+        if (job.status !== 'cancelled') {
+            job.status = persisted ? 'completed' : 'failed';
+            job.error = persisted ? '' : 'Generation could not be persisted on server.';
+        }
         job.updatedAt = Date.now();
         job.finishedAt = Date.now();
         notifyJobStatus(job);

@@ -2204,7 +2204,11 @@ router.post('/save', validateAvatarUrlMiddleware, async function (request, respo
         }
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-        acknowledgeGenerationFromValueOrPersistTarget(request, chatData, buildCharacterPersistTargetHint(request));
+        // hint-ack 收紧:整写里末楼不是 AI 层 = 本次写并非生成的落盘
+        // (say/edit/早期楼层整写)——放行会把孤儿 awaiting_ack job 误 ack,
+        // AI 回复永不落盘还显示 completed。只放行显式 gen-id 采集。
+        const lastFloor = Array.isArray(chatData) && chatData.length > 1 ? chatData[chatData.length - 1] : null;
+        acknowledgeGenerationFromValueOrPersistTarget(request, chatData, lastFloor && lastFloor.is_user === false ? buildCharacterPersistTargetHint(request) : null);
         // TASK-013 auto-resettle:整写后全量重放投影(吞错,不阻塞响应)。
         await resettleMvuAfterWrite(request);
         return response.send({ ok: true, integrity });
@@ -2358,7 +2362,9 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
                 console.error('Chat backup after append failed', backupErr);
             }
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-            acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildCharacterPersistTargetHint(request));
+            // hint-ack 收紧:append 里没有非 user 楼层(纯 say/user 写)
+            // 不算生成落盘,不许 ack 孤儿 job。
+            acknowledgeGenerationFromValueOrPersistTarget(request, messages, messages.some(m => m && m.is_user === false) ? buildCharacterPersistTargetHint(request) : null);
             // TASK-013 auto-resettle:新建聊天 floor-0 未初始化 → autoInit 补 init 再结算。
             await settleMvuAfterAppend(request, { autoInit: true });
             return response.send({ ok: true, appended: cleanedMessages.length, created: true, integrity: newIntegrity });
@@ -2385,7 +2391,7 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
 
         if (dedupedMessages.length === 0) {
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-            acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildCharacterPersistTargetHint(request));
+            acknowledgeGenerationFromValueOrPersistTarget(request, messages, messages.some(m => m && m.is_user === false) ? buildCharacterPersistTargetHint(request) : null);
             return response.send({
                 ok: true,
                 appended: 0,
@@ -2424,7 +2430,7 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
         }
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-        acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildCharacterPersistTargetHint(request));
+        acknowledgeGenerationFromValueOrPersistTarget(request, messages, messages.some(m => m && m.is_user === false) ? buildCharacterPersistTargetHint(request) : null);
         // TASK-013 auto-resettle:末楼 settle(无 autoInit——存量聊天不主动初始化)。
         await settleMvuAfterAppend(request);
         return response.send({
@@ -2475,11 +2481,17 @@ router.post('/patch', validateAvatarUrlMiddleware, async function (request, resp
         }
 
         const sanitizedOperations = sanitizeOperationsAgainstLukerGenerationId(operations);
+        // hint-ack 收紧(patch 路径):op 不携带楼层角色信息——只有写进
+        // 末楼的 patch(swipe/continue 改的是生成的那层)才可能是本次生成
+        // 的落盘;改中间楼层/纯 meta 的写不许吞掉孤儿 job 的 ack。
+        const lastIdxForHint = Math.max(0, (existing?.body?.length ?? 0) - 1);
+        const patchHitsLastFloor = ops => Array.isArray(ops) && ops.some(op =>
+            typeof op?.path === 'string' && op.path.startsWith(`/${lastIdxForHint}/`));
         if (sanitizedOperations.length === 0) {
             if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
             const currentIntegrity = existing ? existing.integrity : '';
             await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-            acknowledgeGenerationFromValueOrPersistTarget(request, operations, buildCharacterPersistTargetHint(request));
+            acknowledgeGenerationFromValueOrPersistTarget(request, operations, patchHitsLastFloor(operations) ? buildCharacterPersistTargetHint(request) : null);
             return response.send({ ok: true, applied: 0, total_messages: 0, integrity: currentIntegrity });
         }
 
@@ -2545,7 +2557,7 @@ router.post('/patch', validateAvatarUrlMiddleware, async function (request, resp
         }
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
-        acknowledgeGenerationFromValueOrPersistTarget(request, operations, buildCharacterPersistTargetHint(request));
+        acknowledgeGenerationFromValueOrPersistTarget(request, operations, patchHitsLastFloor(operations) ? buildCharacterPersistTargetHint(request) : null);
         // TASK-013 auto-resettle:楼层被补丁改写 → 全量重放投影。
         await resettleMvuAfterWrite(request);
         return response.send({
