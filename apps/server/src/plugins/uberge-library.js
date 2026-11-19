@@ -25,6 +25,17 @@ import {
 } from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
+// TASK-032 写盘面统一:ack/integrity/gen-id/settle 机制与 legacy /api/chats 同源。
+import sanitize from 'sanitize-filename';
+import {
+    acknowledgeGenerationFromValueOrPersistTarget,
+    readLastChatGenerationId,
+    writeLastChatGenerationId,
+    refreshRecentChatIndexEntry,
+    resettleMvuAfterWrite,
+    settleMvuAfterAppend,
+    sanitizeOperationsAgainstLukerGenerationId,
+} from '../endpoints/chats.js';
 
 export const inject = ['webServer'];
 
@@ -787,11 +798,36 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.messages non-empty array' });
             }
             const handle = request.user.profile.handle;
-            const result = await getChatRepo().append(
-                handle, charDir, chatName, messages,
-                typeof request.body?.integrity === 'string' ? request.body.integrity : undefined,
-            );
-            return response.send(result);
+            const body = request.body ?? {};
+            const incomingId = String(body.luker_generation_id || '').trim();
+            const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
+            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            // settle/ack 机制读 body.avatar_url|file_name —— 合成写盘上下文
+            const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+
+            // gen-id 侧车去重(legacy 同语义):重试同一生成只剥队首匹配
+            const sidecarLast = readLastChatGenerationId(chatFilePath);
+            const toWrite = messages.slice();
+            let skipped = 0;
+            while (toWrite.length && sidecarLast && String(toWrite[0]?.extra?.luker_generation_id || '') === sidecarLast) {
+                toWrite.shift(); skipped++;
+            }
+            let result;
+            if (toWrite.length) {
+                result = await getChatRepo().append(
+                    handle, charDir, chatName, toWrite,
+                    typeof body.integrity === 'string' ? body.integrity : undefined,
+                );
+                if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+            } else {
+                const cur = await getChatRepo().get(handle, charDir, chatName).catch(() => null);
+                result = { integrity: cur?.integrity ?? null, accepted: 0, dedupedGenIds: [] };
+            }
+            // ack(append 里没 AI 层不许吞孤儿 job)+ settle + recents —— 与 legacy 同步序
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, messages.some(m => m?.is_user === false) ? hint : null);
+            await settleMvuAfterAppend(writeReq, { autoInit: true });
+            await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+            return response.send({ ...result, skipped });
         } catch (error) {
             return sendError(response, error, 'uberge/chats append');
         }
@@ -813,10 +849,26 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.ops non-empty array' });
             }
             const handle = request.user.profile.handle;
+            const body = request.body ?? {};
+            const incomingId = String(body.luker_generation_id || '').trim();
+            const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
+            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+
+            // 防 gen-id 伪造注入 + hint-ack 末楼门(与 legacy patch 同规则)
+            const sanitizedOps = sanitizeOperationsAgainstLukerGenerationId(ops);
+            const existing = await getChatRepo().get(handle, charDir, chatName).catch(() => null);
+            const lastIdx = Math.max(0, (existing?.body?.length ?? 0) - 1);
+            const hitsLast = ops.some(op => typeof op?.path === 'string'
+                && (op.path.startsWith(`/body/${lastIdx}/`) || op.path.startsWith(`/${lastIdx}/`)));
             const result = await getChatRepo().patch(
-                handle, charDir, chatName, ops,
-                typeof request.body?.integrity === 'string' ? request.body.integrity : undefined,
+                handle, charDir, chatName, sanitizedOps,
+                typeof body.integrity === 'string' ? body.integrity : undefined,
             );
+            if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? hint : null);
+            await resettleMvuAfterWrite(writeReq);
+            await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
             return response.send(result);
         } catch (error) {
             return sendError(response, error, 'uberge/chats patch');

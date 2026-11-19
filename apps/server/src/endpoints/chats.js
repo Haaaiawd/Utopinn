@@ -822,14 +822,14 @@ function writeChatSyncState(chatFilePath, state) {
 const LAST_GENERATION_ID_TTL_MS = 60_000;
 const lastChatGenerationIdByPath = new Map();
 
-function readLastChatGenerationId(chatFilePath) {
+export function readLastChatGenerationId(chatFilePath) {
     const key = path.resolve(String(chatFilePath || ''));
     if (!key) return '';
     const entry = lastChatGenerationIdByPath.get(key);
     return entry && typeof entry.value === 'string' ? entry.value : '';
 }
 
-function writeLastChatGenerationId(chatFilePath, generationId) {
+export function writeLastChatGenerationId(chatFilePath, generationId) {
     const safeId = typeof generationId === 'string' ? generationId.trim() : '';
     if (!safeId) return;
     const key = path.resolve(String(chatFilePath || ''));
@@ -1538,7 +1538,7 @@ function acknowledgeGenerationIdsFromValue(request, value) {
     return acknowledgeGenerationJobsForRequest(request, generationIds);
 }
 
-function acknowledgeGenerationFromValueOrPersistTarget(request, value, persistTarget) {
+export function acknowledgeGenerationFromValueOrPersistTarget(request, value, persistTarget) {
     const explicitAcknowledged = acknowledgeGenerationIdsFromValue(request, value);
     if (explicitAcknowledged.length > 0 || !persistTarget || typeof persistTarget !== 'object') {
         return explicitAcknowledged;
@@ -1550,7 +1550,7 @@ function acknowledgeGenerationFromValueOrPersistTarget(request, value, persistTa
     });
 }
 
-function buildCharacterPersistTargetHint(request) {
+export function buildCharacterPersistTargetHint(request) {
     const avatarUrl = String(request?.body?.avatar_url || '').trim();
     const fileName = String(request?.body?.file_name || '').trim();
     if (!avatarUrl || !fileName) {
@@ -1593,7 +1593,7 @@ function mvuRepoArgsFromRequest(request, { group = false } = {}) {
 }
 
 /** /save、/patch 后全量重放(楼层被编辑/替换 → 投影重建)。 */
-async function resettleMvuAfterWrite(request, { group = false } = {}) {
+export async function resettleMvuAfterWrite(request, { group = false } = {}) {
     try {
         const args = mvuRepoArgsFromRequest(request, { group });
         if (!args) return;
@@ -1604,7 +1604,7 @@ async function resettleMvuAfterWrite(request, { group = false } = {}) {
 }
 
 /** /append 后末楼 settle;新建聊天带 autoInit(floor-0 未初始化先补 init)。 */
-async function settleMvuAfterAppend(request, { group = false, autoInit = false } = {}) {
+export async function settleMvuAfterAppend(request, { group = false, autoInit = false } = {}) {
     try {
         const args = mvuRepoArgsFromRequest(request, { group });
         if (!args) return;
@@ -1978,7 +1978,7 @@ export async function patchChatMessagesInFile({ filePath, operations, chatMetada
  * - For add/replace ops whose value is a full message or an `extra` object,
  *   the lukgenid is stripped from value before the op gets applied.
  */
-function sanitizeOperationsAgainstLukerGenerationId(operations) {
+export function sanitizeOperationsAgainstLukerGenerationId(operations) {
     /** @type {object[]} */
     const result = [];
     for (const op of operations) {

@@ -241,32 +241,32 @@ async function resolveChatForUse(charDir, fuzzy, charChat) {
     return null;
 }
 
-// ═══ 写盘(append/patch + integrity CAS + gen-id ack)═══
+// ═══ 写盘(uberge REST:append=POST messages / patch=PATCH chat)═══
+// TASK-032:写盘面已统一进 uberge fiber——ack/integrity/gen-id/settle 与 legacy 同机制。
+// patch 的 op path 用 /body/<i> 命名空间(uberge doc = {header, body:[]})。
 async function writeOp(op, body, { retried = false } = {}) {
     const { charDir, chatName } = needCtx();
-    const path = `/api/chats/${op}`;
-    const payload = {
-        avatar_url: `${charDir}.png`,
-        file_name: `${chatName}.jsonl`,
-        ...body,
-    };
+    const base = `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`;
+    const isAppend = op === 'append';
+    const path = isAppend ? `${base}/messages` : base;
+    const payload = isAppend
+        ? { messages: body.messages, ...(body.luker_generation_id ? { luker_generation_id: body.luker_generation_id } : {}) }
+        : { ops: body.operations ?? body.ops, ...(body.luker_generation_id ? { luker_generation_id: body.luker_generation_id } : {}) };
     if (!flags.force && state.integrity) payload.integrity = state.integrity;
-    if (flags.force) payload.force = true;
     try {
-        const { data } = await req('POST', path, payload);
+        const { data } = await req(isAppend ? 'POST' : 'PATCH', path, payload);
         if (data?.integrity) saveState({ integrity: data.integrity });
         return data;
     } catch (e) {
         // 409 分两种:integrity CAS(可重锚重试)vs patch op 冲突(重试无用)。
-        // 只在前者重试——op 冲突(e.g. replace 缺键)是代码 bug,重试同样挂。
+        // uberge ConflictError 回 {error:'integrity_mismatch', actual}——直接拿 actual 重锚。
         const isIntegrity409 = e.status === 409 && /integrity/i.test(JSON.stringify(e.data ?? '') + e.message);
         if (isIntegrity409 && !retried && !flags.force) {
             warn('integrity 409 — 重锚后重试一次');
-            const cur = await getChat(charDir, chatName);
-            const fresh = cur?.[0]?.chat_metadata?.integrity ?? '';
-            if (fresh) saveState({ integrity: fresh, floors: Math.max(0, (cur?.length ?? 1) - 1) });
+            const fresh = String(e.data?.actual || '') || (await getChat(charDir, chatName))?.[0]?.chat_metadata?.integrity || '';
+            if (fresh) saveState({ integrity: fresh });
             payload.integrity = fresh;
-            const { data } = await req('POST', path, payload);
+            const { data } = await req(isAppend ? 'POST' : 'PATCH', path, payload);
             if (data?.integrity) saveState({ integrity: data.integrity });
             return data;
         }
@@ -410,14 +410,17 @@ async function streamJob(jobId, { onDelta, onReasoning, fromSeq = 1, waitMs = DE
     return result;
 }
 
-async function pollStatus(jobId, { waitMs = 60_000 } = {}) {
+async function pollStatus(jobId, { waitMs = 60_000, breakOn = [] } = {}) {
+    // breakOn:额外视为可返回的状态(默认只等终态)。写盘前用 awaiting_ack,
+    // 因为要抢在 15s ack grace 内落 patch;写后只等终态。
     const deadline = Date.now() + waitMs;
+    const terminals = new Set(['completed', 'failed', 'cancelled', ...breakOn]);
     let status = null;
     while (Date.now() < deadline) {
         const { data } = await req('POST', '/api/backends/chat-completions/jobs/status', { id: jobId }, { allowFail: true });
         if (data?.status) {
             status = data;
-            if (status.persisted || ['completed', 'failed', 'cancelled'].includes(status.status)) break;
+            if (status.persisted || terminals.has(status.status)) break;
         }
         await sleep(700);
     }
@@ -450,13 +453,13 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         if (!flags.empty) {
             const wr = await appendFloors([userFloor({ persona: flags.user ?? state.persona ?? 'User', text: promptText ?? '' })]);
             saveState({ floors: (state.floors ?? 0) + 1 });
-            ndjson({ type: 'write', op: 'append-user', appended: wr?.appended ?? 1, integrity: wr?.integrity });
+            ndjson({ type: 'write', op: 'append-user', appended: wr?.accepted ?? 1, integrity: wr?.integrity });
             if (!JSON_MODE) console.log(`\x1b[36m${flags.user ?? state.persona ?? 'User'}\x1b[0m\n${promptText}\n\n\x1b[35m${charName}\x1b[0m`);
         }
     } else if (verb === 'say') {
         const wr = await appendFloors([userFloor({ persona: flags.user ?? state.persona ?? 'User', text: promptText })]);
         saveState({ floors: (state.floors ?? 0) + 1 });
-        ndjson({ type: 'done', ok: true, data: { said: true, appended: wr?.appended ?? 1 }, ctx: ctxSummary() });
+        ndjson({ type: 'done', ok: true, data: { said: true, appended: wr?.accepted ?? 1 }, ctx: ctxSummary() });
         if (!JSON_MODE) { footer('said'); }
         return { said: true };
     } else if (verb === 'regen') {
@@ -469,7 +472,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             fail('no_ai_floor', 'regen 需要末楼是 AI 楼', { hint: '末楼是 user——用 send 续对话', nexts: [{ cmd: 'uberge send "…"' }] });
             return null;
         }
-        await patchFloors([{ op: 'remove', path: `/${lastIdx - 1}` }]);
+        await patchFloors([{ op: 'remove', path: `/body/${lastIdx - 1}` }]);
         saveState({ floors: (state.floors ?? 1) - 1 });
     } else if (verb === 'swipe') {
         floorsData = await getChat(charDir, chatName);
@@ -501,9 +504,11 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         generation_overrides: flags.set ?? {},
         luker_generation: {
             job_id: jobId,
-            // kind:'none' 也带身份字段——服务端 ack/诊断需要 chatKey 推导
+            // kind:'none' 必须纯 {kind:'none'}——服务端 getPersistChatKey
+            // 只要看到 avatar_url+file_name 就当真 persist 目标,会尝试替
+            // swipe/continue 写整楼再标 failed。
             persist_target: persistNone
-                ? { kind: 'none', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl`, char_name: charName }
+                ? { kind: 'none' }
                 : { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl`, char_name: charName },
         },
     };
@@ -535,9 +540,12 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     });
     if (!JSON_MODE) process.stdout.write(reasoningShown ? '\x1b[0m\n' : '\n');
 
-    // ④先轮询到终态/awaiting_ack 再写盘——authoritative text + persisted
-    // 判据都只在 job 落定后才可信;流文本是残件,不许盖过 status.text。
-    const status = await pollStatus(jobId, { waitMs: 20_000 }) ?? {};
+    // ④短等 status.text(权威文本),但必须抢在 15s ack grace 内写盘——
+    // kind:'none' 动词(swipe/continue/impersonate/quiet)服务端不落盘,
+    // 超时由兜底标 failed;写盘必须紧跟流尾,不能先等终态。
+    // 轮询上限 4s:通常 dispatch 收尾后 status.text 立即可得;
+    // awaiting_ack 一到就返回立刻写盘(grace 只剩 ~11s)。
+    const status = await pollStatus(jobId, { waitMs: 4_000, breakOn: ['awaiting_ack'] }) ?? {};
     const text = String(status?.text ?? '') || stream.streamed;
     const genFinished = isoNow();
     if (!status?.status && !stream.frames.end) {
@@ -548,7 +556,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         return null;
     }
 
-    // ⑤写盘(成功 + 服务端未落盘才写;persisted=true 说明兜底已写,再写就双楼)
+    // ⑤立即写盘(成功 + 服务端未落盘才写;persisted=true 说明兜底已写,再写就双楼)
     let writeResult = null;
     const failedUpstream = status?.status === 'failed' || status?.status === 'cancelled' || (stream.error && !text);
     if (!failedUpstream && text && !status?.persisted) {
@@ -557,7 +565,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             // 双通道:顶层 gen-id 写 sidecar(幂等)+ extra.luker_generation_id 参与 ack
             writeResult = await appendFloors([floor], { luker_generation_id: jobId });
             saveState({ floors: (state.floors ?? 0) + 1 });
-            ndjson({ type: 'write', op: 'append-ai', appended: writeResult?.appended ?? 1, skipped: writeResult?.skipped ?? 0, integrity: writeResult?.integrity });
+            ndjson({ type: 'write', op: 'append-ai', appended: writeResult?.accepted ?? 1, skipped: writeResult?.skipped ?? 0, integrity: writeResult?.integrity });
         } else if (verb === 'swipe') {
             const lastIdx = floorsData.length - 1;
             const last = floorsData[lastIdx];
@@ -570,10 +578,10 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             const baseSwipes = oldSwipes.length ? oldSwipes : [last.mes ?? ''];
             const baseInfo = baseSwipes.map((_, i) => oldInfo[i] ?? floorEntry);
             const ops = [
-                { op: 'add', path: `/${bodyIdx}/swipes`, value: [...baseSwipes, text] },
-                { op: 'add', path: `/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: new Date(started).toISOString(), gen_finished: genFinished, extra: { api: 'cli', model: status?.model ?? '', luker_generation_id: jobId } }] },
-                { op: 'add', path: `/${bodyIdx}/swipe_id`, value: baseSwipes.length },
-                { op: 'add', path: `/${bodyIdx}/mes`, value: text },
+                { op: 'add', path: `/body/${bodyIdx}/swipes`, value: [...baseSwipes, text] },
+                { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: new Date(started).toISOString(), gen_finished: genFinished, extra: { api: 'cli', model: status?.model ?? '', luker_generation_id: jobId } }] },
+                { op: 'add', path: `/body/${bodyIdx}/swipe_id`, value: baseSwipes.length },
+                { op: 'add', path: `/body/${bodyIdx}/mes`, value: text },
             ];
             writeResult = await patchFloors(ops, { luker_generation_id: jobId });
             ndjson({ type: 'write', op: 'patch-swipe', applied: writeResult?.applied ?? ops.length });
@@ -582,22 +590,22 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
             const last = floorsData[lastIdx];
             const bodyIdx = lastIdx - 1;
             const merged = String(last.mes ?? '') + text;
-            const ops = [{ op: 'add', path: `/${bodyIdx}/mes`, value: merged }];
+            const ops = [{ op: 'add', path: `/body/${bodyIdx}/mes`, value: merged }];
             const swipes = Array.isArray(last.swipes) ? last.swipes : null;
             const swipeId = Number.isInteger(last.swipe_id) ? last.swipe_id : null;
             if (swipes && swipeId != null && swipeId < swipes.length) {
-                ops.push({ op: 'add', path: `/${bodyIdx}/swipes/${swipeId}`, value: merged });
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/swipes/${swipeId}`, value: merged });
                 // gen-id 埋进 op 值——patch 的显式 ack 只扫 operations,不扫 body
                 const info = Array.isArray(last.swipe_info) ? last.swipe_info[swipeId] : null;
-                ops.push({ op: 'add', path: `/${bodyIdx}/swipe_info/${swipeId}`, value: { ...(info && typeof info === 'object' ? info : {}), gen_finished: genFinished, extra: { ...(info?.extra ?? {}), luker_generation_id: jobId } } });
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/swipe_info/${swipeId}`, value: { ...(info && typeof info === 'object' ? info : {}), gen_finished: genFinished, extra: { ...(info?.extra ?? {}), luker_generation_id: jobId } } });
             } else if (!swipes) {
                 // 服务端兜底 persist 的楼层没有 swipe 结构 —— 补全(上游 normalize 语义)
-                ops.push({ op: 'add', path: `/${bodyIdx}/swipes`, value: [merged] });
-                ops.push({ op: 'add', path: `/${bodyIdx}/swipe_id`, value: 0 });
-                ops.push({ op: 'add', path: `/${bodyIdx}/swipe_info`, value: [{ send_date: last.send_date ?? isoNow(), gen_started: last.gen_started ?? isoNow(), gen_finished: genFinished, extra: { ...(last.extra ?? {}), luker_generation_id: jobId } }] });
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/swipes`, value: [merged] });
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/swipe_id`, value: 0 });
+                ops.push({ op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [{ send_date: last.send_date ?? isoNow(), gen_started: last.gen_started ?? isoNow(), gen_finished: genFinished, extra: { ...(last.extra ?? {}), luker_generation_id: jobId } }] });
             }
             // add 对缺键/已存在都成立;replace 遇缺键直接 409
-            ops.push({ op: 'add', path: `/${bodyIdx}/gen_finished`, value: genFinished });
+            ops.push({ op: 'add', path: `/body/${bodyIdx}/gen_finished`, value: genFinished });
             writeResult = await patchFloors(ops, { luker_generation_id: jobId });
             ndjson({ type: 'write', op: 'patch-continue', applied: writeResult?.applied ?? ops.length });
         } else if (verb === 'impersonate' && flags.write) {
