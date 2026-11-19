@@ -2792,14 +2792,24 @@
           "verified": ""
         }
       ],
-      "progress": " | 首增量(b31f898):chats.js 机制函数已导出,uberge append/patch 路由全套接入(sidecar dedup/ack/settle/resettle/recents/sanitize);CLI writeOp 已切 uberge REST,/body/ 命名空间;实弹 send→completed+persisted、swipe→completed(409重锚+gen-id ack)。另修时序:awaiting_ack 即到即写防 grace 超时。",
+      "progress": {
+        "completed": [
+          "uberge append/patch 与 legacy /api/chats 同源机制移植(ack/integrity/gen-id/settle;b31f898)",
+          "CLI 时序修复:awaiting_ack 即到即写,kind:none 纯化;swipe 409 重锚实弹闭环",
+          "对抗自查 10 项全核,safe-to-proceed(.loom/eval/task032-self-review-2026-11-19.md)",
+          "PUT chats/:chatName/document 整文档写盘(legacy /save 等价;双形状;CAS+force+checkIntegrity;backup/recents/gen-id ack/MVU 全量重放;c8ad7f4)",
+          "CLI chat-put 具名:CAS 自动注入+409 重锚;实弹 26 层逐字节相同"
+        ],
+        "current": "整文档写盘已通;剩 state sidecar 三族(chat_state/char_state/preset_state)uberge 路由——TASK-033 前置",
+        "next": "设计并实现 /api/uberge/state/* 三路 sidecar 路由(读 legacy chats.js state 端点契约),然后开 TASK-033 Top-10 改道"
+      },
       "evidence": [],
       "outcome": "三套写盘面收成一套:ack/integrity/gen-id/settle 机制归 fiber 所有,uberge chats REST 成为唯一权威写盘接口;legacy /api/chats 退化为兼容转发。",
       "boundaries": [
         "不删 legacy 端点(转 TASK-035)",
         "行为语义以 legacy 为准做 parity diff,不自由发挥"
       ],
-      "updated_at": "2026-11-19T06:05:05.960Z"
+      "updated_at": "2026-11-19T06:42:43.526Z"
     },
     {
       "id": "TASK-033",
