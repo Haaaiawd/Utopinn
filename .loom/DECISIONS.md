@@ -250,3 +250,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Supersedes: none
 - Affects: .loom/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/utopinn-cli.mjs
 - Recorded: 2026-11-19T06:00:00.000Z
+
+## D-021: CLI = 协议参考客户端(以骨长肉)——服务端能力必须先有 CLI 动词,新前端绑同一协议面
+
+- Current decision: /api/utopinn/* 每条服务端能力必须存在对应 CLI 具名动词(按 Cordis 插件域组织:library/generate/state/mvu/diag/plugins/import/delivery);CLI 动词即协议契约的活文档与回归面。将来新前端 UI 不另起协议,直接消费与 CLI 相同的 REST+WS 面——"以骨长肉":CLI 先把协议骨架跑熟钉死,新 UI 只是骨架上的第二层肉。TASK-036 的 48 动词是第一期,TASK-038 扩展为全覆盖矩阵。
+- Rationale: 用户明示"CLI需要覆盖所有的东西,并以Cordis组织;到时候新前端UI需要绑定,或许以CLI同步前端的方式,直接以骨长肉"。浏览器旧 UI 是过渡形态,协议面才是产品本体;CLI 覆盖即契约覆盖,CLI 全绿的面上任何薄客户端(浏览器/移动/新 SPA)都只剩渲染职责。
+- Source: conversation
+- Supersedes: none
+- Affects: apps/cli/utopinn-cli.mjs, apps/server/src/plugins/, .loom/tasks.json(TASK-038 升级)
+- Recorded: 2026-11-19T09:30:00.000Z
