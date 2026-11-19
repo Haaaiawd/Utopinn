@@ -4,12 +4,12 @@
  * 规格:.loom/capabilities/cli-client/capability.md(唯一契约,先读它)。
  * 零依赖:Node ≥22 原生 fetch + WebSocket。
  */
-import { readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, writeFileSync, renameSync, existsSync, statSync } from 'node:fs';
+import { resolve, basename, join } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const DEFAULT_SERVER = 'http://127.0.0.1:8000';
 const DEFAULT_WAIT_MS = 180_000;
 const DEFAULT_REQ_TIMEOUT = 30_000;
@@ -44,6 +44,21 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--type') flags.type = argv[++i];
     else if (a === '--empty') flags.empty = true;
     else if (a === '--char') flags.char = argv[++i];
+    else if (a === '--json-file') flags.jsonFile = argv[++i];
+    else if (a === '--file') flags.file = argv[++i];
+    else if (a === '--name') flags.name = argv[++i];
+    else if (a === '--id') flags.id = argv[++i];
+    else if (a === '--value') flags.value = argv[++i];
+    else if (a === '--label') flags.label = argv[++i];
+    else if (a === '--code') flags.code = argv[++i];
+    else if (a === '--dir') flags.dir = argv[++i];
+    else if (a === '--html') flags.html = true;
+    else if (a === '--api') flags.api = argv[++i];
+    else if (a === '--kind') flags.kind = argv[++i];
+    else if (a === '--conflict') flags.conflict = argv[++i];
+    else if (a === '--as') flags.as = argv[++i];
+    else if (a === '--mode') flags.mode = argv[++i];
+    else if (a === '--handle') flags.handle = argv[++i];
     else if (a === '--set') {
         const kv = String(argv[++i]).split('=');
         const raw = kv.slice(1).join('=');
@@ -668,13 +683,30 @@ process.on('SIGINT', () => {
 });
 
 // ═══ stdin 文本源 ═══
+async function readStdinBuffer() {
+    const chunks = [];
+    for await (const c of process.stdin) chunks.push(c);
+    return Buffer.concat(chunks);
+}
 async function readTextArg(rest) {
-    if (flags.stdin) {
-        const chunks = [];
-        for await (const c of process.stdin) chunks.push(c);
-        return Buffer.concat(chunks).toString('utf8');
-    }
+    if (flags.stdin) return (await readStdinBuffer()).toString('utf8');
     return rest.join(' ');
+}
+/**
+ * 编辑类写动词的 JSON 文档源:--json-file f | --stdin | 位置参 inline JSON。
+ * 成功回 parsed doc;任何失败已 fail() 并回 undefined(调用方直接 return)。
+ */
+async function readJsonBody(rest, usageStr) {
+    let raw;
+    if (flags.jsonFile) {
+        try { raw = readFileSync(resolve(flags.jsonFile), 'utf8'); }
+        catch (e) { fail('usage', `--json-file 读取失败: ${e.message}`, { rc: 2 }); return undefined; }
+    } else {
+        raw = await readTextArg(rest);
+    }
+    if (!String(raw ?? '').trim()) { fail('usage', usageStr, { rc: 2 }); return undefined; }
+    try { return JSON.parse(raw); }
+    catch (e) { fail('usage', `JSON parse 失败: ${e.message}`, { detail: trunc(String(raw), 140), rc: 2 }); return undefined; }
 }
 
 // ═══ 命令实现 ═══
@@ -739,8 +771,35 @@ const NAMED_UBERGE_ROUTES = new Set([
     'GET|pattern|/api/uberge/jobs/:id',
     'POST|pattern|/api/uberge/generate',
     'POST|pattern|/api/uberge/preview',
+    // —— 生成写盘(writeOp:send/say append;edit/swipe/continue patch)——
+    'POST|pattern|/api/uberge/characters/:charDir/chats/:chatName/messages',
+    'PATCH|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    // —— library 读面(chars/chats 显示已切 kernel;legacy 仅留内部解析用)——
+    'GET|pattern|/api/uberge/characters',
+    'GET|pattern|/api/uberge/characters/:charDir',
+    'GET|pattern|/api/uberge/characters/:charDir/chats',
+    'GET|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
+    'PUT|pattern|/api/uberge/characters/:charDir/chats/:chatName',
+    'POST|pattern|/api/uberge/characters/:charDir/chats/:chatName/rename',
+    'DELETE|pattern|/api/uberge/characters/:charDir/chats/:chatName',
     'GET|pattern|/api/uberge/worlds',
     'GET|pattern|/api/uberge/worlds/:name',
+    'PUT|pattern|/api/uberge/worlds/:name',
+    'DELETE|pattern|/api/uberge/worlds/:name',
+    'GET|pattern|/api/uberge/presets',
+    'GET|pattern|/api/uberge/presets/:name',
+    'PUT|pattern|/api/uberge/presets/:name',
+    'DELETE|pattern|/api/uberge/presets/:name',
+    'GET|pattern|/api/uberge/personas',
+    'PUT|pattern|/api/uberge/personas/:avatar',
+    'DELETE|pattern|/api/uberge/personas/:avatar',
+    'GET|pattern|/api/uberge/settings',
+    'PATCH|pattern|/api/uberge/settings',
+    'GET|pattern|/api/uberge/secrets',
+    'PUT|pattern|/api/uberge/secrets/:key',
+    'DELETE|pattern|/api/uberge/secrets/:key/:id',
+    // —— 组件面 ——
     'GET|pattern|/api/uberge/plugins',
     'POST|pattern|/api/uberge/plugins/:id/enable',
     'POST|pattern|/api/uberge/plugins/:id/disable',
@@ -748,8 +807,16 @@ const NAMED_UBERGE_ROUTES = new Set([
     'POST|pattern|/api/uberge/mvu/settle',
     'POST|pattern|/api/uberge/mvu/resettle',
     'GET|pattern|/api/uberge/mvu/state',
+    'POST|pattern|/api/uberge/mvu/panel/render',
     'POST|pattern|/api/uberge/script/run',
     'POST|pattern|/api/uberge/th/call',
+    // —— 数据面(import/backup/lan)——
+    'POST|pattern|/api/uberge/import/scan-st',
+    'POST|pattern|/api/uberge/import/preview',
+    'POST|pattern|/api/uberge/import/commit',
+    'POST|pattern|/api/uberge/backup',
+    'POST|pattern|/api/uberge/lan/offer',
+    'POST|pattern|/api/uberge/lan/import',
 ]);
 
 async function cmdDoctor() {
@@ -817,8 +884,11 @@ const SCHEMA = {
         { cmd: 'uberge recent [-n N]', desc: '跨角色最近聊天', out: '[{char,chat,time}]' },
         { cmd: 'uberge use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
         { cmd: 'uberge chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
+        { cmd: 'uberge chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
+        { cmd: 'uberge chat-get [chat]', desc: '[library] uberge doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'uberge chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
         { cmd: 'uberge chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
+        { cmd: 'uberge char <name>', desc: '[library] 角色卡全文(模糊名→目录名)', out: '{card}' },
         { cmd: 'uberge send <text>|--stdin', desc: 'append user 楼+生成+append AI 楼', out: 'stream text + footer' },
         { cmd: 'uberge say <text>', desc: '只写 user 楼不生成', out: 'floor' },
         { cmd: 'uberge regen', desc: '删末 AI 楼重生成', out: 'stream text' },
@@ -834,21 +904,41 @@ const SCHEMA = {
         { cmd: 'uberge attach [jobId]', desc: '断链恢复(WS resume/status 对账)', out: 'stream|text' },
         { cmd: 'uberge abort [jobId]', desc: '中止 job', out: 'aborted' },
         { cmd: 'uberge persona [name]', desc: '查看/设定 persona', out: 'persona' },
-        { cmd: 'uberge presets', desc: 'openai 预设列表', out: '[name]' },
+        { cmd: 'uberge personas', desc: '[library] 人设表(avatar/name/default)', out: '[{avatar,name,isDefault}]' },
+        { cmd: 'uberge persona-edit <avatar> [json|--json-file|--stdin|--set k=v]', desc: '[library] 写人设(name/description/position/title/is_default)', out: '{ok,avatar,name}' },
+        { cmd: 'uberge persona-delete <avatar>', desc: '[library] 删人设(personas+desc 双表摘除)', out: '204' },
+        { cmd: 'uberge presets', desc: 'openai 预设列表(kernel)', out: '[name]' },
         { cmd: 'uberge preset <name>|--off', desc: '绑定预设进 generate.presetName', out: 'preset' },
+        { cmd: 'uberge preset-get <name>', desc: '[library] 预设全文 doc(--api 族,默认 openai)', out: '{name,apiId,doc}' },
+        { cmd: 'uberge preset-edit <name> [json|--json-file|--stdin]', desc: '[library] 预设整档写回(upsert)', out: '{ok,name,apiId}' },
+        { cmd: 'uberge preset-delete <name>', desc: '[library] 删预设(--api 族)', out: '204' },
+        { cmd: 'uberge settings', desc: '[library] 服务端 settings(脱敏视图)', out: '{settings}' },
+        { cmd: 'uberge settings-set <json|--json-file|--stdin>', desc: '[library] settings 受限合并(仅 power_user|extension_settings)', out: '{settings}' },
+        { cmd: 'uberge secrets', desc: '[secrets] 全键脱敏态(value 恒打码)', out: '{key:[{id,masked,label,active}]}' },
+        { cmd: 'uberge secret-set <key> --value v|--stdin [--label l]', desc: '[secrets] 写新 secret(服务端铸 id,不回显明文)', out: '{ok,id,entries*masked}' },
+        { cmd: 'uberge secret-delete <key> <id>', desc: '[secrets] 按 id 删一条', out: '204' },
         { cmd: 'uberge worlds', desc: '[library] 世界书列表', out: '[{name,displayName}]' },
         { cmd: 'uberge wi <book> [-n N] [--full] [--out f]', desc: '[library] 世界书条目(uid/keys/constant/off)', out: '[entry]' },
+        { cmd: 'uberge world-edit <name> [json|--json-file|--stdin]', desc: '[library] 世界书整档写回{entries:{}}(upsert)', out: '{ok,name}' },
+        { cmd: 'uberge world-delete <name>', desc: '[library] 删世界书(显式名)', out: '204' },
         { cmd: 'uberge kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
         { cmd: 'uberge plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
         { cmd: 'uberge plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
         { cmd: 'uberge mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
         { cmd: 'uberge mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
         { cmd: 'uberge mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
+        { cmd: 'uberge mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
         { cmd: 'uberge script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
         { cmd: 'uberge th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
+        { cmd: 'uberge import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
+        { cmd: 'uberge import-preview <file|--file f|--stdin>', desc: '[data] 格式探测+摘要+冲突,不落库', out: '{kind,summary,warnings,conflicts}' },
+        { cmd: 'uberge import-commit <file|--file f> [--conflict r|o|s] [--as name] [--kind k]', desc: '[data] 显式落库(同名 409→--conflict rename|overwrite|skip)', out: '{ok,targetName,renamed}' },
+        { cmd: 'uberge backup [--out f|dir] [--set cat=bool]', desc: '[data] zip 快照下载落盘(默认 cwd 用服务端文件名)', out: '{file,bytes}' },
+        { cmd: 'uberge lan-offer [--set cat=bool|--json-file sel]', desc: '[data] LAN 迁移 offer→一次性 url', out: '{url,expiresAt}' },
+        { cmd: 'uberge lan-import <url|--code c> [--mode merge|overwrite]', desc: '[data] 拉对端 zip 恢复(慢,--wait)', out: '{mode,restored}' },
         { cmd: 'uberge raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UBERGE_SERVER'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UBERGE_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.uberge-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
@@ -856,12 +946,19 @@ const SCHEMA = {
 };
 
 async function cmdChars() {
+    // kernel GET /characters 给 tags/readable;chat 指针只在 legacy all 里 → 双源合并
     const chars = await listChars();
-    const rows = chars.map(c => ({ dir: stripExt(c.avatar, 'png'), name: c.name ?? '', chat: stripExt(c.chat ?? '', 'jsonl') }));
+    const { data: kdata, status: kst } = await req('GET', '/api/uberge/characters', undefined, { allowFail: true });
+    const kmap = new Map((kst < 400 && Array.isArray(kdata?.items) ? kdata.items : []).map(i => [i.charDir, i]));
+    const rows = chars.map(c => {
+        const dir = stripExt(c.avatar, 'png');
+        const k = kmap.get(dir) ?? {};
+        return { dir, name: c.name ?? k.name ?? '', chat: stripExt(c.chat ?? '', 'jsonl'), tags: k.tags, readable: k.readable };
+    });
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(rows, null, 2)); warn(`wrote ${flags.out}`); }
     const show = flags.n ? rows.slice(0, flags.n) : rows;
-    if (JSON_MODE) return out(show, [{ cmd: 'uberge use <dir>', why: '选卡进 ctx' }]);
-    for (const r of show) console.log(`${r.dir.padEnd(36)} ${r.name} ${r.chat ? `· ${r.chat}` : ''}`);
+    if (JSON_MODE) return out(show, [{ cmd: 'uberge use <dir>', why: '选卡进 ctx' }, { cmd: 'uberge char <dir>', why: '看卡全文' }]);
+    for (const r of show) console.log(`${r.readable === false ? '\x1b[31m!\x1b[0m' : ' '}${r.dir.padEnd(36)} ${r.name} ${r.chat ? `· ${r.chat}` : ''}`);
     console.log(`\n${rows.length} characters`);
     next('uberge use <dir>');
     footer();
@@ -871,13 +968,26 @@ async function cmdChars() {
 async function cmdChats() {
     const charDir = flags.char ? stripExt(flags.char, 'png') : needCtx()?.charDir;
     if (!charDir) return;
-    const chats = await listChats(charDir);
-    const rows = chats.map(c => ({
-        name: stripExt(c.file_name ?? c.name ?? c, 'jsonl'),
-        floors: c.chat_items ?? c.message_count ?? null,
-        last: trunc(c.mes ?? c.last_mes ?? '', 60),
-        time: c.sort_time ? new Date(c.sort_time).toISOString().slice(0, 16) : null,
-    }));
+    // kernel GET 面(messageCount/lastMessage/updatedAt)优先;缺 items 回退 legacy
+    const { data: kdata, status: kst } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats`, undefined, { allowFail: true });
+    let rows;
+    if (kst < 400 && Array.isArray(kdata?.items)) {
+        rows = kdata.items.map(i => ({
+            name: stripExt(i.name ?? i.fileName ?? '', 'jsonl'),
+            floors: i.messageCount ?? null,
+            // kernel lastMessage 是整楼层对象,摘 mes;legacy 是字符串
+            last: trunc(typeof i.lastMessage === 'object' && i.lastMessage !== null ? (i.lastMessage.mes ?? '') : (i.lastMessage ?? ''), 60),
+            time: i.updatedAt ? new Date(i.updatedAt).toISOString().slice(0, 16) : null,
+        }));
+    } else {
+        const chats = await listChats(charDir);
+        rows = chats.map(c => ({
+            name: stripExt(c.file_name ?? c.name ?? c, 'jsonl'),
+            floors: c.chat_items ?? c.message_count ?? null,
+            last: trunc(c.mes ?? c.last_mes ?? '', 60),
+            time: c.sort_time ? new Date(c.sort_time).toISOString().slice(0, 16) : null,
+        }));
+    }
     if (JSON_MODE) return out(rows, [{ cmd: 'uberge use <char> <chat>', why: '切聊天' }, { cmd: 'uberge chat-new <name>' }]);
     for (const r of rows) console.log(`${r.name === state.chat?.name ? '*' : ' '} ${r.name}  ${r.floors ?? '?'}f  ${r.time ?? ''}  ${r.last}`);
     console.log(`\n${rows.length} chats for ${charDir}`);
@@ -936,7 +1046,10 @@ async function cmdChatRename() {
     const c = needCtx(); if (!c) return;
     const newName = stripExt(positional[1] ?? '', 'jsonl');
     if (!newName) return void fail('usage', 'uberge chat-rename <new>', { rc: 2 });
-    const { data } = await req('POST', '/api/chats/rename', { avatar_url: `${c.charDir}.png`, original_file: `${c.chatName}.jsonl`, renamed_file: `${newName}.jsonl` });
+    const { data, status } = await req('POST', `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/rename`, { newName }, { allowFail: true });
+    if (status === 404) return void fail('not_found', `chat ${c.chatName} 不存在`, { hint: 'uberge chats 看列表' });
+    if (status === 409) return void fail('exists', `chat exists: ${newName}`, { rc: 3 });
+    if (status >= 400 || data?.error) return void fail('server', `rename 失败:${data?.error ?? status}`, { status });
     saveState({ chat: { name: newName } });
     if (JSON_MODE) return out({ renamed: newName, data }, genNextFor('send', false));
     console.log(`renamed → ${newName}`);
@@ -947,7 +1060,9 @@ async function cmdChatDelete() {
     const c = needCtx(); if (!c) return;
     const name = stripExt(positional[1] ?? '', 'jsonl');
     if (!name) return void fail('usage', 'uberge chat-delete <name>(显式名,不给模糊)', { rc: 2 });
-    await req('POST', '/api/chats/delete', { avatar_url: `${c.charDir}.png`, chatfile: `${name}.jsonl` });
+    const { data, status } = await req('DELETE', `/api/uberge/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `chat not found: ${name}`, { hint: 'uberge chats 看列表' });
+    if (status >= 400 || data?.error) return void fail('server', `delete 失败:${data?.error ?? status}`, { status });
     if (state.chat?.name === name) saveState({ chat: { name: null }, floors: null, integrity: null });
     if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'uberge chats' }]);
     console.log(`deleted ${name}`);
@@ -1119,9 +1234,8 @@ async function cmdPersona() {
 }
 
 async function cmdPresets() {
-    const { data } = await req('GET', '/api/presets/list?apiId=openai', undefined, { allowFail: true });
-    const names = data?.names ?? (Array.isArray(data) ? data : []);
-    if (JSON_MODE) return out(names, [{ cmd: 'uberge preset <name>' }]);
+    const names = await cmdPresetsQuiet() ?? [];
+    if (JSON_MODE) return out(names, [{ cmd: 'uberge preset <name>' }, { cmd: 'uberge preset-get <name>' }]);
     for (const n of names) console.log(` ${n === state.preset ? '*' : ' '} ${n}`);
     footer();
     return names;
@@ -1146,8 +1260,13 @@ async function cmdPreset() {
     console.log(`preset = ${name}`);
 }
 async function cmdPresetsQuiet() {
-    const { data } = await req('GET', '/api/presets/list?apiId=openai', undefined, { allowFail: true });
-    return data?.names ?? (Array.isArray(data) ? data : null);
+    // kernel GET /presets 优先(同 PresetRepo 数据);缺 items 回退 legacy list
+    const { data, status } = await req('GET', `/api/uberge/presets?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
+    if (status < 400 && Array.isArray(data?.items)) {
+        return data.items.map(i => i?.name).filter(n => typeof n === 'string' && n.length > 0);
+    }
+    const { data: legacy } = await req('GET', `/api/presets/list?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
+    return legacy?.names ?? (Array.isArray(legacy) ? legacy : null);
 }
 
 async function cmdSwipe() {
@@ -1306,7 +1425,26 @@ async function cmdMvu() {
         footer();
         return;
     }
-    fail('usage', 'uberge mvu [state|settle [--floor i]|resettle]', { rc: 2 });
+    if (sub === 'panel') {
+        // 模板 × ctx chat 变量 → 服务端渲染面板 HTML(scope 缺省=当前 chat 变量)
+        let template;
+        if (flags.file) {
+            try { template = readFileSync(resolve(flags.file), 'utf8'); }
+            catch (e) { return void fail('usage', `--file 读取失败: ${e.message}`, { rc: 2 }); }
+        } else {
+            template = await readTextArg(positional.slice(2));
+        }
+        if (!String(template ?? '').trim()) return void fail('usage', 'uberge mvu panel <tpl|--file f|--stdin>', { hint: 'scope 缺省取当前 chat 变量', rc: 2 });
+        const { data, status } = await req('POST', '/api/uberge/mvu/panel/render', { template, ...t }, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `mvu panel 失败:${data?.error ?? status}`, { status });
+        const html = String(data?.html ?? '');
+        if (flags.out) { writeFileSync(resolve(flags.out), html); warn(`wrote ${flags.out} (${html.length}ch)`); }
+        if (JSON_MODE && !flags.html) return out({ html, len: html.length });
+        console.log(html);
+        footer(`${html.length}ch`);
+        return;
+    }
+    fail('usage', 'uberge mvu [state|settle [--floor i]|resettle|panel <tpl|--file|--stdin>]', { rc: 2 });
 }
 
 async function cmdScript() {
@@ -1349,6 +1487,483 @@ async function cmdTh() {
     footer();
 }
 
+// ═══ 数据面/写面具名动词(TASK-036:kernel 路由全覆盖)═══
+// library 读:char / chat-get;library 写:world-edit|delete、preset-get|edit|delete、
+// personas|persona-edit|delete、settings|settings-set、secrets|secret-set|delete、
+// chat 生命周期:chat-create;数据面:import-scan|preview|commit、backup、lan-offer|import。
+
+async function cmdChar() {
+    const char = await resolveChar(positional[1]);
+    if (!char) return;
+    const charDir = stripExt(char.avatar, 'png');
+    const { data, status } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}`, undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('not_found', `char: ${charDir}`, { detail: data?.error, status });
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: `uberge use ${charDir}` }]);
+    const d = (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) ? data.data : data;
+    console.log(`\x1b[1m${d?.name ?? charDir}\x1b[0m  \x1b[2m(${charDir})\x1b[0m`);
+    if (Array.isArray(d?.tags) && d.tags.length) console.log(`tags: ${d.tags.join(', ')}`);
+    for (const k of ['description', 'personality', 'scenario', 'first_mes', 'mes_example', 'system_prompt', 'post_history_instructions', 'creator_notes']) {
+        const v = d?.[k];
+        if (typeof v === 'string' && v) console.log(`\x1b[2m[${k}]\x1b[0m ${trunc(v, flags.full ? 1e9 : 160)}`);
+    }
+    const extensions = d?.extensions && typeof d.extensions === 'object' ? Object.keys(d.extensions) : [];
+    if (extensions.length) console.log(`\x1b[2mextensions: ${extensions.join(', ')}\x1b[0m`);
+    footer();
+}
+
+async function cmdChatGet() {
+    // charDir = --char | ctx.char;chatName = 位置参 | ctx.chat —— 两组独立来源
+    const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
+    const chatName = stripExt(positional[1] ?? state.chat?.name, 'jsonl');
+    if (!charDir || !chatName) return void fail('no_ctx', 'chat-get 需要 char+chat', { hint: 'uberge use <char> <chat> 或 chat-get <chat> --char <d>', rc: 2 });
+    const { data, status } = await req('GET', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}`, undefined, { allowFail: true });
+    if (status === 404 || data?.error) return void fail('not_found', `chat: ${charDir}/${chatName}`, { detail: data?.error, hint: 'uberge chats 看列表' });
+    if (status >= 400) return void fail('server', `chat-get → ${status}`, { status });
+    const msgs = Array.isArray(data?.messages) ? data.messages : [];
+    if (data?.integrity) saveState({ integrity: data.integrity, floors: chatName === state.chat?.name ? msgs.length : state.floors });
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data);
+    console.log(`${charDir} @ ${chatName} — ${msgs.length} floors · integrity ${String(data?.integrity ?? '—').slice(0, 10)}`);
+    const meta = data?.header?.chat_metadata ?? {};
+    const metaKeys = Object.keys(meta).filter(k => meta[k] !== undefined && k !== 'integrity');
+    if (metaKeys.length) console.log(`\x1b[2mmetadata: ${metaKeys.join(', ')}\x1b[0m`);
+    for (const m of msgs.slice(-2)) {
+        console.log(`\x1b[2m#${msgs.indexOf(m)}\x1b[0m ${m.is_user ? '\x1b[36m' : '\x1b[35m'}${m.name ?? ''}\x1b[0m ${trunc(m.mes, 120)}`);
+    }
+    footer();
+}
+
+async function cmdChatCreate() {
+    // 只需要 charDir(ctx.char 或 --char);chatName 就是要建的,不依赖 ctx.chat
+    const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
+    if (!charDir) return void fail('no_ctx', '先选卡', { hint: 'uberge use <char> 或 --char d', rc: 2 });
+    const name = stripExt(positional[1] ?? '', 'jsonl');
+    if (!name) return void fail('usage', 'uberge chat-create <name>(立即建空文件;懒建用 chat-new)', { rc: 2 });
+    const { data, status } = await req('PUT', `/api/uberge/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(name)}`, { header: { chat_metadata: {} } }, { allowFail: true });
+    if (status === 409) return void fail('exists', `chat exists: ${name}`, { hint: 'uberge chats 看列表', rc: 3 });
+    if (status >= 400 || data?.error) return void fail('server', `chat-create 失败:${data?.error ?? status}`, { status });
+    // 只在 ctx.char 与目标同卡时才把 ctx.chat 切过去(--char 建到别的卡上不挪 ctx)
+    if (charDir === state.char?.dir) saveState({ chat: { name }, floors: 0, integrity: data?.integrity ?? null });
+    const n = [{ cmd: 'uberge send "…"', why: '写第一楼' }];
+    if (JSON_MODE) return out({ created: name, integrity: data?.integrity }, n);
+    console.log(`chat = ${name}(空文件已建)`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+// —— worlds 写面 ——
+async function cmdWorldEdit() {
+    const name = positional[1];
+    if (!name) return void fail('usage', 'uberge world-edit <name> [json|--json-file f|--stdin]', { hint: 'uberge wi <book> --out d.json 取现文档改完写回', rc: 2 });
+    const doc = await readJsonBody(positional.slice(2), 'world-edit 需要世界书文档 {entries:{}}');
+    if (doc === undefined) return;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !doc.entries || typeof doc.entries !== 'object' || Array.isArray(doc.entries)) {
+        return void fail('usage', 'world doc 必须是含 entries 对象的对象', { rc: 2 });
+    }
+    const { data, status } = await req('PUT', `/api/uberge/worlds/${encodeURIComponent(name)}`, doc, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `world-edit ${name} 失败:${data?.error ?? status}`, { status });
+    const n = [{ cmd: `uberge wi ${data?.name ?? name} -n 10`, why: '验证写回' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`world "${data?.name ?? name}" saved — ${Object.keys(doc.entries).length} entries`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdWorldDelete() {
+    const name = positional[1];
+    if (!name) return void fail('usage', 'uberge world-delete <name>(显式名)', { rc: 2 });
+    const { data, status } = await req('DELETE', `/api/uberge/worlds/${encodeURIComponent(name)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `world book: ${name}`, { hint: 'uberge worlds 看列表' });
+    if (status >= 400 || data?.error) return void fail('server', `world-delete 失败:${data?.error ?? status}`, { status });
+    if (JSON_MODE) return out({ deleted: name }, [{ cmd: 'uberge worlds' }]);
+    console.log(`deleted world "${name}"`);
+    footer();
+}
+
+// —— presets 写面(apiId 默认 openai,--api 换族)——
+const presetPath = (name) => `/api/uberge/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(flags.api ?? 'openai')}`;
+
+async function cmdPresetGet() {
+    const name = positional[1] ?? state.preset;
+    if (!name) return void fail('usage', 'uberge preset-get <name>', { hint: 'uberge presets 看列表', rc: 2 });
+    const { data, status } = await req('GET', presetPath(name), undefined, { allowFail: true });
+    if (status === 404 || data?.error) return void fail('not_found', `preset: ${name}`, { hint: 'uberge presets 看列表' });
+    if (status >= 400) return void fail('server', `preset-get → ${status}`, { status });
+    const doc = data?.doc ?? {};
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(doc, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: `uberge preset-edit ${name} --json-file <doc>`, why: '改完写回' }]);
+    const prompts = Array.isArray(doc.prompts) ? doc.prompts.length : 0;
+    const sampler = ['temperature', 'top_p', 'max_tokens', 'frequency_penalty', 'presence_penalty', 'stream_openai']
+        .filter(k => doc[k] !== undefined).map(k => `${k}=${trunc(JSON.stringify(doc[k]), 24)}`).join(' ');
+    console.log(`${name} (${data?.apiId ?? flags.api ?? 'openai'}) — prompts:${prompts}${sampler ? ` · ${sampler}` : ''}`);
+    console.log(`\x1b[2mkeys: ${Object.keys(doc).slice(0, flags.full ? 1e9 : 24).join(', ')}${!flags.full && Object.keys(doc).length > 24 ? ' …' : ''}\x1b[0m`);
+    footer();
+}
+
+async function cmdPresetEdit() {
+    const name = positional[1];
+    if (!name) return void fail('usage', 'uberge preset-edit <name> [json|--json-file f|--stdin]', { hint: 'uberge preset-get <name> --out d.json 取现文档', rc: 2 });
+    const doc = await readJsonBody(positional.slice(2), 'preset-edit 需要预设 doc 对象');
+    if (doc === undefined) return;
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+        return void fail('usage', 'preset doc 必须是 JSON 对象', { rc: 2 });
+    }
+    const { data, status } = await req('PUT', presetPath(name), doc, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `preset-edit ${name} 失败:${data?.error ?? status}`, { status });
+    const n = [{ cmd: `uberge preset-get ${name}`, why: '验证写回' }, { cmd: `uberge preset ${name}`, why: '绑进 ctx' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`preset "${name}" saved (${data?.apiId ?? flags.api ?? 'openai'})`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdPresetDelete() {
+    const name = positional[1];
+    if (!name) return void fail('usage', 'uberge preset-delete <name>(显式名,--api 族)', { rc: 2 });
+    const { data, status } = await req('DELETE', presetPath(name), undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `preset: ${name}`, { hint: 'uberge presets 看列表' });
+    if (status >= 400 || data?.error) return void fail('server', `preset-delete 失败:${data?.error ?? status}`, { status });
+    const wasBound = state.preset === name;
+    if (wasBound) saveState({ preset: null });
+    if (JSON_MODE) return out({ deleted: name, unbound: wasBound }, [{ cmd: 'uberge presets' }]);
+    console.log(`deleted preset "${name}"${wasBound ? '(已解绑 ctx.preset)' : ''}`);
+    footer();
+}
+
+// —— personas 面 ——
+async function cmdPersonas() {
+    const { data, status } = await req('GET', '/api/uberge/personas', undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `personas 列表失败:${data?.error ?? status}`, { status });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (JSON_MODE) return out({ items, defaultPersona: data?.defaultPersona ?? null }, [{ cmd: 'uberge persona-edit <avatar> --set name=…' }]);
+    for (const p of items) {
+        console.log(`${p.isDefault ? '*' : ' '} ${p.avatar.padEnd(28)} ${p.name}${p.title ? ` · ${p.title}` : ''}${p.hasImage ? '' : '  \x1b[2m(no img)\x1b[0m'}`);
+    }
+    console.log(`\n${items.length} personas`);
+    next('uberge persona-edit <avatar> --set name=…');
+    footer();
+}
+
+async function cmdPersonaEdit() {
+    const avatar = positional[1];
+    if (!avatar) return void fail('usage', 'uberge persona-edit <avatar> [json|--json-file f|--stdin|--set k=v]', { hint: '字段:name/description/position/title/is_default', rc: 2 });
+    let body = {};
+    if (flags.jsonFile || flags.stdin || positional[2] !== undefined) {
+        const doc = await readJsonBody(positional.slice(2), 'persona-edit 需要 JSON doc 或 --set k=v');
+        if (doc === undefined) return;
+        if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return void fail('usage', 'persona doc 必须是对象', { rc: 2 });
+        body = doc;
+    }
+    body = { ...body, ...(flags.set ?? {}) };
+    if (!Object.keys(body).length) return void fail('usage', 'persona-edit 无字段可写——给 JSON doc 或 --set name=…', { rc: 2 });
+    const { data, status } = await req('PUT', `/api/uberge/personas/${encodeURIComponent(avatar)}`, body, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `persona-edit ${avatar} 失败:${data?.error ?? status}`, { status });
+    const n = [{ cmd: 'uberge personas', why: '看表' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`persona ${data?.avatar ?? avatar} → name="${data?.name ?? ''}"${data?.isDefault ? ' · default' : ''}${data?.title ? ` · ${data.title}` : ''}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdPersonaDelete() {
+    const avatar = positional[1];
+    if (!avatar) return void fail('usage', 'uberge persona-delete <avatar>(显式 avatar 文件名)', { rc: 2 });
+    const { data, status } = await req('DELETE', `/api/uberge/personas/${encodeURIComponent(avatar)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `persona: ${avatar}`, { hint: 'uberge personas 看列表' });
+    if (status >= 400 || data?.error) return void fail('server', `persona-delete 失败:${data?.error ?? status}`, { status });
+    if (JSON_MODE) return out({ deleted: avatar }, [{ cmd: 'uberge personas' }]);
+    console.log(`deleted persona "${avatar}"`);
+    footer();
+}
+
+// —— settings 面(服务端已脱敏;PATCH 仅 power_user|extension_settings 白名单)——
+const SETTINGS_PATCHABLE = new Set(['power_user', 'extension_settings']);
+
+async function cmdSettings() {
+    const { data, status } = await req('GET', '/api/uberge/settings', undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `settings 读取失败:${data?.error ?? status}`, { status });
+    const settings = data?.settings ?? {};
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(settings, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: 'uberge settings-set --json-file <patch>', why: '受限合并写回' }]);
+    const keys = Object.keys(settings);
+    console.log(`settings — ${keys.length} 顶层段`);
+    for (const k of keys.slice(0, flags.n ?? 25)) {
+        const v = settings[k];
+        const desc = v && typeof v === 'object' ? (Array.isArray(v) ? `[${v.length}]` : `{${Object.keys(v).length} keys}`) : trunc(JSON.stringify(v), 60);
+        console.log(`  ${k} ${desc}`);
+    }
+    if (!flags.full && keys.length > (flags.n ?? 25)) console.log(`  …+${keys.length - (flags.n ?? 25)}(--full/--out 展开)`);
+    next('uberge settings-set --json-file <patch>');
+    footer();
+}
+
+async function cmdSettingsSet() {
+    const patch = await readJsonBody(positional.slice(1), 'settings-set 需要 JSON patch {power_user:{…}}|{extension_settings:{…}}');
+    if (patch === undefined) return;
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !Object.keys(patch).length) {
+        return void fail('usage', 'settings patch 必须是非空对象', { rc: 2 });
+    }
+    const rejected = Object.keys(patch).filter(k => !SETTINGS_PATCHABLE.has(k));
+    if (rejected.length) {
+        return void fail('usage', `不可写顶层段: ${rejected.join(', ')}`, { hint: `此端点只放 ${[...SETTINGS_PATCHABLE].join(' | ')};其余段走服务端管理面`, rc: 2 });
+    }
+    for (const [k, v] of Object.entries(patch)) {
+        if (!v || typeof v !== 'object' || Array.isArray(v)) {
+            return void fail('usage', `section "${k}" 必须是 JSON 对象(逐键浅合并)`, { rc: 2 });
+        }
+    }
+    const { data, status } = await req('PATCH', '/api/uberge/settings', patch, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `settings-set 失败:${data?.error ?? status}`, { status });
+    const n = [{ cmd: 'uberge settings', why: '看合并后视图' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`settings merged: ${Object.keys(patch).map(k => `${k}(+${Object.keys(patch[k]).length})`).join(' · ')}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+// —— secrets 面(值永不回显;服务端 allowKeysExposure 开了也照打码)——
+const maskSecret = (v) => {
+    const s = String(v ?? '');
+    if (s.length <= 4) return '····';
+    return `${s.slice(0, 2)}${'·'.repeat(Math.min(6, Math.max(2, s.length - 4)))}${s.slice(-2)}`;
+};
+const maskedSecretEntries = (entries) => (Array.isArray(entries) ? entries : []).map(e => ({
+    id: e?.id, value: maskSecret(e?.value), label: e?.label ?? '', active: Boolean(e?.active),
+}));
+
+async function cmdSecrets() {
+    const { data, status } = await req('GET', '/api/uberge/secrets', undefined, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `secrets 读取失败:${data?.error ?? status}`, { status });
+    const raw = data?.secrets ?? {};
+    const set = {};
+    let nullCount = 0;
+    for (const [k, entries] of Object.entries(raw)) {
+        if (Array.isArray(entries) && entries.length) set[k] = maskedSecretEntries(entries);
+        else nullCount++;
+    }
+    if (JSON_MODE) return out({ secrets: set, unset: nullCount }, [{ cmd: 'uberge secret-set <key> --value …|--stdin' }]);
+    const rows = Object.entries(set);
+    for (const [k, entries] of rows) {
+        for (const e of entries) {
+            console.log(`${e.active ? '\x1b[32m●\x1b[0m' : '\x1b[2m○\x1b[0m'} ${k.padEnd(28)} ${e.value.padEnd(14)} ${e.label} \x1b[2m${String(e.id).slice(0, 8)}\x1b[0m`);
+        }
+    }
+    console.log(`\n${rows.length} keys set · ${nullCount} empty`);
+    next('uberge secret-set <key> --value …|--stdin');
+    footer();
+}
+
+async function cmdSecretSet() {
+    const key = positional[1];
+    if (flags.id) return void fail('usage', 'PUT 总是新建条目(服务端铸 id)——没有 --id 语义;删旧条目用 secret-delete <key> <id>', { rc: 2 });
+    let value = flags.value;
+    if (value === undefined && flags.stdin) {
+        // stdin 密钥不进出参/命令行历史;剥尾换行防 "…\n" 静默进 value
+        value = (await readStdinBuffer()).toString('utf8').replace(/\r?\n$/, '');
+    }
+    if (value === undefined && positional[2] !== undefined) value = positional[2];
+    if (!key) return void fail('usage', 'uberge secret-set <key> --value v|--stdin [--label l]', { hint: 'uberge secrets 看键名(api_key_* 一族)', rc: 2 });
+    if (typeof value !== 'string' || !value) return void fail('usage', 'secret-set 需要 --value v 或 --stdin(值不进命令行历史)', { rc: 2 });
+    const { data, status } = await req('PUT', `/api/uberge/secrets/${encodeURIComponent(key)}`, { value, ...(flags.label ? { label: flags.label } : {}) }, { allowFail: true });
+    if (status === 400) return void fail('usage', `secret-set 被拒:${data?.error ?? 'bad key/value'}`, { detail: data?.error, hint: 'uberge secrets 看合法键名', rc: 2 });
+    if (status >= 400 || data?.error) return void fail('server', `secret-set 失败:${data?.error ?? status}`, { status });
+    const entries = maskedSecretEntries(data?.entries);
+    if (JSON_MODE) return out({ ok: true, id: data?.id, key, entries });
+    console.log(`secret-set ${key} → id ${String(data?.id ?? '').slice(0, 8)}… (active)`);
+    for (const e of entries) console.log(`  ${e.active ? '●' : '○'} ${e.value}  ${e.label} \x1b[2m${String(e.id).slice(0, 8)}\x1b[0m`);
+    footer();
+}
+
+async function cmdSecretDelete() {
+    const key = positional[1], id = positional[2] ?? flags.id;
+    if (!key || !id) return void fail('usage', 'uberge secret-delete <key> <id>', { hint: 'uberge secrets 看 id', rc: 2 });
+    const { data, status } = await req('DELETE', `/api/uberge/secrets/${encodeURIComponent(key)}/${encodeURIComponent(id)}`, undefined, { allowFail: true });
+    if (status === 400) return void fail('usage', `secret-delete 被拒:${data?.error ?? ''}`, { rc: 2 });
+    if (status >= 400 || data?.error) return void fail('server', `secret-delete 失败:${data?.error ?? status}`, { status });
+    if (JSON_MODE) return out({ deleted: { key, id } }, [{ cmd: 'uberge secrets' }]);
+    console.log(`deleted secret ${key}/${String(id).slice(0, 8)}`);
+    footer();
+}
+
+// —— 数据面:import / backup / lan ——
+/** 导入载荷:--file f | 位置参 | --stdin(二进制)。回 {buffer,fileName} 或 null(已 fail)。 */
+async function importPayload() {
+    if (flags.stdin) {
+        const buffer = await readStdinBuffer();
+        if (!buffer.length) { fail('usage', 'stdin 空载荷', { rc: 2 }); return null; }
+        return { buffer, fileName: String(flags.name ?? positional[1] ?? 'stdin.bin') };
+    }
+    const file = flags.file ?? positional[1];
+    if (!file) { fail('usage', '需要文件(--file f | 位置参 | --stdin)', { rc: 2 }); return null; }
+    let buffer;
+    try { buffer = readFileSync(resolve(file)); }
+    catch (e) { fail('usage', `读文件失败: ${e.message}`, { rc: 2 }); return null; }
+    return { buffer, fileName: String(flags.name ?? basename(resolve(file))) };
+}
+const importBody = (p, extra = {}) => ({ name: p.fileName, dataBase64: p.buffer.toString('base64'), ...extra });
+
+async function cmdImportScan() {
+    const dir = positional[1] ?? flags.dir;
+    if (!dir) return void fail('usage', 'uberge import-scan <dir>(服务端路径,不是本地路径)', { rc: 2 });
+    const { data, status } = await req('POST', '/api/uberge/import/scan-st', { dir: String(dir) }, { allowFail: true });
+    if (status === 403) return void fail('server', 'import-scan 需要 admin profile', { status });
+    if (status === 404) return void fail('not_found', `not a directory: ${dir}`, { detail: data?.error });
+    if (status >= 400 || data?.error) return void fail('server', `import-scan 失败:${data?.error ?? status}`, { status });
+    const counts = data?.counts ?? {};
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (JSON_MODE) return out(data, [{ cmd: 'uberge import-preview --file <path>' }]);
+    console.log(`${data?.root ?? dir} — ${data?.total ?? items.length} importable`);
+    for (const [k, n] of Object.entries(counts)) console.log(`  ${k.padEnd(12)} ${n}`);
+    for (const i of items.slice(0, flags.n ?? 20)) console.log(`  \x1b[2m${i.kind.padEnd(10)}\x1b[0m ${trunc(i.name, 40)}  \x1b[2m${(i.bytes / 1024).toFixed(0)}KB ${i.file}\x1b[0m`);
+    if (!flags.full && items.length > (flags.n ?? 20)) console.log(`  …+${items.length - (flags.n ?? 20)}(--full 展开)`);
+    next('uberge import-preview --file <path>');
+    footer();
+}
+
+async function cmdImportPreview() {
+    const p = await importPayload();
+    if (!p) return;
+    const { data, status } = await req('POST', '/api/uberge/import/preview', importBody(p, {
+        ...(flags.api ? { apiId: flags.api } : {}),
+        ...(flags.as ? { targetName: flags.as } : {}),
+    }), { allowFail: true });
+    if (status === 422 || status === 400) return void fail('usage', `探测失败:${data?.error ?? status}`, { detail: data?.hints ?? data?.error, hint: '换文件或用 --kind/--api 纠类型后 commit', rc: 2 });
+    if (status >= 400 || data?.error) return void fail('server', `import-preview 失败:${data?.error ?? status}`, { status });
+    const conflict = Boolean(data?.conflicts?.existingSameName);
+    const n = [{ cmd: `uberge import-commit ${flags.file ?? positional[1] ?? '<file>'}${conflict ? ' --conflict rename' : ''}`, why: conflict ? '有同名冲突,显式给策略' : '确认落库' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`${data?.kind ?? '?'}  "${data?.name ?? '?'}" → ${data?.targetName ?? '?'}${conflict ? '  \x1b[33m⚠ 同名已存在\x1b[0m' : ''}`);
+    const sum = data?.summary ?? {};
+    for (const [k, v] of Object.entries(sum).slice(0, flags.full ? 1e9 : 12)) {
+        console.log(`  ${k}: ${trunc(typeof v === 'object' ? JSON.stringify(v) : String(v), 90)}`);
+    }
+    for (const w of (data?.warnings ?? [])) console.log(`  \x1b[33mwarning:\x1b[0m ${w}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdImportCommit() {
+    const p = await importPayload();
+    if (!p) return;
+    const { data, status } = await req('POST', '/api/uberge/import/commit', importBody(p, {
+        ...(flags.kind ? { kind: flags.kind } : {}),
+        ...(flags.as ? { targetName: flags.as } : {}),
+        ...(flags.conflict ? { conflict: flags.conflict } : {}),
+        ...(flags.api ? { apiId: flags.api } : {}),
+    }), { allowFail: true });
+    if (status === 409) {
+        return void fail('exists', `同名冲突 "${data?.targetName ?? ''}"——显式给策略`, {
+            detail: data?.error,
+            hint: '--conflict rename|overwrite|skip',
+            nexts: [{ cmd: `uberge import-commit ${flags.file ?? positional[1] ?? '<file>'} --conflict rename` }],
+            rc: 3,
+        });
+    }
+    if (status === 422 || status === 400) return void fail('usage', `commit 被拒:${data?.error ?? status}`, { detail: data?.hints ?? data?.error, rc: 2 });
+    if (status >= 400 || data?.error) return void fail('server', `import-commit 失败:${data?.error ?? status}`, { status });
+    const n = data?.kind === 'char' ? [{ cmd: 'uberge chars -n 5', why: '看新卡' }] : data?.kind === 'world' ? [{ cmd: `uberge wi ${data.targetName} -n 10` }] : [{ cmd: 'uberge doctor' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`imported ${data?.kind ?? '?'} "${data?.name ?? ''}" → ${data?.targetName ?? '?'}${data?.renamed ? ' (renamed)' : ''}${data?.skipped ? ' (skipped)' : ''}`);
+    for (const w of (data?.warnings ?? [])) console.log(`  \x1b[33mwarning:\x1b[0m ${w}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdBackup() {
+    // zip attachment 二进制流——req() 的 JSON 路径走不通,自管 fetch(保留 401/403 重握手一次)
+    const doFetch = () => fetch(`${SERVER}/api/uberge/backup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf, Cookie: cookie },
+        body: JSON.stringify(flags.set ? { selection: flags.set } : {}),
+        signal: AbortSignal.timeout(flags.wait ?? 180_000),
+    });
+    await session();
+    let r = await doFetch();
+    if (r.status === 401 || r.status === 403) { csrf = ''; cookie = ''; await session(); r = await doFetch(); }
+    if (!r.ok) {
+        const t = await r.text().catch(() => '');
+        let d; try { d = JSON.parse(t); } catch { d = t; }
+        return void fail('server', `backup → ${r.status}`, { status: r.status, detail: d });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    const cd = r.headers.get('content-disposition') ?? '';
+    const m = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(cd);
+    const srvName = (m ? decodeURIComponent(String(m[1]).trim().replace(/^"|"$/g, '')) : '') || `uberge-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.zip`;
+    let outPath;
+    if (flags.out) {
+        const p = resolve(flags.out);
+        outPath = /[\\/]$/.test(flags.out) || (existsSync(p) && statSync(p).isDirectory()) ? join(p, srvName) : p;
+    } else {
+        outPath = resolve(srvName);
+    }
+    writeFileSync(outPath, buf);
+    if (JSON_MODE) return out({ file: outPath, bytes: buf.length, serverName: srvName });
+    console.log(`backup → ${outPath} (${(buf.length / 1024).toFixed(1)}KB)`);
+    footer();
+}
+
+/** lan offer/import 共用的 selection 源:--set cat=bool 或 --json-file。 */
+function lanSelection() {
+    if (flags.jsonFile) {
+        try { return JSON.parse(readFileSync(resolve(flags.jsonFile), 'utf8')); }
+        catch (e) { fail('usage', `--json-file 读取失败: ${e.message}`, { rc: 2 }); return null; }
+    }
+    if (flags.set) return { ...flags.set };
+    return undefined;
+}
+
+async function cmdLanOffer() {
+    const selection = lanSelection();
+    if (selection === null) return;
+    const { data, status } = await req('POST', '/api/uberge/lan/offer', {
+        ...(flags.handle ? { handle: flags.handle } : {}),
+        ...(selection ? { selection } : {}),
+    }, { allowFail: true });
+    if (status >= 400 || data?.error) return void fail('server', `lan-offer 失败:${data?.error ?? status}`, { status, hint: status === 403 ? '跨 handle 需要 admin' : undefined });
+    const n = [{ cmd: `uberge lan-import --code ${data?.url ?? '<url>'}`, why: '对端机器执行拉入' }];
+    if (JSON_MODE) return out(data, n);
+    console.log(`offer → ${data?.url ?? '(no url)'}`);
+    console.log(`expires ${data?.expiresAt ? new Date(data.expiresAt).toISOString() : '?'}(一次性,~10min)`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
+async function cmdLanImport() {
+    const url = flags.code ?? positional[1];
+    if (!url) return void fail('usage', 'uberge lan-import <offer-url|--code c> [--mode merge|overwrite]', { hint: 'url 来自对端 lan-offer', rc: 2 });
+    const selection = lanSelection();
+    if (selection === null) return;
+    const mode = String(flags.mode ?? 'merge').toLowerCase();
+    if (!['merge', 'overwrite'].includes(mode)) return void fail('usage', '--mode 只认 merge|overwrite', { rc: 2 });
+    const { data, status } = await req('POST', '/api/uberge/lan/import', {
+        url,
+        ...(flags.handle ? { handle: flags.handle } : {}),
+        ...(selection ? { selection } : {}),
+        mode,
+    }, { allowFail: true, timeout: flags.wait ?? 240_000 });
+    if (status >= 400 || (data && typeof data === 'object' && data.error)) {
+        return void fail('server', `lan-import 失败:${typeof data === 'object' ? data?.error ?? status : trunc(data, 200)}`, {
+            status,
+            hint: 'url 必须是对端 /api/users/transfer/backup/<token> 一次性链接;超时/被用掉会 4xx',
+        });
+    }
+    let parsed = data;
+    if (typeof data === 'string') { try { parsed = JSON.parse(data); } catch { parsed = { raw: data }; } }
+    if (JSON_MODE) return out(parsed);
+    console.log(`lan-import ${mode} ← ${parsed?.source?.host ?? 'remote'}`);
+    console.log(JSON.stringify(parsed, null, 2).slice(0, flags.full ? 1e9 : 3000));
+    footer();
+}
+
 async function cmdRaw() {
     // 逃生舱:kernel 路由表上任何端点都能直达——写动词(PUT/PATCH/DELETE)
     // 不必为每条 REST 面单开命令。读面优先用具名命令(输出已整理)。
@@ -1377,8 +1992,11 @@ try {
         case 'recent': await cmdRecent(); break;
         case 'use': await cmdUse(); break;
         case 'chat-new': await cmdChatNew(); break;
+        case 'chat-create': await cmdChatCreate(); break;
+        case 'chat-get': await cmdChatGet(); break;
         case 'chat-rename': await cmdChatRename(); break;
         case 'chat-delete': await cmdChatDelete(); break;
+        case 'char': await cmdChar(); break;
         case 'history': await cmdHistory(); break;
         case 'edit': await cmdEdit(); break;
         case 'jobs': await cmdJobs(); break;
@@ -1387,8 +2005,19 @@ try {
         case 'attach': await cmdAttach(); break;
         case 'abort': await cmdAbort(); break;
         case 'persona': await cmdPersona(); break;
+        case 'personas': await cmdPersonas(); break;
+        case 'persona-edit': await cmdPersonaEdit(); break;
+        case 'persona-delete': await cmdPersonaDelete(); break;
         case 'presets': await cmdPresets(); break;
         case 'preset': await cmdPreset(); break;
+        case 'preset-get': await cmdPresetGet(); break;
+        case 'preset-edit': await cmdPresetEdit(); break;
+        case 'preset-delete': await cmdPresetDelete(); break;
+        case 'settings': await cmdSettings(); break;
+        case 'settings-set': await cmdSettingsSet(); break;
+        case 'secrets': await cmdSecrets(); break;
+        case 'secret-set': await cmdSecretSet(); break;
+        case 'secret-delete': await cmdSecretDelete(); break;
         case 'send': case 'say': case 'regen': case 'continue': case 'impersonate': case 'quiet': {
             const text = CMD === 'send' || CMD === 'say' || CMD === 'quiet'
                 ? await readTextArg(positional.slice(1))
@@ -1403,12 +2032,20 @@ try {
         case 'swipe': await cmdSwipe(); break;
         case 'worlds': await cmdWorlds(); break;
         case 'wi': await cmdWi(); break;
+        case 'world-edit': await cmdWorldEdit(); break;
+        case 'world-delete': await cmdWorldDelete(); break;
         case 'kernel': case 'caps': await cmdKernel(); break;
         case 'plugins': await cmdPlugins(); break;
         case 'plugin': await cmdPlugin(); break;
         case 'mvu': await cmdMvu(); break;
         case 'script': case 'stscript': await cmdScript(); break;
         case 'th': await cmdTh(); break;
+        case 'import-scan': await cmdImportScan(); break;
+        case 'import-preview': await cmdImportPreview(); break;
+        case 'import-commit': await cmdImportCommit(); break;
+        case 'backup': await cmdBackup(); break;
+        case 'lan-offer': await cmdLanOffer(); break;
+        case 'lan-import': await cmdLanImport(); break;
         case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
             console.log('uberge — agent-first CLI。裸跑看状态,`uberge schema` 看自描述目录,`uberge doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
