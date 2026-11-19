@@ -35,6 +35,12 @@ import {
     resettleMvuAfterWrite,
     settleMvuAfterAppend,
     sanitizeOperationsAgainstLukerGenerationId,
+    getBackupFunction,
+    writeChatSyncState,
+    applyIntegrityToMetadata,
+    sendRepoIntegrityConflict,
+    createChatHeader,
+    checkIntegrity,
 } from '../endpoints/chats.js';
 
 export const inject = ['webServer'];
@@ -872,6 +878,77 @@ export function apply(ctx) {
             return response.send(result);
         } catch (error) {
             return sendError(response, error, 'uberge/chats patch');
+        }
+    });
+
+    /**
+     * PUT /characters/:charDir/chats/:chatName/document —— 整文档替换(legacy /save 等价)。
+     * body:{header?, messages[], integrity?, force?, luker_generation_id?}
+     *   兼容 legacy 形状:{chat:[header, ...floors], force?}。
+     *   CAS:body.integrity ?? header.chat_metadata.integrity;force 跳过。
+     *   缺文件 + 带 expected → 按 legacy 语义降级 null 重试(无旧完整性可撞)。
+     *   upsert:文件不存在即创建(与 PUT .../chats/:chatName create-only 互补)。
+     * 响应:{ok:true, integrity}
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/document`, 'PUT', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const reqBody = request.body ?? {};
+            // 双形状:{header,messages} 或 legacy {chat:[header,...floors]}
+            const doc = Array.isArray(reqBody.chat)
+                ? { header: reqBody.chat[0], messages: reqBody.chat.slice(1) }
+                : { header: reqBody.header, messages: reqBody.messages };
+            if (!Array.isArray(doc.messages)) {
+                return response.status(400).send({ error: 'Expected body.messages array (or legacy body.chat array)' });
+            }
+            const handle = request.user.profile.handle;
+            const chatFilePath = path.join(request.user.directories.chats, charDir, sanitize(`${chatName}.jsonl`));
+            const hint = { kind: 'character', avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` };
+            const writeReq = { ...request, body: { ...reqBody, avatar_url: hint.avatar_url, file_name: hint.file_name } };
+
+            const headerInput = (doc.header && typeof doc.header === 'object') ? doc.header : createChatHeader({});
+            const force = Boolean(reqBody.force);
+            const doIntegrityCheck = checkIntegrity && !force;
+            const expectedIntegrity = !doIntegrityCheck ? null
+                : (typeof reqBody.integrity === 'string' && reqBody.integrity.trim()
+                    ? reqBody.integrity.trim()
+                    : String(headerInput?.chat_metadata?.integrity ?? '').trim() || null);
+
+            let integrity;
+            try {
+                ({ integrity } = await getChatRepo().save(handle, charDir, chatName, headerInput, doc.messages, expectedIntegrity));
+            } catch (err) {
+                if (err instanceof NotFoundError && expectedIntegrity !== null) {
+                    ({ integrity } = await getChatRepo().save(handle, charDir, chatName, headerInput, doc.messages, null));
+                } else if (err instanceof ConflictError) {
+                    return sendRepoIntegrityConflict(response, err);
+                } else {
+                    throw err;
+                }
+            }
+
+            writeChatSyncState(chatFilePath, { integrity, updated_at: Date.now() });
+            try {
+                const headerWithIntegrity = {
+                    ...headerInput,
+                    chat_metadata: applyIntegrityToMetadata(headerInput.chat_metadata, integrity),
+                };
+                const jsonlData = [headerWithIntegrity, ...doc.messages].map(m => JSON.stringify(m)).join('\n');
+                getBackupFunction(handle, charDir)(request.user.directories.backups, charDir, jsonlData);
+            } catch (backupErr) {
+                console.error('Chat backup after uberge doc-save failed', backupErr);
+            }
+
+            await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+            // ack:整写里末楼非 AI 层 = 本次写并非生成落盘(同 legacy /save 门)
+            const chatData = [headerInput, ...doc.messages];
+            const lastFloor = doc.messages.length ? doc.messages[doc.messages.length - 1] : null;
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, chatData, lastFloor && lastFloor.is_user === false ? hint : null);
+            await resettleMvuAfterWrite(writeReq);
+            return response.send({ ok: true, integrity });
+        } catch (error) {
+            return sendError(response, error, 'uberge/chats document');
         }
     });
 }
