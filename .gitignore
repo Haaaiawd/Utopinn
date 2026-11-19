@@ -34,3 +34,9 @@ tests/golden-diff/golden-private/
 assets/
 apps/server/src/profile.patch.yaml
 .taste-skill/
+
+# 卡工作区(私有卡面/素材,不入库)
+work/
+
+# 前端验收截图(评审产物)
+apps/web/_shots/
