@@ -560,7 +560,8 @@ async function pollStatus(jobId, { waitMs = 60_000, breakOn = [] } = {}) {
     const terminals = new Set(['completed', 'failed', 'cancelled', ...breakOn]);
     let status = null;
     while (Date.now() < deadline) {
-        const { data } = await req('POST', '/api/backends/chat-completions/jobs/status', { id: jobId }, { allowFail: true });
+        // kernel GET /jobs/:id 是 legacy jobs/status 的字段超集(status/persisted 同名)。
+        const { data } = await req('GET', `/api/utopinn/jobs/${encodeURIComponent(jobId)}`, undefined, { allowFail: true });
         if (data?.status) {
             status = data;
             if (status.persisted || terminals.has(status.status)) break;
@@ -1004,10 +1005,11 @@ async function cmdStatus() {
             lastSwipe = Array.isArray(last?.swipes) ? { n: (last.swipe_id ?? 0) + 1, total: last.swipes.length } : null;
             saveState({ floors, integrity });
         }
-        const { data: active } = await req('POST', '/api/backends/chat-completions/jobs/active', {
-            persist_target: { avatar_url: `${c.charDir}.png`, file_name: `${c.chatName}.jsonl` },
-        }, { allowFail: true });
-        const jobs = Array.isArray(active?.jobs) ? active.jobs : [];
+        // kernel GET /jobs 客户端过滤替代 legacy jobs/active:
+        // chatKey=char:<avatar_url>:<chatName-noext>(与 getPersistChatKey 同构)。
+        const chatKey = `char:${c.charDir}.png:${c.chatName}`;
+        const { data: active } = await req('GET', '/api/utopinn/jobs', undefined, { allowFail: true });
+        const jobs = (Array.isArray(active?.items) ? active.items : []).filter(j => j.chatKey === chatKey || j.chatKey == null);
         const running = jobs.filter(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
         const snap = { ...ctxSummary(), floors, integrity, swipe: lastSwipe, activeJobs: running.map(j => ({ id: j.id, status: j.status })) };
         if (JSON_MODE) return out(snap, running.length ? [{ cmd: `utopinn attach ${running[0].id}` }] : genNextFor('status', false));
@@ -1032,6 +1034,7 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'GET|exact|/api/utopinn/_kernel',
     'GET|pattern|/api/utopinn/jobs',
     'GET|pattern|/api/utopinn/jobs/:id',
+    'POST|pattern|/api/utopinn/jobs/:id/abort',
     'POST|pattern|/api/utopinn/generate',
     'POST|pattern|/api/utopinn/preview',
     // —— 生成写盘(writeOp:send/say append;edit/swipe/continue patch)——
@@ -1303,12 +1306,20 @@ async function cmdUse() {
     const char = await resolveChar(positional[1]);
     if (!char) return;
     const charDir = stripExt(char.avatar, 'png');
-    const chatName = await resolveChatForUse(charDir, positional[2], char.chat);
-    if (!chatName) return;
-    saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: { name: chatName }, group: null, floors: null, integrity: null });
-    const n = [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: '发消息' }];
+    // 新卡无聊天可解析时只绑卡坐标(不隐式建文件——铁律12 防的是
+    // typo 变新文件,绑名不建文件);chat-new/chat-create 再补聊天坐标。
+    const chats = await listChats(charDir);
+    let chatName = null;
+    if (positional[2] || chats.length) {
+        chatName = await resolveChatForUse(charDir, positional[2], char.chat);
+        if (!chatName) return;
+    }
+    saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: chatName ? { name: chatName } : null, group: null, floors: null, integrity: null });
+    const n = chatName
+        ? [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: '发消息' }]
+        : [{ cmd: 'utopinn chat-new <name>', why: '此卡还没有聊天,建一个' }, { cmd: 'utopinn chats', why: '看聊天列表' }];
     if (JSON_MODE) return out({ charDir, charName: char.name, chatName }, n);
-    console.log(`→ ${char.name ?? charDir} @ ${chatName}`);
+    console.log(chatName ? `→ ${char.name ?? charDir} @ ${chatName}` : `→ ${char.name ?? charDir}(无聊天)`);
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
@@ -1349,7 +1360,8 @@ async function cmdGuse() {
 }
 
 async function cmdChatNew() {
-    const c = needCtx() ?? { charDir: flags.char ? stripExt(flags.char, 'png') : null, charName: null };
+    // 只需 char 坐标——新卡绑卡后 chat 尚不存在,needCtx 会误判 no_ctx。
+    const c = { charDir: state.char?.dir ?? (flags.char ? stripExt(flags.char, 'png') : null), charName: state.char?.name ?? null };
     if (!c?.charDir) { fail('no_ctx', '先选卡', { hint: 'utopinn use <char>' }); return; }
     const name = stripExt(positional[1] ?? '', 'jsonl');
     if (!name) return void fail('usage', 'utopinn chat-new <name>', { rc: 2 });
@@ -1624,7 +1636,7 @@ async function cmdAttach() {
 async function cmdAbort() {
     const id = positional[1] || state.lastJob?.id;
     if (!id) return void fail('usage', 'utopinn abort <jobId>', { rc: 2 });
-    await req('POST', `/api/generation/${encodeURIComponent(id)}/abort`, {});
+    await req('POST', `/api/utopinn/jobs/${encodeURIComponent(id)}/abort`, {});
     if (JSON_MODE) return out({ aborted: id });
     console.log(`aborted ${String(id).slice(0, 8)}`);
     footer();
