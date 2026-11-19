@@ -29,6 +29,18 @@ export interface ApiError {
     details?: Record<string, unknown>;
 }
 
+/**
+ * RFC 6902 JSON-Patch operation — shared by every patch-shaped endpoint
+ * (chat doc PATCH, state sidecar patch, meta patch).
+ */
+export interface JsonPatchOp {
+    op: 'add' | 'remove' | 'replace' | 'test' | 'move' | 'copy';
+    /** `/`-prefixed JSON pointer (utopinn chat doc namespace: `/body/<i>/…` or `/header/…`). */
+    path: string;
+    value?: unknown;
+    from?: string;
+}
+
 export interface UserProfile {
     handle: string;
     name: string;
