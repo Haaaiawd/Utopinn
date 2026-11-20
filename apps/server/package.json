@@ -161,7 +161,8 @@
         "plugins:update": "node plugins update",
         "plugins:install": "node plugins install",
         "storage:migrate": "node scripts/storage-migrate.js",
-        "storage:audit-names": "node scripts/audit-storage-names.js"
+        "storage:audit-names": "node scripts/audit-storage-names.js",
+        "test:drift": "node tests/test-gate-coverage.cjs && node tests/test-cli-routes.cjs"
     },
     "bin": {
         "luker": "./src/server-global.js"
