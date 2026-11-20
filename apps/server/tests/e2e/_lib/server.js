@@ -302,7 +302,10 @@ async function spawnAt(port, batchKey, scenarioId, extraEnv, extraConfig, useExi
     // every spec to the filesystem backend. Specs that genuinely need
     // sqlite (e.g. the storage-migrate suite) override via extraConfig.
     let effectiveConfig = structuredClone({ 'storage.mode': 'fs', ...(extraConfig || {}) });
-    let launchEnv = { ...extraEnv };
+    // Browser-driven specs need the bundled legacy UI — server-main only
+    // mounts apps/server/public when LUKER_SERVE_LEGACY=1 (default off,
+    // kernel-only). Specs may still override via extraEnv.
+    let launchEnv = { LUKER_SERVE_LEGACY: '1', ...extraEnv };
     let jitless = false;
     let execArgv = [];
     let stderr = '';
