@@ -56,8 +56,10 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
 
     async function chatVariables(): Promise<Record<string, unknown>> {
         const res = await client.getChat(deps.avatarUrl, deps.chatFileName);
-        const meta = res?.header?.chat_metadata;
-        return (meta?.variables as Record<string, unknown>) ?? {};
+        // res 两形:{header,body} | legacy 数组 [header, ...messages](同 chatBody 口径)
+        const meta = res?.header?.chat_metadata
+            ?? (Array.isArray(res) ? (res[0] as Record<string, unknown> | undefined)?.chat_metadata : undefined);
+        return ((meta as Record<string, unknown> | undefined)?.variables as Record<string, unknown>) ?? {};
     }
 
     async function readScope(args: ThGetVariablesArgs): Promise<Record<string, unknown>> {

@@ -119,8 +119,49 @@ function mutateCliState(mut) {
 // ─── 预置语料(pre-boot:先克隆种子再写盘,服务端冷启吃进内存后任何
 //      legacy 重存都不会把探针键冲掉;post-boot 直写会被服务端自己的
 //      settings 保存覆盖——实测被 /api/characters/* 链路的写盘清掉过)───
+const { writeCardToPng } = await import('@utopinn/formats').catch(() => ({}));
+/** 嵌真 PNG 探头卡:card_app 资产走 data.extensions.card_app.files。 */
+function writeCardAppProbe({ dataRoot, avatarFile, name, cardApp }) {
+    const charsDir = resolve(dataRoot, 'default-user', 'characters');
+    mkdirSync(charsDir, { recursive: true });
+    const seed = resolve(SERVER_DIR, 'default/content/default_Seraphina.png');
+    const card = {
+        spec: 'chara_card_v2', spec_version: '2.0',
+        data: {
+            name, description: 'cardapp acceptance probe', personality: '', scenario: '',
+            first_mes: 'probe', mes_example: '', creator_notes: '', system_prompt: '',
+            post_history_instructions: '', alternate_greetings: [], tags: ['acc'],
+            creator: 'acc', character_version: '1.0',
+            extensions: { card_app: cardApp },
+        },
+    };
+    if (typeof writeCardToPng !== 'function') throw new Error('@utopinn/formats writeCardToPng 不可导入(cardapp 探头无法制卡)');
+    const png = writeCardToPng(new Uint8Array(readFileSync(seed)), JSON.stringify(card));
+    writeFileSync(resolve(charsDir, avatarFile), Buffer.from(png));
+}
+
 function seedCorpus(dataRoot, { upstreamUrl }) {
     writeCharacter({ dataRoot, avatarFile: `${CHAR_DIR}.png` });
+    // cardapp headless 探头 ×2:document 面(TH 链+事件订阅)与 module 面(init(ctx))。
+    // mounts 按「PNG 元数据优先」读卡——必须真嵌 PNG tEXt,sidecar 不顶用。
+    writeCardAppProbe({ dataRoot, avatarFile: 'acc-cardapp.png', name: 'CardApp Probe', cardApp: {
+        enabled: true, entry: 'index.html',
+        files: {
+            'index.html': '<!doctype html><html><body><div id="app">loading</div><script>'
+                + '(function(){var app=document.getElementById("app");'
+                + 'if(!window.TavernHelper){app.textContent="NO-SHIM";return}'
+                + 'TavernHelper.eventOn("acc_probe_ev",function(){app.textContent+="EVHIT"});'
+                + 'TavernHelper.getVariables({type:"chat"}).then(function(v){app.textContent="VARS:"+JSON.stringify(v)})'
+                + '})();</script></body></html>',
+            'style.css': '#app{color:#eee}',
+        },
+    } });
+    writeCardAppProbe({ dataRoot, avatarFile: 'acc-cardapp-mod.png', name: 'CardApp Module Probe', cardApp: {
+        enabled: true, entry: 'index.js',
+        files: {
+            'index.js': 'export async function init(ctx){document.getElementById("card-app-container").textContent="MODULE-INIT:"+ctx.charId}',
+        },
+    } });
     writePreset({ dataRoot, name: PRESET });
     writePreset({ dataRoot, name: PRESET2 });
     writeWorldBook({ dataRoot, name: BOOK, entries: BRYN_ENTRIES });
@@ -491,6 +532,51 @@ try {
         || JSON.stringify(data?.data).slice(0, 140));
     r = cli(['diag-client', 'acc-probe', '--code', 'probe']);
     expect('diag-client 上报', r, { rc: 0 }, (data) => data?.ok === true && typeof data?.seq === 'number' || JSON.stringify(data));
+
+    // ──────────────── K. cardapp headless 宿主(jsdom 真跑) ────────────────
+    // 一次性进程语义:每动词独立 mount→act→dispose。jsdom 在 9P/NFS 上冷
+    // import 可能 >60s——UTOPINN_CARDAPP_DEPS_DIR 指向本地镜像可秒级;本
+    // 面只跑 6 个用例,正常磁盘 ~15s/个。
+    group('cardapp headless(jsdom 真跑卡 HTML/JS)');
+    r = cli(['chat-create', 'acc-cardapp-chat', '--char', 'acc-cardapp']);
+    expect('cardapp chat 就绪', r, { rc: 0 });
+    r = cli(['use', 'acc-cardapp', 'acc-cardapp-chat']);
+    expect('cardapp ctx 绑定', r, { rc: 0 });
+    r = cli(['chat-put', JSON.stringify({ header: { user_name: 'User', character_name: 'CardApp Probe', chat_metadata: { variables: { acc_probe: 'seeded', counter: 7 } } }, messages: [] })]);
+    expect('cardapp 变量播种', r, { rc: 0 });
+    r = cli(['cardapp', 'mount']);
+    expect('cardapp mount(document 面)', r, { rc: 0 }, (data) =>
+        (data?.ok === true && data?.mount?.face === 'th' && data?.mount?.entryKind === 'document')
+        || `mount=${JSON.stringify(data?.mount).slice(0, 160)}`);
+    r = cli(['cardapp', 'eval', "document.getElementById('app').textContent"]);
+    expect('cardapp eval(卡自跑 TH 链)', r, { rc: 0 }, (data) =>
+        /VARS:\{[^}]*acc_probe/.test(String(data?.result ?? '')) || `result=${JSON.stringify(data?.result).slice(0, 160)}`);
+    r = cli(['cardapp', 'call', 'getVariables', '{"type":"chat"}']);
+    expect('cardapp call getVariables', r, { rc: 0 }, (data) => data?.result?.acc_probe === 'seeded' || `result=${JSON.stringify(data?.result).slice(0, 140)}`);
+    r = cli(['th', 'getVariables', '{"type":"chat"}']);
+    expect('th getVariables 对拍同真值', r, { rc: 0 }, (data) => data?.result?.acc_probe === 'seeded' || `result=${JSON.stringify(data?.result).slice(0, 140)}`);
+    // 事件投递:卡 init 里 eventOn('acc_probe_ev') → 宿主 push 等价物
+    // (shim 的 __utopinnPanelReceive 入口,与 bridge.push 同路) → DOM 落 EVHIT
+    r = cli(['cardapp', 'eval',
+        "(async()=>{window.__utopinnPanelReceive({channel:'utopinn-panel',direction:'push',nonce:window.__UTOPINN_PANEL_NONCE__,event:'th.event',payload:{name:'acc_probe_ev',args:[]}});await new Promise(r=>setTimeout(r,80));return document.getElementById('app').textContent})()"]);
+    expect('cardapp th.event 推送投递', r, { rc: 0 }, (data) => /EVHIT/.test(String(data?.result ?? '')) || `result=${JSON.stringify(data?.result).slice(0, 160)}`);
+    // nonce 门:错 nonce 的桥请求必须回 bad_nonce wire 错(bridge.ts 同码)
+    r = cli(['cardapp', 'eval',
+        "(async()=>{let hit=null;const orig=window.__utopinnPanelReceive;window.__utopinnPanelReceive=(m)=>{hit=m;return orig(m)};window.__utopinnPanelPost({channel:'utopinn-panel',direction:'request',nonce:'BADNONCE',requestId:'q1',method:'th.getVariables',args:{type:'chat'}});await new Promise(r=>setTimeout(r,120));return hit?.error?.code??('resp='+JSON.stringify(hit))})()"]);
+    expect('cardapp 错 nonce → bad_nonce', r, { rc: 0 }, (data) => data?.result === 'bad_nonce' || `result=${JSON.stringify(data?.result)}`);
+    // module 面:esbuild bundle + 显式 init(ctx)——服务端 module shell 只
+    // 载不跑,init 调用是本宿主补的死卡点(设计 §0-1)
+    r = cli(['chat-create', 'acc-mod-chat', '--char', 'acc-cardapp-mod']);
+    expect('module chat 就绪', r, { rc: 0 });
+    r = cli(['cardapp', 'mount', '--char', 'acc-cardapp-mod', '--chat', 'acc-mod-chat']);
+    expect('cardapp mount(module init)', r, { rc: 0 }, (data) =>
+        (data?.ok === true && data?.mount?.initCalled === true && data?.mount?.face === 'ctx')
+        || `mount=${JSON.stringify(data?.mount).slice(0, 160)}`);
+    r = cli(['cardapp', 'eval', "document.getElementById('card-app-container').textContent", '--char', 'acc-cardapp-mod', '--chat', 'acc-mod-chat']);
+    expect('module init(ctx) 真执行', r, { rc: 0 }, (data) =>
+        /MODULE-INIT:acc-cardapp-mod/.test(String(data?.result ?? '')) || `result=${JSON.stringify(data?.result).slice(0, 160)}`);
+    r = cli(['use', CHAR_DIR, CHAT]);
+    expect('ctx 还原', r, { rc: 0 });
 
 } catch (e) {
     console.error(`\nSETUP FAIL: ${e?.message ?? e}`);
