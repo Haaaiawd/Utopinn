@@ -908,10 +908,15 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     <div className="flex shrink-0 items-center gap-1">
                         {s.isMobile ? (
                             <button
-                                className="ghost-btn h-8 gap-1.5 border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 text-[12px] text-[color:var(--fg-primary)]"
-                                onClick={() => s.setSheetSnap('half')}
+                                className="ghost-btn h-8 gap-1.5 border px-3 text-[12px] text-[color:var(--fg-primary)]"
+                                style={{
+                                    borderRadius: 999,
+                                    background: s.sheetSnap !== 'closed' ? 'var(--bg-active)' : 'var(--bg-surface)',
+                                    borderColor: s.sheetSnap !== 'closed' ? 'var(--border-bold)' : 'var(--border-hairline)',
+                                }}
+                                onClick={() => s.setSheetSnap(s.sheetSnap === 'closed' ? 'half' : 'closed')}
                             >
-                                <Icon name="panelRight" size={15} /><span>{t('mob.panel')}</span>
+                                <Icon name="panelRight" size={15} active={s.sheetSnap !== 'closed'} /><span>{t('mob.panel')}</span>
                             </button>
                         ) : (
                             <button className="ghost-btn h-8 w-8" onClick={s.toggleWorkbench} title={t('chrome.workbench')}>
