@@ -69,6 +69,8 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--gchat') flags.gchat = argv[++i];
     else if (a === '--member') flags.member = argv[++i];
     else if (a === '--no-chain') flags.noChain = true;
+    else if (a === '--by') flags.by = argv[++i];
+    else if (a === '--range') flags.range = argv[++i];
     else if (a === '--set') {
         const kv = String(argv[++i]).split('=');
         const raw = kv.slice(1).join('=');
@@ -1043,6 +1045,10 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'GET|pattern|/api/utopinn/diag/stats',
     'POST|pattern|/api/utopinn/diag/client',
     'GET|pattern|/api/utopinn/diag/jobs/:id/trace',
+    // —— stats 聚合面(stats/stats char/stats inject)——
+    'GET|pattern|/api/utopinn/stats/summary',
+    'GET|pattern|/api/utopinn/stats/by-char/:id',
+    'GET|pattern|/api/utopinn/stats/inject',
     'GET|pattern|/api/utopinn/jobs',
     'GET|pattern|/api/utopinn/jobs/:id',
     'POST|pattern|/api/utopinn/jobs/:id/abort',
@@ -1227,6 +1233,9 @@ const SCHEMA = {
         { cmd: 'utopinn errors [-n N]', desc: '[diag] warn+ 事件快捷面(http_4xx/5xx/job_failed/th/…)', out: '[{…}]' },
         { cmd: 'utopinn trace <jobId>', desc: '[diag] job 聚合回放:状态+注入时序表(preset/charbook/worldinfo/regex/instruct/macro/assemble)+perf+事件', out: '{job,injections,events,perf}' },
         { cmd: 'utopinn diag-client <msg> [--kind k] [--code c] [json|--stdin]', desc: '[diag] 客户端错误上报进服务端总线', out: '{ok,seq}' },
+        { cmd: 'utopinn stats [--by char|model|day] [--range 1h|24h|7d|all]', desc: '[stats] 生成量/失败率/token/时延分组表(jobs+inspector 聚合)', out: '{totals,groups[]}' },
+        { cmd: 'utopinn stats char <id>', desc: '[stats] 单卡:floors/gens/token/WI 命中频次+top 条目(charDir|卡名)', out: '{floors,generations,wiHits}' },
+        { cmd: 'utopinn stats inject [--chat <charDir>/]<chat>', desc: '[stats] 注入源命中率+token 占比;worldinfo 条目级命中表', out: '{sources[],entries[]}' },
         { cmd: 'utopinn plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
         { cmd: 'utopinn plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
         { cmd: 'utopinn mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
@@ -1247,7 +1256,7 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
@@ -1610,6 +1619,96 @@ async function cmdTrace() {
         for (const e of evts) console.log(`  ${fmtDiagEvent(e)}`);
     }
     footer();
+}
+
+// ═══ stats 聚合面(utopinn-stats 插件):summary/by-char/inject ═══
+const fmtTok = (v) => (v == null ? '-' : String(Math.round(v)));
+const fmtMs = (v) => (v == null ? '-' : `${Math.round(v)}ms`);
+const fmtPct = (v) => (v == null ? '-' : `${Math.round(v * 1000) / 10}%`);
+const fmtTs = (ts) => (ts ? new Date(ts).toISOString().slice(0, 16).replace('T', ' ') : '-');
+
+async function cmdStats() {
+    const sub = positional[1];
+    if (sub === 'char') return cmdStatsChar(positional[2]);
+    if (sub === 'inject') return cmdStatsInject();
+    // 未知子命令按 summary 兜底?不——显式报错,防 `stats chr foo` 静默当总表
+    if (sub !== undefined) return void fail('usage', `unknown stats subcommand: ${sub}`, { hint: 'utopinn stats [--by d] [--range r] · utopinn stats char <id> · utopinn stats inject [--chat c]', rc: 2 });
+    const params = new URLSearchParams();
+    if (flags.by) params.set('by', flags.by);
+    if (flags.range) params.set('range', flags.range);
+    const qs = params.toString();
+    const { data, status } = await req('GET', `/api/utopinn/stats/summary${qs ? `?${qs}` : ''}`, undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `stats summary → ${status}`, { status, detail: data });
+    const t = data?.totals ?? {};
+    const groups = Array.isArray(data?.groups) ? data.groups : [];
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: 'utopinn stats inject', why: '看注入源命中/token 占比' }, { cmd: 'utopinn stats char <id>' }]);
+    console.log(`\x1b[1mtotals\x1b[0m  gen ${t.generations ?? 0} · ok ${t.completed ?? 0} · fail ${t.failed ?? 0} (${fmtPct(t.failRate)}) · tok in ${fmtTok(t.tokensIn)} out ${fmtTok(t.tokensOut)} · p50 ${fmtMs(t.p50ms)} p95 ${fmtMs(t.p95ms)}${data?.empty ? ' · \x1b[2mempty\x1b[0m' : ''}`);
+    if (groups.length) {
+        console.log(`\n  ${'key'.padEnd(30)} ${'gen'.padStart(5)} ${'fail'.padStart(5)} ${'failRate'.padStart(9)} ${'tokIn'.padStart(8)} ${'tokOut'.padStart(8)} ${'p50'.padStart(8)} ${'p95'.padStart(8)}`);
+        for (const g of groups) {
+            console.log(`  ${trunc(g.key, 30).padEnd(30)} ${String(g.generations).padStart(5)} ${String(g.failed).padStart(5)} ${fmtPct(g.failRate).padStart(9)} ${fmtTok(g.tokensIn).padStart(8)} ${fmtTok(g.tokensOut).padStart(8)} ${fmtMs(g.p50ms).padStart(8)} ${fmtMs(g.p95ms).padStart(8)}`);
+        }
+    }
+    next('utopinn stats inject', 'utopinn stats char <id>');
+    footer(`by=${data?.by ?? '?'} range=${data?.range ?? '?'}`);
+    return data;
+}
+
+async function cmdStatsChar(id) {
+    const target = id ?? state.char?.dir;
+    if (!target) return void fail('usage', 'utopinn stats char <charDir|卡名>', { hint: 'utopinn chars 看目录名', rc: 2 });
+    const { data, status } = await req('GET', `/api/utopinn/stats/by-char/${encodeURIComponent(target)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `character not found: ${target}`, { hint: 'utopinn chars 看全表' });
+    if (status >= 400) return void fail('server', `stats by-char → ${status}`, { status, detail: data });
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: `utopinn stats inject --chat <chat>`, why: '该卡注入源明细' }]);
+    console.log(`\x1b[1m${data.name || data.charDir}\x1b[0m  \x1b[2m(${data.charDir})\x1b[0m`);
+    console.log(`floors ${data.floors ?? 0} · chats ${data.chats ?? 0} · gen ${data.generations ?? 0} (fail ${data.failed ?? 0}) · tok in ${fmtTok(data.tokens?.in)} out ${fmtTok(data.tokens?.out)}`);
+    console.log(`WI hits ${data.wiHits ?? 0} across ${data.wiGenerations ?? 0} gen · lastActive ${fmtTs(data.lastActive)}${data.empty ? ' · \x1b[2mempty\x1b[0m' : ''}`);
+    const top = Array.isArray(data.wiTop) ? data.wiTop : [];
+    if (top.length) {
+        console.log('\nWI top:');
+        for (const e of top) console.log(`  ${String(e.hits).padStart(4)}× ${e.entry}  \x1b[2m${trunc(e.key ?? '', 48)}\x1b[0m`);
+    }
+    next(`utopinn stats inject --chat <chat>`);
+    footer();
+    return data;
+}
+
+async function cmdStatsInject() {
+    // --chat 接受 <charDir>/<chat> 或裸聊天名(裸名用 ctx charDir 补前缀);
+    // 不带 --chat = 全局聚合(全 char 的 inject 事件)。
+    let chatParam = flags.chat;
+    if (chatParam && !chatParam.includes('/')) {
+        if (!state.char?.dir) return void fail('no_ctx', '--chat <chat> 需要 ctx charDir(或给 <charDir>/<chat>)', { hint: 'utopinn use <char> [chat]', rc: 2 });
+        chatParam = `${state.char.dir}/${chatParam}`;
+    }
+    const params = new URLSearchParams();
+    if (chatParam) params.set('chat', chatParam);
+    const qs = params.toString();
+    const { data, status } = await req('GET', `/api/utopinn/stats/inject${qs ? `?${qs}` : ''}`, undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `stats inject → ${status}`, { status, detail: data });
+    const sources = Array.isArray(data?.sources) ? data.sources : [];
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: 'utopinn stats', why: '生成总表' }, { cmd: 'utopinn trace <jobId>', why: '单 job 回放' }]);
+    console.log(`inject ${data?.chat ? `@ ${data.chat} ` : ''}· ${data?.events ?? 0} events${data?.empty ? ' · \x1b[2mempty\x1b[0m' : ''}`);
+    console.log(`\n  ${'source'.padEnd(11)} ${'events'.padStart(6)} ${'hitRate'.padStart(8)} ${'injected'.padStart(8)} ${'tokAvg'.padStart(8)} ${'msAvg'.padStart(7)}`);
+    for (const s of sources) {
+        const share = s.tokenShare != null ? ` share=${fmtPct(s.tokenShare)}` : '';
+        console.log(`  ${String(s.source).padEnd(11)} ${String(s.events).padStart(6)} ${fmtPct(s.hitRate).padStart(8)} ${String(s.injectedTotal).padStart(8)} ${fmtTok(s.tokensAvg).padStart(8)} ${fmtMs(s.msAvg).padStart(7)}${share}`);
+    }
+    const wi = sources.find((s) => s.source === 'worldinfo');
+    const entries = Array.isArray(wi?.entries) ? wi.entries : [];
+    if (entries.length) {
+        const show = flags.full ? entries : entries.slice(0, flags.n ?? 15);
+        console.log(`\nworldinfo entries(${entries.length}):`);
+        for (const e of show) console.log(`  ${String(e.hits).padStart(4)}× ${e.entry}  \x1b[2m${trunc(e.key ?? '', 52)}\x1b[0m`);
+        if (!flags.full && entries.length > show.length) console.log(`  …+${entries.length - show.length}(--full/-n 展开)`);
+    }
+    next('utopinn stats', 'utopinn trace <jobId>');
+    footer();
+    return data;
 }
 
 async function cmdDiagClient() {
@@ -2778,6 +2877,7 @@ try {
         case 'logs': await cmdLogs(); break;
         case 'errors': await cmdErrors(); break;
         case 'trace': await cmdTrace(); break;
+        case 'stats': await cmdStats(); break;
         case 'diag-client': await cmdDiagClient(); break;
         case 'preview': await cmdPreview(); break;
         case 'attach': await cmdAttach(); break;
