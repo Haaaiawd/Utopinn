@@ -3535,17 +3535,17 @@
         {
           "criterion": "卡内 card_app.files 在导入时物化到 card-apps/<stem>/,前端可查",
           "verify_by": "导入验收脚本断言 cardAppFiles>0",
-          "evidence": ""
+          "evidence": "2026-11-21 实测:掌门卡 v31(我没想当掌门啊_角色卡_v31.json)内嵌 card_app.files=71。extractCardAppFiles(utopinn-data.js:370 import-commit 钩)实测 → card-apps/我没想当掌门啊/ 落盘 71/71,index.js 在,卡面 files 正确剥离。mount 懒提取同验:createMount→ensureCardAppAssets 真卡实测 71 文件落盘(card-runtime-assets.test.mjs test2 + 一次性真卡 harness)。import-pipeline.js:114 cardAppFiles 计数与 extractCardAppFiles 读同一字段 data.extensions.card_app.files,预览面 71>0。"
         },
         {
           "criterion": "应用内(CardApp 面板/浮窗)能挂载沙箱渲染真实 CardApp,ctx 桥双向通",
           "verify_by": "掌门卡 BBS 浮窗在 web 端打开渲染",
-          "evidence": ""
+          "evidence": "宿主面全链实测(真卡):POST /api/card-runtime/mounts{charId,chatName}→201 bundle(entryKind:module,api:['ctx','th'],chatName,bridgeNonce,ctxShimUrl);GET entryUrl?shim=ctx→bootstrap(nonce 精确匹配+face:ctx+chatName)+/card-runtime/shim/ctx.js(公共面,21KB,__CARDAPP_CTX__)+init-caller(await import('./index.js')→__mod.init(__ctx),无裸 module tag)+style.css 自动链接;CSP sandbox allow-scripts(无 same-origin);中文资产 icons/信.svg 200。CardAppFrame.tsx 按 entryKind 选 shim(module→ctx/document→t0),PanelBridge nonce+grant 门,ctxHost 复合 dispatch(th.* T0→panel-t0 本地/其余→th/call;ctx.*→ctxDispatch 表 22 方法含 generate/editMessage/setVariable/getWorldBooks/executeSlashCommand/setExtensionPrompt/eventEmit);8s 事件泵 diff 楼层推 host.event/th.event。web tsc --noEmit 0 错。未验:浏览器端真渲染(需全服+Playwright)——单元面已覆盖 shell/shim/init-caller/dispatch,真机 BBS 浮窗像素级验收留后续。"
         },
         {
           "criterion": "CardApp 发起的辅助生成请求经服务端管线执行并有 diag 记录",
           "verify_by": "BBS 发起请求后 diag/events 有生成记录",
-          "evidence": ""
+          "evidence": "段3a 落地:services/quiet-generation.js 新增 runQuietGeneration——合成 req/res(utopinnDiagId 认亲)→ buildGenerationContext(quietPrompt+skipWIAN)→ presetToDispatchParams → runLukerDispatch(真 job,persist_target:{kind:'none'})→ getTaskByRequestId 轮询终态 → acknowledgeGenerationJobsForRequest → 返回文本;quiet_submit/quiet_terminal diag 事件带 diagId+jobId。stscript-env.js env.host.generateQuiet 绑定(上游失败回 '' 同语义:sink notification+diag),/api/utopinn/script/run 与 th/call triggerSlash 同 env 故 /gen locked=true 现在走真 job 链。web ctx.generate/sendMessage(silent)→client.generation.generate(POST /api/utopinn/generate 已有 job+diag 面)→jobGet 轮询→generation_started/ended 事件泵回卡。端点侧模块(chat-completions/luker-generation/secrets)改动态 import,免 config 依赖污染 stscript-env 的测试导入面。未验:真上游派发(需 API creds)——job 生命周期/ack/diag 键与 /api/utopinn/generate 同源,live-fire 留后续。quietToLoud(as=char 楼层回写)与 quietName(异角色预设)仅记录未实现。"
         }
       ],
       "done_when": [],
@@ -3650,6 +3650,68 @@
       ],
       "status": "open",
       "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-049",
+      "title": "P0: TavernHelper API 面对齐 —— 事件驱动模型+消息写+世界书/正则+displayed_message",
+      "status": "open",
+      "created": "2026-11-20",
+      "reads": [
+        ".loom/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md",
+        ".loom/design/client-contract.md",
+        "apps/server/src/plugins/utopinn-th.js",
+        "packages/panel-shim/src/ctx-shim.js",
+        "packages/protocol/src/panels.ts",
+        "apps/cli/cardapp-host.mjs"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-th.js"
+      ],
+      "acceptance": [
+        {
+          "criterion": "TH 方法面对照表:研究档 API 面清单 × 现状 METHODS,逐法标注已实现/缺/不适用",
+          "verify_by": "对照表入档",
+          "evidence": ""
+        },
+        {
+          "criterion": "事件系统:eventOn/eventOnce/eventMakeLast/Remove/Clear 面 + 宿主→卡事件通道(MESSAGE_RECEIVED/GENERATION_ENDED/CHAT_CHANGED 等核心事件真实触发)",
+          "verify_by": "TH 测试卡在宿主里 eventOn 收到真事件",
+          "evidence": ""
+        },
+        {
+          "criterion": "消息写面:setChatMessages/createChatMessages/setChatMessage/deleteChatMessages 落库且楼层一致",
+          "verify_by": "curl/CLI 验",
+          "evidence": ""
+        },
+        {
+          "criterion": "世界书+正则 TH 面:getLorebooks/entries CRUD + updateTavernRegexes 走 server repo",
+          "verify_by": "curl 验",
+          "evidence": ""
+        },
+        {
+          "criterion": "displayed_message/iframe 渲染本体:卡声明的 HTML 渲染进聊天消息位(宿主面之二,非悬浮窗)",
+          "verify_by": "浏览器实测",
+          "evidence": ""
+        }
+      ],
+      "depends_on": [
+        "TASK-046"
+      ],
+      "outcome": "TH 兼容面从「变量+身份+slash」(~11/50+)扩到事件驱动完整模型:eventOn 家族+宿主→卡事件通道、消息写面、世界书/正则面、displayed_message 渲染本体。真 TH 卡不改代码能跑。",
+      "done_when": [
+        "TH 方法面对照表:研究档 API 面清单 × 现状 METHODS,逐法标注已实现/缺/不适用",
+        "事件系统:eventOn/eventOnce/eventMakeLast/Remove/Clear 面 + 宿主→卡事件通道(MESSAGE_RECEIVED/GENERATION_ENDED/CHAT_CHANGED 等核心事件真实触发)",
+        "消息写面:setChatMessages/createChatMessages/setChatMessage/deleteChatMessages 落库且楼层一致",
+        "世界书+正则 TH 面:getLorebooks/entries CRUD + updateTavernRegexes 走 server repo",
+        "displayed_message/iframe 渲染本体:卡声明的 HTML 渲染进聊天消息位(宿主面之二,非悬浮窗)"
+      ],
+      "boundaries": [
+        "不并入 TH 代码(PolyForm NC,只再实现 API 面)",
+        "宿主→卡事件通道需与 TASK-046 桥协议一致,在其落地后开工"
+      ],
+      "implementation_notes": [
+        "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议"
+      ]
     }
   ],
   "milestones": [
