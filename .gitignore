@@ -40,3 +40,4 @@ work/
 
 # 前端验收截图(评审产物)
 apps/web/_shots/
+apps/web/tsconfig.tsbuildinfo
