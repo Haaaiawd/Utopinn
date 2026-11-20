@@ -6,12 +6,14 @@
 //   worldbook 列表/条目启停 = GET/PUT /worlds 全真;命中率徽标 = stats/inject
 //     (api/stats.ts 在场则吃真数据,取不到/无会话 → 无徽标,不装数)。
 //   global    全局栈读面真(settings.world_info_settings.world_info.globalSelect);
-//     写面不在 PATCH 白名单 → 开关渲染但 disabled + 说明。
-//   presets   列表/参数/调参写全真;「设为默认」写面(settings.preset_settings_openai)
-//     不在白名单 → disabled 徽标。
+//     写面服务端已放行(PATCH 白名单含 world_info_settings),UI 未接 →
+//     开关渲染但 disabled + 说明。
+//   presets   列表/参数/调参写全真;「设为默认」指针 preset_settings_openai
+//     已在 PATCH 白名单(标量直写),UI 未接 → disabled 徽标。
 //   persona   GET/PUT/DELETE 全真。
-//   regex     服务端无 /regex 面(C7)—— 条目名从卡 extensions.regex_scripts 真读,
-//     无启停控件,只读列表 + 排期徽标。
+//   regex     服务端已有 /api/utopinn/regex 面(GET/PUT + PATCH/DELETE :id,
+//     utopinn-regex.js);本页暂仍从卡 extensions.regex_scripts 真读条目名,
+//     启停/编辑写面未接 → 只读列表 + 排期徽标。
 import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
@@ -214,7 +216,8 @@ function useWiHits(chatLabel: string | null) {
 }
 
 /** 侧栏计数(端稿 cats.count):cards=卡数;global=选中/总数;worldbook=条目总数;
- *  presets/persona=总数;regex 无管理面 → 'C7' 章。 */
+ *  presets/persona=总数;regex 管理面服务端已备(/api/utopinn/regex)但
+ *  本页未接 → 仍 'C7' 章。 */
 export function useStudioCounts(): Record<StudioNav, string> {
     const s = useShell();
     const worlds = useRemote('studio-cnt:worlds', listWorlds);
@@ -833,7 +836,8 @@ function PersonaRow({ p, busy, editing, draft, onEdit, onCancel, onChange, onSav
 }
 
 /* ------------------------------------------------------------------ */
-/* 6. regex —— C7 排期:卡内 regex_scripts 真读只列名,无启停面             */
+/* 6. regex —— 服务端面已备(/api/utopinn/regex GET/PUT/PATCH/DELETE),      */
+/*    本页未接:卡内 regex_scripts 真读只列名,无启停面                     */
 /* ------------------------------------------------------------------ */
 
 interface RegexRow { name: string; scope: string; disabled: boolean }
@@ -842,7 +846,8 @@ function RegexPage() {
     const { t } = useI18n();
     const s = useShell();
     const cards = useMemo(() => [...s.cards.values()], [s.cards]);
-    /* 卡 extensions.regex_scripts 真读 —— 条目名是真的,启停写面 C7 未备。 */
+    /* 卡 extensions.regex_scripts 真读 —— 条目名是真的;启停写面服务端
+       已备(/api/utopinn/regex PUT/PATCH),本页未接。 */
     const rows = useRemote(cards.length ? `regex-rows:${cards.map((c) => c.charDir).join('|').length}:${cards.length}` : null, async () => {
         const out: RegexRow[] = [];
         await Promise.all(cards.map(async (c) => {

@@ -12,14 +12,14 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { postGenerate, streamJob } from '../../api/generate';
-import { getJob, listJobs } from '../../api/jobs';
+import { abortJob, getJob, listJobs } from '../../api/jobs';
 import { getPreset } from '../../api/presets';
 import { getMvuState, settleMvu, type MvuTarget } from '../../api/mvu';
 import {
     appendAssistantMessage, appendUserMessage, getChat, mkAssistantFloor, patchChat, patchSwipe,
     type ChatPatchOp, type FloorMsg, type GenerateBody, type GenerateVerb,
 } from '../../api/chats';
-import { ApiError, apiFetch, apiGet, apiPost } from '../../api/client';
+import { ApiError, apiGet, apiPost } from '../../api/client';
 import { charImageUrl } from '../../api/characters';
 import {
     MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
@@ -676,16 +676,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [busy, offline, s, runGenerate, stageKind, mockStagePush, mockStageReply]);
 
-    /* ——— 中止:POST /api/generation/:id/abort(legacy 路由;
+    /* ——— 中止:POST /api/utopinn/jobs/:id/abort(走 api/jobs.ts 面;
      *     服务端中止后 WS 未必回终帧 → settleRef 本地兜底 + 关 socket) ——— */
     const onStop = useCallback(async () => {
         const j = job;
         if (!j) return;
         abortingRef.current = j.id;
         try {
-            const res = await apiFetch(`/api/generation/${encodeURIComponent(j.id)}/abort`, { method: 'POST' });
-            const body = (await res.json().catch(() => null)) as { aborted?: boolean; error?: string } | null;
-            if (!res.ok) throw new ApiError(body?.error || res.statusText, res.status);
+            await abortJob(j.id);
         } catch (e) {
             abortingRef.current = '';
             s.hint(errText(e), true);
