@@ -26,9 +26,25 @@ function CardRing({ charDir, size = 20 }: { charDir: string; size?: number }) {
     );
 }
 
+/** 会话行时间:服务端 ISO → 同日 HH:mm / 昨天 / 周N / MM-DD(规范稿右列短签)。 */
+export function relTime(iso?: string): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    const dayMs = 86400000;
+    const diff = Math.floor((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / dayMs);
+    if (diff === 1) return '昨天';
+    if (diff < 7) return `周${'日一二三四五六'[d.getDay()]}`;
+    return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function SessionRow({ s }: { s: ChatSummary }) {
     const shell = useShell();
     const active = shell.activeChat === s.id && shell.railTab === 'chat';
+    const rel = relTime(s.updatedAt);
     return (
         <button
             className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors"
@@ -37,7 +53,7 @@ function SessionRow({ s }: { s: ChatSummary }) {
         >
             <span className="min-w-0 flex-1 truncate">{s.title}</span>
             {s.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'var(--brand)' }} />}
-            {s.updatedAt && <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{s.updatedAt}</span>}
+            {rel && <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{rel}</span>}
         </button>
     );
 }
@@ -60,10 +76,11 @@ export function ChatTree() {
             {/* 桌面:顶部 h-1.5 呼吸位(规范稿无域头);移动 drawer 头部统一管 */}
             {!shell.isMobile && <div className="h-1.5 shrink-0" />}
             <div className="shrink-0 px-2.5 pb-3">
+                {/* 规范稿:移动端此钮 = rail→home(卡画廊选面),桌面才直发 newChat */}
                 <button
                     className="flex h-9 w-full items-center justify-center gap-2 rounded-[9px] px-3 text-[12.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface-hover)]"
                     style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-strong)', boxShadow: 'var(--shadow-card)', color: 'var(--fg-primary)' }}
-                    onClick={() => shell.newChat()}
+                    onClick={() => (shell.isMobile ? shell.setView('home') : shell.newChat())}
                 >
                     <Icon name="plus" size={15} />
                     <span>{t('tree.pickCard')}</span>
@@ -74,7 +91,9 @@ export function ChatTree() {
                     <div className="space-y-0.5">
                         <div className={sect}><span>{t('tree.pinned')}</span></div>
                         {pinned.map((s) => {
-                            const active = shell.activeChat === s.id;
+                            const active = shell.activeChat === s.id && shell.railTab === 'chat';
+                            /* 规范稿置顶行:cardName · title 合成标签 */
+                            const cardName = shell.cards.get(s.charDir)?.name ?? s.charDir;
                             return (
                                 <button
                                     key={s.id}
@@ -83,7 +102,7 @@ export function ChatTree() {
                                     onClick={() => shell.selectChat(s.id)}
                                 >
                                     <CardRing charDir={s.charDir} />
-                                    <span className="min-w-0 flex-1 truncate">{s.title}</span>
+                                    <span className="min-w-0 flex-1 truncate">{cardName} · {s.title}</span>
                                 </button>
                             );
                         })}
