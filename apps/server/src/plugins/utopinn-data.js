@@ -36,6 +36,7 @@ import os from 'node:os';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
+import { convertCharacterBook } from '@utopinn/core';
 import { isPng, readCardFromPng, toV2, writeCardToPng } from '@utopinn/formats';
 import { createBackupArchive, normalizeUserBackupSelection } from '../users.js';
 import { createLanMigrationOffer, LAN_MIGRATION_PATH_PREFIX } from '../lan-migration.js';
@@ -300,6 +301,43 @@ function directWriteCard(directories, stem, baseImage, cardJson) {
  *     转码写盘(jimp 不可用时按其既有 fallback 用默认头像);直写失败也回落它。
  * @returns {Promise<{ok:boolean, error?:string}>}
  */
+/**
+ * Materialize an embedded character_book to worlds/<extensions.world>.json
+ * — the server-side equivalent of the upstream importEmbeddedWorldInfo and
+ * the same materialization path as the in-memory fallbacks in
+ * generate-context / mvu-settle. All of them MUST go through
+ * convertCharacterBook to turn the v2 card book into world-file shape
+ * (uid/keys restored); stuffing the raw card book in would leave every
+ * entry sharing the "world.undefined" dedupe key and collapse the whole
+ * book into a single entry.
+ * The exists-check + write is one atomic WorldInfoRepo.createIfAbsent, so
+ * concurrent imports of cards bound to the same world cannot overwrite each
+ * other; an existing same-named standalone book is never overwritten. An
+ * empty extensions.world does not get a name invented for it; a failed
+ * write only warns, it does not sink the import.
+ * @returns {Promise<string[]>} entries appended to the commit response warnings
+ */
+async function materializeEmbeddedWorld(request, card) {
+    const bookEntries = card?.data?.character_book?.entries;
+    const worldName = String(card?.data?.extensions?.world ?? card?.extensions?.world ?? '').trim();
+    if (!Array.isArray(bookEntries) || bookEntries.length === 0 || !worldName) {
+        return [];
+    }
+    const repo = getWorldInfoRepo();
+    const handle = request.user.profile.handle;
+    try {
+        const { created, name } = await repo.createIfAbsent(
+            handle, worldName, convertCharacterBook(card.data.character_book));
+        if (!created) {
+            return [];
+        }
+        return [`Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
+    } catch (error) {
+        console.warn(`utopinn/data: failed to materialize embedded world "${worldName}":`, error);
+        return [`Embedded character_book could not be materialized to world "${worldName}": ${error?.message ?? error}`];
+    }
+}
+
 async function commitCharacter(request, prepared, stem, { preserveChat = false, overwrite = false } = {}) {
     const directories = request.user.directories;
 
@@ -349,7 +387,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
             if (overwrite) {
                 invalidateAvatarThumbnail(directories, stem);
             }
-            return { ok: true };
+            return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
         } catch (error) {
             // 底图畸形 / 默认头像缺失等 → 退回 writeCharacterData 的兜底链
             console.warn('utopinn/data import: direct PNG write failed, falling back to writeCharacterData:', error);
@@ -361,7 +399,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
     if (!ok) {
         return { ok: false, error: request?.lastWriteCharacterDataError || 'character write failed' };
     }
-    return { ok: true };
+    return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
 }
 
 // ---------------------------------------------------------------------------

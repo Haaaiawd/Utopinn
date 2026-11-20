@@ -20,7 +20,7 @@
  */
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
-import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@utopinn/core';
+import { settleMvuMessage, isMvuData, initializeMvuVariables, convertCharacterBook } from '@utopinn/core';
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
 import { loadCard } from './stscript-env.js';
@@ -177,7 +177,17 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
     const lorebooks = [];
     for (const name of uniqueNames) {
         const raw = await worldInfoRepo.get(handle, name).catch(() => null);
-        const doc = raw?.doc ?? raw;
+        let doc = raw?.doc ?? raw;
+        // Same fallback as generate-context's worldCache (upstream
+        // importEmbeddedWorldInfo semantics): when the primary book has not
+        // been materialized yet, convert the card's embedded character_book
+        // on the fly — it MUST go through convertCharacterBook (v2 card
+        // book → world file shape, uid/keys restored); feeding the raw card
+        // book in would leave every entry sharing the "world.undefined"
+        // dedupe key and collapse the whole book into a single entry.
+        if (!doc && name === primaryName && card?.data?.character_book?.entries) {
+            doc = convertCharacterBook(card.data.character_book);
+        }
         const entries = Object.values(doc?.entries ?? {})
             .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
             .map((e) => ({
