@@ -5,7 +5,9 @@
 
 .font-mono-ui { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .font-serif-ui { font-family: var(--font-reading); }
-.chat-body-text { font-size: var(--chat-font-size); line-height: 1.84; letter-spacing: 0.005em; }
+/* 楼层正文衬线:按需求方指令取 .novel-p 的阅读栈(规范稿 436 行
+   font-serif 16px/2.08);font-size 仍走 --chat-font-size 供 st.fontSize 滑杆。 */
+.chat-body-text { font-family: var(--font-serif); font-size: var(--chat-font-size); line-height: 2.08; letter-spacing: 0.005em; }
 .heading-tight { letter-spacing: -0.025em; font-weight: 500; }
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -34,14 +36,45 @@
 .left-chrome {
     position: relative; height: 100%; flex-shrink: 0;
     background: var(--bg-chrome);
-    width: 52px;
+    width: 56px;
     transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
     display: flex; flex-direction: column; overflow: hidden;
 }
-.left-chrome[data-open="true"] { width: 276px; }
+.left-chrome[data-open="true"] { width: 284px; }
+
+/* Unified Top Brand Row: Single cohesive Logo+Utopinn button + right paired action icons */
+.brand-header-row {
+    height: 52px; width: 100%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 9px; gap: 6px;
+}
+.brand-pill-btn {
+    height: 38px; border-radius: 10px; padding: 0 5px;
+    display: inline-flex; align-items: center; gap: 8px;
+    cursor: pointer; transition: background 0.14s ease;
+    overflow: hidden; min-width: 38px;
+}
+.brand-pill-btn:hover { background: var(--bg-active); }
+.brand-wordmark {
+    font-size: 15.5px; font-weight: 600; letter-spacing: -0.03em;
+    color: var(--fg-primary); white-space: nowrap;
+    opacity: 0; transform: translateX(-6px); pointer-events: none;
+    transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.brand-actions {
+    display: inline-flex; align-items: center; gap: 2px;
+    padding: 2px; border-radius: 9px;
+    opacity: 0; transform: translateX(-6px); pointer-events: none;
+    transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.left-chrome[data-open="true"] .brand-wordmark,
+.left-chrome[data-open="true"] .brand-actions {
+    opacity: 1; transform: translateX(0); pointer-events: auto;
+    transition: opacity 210ms ease 70ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1) 55ms;
+}
 
 .left-tree-pane {
-    width: 224px; flex-shrink: 0; height: 100%;
+    width: 228px; flex-shrink: 0; height: 100%;
     display: flex; flex-direction: column;
     opacity: 0; transform: translateX(-8px); pointer-events: none;
     transition: opacity 180ms ease, transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -51,29 +84,29 @@
     transition: opacity 220ms ease 60ms, transform 260ms cubic-bezier(0.22, 1, 0.36, 1) 40ms;
 }
 
-/* 90° Spatial Continuity Bottom Dock (10+32+10+172+10+32+10 = 276px) */
+/* 90° Spatial Continuity Bottom Dock — Exact 56px / 284px Optical Grid */
 .account-dock {
     position: relative; flex-shrink: 0; width: 100%;
-    height: 92px;
+    height: 102px;
     transition: height 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.left-chrome[data-open="true"] .account-dock { height: 52px; }
+.left-chrome[data-open="true"] .account-dock { height: 58px; }
 
 .dock-account-btn {
-    position: absolute; left: 6px; bottom: 6px;
-    width: 40px; height: 40px; padding: 4px;
+    position: absolute; left: 7px; bottom: 8px;
+    width: 42px; height: 42px; padding: 4px;
     border-radius: 10px; display: flex; align-items: center; gap: 10px;
     overflow: hidden; cursor: pointer; text-align: left;
     transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease;
 }
 .dock-account-btn:hover { background: var(--bg-surface-hover); }
 .dock-account-btn:active .dock-avatar-circle { transform: scale(0.95); }
-.left-chrome[data-open="true"] .dock-account-btn { width: 220px; }
+.left-chrome[data-open="true"] .dock-account-btn { width: 224px; }
 
 .dock-avatar-circle {
-    position: relative; width: 32px; height: 32px; border-radius: 999px;
+    position: relative; width: 34px; height: 34px; border-radius: 999px;
     flex-shrink: 0; display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 600;
+    font-size: 12.5px; font-weight: 600;
     transition: border-color 0.15s ease, transform 0.12s ease;
 }
 
@@ -90,16 +123,44 @@
 /* Gear arcing 90° from above-avatar to right edge on open */
 .dock-gear {
     position: absolute; left: 0; bottom: 0;
-    width: 32px; height: 32px; border-radius: 8px;
+    width: 38px; height: 38px; border-radius: 10px;
     display: inline-flex; align-items: center; justify-content: center;
     color: var(--fg-secondary); cursor: pointer;
-    transform: translate3d(10px, -50px, 0) rotate(0deg);
-    transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), background 0.14s ease, color 0.14s ease;
+    transform: translate3d(9px, -56px, 0) rotate(0deg);
+    transition: transform 360ms cubic-bezier(0.34, 1.38, 0.64, 1), background 0.14s ease, color 0.14s ease;
 }
 .dock-gear:hover { background: var(--bg-active); color: var(--fg-primary); }
 .left-chrome[data-open="true"] .dock-gear {
-    transform: translate3d(234px, -10px, 0) rotate(90deg);
+    transform: translate3d(237px, -10px, 0) rotate(90deg);
 }
+
+/* Interactive Right Workbench Resizer Handle (Drag to resize + Double-click to reset) */
+.wb-resizer {
+    position: relative; width: 1px; flex-shrink: 0; z-index: 20;
+    background: var(--border-hairline); cursor: col-resize;
+    transition: background 0.15s ease;
+}
+.wb-resizer::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px;
+}
+.wb-resizer::after {
+    content: ""; position: absolute; top: 50%; left: -1px; transform: translateY(-50%);
+    width: 3px; height: 36px; border-radius: 999px;
+    background: var(--border-strong); opacity: 0;
+    transition: opacity 0.16s ease, background 0.16s ease, height 0.16s ease;
+}
+.wb-resizer:hover::after, .wb-resizer.dragging::after {
+    opacity: 1; background: var(--brand); height: 52px;
+}
+.wb-resizer:hover, .wb-resizer.dragging { background: var(--brand); }
+.wb-width-badge {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+    padding: 2px 7px; border-radius: 6px; font-size: 10.5px;
+    background: var(--bg-elevated); color: var(--fg-primary);
+    box-shadow: var(--shadow-pop); pointer-events: none;
+    opacity: 0; transition: opacity 0.12s ease; white-space: nowrap;
+}
+.wb-resizer.dragging .wb-width-badge { opacity: 1; }
 
 /* Anchored popover entrance */
 @keyframes popIn {
@@ -192,7 +253,7 @@
 /* rail active = 4px brand spine on the left edge */
 .rail-btn { position: relative; }
 .rail-btn[data-active="true"]::before {
-    content: ""; position: absolute; left: -10px; top: 5px; bottom: 5px;
+    content: ""; position: absolute; left: -9px; top: 7px; bottom: 7px;
     width: 4px; border-radius: 0 999px 999px 0; background: var(--brand);
 }
 
@@ -294,3 +355,44 @@ input[type="range"] { accent-color: var(--brand); }
     color: var(--fg-primary); font-size: 15px; font-weight: 500;
     pointer-events: none; animation: popIn 0.15s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
+/* Universal Dual-State Utopinn Icon Ignition (Idle -> Hover/Press/Active Coral Spark Glow!) */
+.u-ico {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0; vertical-align: middle;
+}
+.u-ico > svg { display: block; transition: opacity 0.16s ease, transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), filter 0.18s ease; }
+.u-ico > svg.u-ico-act { position: absolute; inset: 0; opacity: 0; transform: scale(0.92); pointer-events: none; }
+.u-ico[data-active="true"] > svg.u-ico-idle { opacity: 0; transform: scale(0.92); }
+.u-ico[data-active="true"] > svg.u-ico-act {
+    opacity: 1; transform: scale(1);
+    filter: drop-shadow(0 0 6px rgba(255, 107, 91, 0.34));
+}
+html[data-theme="light"] .u-ico[data-active="true"] > svg.u-ico-act {
+    filter: drop-shadow(0 0 4px rgba(255, 107, 91, 0.22));
+}
+/* Hover or press on ANY interactive button smoothly ignites its dual-state coral icon! */
+button:hover .u-ico > svg.u-ico-idle,
+button:active .u-ico > svg.u-ico-idle,
+.wb-tab:hover .u-ico > svg.u-ico-idle { opacity: 0; transform: scale(0.94); }
+button:hover .u-ico > svg.u-ico-act,
+button:active .u-ico > svg.u-ico-act,
+.wb-tab:hover .u-ico > svg.u-ico-act {
+    opacity: 1; transform: scale(1);
+    filter: drop-shadow(0 0 7px rgba(255, 107, 91, 0.38));
+}
+button:active .u-ico > svg.u-ico-act { transform: scale(1.08); }
+
+/* Dedicated Send Button Coral Spark Ignition */
+#btn-send[data-ready="true"] .u-ico > svg.u-ico-act,
+#btn-send:hover .u-ico > svg.u-ico-act,
+#btn-send:active .u-ico > svg.u-ico-act {
+    opacity: 1; transform: scale(1);
+    filter: drop-shadow(0 0 10px rgba(255, 107, 91, 0.5));
+}
+@keyframes sendSparkPop {
+    0% { transform: scale(0.86); filter: drop-shadow(0 0 16px rgba(255, 107, 91, 0.85)); }
+    60% { transform: scale(1.12); filter: drop-shadow(0 0 12px rgba(255, 107, 91, 0.6)); }
+    100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(255, 107, 91, 0.32)); }
+}
+.send-spark-pop { animation: sendSparkPop 0.32s cubic-bezier(0.22, 1, 0.36, 1); }

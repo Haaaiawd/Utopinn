@@ -133,19 +133,35 @@ const BRAND = {
     persona: 'persona', branch: 'branch', compass: 'compass',
     bookmark: 'bookmark', flame: 'flame',
 } as const satisfies Record<string, UtopinnIconName>;
-export function Icon({ name, size = 17, weight = 'regular', mirrored = false, className }: {
+export function Icon({ name, size = 17, weight = 'regular', mirrored = false, className, active }: {
     name: IconName;
     size?: number;
     weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill' | 'duotone';
     /** 镜像 —— panelRight 用 SidebarSimple 翻转得到。 */
     mirrored?: boolean;
     className?: string;
+    /** 规范稿 u-ico data-active:active 态点亮(等价旧 weight='duotone')。 */
+    active?: boolean;
 }) {
     const brand = BRAND[name as keyof typeof BRAND];
+    const lit = active ?? weight === 'duotone';
     if (brand) {
-        return <UtopinnIcon name={brand} active={weight === 'duotone'} size={size}
-            className={className} style={mirrored ? { transform: 'scaleX(-1)' } : undefined} />;
+        /* 规范稿 u-ico 双态层:idle + act 两张同位 svg,css 负责 cross-fade;
+           父级 button hover/press → act 点亮带 coral drop-shadow。 */
+        return (
+            <span
+                className={`u-ico${className ? ` ${className}` : ''}`}
+                data-active={lit || undefined}
+                style={{ width: size, height: size }}
+                aria-hidden="true"
+            >
+                <UtopinnIcon name={brand} size={size} className="u-ico-idle"
+                    style={mirrored ? { transform: 'scaleX(-1)' } : undefined} />
+                <UtopinnIcon name={brand} active size={size} className="u-ico-act"
+                    style={mirrored ? { transform: 'scaleX(-1)' } : undefined} />
+            </span>
+        );
     }
     const C = MAP[name as keyof typeof MAP];
-    return <C size={size} weight={weight} mirrored={mirrored} className={className} aria-hidden="true" />;
+    return <C size={size} weight={lit ? 'duotone' : weight} mirrored={mirrored} className={className} aria-hidden="true" />;
 }
