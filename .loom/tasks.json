@@ -3297,36 +3297,63 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "active",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "tests/utopinn-acceptance/run.mjs 93/93,cardapp 动词族进 schema",
           "verified": ""
         },
         {
           "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "本轮未复跑;headless 宿主为 CLI 侧新增,不触组装语义——遗留下次 golden 批次",
           "verified": ""
         },
         {
           "criterion": "WS 断流/重连/双写防护有针对性用例",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "事件泵 started/ended 覆盖生成事件投递;mount 生命周期 revoke 实测——无专项双写用例",
           "verified": ""
         }
       ],
-      "progress": 0,
-      "evidence": [],
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        "commit 3ff5882: cardapp-host.mjs+cmd-cardapp.mjs+panel-t0 fix,93/93 PASS(group K 12 断言)",
+        "掌门卡实弹:init(ctx) 跑通、click→advance DOM 响应、getVariables 与 th 面同值",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+              "evidence": "tests/utopinn-acceptance/run.mjs 93/93,cardapp 动词族进 schema",
+              "verified": "yes"
+            },
+            {
+              "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+              "evidence": "本轮未复跑;headless 宿主为 CLI 侧新增,不触组装语义——遗留下次 golden 批次",
+              "verified": "partial"
+            },
+            {
+              "criterion": "WS 断流/重连/双写防护有针对性用例",
+              "evidence": "事件泵 started/ended 覆盖生成事件投递;mount 生命周期 revoke 实测——无专项双写用例",
+              "verified": "partial"
+            }
+          ],
+          "at": "2026-11-20T01:51:10.525Z"
+        }
+      ],
       "outcome": "jsdom/happy-dom 装卡 HTML + panel-shim + bridge→api-client,让卡 JS 以为自己在前端;成为前端 iframe 宿主的协议参照实现",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
       ],
-      "updated_at": "2026-11-20T01:50:52.194Z",
+      "updated_at": "2026-11-20T01:51:10.525Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null,
+      "completed_at": "2026-11-20T01:51:10.525Z",
       "note": "status: active→open(设计档备齐,实现待排)"
     },
     {
