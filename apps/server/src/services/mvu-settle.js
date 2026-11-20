@@ -178,10 +178,13 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
     for (const name of uniqueNames) {
         const raw = await worldInfoRepo.get(handle, name).catch(() => null);
         let doc = raw?.doc ?? raw;
-        // 与 generate-context worldCache 同兜底(上游 importEmbeddedWorldInfo
-        // 语义):主书尚未物化时用卡内嵌 character_book 即时转换顶上——必须走
-        // convertCharacterBook(v2 卡书→world 文件形,uid/keys 归位),直接塞
-        // 原始卡书会让全本共享 "world.undefined" 去重键,整本书塌成一条。
+        // Same fallback as generate-context's worldCache (upstream
+        // importEmbeddedWorldInfo semantics): when the primary book has not
+        // been materialized yet, convert the card's embedded character_book
+        // on the fly — it MUST go through convertCharacterBook (v2 card
+        // book → world file shape, uid/keys restored); feeding the raw card
+        // book in would leave every entry sharing the "world.undefined"
+        // dedupe key and collapse the whole book into a single entry.
         if (!doc && name === primaryName && card?.data?.character_book?.entries) {
             doc = convertCharacterBook(card.data.character_book);
         }

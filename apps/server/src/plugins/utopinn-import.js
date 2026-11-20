@@ -221,13 +221,20 @@ function invalidateAvatarThumbnail(directories, stem) {
 }
 
 /**
- * 内嵌 character_book → worlds/<extensions.world>.json(上游
- * importEmbeddedWorldInfo 的服务端等价,与 generate-context/mvu-settle
- * 的内存兜底同一物化路径——都走 convertCharacterBook 做 v2 卡书→world
- * 文件形转换,否则全本共享 "world.undefined" 去重键塌成一条)。
- * 同名书已存在不覆盖用户独立书;extensions.world 为空不造名;
- * 写失败只警告不毁导入。
- * @returns {Promise<string[]>} 追加到 commit 响应 warnings 的条目
+ * Materialize an embedded character_book to worlds/<extensions.world>.json
+ * — the server-side equivalent of the upstream importEmbeddedWorldInfo and
+ * the same materialization path as the in-memory fallbacks in
+ * generate-context / mvu-settle. All of them MUST go through
+ * convertCharacterBook to turn the v2 card book into world-file shape
+ * (uid/keys restored); stuffing the raw card book in would leave every
+ * entry sharing the "world.undefined" dedupe key and collapse the whole
+ * book into a single entry.
+ * The exists-check + write is one atomic WorldInfoRepo.createIfAbsent, so
+ * concurrent imports of cards bound to the same world cannot overwrite each
+ * other; an existing same-named standalone book is never overwritten. An
+ * empty extensions.world does not get a name invented for it; a failed
+ * write only warns, it does not sink the import.
+ * @returns {Promise<string[]>} entries appended to the commit response warnings
  */
 async function materializeEmbeddedWorld(request, card) {
     const bookEntries = card?.data?.character_book?.entries;
@@ -238,11 +245,12 @@ async function materializeEmbeddedWorld(request, card) {
     const repo = getWorldInfoRepo();
     const handle = request.user.profile.handle;
     try {
-        if (await repo.resolveName(handle, worldName) != null) {
+        const { created, name } = await repo.createIfAbsent(
+            handle, worldName, convertCharacterBook(card.data.character_book));
+        if (!created) {
             return [];
         }
-        await repo.save(handle, worldName, convertCharacterBook(card.data.character_book));
-        return [`Embedded character_book materialized to world "${worldName}" (${bookEntries.length} entries).`];
+        return [`Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
     } catch (error) {
         console.warn(`utopinn/import: failed to materialize embedded world "${worldName}":`, error);
         return [`Embedded character_book could not be materialized to world "${worldName}": ${error?.message ?? error}`];
