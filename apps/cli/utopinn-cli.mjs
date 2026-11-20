@@ -1047,11 +1047,18 @@ async function cmdStatus() {
     return c2;
 }
 
-// doctor 覆盖差集用:具名命令已绑的 kernel 路由(kernel list() 的
-// "METHOD|kind|path" 串格式)。未列的 = raw-only,doctor --full 会打印差集。
+// ═══ 具名路由表:字面钉样 + 词表派生对账 ═══
+// doctor "capability coverage" 拿本表 diff kernel 路由全集,未具名=raw-only 待补面
+// (kernel list() 的 "METHOD|kind|path" 串格式;--full 打印差集)。
+//
+// 本块同时是 test-cli-routes.cjs 的对账锚 —— 它只扫 'METHOD|kind|path' 单引号
+// 字面量与 kernel 双向对账,故钉样必须保持字面形态(字面块存在的唯一理由)。
+// 真源是下方词表常量:程序化构造族(route(tail)/plugins verb/mvu sub)的合法词表
+// 与命令实现共用,加载期自检断言 派生 ≡ 钉样程序化段 —— 单向漂移当场拒跑(exit 2),
+// 不再靠人肉对表。字面族(命令按路径直呼的真·单例)直接列,由 kernel 侧对账钉存在性。
 const NAMED_UTOPINN_ROUTES = new Set([
     'GET|exact|/api/utopinn/_kernel',
-    // —— diag 观测面(logs/errors/trace/diag-client)——
+    // —— diag 观测面(logs/errors/diag-client/trace;diag/stats 属 OBSERVED 观测命名)——
     'GET|pattern|/api/utopinn/diag/events',
     'GET|pattern|/api/utopinn/diag/errors',
     'GET|pattern|/api/utopinn/diag/stats',
@@ -1061,6 +1068,7 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'GET|pattern|/api/utopinn/stats/summary',
     'GET|pattern|/api/utopinn/stats/by-char/:id',
     'GET|pattern|/api/utopinn/stats/inject',
+    // —— job 面(jobs/inspect/abort)——
     'GET|pattern|/api/utopinn/jobs',
     'GET|pattern|/api/utopinn/jobs/:id',
     'POST|pattern|/api/utopinn/jobs/:id/abort',
@@ -1105,16 +1113,9 @@ const NAMED_UTOPINN_ROUTES = new Set([
     // —— 连接面(conn test / models)——
     'POST|pattern|/api/utopinn/connection/test',
     'GET|pattern|/api/utopinn/models',
-    // —— 组件面 ——
+    // —— 组件面(plugins 列表/contrib/script/th 是字面单例)——
     'GET|pattern|/api/utopinn/plugins',
     'GET|exact|/api/utopinn/ui/contrib',
-    'POST|pattern|/api/utopinn/plugins/:id/enable',
-    'POST|pattern|/api/utopinn/plugins/:id/disable',
-    'POST|pattern|/api/utopinn/plugins/:id/reload',
-    'POST|pattern|/api/utopinn/mvu/settle',
-    'POST|pattern|/api/utopinn/mvu/resettle',
-    'GET|pattern|/api/utopinn/mvu/state',
-    'POST|pattern|/api/utopinn/mvu/panel/render',
     'POST|pattern|/api/utopinn/script/run',
     'POST|pattern|/api/utopinn/th/call',
     // —— 数据面(import/backup/lan)——
@@ -1124,7 +1125,17 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'POST|pattern|/api/utopinn/backup',
     'POST|pattern|/api/utopinn/lan/offer',
     'POST|pattern|/api/utopinn/lan/import',
-    // —— state sidecar 三族(state <family> <op>;get 的 GET/POST 双形都占具名位)——
+    // ═══ 程序化构造族的钉样展开(词表派生的冻结输出;改词表必须同步此段,自检强制)═══
+    // —— 源 PLUGIN_VERBS:plugin <id> <verb> ——
+    'POST|pattern|/api/utopinn/plugins/:id/enable',
+    'POST|pattern|/api/utopinn/plugins/:id/disable',
+    'POST|pattern|/api/utopinn/plugins/:id/reload',
+    // —— 源 MVU_SUB_ROUTES:mvu <sub>(state=GET 读面;panel 打 render 端点)——
+    'GET|pattern|/api/utopinn/mvu/state',
+    'POST|pattern|/api/utopinn/mvu/settle',
+    'POST|pattern|/api/utopinn/mvu/resettle',
+    'POST|pattern|/api/utopinn/mvu/panel/render',
+    // —— 源 STATE_OPS:state <family> <op>(get 的 GET/POST 双形都占具名位)——
     'GET|pattern|/api/utopinn/state/chat/get',
     'POST|pattern|/api/utopinn/state/chat/get',
     'POST|pattern|/api/utopinn/state/chat/get-batch',
@@ -1144,6 +1155,68 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'POST|pattern|/api/utopinn/state/preset/delete-all',
     'POST|pattern|/api/utopinn/state/preset/rename',
 ]);
+
+// ═══ 具名派生源:词表常量(命令实现与具名表共用,单事实源)═══
+// state 三族命名域照抄 kernel 路由(utopinn-library.js state 段):
+//   chat={get,get-batch,patch,delete};char +set(整态覆写);preset +delete-all/rename。
+const STATE_OPS = {
+    chat: ['get', 'get-batch', 'patch', 'delete'],
+    char: ['get', 'get-batch', 'set', 'patch', 'delete'],
+    preset: ['get', 'get-batch', 'patch', 'delete', 'delete-all', 'rename'],
+};
+
+// plugin <id> <verb> —— cmdPlugin 的门词表;路由形 POST /plugins/:id/<verb>。
+const PLUGIN_VERBS = ['enable', 'disable', 'reload'];
+
+// mvu <sub> —— cmdMvu 的门词表。sub→路由非均匀(state=GET 读面,panel 打
+// panel/render 端点,仅 settle/resettle 是统一 POST mvu/<sub>),故记 sub→具名串。
+const MVU_SUB_ROUTES = {
+    state: 'GET|pattern|/api/utopinn/mvu/state',
+    settle: 'POST|pattern|/api/utopinn/mvu/settle',
+    resettle: 'POST|pattern|/api/utopinn/mvu/resettle',
+    panel: 'POST|pattern|/api/utopinn/mvu/panel/render',
+};
+// 统一 POST mvu/<sub> 形的子集(cmdMvu 的 settle|resettle 分支用)——从表派生。
+const MVU_POST_SUBS = Object.keys(MVU_SUB_ROUTES)
+    .filter((s) => MVU_SUB_ROUTES[s] === `POST|pattern|/api/utopinn/mvu/${s}`);
+
+// 观测面命名:在 kernel 路由表且被具名,但没有任何 CLI 动词拼它 —— 刻意留名
+// (doctor 不报 raw-only),逐条注释理由;新条目必须带理由。
+const OBSERVED_NAMED = [
+    // diag-bus 聚合统计口:logs/errors/trace 已覆盖读面,此 GET 留观测命名(raw 可达)。
+    'GET|pattern|/api/utopinn/diag/stats',
+];
+
+/** 词表 → 具名串展开(程序化构造族 + OBSERVED)。字面族单例不参与 —— 只在钉样里。 */
+function expandNamedRoutes() {
+    const out = [];
+    for (const [family, ops] of Object.entries(STATE_OPS)) {
+        for (const op of ops) {
+            out.push(`POST|pattern|/api/utopinn/state/${family}/${op}`);
+            // get 的 --via get 走 GET+query(ETag 私有化读,kernel 双注册)
+            if (op === 'get') out.push(`GET|pattern|/api/utopinn/state/${family}/get`);
+        }
+    }
+    for (const verb of PLUGIN_VERBS) out.push(`POST|pattern|/api/utopinn/plugins/:id/${verb}`);
+    out.push(...Object.values(MVU_SUB_ROUTES), ...OBSERVED_NAMED);
+    return new Set(out);
+}
+
+/** 程序化构造族的钉样条目判别(route(tail) 三族:state/plugins :id/mvu)。 */
+const isProgrammaticNamed = (r) => r.includes('/api/utopinn/state/')
+    || r.includes('/api/utopinn/plugins/:id/')
+    || r.includes('/api/utopinn/mvu/');
+
+// ── 加载期对账:词表派生 ≡ 钉样程序化段。失同步 = 仓库内 bug(改词表漏钉/钉样残留),
+// 任何 utopinn 调用当场拒跑 —— 不靠人肉对表,也不等 e2e 才报。
+const _DERIVED_NAMED = expandNamedRoutes();
+const _unpinned = [..._DERIVED_NAMED].filter((r) => !NAMED_UTOPINN_ROUTES.has(r));
+const _stale = [...NAMED_UTOPINN_ROUTES].filter(isProgrammaticNamed).filter((r) => !_DERIVED_NAMED.has(r));
+if (_unpinned.length || _stale.length) {
+    for (const r of _unpinned) console.error(`named-routes drift: 词表派生出未钉路由 — ${r}(往钉样补字面量)`);
+    for (const r of _stale) console.error(`named-routes drift: 钉样残留词表已无的路由 — ${r}(删之,或确属观测面进 OBSERVED_NAMED)`);
+    process.exit(2);
+}
 
 async function cmdDoctor() {
     const steps = [];
@@ -1266,9 +1339,9 @@ const SCHEMA = {
         { cmd: 'utopinn stats char <id>', desc: '[stats] 单卡:floors/gens/token/WI 命中频次+top 条目(charDir|卡名)', out: '{floors,generations,wiHits}' },
         { cmd: 'utopinn stats inject [--chat <charDir>/]<chat>', desc: '[stats] 注入源命中率+token 占比;worldinfo 条目级命中表', out: '{sources[],entries[]}' },
         { cmd: 'utopinn plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
-        { cmd: 'utopinn plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
+        { cmd: `utopinn plugin <id> <${PLUGIN_VERBS.join('|')}>`, desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
         { cmd: 'utopinn contrib', desc: '[plugins] UI 贡献点清单(ui.contrib manifest × 内核映射;admin)', out: '[{plugin,slot,contribution,core?}]' },
-        { cmd: 'utopinn mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
+        { cmd: `utopinn mvu <${Object.keys(MVU_SUB_ROUTES).join('|')}>`, desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源;panel 渲染)', out: '{variables,receipts}' },
         { cmd: 'utopinn mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
         { cmd: 'utopinn mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
         { cmd: 'utopinn mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
@@ -1281,9 +1354,9 @@ const SCHEMA = {
         { cmd: 'utopinn backup [--out f|dir] [--set cat=bool]', desc: '[data] zip 快照下载落盘(默认 cwd 用服务端文件名)', out: '{file,bytes}' },
         { cmd: 'utopinn lan-offer [--set cat=bool|--json-file sel]', desc: '[data] LAN 迁移 offer→一次性 url', out: '{url,expiresAt}' },
         { cmd: 'utopinn lan-import <url|--code c> [--mode merge|overwrite]', desc: '[data] 拉对端 zip 恢复(慢,--wait)', out: '{mode,restored}' },
-        { cmd: 'utopinn state chat <get|get-batch|patch|delete> <ns…> [ops|--json-file|--stdin]', desc: '[state] chat_state sidecar(目标=ctx 或 --char/--chat;patch=JSON-Patch;get 默认 POST,--via get 走 ETag 资源读)', out: '{ok,data|applied|deleted}' },
-        { cmd: 'utopinn state char <get|get-batch|set|patch|delete> <ns…> [doc]', desc: '[state] char_state sidecar(--char|ctx;set=整态覆写,data 必须 JSON 对象)', out: '{ok,data|deleted}' },
-        { cmd: 'utopinn state preset <get|get-batch|patch|delete> <name> <ns…> [--api id]', desc: '[state] preset_state sidecar(显式名;--api 族默认 openai)', out: '{ok,data|deleted}' },
+        { cmd: `utopinn state chat <${STATE_OPS.chat.join('|')}> <ns…> [ops|--json-file|--stdin]`, desc: '[state] chat_state sidecar(目标=ctx 或 --char/--chat;patch=JSON-Patch;get 默认 POST,--via get 走 ETag 资源读)', out: '{ok,data|applied|deleted}' },
+        { cmd: `utopinn state char <${STATE_OPS.char.join('|')}> <ns…> [doc]`, desc: '[state] char_state sidecar(--char|ctx;set=整态覆写,data 必须 JSON 对象)', out: '{ok,data|deleted}' },
+        { cmd: `utopinn state preset <${STATE_OPS.preset.join('|')}> <name> <ns…> [--api id]`, desc: '[state] preset_state sidecar(显式名;--api 族默认 openai)', out: '{ok,data|deleted}' },
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
@@ -2086,17 +2159,17 @@ async function cmdPlugins() {
     const { data, status } = await req('GET', '/api/utopinn/plugins', undefined, { allowFail: true });
     if (status >= 400) return void fail('server', `plugins 列表失败:${data?.error ?? 'denied?'}`, { hint: '需要 admin profile' });
     const items = data?.items ?? [];
-    if (JSON_MODE) return out(items, [{ cmd: 'utopinn plugin <id> <enable|disable|reload>' }]);
+    if (JSON_MODE) return out(items, [{ cmd: `utopinn plugin <id> <${PLUGIN_VERBS.join('|')}>` }]);
     for (const p of items) console.log(` ${p.disabled ? '\x1b[2m○\x1b[0m' : '\x1b[32m●\x1b[0m'} ${p.id ?? p.name}${p.version ? ` v${p.version}` : ''}${p.disabled ? ' (disabled)' : ''}`);
     console.log(`\n${items.length} fibers`);
-    next('utopinn plugin <id> <enable|disable|reload>');
+    next(`utopinn plugin <id> <${PLUGIN_VERBS.join('|')}>`);
     footer();
 }
 
 async function cmdPlugin() {
     const id = positional[1], verb = positional[2];
-    if (!id || !['enable', 'disable', 'reload'].includes(verb)) {
-        return void fail('usage', 'utopinn plugin <id> <enable|disable|reload>', { hint: 'utopinn plugins 看清单', rc: 2 });
+    if (!id || !PLUGIN_VERBS.includes(verb)) {
+        return void fail('usage', `utopinn plugin <id> <${PLUGIN_VERBS.join('|')}>`, { hint: 'utopinn plugins 看清单', rc: 2 });
     }
     const { data, status } = await req('POST', `/api/utopinn/plugins/${encodeURIComponent(id)}/${verb}`, {}, { allowFail: true });
     if (status >= 400 || data?.error) return void fail('server', `${verb} ${id} 失败:${data?.error ?? 'unknown'}`, { hint: id === 'utopinn-plugins' ? '插件管理器自锁,改 profile.patch.yaml' : undefined });
@@ -2155,7 +2228,7 @@ async function cmdMvu() {
         footer();
         return;
     }
-    if (sub === 'settle' || sub === 'resettle') {
+    if (MVU_POST_SUBS.includes(sub)) {
         const body = { ...t };
         if (sub === 'settle' && flags.floor != null) body.message_index = flags.floor;
         const { data, status } = await req('POST', `/api/utopinn/mvu/${sub}`, body, { allowFail: true });
@@ -2184,7 +2257,7 @@ async function cmdMvu() {
         footer(`${html.length}ch`);
         return;
     }
-    fail('usage', 'utopinn mvu [state|settle [--floor i]|resettle|panel <tpl|--file|--stdin>]', { rc: 2 });
+    fail('usage', `utopinn mvu <${Object.keys(MVU_SUB_ROUTES).join('|')}>(settle --floor i · panel <tpl|--file|--stdin>)`, { rc: 2 });
 }
 
 async function cmdScript() {
@@ -2933,21 +3006,16 @@ async function cmdRaw() {
 }
 
 // ═══ state sidecar 三族(TASK-038):/api/utopinn/state/<family>/<op> ═══
-// 命名域照抄 kernel 路由(utopinn-library.js state 段)。
+// 词表 STATE_OPS 在具名路由区(NAMED_UTOPINN_ROUTES 旁,与具名钉样共用并自检)。
 //   - get 默认 POST body 形;--via get 走 GET+query 的 ETag 私有化读
 //     (?account 必须=认证 handle,默认 default-user,--handle 覆盖)。
 //   - patch 收 JSON-Patch:ops 数组 | {operations:[…]} | {operation:{…}} | 裸单 op。
 //   - char 独有 set(整态覆写;body.data 先验对象形);preset 独有 delete-all/rename。
 //   - delete 类恒显式点名;chat 目标 = ctx 或 --char/--chat 显式覆盖
 //     (群聊 is_group 目标待 --group flag 统一收,本格不加)。
-const STATE_OPS = {
-    chat: ['get', 'get-batch', 'patch', 'delete'],
-    char: ['get', 'get-batch', 'set', 'patch', 'delete'],
-    preset: ['get', 'get-batch', 'patch', 'delete', 'delete-all', 'rename'],
-};
 
-const stateUsage = (detail) => fail('usage', 'utopinn state <chat|char|preset> <op> [args] [json|--json-file|--stdin]', {
-    detail: detail ?? 'chat:get|get-batch|patch|delete <ns…>(ctx|--char/--chat) · char:+set <ns> <doc> · preset:<op> <name> [ns…]|delete-all <name>|rename <old> <new>(--api 族,默认 openai)',
+const stateUsage = (detail) => fail('usage', `utopinn state <${Object.keys(STATE_OPS).join('|')}> <op> [args] [json|--json-file|--stdin]`, {
+    detail: detail ?? `chat:${STATE_OPS.chat.join('|')} <ns…>(ctx|--char/--chat) · char:${STATE_OPS.char.join('|')} <ns> <doc> · preset:<op> <name> [ns…]|delete-all <name>|rename <old> <new>(--api 族,默认 openai)`,
     rc: 2,
 });
 
