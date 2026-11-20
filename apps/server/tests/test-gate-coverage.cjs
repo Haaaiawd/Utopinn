@@ -49,20 +49,9 @@ const EXEMPT = new Map(Object.entries({
     // —— 只读 POST:body 载查询参数,闸只挡写路径,读面与 GET 同级不持槽 ——
     'POST|pattern|/api/utopinn/connection/test':
         '出站探测上游 API;只读 settings/secrets 取凭据,不写盘。',
-    'POST|pattern|/api/utopinn/chats/recent':
-        '只读聚合(pinned/max 在 body);recent 索引驻内存不落盘。',
-    'POST|pattern|/api/utopinn/state/chat/get':
-        '只读 chat state sidecar(POST 带 target/namespace)。',
-    'POST|pattern|/api/utopinn/state/chat/get-batch':
-        '只读 sidecar,单 target 多 namespace 批量。',
-    'POST|pattern|/api/utopinn/state/char/get':
-        '只读 char state sidecar。',
-    'POST|pattern|/api/utopinn/state/char/get-batch':
-        '只读 sidecar 批量。',
-    'POST|pattern|/api/utopinn/state/preset/get':
-        '只读 preset state sidecar。',
-    'POST|pattern|/api/utopinn/state/preset/get-batch':
-        '只读 sidecar 批量。',
+    // 注:chats/recent 与 state/*/get|get-batch 读的是用户数据(sidecar/
+    // chat 索引),持 dirty:false 读者槽防 sync writer 撕读 —— 已进闸表,
+    // 非豁免。见 .loom/design/deferred-surgery.md 闸表节。
 }));
 
 const failures = [];
