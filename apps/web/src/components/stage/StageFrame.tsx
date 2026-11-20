@@ -68,6 +68,8 @@ export interface FloorOps {
     onRetry: (m: FloorMsg) => void;
     onTrace: (m: FloorMsg) => void;
     onContinue: () => void;
+    /** 绝对 swipe 跳转(galgame 分支选项等按 index 直跳,不再逐版翻页)。 */
+    onSwipeTo: (m: FloorMsg, index: number) => void;
 }
 
 /** 帧内引擎:形态体(楼层列等)经本接口读楼层/操作;composer 在帧内自耗。 */
@@ -76,6 +78,11 @@ export interface StageEngine {
     loadErr: string | null;
     opsOf: (m: FloorMsg, idx: number) => FloorOps;
     reload: () => Promise<void>;
+    /** 形态内按钮的用户文本入口(选项/指令 = 等效 composer 发送)。 */
+    send: (text: string) => void;
+    /** 形态级「推进」:不追 user 楼、直接 normal 生成下一拍
+     *  (VN ▸;区别于 onContinue —— 那是把半截楼续完)。 */
+    advance: () => void;
 }
 
 const EngineCtx = createContext<StageEngine | null>(null);
@@ -337,14 +344,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setLastTokens(null);
         setLastJobId(null);
         setLoadErr(null);
-        /* 形态会话(st-* 种子)渲 stageData 预演体,不存于服务端 —— 跳过
-           getChat,否则 404 被失踪兜底弹回真会话,形态预览永远够不到。 */
-        if (s.live && s.chat && s.chat.stage && s.chat.stage !== 'chat') {
-            setMsgs([]);
-            setQrChips([]);
-            setCtxLen(null);
-            return;
-        }
+        /* 形态会话(st-* 种子)渲 stageData 预演体,不存于服务端 —— 但
+           stage 绑定面(SPEC-DATA)落地后真会话也会带形态,故照常取楼;
+           404 对 chat 是「失踪兜底」,对形态会话只是「预演种子」标记:
+           不弹走当前选择,楼层留空 → 形态体自行落 stageData。 */
         if (s.live && s.chat) {
             let dead = false;
             setMsgs([]);
@@ -355,6 +358,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     /* 持久指针指向已删会话(404/not-found)→ 落下一可用会话,
                        全部失踪 → selectChat('') 进选会话空态;不渲整屏错误域。 */
                     if (isChatNotFound(e)) {
+                        if (stageKind !== 'chat') return;
                         if (chatKey) missingChatsRef.current.add(chatKey);
                         const sh = sRef.current;
                         const next = sh.chats.find((c) => {
@@ -457,39 +461,33 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const pushErrorFloor = (error: FloorMsg['error']) =>
         setMsgs((prev) => [...prev, { id: --transientRef.current, role: 'assistant', name: '', content: '', timestamp: Date.now(), error }]);
 
-    /* ——— 规范稿 sendText 的 stage 分支:mock 路把文本/回文送回形态数据 ——— */
+    /* ——— 规范稿 sendText 的 stage 分支:mock 路把文本/回文送回形态数据。
+     *     novel/galgame 现以楼层轨优先渲染 —— mock 回文落成楼层,
+     *     章目录/对话框经推导自然更新;落进 stageData 种子会进不可见轨。 ——— */
     const mockStagePush = useCallback((kind: StageKind, text: string) => {
-        if (kind === 'chat') {
-            setMsgs((prev) => [...prev, mkMock('user', text)]);
-            return;
-        }
         if (kind === 'messenger') {
             s.patchStageData({
                 channels: s.stageData.channels.map((c) => c.id === s.stageData.activeChannel
                     ? { ...c, msgs: [...c.msgs, { sender: 'haa', self: true, time: '刚刚', text }] }
                     : c),
             });
+            return;
         }
-        /* novel/galgame 无用户回声(规范稿 sendText 同 —— draft 只是指挥/台词)。 */
+        /* novel 的 user 楼渲成段间「指挥」注记,galgame 渲成玩家台词楼。 */
+        setMsgs((prev) => [...prev, mkMock('user', text)]);
     }, [s]);
 
     const mockStageReply = useCallback((kind: StageKind, reply: string) => {
-        if (kind === 'chat') { pushReply(reply); return; }
-        if (kind === 'novel') {
-            s.patchStageData({
-                chapters: s.stageData.chapters.map((c, i) => i === s.stageData.chapters.length - 1
-                    ? { ...c, paras: [...c.paras, { id: `p${Date.now()}`, text: reply }] }
-                    : c),
-            });
-        } else if (kind === 'messenger') {
+        if (kind === 'messenger') {
             s.patchStageData({
                 channels: s.stageData.channels.map((c) => c.id === s.stageData.activeChannel
                     ? { ...c, msgs: [...c.msgs, { sender: c.members[0]?.name ?? '群成员', self: false, time: '刚刚', text: reply }] }
                     : c),
             });
-        } else if (kind === 'galgame') {
-            s.patchStageData({ vn: { ...s.stageData.vn, line: reply } });
+            return;
         }
+        /* chat/novel/galgame 统一回楼层:章目录按推导重分段,galgame 末楼换台词。 */
+        pushReply(reply);
     }, [s]);
 
     const mockReplyFor = (kind: StageKind) =>
@@ -693,19 +691,19 @@ export function StageFrame({ children }: { children: ReactNode }) {
         wsClose.current?.();
     }, [job, s]);
 
-    /* ——— swipe ‹ › ——— */
-    const onSwipe = useCallback(async (m: FloorMsg, dir: -1 | 1, idx: number) => {
+    /* ——— swipe ‹ › 与绝对跳版(分支选项直跳同一实现) ——— */
+    const swipeTo = useCallback(async (m: FloorMsg, next: number) => {
         const count = m.swipes?.length ?? 0;
         const active = m.activeSwipe ?? 0;
-        const next = active + dir;
-        if (next >= count && dir > 0) {
+        if (next === active) return;
+        if (next >= count) {
             // 末版 › = 再生成一版:只对末楼有意义(服务端 swipe 弹末层)
             const lastAi = msgs.reduce((acc, x, i) => (x.role === 'assistant' && !x.error ? i : acc), -1);
-            if (idx !== lastAi) { s.hint(t('stage.swipe.needLast'), true); return; }
+            if (msgs.indexOf(m) !== lastAi) { s.hint(t('stage.swipe.needLast'), true); return; }
             void runGenerate('swipe');
             return;
         }
-        if (next < 0 || next >= count) return;
+        if (next < 0) return;
         const content = m.swipes?.[next]?.content ?? m.content;
         patchFloor(m.id, { activeSwipe: next, content });
         if (s.live && s.chat && m.id >= 0) {
@@ -716,6 +714,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
             }
         }
     }, [msgs, s, patchFloor, runGenerate, refreshMvu, t]);
+
+    const onSwipe = useCallback((m: FloorMsg, dir: -1 | 1) => {
+        void swipeTo(m, (m.activeSwipe ?? 0) + dir);
+    }, [swipeTo]);
+
+    const onSwipeTo = useCallback((m: FloorMsg, index: number) => {
+        void swipeTo(m, index);
+    }, [swipeTo]);
 
     /* ——— 楼操作 ——— */
     const onCopy = useCallback((m: FloorMsg) => {
@@ -846,7 +852,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const opsOf = (m: FloorMsg, idx: number): FloorOps => ({
         isLast: idx === msgs.length - 1,
         editing,
-        onSwipe: (mm, dir) => void onSwipe(mm, dir, idx),
+        onSwipe: (mm, dir) => onSwipe(mm, dir),
+        onSwipeTo: (mm, i) => onSwipeTo(mm, i),
         onCopy,
         onEdit: (mm) => setEditing({ id: mm.id, text: mm.displayContent ?? mm.content }),
         onEditText: (text) => setEditing((prev) => (prev ? { ...prev, text } : prev)),
@@ -861,7 +868,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         onContinue: () => void runGenerate('continue'),
     });
 
-    const engine: StageEngine = { msgs, loadErr, opsOf, reload };
+    const engine: StageEngine = { msgs, loadErr, opsOf, reload, send: (text) => void send(text), advance: () => void runGenerate('normal') };
 
     const effectiveCtxLen = ctxLen ?? s.presetParams.ctxLen;
     const tokenPct = lastTokens != null && effectiveCtxLen > 0 ? Math.min(100, Math.round((lastTokens / effectiveCtxLen) * 100)) : 0;
