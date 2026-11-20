@@ -276,6 +276,20 @@
     z-index: 70; display: flex; flex-direction: column; overflow: hidden;
 }
 
+/* CardApp 宿主:撑满面板/浮窗容器,iframe 吃余量(缺规则时 iframe 退回
+   HTML 默认 300×150 —— 验收 B4)。 */
+.cardapp-host {
+    display: flex; flex-direction: column; flex: 1 1 0; min-height: 0;
+    width: 100%; height: 100%; position: relative;
+}
+.cardapp-degraded {
+    position: absolute; top: 8px; right: 8px; z-index: 2;
+}
+.cardapp-frame {
+    flex: 1 1 0; min-height: 0; width: 100%; height: 100%;
+    border: 0; display: block; background: transparent;
+}
+
 /* =========================================================================
    MOBILE SHELL(hub + drawer + vaul sheet)
    ========================================================================= */

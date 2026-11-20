@@ -3770,6 +3770,53 @@
         "2026-11-20 立案:用户拍板剧场模式为主打方向之一;现为 P2 精修项,骨架+沉浸壳已于 TASK-044 落地"
       ],
       "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-051",
+      "title": "生成/挂载契约缺口收口:swipe 落盘语义 + quiet 组装失败登记 + 预设口径",
+      "status": "open",
+      "outcome": "全链路实测(2026-11-20)发现的契约缺口收口:API 直生成方的 swipe 语义与 ST 楼层惯例对齐;quiet 组装失败也有终态记录;预设默认口径适配大卡。",
+      "acceptance": [
+        {
+          "criterion": "B1:服务端直持久化 AI 楼带 swipes[]/swipe_id;type:\"swipe\" job 并入前楼 swipes 而非追加新楼(或明确定义新契约并入档)",
+          "verify_by": "生成+swipe 后 JSONL 回读验楼层结构",
+          "evidence": ""
+        },
+        {
+          "criterion": "B5:quiet 生成组装失败(assemble_failed)也登记 job 终态,不再只有 quiet_submit 无下文",
+          "verify_by": "/gen 触发失败路径查 jobs 台账",
+          "evidence": ""
+        },
+        {
+          "criterion": "B6:Default 预设 openai_max_context 对小上下文卡/大卡的适配口径定稿(默认上调或按卡调)",
+          "verify_by": "掌门卡直生成不再 jailbreak 预算炸",
+          "evidence": ""
+        }
+      ],
+      "done_when": [
+        "B1 swipe 语义收口",
+        "B5 quiet 终态登记",
+        "B6 预设口径"
+      ],
+      "boundaries": [
+        "kind:none 契约(写盘归客户端)可保留,但 API 直生成方需有等价 swipe 面",
+        "改动限于 luker-generation/quiet-generation/settings 面"
+      ],
+      "depends_on": [
+        "TASK-046"
+      ],
+      "reads": [
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/src/services/quiet-generation.js"
+      ],
+      "touches": [
+        "apps/server/src/endpoints/backends/luker-generation.js"
+      ],
+      "implementation_notes": [
+        "2026-11-20 立案:源自全链路实测发现清单 B1/B5/B6;B2(dist 陈旧)/B3(CSP img-src)/B4(cardapp CSS)当日已修",
+        "B7 环境项不归档"
+      ],
+      "created": "2026-11-20"
     }
   ],
   "milestones": [

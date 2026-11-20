@@ -50,7 +50,9 @@ export function buildCardRuntimeCsp({ selfOrigin, permissions = {} }) {
         `sandbox ${sandbox.join(' ')}`,
         `script-src ${scriptSrc.join(' ')}`,
         `style-src ${runtime} 'unsafe-inline'`,
-        `img-src ${runtime} data: blob:`,
+        // 兼容面:Luker 生态卡按旧 /api/card-app/<char>/ 取图(同源只读),
+        // 路径收窄放行;数据仍走桥,connect-src 不扩。
+        `img-src ${runtime} ${selfOrigin}/api/card-app/ data: blob:`,
         `font-src ${runtime} data:`,
         // Card JS talks to the host over postMessage, not fetch — connect-src
         // only needs the runtime path (assets + CDN proxy).
