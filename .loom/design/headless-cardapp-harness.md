@@ -1,7 +1,7 @@
 # Headless CardApp Harness —— CLI/Node 玩轻前端卡
 
 - Kind: architecture
-- Status: draft
+- Status: implemented(2026-11-20,TASK-042 实弹过掌门卡 + 验收 93/93)
 - 目标:让 CLI/Node 环境能挂载并操作卡内嵌 HTML/JS 应用(CardApp/TH 面板)。
   卡 JS 以为自己跑在 iframe 里,桥另一头是 api-client 打真服务端。
   本 harness 同时是 web/RN iframe 宿主的**协议参照实现**:同一份 nonce+白名单
@@ -440,3 +440,33 @@ TH `getChatMessages`×43 频度压测 → dispatch 耗时分布,顺便给 T1
 - 既有设计:`.loom/design/cardapp-web-host.md`、`mobile-panels.md`、
   `capabilities/sandboxed-card-apps/research/{webview-bridge-security,
   card-runtime-ecosystem}.md`
+
+## 实现注记(2026-11-20 TASK-042 落地落差)
+
+已交付:`apps/cli/cardapp-host.mjs`(harness)+ `apps/cli/cmd-cardapp.mjs`(动词层)
++ `utopinn-cli.mjs` 解析/分派/SCHEMA + `apps/cli/package.json`(jsdom 31.0.0、
+esbuild 0.25.12、@utopinn/{protocol,formats,api-client})。验收:
+`apps/server/tests/utopinn-acceptance/run.mjs` group K 新增 12 断言,93/93 全绿。
+
+与设计稿的正交落差(实现期实测校准,非改决策):
+
+1. **jsdom≥26 没有 `ResourceLoader`**:资源收口改 `resources:{interceptors:
+   [requestInterceptor(fn)]}`——fn(request,{element}) → Response|undefined。
+   语义同原 ResourceLoader.fetch 收口点(mount-space→resolver、外链→allowlist、
+   未准→404),`<script>/<link>/<img>/fetch/XHR` 全过这门。
+2. **`UTOPINN_CARDAPP_DEPS_DIR`**:9P/NFS 场景 jsdom 冷 import 可 >60s,
+   指一个本地镜像目录(`<dir>/node_modules/{jsdom,esbuild}`)走 createRequire
+   快路径;不设/不可解时落回裸 specifier,行为不变。
+3. **api-client 上游修**:`panel-t0.ts chatVariables` 只读 `res.header.chat_metadata`,
+   而 `/api/chats/get` 返回 legacy 数组形 `[header,...msgs]` → getVariables 恒
+   `{}`。已补 `res[0]?.chat_metadata` 分支(src+dist 同步)——web 宿主同受益。
+4. **`Object.assign` 会立即求值 getter 再拷值**:ctx.container/assetBase/
+   dead/lukerContext 改 `Object.defineProperties` 活 getter(containerRef
+   在 JSDOM 就位后才赋值,冻值会让 init(ctx) 拿到 null container)。
+5. **JSON Patch `add` ≠ `replace`**:服务端 patch 面 test-first,`replace`
+   于键缺席/父缺席时 409;`setVariable`/`setExtensionPrompt` 用 `add`
+   (upsert),`extension_prompts` 父段缺失时先补父再补键。
+6. **init-caller 显式调用**:module 入口 esbuild bundle(cjs)→ realm eval
+   → `moduleExports.init(ctx)`;`initCalled` 随 mount brief 回显,验收断言钉住。
+7. **charId=charDir**:ctx.charId / bootstrap.charId 语义 = 角色目录名
+   (与 server mounts/ctx 契约一致),非卡面 display name。

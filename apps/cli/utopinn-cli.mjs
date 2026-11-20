@@ -64,6 +64,10 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--mode') flags.mode = argv[++i];
     else if (a === '--handle') flags.handle = argv[++i];
     else if (a === '--chat') flags.chat = argv[++i];
+    else if (a === '--card') flags.card = argv[++i];
+    else if (a === '--settle') flags.settle = Number(argv[++i]);
+    else if (a === '--mount-id') flags.mountId = argv[++i];
+    else if (a === '--with-parent-doc') flags.withParentDoc = true;
     else if (a === '--via') flags.via = argv[++i];
     else if (a === '--group') flags.group = argv[++i];
     else if (a === '--gchat') flags.gchat = argv[++i];
@@ -1244,6 +1248,7 @@ const SCHEMA = {
         { cmd: 'utopinn mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
         { cmd: 'utopinn script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
         { cmd: 'utopinn th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
+        { cmd: 'utopinn cardapp <mount|eval|call|op|status|unmount>', desc: '[cardapp] headless CardApp 宿主(jsdom 真跑卡 HTML/JS;一次性进程语义)', out: '{mount,result,console}' },
         { cmd: 'utopinn import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
         { cmd: 'utopinn import-preview <file|--file f|--stdin>', desc: '[data] 格式探测+摘要+冲突,不落库', out: '{kind,summary,warnings,conflicts}' },
         { cmd: 'utopinn import-commit <file|--file f> [--conflict r|o|s] [--as name] [--kind k]', desc: '[data] 显式落库(同名 409→--conflict rename|overwrite|skip)', out: '{ok,targetName,renamed}' },
@@ -2850,6 +2855,15 @@ async function cmdState() {
     }
 }
 
+async function cmdCardApp() {
+    // 懒加载:jsdom/esbuild 不进 utopinn-cli.mjs 启动路径(零依赖冷启保持)
+    const { run } = await import('./cmd-cardapp.mjs');
+    return run({
+        positional, flags, SERVER, needCtx, out, fail, warn, footer,
+        saveState, state, readTextArg, stripExt, JSON_MODE,
+    });
+}
+
 // ═══ dispatch ═══
 try {
     switch (CMD) {
@@ -2918,6 +2932,7 @@ try {
         case 'mvu': await cmdMvu(); break;
         case 'script': case 'stscript': await cmdScript(); break;
         case 'th': await cmdTh(); break;
+        case 'cardapp': await cmdCardApp(); break;
         case 'import-scan': await cmdImportScan(); break;
         case 'import-preview': await cmdImportPreview(); break;
         case 'import-commit': await cmdImportCommit(); break;
