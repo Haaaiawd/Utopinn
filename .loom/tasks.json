@@ -3717,6 +3717,59 @@
       "implementation_notes": [
         "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议"
       ]
+    },
+    {
+      "id": "TASK-050",
+      "title": "剧场模式旗舰打磨 + 首张配套卡(scene/立绘/choices 数据契约)",
+      "status": "open",
+      "outcome": "剧场模式成为差异化主打:形态精细打磨 + 一张为它设计的旗舰卡——卡携带 scene.bg/立绘/choices/节拍信号,形态钩位全部吃到真数据,成为演示门面。",
+      "acceptance": [
+        {
+          "criterion": "配套卡数据契约定稿:scene.bg/立绘槽/extra.choices/节拍标记的字段形状+卡内位置(extensions 或 card_app)",
+          "verify_by": "契约入设计档",
+          "evidence": ""
+        },
+        {
+          "criterion": "首张配套卡制作完成并入库(可跑通剧场模式全流程:背景/立绘/对话推进/选项)",
+          "verify_by": "卡落 tests/corpus 或数据根+实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "剧场模式精细打磨:演出节奏/立绘转场/对话条排版/沉浸壳细节逐项过",
+          "verify_by": "浏览器实测+截图",
+          "evidence": ""
+        },
+        {
+          "criterion": "服务端 choices/scene 字段落位(generate 输出或卡数据→floor.extra 通路)",
+          "verify_by": "curl 验字段到楼层",
+          "evidence": ""
+        }
+      ],
+      "done_when": [
+        "配套卡数据契约定稿",
+        "首张配套卡入库可跑通",
+        "剧场模式精细打磨过",
+        "choices/scene 服务端通路"
+      ],
+      "boundaries": [
+        "不承诺完整 VN 引擎(分支树/存档系统后置)",
+        "配套卡归 tests/corpus(公开卡)或私有 corpus-private"
+      ],
+      "depends_on": [
+        "TASK-044"
+      ],
+      "reads": [
+        "apps/web/src/features/stagepack.tsx",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "assets/u_ui_codex_linear_shadcn_ui.html"
+      ],
+      "touches": [
+        "apps/web/src/features/stagepack.tsx"
+      ],
+      "implementation_notes": [
+        "2026-11-20 立案:用户拍板剧场模式为主打方向之一;现为 P2 精修项,骨架+沉浸壳已于 TASK-044 落地"
+      ],
+      "created": "2026-11-20"
     }
   ],
   "milestones": [
