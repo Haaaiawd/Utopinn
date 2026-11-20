@@ -38,9 +38,8 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { regexFromString } from '@utopinn/core';
 
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { readCharacterData, writeCharacterData } from '../endpoints/characters.js';
+import { writeCharacterData } from '../endpoints/characters.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
-import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { assertWritable } from '../storage/read-only-mode.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { safeName, sendError } from './utopinn-library.js';
@@ -137,8 +136,8 @@ function resolveScope(request) {
     }
     if (scope === 'preset') {
         const apiId = String(src.apiId ?? src.api ?? 'openai').trim();
-        if (!PRESET_FOLDER_BY_API_ID[apiId]) {
-            throw new InvalidArgumentError(`unknown apiId: ${apiId}`);
+        if (!REGEX_PRESET_API_IDS.includes(apiId)) {
+            throw new InvalidArgumentError(`apiId must be one of ${REGEX_PRESET_API_IDS.join('|')}, got "${apiId}"`);
         }
         return { scope: 'preset', apiId, name: safeName(src.preset ?? src.name, 'preset') };
     }
@@ -175,7 +174,7 @@ function setCardRegexScripts(card, scripts) {
  * @returns {{index:number, script:object}|null}
  */
 function findScript(scripts, id) {
-    const byId = scripts.findIndex((s) => s && String(s.id) === id);
+    const byId = scripts.findIndex((s) => s && s.id !== undefined && String(s.id) === id);
     if (byId >= 0) return { index: byId, script: scripts[byId] };
     if (/^\d+$/.test(id)) {
         const i = Number(id);
@@ -224,7 +223,7 @@ function putPresetOps(presetDoc, scripts) {
  * 放行表更新(char/preset)。字段缺省 → add;在场 → test+replace CAS。
  * @returns {Promise<void>}
  */
-async function patchAllowlist(handle, scope, { charDir, avatar, apiId, presetName, allow }) {
+async function patchAllowlist(handle, scope, { avatar, apiId, presetName, allow }) {
     const repo = getSettingsRepo();
     const settings = (await repo.get(handle)) ?? {};
     const ext = (settings.extension_settings && typeof settings.extension_settings === 'object')
@@ -336,6 +335,13 @@ async function mutateCharScripts(request, charDir, mutator) {
         const old = cardRegexScripts(loaded.card);
         const next = mutator(old);
         setCardRegexScripts(loaded.card, next);
+        // v1 .png(spec 缺失):先盖章走 toStoredV2Character 升格;
+        // 否则 normalizeCharacterCardForStorage 走 convertToV2 表单路径,
+        // 把 extensions.world/system_prompt 等非表单字段清零(同 library PATCH)。
+        if (loaded.card.spec === undefined) {
+            loaded.card.spec = 'chara_card_v2';
+            loaded.card.spec_version = '2.0';
+        }
         assertWritable();
         if (loaded.ext === '.png') {
             const ok = await writeCharacterData(
@@ -517,6 +523,11 @@ export function apply(ctx) {
             }
 
             if (hasAllow) {
+                // 幽灵放行拦截:卡文件不存在时拒绝写放行表(否则留下指向
+                // 不存在 avatar 的 character_allowed_regex 条目)。
+                if (scope.scope === 'char' && !resolveCharFile(request.user.directories, scope.charDir)) {
+                    throw new NotFoundError('character card', { charDir: scope.charDir });
+                }
                 const avatar = scope.scope === 'char'
                     ? await resolveAvatarFileName(request.user.directories, scope.charDir)
                     : undefined;

@@ -109,15 +109,28 @@ export function apply(ctx) {
         },
     }));
 
+    // 读面 admin 闸:事件 ctx 含 handle/charDir/route,多用户部署下不闸即
+    // 跨用户元数据泄漏(与 /plugins|/ui/contrib 同构)。单机自用无感。
+    const adminOnly = (request, response) => {
+        if (!request.user?.profile?.admin) {
+            response.status(403).send({ error: 'Unauthorized' });
+            return false;
+        }
+        return true;
+    };
+
     reg('GET', `${P}/events`, function (request, response) {
+        if (!adminOnly(request, response)) return;
         return response.send(eventsReply(request.query ?? {}));
     });
 
     reg('GET', `${P}/errors`, function (request, response) {
+        if (!adminOnly(request, response)) return;
         return response.send(eventsReply({ ...(request.query ?? {}), lvl: 'warn' }));
     });
 
-    reg('GET', `${P}/stats`, function (_request, response) {
+    reg('GET', `${P}/stats`, function (request, response) {
+        if (!adminOnly(request, response)) return;
         const st = diagStats();
         // 窗口总览:环内现存事件按 kind 计数(events)+ warn+ 按 domain 计数
         // (errors 面同口径 lvl≥warn;domain=kind —— 前端 ERR_DOMAINS 词表即

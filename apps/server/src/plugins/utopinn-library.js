@@ -20,6 +20,7 @@ import { read as readCharacterCard } from '../character-card-parser.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { applyJsonPatch } from '../storage/repositories/json-patch.js';
+import { assertWritable } from '../storage/read-only-mode.js';
 import {
     ConflictError,
     InvalidArgumentError,
@@ -675,6 +676,13 @@ export function apply(ctx) {
                 && Object.hasOwn(patch.oai_settings, 'preset_settings_openai');
             const presetViaTop = Object.hasOwn(patch, 'preset_settings_openai');
             if (presetViaOai || presetViaTop) {
+                // 标量守卫:oai_settings 内嵌 preset_settings_openai 同顶层口径
+                // —— 非 string|null 拒写(否则对象类型会污染 generate-context
+                // 的预设指针)。
+                const mirrorVal = presetViaOai ? patch.oai_settings.preset_settings_openai : patch.preset_settings_openai;
+                if (mirrorVal !== null && typeof mirrorVal !== 'string') {
+                    return response.status(422).send({ error: 'preset_settings_openai must be a string or null.' });
+                }
                 const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
                     ? { ...next.oai_settings }
                     : {};
@@ -834,6 +842,7 @@ export function apply(ctx) {
                 }
             }
 
+            assertWritable();
             if (source.kind === 'json') {
                 writeFileAtomicSync(source.filePath, JSON.stringify(next), 'utf8');
             } else {
@@ -1811,6 +1820,7 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Invalid namespace for state sidecar path.' });
             }
 
+            assertWritable();
             fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
             writeFileAtomicSync(stateFilePath, JSON.stringify(state), 'utf8');
             return response.send({ ok: true });
@@ -1870,6 +1880,7 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Character state patch result must be an object.' });
             }
 
+            assertWritable();
             fs.mkdirSync(path.dirname(stateFilePath), { recursive: true });
             writeFileAtomicSync(stateFilePath, JSON.stringify(next), 'utf8');
             return response.send({
@@ -1901,6 +1912,7 @@ export function apply(ctx) {
                 return response.send({ ok: true, deleted: false });
             }
 
+            assertWritable();
             fs.unlinkSync(stateFilePath);
             return response.send({ ok: true, deleted: true });
         } catch (error) {
