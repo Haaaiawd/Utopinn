@@ -44,6 +44,11 @@ export const charImgFallback = (e: React.SyntheticEvent<HTMLImageElement>) => {
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const errCode = (e: unknown) => (e instanceof ApiError ? `HTTP ${e.status ?? '?'}` : 'error');
 
+/** 会话失踪判定:HTTP 404 或 not-found 文案 —— 走空态兜底,不渲整屏错误域。 */
+const isChatNotFound = (e: unknown) =>
+    (e instanceof ApiError && e.status === 404) ||
+    /chat[_\s-]?not[_\s-]?found|not_found|不存在/i.test(errText(e));
+
 /** chat → mvu/state target(与 chat_state 同形;不引 panels 域件)。 */
 const mvuTarget = (chat: ChatSummary | null): MvuTarget | null =>
     chat?.charDir && chat?.chatName ? { avatar_url: `${chat.charDir}.png`, file_name: `${chat.chatName}.jsonl` } : null;
@@ -150,7 +155,7 @@ function SlashMenu({ onPick, onClose }: { onPick: (key: string) => void; onClose
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
                 className="pop-in absolute left-4 w-[288px] max-w-[calc(100%-32px)] space-y-0.5 rounded-2xl p-1.5 sm:left-6"
-                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--composer-pop-bottom, 94px)' }}
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--slash-pop-bottom, 94px)' }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-2.5 py-1.5 text-[10.5px] font-medium text-[color:var(--fg-muted)]">
@@ -196,7 +201,11 @@ function PresetPop({ onClose }: { onClose: () => void }) {
     return (
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
-                className="pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-3 z-40 flex max-h-[72vh] w-[352px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-2xl sm:right-6"
+                className={
+                    s.isMobile
+                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[72vh] flex-col overflow-hidden rounded-2xl'
+                        : 'pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-6 z-40 flex max-h-[72vh] w-[352px] flex-col overflow-hidden rounded-2xl'
+                }
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom right' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -291,6 +300,11 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const wsClose = useRef<(() => void) | null>(null);
     /** 服务端中止后 WS 未必回终帧 —— 本地 settle 兜底,busy 不挂。 */
     const settleRef = useRef<((r: { text: string; error?: string }) => void) | null>(null);
+    /* 失踪会话登记簿(404 过的 charDir/chatName —— 兜底时跳过,防连环打回);
+       sRef 供异步 catch 取最新壳态,避免闭包里的陈旧 chats。 */
+    const missingChatsRef = useRef(new Set<string>());
+    const sRef = useRef(s);
+    sRef.current = s;
     const model = s.models.find((m) => m.id === s.activeModel);
     const offline = s.serverStatus === 'offline';
     const streaming = busy && job !== null;
@@ -323,15 +337,39 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setLastTokens(null);
         setLastJobId(null);
         setLoadErr(null);
+        /* 形态会话(st-* 种子)渲 stageData 预演体,不存于服务端 —— 跳过
+           getChat,否则 404 被失踪兜底弹回真会话,形态预览永远够不到。 */
+        if (s.live && s.chat && s.chat.stage && s.chat.stage !== 'chat') {
+            setMsgs([]);
+            setQrChips([]);
+            setCtxLen(null);
+            return;
+        }
         if (s.live && s.chat) {
             let dead = false;
             setMsgs([]);
             getChat(s.chat.charDir, s.chat.chatName)
                 .then((d) => { if (!dead) setMsgs(d.messages); })
-                .catch((e) => { if (!dead) { setMsgs([]); setLoadErr(errText(e)); } });
+                .catch((e) => {
+                    if (dead) return;
+                    /* 持久指针指向已删会话(404/not-found)→ 落下一可用会话,
+                       全部失踪 → selectChat('') 进选会话空态;不渲整屏错误域。 */
+                    if (isChatNotFound(e)) {
+                        if (chatKey) missingChatsRef.current.add(chatKey);
+                        const sh = sRef.current;
+                        const next = sh.chats.find((c) => {
+                            const k = `${c.charDir}/${c.chatName}`;
+                            return k !== chatKey && !missingChatsRef.current.has(k);
+                        });
+                        sh.selectChat(next?.id ?? '');
+                        return;
+                    }
+                    setMsgs([]); setLoadErr(errText(e));
+                });
             return () => { dead = true; };
         }
-        setMsgs(MOCK_MESSAGES);
+        /* live 无会话 → 空楼层(选会话空态);离线/mock 路 → mock 种子。 */
+        setMsgs(s.live ? [] : MOCK_MESSAGES);
         setQrChips([]);
         setCtxLen(null);
     }, [chatKey, s.live]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -614,7 +652,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     /* ——— 发送 ——— */
     const send = useCallback(async (text: string) => {
         const v = text.trim();
-        if (!v || busy || offline) return;
+        if (!v || busy || offline || (s.live && !s.chat)) return;
         setDraft('');
         if (!s.live || !s.chat) {
             mockStagePush(stageKind, v);
@@ -831,13 +869,20 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const tokenPct = lastTokens != null && effectiveCtxLen > 0 ? Math.min(100, Math.round((lastTokens / effectiveCtxLen) * 100)) : 0;
 
     const qrVisible = qrOpen && qrChips.length > 0 && menu === 'none' && stageKind === 'chat';
+    /* 弹层抬升量看「QR 开关态」而非可见态 —— 规范稿弹层打开时 QR 条隐藏,
+       但弹层锚位仍按 quickRepliesOpen 抬(126/92 桌面,122/88 移动)。 */
+    const qrSpace = qrOpen && qrChips.length > 0 && stageKind === 'chat';
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
     return (
         <EngineCtx.Provider value={engine}>
             <section
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col"
-                style={{ background: 'var(--bg-canvas)', ['--composer-pop-bottom' as never]: qrVisible ? '126px' : '92px' }}
+                style={{
+                    background: 'var(--bg-canvas)',
+                    ['--composer-pop-bottom' as never]: qrSpace ? (s.isMobile ? '122px' : '126px') : (s.isMobile ? '88px' : '92px'),
+                    ['--slash-pop-bottom' as never]: qrSpace ? '128px' : '94px',
+                }}
             >
                 {/* 规范稿 stage-header h-12 px-4:左 ctx 钮(卡环+名·题+⌄)→ ctx 弹层;右 wb/移动 sheet 钮 */}
                 <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4">
@@ -990,7 +1035,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                         className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-90"
                                         style={{ color: draft.trim() ? 'var(--brand)' : 'var(--fg-secondary)', opacity: offline ? 0.35 : 1 }}
                                         onClick={() => void send(draft)}
-                                        disabled={offline || busy}
+                                        disabled={offline || busy || (s.live && !s.chat)}
                                         title={t('composer.send')}
                                     >
                                         <Icon name="send" size={26} active={!!draft.trim()} />

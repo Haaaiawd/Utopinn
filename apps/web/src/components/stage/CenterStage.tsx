@@ -82,7 +82,8 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                         <div className="whitespace-pre-line">{m.displayContent ?? m.content}</div>
                     )}
                 </div>
-                <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                {/* 触屏无 hover —— 移动端 ops 常显(opacity-90),桌面保留 hover 显现 */}
+                <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast || s.isMobile ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
@@ -177,7 +178,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                 )}
                 {/* 规范稿楼层操作条 L1191-1206:左 swipe 胶囊+copy/edit/del/回滚,右 deltas mono 芯 */}
                 {showOps && (
-                    <div className={`flex items-center justify-between gap-2 pt-0.5 transition-opacity duration-150 ${ops.isLast ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                    <div className={`flex items-center justify-between gap-2 pt-0.5 transition-opacity duration-150 ${ops.isLast || s.isMobile ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
                         <div className="flex items-center gap-1">
                             {(m.swipes || ops.isLast) && (
                                 <span className="mr-1 inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-0.5">
@@ -224,12 +225,18 @@ function ChatFloors() {
             )}
             <div className="relative z-10 mx-auto max-w-[660px] space-y-7 pb-6">
                 {eng.loadErr && (() => {
-                    /* 规范稿空态模型(同 CardApp 错误域):图标砖 + 标题 + code/detail 分层,不裸渲 JSON */
+                    /* 规范稿空态模型(同 CardApp 错误域):图标砖 + 标题 + code/detail 分层,
+                       detail 只取 error.message —— 不裸渲整串 JSON 响应体。 */
                     let code = '', detail = eng.loadErr;
                     try {
                         const j = JSON.parse(eng.loadErr) as Record<string, unknown>;
-                        code = String(j.code ?? j.error ?? ''); detail = String(j.detail ?? j.message ?? eng.loadErr);
-                    } catch { /* 非 JSON 原文展示 */ }
+                        code = String(j.code ?? j.error ?? '');
+                        const msg = j.message
+                            ?? (typeof j.detail === 'string' ? j.detail
+                            : j.detail && typeof j.detail === 'object' ? (j.detail as { message?: unknown }).message
+                            : j.error);
+                        detail = typeof msg === 'string' ? msg : '';
+                    } catch { /* 非 JSON → e.message 原文展示 */ }
                     return (
                         <div className="my-8 flex flex-col items-center gap-2.5 text-center">
                             <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)]" style={{ color: 'var(--status-danger)' }}>
@@ -237,11 +244,29 @@ function ChatFloors() {
                             </span>
                             <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">{t('stage.err.load')}</div>
                             {code && <div className="font-mono-ui text-[10.5px]" style={{ color: 'var(--status-danger)' }}>{code}</div>}
-                            <div className="max-w-[420px] break-all font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{detail}</div>
+                            {detail && <div className="max-w-[420px] break-all font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{detail}</div>}
                             <button className="ghost-btn mt-1 h-7 border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3 text-[11.5px]" onClick={() => void eng.reload()}>{t('panel.retry')}</button>
                         </div>
                     );
                 })()}
+                {/* live 无会话(指针空/会话全失踪)→ 规范稿选会话空态,不播 mock 楼层 */}
+                {s.live && !s.chat && !eng.loadErr && (
+                    <div className="flex min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
+                        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] text-[color:var(--fg-muted)]">
+                            <Icon name="chat" size={20} />
+                        </div>
+                        <div className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('chat.pick.title')}</div>
+                        <div className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-[color:var(--fg-muted)]">{t('chat.pick.desc')}</div>
+                        {(s.isMobile || !s.sidebarOpen) && (
+                            <button
+                                className="mt-4 h-8 rounded-lg border border-[color:var(--border-strong)] bg-[color:var(--bg-surface)] px-3.5 text-[12px] font-medium text-[color:var(--fg-primary)] transition-colors hover:bg-[color:var(--bg-active)]"
+                                onClick={() => (s.isMobile ? s.setMobileDrawer(true) : s.toggleSidebar())}
+                            >
+                                {t('chat.pick.btn')}
+                            </button>
+                        )}
+                    </div>
+                )}
                 {eng.msgs.filter((m) => m.role !== 'system' || m.content).map((m, i) => <Msg key={m.id} m={m} idx={i} ops={eng.opsOf(m, i)} />)}
             </div>
         </div>
