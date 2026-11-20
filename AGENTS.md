@@ -81,6 +81,7 @@ the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative 
 
 - **9P stall 已实锤**:WSL2 下 /mnt/d 走 9P 协议,高并发 I/O 时进程会 D 态卡死 `p9_client_rpc`(症状:server 启动静默 >60s、ps 显示 Dsl+)。**解法:scratch/dataRoot 放 /tmp**(如 `--dataRoot /tmp/uto-xxx-data`),代码树在 /mnt/d 无妨。
 - **免编译启动**:`LUKER_PREBUILT_BUNDLES_DIR=<含 lib.core/lib.optional/codemirror.bundle.js 的 output 目录>` 跳过 webpack 编译,秒级起服。产物在 `tests/.e2e-scratch/*/_webpack/<hash>/output`(hash 寻址,跨 scratch 可互借)。
+- **旧 UI 闸刀**:`apps/server/public/` 旧 jQuery UI 默认**不挂载**;`LUKER_SERVE_LEGACY=1` 才恢复(e2e 浏览器 harness/golden-diff 已由 `_lib/server.js` 自动注入)。直开服务端端口看到的是 kernel 状态页。
 - 快速拉起:`rsync -a --exclude _webpack <scratch>/ /tmp/data/ && LUKER_PREBUILT_BUNDLES_DIR=<output> node server.js --dataRoot /tmp/data --port 18997`。
 
 ## 掌门卡 CardApp 工作区
