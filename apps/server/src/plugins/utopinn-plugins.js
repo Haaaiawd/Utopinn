@@ -22,8 +22,12 @@
  *   前端要锁定的件(library/generate/delivery/diag)。disabled 行只回 BUILTIN
  *   声明 + disabled 位,不 import 模块 —— 关掉的插件不跑它顶层代码。
  *
- * 自锁保护:本插件的 disable/reload 会拆了自己的路由面(或把自己关进
- * disabled 而无路可开)—— 一律 400 拒绝;真要关它,改 profile.patch.yaml。
+ * 自锁 + core 闸:本插件的 disable/reload 会拆了自己的路由面(或把自己关进
+ * disabled 而无路可开)—— 一律 400 拒绝。CORE_PLUGINS 成员的 disable
+ * 同样在路由侧拒绝(core = 关掉产品就死/管理面失联,见 domain-map §6.1);
+ * reload 对 core 成员仍放行(dispose+重载是恢复性操作)。kernel 侧
+ * pluginManager.disable() 目前不查这张表 —— 最终闸应落在
+ * kernel-boot.js 的 disable() 里读同一份 CORE_PLUGINS(已 export)。
  */
 import { statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -46,9 +50,15 @@ const KNOWN_SLOTS = [
     'panel.type', 'renderer', 'ctbar.chat', 'locale',
 ];
 
-/** 内核锁定件:这些插件的贡献项带 core:true(前端不可卸的面)。 */
-const CORE_PLUGINS = new Set([
+/**
+ * 内核锁定件(core = 关掉它产品就死/管理面失联,domain-map §6.1):
+ *   - 贡献项带 core:true(前端不可卸的面)
+ *   - disable 路由侧 400 拒绝(act 闸;kernel pluginManager 待接同一份表)
+ * utopinn-plugins 自身在列:disable 它之后连「再 enable」的 API 都没了。
+ */
+export const CORE_PLUGINS = new Set([
     'utopinn-library', 'utopinn-generate', 'utopinn-delivery', 'utopinn-diag',
+    'utopinn-plugins',
 ]);
 
 /**
@@ -57,14 +67,24 @@ const CORE_PLUGINS = new Set([
  * panels feature 的注册值,不是另一套词。
  */
 const BUILTIN_CONTRIB = {
+    // stats 面板随 utopinn-stats 并入 diag 后归此键(与 diag manifest 的
+    // diag 项同槽并列;两键同插件不冲突——items 里 plugin 字段同)。
     'utopinn-diag': [
         { slot: 'panel.type', contribution: { type: 'diag', icon: 'code', wired: true, badge: 'diag', category: 'system', desc: 'panel.desc.diag' } },
-    ],
-    'utopinn-stats': [
         { slot: 'panel.type', contribution: { type: 'stats', icon: 'compass', wired: true, badge: 'stats', category: 'system', desc: 'panel.desc.stats' } },
     ],
     'utopinn-mvu': [
         { slot: 'panel.type', contribution: { type: 'mvu', icon: 'database', wired: true, category: 'system', desc: 'panel.desc.mvu' } },
+    ],
+    // CardApp 桶:ledger/cardapp 面板的后端是 th/call 桥 + state sidecar。
+    'utopinn-th': [
+        { slot: 'panel.type', contribution: { type: 'ledger', icon: 'notebook', wired: true, badge: 'panel.badge.cardapp', category: 'cardapp', desc: 'panel.desc.ledger' } },
+        { slot: 'panel.type', contribution: { type: 'cardapp', icon: 'layout', wired: true, badge: 'panel.badge.cardapp', category: 'cardapp', desc: 'panel.desc.cardapp' } },
+    ],
+    // notes=library state/chat(ns='notes')面;preset=library /presets 面。
+    'utopinn-library': [
+        { slot: 'panel.type', contribution: { type: 'notes', icon: 'note', wired: true, category: 'system', desc: 'panel.desc.notes' } },
+        { slot: 'panel.type', contribution: { type: 'preset', icon: 'sliders', wired: true, category: 'system', desc: 'panel.desc.preset' } },
     ],
 };
 
@@ -201,6 +221,11 @@ export function apply(ctx) {
         const id = request.params?.id;
         if (id === SELF && verb !== 'enable') {
             return response.status(400).send({ error: `cannot ${verb} the plugin manager itself` });
+        }
+        // core 闸:关掉即产品死/管理面失联的件不可经 API 停用(改
+        // profile.patch.yaml 是绕过本面的显式操作,不算破坏)。reload 放行。
+        if (verb === 'disable' && CORE_PLUGINS.has(id)) {
+            return response.status(400).send({ error: `${id} is a core plugin; refusing disable` });
         }
         const r = await pm[verb](id);
         if (!r.ok) return response.status(r.code ?? 500).send({ error: r.error });

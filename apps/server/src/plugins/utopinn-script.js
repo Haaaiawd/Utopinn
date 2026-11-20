@@ -13,7 +13,7 @@ import {
 } from '@utopinn/core';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
-import { safeName, sendError } from './utopinn-library.js';
+import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv } from '../services/stscript-env.js';
 
 export const inject = ['webServer'];
