@@ -11,6 +11,7 @@ import { Icon, type IconName } from '../Icon';
 import { LogoU } from '../LogoU';
 import { WorkbenchBody } from './Workbench';
 import { CenterStage } from '../stage/CenterStage';
+import { charImgFallback } from '../stage/StageFrame';
 import { useRemote } from '../panels/panelShared';
 import { cardData, charImageUrl, getCharacter } from '../../api/characters';
 import { getSettings } from '../../api/settings';
@@ -105,7 +106,7 @@ export function MobileFrame() {
                                 className="flex w-full items-center justify-between rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3 py-2 text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface-hover)]"
                                 onClick={() => { s.setMobileDrawer(false); s.setView('hub'); }}
                             >
-                                <span className="flex items-center gap-2"><Icon name="home" size={16} /><span className="font-medium text-[color:var(--fg-primary)]">{t('mob.hub.assetHub')}</span></span>
+                                <span className="flex items-center gap-2"><Icon name="studio" size={16} /><span className="font-medium text-[color:var(--fg-primary)]">{t('mob.hub.assetHub')}</span></span>
                                 <span className="text-[10.5px] text-[color:var(--fg-muted)]">{t('mob.hub.assetSub')}</span>
                             </button>
                             <div className="flex items-center justify-between gap-1">
@@ -485,7 +486,7 @@ function CharEditorModal() {
             <div className="pop-in flex max-h-[82vh] w-full max-w-[600px] flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
                 <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-[color:var(--border-hairline)] px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
-                        {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
+                        {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" onError={charImgFallback} /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
                         <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{data?.name || card?.name || dir}</span>
                         <WiredBadge warn>{t('ov.char.badge')}</WiredBadge>
                     </div>
@@ -557,7 +558,7 @@ export function Cmdk() {
                                 return (
                                     <button key={c.id} className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.selectChat(c.id); s.setCmdkOpen(false); }}>
                                         <span className="flex min-w-0 items-center gap-2.5">
-                                            <img src={card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png'} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
+                                            <img src={card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png'} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" onError={charImgFallback} />
                                             <span className="truncate text-[13px] text-[color:var(--fg-primary)]">{card?.name ?? c.charDir} · {c.title}</span>
                                         </span>
                                         <span className="shrink-0 text-[11px] text-[color:var(--fg-muted)]">{t(`stage.label.${c.stage ?? 'chat'}`)}</span>

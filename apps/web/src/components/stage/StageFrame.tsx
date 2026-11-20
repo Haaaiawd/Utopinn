@@ -33,6 +33,14 @@ const mkMock = (role: 'user' | 'assistant', content: string, streaming = false):
     id: ++mockMid, role, name: role === 'user' ? 'haa' : '云栖宗 · 陈修线', content, streaming, timestamp: Date.now(),
 });
 
+/** 卡头像兜底:服务端 404/离线 → default-char 占位(诚实降级,不装作有图)。 */
+export const charImgFallback = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const el = e.currentTarget;
+    if (el.dataset.fbk) return;
+    el.dataset.fbk = '1';
+    el.src = '/assets/avatars/default-char.png';
+};
+
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const errCode = (e: unknown) => (e instanceof ApiError ? `HTTP ${e.status ?? '?'}` : 'error');
 
@@ -234,7 +242,7 @@ function PresetPop({ onClose }: { onClose: () => void }) {
                     <div className="inset-group">
                         {sliders.map((sl) => (
                             <div key={sl.k} className="inset-row flex-col items-stretch gap-1 py-2.5">
-                                <div className="flex justify-between text-[11.5px]">
+                                <div className="flex w-full justify-between text-[11.5px]">
                                     <span className="text-[color:var(--fg-secondary)]">{sl.label}</span>
                                     <span className="font-mono-ui">{sl.fmt(pp[sl.k])}</span>
                                 </div>
@@ -845,7 +853,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                             onClick={() => setMenu(menu === 'context' ? 'none' : 'context')}
                             title={t('ctx.capsule')}
                         >
-                            <span className="char-avatar-ring h-5 w-5 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" /></span>
+                            <span className="char-avatar-ring h-5 w-5 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" onError={charImgFallback} /></span>
                             <span className="truncate text-[color:var(--fg-primary)]">
                                 {s.chat ? `${card?.name ?? s.chat.charDir} · ${s.chat.title}` : t('chat.none')}
                             </span>
@@ -960,7 +968,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                     title={t('composer.presetModel')}
                                 >
                                     <span className="hidden sm:inline">{model?.short ?? t('composer.presetModel')}</span>
-                                    <span className="sm:hidden">{t('composer.presetModel')}</span>
+                                    <span className="sm:hidden">{t('composer.presetModelShort')}</span>
                                     <Icon name="chevronDown" size={12} />
                                 </button>
                                 {streaming ? (

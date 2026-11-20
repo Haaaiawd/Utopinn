@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import type { ChatSummary } from '../../types';
 import { charImageUrl } from '../../api/characters';
+import { charImgFallback } from '../stage/StageFrame';
 import { STUDIO_NAV_META, normStudioNav, useStudioCounts } from '../views/studio';
 
 /** 规范稿段标:text-[11px] font-medium fg-muted(非 caps)。 */
@@ -20,7 +21,7 @@ function CardRing({ charDir, size = 20 }: { charDir: string; size?: number }) {
     const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
     return (
         <span className="char-avatar-ring shrink-0" style={{ width: size, height: size }}>
-            <img src={src} alt="" className="h-full w-full object-cover" />
+            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} />
         </span>
     );
 }

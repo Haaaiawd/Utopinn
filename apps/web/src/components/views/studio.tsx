@@ -991,7 +991,7 @@ export function MobileHubView() {
                         </div>
                         <div>
                             <div className="heading-tight font-mono-ui text-[22px] font-medium leading-none text-[color:var(--fg-primary)]">{entrySum ?? '…'}</div>
-                            <div className="mt-1.5 text-[12.5px] text-[color:var(--fg-secondary)]">{t('mob.hub.worldbook')}{items.length ? ` · ${items.length}` : ''}</div>
+                            <div className="mt-1.5 text-[12.5px] text-[color:var(--fg-secondary)]">{t('mob.hub.worldbook')}</div>
                         </div>
                     </button>
                     <button
