@@ -23,7 +23,7 @@ import { selectChatCompletionDispatch } from '../endpoints/backends/chat-complet
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
-import { listGenerationJobsForRequest, getGenerationJobForRequest } from '../endpoints/backends/luker-generation.js';
+import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequestId, failGenerationJob } from '../endpoints/backends/luker-generation.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
@@ -264,6 +264,33 @@ export function apply(ctx) {
             created_at: job.createdAt,
             updated_at: job.updatedAt,
         });
+    });
+
+    /**
+     * POST /jobs/:id/abort —— 中止在跑的生成任务(legacy
+     * `/api/generation/:id/abort` 的 utopinn 孪生,守卫同构:
+     * 仅 running/queued 可中止,已完成的 job 不翻 failed)。
+     */
+    reg('/api/utopinn/jobs/:id/abort', async function (request, response) {
+        const jobId = String(request.params.id || '');
+        const ownerHandle = request.user?.profile?.handle || '';
+        let job;
+        try {
+            job = getTaskByRequestId(jobId, ownerHandle);
+        } catch {
+            return response.status(403).send({ error: 'forbidden' });
+        }
+        if (!job) {
+            return response.status(404).send({ error: 'not_found' });
+        }
+        if (!['running', 'queued'].includes(String(job.status || ''))) {
+            return response.status(409).send({ aborted: false, error: 'not_running' });
+        }
+        if (job.abortController) {
+            try { job.abortController.abort('client abort'); } catch { /* already aborted */ }
+        }
+        failGenerationJob(job, 'aborted by client');
+        return response.send({ aborted: true });
     });
 
     reg('/api/utopinn/generate', async function (request, response) {

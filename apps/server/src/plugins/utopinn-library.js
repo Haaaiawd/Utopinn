@@ -223,8 +223,12 @@ export function sanitizeSettingsDoc(value) {
     return value;
 }
 
-/** PATCH /settings 允许的顶层段:只能往这两段里浅合并。 */
-const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings']);
+/**
+ * PATCH /settings 允许的顶层段。
+ * `oai_settings` 承载连接配置(source/baseUrl/model 选择,连接设置 tab 依赖);
+ * 合入前过 sanitizeSettingsDoc——api_key_* 形字段一律拒绝落盘,密钥走 /secrets。
+ */
+const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings']);
 
 // ---------------------------------------------------------------------------
 // 路由注册
@@ -585,7 +589,7 @@ export function apply(ctx) {
             const next = { ...base };
             for (const key of keys) {
                 const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
-                next[key] = { ...section, ...patch[key] };
+                next[key] = { ...section, ...sanitizeSettingsDoc(patch[key]) };
             }
             await repo.save(handle, next);
             return response.send({ settings: sanitizeSettingsDoc(next) });

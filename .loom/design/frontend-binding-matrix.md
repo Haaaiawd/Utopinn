@@ -256,7 +256,7 @@
 | 设置·diagnostics·清缓存 | — | — | — | ⚪ |
 | 设置·account(实例/同步) | data(+diag) | 实例切换本地;LAN 同步 = /lan/offer+/lan/import | — | ❌ LAN 缺;切换 ⚪ |
 | 导入中心( ImportView 已有) | import+data | /import/preview+commit;**POST /import/scan-st**(ST 目录扫描) | `previewImport` `commitImport` | ✅ 两段已接;scan-st ❌ |
-| job 中止(诊断/长任务) | generate | POST /jobs/:id/abort | — | ❌ |
+| job 中止(诊断/长任务) | generate | POST /jobs/:id/abort | `abortJob` | ✅ utopinn 孪生已注册(同 legacy 守卫) |
 | 移动 shell(抽屉/底sheet/hub) | — | 数据面同桌面 | — | ⚪ |
 | 悬浮窗 | — | — | — | ⚪ |
 

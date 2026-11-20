@@ -1185,6 +1185,10 @@ export function listGenerationJobsForRequest(request) {
             persisted: Boolean(job.persisted),
             eventCount: Array.isArray(job.events) ? job.events.length : 0,
             hasTrace: job.trace != null,
+            totalMs: typeof job.perf?.totalMs === 'number' ? Math.round(job.perf.totalMs) : null,
+            tokens: (job.trace?.tokenBudget != null && job.trace?.remainingBudget != null)
+                ? job.trace.tokenBudget - job.trace.remainingBudget
+                : null,
             created_at: job.createdAt,
             updated_at: job.updatedAt,
         }));
