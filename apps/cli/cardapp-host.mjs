@@ -71,8 +71,13 @@ async function loadDeps() {
     return deps;
 }
 
-// ─── expandApiGrants(bridge.ts:33 同语义,参照实现必须同一份逻辑)───────────
-function expandApiGrants(api, T0) {
+// ─── expandApiGrants(bridge.ts:34 同语义,参照实现必须同一份逻辑)───────────
+//   'th'     → 全 T0 表(PANEL_METHODS_TH_T0)
+//   'th.x'   → 单方法
+//   'ctx'    → 全 ctx 面(PANEL_METHODS)——ctx-shim 走桥的方法面
+//   'ctx.x'  → 单方法(shim 的 realm-local 成员不过桥)
+// api 空/未声明 → 生态缺省 = 全 T0 表。
+function expandApiGrants(api, T0, CTX = []) {
     if (!api || api.length === 0) {
         return { allowed: new Set(T0), ctxFace: false, thFace: true };
     }
@@ -83,8 +88,12 @@ function expandApiGrants(api, T0) {
         if (grant === 'th') {
             thFace = true;
             for (const m of T0) allowed.add(m);
-        } else if (grant === 'ctx' || String(grant).startsWith('ctx.')) {
+        } else if (grant === 'ctx') {
             ctxFace = true;
+            for (const m of CTX) allowed.add(m);
+        } else if (String(grant).startsWith('ctx.')) {
+            ctxFace = true;
+            allowed.add(grant);
         } else if (String(grant).startsWith('th.')) {
             thFace = true;
             allowed.add(grant);
@@ -431,27 +440,35 @@ export async function mountCardApp(opts) {
         const e = new Error('mount bundle 缺 manifest.entry'); e.code = 'server'; throw e;
     }
 
-    const grants = expandApiGrants(manifest.permissions?.api, protocol.PANEL_METHODS_TH_T0);
+    const grants = expandApiGrants(manifest.permissions?.api, protocol.PANEL_METHODS_TH_T0, protocol.PANEL_METHODS);
     const face = manifest.entryKind === 'module' ? 'ctx' : 'th';   // 约定:module 入口 = ctx 面(Luker loader 形)
     const mountOrigin = `${server}${resolver.assetBasePath}`;
 
     // ── shim 源(server shim handler 同源,或直接读包)──────────────────────
+    // face → 契约(card-runtime/assets.js SHIM_URLS/SHIM_FILES 同表):
+    //   th  → GET /card-runtime/shim/t0.js  = panel-shim/src/runtime.js
+    //   ctx → GET /card-runtime/shim/ctx.js = panel-shim/src/ctx-shim.js
+    const SHIM_SPECS = {
+        th: { url: '/card-runtime/shim/t0.js', file: 'runtime.js' },
+        ctx: { url: '/card-runtime/shim/ctx.js', file: 'ctx-shim.js' },
+    };
+    const shimSpec = SHIM_SPECS[face] ?? null;
     let shimSource = null;
-    if (face === 'th') {
+    if (shimSpec) {
         try {
-            const r = await fetch(`${server}/card-runtime/shim/t0.js`);
+            const r = await fetch(`${server}${shimSpec.url}`);
             if (r.ok) shimSource = await r.text();
         } catch { /* fallthrough */ }
         if (!shimSource) {
             // 服务端 shim 面不可达 → 从已装面板包读(design:同一 runtime)
             try {
                 const shimPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
-                    '../../packages/panel-shim/src/runtime.js');
+                    `../../packages/panel-shim/src/${shimSpec.file}`);
                 shimSource = fs.readFileSync(shimPath, 'utf8');
             } catch (e) {
                 const err = new Error(`shim runtime 不可读: ${e?.message ?? e}`);
                 err.code = 'harness_missing';
-                err.detail = { hint: 'server /card-runtime/shim/t0.js 与 packages/panel-shim 双路都失' };
+                err.detail = { hint: `server ${shimSpec.url} 与 packages/panel-shim 双路都失` };
                 throw err;
             }
         }
@@ -505,8 +522,13 @@ export async function mountCardApp(opts) {
         if (!want.includes(name)) return;
         bridge?.push('th.event', { name, args: jsonClone(args) ?? [] });
     };
+    // ctx 订阅记账(ctx.on 经桥登记;ctxHost.ts ctxSubscribed/emitCtx 同语义)。
+    // 卡 realm 内 ctx.eventSource 只收 shim 分发的 'host.event' push——
+    // 不经桥 emit 的话 generation_started 等泵全部死在宿主侧。
+    const ctxSubscribed = new Set();
     const pushCtxEvent = (name, args = []) => {
         try { eventSource.emit(name, ...(Array.isArray(args) ? args : [args])); } catch (e) { pushConsole('warn', `eventSource emit ${name} threw: ${e?.message ?? e}`); }
+        if (ctxSubscribed.has(name)) bridge?.push('host.event', { name, args: jsonClone(args) ?? [] });
     };
 
     let panelT0 = null;
@@ -861,9 +883,32 @@ export async function mountCardApp(opts) {
         },
     });
 
-    // ctx.* 桥方法(ctxDispatch):可序列化的经桥——设计 §3d「经桥」表
+    // ctx.* 桥方法(ctxDispatch):可序列化的经桥——设计 §3d「经桥」表,
+    // 方法面与 apps/web/src/cardapp/ctxHost.ts ctxDispatch 同名对齐(22)。
     const ctxDispatch = async (sub, args) => {
         switch (sub) {
+            case 'getChat':
+                await syncChat();
+                return { messages: getMessages(), header: chatDoc?.header ?? null };
+            case 'sendMessage': return ctx.sendMessage(args?.text ?? args?.mes ?? '', args?.options);
+            case 'generate': return runCardGeneration({
+                type: String(args?.type ?? 'normal'),
+                quietPrompt: args?.quietPrompt ? String(args.quietPrompt) : undefined,
+            });
+            case 'regenerate': return ctx.regenerate();
+            case 'swipe': return ctx.swipe();
+            case 'editMessage': {
+                const i = Number(args?.messageId);
+                if (!getMessages()[i]) return { ok: true, edited: false };
+                await ctx.editMessage(i, String(args?.text ?? ''));
+                pushCtxEvent('message_edited', [i]);
+                pushThEvent('message_edited', [i]);
+                return { ok: true, edited: true };
+            }
+            case 'setVariable': {
+                await ctx.setVariable(String(args?.key ?? ''), args?.value);
+                return args?.value;
+            }
             case 'getChatState': return ctx.getChatState(args?.namespace ?? args?.ns);
             case 'updateChatState': {
                 const ns = args?.namespace ?? args?.ns;
@@ -871,6 +916,7 @@ export async function mountCardApp(opts) {
                 if (Array.isArray(ops)) return ctx.patchChatState(ns, ops);
                 return ctx.updateChatState(ns, () => args?.state ?? args?.value ?? {});
             }
+            case 'deleteChatState': return ctx.deleteChatState(args?.namespace ?? args?.ns);
             case 'getCharacterState': {
                 const st = await client.state.char.get({ avatar_url: avatarUrl }, String(args?.namespace ?? '')).catch(() => null);
                 return { ok: true, state: st?.data ?? st ?? null };
@@ -881,23 +927,44 @@ export async function mountCardApp(opts) {
                 await client.state.char.set({ avatar_url: avatarUrl }, String(args?.namespace ?? ''), next);
                 return { ok: true, state: next };
             }
-            case 'sendMessage': return ctx.sendMessage(args?.text ?? args?.mes ?? '', args?.options);
-            case 'swipe': return ctx.swipe();
-            case 'regenerate': return ctx.regenerate();
             case 'getCharacter': {
                 const res = await client.th.call('getCharacter', { target: { charDir } });
                 return res?.result;
             }
-            case 'getChat': return { messages: getMessages(), header: chatDoc?.header ?? null };
+            case 'getWorldBooks': return getWorldBooks({ withSource: !!args?.withSource });
             case 'getWorldBook': {
                 const name = args?.name ?? (await getWorldBooks({}))[0];
                 return name ? getWorldBookEntries(name) : null;
             }
-            case 'on': { eventSource.on(String(args?.event), () => { }); return null; }
-            case 'off': return null;
-            case 'dispose': return dispose();
+            case 'updateWorldBookEntry': {
+                const name = args?.name ?? (await getWorldBooks({}))[0];
+                if (!name) return { ok: false, reason: 'no_book' };
+                const doc = await getWorldBookEntries(name);
+                if (!doc?.entries) return { ok: false, reason: 'no_book' };
+                const uid = args?.uid ?? args?.entryId;
+                const fields = args?.fields ?? args?.data ?? {};
+                const key = String(uid ?? Object.keys(doc.entries).length);
+                doc.entries[key] = { ...(doc.entries[key] ?? {}), ...fields };
+                await client.library.worldEdit(String(name), doc);
+                return { ok: true };
+            }
+            case 'executeSlashCommand': return ctx.executeSlashCommand(String(args?.script ?? args?.command ?? ''));
+            case 'setExtensionPrompt': {
+                await setExtensionPrompt(
+                    String(args?.key ?? ''), String(args?.value ?? ''),
+                    args?.position, args?.depth, args?.scan, args?.role);
+                return { ok: true };
+            }
+            case 'eventEmit': {
+                // 卡→宿主扇出(worldinfo_force_activate 等):当前面没有服务端
+                // 消费者 —— 收下并留痕,不伪装成功语义(ctxHost.ts:401 同款)。
+                pushConsole('log', `ctx.eventEmit ${String(args?.name)} (no host consumer)`);
+                return { ok: true, delivered: 'log' };
+            }
+            case 'on': { ctxSubscribed.add(String(args?.event)); return null; }
+            case 'off': { ctxSubscribed.delete(String(args?.event)); return null; }
             case 'setTimer': return null;
-            case 'updateWorldBookEntry': throw new Error('unsupported_method: ctx.updateWorldBookEntry');
+            case 'dispose': return dispose();
             default: throw new Error(`unsupported_method: ctx.${sub}`);
         }
     };
@@ -922,6 +989,9 @@ export async function mountCardApp(opts) {
             window.__UTOPINN_PANEL_BOOTSTRAP__ = {
                 face: face === 'ctx' ? 'ctx' : 'th',
                 mountId, charId,
+                chatName,                                   // ctx-shim:getChatId/lukerContext.chatId
+                entry: manifest.entry,                      // ctx 面 init 寻址约定
+                assetBase: assetBaseUrl,                    // ctx-shim:ctx.assetBase
                 stateNamespaces,
                 initializedGlobals: [],
                 messageId: getMessages().length - 1,
@@ -936,6 +1006,10 @@ export async function mountCardApp(opts) {
     });
     dbg('JSDOM constructed');
     const window = dom.window;
+    // ctx.__ready peut rejeter dès le flush des requêtes en file (ex: ctx.getChat
+    // non accordé) — avaler la promesse tôt pour éviter un unhandledRejection
+    // fatal; l'init-caller await __ready plus tard avec son propre catch.
+    try { window.__CARDAPP_CTX__?.__ready?.catch(() => { }); } catch { }
 
     bridge = new PanelBridge({
         nonce: bridgeNonce,
@@ -1039,7 +1113,15 @@ export async function mountCardApp(opts) {
         moduleExports = window.__cardapp_exports;
         if (typeof moduleExports?.init === 'function') {
             initCalled = true;
-            await Promise.resolve(moduleExports.init(ctx));
+            // ctx 面:init 收 shim 造的 __CARDAPP_CTX__(ctx.* 全走桥,wire 契约
+            // 才被真实行使)——mount 端 buildModuleShell initCaller 同语义:
+            // 先等 __ready 种子(varCache/chatCache),再 init。shim eval 失败
+            // 时退宿主 ctx 对象(旧直调路径,仍能跑但不过 wire 门)。
+            const cardCtx = (face === 'ctx' && window.__CARDAPP_CTX__) ? window.__CARDAPP_CTX__ : ctx;
+            if (cardCtx !== ctx && cardCtx.__ready) {
+                try { await cardCtx.__ready; } catch { /* 种子失败不拦 init */ }
+            }
+            await Promise.resolve(moduleExports.init(cardCtx));
         } else {
             warnings.push('module entry 无 init(ctx) 导出——按自执行模块降级(side effects only)');
         }
