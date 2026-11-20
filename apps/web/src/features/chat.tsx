@@ -1,6 +1,7 @@
-// feature:chat — 聊天域:rail 项 + chat view(CenterStage 出口)+ 会话树。
+// feature:chat — 聊天域:rail 项 + chat view(CenterStage 出口)+ 会话树
+//  + stage.form 'chat' 兜底(贡献点契约:默认聊天形态归本 feature)。
 import type { Feature } from '../kernel/kernel';
-import { CenterStage } from '../components/stage/CenterStage';
+import { CenterStage, ChatStage } from '../components/stage/CenterStage';
 import { ChatTree } from '../components/sidebar/trees';
 import { HomeView } from '../components/views/SpecViews';
 
@@ -11,6 +12,7 @@ export const chatFeature: Feature = {
         ctx.add('nav.rail', { view: 'home', icon: 'cards', order: 20 });
         ctx.add('view', { view: 'chat', Component: CenterStage });
         ctx.add('view', { view: 'home', Component: HomeView });
+        ctx.add('stage.form', { kind: 'chat', order: 0, Component: ChatStage });
         ctx.add('sidebar.tree', { rail: 'chat', order: 10, Component: ChatTree });
         ctx.locale('chat', {
             'zh-CN': {
