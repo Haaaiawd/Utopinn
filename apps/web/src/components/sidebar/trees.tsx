@@ -5,6 +5,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import type { ChatSummary } from '../../types';
+import { STUDIO_NAV_META, normStudioNav, useStudioCounts } from '../views/studio';
 
 const head = 'mb-1 mt-3 flex items-center justify-between px-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
 const rowCls = 'ghost-btn w-full justify-start gap-2 rounded-md px-2 py-[6px] text-left text-[12px]';
@@ -74,28 +75,25 @@ export function ChatTree() {
     );
 }
 
-/** studio 域树:板块目录(规范稿 studio nav —— lore 双栏为首项)。 */
+/** studio 域树:六类目录(端稿 studio nav —— cards/global/worldbook/presets/
+ *  persona/regex;行尾带真实计数)。 */
 export function StudioTree() {
     const { t } = useI18n();
     const shell = useShell();
-    const items: [string, string][] = [
-        ['lore', 'bookOpen'],
-        ['chars', 'user'],
-        ['prompts', 'feather'],
-        ['regex', 'code'],
-        ['files', 'folder'],
-    ];
+    const counts = useStudioCounts();
+    const nav = normStudioNav(shell.studioNav);
     return (
         <div>
-            {items.map(([id, icon]) => (
+            {STUDIO_NAV_META.map(({ id, icon }) => (
                 <button
                     key={id}
                     className={rowCls}
-                    style={shell.studioNav === id ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
+                    style={nav === id ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
                     onClick={() => shell.setStudioNav(id)}
                 >
-                    <Icon name={icon as never} size={12} className="shrink-0 text-[color:var(--fg-faint)]" />
+                    <Icon name={icon} size={12} className="shrink-0 text-[color:var(--fg-faint)]" />
                     <span className="truncate">{t(`studio.nav.${id}`)}</span>
+                    <span className="ml-auto shrink-0 font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{counts[id]}</span>
                 </button>
             ))}
         </div>

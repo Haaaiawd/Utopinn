@@ -157,6 +157,33 @@ export async function commitImport(body: ImportCommitBody): Promise<ImportCommit
     return postImport<ImportCommitResult>('/api/utopinn/import/commit', body);
 }
 
+/* ---------------------------------------------------------------------------
+ * ST 迁移扫描 —— POST /import/scan-st(apps/server/src/plugins/utopinn-data.js)。
+ * 只列清单不导入:item.file 是服务端绝对路径,客户端拿不到字节;真正的落库
+ * 仍走 preview/commit(把文件拖进导入中心第一页)。admin-only;dir 必填。
+ * ------------------------------------------------------------------------- */
+export type StScanKind = 'character' | 'world' | 'quickReply' | 'preset' | 'persona' | 'theme';
+
+export interface StScanItem {
+    kind: StScanKind;
+    /** 去扩展名基名。 */
+    name: string;
+    /** 服务端绝对路径 —— 仅展示,不可当导入载荷。 */
+    file: string;
+    bytes: number;
+}
+
+export interface StScanResult {
+    root: string;
+    total: number;
+    counts: Partial<Record<StScanKind, number>>;
+    items: StScanItem[];
+}
+
+export async function scanStImport(dir: string): Promise<StScanResult> {
+    return postImport<StScanResult>('/api/utopinn/import/scan-st', { dir });
+}
+
 // ---------------------------------------------------------------------------
 // 离线 mock 嗅探 —— 服务端不可达时让导入中心保持可演示。
 // 只复刻探测的形状(kind+粗摘要),正则/CardApp 面等细节不在客户端重做;

@@ -1,4 +1,5 @@
-// 规范稿视图体:home(资产画廊)/ studio(世界书双栏)/ plugins(内置+市场)。
+// 规范稿视图体:home(资产画廊)/ plugins(内置+市场)。
+// studio 六类页已迁至 views/studio.tsx(端稿 renderStudioMain —— 真 API 面)。
 // 走 view 贡献点注册;数据一律 useShell + SPEC-DATA mock。
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
@@ -36,49 +37,6 @@ export function HomeView() {
                 })}
             </div>
             {s.cardsMock && <p className="mt-4 text-[10.5px] text-[color:var(--fg-faint)]">{t('common.mockData')}</p>}
-        </div>
-    );
-}
-
-/** studio:世界书双栏(规范稿 lore 双栏 —— 左条目列表右详情),其余 nav 诚实占位。 */
-export function StudioView() {
-    const { t } = useI18n();
-    const s = useShell();
-    const sel = s.worldbook.find((w) => w.id === s.selectedLoreId) ?? s.worldbook[0];
-    if (s.studioNav !== 'lore') {
-        return (
-            <div className="flex h-full items-center justify-center text-[12px] text-[color:var(--fg-faint)]">
-                {t(`studio.nav.${s.studioNav}`)} · SPEC-DATA
-            </div>
-        );
-    }
-    return (
-        <div className="flex min-h-0 flex-1">
-            <div className="w-[240px] shrink-0 overflow-y-auto border-r border-[color:var(--border-hairline)] p-2">
-                {s.worldbook.map((w) => (
-                    <button
-                        key={w.id}
-                        className="inset-row-btn mb-1 flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left"
-                        style={w.id === s.selectedLoreId ? { background: 'var(--bg-active)' } : undefined}
-                        onClick={() => s.setSelectedLoreId(w.id)}
-                    >
-                        <span className="min-w-0">
-                            <span className="block truncate text-[11.5px] text-[color:var(--fg-primary)]">{w.title}</span>
-                            <span className="mt-0.5 block text-[9.5px] text-[color:var(--fg-faint)]">{w.type} · P{w.priority}</span>
-                        </span>
-                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: w.enabled ? 'var(--status-ok)' : 'var(--fg-faint)' }} />
-                    </button>
-                ))}
-            </div>
-            <div className="min-w-0 flex-1 overflow-y-auto p-5">
-                {sel && (
-                    <>
-                        <h2 className="heading-tight text-[15px] text-[color:var(--fg-primary)]">{sel.title}</h2>
-                        <div className="mb-3 mt-1 text-[10.5px] text-[color:var(--fg-muted)]">{sel.type} · 优先级 {sel.priority} · {sel.tokens} tokens</div>
-                        <div className="inset-group p-4 text-[12.5px] leading-relaxed text-[color:var(--fg-secondary)]">{sel.content}</div>
-                    </>
-                )}
-            </div>
         </div>
     );
 }
