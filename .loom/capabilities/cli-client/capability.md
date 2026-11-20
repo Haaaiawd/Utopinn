@@ -213,9 +213,10 @@ REST 直达与 kernel 表面外 legacy 端点。
 | utopinn-library | `utopinn world-delete <n>` | 显式名 | 删书(204) |
 | utopinn-library | `utopinn preset-get\|preset-edit\|preset-delete <n>` | `--api`,`--json-file` | 预设 doc 读/整档写回/删 |
 | utopinn-library | `utopinn personas` / `persona-edit <av>` / `persona-delete <av>` | `--set k=v`,`--json-file` | 人设表/写字段/删 |
-| utopinn-library | `utopinn settings` / `settings-set` | `--json-file\|--stdin\|json` | 脱敏读;PATCH 仅 power_user\|extension_settings |
+| utopinn-library | `utopinn settings` / `settings-set` | `--json-file\|--stdin\|json` | 脱敏读;PATCH 白名单 power_user\|extension_settings\|oai_settings\|world_info_settings + 标量 preset_settings_openai(双向镜像 oai_settings.preset_settings_openai,生成/设置两读面一致) |
 | utopinn-library | `utopinn secrets` / `secret-set <k>` / `secret-delete <k> <id>` | `--value\|--stdin` | 脱敏态;写新(PUT 铸 id)/按 id 删——值永不回显 |
 | utopinn-library | `utopinn char <n>` / `chat-get [c]` / `chat-create <n>` | — | 卡全文/utopinn doc/立即建空聊天 |
+| utopinn-library | `utopinn char-edit <n>` | `--set k=v`,`--json-file`,`json` | 卡字段 merge-patch:11 个字符串字段+tags+extensions{world\|alternate_greetings\|regex_scripts};name 只改显示名,charDir 存储键不动;写后整卡返回 |
 | utopinn-diag | `utopinn kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
 | utopinn-stats | `utopinn stats [--by char\|model\|day] [--range 1h\|24h\|7d\|all]` / `stats char <id>` / `stats inject [--chat <charDir>/]<chat>` | `--by,--range,--chat,-n,--full` | jobs×inspector 聚合分组表 / 单卡 floors·gens·WI 命中 / 注入源命中率+token 占比(WI 条目级) |
 | utopinn-plugins | `utopinn plugins` | — | `● id` fiber 状态表 |
