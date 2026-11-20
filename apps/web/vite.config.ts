@@ -43,6 +43,34 @@ export default defineConfig({
             // CardApp iframe surface (/card-runtime/m/<id>/… + shim) — the
             // mount-id capability carries it, no session needed upstream.
             '/card-runtime': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // --- User-directory static roots (TASK-047). Upstream mounts them
+            // on the app root via app.use('/', userDataRouter) at
+            // apps/server/src/server-startup.js:85; the handlers live at
+            // apps/server/src/users.js:1604-1609. Without these the dev server
+            // 404s card PNGs/persona avatars and every image fell back to the
+            // ghost placeholder.
+            // /characters/<file> → <userRoot>/characters — src/users.js:1605
+            '/characters': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // /User%20Avatars/<file> → <userRoot>/User Avatars — src/users.js:1606
+            // (proxy context matches the raw, still percent-encoded req.url).
+            '/User%20Avatars': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // /backgrounds/<file> → <userRoot>/backgrounds — src/users.js:1604
+            '/backgrounds': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // /user/images/* + /user/files/* — src/users.js:1608-1609. Kept as
+            // two exact prefixes (not '/user') so nothing else under /user* is
+            // captured by the proxy.
+            '/user/images': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            '/user/files': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // /thumbnail?type=avatar|bg|persona&file=… → thumbnailRouter, mounted
+            // at apps/server/src/server-startup.js:101. The upstream mount is
+            // singular '/thumbnail' — there is no '/thumbnails' route.
+            '/thumbnail': { target: SERVER_ORIGIN, changeOrigin: true, configure: (proxy) => proxy.on('error', upstreamError) },
+            // NOT proxied: '/assets'. Upstream '/assets/*' (src/users.js:1607)
+            // is the server-side user-assets root, but apps/web/public/assets is
+            // real local bundle content referenced throughout the SPA as
+            // /assets/avatars/* and /assets/backgrounds/* — proxying the prefix
+            // would shadow all of it. Nothing in the frontend references
+            // server-side user asset files directly, so /assets stays local.
         },
     },
 });

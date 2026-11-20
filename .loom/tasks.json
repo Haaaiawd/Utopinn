@@ -3576,17 +3576,17 @@
         {
           "criterion": "vite proxy 覆盖全部用户目录静态根,卡 PNG 在大厅/聊天头正常显图",
           "verify_by": "dev 服浏览器肉眼验证",
-          "evidence": ""
+          "evidence": "vite.config.ts proxy 补 6 根:/characters、/User%20Avatars、/backgrounds、/user/images、/user/files、/thumbnail,逐条注释服务端挂载出处(users.js:1604-1609、server-startup.js:85/101);/assets 按边界不代(apps/web/public/assets 真实在用,代理会影子本地资产;服务端用户资产根前端无直接引用)。upstream 实测(LUKER_SKIP_WEBPACK=1,dataRoot=/tmp/uto-39611-data,:8000):GET /characters/我没想当掌门啊_最终卡_v1.png→200 image/png 8678958B、诡异修仙人生模拟器.png→200 image/png 1113531B、default_Seraphina.png→200 image/png 551901B、/thumbnail?type=avatar&file=default_Seraphina.png→200 image/png。浏览器肉眼验未跑:vite dev on /mnt/d 是已实锤 9P-stall 元凶(AGENTS.md 运维备忘),curl 证据代位。"
         },
         {
           "criterion": "数据根角色目录只剩真实卡(掌门/修仙/Seraphina/默认),探针件清除",
           "verify_by": "ls characters 对照",
-          "evidence": ""
+          "evidence": "characters/ 现仅四项:Seraphina/、default_Seraphina.png、我没想当掌门啊_最终卡_v1.png、诡异修仙人生模拟器.png。已删:characters/TH-Probe.png、TH-Probe1.png、smoke-cardapp.json;chats/TH-Probe/(空)、chats/TH-Probe1/(probe-fresh.jsonl+chat_sync 侧车);thumbnails/avatar/TH-Probe{,1}.png;backups/chat_th_probe{,_1_20261119-195827,_1_20261119-195900}.jsonl×3;card-apps/smoke-cardapp/(index.html+style.css);真卡会话残留 chats/default_Seraphina/u-web-probe.*、chats/我没想当掌门啊_最终卡_v1/u-zm-probe.*。删后全根 find -iname '*probe*' 零命中;真卡字节未动(掌门 8678958B、修仙 1113531B、Seraphina 551901B 原大小)。"
         },
         {
           "criterion": "正经导入一张新卡→大厅显图→进会话,链路无断点",
           "verify_by": "导入验收",
-          "evidence": ""
+          "evidence": "全链路实测(HTTP,:8000):GET /csrf-token→200 拿 token+会话;POST /api/utopinn/import/commit{dataBase64=default_Seraphina.png 字节,targetName=T47-Import-Check}→200 {ok:true,kind:'char',name:'Seraphina',targetName:'T47-Import-Check'};GET /api/utopinn/characters→列表 4 项含 T47-Import-Check;GET /characters/T47-Import-Check.png→200 image/png 551725B(大厅显图链路通);POST /api/utopinn/characters/T47-Import-Check/chats/t47-check/messages→200 {ok:true,appended:1,created:true}(进会话无断点),GET chats 回读 messageCount=1。验后 DELETE 会话 204 + POST /api/characters/delete 200 清除测试件,数据根恢复仅四真卡状态。"
         }
       ],
       "done_when": [],
