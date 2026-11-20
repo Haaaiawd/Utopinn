@@ -95,8 +95,34 @@ function presetPromptRows(doc: Record<string, unknown> | undefined): PresetPromp
     });
 }
 
-/** 预设 / 模型板块 —— /api/utopinn/presets 只读列表 + 选中档详情(参数/
- *  模型名/提示词条目全部读自真档;写面与家族切换留给后续)。 */
+/** 规范稿 L1429 滑杆行:标签左 + 值右 + 原生 range(accent-color 走 tokens)。
+ *  服务端预设写面未备 → pointer-events:none 只读(不禁用,保住 accent 着色),
+ *  值被 React 钉死,拖不动也不假装可写。 */
+function ParamSlider({ label, value, min, max, step, fmt }: {
+    label: string; value: number | null; min: number; max: number; step: number;
+    fmt: (v: number) => string;
+}) {
+    return (
+        <div className="inset-row flex-col items-stretch gap-1.5">
+            <div className="flex w-full justify-between text-[12px]">
+                <span className="text-[color:var(--fg-secondary)]">{label}</span>
+                <span className="font-mono-ui">{value === null ? '—' : fmt(value)}</span>
+            </div>
+            <input
+                type="range" className="h-1.5 w-full"
+                min={min} max={max} step={step}
+                value={value === null ? min : Math.min(max, Math.max(min, value))}
+                readOnly tabIndex={-1} aria-readonly="true"
+                style={{ pointerEvents: 'none' }}
+                onChange={() => { }}
+            />
+        </div>
+    );
+}
+
+/** 预设 / 模型板块 —— /api/utopinn/presets 只读列表 + 选中档详情。
+ *  布局对规范稿 L1381 preset 分支:标题块 → 模型下拉 → 预设下拉 →
+ *  采样/上下文滑杆组 → 提示词条目开关组;数据全真,写面未接处禁用。 */
 export function PresetPanel() {
     const { t } = useI18n();
     const s = useShell();
@@ -108,12 +134,6 @@ export function PresetPanel() {
     const detail = useRemote(active ? `${PRESET_API_ID}/${active}` : null, () => getPreset(active!, PRESET_API_ID));
     const doc = detail.data?.doc as Record<string, unknown> | undefined;
     const { source, model } = pickPresetModel(doc);
-    const params: [string, number | null][] = [
-        [t('param.temp'), num(doc?.temperature)],
-        [t('param.topP'), num(doc?.top_p)],
-        [t('param.ctxLen'), num(doc?.openai_max_context)],
-        [t('param.maxReply'), num(doc?.openai_max_tokens)],
-    ];
     const prompts = presetPromptRows(doc);
 
     if (list.error) return <PanelError error={list.error} onRetry={list.reload} />;
@@ -121,28 +141,55 @@ export function PresetPanel() {
         return <PanelEmpty icon="sliders">{t('panel.preset.empty')} · {PRESET_API_ID}</PanelEmpty>;
     }
     return (
-        <div className="p-3">
-            <div className="flex items-center justify-between">
-                <span className={lbl} style={{ marginBottom: 0 }}>{t('panel.preset.preset')} · {PRESET_API_ID}</span>
-                <button className="ghost-btn h-6 px-2 text-[10px]" onClick={() => setJsonView(!jsonView)} disabled={!doc}>
+        <div className="p-4">
+            <div className="mb-5 flex items-start justify-between gap-2">
+                <div>
+                    <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
+                    <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
+                </div>
+                <button className="ghost-btn h-6 shrink-0 px-2 text-[10px]" onClick={() => setJsonView(!jsonView)} disabled={!doc}>
                     {jsonView ? t('panel.mvu.table') : 'JSON'}
                 </button>
             </div>
-            <div className="relative mb-3 mt-1">
-                <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
-                    <span className="truncate font-mono-ui text-[11px]">{list.data ? (active ?? '—') : '…'}</span>
-                    <Icon name="chevronDown" size={12} className="text-[color:var(--fg-faint)]" />
-                </button>
-                {s.openDropdown === 'preset' && (
-                    <div className="sh-select-menu pop-in">
-                        {names.map((x) => (
-                            <button key={x} className="inset-row-btn flex w-full items-center justify-between rounded-md px-2.5 py-[7px] text-[11.5px]" onClick={() => { setPicked(x); s.setOpenDropdown(null); }}>
-                                <span className="truncate font-mono-ui text-[11px]">{x}</span>
-                                {x === active && <Icon name="check" size={12} className="text-[color:var(--brand)]" />}
-                            </button>
-                        ))}
-                    </div>
-                )}
+            <div className="mb-5 space-y-3">
+                <div className="relative">
+                    <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('panel.preset.modelSel')}</label>
+                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')} disabled={!model}>
+                        <span className="truncate font-mono-ui">{detail.loading ? '…' : (model ?? '—')}</span>
+                        <span className="text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
+                    </button>
+                    {s.openDropdown === 'model' && model && (
+                        <div className="sh-select-menu pop-in">
+                            <div className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left">
+                                <div>
+                                    <div className="font-mono-ui text-[12px]">{model}</div>
+                                    <div className="text-[10px] text-[color:var(--fg-muted)]">{source ?? ''} · {t('panel.preset.readonly')}</div>
+                                </div>
+                                <Icon name="check" size={12} className="text-[color:var(--brand)]" />
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <div className="relative">
+                    <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('panel.preset.presetSel')}</label>
+                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
+                        <span className="truncate font-mono-ui">{list.data ? (active ?? '—') : '…'}</span>
+                        <span className="text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
+                    </button>
+                    {s.openDropdown === 'preset' && (
+                        <div className="sh-select-menu pop-in">
+                            {names.map((x) => (
+                                <button key={x} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { setPicked(x); s.setOpenDropdown(null); }}>
+                                    <div>
+                                        <div className="font-mono-ui text-[12px]">{x}</div>
+                                        <div className="font-mono-ui text-[10px] text-[color:var(--fg-muted)]">{PRESET_API_ID}</div>
+                                    </div>
+                                    {x === active && <Icon name="check" size={12} className="text-[color:var(--brand)]" />}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
             {detail.error && <PanelError error={detail.error} onRetry={detail.reload} />}
             {jsonView && doc ? (
@@ -151,29 +198,23 @@ export function PresetPanel() {
                 </pre>
             ) : (
                 <>
-                    <span className={lbl}>{t('panel.preset.model')}</span>
-                    <div className={group}>
-                        <div className={row}>
-                            <span className="min-w-0 truncate font-mono-ui text-[11px] text-[color:var(--fg-primary)]">{detail.loading ? '…' : (model ?? '—')}</span>
-                            <span className="font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{source ?? ''}</span>
+                    <div className="mb-5 space-y-1.5">
+                        <div className="px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.sampling')}</div>
+                        <div className="inset-group">
+                            <ParamSlider label={t('param.temp')} value={num(doc?.temperature)} min={0} max={1.5} step={0.05} fmt={(v) => v.toFixed(2)} />
+                            <ParamSlider label={t('param.topP')} value={num(doc?.top_p)} min={0.1} max={1} step={0.02} fmt={(v) => v.toFixed(2)} />
+                            <ParamSlider label={t('param.ctxLenTokens')} value={num(doc?.openai_max_context)} min={16000} max={200000} step={8000} fmt={(v) => v.toLocaleString()} />
+                            <ParamSlider label={t('param.maxReply')} value={num(doc?.openai_max_tokens)} min={1024} max={16384} step={1024} fmt={(v) => String(v)} />
                         </div>
                     </div>
-                    <div className={group}>
-                        {params.map(([name, v]) => (
-                            <div key={name} className={row}>
-                                <span className="text-[color:var(--fg-secondary)]">{name}</span>
-                                <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-primary)]">{v ?? '—'}</span>
-                            </div>
-                        ))}
-                    </div>
                     {prompts.length > 0 && (
-                        <>
-                            <span className={lbl}>{t('panel.preset.blocks')}</span>
-                            <div className={group}>
+                        <div className="mb-5 space-y-1.5">
+                            <div className="px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.blocksLabel')}</div>
+                            <div className="inset-group">
                                 {prompts.map((p) => (
                                     <div key={p.key} className={row}>
                                         <span className="min-w-0">
-                                            <span className="block truncate text-[color:var(--fg-secondary)]">{p.name}</span>
+                                            <span className="block truncate text-[12.5px] text-[color:var(--fg-secondary)]">{p.name}</span>
                                             {p.role && <span className="block font-mono-ui text-[9px] text-[color:var(--fg-faint)]">{p.role}</span>}
                                         </span>
                                         {p.enabled !== null && (
@@ -184,7 +225,7 @@ export function PresetPanel() {
                                     </div>
                                 ))}
                             </div>
-                        </>
+                        </div>
                     )}
                     <p className="px-1 text-[9.5px] leading-relaxed text-[color:var(--fg-faint)]">{t('panel.preset.readonly')}</p>
                 </>
@@ -272,11 +313,12 @@ export function MvuPanel() {
     if (remote.error) return <PanelError error={remote.error} onRetry={remote.reload} />;
 
     return (
-        <div className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-                <span className={lbl} style={{ marginBottom: 0 }}>
-                    {t('panel.mvu.vars')} · {statData ? 'stat_data' : 'chat_variables'}
-                </span>
+        <div className="space-y-3 p-4">
+            <div className="flex items-center justify-between">
+                <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">
+                    {t('panel.mvu.snapshot')}
+                    <span className="ml-1.5 align-middle font-mono-ui text-[10px] font-normal text-[color:var(--fg-faint)]">{statData ? 'stat_data' : 'chat_variables'}</span>
+                </div>
                 <span className="flex items-center gap-1">
                     <button className="ghost-btn h-6 px-2 text-[10px]" disabled={busy || remote.loading} onClick={() => void runOp(() => settleMvu(target))}>{t('panel.mvu.settle')}</button>
                     <button className="ghost-btn h-6 px-2 text-[10px]" disabled={busy || remote.loading} onClick={() => void runOp(() => resettleMvu(target))}>{t('panel.mvu.resettle')}</button>
@@ -290,21 +332,23 @@ export function MvuPanel() {
                     {JSON.stringify(vars ?? null, null, 2)}
                 </pre>
             ) : rows.length === 0 ? (
-                <PanelEmpty icon="database">{t('panel.mvu.empty')}</PanelEmpty>
+                <PanelEmpty icon="database" desc={t('panel.mvu.emptyDesc')}>{t('panel.mvu.empty')}</PanelEmpty>
             ) : (
                 <div className={group}>
                     {rows.map((r) => (
+                        /* 规范稿行:左列「键名 11px muted / 值 13px mono medium」,
+                           数值键右侧 ±;非数值键无步进。 */
                         <div key={r.path} className={row} title={r.desc}>
-                            <span className="min-w-0 truncate text-[color:var(--fg-secondary)]">{r.path}</span>
-                            <span className="flex items-center gap-1.5">
-                                {r.num !== undefined && (
-                                    <button className="ghost-btn h-5 w-5 text-[10px]" disabled={busy} onClick={() => step(r, -1)}><Icon name="minus" size={9} /></button>
-                                )}
-                                <span className="min-w-10 text-right font-mono-ui text-[11px] text-[color:var(--fg-primary)]">{r.text}</span>
-                                {r.num !== undefined && (
-                                    <button className="ghost-btn h-5 w-5 text-[10px]" disabled={busy} onClick={() => step(r, 1)}><Icon name="plus" size={9} /></button>
-                                )}
+                            <span className="min-w-0">
+                                <span className="block truncate text-[11px] text-[color:var(--fg-muted)]">{r.path}</span>
+                                <span className="font-mono-ui mt-0.5 block truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{r.text}</span>
                             </span>
+                            {r.num !== undefined && (
+                                <span className="flex items-center gap-1">
+                                    <button className="ghost-btn h-6 w-6 text-xs" disabled={busy} onClick={() => step(r, -1)}><Icon name="minus" size={10} /></button>
+                                    <button className="ghost-btn h-6 w-6 text-xs" disabled={busy} onClick={() => step(r, 1)}><Icon name="plus" size={10} /></button>
+                                </span>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -467,16 +511,17 @@ export function NotesPanel() {
         : phase === 'error' ? `${t('panel.notes.failed')}: ${err}`
         : '';
     return (
-        <div className="flex h-full flex-col p-3">
+        <div className="flex h-full flex-col gap-2 p-4">
+            <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.type.notes')}</div>
             <textarea
                 value={draft}
                 onChange={(e) => onChange(e.target.value)}
                 onBlur={() => flushRef.current()}
                 disabled={busy || phase === 'conflict' || loadedKey !== key}
                 spellCheck={false}
-                className="min-h-0 flex-1 resize-none rounded-[10px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] leading-relaxed text-[color:var(--fg-secondary)] outline-none focus:border-[color:var(--border-strong)]"
+                className="min-h-0 w-full flex-1 resize-none select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3.5 text-[13px] leading-relaxed text-[color:var(--fg-primary)] outline-none focus:border-[color:var(--border-strong)]"
             />
-            <div className="mt-2 flex items-center justify-between px-1">
+            <div className="flex items-center justify-between px-1">
                 <span className="font-mono-ui text-[9px] text-[color:var(--fg-faint)]">chat_state · ns={NOTES_NS}</span>
                 {phase === 'conflict' ? (
                     <span className="flex items-center gap-1.5">
@@ -538,34 +583,25 @@ export function CardAppPanel() {
 /** 世界书板块 —— mock 保持:面板要的是卡绑定条目栈(主/辅/聊天/全局四层
  *  来源),/api/utopinn/worlds 只有整档 CRUD,绑定面未出。 */
 export function LorePanel() {
+    /* 规范稿 L1684「世界书命中」:只读展示 enabled 条目 ——
+       [全局] name·tokens t 行 + title·P{priority} 行;开关交互在 ctx 弹层。 */
     const { t } = useI18n();
     const s = useShell();
     return (
-        <div className="p-3">
+        <div className="space-y-3 p-4">
             <UnwiredNote />
-            <span className={lbl}>{t('panel.lore.entries')}</span>
+            <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.lore.title')}</div>
             <div className={group}>
-                {s.worldbook.map((w) => (
-                    <button key={w.id} className={`${row} inset-row-btn`} onClick={() => s.setSelectedLoreId(w.id)}>
-                        <span className="min-w-0">
-                            <span className="block truncate text-[color:var(--fg-primary)]">{w.title}</span>
-                            <span className="mt-0.5 block text-[10px] text-[color:var(--fg-faint)]">
-                                {w.type} · P{w.priority} · {w.tokens} tok
-                            </span>
-                        </span>
-                        <Switch on={w.enabled} onToggle={() => {}} />
-                    </button>
-                ))}
-            </div>
-            <span className={lbl}>{t('panel.lore.global')}</span>
-            <div className={group}>
-                {s.globalLore.map((g) => (
+                {s.globalLore.filter((g) => g.enabled).map((g) => (
                     <div key={g.id} className={row}>
-                        <span className="min-w-0">
-                            <span className="block truncate text-[color:var(--fg-primary)]">{g.name}</span>
-                            <span className="mt-0.5 block font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{g.file} · {g.tokens} tok</span>
-                        </span>
-                        <Switch on={g.enabled} onToggle={() => s.toggleGlobalLore(g.id)} />
+                        <span className="truncate text-[12.5px]">[全局] {g.name}</span>
+                        <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">{g.tokens}t</span>
+                    </div>
+                ))}
+                {s.worldbook.filter((w) => w.enabled).map((w) => (
+                    <div key={w.id} className={row}>
+                        <span className="truncate text-[12.5px] text-[color:var(--fg-secondary)]">{w.title}</span>
+                        <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">P{w.priority}</span>
                     </div>
                 ))}
             </div>
@@ -573,33 +609,51 @@ export function LorePanel() {
     );
 }
 
-/** 章节板块 —— mock 保持:novel 形态会话目录的服务端 schema 未出。 */
+/** 章节板块(规范稿 L1685):章节目录头 + 「+ 新章」+ inset-group 章行
+ *  (num mono / title)。目录服务端 schema 未出 → mock + unwired 标注;
+ *  行点选联动 novel 阅读位是真行为,保留;新章写 mock stageData,诚实。 */
 export function ChaptersPanel() {
     const { t } = useI18n();
     const s = useShell();
     const chs = s.stageData.chapters;
+    const addChapter = () => {
+        const n = chs.length + 1;
+        s.patchStageData({
+            chapters: [...chs, {
+                id: `ch-${Date.now()}`, num: `第${n}章`, title: '初一卯时的山门风波',
+                paras: [{ id: `p-${Date.now()}`, text: '新章节已建立，在下方输入导演指令即可续写。' }],
+            }],
+        });
+        s.hint(t('panel.chapters.added'));
+    };
     return (
-        <div className="p-3">
+        <div className="p-4">
             <UnwiredNote />
+            <div className="mb-3 flex items-center justify-between">
+                <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.chapters.title')}</div>
+                <button
+                    className="rounded-lg px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface-hover)]"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    onClick={addChapter}
+                >
+                    {t('panel.chapters.new')}
+                </button>
+            </div>
             <div className={group}>
-                {chs.map((c, i) => {
-                    const active = s.chat?.stage === 'novel';
-                    return (
-                        <button
-                            key={c.id}
-                            className={`${row} inset-row-btn`}
-                            onClick={() => s.patchStageData({ selParaId: c.paras[0]?.id ?? null })}
-                        >
-                            <span className="min-w-0">
-                                <span className="block truncate text-[color:var(--fg-primary)]">{c.num} · {c.title}</span>
-                                <span className="mt-0.5 block text-[10px] text-[color:var(--fg-faint)]">{c.paras.length} {t('panel.chapters.paras')}</span>
-                            </span>
-                            {i === chs.length - 1 && active && (
-                                <span className="rounded-full px-1.5 py-px text-[9px]" style={{ background: 'var(--bg-active)', color: 'var(--brand)' }}>{t('panel.chapters.current')}</span>
-                            )}
-                        </button>
-                    );
-                })}
+                {chs.map((c) => (
+                    /* 规范稿为纯展示行;点选联动 selParaId 是 impl 真行为,保留点击、
+                       去掉规范稿没有的「当前」徽标。 */
+                    <button
+                        key={c.id}
+                        className={`${row} inset-row-btn`}
+                        onClick={() => s.patchStageData({ selParaId: c.paras[0]?.id ?? null })}
+                    >
+                        <span className="min-w-0">
+                            <span className="block font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{c.num}</span>
+                            <span className="mt-0.5 block truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{c.title}</span>
+                        </span>
+                    </button>
+                ))}
             </div>
         </div>
     );
@@ -610,8 +664,9 @@ export function ChannelsPanel() {
     const { t } = useI18n();
     const s = useShell();
     return (
-        <div className="p-3">
+        <div className="space-y-3 p-4">
             <UnwiredNote />
+            <div className="heading-tight text-[13px] font-semibold">{t('panel.channels.list')}</div>
             <div className={group}>
                 {s.stageData.channels.map((c) => (
                     <button
@@ -621,11 +676,11 @@ export function ChannelsPanel() {
                         onClick={() => s.patchStageData({ activeChannel: c.id })}
                     >
                         <span className="min-w-0">
-                            <span className="block truncate text-[color:var(--fg-primary)]">{c.name}</span>
-                            {c.notice && <span className="mt-0.5 block truncate text-[10px] text-[color:var(--fg-faint)]">{c.notice}</span>}
+                            <span className="block truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{c.name}</span>
+                            <span className="mt-0.5 block truncate text-[11px] text-[color:var(--fg-muted)]">{c.msgs.length} {t('panel.channels.msgs')}</span>
                         </span>
                         {c.unread > 0 && (
-                            <span className="rounded-full px-1.5 py-px text-[9.5px] font-medium" style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}>{c.unread}</span>
+                            <span className="font-mono-ui flex h-4 w-4 items-center justify-center rounded-full text-[10px]" style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}>{c.unread}</span>
                         )}
                     </button>
                 ))}
