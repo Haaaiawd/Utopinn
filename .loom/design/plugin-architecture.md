@@ -4,6 +4,8 @@
 - Status: draft(v2:改为直接仿 DSH Cordis 骨架)
 - 方向来源:用户拍板——"骨架可以很直接地仿照 DSH;遵从酒馆生态永远是第一要位"
 
+> vs-V2: partially-stale
+
 ## 0. 第一约束(凌驾于本设计一切条目之上)
 
 **酒馆生态兼容永远是第一要位。** 插件形态的选择、内核边界的划定、
@@ -21,6 +23,8 @@ DSH = "all-plugin Cordis agent harness"——内核只做 Context/事件/注册�
   (导入导出+analyzeCardRuntime)、`card-runtime`(TH-shim/CardApp/CDN代理)、
   `tavern-presets`(预设管理)
 - **第三方插件**:走同一契约,manifest+inject+apply
+
+<!-- V2 校准:域名以 plugin-domain-map+contributions.ts 八槽为准 -->
 
 ## 2. 插件契约(直接映射 Cordis)
 
@@ -90,6 +94,8 @@ plugins:
 
 ## 3b. 事件三域 + dispatch 五模式(契约式,@mode 校验)
 
+<!-- V2 校准:域名以 plugin-domain-map+contributions.ts 八槽为准 -->
+
 DSH 事件按域分(architecture.md §Events),我们照搬:
 
 | 域 | 性质 | 我们的事件 |
@@ -142,6 +148,8 @@ DSH `ctx.sessionProjections`:注册 fold 单元,把持久事件折成视图。
 | **service** | 半,输出侧后端可变 | 1 owner,0-1 impls | `ctx.injectedPrompts`、`ctx.telemetry`(若上) |
 
 ### 插件 UI 贡献点(DSH 式:插件自带 UI 面)
+
+<!-- V2 校准:域名以 plugin-domain-map+contributions.ts 八槽为准 -->
 
 插件除了服务端 seam,还能往客户端 UI 贡献六类条目——manifest 声明式注册,客户端零插件代码:
 

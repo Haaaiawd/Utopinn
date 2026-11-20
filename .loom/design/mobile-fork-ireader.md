@@ -2,6 +2,8 @@
 
 > 状态:已拍板(D-020),侦察完成,待切割实施
 > 关联:mobile-reader-form(UX 目标,仍有效)/ mobile-panels(桥协议,仍有效)/ mobile-ui-foundation(Expo 栈文档,冻结为参照)
+> vs-V2: reference(parked)
+<!-- V2:mobile 整体 parked -->
 
 ## 为什么是 IReader
 

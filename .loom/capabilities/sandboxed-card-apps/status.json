@@ -1,11 +1,11 @@
 {
-  "status": "provisional",
+  "status": "confirmed",
   "title": "不可信卡片代码沙箱(WebView隔离/桥接/CSP/shim)",
   "field": "untrusted HTML/JS sandbox in RN",
-  "scenario": "不可信卡HTML/JS:独立WebView/iframe沙箱+nonce白名单桥+CSP+shim降级",
-  "confirmed_at": "",
+  "scenario": "卡面 HTML 应用沙箱宿主已落地:PanelBridge nonce 闸/白名单、card-runtime CSP/mounts、CLI headless 复用 wire 契约(用户拍板 2026-11-20)",
+  "confirmed_at": "2026-11-20T11:15:08.309Z",
   "created_at": "2026-11-02T08:51:52.247Z",
-  "updated_at": "2026-11-02T08:55:37.260Z",
-  "source": "agent",
-  "selected_at": "2026-11-02T08:55:37.259Z"
+  "updated_at": "2026-11-20T11:15:08.309Z",
+  "source": "human",
+  "selected_at": "2026-11-20T11:15:08.309Z"
 }

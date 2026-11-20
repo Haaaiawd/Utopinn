@@ -1,6 +1,8 @@
 # 移动形态 v2:IReader 形态学 + RP 件映射
 
 > 来源:深潜代理 7ce17f5b(2026-11-04)。一手资料=ref/ireader 源码 + 中文 RP app 公开评测。基线=mobile-reader-form.md(深化不推翻)。
+> vs-V2: reference(parked)
+<!-- V2:mobile 整体 parked -->
 
 ## 一、IReader 代码形态学(事实,全部带路径)
 

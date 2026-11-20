@@ -2,6 +2,7 @@
 
 > 2026-11-19 TASK-030/031 实弹期整理。唯一事实源是代码;本文当导航。
 > 端口面以 `apps/server` 实跑为准;CLI 契约以 `.loom/capabilities/cli-client/capability.md` 为准。
+> vs-V2: partially-stale
 
 ## 0. 一张图
 
@@ -38,6 +39,8 @@
                        ▼
               LLM 上游(OpenAI 兼容/自定义/各源)
 ```
+
+<!-- V2 校准:V2:apps/web 正式前端、旧 UI=LUKER_SERVE_LEGACY 兼容闸、手机端 parked -->
 
 分层记忆:**会话 → 实体 → 生成 → 投递 → 写盘 → 诊断**。客户端只需要这六层。
 

@@ -6,6 +6,8 @@
 > Apple Books/Wattpad/AO3 实测 + RP 先例(彩云小梦/Character.AI/ST 引号色)。
 > 结论:**会话=一本书,楼层=段落流,章节=语义切片;prose 渲染器的
 > 移动端实例 + 沉浸 chrome 层,不发明新数据语义。**
+> vs-V2: reference(parked)
+<!-- V2:mobile 整体 parked -->
 
 ## 0. 架构落位(Cordis 约束)
 

@@ -38,13 +38,21 @@ Agent 用 `utopinn` 完成「选卡→看历史→发消息→收流→看轨迹
 
 ## 架构决定
 
-- **零依赖单文件**:Node ≥22 原生 `fetch` + `WebSocket`(22.4 起稳定),
+- **核心面零依赖单文件**:Node ≥22 原生 `fetch` + `WebSocket`(22.4 起稳定),
   不用 ws/node-fetch/extra deps。`apps/cli/utopinn-cli.mjs` + 薄
   `package.json`(bin `utopinn`)。这个工具要能 `node utopinn-cli.mjs …`
-  随手跑,不该有构建链。
-- **不走 api-client 包**:api-client 当前是骨架(TS,需构建,无 cookie
+  随手跑,不该有构建链。**修订(2026-11):cardapp 动词族引入了
+  jsdom/esbuild/@utopinn/{api-client,protocol,formats} 依赖——但全部
+  懒加载(只在 cardapp 动词进程里付费,主面启动零成本,
+  `UTOPINN_CARDAPP_DEPS_DIR` 供 9P/NFS 场景指本地盘快速路径);
+  文件面也裂成 utopinn-cli.mjs + cmd-cardapp.mjs + cardapp-host.mjs,
+  「单文件」收缩为「核心命令面单文件」。**
+- **核心面不走 api-client 包**:api-client 当前是骨架(TS,需构建,无 cookie
   罐)。CLI 先自铺薄层;等 api-client 长全(WS 面+cookie)再迁。两者
-  消费同一协议,CLI 实现即 api-client 的行为参照。
+  消费同一协议,CLI 实现即 api-client 的行为参照。**修订:cardapp
+  宿主已消费真包(`UtopinnClient` + `createPanelT0Handler`,
+  cardapp-host.mjs:68-69)——迁移预言部分兑现,但 send/history 等核心
+  动词仍走自铺薄层(cookie 罐原因不变)。**
 - **与浏览器同一条 wire**:CSRF cookie 会话 + REST + ws-ticket/ws-delivery
   帧流——不走任何后门接口。CLI 能做的事 = 浏览器能做的事,这是刻意
   约束:协议缺什么就暴露什么,不补私有通道。
@@ -201,9 +209,14 @@ hint = `utopinn attach <id>` 或 `utopinn abort <id>`。防双楼层并发,
 ### 组件面(cordis fiber ↔ CLI 动词)
 
 CLI 命令族与服务端 fiber 一一对应;`utopinn kernel` 打出的路由表
-就是这套映射的远端清单。kernel 路由表 47 条全部由具名命令覆盖
-(doctor `capability coverage` 差集=0);`raw` 逃生舱保留作任意
-REST 直达与 kernel 表面外 legacy 端点。
+就是这套映射的远端清单。**kernel 路由表 84 条:83 具名 + 1 观测命名**
+(`OBSERVED_NAMED`:`GET diag/stats`,有路由无动词,raw 可达,刻意留名
+doctor 不报 raw-only)——doctor `capability coverage` 差集=0;具名表是
+`NAMED_UTOPINN_ROUTES` 字面钉样 × 词表派生(STATE_OPS/PLUGIN_VERBS/
+MVU_SUB_ROUTES)加载期自检对账,漂移即拒跑 exit 2(utopinn-cli.mjs:
+1050-1219)。`raw` 逃生舱保留作任意 REST 直达与 kernel 表面外 legacy
+端点。**注:下表按现 11 插件归族(utopinn-import→data、utopinn-stats→
+diag 合并已落地,domain-map §5.1);verb 全集以 `utopinn schema` 为准。**
 
 | fiber | 命令 | 输入 | 输出 |
 |---|---|---|---|
@@ -212,22 +225,26 @@ REST 直达与 kernel 表面外 legacy 端点。
 | utopinn-library | `utopinn world-edit <n>` | `--json-file\|--stdin\|json` | 世界书整文档写回 `{entries:{}}`(upsert) |
 | utopinn-library | `utopinn world-delete <n>` | 显式名 | 删书(204) |
 | utopinn-library | `utopinn preset-get\|preset-edit\|preset-delete <n>` | `--api`,`--json-file` | 预设 doc 读/整档写回/删 |
-| utopinn-library | `utopinn personas` / `persona-edit <av>` / `persona-delete <av>` | `--set k=v`,`--json-file` | 人设表/写字段/删 |
+| utopinn-library | `utopinn personas` / `persona-edit <av>` / `persona-delete <av>` | `--set k=v`,`--json-file` | 人设表/写字段(name/description/position/title/is_default)/删 |
 | utopinn-library | `utopinn settings` / `settings-set` | `--json-file\|--stdin\|json` | 脱敏读;PATCH 白名单 power_user\|extension_settings\|oai_settings\|world_info_settings + 标量 preset_settings_openai(双向镜像 oai_settings.preset_settings_openai,生成/设置两读面一致) |
 | utopinn-library | `utopinn secrets` / `secret-set <k>` / `secret-delete <k> <id>` | `--value\|--stdin` | 脱敏态;写新(PUT 铸 id)/按 id 删——值永不回显 |
-| utopinn-library | `utopinn char <n>` / `chat-get [c]` / `chat-create <n>` | — | 卡全文/utopinn doc/立即建空聊天 |
-| utopinn-library | `utopinn char-edit <n>` | `--set k=v`,`--json-file`,`json` | 卡字段 merge-patch:11 个字符串字段+tags+extensions{world\|alternate_greetings\|regex_scripts};name 只改显示名,charDir 存储键不动;写后整卡返回 |
-| utopinn-diag | `utopinn kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
-| utopinn-stats | `utopinn stats [--by char\|model\|day] [--range 1h\|24h\|7d\|all]` / `stats char <id>` / `stats inject [--chat <charDir>/]<chat>` | `--by,--range,--chat,-n,--full` | jobs×inspector 聚合分组表 / 单卡 floors·gens·WI 命中 / 注入源命中率+token 占比(WI 条目级) |
-| utopinn-plugins | `utopinn plugins` | — | `● id` fiber 状态表 |
-| utopinn-plugins | `utopinn plugin <id> <enable\|disable\|reload>` | — | 生命周期操作(admin;utopinn-plugins 自锁) |
-| utopinn-mvu | `utopinn mvu [state]` | `-n,--full,--out` | chat 变量表 + settle 回执数(=悬浮窗/状态板数据源) |
-| utopinn-mvu | `utopinn mvu settle [--floor i]` | `--floor` | 手动重结算目标楼层 |
-| utopinn-mvu | `utopinn mvu resettle` | — | 全量重放投影(编辑/删楼/换 swipe 后重建) |
-| utopinn-mvu | `utopinn mvu panel <tpl\|--file\|--stdin>` | `--out`,`--html` | 模板×chat变量→面板 HTML |
+| utopinn-library | `utopinn char <n>` / `char-edit <n>` / `chat-get [c]` / `chat-create <n>` / `chat-put [doc]` | `--set k=v`,`--json-file` | 卡全文/字段 merge-patch/utopinn doc/建空聊天/整文档替换(legacy /save 等价,CAS 自动+409 重锚) |
+| utopinn-library | `utopinn state chat\|char\|preset <op> …` | 三族 ops(chat 4 / char+set / preset+delete-all\|rename);`--via get` 走 ETag 资源读 | sidecar 读写(18 条注册全具名) |
+| utopinn-generate | `utopinn jobs` / `inspect` / `abort` / `preview` / `send` 等生成动词 | 见生成动词表 | job 面 + 组装干跑 |
+| utopinn-diag(含原 stats 面) | `utopinn kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
+| utopinn-diag | `utopinn logs` / `errors` / `trace <jobId>` / `diag-client <msg>` | `--kind,--lvl,--since,--code,--job` | diag-bus 事件读面 + job 聚合回放 + 客户端上报口 |
+| utopinn-diag | `utopinn stats [--by char\|model\|day] [--range 1h\|24h\|7d\|all]` / `stats char <id>` / `stats inject [--chat <charDir>/]<chat>` | `--by,--range,--chat,-n,--full` | jobs×inspector 聚合分组表 / 单卡 floors·gens·WI 命中 / 注入源命中率+token 占比(WI 条目级) |
+| utopinn-plugins | `utopinn plugins` / `plugin <id> <enable\|disable\|reload>` / `contrib` | — | fiber 状态表/生命周期操作(admin;core 行与 plugins 自锁拒 disable)/ui.contrib 清单 |
+| utopinn-delivery | (WS 通道;无独立动词,生成动词经 ticket+resume 消费) | — | — |
+| utopinn-mvu | `utopinn mvu [state]` / `settle` / `resettle` / `panel <tpl>` | `--floor`,`--out`,`--html` | chat 变量表/手动重结算/全量重放/模板×变量→面板 HTML |
 | utopinn-script | `utopinn script <st\|--stdin>` | 位置参/stdin | `pipe` + `ops/notify/popup` 计数(服务端 STscript) |
-| utopinn-import | `utopinn import-scan <dir>` / `import-preview\|commit <f>` | `--file,--stdin,--conflict,--as` | ST 目录扫描(admin)/探测预览/落库 |
-| utopinn-data | `utopinn backup [--out]` / `lan-offer` / `lan-import <url>` | `--set cat=bool,--mode` | zip 快照/LAN 迁移 offer/拉入恢复 |
+| utopinn-th | `utopinn th <method> [json]` | 方法名+载荷 | TavernHelper 调用面(变量/消息/slash) |
+| utopinn-connection | `utopinn conn test` / `models [--fresh]` | — | 上游探测(latency/modelCount)/模型清单(30s 缓存) |
+| utopinn-regex | `utopinn regex [--global\|--char d\|--preset n]` / `--put` / `<id> --enable\|--disable\|--delete` / `--allow\|--disallow` | scope flags | 三层脚本视图/整组写回/单条启停删/放行表开关 |
+| utopinn-data(含原 import 面) | `utopinn import-scan <dir>` / `import-preview\|commit <f>` | `--file,--stdin,--conflict,--as` | ST 目录扫描(admin)/探测预览/落库 |
+| utopinn-data | `utopinn backup [--out]` / `lan-offer` / `lan-import <url>` | `--set cat=bool,--mode,--handle` | zip 快照/LAN 迁移 offer/拉入恢复(--handle 跨 handle 需 admin) |
+| —(legacy 契约,TASK-037) | `utopinn groups` / `guse <id\|name> [chatId]` | `--member,--gchat,--no-chain` | 群列表/绑群 ctx;send/regen/swipe 等生成动词经 `/api/groups/all`+`/api/chats/group/{get,append,patch}` 走群路由(非 /api/utopinn/generate selected_group) |
+| —(headless 宿主,TASK-042) | `utopinn cardapp <mount\|eval\|call\|op\|status\|unmount>` | 见「headless CardApp 宿主」章 | jsdom 真跑卡 HTML/JS,一次性进程语义 |
 | — | `utopinn raw <M> </path> [json\|--stdin]` | — | `{status,data}` —— 任意 REST 端点(含 legacy/kernel 表外) |
 
 ## 上下文链与状态文件
@@ -357,21 +374,28 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 - **写操作**:全部走 `/api/chats/*` 既有 CAS/校验;`--force` 是 opt-in;
   delete 必须显式点名。CLI 不直接碰数据目录。
 
-## v1 明确不做(登记,不实现)
+## v1 明确不做(登记,不实现)——带事后对账
 
-- REPL / TUI / 交互选择器(一切状态化,无交互问答)
-- swipe 的非末楼操作、per-floor 多 swipe 管理 UI
-- group 聊天(服务端 `/api/utopinn/generate` 未接,buildUtopinnGenerateBody
-  selected_group → null 即弃)
-- 多 handle/多用户、登录流、远端部署凭证
-- persona description 写入面(persona 只带 name;description 走服务端
-  `power_user.persona_description`,CLI 不碰 settings)
-- `wi`/`books` 专查(WI 明细已在 inspect/preview sources 里;专查端点
-  留给 web 管理端需求驱动)
-- `panel`(chat_state sidecar,`/api/chats/state/*` 已存在——CardApp
-  联调面,归 CardApp 任务)
-- `th`(TH-compat `/api/utopinn/th/call` 直连,酒助脚本调试)
-- api-client 包迁移(等包长全,CLI 届时变纯壳)
+- REPL / TUI / 交互选择器(一切状态化,无交互问答)——仍不做
+- swipe 的非末楼操作、per-floor 多 swipe 管理 UI——仍不做
+- ~~group 聊天(服务端 `/api/utopinn/generate` 未接,buildUtopinnGenerateBody
+  selected_group → null 即弃)~~ **已实现(TASK-037):`groups`/`guse`
+  绑群 ctx,生成动词走 legacy `/api/chats/group/*` 契约 + `--member`/
+  `--gchat`/`--no-chain`;utopinn generate 的 selected_group 仍不接,群路由
+  绕它走 legacy 面——路径与预案不同,能力在**
+- 多 handle/多用户、登录流、远端部署凭证——大半仍不做;`--handle` 已开
+  小口子(lan-offer/import 的 admin 跨 handle + `state get --via get` 的
+  `?account=` 参数),不等于多用户面
+- ~~persona description 写入面~~ **已实现:`persona-edit` 写
+  name/description/position/title/is_default**
+- ~~`wi`/`books` 专查~~ **已实现:`utopinn wi <book>` 条目表**
+- ~~`panel`(chat_state sidecar)~~ **已实现,且超出原设想:`state chat`
+  三族动词(get/get-batch/patch/delete 全 ops)直接读写 sidecar;CardApp
+  联调面由 `cardapp` 动词族承接(见下章),`mvu panel` 另有模板渲染**
+- ~~`th`(TH-compat `/api/utopinn/th/call` 直连)~~ **已实现:
+  `utopinn th <method> [json]`**
+- api-client 包迁移(等包长全,CLI 届时变纯壳)——仍挂账;cardapp 宿主
+  已用真包,核心动词未迁
 
 ## 实现自检清单(照此做不踩坑)
 
@@ -400,10 +424,44 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 12. `use` 不许隐式建聊天(打错字 = not_found + 候选,新聊天走
     `chat-new` 显式)——agent 侧最怕「typo 变成新文件」。
 
+## headless CardApp 宿主(TASK-042,已落地)
+
+`utopinn cardapp <mount|eval|call|op|status|unmount>` —— 不依赖浏览器
+真跑卡面 HTML/JS 的参照宿主,两个文件:`cmd-cardapp.mjs`(动词层)+
+`cardapp-host.mjs`(harness 本体,~1100 行,jsdom/esbuild 懒加载,
+design: `.loom/design/headless-cardapp-harness.md`)。
+
+- **一次性进程语义**:每动词 = mount → settle → act → dispose → exit。
+  卡真相在服务端(chat_metadata.variables/chat_state/chat body),
+  重开面板无损,宿主不留长驻状态。
+- **两类卡源 × 两种入口,正交**:卡源 A=server charDir
+  (`POST /api/card-runtime/mounts` 拿能力 URL 资产空间);
+  卡源 B=`--card` 文件(PNG/charx/JSON → card_app.files 内存图,
+  nonce 自铸)。入口 document=JSDOM(html)+beforeParse(bootstrap→
+  stubs→shim)→卡 <script>;入口 module=合成壳+esbuild bundle(cjs)+
+  显式 init(ctx)(Luker loader 约定)。
+- **wire 契约参照实现**:nonce + 方法白名单 + requestId 台账,传输层
+  退化为进程内函数调用(shim 自带 `__utopinnPanelPost/Receive` 钩子)。
+  dispatch 复合:T0 走 api-client `createPanelT0Handler`,其余 `th.*`
+  透传 `/api/utopinn/th/call`(unsupported → `unsupported_method`
+  wire 码,与 apps/web ctxApi.ts 同码)。
+- **动词面**:`mount`(挂卡+init)/`eval <expr>`(卡 window realm 求值,
+  回 {result,console[]})/`call <method>`(直打 dispatch)/`op
+  dom|click|input|dump|push|wait`(DOM 读/点击/输入/落盘/宿主→卡事件/
+  轮询等异步)/`status`/`unmount`(撤服务端 mount+清状态)。
+- **子命令契约与主面一致**:JSON 模式 envelope 同形;`--char/--chat`
+  缺省落 ctx use 态;chat 缺席不拦(部分卡无 chat 也能跑,chat-scope
+  th 调用按服务端语义 4xx 诚实上报);`state.cardapp.lastMountId` 落
+  状态文件供 status 对账。
+- 验收:tests/utopinn-acceptance/run.mjs 93/93(group K 12 断言);
+  掌门卡实弹 init(ctx)+click→advance+getVariables 与 th 面同值。
+
 ## v1 之后的生长方向(登记,不做)
 
-- `panel` 命令:chat_state sidecar 读写(CardApp/掌门卡状态面联调)
-- `th` 命令:TH-compat `/api/utopinn/th/call` 直连(酒馆助手脚本调试)
-- 交互 REPL 模式(readline 逐轮对话,比一次性 send 更像「玩」)
-- `wi`/`books` 世界书专查与启停
-- api-client 包补齐后迁移,CLI 变纯壳
+- ~~`panel` 命令:chat_state sidecar 读写~~ **已落地:`state` 三族 +
+  `cardapp` 动词族(见上章)**
+- ~~`th` 命令~~ **已落地:`utopinn th <method>`**
+- ~~`wi`/`books` 世界书专查与启停~~ **已落地:`wi`/`world-edit`/
+  `world-delete`**
+- 交互 REPL 模式(readline 逐轮对话,比一次性 send 更像「玩」)——仍登记
+- api-client 包补齐后迁移,CLI 变纯壳——仍登记(cardapp 已先用上)

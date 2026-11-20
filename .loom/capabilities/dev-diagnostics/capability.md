@@ -20,6 +20,7 @@ prompt 查看、WI 轨迹、变量日志、生成任务、存储检查、golden 
   - B: 散进扩展页杂项(ST 现状) → leads_to: 找不到,等于没有
 - source: design/web-ia.md §8 开发者支柱+§11 覆盖审计
 - output: 诊断域 8 工具卡;侧栏=诊断项索引;普通用户不打扰(不占聊天面)
+- note(2026-11 落地对账): 诊断面实际落地为 workbench 面板类型(diag/stats 面板,panel.type 贡献点,features/panels.tsx),非 rail 一级导航域——形式不同语义等价(聚合入口在 launcher 网格,不占聊天面的目标达成)
 
 ### C2: model-visible ⟺ logged
 

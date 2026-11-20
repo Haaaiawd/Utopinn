@@ -1,5 +1,8 @@
 # TASK-034 — 浏览器组装短路:chat scope 直调服务端,真性能分离
 
+> vs-V2: reference
+<!-- TASK-034 已按架构性达成收账(D-2026-11-20);旧 UI=兼容 harness -->
+
 只读侦察(2026-11,explore 子代理产)。对应 tasks.json TASK-034(depends_on TASK-030/032/033;
 done_when:Generate() 在 requestScope===chat 跳过 openai.js 组装;浏览器 CPU 组装耗时归零;
 WI/macro/STscript 只在服务端跑;回归+实弹不绿不收)。边界:不删浏览器引擎文件(TASK-035);

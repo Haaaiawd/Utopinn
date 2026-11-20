@@ -10,6 +10,10 @@
 
 用户装卡/书/预设/主题主要靠导入;换端/换机要能整体搬家;ST 老用户一键迁移。
 
+> note(2026-11 落地对账): 服务端 `utopinn-import` 插件已并入 `utopinn-data`
+> (domain-map §2.1,preview/commit/scan-st 同归数据进出域);CLI 侧
+> import-scan/preview/commit 动词面已超出本卷宗的 UX 视野,归 cli-client 卷。
+
 ## Decision tree
 
 ### C1: 万能导入手势

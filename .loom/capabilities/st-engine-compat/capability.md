@@ -8,7 +8,7 @@
 
 ## Project scenario
 
-无规格遗产引擎移植:golden-diff先行,ctx-seam边界,全维度断言清单,分层副作用
+无规格遗产引擎移植已实战验证:golden-diff 捕获/分级/KNOWN-GAP 容差挂账跑过多轮,仍是验收闸(用户拍板 2026-11-20)
 
 ## Decision tree
 

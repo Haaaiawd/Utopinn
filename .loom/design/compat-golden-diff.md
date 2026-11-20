@@ -3,6 +3,8 @@
 - Kind: verification
 - Status: frozen
 
+> vs-V2: current
+
 ## Responsibility in the whole
 
 把"兼容绝大多数卡"从口号变成可测的机制:收集真实卡语料,用原版引擎产出 golden 组装结果,与 `@utopinn/core` 产出逐字段 diff,作为 core 移植的验收门禁。

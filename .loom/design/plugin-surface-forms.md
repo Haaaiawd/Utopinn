@@ -2,6 +2,7 @@
 
 > 缘起:壳落地后发现缺口不止前端——四种舞台形态+统计面的**数据源在插件层就不存在**。
 > 本文档梳理「每种形态需要服务端/插件补什么」,作为后续插件调整/新建的排期依据。
+> vs-V2: partially-stale
 
 ## 现状插件清单
 
@@ -34,6 +35,9 @@ generate+delivery+state 三族+mvu+th 覆盖。无结构性缺口,剩 polish。
   sidecar ns 约定;不建议单开插件,除非选项要走服务端计算
 
 ### 5. 统计(stats)—— 新插件 `utopinn-stats`
+
+<!-- V2 校准:stats 并入 diag、ui.contrib 已水合;余量=novel 章目录+galgame -->
+
 数据源已经全在:jobs 带 perf(ms)/trace(tokens)/status,diag 总线有 inject 事件
 (WI 命中条目/时序)。缺的只是**聚合视图**:
 - `GET /api/utopinn/stats/summary?range=&by=char|model|day`
@@ -44,6 +48,9 @@ generate+delivery+state 三族+mvu+th 覆盖。无结构性缺口,剩 polish。
 - 实现:纯读面,扫 job store + diag ring;不写存储(冷数据再谈持久化)
 
 ### 6. 插件声明 UI(架构层,最值得想的一条)
+
+<!-- V2 校准:stats 并入 diag、ui.contrib 已水合;余量=novel 章目录+galgame -->
+
 前端 kernel 已是贡献点模型;服务端插件将来应该能**声明自己贡献的 UI**:
 `ctx.add('ui.panel'|'ui.stageForm'|'ui.nav', {…元数据})` → kernel 汇成
 `GET /api/utopinn/contrib` manifest → 前端启动拉一次,面板/形态/导航自动出现。

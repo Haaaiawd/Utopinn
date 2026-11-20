@@ -3,6 +3,8 @@
 - Kind: contract
 - Status: frozen
 
+> vs-V2: partially-stale
+
 ## Responsibility in the whole
 
 定义"客户端发一句话、服务端组装并调 LLM、结果流式回推并可断线续接"的完整链路契约。是薄客户端唯一需要理解的生成协议;旧版 `/api/backends/*/generate`(前端自带组装)在过渡期并存。
@@ -23,6 +25,8 @@ client → POST /api/generate → generationJob(Luker generationJobs Map,已持�
       → 完成:消息写 chat(JSONL via ChatRepo)+ variables/regex 后处理 + chat_state 更新
 断线:client 持 lastEventId/ack → WS 重连 → job 事件回放(ack grace ~15s,既有)
 ```
+
+<!-- V2 校准:实名 /api/utopinn/generate+charDir/chatName/type,帧 head/chunk/end/ping/pong -->
 
 - 复用:`src/endpoints/backends/luker-generation.js` 的 job/TTL/ack 机制、`ws-delivery.js` + `ws-ticket-router.js` 的心跳与重连协议
 - RN 走 WS 不走 SSE(fetch 分块在 RN 不可靠——已记录为假设 A)

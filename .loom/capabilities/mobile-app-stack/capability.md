@@ -1,6 +1,12 @@
 # React Native/Expo 客户端技术栈选型(导航/数据层/列表/Markdown/WS/存储/WebView)
 
-> One dossier covers one recognizable professional field.
+> ⚠ **SUPERSEDED(2026-11,D-020)**:移动端地基已改判 fork IReader(KMP,
+> Apache-2.0,android/desktop/iosApp 三端壳)——`apps/mobile`(Expo)冻结为
+> 参照实现,代码不演进主线;mobile 整体 parked。本卷留档作 Expo 参照与
+> 协议面调研资产,以下决策树不再指导新代码。另注:即便在参照实现内,
+> 选型也已与本文分叉——实际是 heroui-native+uniwind(非 NativeWind+
+> gluestack),streamdown 不在 deps(Markdown 流式选型未落地)。
+> 新地基见 .loom/design/mobile-fork-ireader.md。
 
 ## Field identity and boundary
 

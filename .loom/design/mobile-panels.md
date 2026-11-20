@@ -3,6 +3,9 @@
 - Kind: experience
 - Status: frozen
 
+> vs-V2: reference(parked)
+<!-- V2:mobile 整体 parked -->
+
 ## Responsibility in the whole
 
 "重UI"= 卡里预设的 HTML 应用与状态面板(背包、任务卡、好感度/属性栏、交互小游戏)。在移动端它们不混进聊天流,而是收进底导航的"面板"专属页;状态持久在服务端,客户端零真相。

@@ -1,5 +1,8 @@
 # textgen / instruct 派发路径设计(TASK-020)
 
+> vs-V2: reference
+<!-- 落地实名:/api/utopinn/generate 的 body.api==='text' 分叉(api_type 选源) -->
+
 ## 定位
 
 chat-completions 路径(`/api/utopinn/generate` 现成)只覆盖 openai 系;

@@ -1,5 +1,7 @@
 # TASK-037 — group 聊天 + textgen/kobold/novel 源进服务端 cordis 面
 
+> vs-V2: partially-stale
+
 只读侦察(2026-11,explore 子代理产)。对应 tasks.json TASK-037(depends_on TASK-032;
 done_when:group 生成走服务端组装(deps.group 接入)+ textgen/kobold/novel 派发接入 + CLI 实弹)。
 边界:group UI 交互不重写;非 openai 源只接派发不重写 provider。
@@ -47,6 +49,8 @@ TEXTGEN_CONN_KEYS 剥除、4 别名已有。
 
 ## 2. Group 现状
 
+<!-- V2 校准:group parked(C9 砍);textgen/kobold/novel 余量 open -->
+
 **路由两簇(无 /api/groupchats/*)**:
 - 群档 /api/groups/*(groups.js):all/create/edit/delete;members/disabled_members/
   activation_strategy/generation_mode/join prefix-suffix/chat_id/chats[]。
@@ -80,6 +84,7 @@ A. group 数据面:/api/utopinn/groups CRUD + /api/utopinn/group-chats/:chatId
 B. group 生成面:target={kind:'group',groupId,chatId};成员解析(显式 member
    或策略);每成员一 job persist_target{kind:'group',id:文件id,member字段};
    APPEND 联合卡+多 depth 提示。
+<!-- V2 校准:group parked(C9 砍);textgen/kobold/novel 余量 open -->
 C. textgen body 整形:buildTextgenDispatchBody;status/props 面。
 D. kobold/novel:api union;kai_flags 探测或传入;novel encode helper+prefix;
    streaming 旗标;客户端 decode 扩展。

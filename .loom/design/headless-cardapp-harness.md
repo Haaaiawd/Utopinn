@@ -7,6 +7,8 @@
   本 harness 同时是 web/RN iframe 宿主的**协议参照实现**:同一份 nonce+白名单
   wire 校验、同一 dispatch 表,只换传输层。
 
+> vs-V2: current
+
 ## 0. 结论速览
 
 | 决策点 | 选择 | 一句话理由 |

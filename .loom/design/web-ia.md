@@ -4,6 +4,8 @@
 > 输入:ST 真实 UI 面全量盘点;输出:一级/次级/默认折叠映射 + 线稿
 > 原则:**聊天是产品的默认态,管理是明确目的态**。ST 的平铺 icon 汤
 > 重排为"聊天 / 库 / 生成配置 / 扩展 / 系统"五域。
+> vs-V2: partially-stale
+<!-- V2 校准:实际 IA=规范稿 home/chat/studio/plugins(RAIL_VIEWS),非 §14 v3;移动四 tab 已被 chat+hub+设置收敛取代 -->
 
 ## 1. ST UI 面全量盘点(输入源)
 

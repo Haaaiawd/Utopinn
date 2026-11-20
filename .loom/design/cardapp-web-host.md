@@ -1,5 +1,7 @@
 # CardApp web 宿主设计(TASK-022)
 
+> vs-V2: current
+
 ## 定位
 
 TASK-014 已交付服务端面(manifest/CSP/mounts/cdn-proxy/assets,

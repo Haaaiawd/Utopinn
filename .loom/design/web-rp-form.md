@@ -4,6 +4,8 @@
 > Harpy/oobabooga/NovelAI 逐个拆 + 本地 Luker DOM 一手证据。
 > 结论:**方案 A——rail+路由骨架不动,把壳填充成 RP 心智**;
 > 否决双壳馆/场(IA 附录裁决不变:聊天即舞台是视图态不是导航范式)。
+> vs-V2: partially-stale
+<!-- V2 校准:P0 大部已在 TASK-040 壳落地,余量随 TASK-026 停泊 -->
 
 ## 0. 判据
 

@@ -1,5 +1,8 @@
 # STscript / QuickReply 服务端引擎设计(TASK-019)
 
+> vs-V2: reference
+<!-- 落地实名:POST /api/utopinn/script/run(utopinn-script 插件) -->
+
 ## 定位
 
 STscript 是 ST 的命令管线语言(`/send`、`/setvar`、`/if`、`| pipe`),QuickReply

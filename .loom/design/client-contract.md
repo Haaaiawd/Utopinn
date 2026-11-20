@@ -10,6 +10,8 @@
   `.loom/design/plugin-domain-map.md`(路由口径)与
   `.loom/design/frontend-binding-matrix.md`(早期绑定态)交叉对账。
 
+> vs-V2: partially-stale
+
 ## 0. 总判断
 
 **协议面在服务端已经基本齐了;问题不是"没有契约",是契约被三份手写
@@ -445,6 +447,8 @@ request_id 去重挤旧;**应用层心跳必须回 `{type:'pong',ts}`**;
 | `mvu`/`th`/`state`/`script`/`plugins`/`import`/`stats`/`diag-events` 方法写了**但大量无 UI 调用点**(面板未水合) | PUT `…/chats/:chatName`(显式建)+ `…/document`(整文档替换)—— api-client 在用,web 未绑 |
 
 ### 5.2 优先级(声明化收益 ÷ 改动成本)
+
+<!-- V2 校准:streamJob pong/SettingsPatch/abort/ui/contrib 已兑现;余量:vocab/features、api-client 收编、rename 仍 legacy -->
 
 | 序 | 动作 | 收益 | 成本 | 判 |
 |---|---|---|---|---|

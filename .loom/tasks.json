@@ -32,9 +32,6 @@
         "AGENTS.md",
         "apps/server/package.json"
       ],
-      "touches": [
-        "apps/server"
-      ],
       "implements": "",
       "design_exemption": "operational baseline; no design doc applies",
       "capability_hooks": [],
@@ -74,7 +71,10 @@
       ],
       "created_at": "2026-11-02T08:50:32.133Z",
       "updated_at": "2026-11-02T09:12:00.605Z",
-      "completed_at": "2026-11-02T09:12:00.605Z"
+      "completed_at": "2026-11-02T09:12:00.605Z",
+      "touches": [
+        "apps/server/package.json"
+      ]
     },
     {
       "id": "TASK-002",
@@ -100,9 +100,6 @@
       "reads": [
         ".loom/design/generation-api.md",
         ".loom/design/mobile-panels.md"
-      ],
-      "touches": [
-        "packages/protocol/src"
       ],
       "implements": ".loom/design/generation-api.md#Interfaces and dependencies",
       "design_exemption": "",
@@ -137,7 +134,11 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-02T09:13:46.772Z",
-      "completed_at": "2026-11-02T09:13:46.772Z"
+      "completed_at": "2026-11-02T09:13:46.772Z",
+      "touches": [
+        ".loom/design/generation-api.md",
+        ".loom/design/mobile-panels.md"
+      ]
     },
     {
       "id": "TASK-003",
@@ -161,10 +162,6 @@
         "apps/server/src/byaf.js",
         "apps/server/src/character-card-parser.js",
         "apps/server/src/png/encode.js"
-      ],
-      "touches": [
-        "packages/formats/src",
-        "packages/formats/tests"
       ],
       "implements": "",
       "design_exemption": "faithful port of existing code; covered by compat-golden-diff verification design",
@@ -197,7 +194,12 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T03:22:14.720Z",
-      "completed_at": "2026-11-03T03:22:14.720Z"
+      "completed_at": "2026-11-03T03:22:14.720Z",
+      "touches": [
+        "apps/server/src/charx.js",
+        "apps/server/src/byaf.js",
+        "apps/server/src/character-card-parser.js"
+      ]
     },
     {
       "id": "TASK-004",
@@ -226,10 +228,6 @@
       "reads": [
         ".loom/design/compat-golden-diff.md",
         "apps/server/src/request-inspector.js"
-      ],
-      "touches": [
-        "tests/corpus",
-        "tests/golden-diff"
       ],
       "implements": ".loom/design/compat-golden-diff.md",
       "design_exemption": "",
@@ -280,7 +278,11 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T03:16:09.031Z",
-      "completed_at": "2026-11-03T03:16:09.031Z"
+      "completed_at": "2026-11-03T03:16:09.031Z",
+      "touches": [
+        ".loom/design/compat-golden-diff.md",
+        "apps/server/src/request-inspector.js"
+      ]
     },
     {
       "id": "TASK-005",
@@ -312,9 +314,6 @@
         ".loom/design/core-engine.md",
         "apps/server/public/scripts/world-info.js",
         "apps/server/public/scripts/macros.js"
-      ],
-      "touches": [
-        "packages/core/src"
       ],
       "implements": ".loom/design/core-engine.md",
       "design_exemption": "",
@@ -355,7 +354,12 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-03T06:34:44.592Z",
-      "completed_at": "2026-11-03T06:34:44.592Z"
+      "completed_at": "2026-11-03T06:34:44.592Z",
+      "touches": [
+        ".loom/design/core-engine.md",
+        "apps/server/public/scripts/world-info.js",
+        "apps/server/public/scripts/macros.js"
+      ]
     },
     {
       "id": "TASK-006",
@@ -378,9 +382,6 @@
       "reads": [
         "apps/server/public/scripts/openai.js",
         "apps/server/public/scripts/PromptManager.js"
-      ],
-      "touches": [
-        "packages/core/src"
       ],
       "implements": ".loom/design/core-engine.md",
       "design_exemption": "",
@@ -415,7 +416,11 @@
       },
       "evidence": [],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T09:55:17.594Z"
+      "updated_at": "2026-11-03T09:55:17.594Z",
+      "touches": [
+        "apps/server/public/scripts/openai.js",
+        "apps/server/public/scripts/PromptManager.js"
+      ]
     },
     {
       "id": "TASK-007",
@@ -442,10 +447,6 @@
         ".loom/design/generation-api.md",
         "apps/server/src/endpoints/backends/luker-generation.js",
         "apps/server/src/plugins/utopinn-delivery.js"
-      ],
-      "touches": [
-        "apps/server/src",
-        "packages/api-client/src"
       ],
       "implements": ".loom/design/generation-api.md",
       "design_exemption": "",
@@ -489,7 +490,12 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-04T08:50:28.038Z",
-      "completed_at": "2026-11-04T08:50:28.038Z"
+      "completed_at": "2026-11-04T08:50:28.038Z",
+      "touches": [
+        ".loom/design/generation-api.md",
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/src/plugins/utopinn-delivery.js"
+      ]
     },
     {
       "id": "TASK-008",
@@ -517,9 +523,6 @@
       "reads": [
         ".loom/design/mobile-panels.md",
         "apps/mobile/app/_layout.tsx"
-      ],
-      "touches": [
-        "apps/mobile"
       ],
       "implements": "",
       "design_exemption": "thin-client app shell; covered by mobile-panels and generation-api designs",
@@ -561,7 +564,11 @@
         "D-020:Expo 实现完成交付后退位为参照(fork IReader 改判);验收语义由 TASK-028 在 KMP 栈承接"
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-04T08:01:59.550Z"
+      "updated_at": "2026-11-04T08:01:59.550Z",
+      "touches": [
+        ".loom/design/mobile-panels.md",
+        "apps/mobile/app/_layout.tsx"
+      ]
     },
     {
       "id": "TASK-009",
@@ -589,9 +596,6 @@
       "reads": [
         ".loom/design/mobile-panels.md",
         "apps/server/docs/development/card-developers.md"
-      ],
-      "touches": [
-        "apps/mobile"
       ],
       "implements": ".loom/design/mobile-panels.md",
       "design_exemption": "",
@@ -633,7 +637,11 @@
         "D-020:Expo 实现完成交付后退位为参照(fork IReader 改判);验收语义由 TASK-028 在 KMP 栈承接"
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
-      "updated_at": "2026-11-03T06:33:54.144Z"
+      "updated_at": "2026-11-03T06:33:54.144Z",
+      "touches": [
+        ".loom/design/mobile-panels.md",
+        "apps/server/docs/development/card-developers.md"
+      ]
     },
     {
       "id": "TASK-010",
@@ -661,9 +669,6 @@
       "reads": [
         "AGENTS.md",
         ".loom/design/web-visual-system.md"
-      ],
-      "touches": [
-        "apps/web"
       ],
       "implements": "",
       "design_exemption": "web SPA direction in loom record assumptions; dedicated design doc deferred",
@@ -820,7 +825,10 @@
       ],
       "created_at": "2026-11-02T08:50:32.134Z",
       "updated_at": "2026-11-04T08:49:49.984Z",
-      "completed_at": "2026-11-04T08:49:49.984Z"
+      "completed_at": "2026-11-04T08:49:49.984Z",
+      "touches": [
+        ".loom/design/web-visual-system.md"
+      ]
     },
     {
       "id": "TASK-011",
@@ -854,10 +862,6 @@
       "reads": [
         ".loom/design/plugin-architecture.md",
         "ref/deepseek-harness/docs/cordis-primer.md"
-      ],
-      "touches": [
-        "packages/kernel",
-        "apps/server"
       ],
       "implements": ".loom/design/plugin-architecture.md#2. 插件契约(直接映射 Cordis)",
       "design_exemption": "",
@@ -898,7 +902,11 @@
         "packages/kernel/src/{context,loader,plugin,legacy-adapter}.ts"
       ],
       "created_at": "2026-11-03T06:19:55.764Z",
-      "updated_at": "2026-11-03T08:23:18.588Z"
+      "updated_at": "2026-11-03T08:23:18.588Z",
+      "touches": [
+        ".loom/design/plugin-architecture.md",
+        "ref/deepseek-harness/docs/cordis-primer.md"
+      ]
     },
     {
       "id": "TASK-012",
@@ -980,10 +988,6 @@
         ".loom/design/plugin-architecture.md",
         "ref/SillyTavern/public/script.js"
       ],
-      "touches": [
-        "packages/core",
-        "apps/server/src"
-      ],
       "implements": ".loom/capabilities/mvu-runtime/capability.md",
       "design_exemption": "",
       "capability_hooks": [
@@ -1037,7 +1041,11 @@
       ],
       "created_at": "2026-11-03T06:33:54.144Z",
       "updated_at": "2026-11-04T08:50:43.426Z",
-      "completed_at": "2026-11-04T08:50:43.426Z"
+      "completed_at": "2026-11-04T08:50:43.426Z",
+      "touches": [
+        ".loom/design/plugin-architecture.md",
+        "ref/SillyTavern/public/script.js"
+      ]
     },
     {
       "id": "TASK-014",
@@ -1063,10 +1071,6 @@
       "reads": [
         ".loom/capabilities/sandboxed-card-apps/capability.md",
         "apps/server/src/endpoints/panel-shim.js"
-      ],
-      "touches": [
-        "apps/server/src/endpoints",
-        "packages/protocol"
       ],
       "implements": ".loom/capabilities/sandboxed-card-apps/capability.md",
       "design_exemption": "",
@@ -1094,7 +1098,11 @@
         "apps/web cardapp/ 宿主"
       ],
       "created_at": "2026-11-03T06:33:54.144Z",
-      "updated_at": "2026-11-04T07:22:25.869Z"
+      "updated_at": "2026-11-04T07:22:25.869Z",
+      "touches": [
+        ".loom/capabilities/sandboxed-card-apps/capability.md",
+        "apps/server/src/endpoints/panel-shim.js"
+      ]
     },
     {
       "acceptance": [
@@ -1128,10 +1136,6 @@
         ".loom/design/conversation-renderers.md",
         "ref/dsh-tavern/tavern-plugin/src/client/gal-entry.js",
         "ref/dsh-tavern/tavern-plugin/src/client/gal-looks.js"
-      ],
-      "touches": [
-        "packages/protocol",
-        ".loom/capabilities/conversation-renderers/research"
       ],
       "design_exemption": "",
       "covers": [],
@@ -1173,6 +1177,11 @@
           "at": "注册面",
           "must_produce": "provide seam 签名"
         }
+      ],
+      "touches": [
+        ".loom/design/conversation-renderers.md",
+        "ref/dsh-tavern/tavern-plugin/src/client/gal-entry.js",
+        "ref/dsh-tavern/tavern-plugin/src/client/gal-looks.js"
       ]
     },
     {
@@ -1219,10 +1228,6 @@
         ".loom/capabilities/import-export/capability.md",
         "packages/formats/src/card.ts",
         ".loom/design/import-export-center.md"
-      ],
-      "touches": [
-        "apps/server/src/endpoints",
-        "packages/formats"
       ],
       "design_exemption": "",
       "covers": [],
@@ -1461,7 +1466,12 @@
           "must_produce": "快照+LAN/S3端点"
         }
       ],
-      "completed_at": "2026-11-04T10:12:16.778Z"
+      "completed_at": "2026-11-04T10:12:16.778Z",
+      "touches": [
+        ".loom/capabilities/import-export/capability.md",
+        "packages/formats/src/card.ts",
+        ".loom/design/import-export-center.md"
+      ]
     },
     {
       "acceptance": [
@@ -1499,10 +1509,6 @@
       ],
       "reads": [
         ".loom/capabilities/dev-diagnostics/capability.md"
-      ],
-      "touches": [
-        "apps/web",
-        "apps/server/src/endpoints"
       ],
       "design_exemption": "",
       "covers": [],
@@ -1795,7 +1801,10 @@
           "must_produce": "降级徽标+可操作说明"
         }
       ],
-      "completed_at": "2026-11-04T08:55:38.509Z"
+      "completed_at": "2026-11-04T08:55:38.509Z",
+      "touches": [
+        ".loom/capabilities/dev-diagnostics/capability.md"
+      ]
     },
     {
       "acceptance": [
@@ -1874,7 +1883,6 @@
         ".loom/design/stscript-engine.md"
       ],
       "touches": [
-        "packages/core/src/stscript/",
         "packages/core/tests/stscript-engine.test.mjs"
       ],
       "design_exemption": "",
@@ -1921,7 +1929,6 @@
         ".loom/design/textgen-instruct.md"
       ],
       "touches": [
-        "apps/server/src/luker-dispatch/",
         "packages/core/src/instruct/engine.ts"
       ],
       "design_exemption": "",
@@ -2238,7 +2245,6 @@
         ".loom/design/conversation-renderers.md"
       ],
       "touches": [
-        "apps/web/src/components/shell/Sidebar.tsx",
         "apps/web/src/api/chats.ts"
       ],
       "design_exemption": "聊天 CRUD/swipe 持久化直迁 legacy chats 语义,无独立设计稿",
@@ -2302,9 +2308,6 @@
       "reads": [
         ".loom/capabilities/web-spa-stack/capability.md"
       ],
-      "touches": [
-        "apps/web/src/components/views/SettingsView.tsx"
-      ],
       "design_exemption": "",
       "covers": [],
       "status": "done",
@@ -2346,7 +2349,10 @@
           "must_produce": "persona/用户面页组入贡献式域"
         }
       ],
-      "completed_at": "2026-11-04T08:55:37.680Z"
+      "completed_at": "2026-11-04T08:55:37.680Z",
+      "touches": [
+        ".loom/capabilities/web-spa-stack/capability.md"
+      ]
     },
     {
       "acceptance": [
@@ -2421,14 +2427,7 @@
         "tsc+build 绿"
       ],
       "reads": [
-        ".loom/design/web-rp-form.md",
-        "apps/web/src/components/views/LibraryView.tsx",
-        "apps/web/src/components/chat/renderers/ProseRenderer.tsx"
-      ],
-      "touches": [
-        "apps/web/src/components/",
-        "apps/web/src/features/",
-        "apps/web/src/styles/"
+        ".loom/design/web-rp-form.md"
       ],
       "implements": "web-spa-stack",
       "acceptance": [
@@ -2465,7 +2464,10 @@
         "移动端阅读器归 TASK-027 不在此",
         "stageScheme/per-chat 背景/立绘列 P1 不进本任务"
       ],
-      "updated_at": "2026-11-04T08:48:47.754Z"
+      "updated_at": "2026-11-04T08:48:47.754Z",
+      "touches": [
+        ".loom/design/web-rp-form.md"
+      ]
     },
     {
       "id": "TASK-027",
@@ -2481,12 +2483,7 @@
         "bubble形态可切回"
       ],
       "reads": [
-        ".loom/design/mobile-reader-form.md",
-        "apps/mobile/app/chat/[charDir]/[chatName].tsx",
-        "apps/web/src/components/chat/renderers/ProseRenderer.tsx"
-      ],
-      "touches": [
-        "apps/mobile/"
+        ".loom/design/mobile-reader-form.md"
       ],
       "implements": "mobile-app-stack",
       "acceptance": [
@@ -2520,6 +2517,9 @@
         "CardApp 面板桥复用既有协议不重造",
         "桌面端改动归 TASK-026 不在此",
         "避头尾/分人配色/AI章名拟题列 v2 不进本任务"
+      ],
+      "touches": [
+        ".loom/design/mobile-reader-form.md"
       ]
     },
     {
@@ -2534,13 +2534,8 @@
       ],
       "reads": [
         ".loom/design/mobile-fork-ireader.md",
-        "ref/ireader/",
         ".loom/design/mobile-reader-form.md",
         ".loom/design/mobile-panels.md"
-      ],
-      "touches": [
-        "ref/ireader/",
-        "apps/"
       ],
       "implements": "mobile-app-stack",
       "acceptance": [
@@ -2566,7 +2561,12 @@
         "TASK-009",
         "TASK-027"
       ],
-      "capability_exemption": "承接 superseded 任务的 capability 归属(同 mobile-app-stack)"
+      "capability_exemption": "承接 superseded 任务的 capability 归属(同 mobile-app-stack)",
+      "touches": [
+        ".loom/design/mobile-fork-ireader.md",
+        ".loom/design/mobile-reader-form.md",
+        ".loom/design/mobile-panels.md"
+      ]
     },
     {
       "id": "TASK-029",
@@ -2614,9 +2614,9 @@
         "apps/server/tests/utopinn-generate-context.test.mjs"
       ],
       "implements": "",
-      "design_exemption": "",
+      "design_exemption": "修复型/余量任务,无独立设计面(依据已散见 v2-stack-decisions/plugin-domain-map)",
       "capability_hooks": [],
-      "capability_exemption": "",
+      "capability_exemption": "不依赖特定 capability 决策树",
       "integrity_version": 1,
       "covers": [],
       "status": "done",
@@ -2652,8 +2652,7 @@
         "apps/server/src/plugins/utopinn-generate.js"
       ],
       "touches": [
-        "apps/server/public/script.js",
-        "apps/server/public/scripts/"
+        "apps/server/public/script.js"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -2713,9 +2712,6 @@
       "reads": [
         "apps/cli/utopinn-cli.mjs"
       ],
-      "touches": [
-        "apps/cli/"
-      ],
       "acceptance": [
         {
           "criterion": "CLI 覆盖会话+生成+楼层+诊断+组件面",
@@ -2741,7 +2737,10 @@
         "不替代浏览器管理端",
         "raw-only 路由的具名化归 TASK-036"
       ],
-      "evidence": []
+      "evidence": [],
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-032",
@@ -2762,7 +2761,6 @@
         "apps/cli/utopinn-cli.mjs"
       ],
       "touches": [
-        "apps/server/src/plugins/",
         "apps/server/src/endpoints/chats.js"
       ],
       "implements": "core-engine",
@@ -2827,11 +2825,7 @@
       ],
       "reads": [
         "apps/server/public/script.js",
-        "apps/server/public/scripts/",
         "apps/server/src/plugins/utopinn-library.js"
-      ],
-      "touches": [
-        "apps/server/public/"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -2876,7 +2870,11 @@
         "group 聊天依赖 TASK-037"
       ],
       "updated_at": "2026-11-19T06:47:18.148Z",
-      "doneAt": "2026-11-20"
+      "doneAt": "2026-11-20",
+      "touches": [
+        "apps/server/public/script.js",
+        "apps/server/src/plugins/utopinn-library.js"
+      ]
     },
     {
       "id": "TASK-034",
@@ -2957,10 +2955,6 @@
         "apps/server/src/endpoints/chats.js",
         "apps/server/public/scripts/openai.js"
       ],
-      "touches": [
-        "apps/server/src/endpoints/",
-        "apps/server/public/scripts/"
-      ],
       "implements": "core-engine",
       "status": "open",
       "acceptance": [
@@ -2994,7 +2988,12 @@
         "删除前全功能实弹清单过一遍"
       ],
       "updated_at": "2026-11-19T05:40:27.051Z",
-      "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)"
+      "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)",
+      "touches": [
+        ".loom/design/v2-stack-decisions.md",
+        "apps/server/src/endpoints/chats.js",
+        "apps/server/public/scripts/openai.js"
+      ]
     },
     {
       "id": "TASK-036",
@@ -3092,8 +3091,7 @@
         "对应 CLI 动词实弹验证"
       ],
       "reads": [
-        "apps/server/src/plugins/utopinn-generate.js",
-        "apps/server/src/luker-dispatch/"
+        "apps/server/src/plugins/utopinn-generate.js"
       ],
       "touches": [
         "apps/server/src/plugins/utopinn-generate.js",
@@ -3146,12 +3144,7 @@
         "WS 断流/重连/双写防护有针对性用例"
       ],
       "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -3183,7 +3176,10 @@
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-19T05:40:27.051Z",
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-040",
@@ -3194,12 +3190,7 @@
       ],
       "done_when": "pnpm typecheck 0错 + vite build 过;旧视图不删;SPEC-DATA 标记齐全",
       "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -3233,7 +3224,10 @@
       "created_at": "2026-11-19T12:06:57.938553Z",
       "completed_at": null,
       "note": "status: active→open(复刻格在飞,验收后回 active/done)",
-      "doneAt": "2026-11-20"
+      "doneAt": "2026-11-20",
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-041",
@@ -3244,12 +3238,7 @@
       ],
       "done_when": "矩阵文档落库;每个 UI 区块能查到「该调哪个方法/还是 mock」",
       "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -3282,7 +3271,10 @@
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
       "completed_at": null,
-      "note": "status: active→done(矩阵+32方法/35路由交付,typecheck 0 错)"
+      "note": "status: active→done(矩阵+32方法/35路由交付,typecheck 0 错)",
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-042",
@@ -3294,10 +3286,6 @@
       "done_when": "设计文档+原型能跑通一张真卡(掌门卡)的一个真实 op:卡 JS 触发 th.* → 服务端落账",
       "reads": [
         "apps/cli/utopinn-cli.mjs"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -3357,7 +3345,10 @@
       "updated_at": "2026-11-20T01:51:10.525Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
       "completed_at": "2026-11-20T01:51:10.525Z",
-      "note": "status: active→open(设计档备齐,实现待排)"
+      "note": "status: active→open(设计档备齐,实现待排)",
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-043",
@@ -3368,12 +3359,7 @@
       ],
       "done_when": "diag 插件暴露 errors+logs+jobs+traces 四类数据面;CLI diag 动词族齐",
       "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
       "status": "done",
@@ -3433,7 +3419,10 @@
       ],
       "updated_at": "2026-11-20T01:50:33.886Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": "2026-11-20T01:50:33.886Z"
+      "completed_at": "2026-11-20T01:50:33.886Z",
+      "touches": [
+        "apps/cli/utopinn-cli.mjs"
+      ]
     },
     {
       "id": "TASK-044",
@@ -3475,15 +3464,14 @@
         ".loom/design/frontend-binding-matrix.md"
       ],
       "touches": [
-        "apps/server/src/plugins/utopinn-stats.js",
         "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/src/plugins/utopinn-library.js",
         ".loom/design/plugin-surface-forms.md"
       ],
       "implements": "",
-      "design_exemption": "",
+      "design_exemption": "修复型/余量任务,无独立设计面(依据已散见 v2-stack-decisions/plugin-domain-map)",
       "capability_hooks": [],
-      "capability_exemption": "",
+      "capability_exemption": "不依赖特定 capability 决策树",
       "integrity_version": 1,
       "covers": [],
       "status": "open",
@@ -3570,12 +3558,11 @@
       "reads": [
         ".loom/design/v2-stack-decisions.md",
         ".loom/design/cardapp-web-host.md",
+        ".loom/design/headless-cardapp-harness.md",
         ".loom/capabilities/sandboxed-card-apps/capability.md"
       ],
       "touches": [
-        "apps/server/src/plugins/utopinn-th.js",
-        "apps/server/src/card-runtime/",
-        "apps/web/src/components/panels/"
+        "apps/server/src/plugins/utopinn-th.js"
       ],
       "implementation_notes": [],
       "status": "open",
@@ -3654,7 +3641,6 @@
         "apps/server/src/plugins/utopinn-connection.js"
       ],
       "touches": [
-        "apps/web/src/",
         "apps/server/src/plugins/utopinn-connection.js"
       ],
       "implementation_notes": [],

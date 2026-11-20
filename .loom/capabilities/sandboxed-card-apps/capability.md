@@ -8,7 +8,7 @@
 
 ## Project scenario
 
-不可信卡HTML/JS:独立WebView/iframe沙箱+nonce白名单桥+CSP+shim降级
+卡面 HTML 应用沙箱宿主已落地:PanelBridge nonce 闸/白名单、card-runtime CSP/mounts、CLI headless 复用 wire 契约(用户拍板 2026-11-20)
 
 ## Decision tree
 

@@ -1,6 +1,8 @@
 # 对话渲染器 seam(conversationRenderer)
 
 > 状态:IA v3 认可(D-015)。对话呈现=可替换产品面;数据语义永远服务端唯一。
+> vs-V2: partially-stale
+<!-- V2 校准:落地形态=stage.form 贡献点(stagepack),renderer 槽零注册,prose/bubble 仅在 parked mobile -->
 
 ## 0. 第一约束
 

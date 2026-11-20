@@ -46,3 +46,4 @@
   - A: 插件 ctx.extend 注册 {id,name,Component?,manifest};宿主列表化可切换 → leads_to: V1 后生态
   - B: 渲染器写死在内核 → leads_to: 违背"插件强于我们"
 - output: 渲染器=plugin UI contribution 的一种;galgame/论坛体为社区观察项,需求验证后官方再做或插件实现
+- note(2026-11 落地对账): web 端 `renderer` 贡献槽至今零注册零消费——「形态切换」实际由 `stage.form` 贡献点承载(chat/novel/messenger/galgame,features/{chat,stagepack}.tsx);prose/bubble 两渲染器只活在 parked 的 apps/mobile(reader/ProseFlow+BubbleFlow),renderer 槽留作线协议词表不算缺口

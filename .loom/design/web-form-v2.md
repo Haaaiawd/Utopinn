@@ -3,6 +3,8 @@
 > 来源:深潜代理 df5e38ec(2026-11-04)。三路产出:竞品实测(全部带源)/实现体检(带文件路径)/v2 建议稿。
 > 基线:web-rp-form.md v1 拍板稿 + web-ia.md + web-visual-system.md,本稿深化不推翻。
 > 竞品来源:Janitor.AI changelog/docs、Character.AI support/blog、Chub docs+开源镜像 aichub、RisuAI deepwiki/源码、Agnaistic docs、SillyTavern docs/deepwiki、Marinara-Engine docs、ScyllaChat、Rin、Chronicler、Harpy。
+> vs-V2: reference
+<!-- 体检段为时点快照;剩余挂账=URL 路由/⌘K -->
 
 ## 一、生态收敛点(事实)
 

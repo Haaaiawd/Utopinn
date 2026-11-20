@@ -1,5 +1,8 @@
 # 导入导出中心设计(TASK-016)
 
+> vs-V2: reference
+<!-- 刀2 utopinn export 面未建,导出走 legacy -->
+
 ## 定位
 
 酒馆生态的流通单位:卡(png/json/charx/byaf)、世界书、预设、persona、

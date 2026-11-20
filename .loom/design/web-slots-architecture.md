@@ -6,6 +6,7 @@
 > 参照:dsh `packages/client/ui-slots`(槽注册表)、`ui-dockkit`
 > (纯引擎+React 表面两层)、`client/web`(Loader+BootManifest 插件树)、
 > `host/webserver`(路由即贡献的服务端同款)。
+> vs-V2: current
 
 ## 为什么
 

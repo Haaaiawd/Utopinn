@@ -1,11 +1,11 @@
 {
-  "status": "provisional",
+  "status": "confirmed",
   "title": "SillyTavern 引擎行为兼容方法论(移植策略/行为面清单/特征化测试)",
   "field": "legacy 引擎行为移植与特征化测试",
-  "scenario": "无规格遗产引擎移植:golden-diff先行,ctx-seam边界,全维度断言清单,分层副作用",
-  "confirmed_at": "",
+  "scenario": "无规格遗产引擎移植已实战验证:golden-diff 捕获/分级/KNOWN-GAP 容差挂账跑过多轮,仍是验收闸(用户拍板 2026-11-20)",
+  "confirmed_at": "2026-11-20T11:15:08.062Z",
   "created_at": "2026-11-02T08:51:52.013Z",
-  "updated_at": "2026-11-02T08:55:37.016Z",
-  "source": "agent",
-  "selected_at": "2026-11-02T08:55:37.016Z"
+  "updated_at": "2026-11-20T11:15:08.062Z",
+  "source": "human",
+  "selected_at": "2026-11-20T11:15:08.061Z"
 }

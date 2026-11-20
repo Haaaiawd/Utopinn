@@ -3,6 +3,8 @@
 - Kind: system
 - Status: frozen
 
+> vs-V2: current
+
 ## Responsibility in the whole
 
 把当前活在 `apps/server/public/scripts/`(jQuery/DOM 耦合,~30k+ 行)里的生成大脑——prompt 组装、世界书引擎、正则管线、宏/STscript、instruct 格式化、reasoning、变量系统——移植为 `packages/core` 的纯 TypeScript 库。服务端是唯一运行者;web/mobile 客户端只拿结果。这是整个重构里工作量最大、兼容风险最高的单点。
