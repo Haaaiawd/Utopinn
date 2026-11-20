@@ -115,6 +115,12 @@ const MAP = {
 
 export type IconName = keyof typeof MAP | 'persona' | 'branch' | 'compass' | 'bookmark' | 'flame';
 
+/** 运行时 icon 词表 —— 服务端贡献清单等外部字符串落成 IconName 前的
+ *  合法性校验面(未知名会让 <Icon> 解析不到组件而崩渲染)。 */
+export const ICON_NAMES: ReadonlySet<string> = new Set<string>([
+    ...Object.keys(MAP), 'persona', 'branch', 'compass', 'bookmark', 'flame',
+]);
+
 /** 品牌族:Utopinn 自家图标(assets/UtopinnIcons),同名键优先于 phosphor。
  *  双色留白规则:weight='duotone' → active=true 点亮 #FF6B5B 焦段;
  *  rail 选中态天然走 duotone,正好吃这条规则。 */
