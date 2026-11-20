@@ -219,7 +219,7 @@ export interface MarketPluginItem {
 export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
     { id: 'u-stage-novel', name: '小说体连续章节', icon: 'feather', category: 'Stage 形态', desc: '纯书排版、段落点选润色与伏笔目录面板。', installed: true, color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
     { id: 'u-stage-im', name: '微信多群聊私聊', icon: 'messages', category: 'Stage 形态', desc: '同世界观多群聊切换、未读红点与 NPC 态度卡。', installed: true, color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
-    { id: 'u-stage-vn', name: 'Galgame 视觉小说', icon: 'sparkles', category: 'Stage 形态', desc: '全屏背景、分支选项浮层与快速存读档。', installed: true, color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
+    { id: 'u-stage-vn', name: '剧场模式', icon: 'sparkles', category: 'Stage 形态', desc: '全屏背景、分支选项浮层与快速存读档。', installed: true, color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
     { id: 'u-panel-dice', name: 'TRPG 跑团骰子', icon: 'dice', category: '右栏面板', desc: '支持 COC/DND 检定公式并写入 MVU 变量。', installed: false, color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
     { id: 'u-panel-bgm', name: '场景 BGM 播放器', icon: 'music', category: '右栏面板', desc: '根据当前场景与情绪标签自动切换氛围音轨。', installed: false, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
     { id: 'u-tool-vector', name: '长篇记忆向量库', icon: 'brain', category: '实验性', desc: '针对 200+ 楼长存档自动摘要并按语义召回。', installed: false, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
@@ -229,7 +229,7 @@ export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
 export const MOCK_STAGE_SESSIONS: ChatSummary[] = [
     { id: 'st-novel', title: '小说连载稿', charDir: 'default_Seraphina', chatName: 'ember-city', group: 'ungrouped', updatedAt: '3h', stage: 'novel', defaultTabs: ['chapters'] },
     { id: 'st-msg', title: '微信多群聊', charDir: 'default_Seraphina', chatName: 'watch-group', group: 'ungrouped', updatedAt: '1d', stage: 'messenger', defaultTabs: ['channels'] },
-    { id: 'st-gal', title: '正殿夜话 (Gal)', charDir: 'default_Seraphina', chatName: 'hyacinth-route', group: 'ungrouped', updatedAt: '2d', stage: 'galgame', defaultTabs: [] },
+    { id: 'st-gal', title: '正殿夜话 (Gal)', charDir: 'default_Seraphina', chatName: 'hyacinth-route', group: 'ungrouped', updatedAt: '2d', stage: 'theater', defaultTabs: [] },
 ];
 
 /** MVU 变量面板种子(规范稿 s.mvu · 掌门线)。 */

@@ -1,11 +1,11 @@
-// feature:stagepack — 舞台形态注册(novel/messenger/galgame 三种形态)。
+// feature:stagepack — 舞台形态注册(novel/messenger/theater 三种形态)。
 // 形态体与聊天形态共享 StageFrame(stage-header/弹层/QR/composer/生成引擎),
 // 本文件只管形态内容;数据双轨:
 //   · 楼层轨 —— useStageEngine().msgs,真实数据(加载逻辑见 StageFrame);
 //   · 预演轨 —— stageData 种子,st-* 会话服务端不存(404 → 楼层空)时兜底,
 //     侧栏/场景签如实标注「预演」,不装作真数据。
-// galgame 另有「沉浸接管」壳层:激活即 portal 全幅覆盖(chrome 让位不卸载,
-// 退出即回)+ 真 Fullscreen/移动横屏锁(失败静默回落),详见 GalgameBody。
+// theater 另有「沉浸接管」壳层:激活即 portal 全幅覆盖(chrome 让位不卸载,
+// 退出即回)+ 真 Fullscreen/移动横屏锁(失败静默回落),详见 TheaterBody。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShell } from '../kernel/context';
@@ -410,7 +410,7 @@ function MessengerBody() {
 }
 
 /* =========================================================================
-   galgame —— 三件套:对话框(末楼 speaker)/ 立绘位 / 选项区
+   theater —— 三件套:对话框(末楼 speaker)/ 立绘位 / 选项区
    ========================================================================= */
 
 interface VnOption {
@@ -422,7 +422,7 @@ interface VnOption {
 }
 
 /** 未来协议钩位:generate 响应 choices 字段落进楼层 extra 后此处自动生效
- *  (服务端面 = TASK-044 galgame choices;形状 {text}[] 宽松解析)。 */
+ *  (服务端面 = TASK-044 theater choices;形状 {text}[] 宽松解析)。 */
 function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOption[] {
     const raw = m?.extra?.choices;
     if (!Array.isArray(raw)) return [];
@@ -434,9 +434,9 @@ function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOptio
         .filter((o): o is VnOption => o !== null);
 }
 
-/** galgame 形态 —— 壳层沉浸接管 + 内容层三件套。
+/** theater 形态 —— 壳层沉浸接管 + 内容层三件套。
  *
- *  壳层(本格新增):激活 galgame 即 portal「fixed inset-0 z-78」全幅覆盖 ——
+ *  壳层(本格新增):激活 theater 即 portal「fixed inset-0 z-78」全幅覆盖 ——
  *  rail/工作台/浮窗被压在下面(让位但不卸载,状态保留,退出即回);
  *  toast/弹窗/cmdk(z≥80)仍在上层,保留系统级逃生口。Chrome/shell 零改动。
  *  · 顶排:场景签 | 赏景(hideHud)+ 真全屏 ⛶ + 退出沉浸 ✕。
@@ -453,7 +453,7 @@ function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOptio
  *             无图 → 空槽/空位,不伪造立绘;
  *    选项区 = 末楼 extra.choices 钩位 → swipe 分支(点击直跳版) → 空态;
  *    背景层 = 末楼 extra.scene.bg 钩位 → 规范稿 vnBg 资产 → 挂图/无图落深空渐变。 */
-function GalgameBody() {
+function TheaterBody() {
     const { t } = useI18n();
     const s = useShell();
     const eng = useStageEngine();
@@ -747,7 +747,7 @@ function GalgameBody() {
 /* ——— 形态注册:全部套 StageFrame(规范稿四形态共享帧头+composer)——— */
 const NovelStage = () => <StageFrame><NovelBody /></StageFrame>;
 const MessengerStage = () => <StageFrame><MessengerBody /></StageFrame>;
-const GalgameStage = () => <StageFrame><GalgameBody /></StageFrame>;
+const TheaterStage = () => <StageFrame><TheaterBody /></StageFrame>;
 
 /* 域内词条 —— stagepack 专属键(壳词条归 shell feature;en 按约定回键名)。 */
 const zh: Record<string, string> = {
@@ -775,6 +775,6 @@ export const stagepackFeature: Feature = {
         ctx.locale('stagepack', { 'zh-CN': zh, en });
         ctx.add('stage.form', { kind: 'novel', order: 10, Component: NovelStage });
         ctx.add('stage.form', { kind: 'messenger', order: 10, Component: MessengerStage });
-        ctx.add('stage.form', { kind: 'galgame', order: 10, Component: GalgameStage });
+        ctx.add('stage.form', { kind: 'theater', order: 10, Component: TheaterStage });
     },
 };

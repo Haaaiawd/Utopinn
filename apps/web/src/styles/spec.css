@@ -237,7 +237,7 @@
 .composer-shell:focus-within { border-color: var(--brand); }
 
 .char-avatar-ring {
-    /* inline-flex:span 默认 inline 时宽高被忽略 —— galgame 里套在
+    /* inline-flex:span 默认 inline 时宽高被忽略 —— theater 里套在
        inline <span> 内就会还原成图片原尺寸(巨型立绘事故)。 */
     display: inline-flex;
     border-radius: 999px; overflow: hidden;

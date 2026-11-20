@@ -13,7 +13,7 @@ export const RAIL_VIEWS = ['home', 'chat', 'studio', 'plugins'] as const;
 export type RailId = (typeof RAIL_VIEWS)[number];
 
 /** 舞台形态 —— s.stage,聊天之外留给 stage 插件占位(utopinn 市场件 u-stage-*)。 */
-export type StageKind = 'chat' | 'novel' | 'messenger' | 'galgame' | (string & {});
+export type StageKind = 'chat' | 'novel' | 'messenger' | 'theater' | (string & {});
 
 /** Sidebar chat entry. `charDir`/`chatName` are the /api/utopinn/* call params. */
 export interface ChatSummary {

@@ -1,11 +1,11 @@
 // StageFrame —— 舞台级共享壳(规范稿 renderCenterColumn):
 //   stage-header | 离线 banner | 三弹层(ctx/slash/preset)| 形态体插槽 |
 //   QR 条(仅 chat 形态)| composer-shell。
-// stage.form 贡献件只渲形态内容(novel/messenger/galgame/chat 楼层列),
+// stage.form 贡献件只渲形态内容(novel/messenger/theater/chat 楼层列),
 // 帧头、输入流、生成写回、楼层操作引擎全归本帧 —— 与 ChatStage 同一份
 // 数据面(postGenerate/streamJob/appendUserMessage/patchChat/mvu),
 // 切形态不改协议语义;mock 路按规范稿 sendText 的 stage 分支回放
-// (chat→楼层 / messenger→频道 / novel→章末段 / galgame→vn.line)。
+// (chat→楼层 / messenger→频道 / novel→章末段 / theater→vn.line)。
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
@@ -68,7 +68,7 @@ export interface FloorOps {
     onRetry: (m: FloorMsg) => void;
     onTrace: (m: FloorMsg) => void;
     onContinue: () => void;
-    /** 绝对 swipe 跳转(galgame 分支选项等按 index 直跳,不再逐版翻页)。 */
+    /** 绝对 swipe 跳转(theater 分支选项等按 index 直跳,不再逐版翻页)。 */
     onSwipeTo: (m: FloorMsg, index: number) => void;
 }
 
@@ -462,7 +462,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setMsgs((prev) => [...prev, { id: --transientRef.current, role: 'assistant', name: '', content: '', timestamp: Date.now(), error }]);
 
     /* ——— 规范稿 sendText 的 stage 分支:mock 路把文本/回文送回形态数据。
-     *     novel/galgame 现以楼层轨优先渲染 —— mock 回文落成楼层,
+     *     novel/theater 现以楼层轨优先渲染 —— mock 回文落成楼层,
      *     章目录/对话框经推导自然更新;落进 stageData 种子会进不可见轨。 ——— */
     const mockStagePush = useCallback((kind: StageKind, text: string) => {
         if (kind === 'messenger') {
@@ -473,7 +473,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             });
             return;
         }
-        /* novel 的 user 楼渲成段间「指挥」注记,galgame 渲成玩家台词楼。 */
+        /* novel 的 user 楼渲成段间「指挥」注记,theater 渲成玩家台词楼。 */
         setMsgs((prev) => [...prev, mkMock('user', text)]);
     }, [s]);
 
@@ -486,12 +486,12 @@ export function StageFrame({ children }: { children: ReactNode }) {
             });
             return;
         }
-        /* chat/novel/galgame 统一回楼层:章目录按推导重分段,galgame 末楼换台词。 */
+        /* chat/novel/theater 统一回楼层:章目录按推导重分段,theater 末楼换台词。 */
         pushReply(reply);
     }, [s]);
 
     const mockReplyFor = (kind: StageKind) =>
-        kind === 'novel' ? MOCK_REPLY_NOVEL : kind === 'messenger' ? MOCK_REPLY_IM : kind === 'galgame' ? MOCK_REPLY_VN : MOCK_REPLY_CHAT;
+        kind === 'novel' ? MOCK_REPLY_NOVEL : kind === 'messenger' ? MOCK_REPLY_IM : kind === 'theater' ? MOCK_REPLY_VN : MOCK_REPLY_CHAT;
 
     /* ——— 生成写回(legacy save_decision 同构:除 impersonate/quiet 外,
      *     客户端写盘是常路,gen-id/命中末楼 ack 掉 awaiting_ack job,
@@ -947,7 +947,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 {menu === 'context' && <ContextPop onClose={() => setMenu('none')} />}
                 {menu === 'slash' && <SlashMenu onPick={onSlash} onClose={() => setMenu('none')} />}
                 {menu === 'preset' && <PresetPop onClose={() => setMenu('none')} />}
-                {/* 形态体插槽:chat 楼层列 / novel 章节 / messenger 频道 / galgame 场景 */}
+                {/* 形态体插槽:chat 楼层列 / novel 章节 / messenger 频道 / theater 场景 */}
                 {children}
                 {/* composer-shell:QR 条 + form p-3(textarea + 底行 /·token | 预设⌄·send) */}
                 <div className="shrink-0 px-4 pb-4 pt-1 sm:px-6">

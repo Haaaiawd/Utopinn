@@ -258,7 +258,7 @@
         "next": ""
       },
       "evidence": [
-        "tests/golden-diff/capture.sh <card> 一键跑通:隔离 Luker server + mockLLM + 原生 chromium(系统库 dpkg -x 自备)+ 显式 API 连接。已产出 5 份 golden:golden/default_Seraphina.golden.json(公开,8 msgs)与 golden-private/ 下 诡异修仙(4 msgs,constant WI 实注)/高中生活模拟(9 msgs)/废材教主(3 msgs,galgame 接管型)/Wilderness_Survival(8 msgs,92 条内嵌书物化进 worlds/ 后 WI 注入可见)。游戏公司老板.png 无卡数据(C2PA-only 的 GPT 生成图),标记跳过。",
+        "tests/golden-diff/capture.sh <card> 一键跑通:隔离 Luker server + mockLLM + 原生 chromium(系统库 dpkg -x 自备)+ 显式 API 连接。已产出 5 份 golden:golden/default_Seraphina.golden.json(公开,8 msgs)与 golden-private/ 下 诡异修仙(4 msgs,constant WI 实注)/高中生活模拟(9 msgs)/废材教主(3 msgs,theater 接管型)/Wilderness_Survival(8 msgs,92 条内嵌书物化进 worlds/ 后 WI 注入可见)。游戏公司老板.png 无卡数据(C2PA-only 的 GPT 生成图),标记跳过。",
         "diff-golden.mjs 自比对 PASS(8/8 msgs 零差异);扰动注入(改 msg[2] 内容 / splice 注入新消息)均正确报 FATAL,白名单归一化(时间戳/gen_id/空白)生效。",
         "requestInspector 双保险:golden 同时含 mockLLM wireRequests 与 inspector.requestInspector[0].fullMessages+wireRequest;cardBook 字段随 golden 落盘供 WI 轨迹重建。",
         {
@@ -1122,7 +1122,7 @@
           "evidence": "待跑"
         },
         {
-          "criterion": "gal-*.js 精读结论:galgame 是渲染器还是面板边界明确",
+          "criterion": "gal-*.js 精读结论:theater 是渲染器还是面板边界明确",
           "verify_by": "loom check + 测试",
           "evidence": "待跑"
         }
@@ -1130,7 +1130,7 @@
       "done_when": [],
       "boundaries": [
         "渲染器只做呈现,不碰消息语义",
-        "galgame/论坛体先调研后实现,不挤V1"
+        "theater/论坛体先调研后实现,不挤V1"
       ],
       "reads": [
         ".loom/design/conversation-renderers.md",
@@ -1144,7 +1144,7 @@
         "completed": [
           "协议类型进 packages/protocol/renderers.ts",
           "registry seam 签名(conversation-renderers.md §4)",
-          "R1-R5 收账(§7):论坛=纯皮/galgame=宿主插件/沙箱渲染器排除/bubble 细节/流式边界",
+          "R1-R5 收账(§7):论坛=纯皮/theater=宿主插件/沙箱渲染器排除/bubble 细节/流式边界",
           "形态判定 §6(输入划界)"
         ],
         "current": "done",
@@ -1155,7 +1155,7 @@
       "updated_at": "2026-11-03T09:52:13.053Z",
       "integrity_version": 1,
       "id": "TASK-015",
-      "title": "conversationRenderer seam:契约定稿+形态调研(galgame/论坛体)",
+      "title": "conversationRenderer seam:契约定稿+形态调研(theater/论坛体)",
       "outcome": "ConversationViewProps 协议类型 + renderer registry seam 签名 + R1-R5 调研笔记(gal-*.js精读/论坛体映射/渲染器沙箱路线) + hello-renderer 冒烟计划",
       "depends_on": [
         "TASK-012"
@@ -3426,8 +3426,8 @@
     },
     {
       "id": "TASK-044",
-      "title": "形态×插件面:novel 章目录 + galgame 三件套(余量)",
-      "outcome": "四种舞台形态与统计面所需的服务端/插件面按 plugin-surface-forms.md 规划落地:utopinn-stats 聚合视图(job perf/trace+diag inject 事件),novel 章目录 sidecar+range regen,galgame choices 字段+assets 面+scene sidecar,ui.contrib manifest(末位)。",
+      "title": "形态×插件面:novel 章目录 + theater 三件套(余量)",
+      "outcome": "四种舞台形态与统计面所需的服务端/插件面按 plugin-surface-forms.md 规划落地:utopinn-stats 聚合视图(job perf/trace+diag inject 事件),novel 章目录 sidecar+range regen,theater choices 字段+assets 面+scene sidecar,ui.contrib manifest(末位)。",
       "acceptance": [
         {
           "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
@@ -3445,15 +3445,15 @@
           "evidence": "前端侧:stage.form novel 已带楼→章推导目录(详见任务级 evidence);sidecar/聚合视图/range regen 服务端面未动"
         },
         {
-          "criterion": "galgame: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+galgame sidecar ns 约定",
+          "criterion": "theater: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+theater sidecar ns 约定",
           "verify_by": "协议类型+实弹",
-          "evidence": "前端侧:galgame 三件套骨架+extra.choices 钩位已备(详见任务级 evidence);choices 字段/assets 清单/scene sidecar 服务端面未动"
+          "evidence": "前端侧:theater 三件套骨架+extra.choices 钩位已备(详见任务级 evidence);choices 字段/assets 清单/scene sidecar 服务端面未动"
         }
       ],
       "done_when": [],
       "boundaries": [
         "ui.contrib manifest 不塞组件,只塞面板类型+数据路由+图标声明",
-        "形态未定稿前不动 galgame",
+        "形态未定稿前不动 theater",
         "统计面只读不另起存储"
       ],
       "depends_on": [
@@ -3479,13 +3479,13 @@
       "status": "open",
       "progress": {
         "completed": [
-          "前端形态骨架:novel 章目录(楼→章推导+点章定位)+ galgame 三件套(对话框/立绘位/选项区)",
-          "galgame 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 左右立绘位/通栏对话条"
+          "前端形态骨架:novel 章目录(楼→章推导+点章定位)+ theater 三件套(对话框/立绘位/选项区)",
+          "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 左右立绘位/通栏对话条"
         ],
-        "current": "前端骨架+galgame 沉浸壳已交,双轨数据(楼层轨优先,种子轨兜底标注)",
-        "next": "服务端面:chapters sidecar ns+GET 聚合+regen --range;generate choices 字段+assets 清单+galgame sidecar(scene.bg 钩位已备)(另一格)"
+        "current": "前端骨架+theater 沉浸壳已交,双轨数据(楼层轨优先,种子轨兜底标注)",
+        "next": "服务端面:chapters sidecar ns+GET 聚合+regen --range;generate choices 字段+assets 清单+theater sidecar(scene.bg 钩位已备)(另一格)"
       },
-      "evidence": "已完成:stats 并入 utopinn-diag(插件合并 27d1ceb)、ui.contrib manifest 已被前端水合消费(b30ec08)。2026-11-20 前端形态骨架落地(收窄口径):StageFrame 放开非 chat 形态楼层加载(getChat 照常,404 对形态会话安静落空→预演种子兜底不弹失踪;真会话 stage 绑定落地即得真楼层),FloorOps 增 onSwipeTo 绝对跳版(与 swipe ‹› 共用 swipeTo),StageEngine 增 send(形态内按钮等效 composer)+advance(VN 推进:normal 生成下一拍,不追 user 楼)。novel:deriveChapters 三级推导——system 楼带正文=分章标记(首行按「第N章/Chapter N」拆称谓,标记前楼层归序章)、无标记>4 楼按 4 楼/章分段、≤4 单章兜底;章目录 ≥sm 常驻侧栏/移动抽屉,滚动跟随高亮+点章 scrollIntoView 定位,栏底如实标注推导策略(分章标记/自动分段/单章/预演种子/暂无章节);user 楼渲为段间「指挥」注记,错误楼独立红卡露面(非 chat 形态此前失败不可见)。galgame 三件套:对话框=末楼 speaker 名签+正文(流式光标,user 楼带「你」侧标)+推进钩位(▶/点条→eng.advance),立绘位=会话卡图/无图空槽(assets 面未接诚实占位),选项区=extra.choices 钩位→swipe 分支(onSwipeTo 直跳,含「再生成一支」)→空态;零楼层落 vn 种子,场景签带「预演」徽标。mock 回路同步:novel/galgame 的 mockStagePush/Reply 改落楼层轨(离线演示链不断;messenger 不动)。2026-11-20 追加 galgame 沉浸壳层:激活形态即 createPortal「fixed inset-0 z-[78]」全幅覆盖——rail/工作台/浮窗被压在下层(让位不卸载,状态保留,退出即回;toast/弹窗/cmdk z≥80 仍在上层作逃生口),Chrome.tsx/shell 零改动(覆盖即让位,无需 stageImmersive 字段)。背景层=深空渐变托底+末楼 extra.scene.bg 钩位→规范稿 vnBg 资产,挂图/无图只剩渐变(不伪造场景图);立绘层左右位=左主卡立绘(玩家台词楼压暗 0.5)+右当前人设头像(/User%20Avatars/<file>,仅玩家楼登场,无人设/挂图空位);对话条=底锚半透明通栏(沉浸态 px-4/8 满幅,舞台内仍是 max-w-640 卡)。真·Fullscreen=documentElement.requestFullscreen(含 webkit 前缀回退),fullscreenchange 同步钮态,退出沉浸/离场/换形态自动 exitFullscreen+orientation.unlock;无手势/旧内核拒绝→静默回落(覆盖层视觉已等同全屏)。移动横屏:进入/点全屏时尝试 orientation.lock('landscape')(lock 面防御性取值,TS lib 无声明),失败或竖屏→「旋转设备」提示层(top-14 pill,可关,旋转至横屏自消);布局 landscape 优先一套,竖屏同结构缩小不做第二套。实测:npx tsc --noEmit 全绿(apps/web);deriveChapters 冒烟 A–G 七场景(single/markers 称谓拆分/segmented 4-4-2/错误楼滤除/尾标记空章/流式末段光标/中英称谓)输出符合预期;vite build 通过。服务端余量未动:chapters sidecar+GET+regen --range、generate choices+assets 清单+galgame sidecar(scene.bg/extra.choices 前端钩位已备,服务端落字段即自动生效)。",
+      "evidence": "已完成:stats 并入 utopinn-diag(插件合并 27d1ceb)、ui.contrib manifest 已被前端水合消费(b30ec08)。2026-11-20 前端形态骨架落地(收窄口径):StageFrame 放开非 chat 形态楼层加载(getChat 照常,404 对形态会话安静落空→预演种子兜底不弹失踪;真会话 stage 绑定落地即得真楼层),FloorOps 增 onSwipeTo 绝对跳版(与 swipe ‹› 共用 swipeTo),StageEngine 增 send(形态内按钮等效 composer)+advance(VN 推进:normal 生成下一拍,不追 user 楼)。novel:deriveChapters 三级推导——system 楼带正文=分章标记(首行按「第N章/Chapter N」拆称谓,标记前楼层归序章)、无标记>4 楼按 4 楼/章分段、≤4 单章兜底;章目录 ≥sm 常驻侧栏/移动抽屉,滚动跟随高亮+点章 scrollIntoView 定位,栏底如实标注推导策略(分章标记/自动分段/单章/预演种子/暂无章节);user 楼渲为段间「指挥」注记,错误楼独立红卡露面(非 chat 形态此前失败不可见)。theater 三件套:对话框=末楼 speaker 名签+正文(流式光标,user 楼带「你」侧标)+推进钩位(▶/点条→eng.advance),立绘位=会话卡图/无图空槽(assets 面未接诚实占位),选项区=extra.choices 钩位→swipe 分支(onSwipeTo 直跳,含「再生成一支」)→空态;零楼层落 vn 种子,场景签带「预演」徽标。mock 回路同步:novel/theater 的 mockStagePush/Reply 改落楼层轨(离线演示链不断;messenger 不动)。2026-11-20 追加 theater 沉浸壳层:激活形态即 createPortal「fixed inset-0 z-[78]」全幅覆盖——rail/工作台/浮窗被压在下层(让位不卸载,状态保留,退出即回;toast/弹窗/cmdk z≥80 仍在上层作逃生口),Chrome.tsx/shell 零改动(覆盖即让位,无需 stageImmersive 字段)。背景层=深空渐变托底+末楼 extra.scene.bg 钩位→规范稿 vnBg 资产,挂图/无图只剩渐变(不伪造场景图);立绘层左右位=左主卡立绘(玩家台词楼压暗 0.5)+右当前人设头像(/User%20Avatars/<file>,仅玩家楼登场,无人设/挂图空位);对话条=底锚半透明通栏(沉浸态 px-4/8 满幅,舞台内仍是 max-w-640 卡)。真·Fullscreen=documentElement.requestFullscreen(含 webkit 前缀回退),fullscreenchange 同步钮态,退出沉浸/离场/换形态自动 exitFullscreen+orientation.unlock;无手势/旧内核拒绝→静默回落(覆盖层视觉已等同全屏)。移动横屏:进入/点全屏时尝试 orientation.lock('landscape')(lock 面防御性取值,TS lib 无声明),失败或竖屏→「旋转设备」提示层(top-14 pill,可关,旋转至横屏自消);布局 landscape 优先一套,竖屏同结构缩小不做第二套。实测:npx tsc --noEmit 全绿(apps/web);deriveChapters 冒烟 A–G 七场景(single/markers 称谓拆分/segmented 4-4-2/错误楼滤除/尾标记空章/流式末段光标/中英称谓)输出符合预期;vite build 通过。服务端余量未动:chapters sidecar+GET+regen --range、generate choices+assets 清单+theater sidecar(scene.bg/extra.choices 前端钩位已备,服务端落字段即自动生效)。",
       "created_at": "2026-11-19T13:46:57.022Z",
       "updated_at": "2026-11-20T03:10:00.000Z"
     },

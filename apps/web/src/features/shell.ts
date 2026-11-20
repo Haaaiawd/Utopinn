@@ -48,7 +48,7 @@ const zh: Record<string, string> = {
     /* ctbar 胶囊 + 弹层 */
     'ctx.capsule': '上下文', 'ctx.title': '世界书与上下文栈', 'ctx.bound': '绑定形态',
     'ctx.globalLore': '全局常驻 JSON 书', 'ctx.openPreset': '在右侧打开「预设与模型」精细调参',
-    'stage.label.chat': '纯文字卡', 'stage.label.novel': '小说形态', 'stage.label.messenger': '群聊频道', 'stage.label.galgame': 'Galgame',
+    'stage.label.chat': '纯文字卡', 'stage.label.novel': '小说形态', 'stage.label.messenger': '群聊频道', 'stage.label.theater': '剧场模式',
     'novel.polish': '润色此段', 'novel.polish.stub': '段落润色走 composer 指令流 —— 此处先占位',
     'vn.hideHud': '纯赏景', 'vn.showDialog': '显示对话',
     'slash.continue': '继续续写', 'slash.regen': '重新生成上一楼', 'slash.impersonate': '扮演用户代写',
@@ -57,7 +57,7 @@ const zh: Record<string, string> = {
     'composer.ph.chat': '输入行动或台词,点 / 呼出斜杠指令…',
     'composer.ph.novel': '指挥 AI 润色段落或续写下一章…',
     'composer.ph.messenger': '发送群聊或私聊消息…',
-    'composer.ph.galgame': '自由输入台词打破分支…',
+    'composer.ph.theater': '自由输入台词打破分支…',
     'chat.none': '未选会话', 'chat.persona': ' Persona',
     'chat.pick.title': '选择一个会话', 'chat.pick.desc': '从左侧会话列表挑一段对话,或新建会话开始',
     'chat.pick.btn': '选择会话', 'home.hero': '继续你的故事',

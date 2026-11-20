@@ -51,7 +51,7 @@ export interface SidebarContribution {
 }
 
 /** 舞台形态贡献:ChatSummary.stage → 中央区内容组件。
- *  'chat' 由 chat feature 兜底注册;novel/messenger/galgame 等
+ *  'chat' 由 chat feature 兜底注册;novel/messenger/theater 等
  *  归 stage 插件 feature(stagepack)注册 —— 壳只认 kind 字符串。 */
 export interface StageFormContribution {
     kind: StageKind;
