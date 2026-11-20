@@ -74,24 +74,47 @@ export function useRemote<T>(key: string | null, load: () => Promise<T>): Remote
     return { ...state, reload: useCallback(() => run(true), [run]) };
 }
 
-/** 引导空态:无 ctx(未选会话)或真·空数据共用,icon + 一行话,不装假。 */
-export function PanelEmpty({ icon, children }: { icon: IconName; children: ReactNode }) {
+/** 引导空态(规范稿 renderEmptyState L1122-1129):44px 边框图标盒 +
+ *  13.5 medium 标题 + 12px muted 描述(≤260px);无 ctx 或真·空数据共用,不装假。 */
+export function PanelEmpty({ icon, children, desc, action }: {
+    icon: IconName; children: ReactNode; desc?: ReactNode;
+    action?: { label: string; onClick: () => void };
+}) {
     return (
-        <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-2.5 p-6 text-center">
-            <Icon name={icon} size={20} className="text-[color:var(--fg-faint)]" />
-            <div className="text-[11.5px] leading-relaxed text-[color:var(--fg-faint)]">{children}</div>
+        <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px]" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--fg-muted)' }}>
+                <Icon name={icon} size={20} />
+            </div>
+            <div className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{children}</div>
+            {desc && <div className="mt-1 max-w-[260px] text-[12px] leading-relaxed text-[color:var(--fg-muted)]">{desc}</div>}
+            {action && (
+                <button
+                    className="mt-4 h-8 rounded-lg px-3.5 text-[12px] font-medium transition-colors hover:bg-[color:var(--bg-active)]"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--fg-primary)' }}
+                    onClick={action.onClick}
+                >
+                    {action.label}
+                </button>
+            )}
         </div>
     );
 }
 
-/** 取数失败态:错误原文 + 重试 —— 诚实路径,不吞错不降级成假数据。 */
+/** 取数失败态:同款图标盒 + mono 错误原文 + 重试 —— 诚实路径,不吞错不降级成假数据。 */
 export function PanelError({ error, onRetry }: { error: string; onRetry: () => void }) {
     const { t } = useI18n();
     return (
-        <div className="flex h-full min-h-[160px] flex-col items-center justify-center gap-2.5 p-6 text-center">
-            <Icon name="warning" size={18} className="text-[color:var(--fg-faint)]" />
-            <div className="max-w-full break-all font-mono-ui text-[10.5px] leading-relaxed text-[color:var(--fg-faint)]">{error}</div>
-            <button className="ghost-btn h-6 px-2.5 text-[10.5px]" onClick={onRetry}>{t('panel.retry')}</button>
+        <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
+            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px]" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--status-danger)' }}>
+                <Icon name="warning" size={20} />
+            </div>
+            <div className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('panel.loadFailed')}</div>
+            <div className="mt-1.5 max-w-[280px] break-all font-mono-ui text-[10.5px] leading-relaxed text-[color:var(--fg-muted)]">{error}</div>
+            <button
+                className="mt-4 h-8 rounded-lg px-3.5 text-[12px] font-medium transition-colors hover:bg-[color:var(--bg-active)]"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--fg-primary)' }}
+                onClick={onRetry}
+            >{t('panel.retry')}</button>
         </div>
     );
 }

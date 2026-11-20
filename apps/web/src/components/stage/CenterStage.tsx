@@ -29,6 +29,7 @@ import {
     type ChatPatchOp, type FloorMsg, type GenerateBody, type GenerateVerb,
 } from '../../api/chats';
 import { ApiError, apiFetch, apiPost } from '../../api/client';
+import { charImageUrl } from '../../api/characters';
 import { MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_IMPERSONATE_DRAFT } from '../../api/mock';
 import { diagTraceParams } from '../panels/DiagPanel';
 import type { ChatSummary } from '../../types';
@@ -55,22 +56,54 @@ export function CenterStage() {
 
 /* ——— 规范稿 ctbar 三弹层 ——— */
 
+/** 规范稿 renderContextPopover:暗幕 + top-12 左上锚卡(全局书 sh-switch 组
+ *  + 「管理」→ studio global + 「右侧打开预设与模型」→ preset panel)。 */
 function ContextPop({ onClose }: { onClose: () => void }) {
     const { t } = useI18n();
     const s = useShell();
     return (
-        <>
-            <div className="fixed inset-0 z-[29]" onClick={onClose} />
-            <div className="pop-in absolute bottom-full left-0 z-[30] mb-2 w-[248px] rounded-[12px] p-1.5" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}>
-                <div className="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('ctx.title')}</div>
-                {s.globalLore.map((g) => (
-                    <button key={g.id} className="inset-row-btn flex w-full items-center justify-between rounded-md px-2 py-[7px] text-[11.5px]" onClick={() => s.toggleGlobalLore(g.id)}>
-                        <span className="min-w-0 truncate text-[color:var(--fg-secondary)]">{g.name}</span>
-                        <span className="shrink-0 font-mono-ui text-[9px]" style={{ color: g.enabled ? 'var(--status-ok)' : 'var(--fg-faint)' }}>{g.enabled ? `${g.tokens}t` : 'off'}</span>
-                    </button>
-                ))}
+        <div className="absolute inset-0 z-40" style={{ background: 'rgba(0,0,0,0.34)' }} onClick={onClose}>
+            <div
+                className="pop-in absolute left-3 right-3 top-12 space-y-3.5 rounded-2xl p-4 sm:left-4 sm:right-auto sm:w-[390px]"
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between">
+                    <div>
+                        <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('ctx.title')}</div>
+                        <div className="mt-0.5 text-[11px] text-[color:var(--fg-muted)]">{t('ctx.bound')}:{t(`stage.label.${s.chat?.stage ?? 'chat'}`)}</div>
+                    </div>
+                    <button className="ghost-btn h-7 w-7" onClick={onClose}><Icon name="x" size={15} /></button>
+                </div>
+                <div className="space-y-1.5">
+                    <div className="flex items-center justify-between px-0.5 text-[11px] text-[color:var(--fg-muted)]">
+                        <span>{t('ctx.globalLore')}</span>
+                        <button className="transition-colors hover:text-[color:var(--fg-primary)]" onClick={() => { onClose(); s.setView('studio'); s.setStudioNav('global'); }}>{t('tree.manage')}</button>
+                    </div>
+                    <div className="inset-group">
+                        {s.globalLore.map((g) => (
+                            <div key={g.id} className="inset-row">
+                                <div className="min-w-0">
+                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{g.name}</div>
+                                    <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{g.desc}</div>
+                                </div>
+                                <button className="sh-switch" data-checked={g.enabled} onClick={() => s.toggleGlobalLore(g.id)}>
+                                    <span className="sh-switch-thumb" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+                <button
+                    className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-[12px] transition-colors hover:bg-[color:var(--bg-surface-hover)]"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    onClick={() => { onClose(); s.openPanel('preset'); }}
+                >
+                    <span className="flex items-center gap-2"><Icon name="sliders" size={15} /><span>{t('ctx.openPreset')}</span></span>
+                    <span className="text-[color:var(--fg-muted)]">›</span>
+                </button>
             </div>
-        </>
+        </div>
     );
 }
 
@@ -85,16 +118,20 @@ function SlashMenu({ onPick, onClose }: { onPick: (key: string) => void; onClose
         { key: 'attach', icon: 'paperclip', label: t('slash.attach'), desc: t('slash.attach.desc'), slash: '/attach', badge: t('slash.attach.badge') },
     ];
     return (
-        <>
-            <div className="fixed inset-0 z-[29]" onClick={onClose} />
-            <div className="pop-in absolute bottom-full left-0 z-[30] mb-2 w-[288px] max-w-[calc(100%-32px)] rounded-[12px] p-1.5" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}>
+        /* 规范稿 renderComposerCommandMenu:透明幕 + left-4/sm:left-6 锚,bottom 随 QR 条抬升 */
+        <div className="absolute inset-0 z-30" onClick={onClose}>
+            <div
+                className="pop-in absolute left-4 w-[288px] max-w-[calc(100%-32px)] space-y-0.5 rounded-2xl p-1.5 sm:left-6"
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--composer-pop-bottom, 94px)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="flex items-center justify-between px-2.5 py-1.5 text-[10.5px] font-medium text-[color:var(--fg-muted)]">
                     <span>{t('slash.menu.title')}</span><span className="font-mono-ui">/ commands</span>
                 </div>
                 {cmds.map((c) => (
                     <button
                         key={c.key}
-                        className="inset-row-btn flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-left"
+                        className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]"
                         style={c.badge ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
                         onClick={() => { if (!c.badge) onPick(c.key); }}
                         title={c.badge ? `${c.slash} · ${c.badge}` : c.slash}
@@ -112,58 +149,90 @@ function SlashMenu({ onPick, onClose }: { onPick: (key: string) => void; onClose
                     </button>
                 ))}
             </div>
-        </>
+        </div>
     );
 }
 
+/** 规范稿 renderPresetPopover:right-6 bottom-锚 w-[352px],头行 + 双
+ *  sh-select(model|preset)+ inset-group 四滑杆 + prompt blocks sh-switch。 */
 function PresetPop({ onClose }: { onClose: () => void }) {
     const { t } = useI18n();
     const s = useShell();
-    const preset = s.presets.find((x) => x.id === s.activePresetId);
-    const model = s.models.find((m) => m.id === s.activeModel);
+    const pp = s.presetParams;
+    const sliders: { k: 'temp' | 'topP' | 'ctxLen' | 'maxReply'; label: string; min: number; max: number; step: number; fmt: (v: number) => string }[] = [
+        { k: 'temp', label: t('param.temp'), min: 0, max: 1.5, step: 0.05, fmt: (v) => v.toFixed(2) },
+        { k: 'topP', label: t('param.topP'), min: 0.1, max: 1, step: 0.02, fmt: (v) => v.toFixed(2) },
+        { k: 'ctxLen', label: t('param.ctxLen'), min: 16000, max: 200000, step: 8000, fmt: (v) => v.toLocaleString() },
+        { k: 'maxReply', label: t('param.maxReply'), min: 1024, max: 16384, step: 1024, fmt: (v) => String(v) },
+    ];
     return (
-        <>
-            <div className="fixed inset-0 z-[29]" onClick={onClose} />
-            <div className="pop-in absolute bottom-full right-0 z-[30] mb-2 w-[252px] rounded-[12px] p-3" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('panel.preset.preset')}</div>
-                <div className="relative mb-2">
-                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
-                        <span className="truncate font-mono-ui text-[11px]">{preset?.id ?? '—'}</span>
-                        <Icon name="chevronDown" size={11} className="text-[color:var(--fg-faint)]" />
-                    </button>
-                    {s.openDropdown === 'preset' && (
-                        <div className="sh-select-menu pop-in">
-                            {s.presets.map((x) => (
-                                <button key={x.id} className="inset-row-btn flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[11px]" onClick={() => { s.pickPreset(x.id); s.setOpenDropdown(null); }}>
-                                    <span className="truncate font-mono-ui">{x.id}</span>
-                                    {x.id === s.activePresetId && <Icon name="check" size={11} className="text-[color:var(--brand)]" />}
-                                </button>
-                            ))}
-                        </div>
-                    )}
+        <div className="absolute inset-0 z-30" onClick={onClose}>
+            <div
+                className="pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-3 z-40 flex max-h-[72vh] w-[352px] max-w-[calc(100%-24px)] flex-col overflow-hidden rounded-2xl sm:right-6"
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom right' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex h-11 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
+                    <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('composer.presetModel')}</span>
+                    <button type="button" className="ghost-btn h-7 w-7" onClick={onClose}><Icon name="x" size={15} /></button>
                 </div>
-                <div className="mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('panel.preset.model')}</div>
-                <div className="relative">
-                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')}>
-                        <span className="truncate font-mono-ui text-[11px]">{model?.short ?? '—'}</span>
-                        <Icon name="chevronDown" size={11} className="text-[color:var(--fg-faint)]" />
-                    </button>
-                    {s.openDropdown === 'model' && (
-                        <div className="sh-select-menu pop-in">
-                            {s.models.map((m) => (
-                                <button key={m.id} className="inset-row-btn flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[11px]" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
-                                    <span className="truncate font-mono-ui">{m.short}</span>
-                                    {m.id === s.activeModel && <Icon name="check" size={11} className="text-[color:var(--brand)]" />}
-                                </button>
-                            ))}
+                <div className="space-y-3.5 overflow-y-auto p-4">
+                    <div className="grid grid-cols-2 gap-2">
+                        <div className="relative min-w-0">
+                            <button type="button" className="sh-select-trigger" title={t('panel.preset.model')} onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')}>
+                                <span className="truncate font-mono-ui text-[11.5px]">{s.models.find((m) => m.id === s.activeModel)?.short ?? '—'}</span>
+                                <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
+                            </button>
+                            {s.openDropdown === 'model' && (
+                                <div className="sh-select-menu">
+                                    {s.models.map((m) => (
+                                        <button key={m.id} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
+                                            <span><span className="block font-mono-ui text-[12px]">{m.id}</span><span className="block text-[10px] text-[color:var(--fg-muted)]">{m.provider} · {m.ctx}</span></span>
+                                            {m.id === s.activeModel && <Icon name="check" size={13} className="text-[color:var(--brand)]" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    )}
+                        <div className="relative min-w-0">
+                            <button type="button" className="sh-select-trigger" title={t('panel.preset.preset')} onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
+                                <span className="truncate font-mono-ui text-[11.5px]">{s.activePresetId.replace(/\.json$/i, '')}</span>
+                                <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
+                            </button>
+                            {s.openDropdown === 'preset' && (
+                                <div className="sh-select-menu">
+                                    {s.presets.map((p) => (
+                                        <button key={p.id} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.pickPreset(p.id); s.setOpenDropdown(null); }}>
+                                            <span><span className="block font-mono-ui text-[12px]">{p.id}</span><span className="block font-mono-ui text-[10px] text-[color:var(--fg-muted)]">T {p.temp} · TopP {p.topP} · {p.maxReply} tok</span></span>
+                                            {p.id === s.activePresetId && <Icon name="check" size={13} className="text-[color:var(--brand)]" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="inset-group">
+                        {sliders.map((sl) => (
+                            <div key={sl.k} className="inset-row flex-col items-stretch gap-1 py-2.5">
+                                <div className="flex justify-between text-[11.5px]">
+                                    <span className="text-[color:var(--fg-secondary)]">{sl.label}</span>
+                                    <span className="font-mono-ui">{sl.fmt(pp[sl.k])}</span>
+                                </div>
+                                <input type="range" min={sl.min} max={sl.max} step={sl.step} value={pp[sl.k]} className="h-1.5 w-full" onChange={(e) => s.setPresetParam(sl.k, Number(e.target.value))} />
+                            </div>
+                        ))}
+                    </div>
+                    <div className="inset-group">
+                        {pp.blocks.map((b) => (
+                            <div key={b.id} className="inset-row py-2">
+                                <span className="truncate text-[12px] text-[color:var(--fg-primary)]">{b.name}</span>
+                                <button type="button" className="sh-switch" data-checked={b.enabled} onClick={() => s.togglePresetBlock(b.id)}><span className="sh-switch-thumb" /></button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
-                <button className="ghost-btn mt-2 w-full justify-center rounded-md py-1.5 text-[11px] text-[color:var(--fg-muted)]" onClick={() => { onClose(); s.openPanel('preset'); }}>
-                    {t('panel.preset.more')} →
-                </button>
             </div>
-        </>
+        </div>
     );
 }
 
@@ -184,18 +253,32 @@ interface FloorOps {
     onContinue: () => void;
 }
 
-/* ——— 消息泡(规范稿:assistant=头像列+正文列,ops 条在正文下;user=右列泡) ——— */
+/* ——— 消息泡(规范稿 renderStageContent chat 分支:
+ *     assistant=article gap-3.5 + w-9 头像环 + ops 条(左 swipe/copy/edit/del/回滚,
+ *     右 deltas mono 芯);user=右列 rounded-2xl bg-user-bubble)——— */
+function StageAvatar({ name }: { name: string }) {
+    const s = useShell();
+    const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
+    const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    return (
+        <span className="char-avatar-ring mt-0.5 h-9 w-9 shrink-0">
+            <img src={src} alt={name} className="h-full w-full object-cover" />
+        </span>
+    );
+}
+
 function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
     const { t } = useI18n();
     const s = useShell();
     const [thinkOpen, setThinkOpen] = useState(false);
     const isUser = m.role === 'user';
-    const name = m.name || (isUser ? 'haa' : (s.chat ? (s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir) : 'Seraphina'));
+    /* 规范稿 sender = 卡名 · 线名合成;m.name 有值(真 char 名)优先 */
+    const name = m.name || (isUser ? 'haa' : (s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : 'Seraphina'));
     const time = typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? new Date(m.timestamp).toTimeString().slice(0, 5) : '';
     if (isUser) {
         return (
-            <div className="group/msg mx-auto flex w-full max-w-[680px] flex-col items-end px-1 py-2">
-                <div className="max-w-[78%] rounded-[12px] px-3.5 py-2.5" style={{ background: 'var(--bg-surface-2, var(--bg-surface))', border: '1px solid var(--border-subtle)', boxShadow: 'var(--shadow-card)' }}>
+            <div className="group/msg flex flex-col items-end">
+                <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed" style={{ background: 'var(--bg-user-bubble)' }}>
                     {ops.editing?.id === m.id ? (
                         <div className="space-y-2">
                             <textarea
@@ -216,9 +299,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                             </div>
                         </div>
                     ) : (
-                        <div className="chat-body-text whitespace-pre-wrap text-[color:var(--fg-primary)]" style={{ fontSize: s.chatSettings.fontSize }}>
-                            {m.displayContent ?? m.content}
-                        </div>
+                        <div className="whitespace-pre-line">{m.displayContent ?? m.content}</div>
                     )}
                 </div>
                 <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
@@ -237,24 +318,28 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
     const swipeCount = m.swipes?.length ?? 0;
     const swipeIdx = m.activeSwipe ?? 0;
     const showOps = !m.streaming && !m.error;
+    const tOpen = s.chatSettings.autoExpandThink || thinkOpen;
+    const receipts = (m.receipts ?? []).map((r) => r.summary).filter((x): x is string => !!x);
     return (
-        <article className="group/msg mx-auto flex w-full max-w-[680px] items-start gap-3 px-1 py-3">
-            <span className="char-avatar-ring mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center text-[11px] font-semibold" style={{ background: 'linear-gradient(135deg,#4a6a8a,#2a3a4a)', color: 'var(--fg-primary)' }}>
-                {name[0]}
-            </span>
-            <div className="min-w-0 flex-1">
-                <div className="mb-1.5 flex items-center gap-2">
-                    <span className="text-[11.5px] font-medium text-[color:var(--fg-primary)]">{name}</span>
-                    {s.chatSettings.showFloorNum && <span className="font-mono-ui text-[9px] text-[color:var(--fg-faint)]">#{idx + 1}</span>}
-                    {time && <span className="font-mono-ui text-[9px] text-[color:var(--fg-faint)]">{time}</span>}
-                    {m.reasoning && (
-                        <button className="flex items-center gap-1 text-[10px] text-[color:var(--fg-faint)]" onClick={() => setThinkOpen(!thinkOpen)}>
-                            {t('stage.think')} <Icon name={thinkOpen ? 'chevronDown' : 'chevronRight'} size={8} />
+        <article className="group/msg flex items-start gap-3.5">
+            <StageAvatar name={name} />
+            <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                    <span className="heading-tight text-[13px] font-medium text-[color:var(--fg-primary)]">{name}</span>
+                    {s.chatSettings.showFloorNum && <span className="font-mono-ui text-[11px] text-[color:var(--fg-faint)]">#{idx + 1}</span>}
+                    {time && <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{time}</span>}
+                    {m.reasoning && s.chatSettings.autoParseThink && (
+                        <button
+                            className="ml-1 inline-flex items-center gap-1 text-[11.5px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
+                            onClick={() => setThinkOpen(!thinkOpen)}
+                        >
+                            <span>{t('stage.think')}</span>
+                            <span className="inline-flex transition-transform" style={{ transform: tOpen ? 'rotate(180deg)' : undefined }}><Icon name="chevronDown" size={11} /></span>
                         </button>
                     )}
                 </div>
-                {thinkOpen && m.reasoning && (
-                    <div className="mb-1.5 rounded-lg bg-[color:var(--bg-surface)] p-2.5 font-mono-ui text-[10px] leading-relaxed text-[color:var(--fg-muted)]">{m.reasoning}</div>
+                {m.reasoning && s.chatSettings.autoParseThink && tOpen && (
+                    <div className="border-l pl-3 text-[12.5px] leading-relaxed text-[color:var(--fg-muted)]" style={{ borderColor: 'var(--border-subtle)' }}>{m.reasoning}</div>
                 )}
                 {m.error ? (
                     /* 规范稿失败楼层 L1167-1178:code 红字 + 发送失败 + 重试/Trace */
@@ -283,7 +368,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                             rows={4}
                             value={ops.editing.text}
                             onChange={(e) => ops.onEditText(e.target.value)}
-                            className="chat-body-text w-full resize-none rounded-[10px] p-3 outline-none"
+                            className="chat-body-text w-full resize-none rounded-[10px] p-3 outline-none select-text"
                             style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--brand)', color: 'var(--fg-primary)', fontSize: s.chatSettings.fontSize }}
                         />
                         <div className="flex items-center gap-1.5">
@@ -297,36 +382,45 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                     </div>
                 ) : (
                     <>
-                        <div className="chat-body-text whitespace-pre-wrap text-[color:var(--fg-primary)]" style={{ fontSize: s.chatSettings.fontSize }}>
+                        <div className="chat-body-text whitespace-pre-line" style={{ fontSize: s.chatSettings.fontSize }}>
                             {m.displayContent ?? m.content}
                             {m.streaming && <span className="cursor-bar" />}
                         </div>
                         {m.aborted && !m.streaming && (
                             /* 规范稿已中止楼层 L1189 */
-                            <span className="mt-1 inline-flex items-center gap-2 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-[11.5px] text-[color:var(--fg-muted)]">
+                            <span className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-[11.5px] text-[color:var(--fg-muted)]">
                                 <span>{t('stage.aborted')}</span>
                                 <button className="font-medium text-[color:var(--brand)] hover:underline" onClick={ops.onContinue}>{t('stage.aborted.continue')}</button>
                             </span>
                         )}
                     </>
                 )}
-                {/* 规范稿楼层操作条 L1191-1206:swipe 胶囊 + copy/edit/del/回滚 */}
+                {/* 规范稿楼层操作条 L1191-1206:左 swipe 胶囊+copy/edit/del/回滚,右 deltas mono 芯 */}
                 {showOps && (
-                    <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast || m.swipes ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
-                        {(m.swipes || ops.isLast) && (
-                            <span className="mr-1 inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-0.5">
-                                <button className="ghost-btn h-6 w-6 text-[12px]" title={t('stage.swipe.prev')} style={swipeIdx <= 0 ? { opacity: 0.35 } : undefined} onClick={() => ops.onSwipe(m, -1)}>‹</button>
-                                <span className="px-1.5 font-mono-ui text-[11px] text-[color:var(--fg-secondary)]">{Math.min(swipeIdx + 1, Math.max(swipeCount, 1))}/{Math.max(swipeCount, 1)}</span>
-                                <button className="ghost-btn h-6 w-6 text-[12px]" title={t('stage.swipe.next')} onClick={() => ops.onSwipe(m, 1)}>›</button>
-                            </span>
-                        )}
-                        <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
-                        <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
-                        <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
-                        {m.snapshot && (
-                            <button className="ghost-btn h-7 gap-1 px-2 text-[11.5px]" title={t('stage.op.rewind') + ` #${idx + 1}`} onClick={() => ops.onRewind(m)}>
-                                <Icon name="rewind" size={14} /><span>{t('stage.op.rewind')}</span>
-                            </button>
+                    <div className={`flex items-center justify-between gap-2 pt-0.5 transition-opacity duration-150 ${ops.isLast || m.swipes ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                        <div className="flex items-center gap-1">
+                            {(m.swipes || ops.isLast) && (
+                                <span className="mr-1 inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-0.5">
+                                    <button className="ghost-btn h-6 w-6 text-[12px]" title={t('stage.swipe.prev')} style={swipeIdx <= 0 ? { opacity: 0.35 } : undefined} onClick={() => ops.onSwipe(m, -1)}>‹</button>
+                                    <span className="px-1.5 font-mono-ui text-[11px] text-[color:var(--fg-secondary)]">{Math.min(swipeIdx + 1, Math.max(swipeCount, 1))}/{Math.max(swipeCount, 1)}</span>
+                                    <button className="ghost-btn h-6 w-6 text-[12px]" title={t('stage.swipe.next')} onClick={() => ops.onSwipe(m, 1)}>›</button>
+                                </span>
+                            )}
+                            <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
+                            <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
+                            <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
+                            {m.snapshot && (
+                                <button className="ghost-btn h-7 gap-1 px-2 text-[11.5px]" title={t('stage.op.rewind') + ` #${idx + 1}`} onClick={() => ops.onRewind(m)}>
+                                    <Icon name="rewind" size={14} /><span>{t('stage.op.rewind')}</span>
+                                </button>
+                            )}
+                        </div>
+                        {receipts.length > 0 && (
+                            <div className="flex items-center gap-1.5">
+                                {receipts.map((d, i) => (
+                                    <span key={i} className="rounded-md bg-[color:var(--bg-surface)] px-2 py-0.5 font-mono-ui text-[10.5px] text-[color:var(--fg-secondary)]">{d}</span>
+                                ))}
+                            </div>
                         )}
                     </div>
                 )}
@@ -856,22 +950,50 @@ export function ChatStage() {
     const effectiveCtxLen = ctxLen ?? s.presetParams.ctxLen;
     const tokenPct = lastTokens != null && effectiveCtxLen > 0 ? Math.min(100, Math.round((lastTokens / effectiveCtxLen) * 100)) : 0;
 
+    const qrVisible = qrOpen && qrChips.length > 0 && menu === 'none' && (s.chat?.stage ?? 'chat') === 'chat';
+    const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
+    const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
     return (
-        <div className="flex min-h-0 flex-1 flex-col">
-            {/* 规范稿瘦头:卡名 · 会话名 面包屑(移动端已由 hub 条承担则隐藏) */}
-            {!s.isMobile && (
-                <div className="flex h-10 shrink-0 items-center px-4">
-                    <div className="mx-auto flex w-full max-w-[680px] items-center gap-1.5">
-                        <span className="char-avatar-ring flex h-5 w-5 items-center justify-center text-[8.5px] font-semibold" style={{ background: 'linear-gradient(135deg,#4a6a8a,#2a3a4a)', color: 'var(--fg-primary)' }}>
-                            {(s.chat?.title ?? '云')[0]}
-                        </span>
-                        <button className="heading-tight truncate text-[12.5px] text-[color:var(--fg-primary)]">
-                            {s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : t('chat.none')}
+        <section
+            className="relative flex min-h-0 min-w-0 flex-1 flex-col"
+            style={{ background: 'var(--bg-canvas)', ['--composer-pop-bottom' as never]: qrVisible ? '126px' : '92px' }}
+        >
+            {/* 规范稿 stage-header h-12 px-4:左 ctx 钮(卡环+名·题+⌄)→ ctx 弹层;右 wb/移动 sheet 钮 */}
+            <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4">
+                <div className="flex min-w-0 items-center gap-1.5">
+                    {/* 规范稿移动端 stage-header 左侧 ≡ → mob drawer */}
+                    {s.isMobile && (
+                        <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
+                            <Icon name="menu" size={20} active={s.mobileDrawer} />
                         </button>
-                        <Icon name="chevronDown" size={10} className="text-[color:var(--fg-faint)]" />
-                    </div>
+                    )}
+                    <button
+                        className="heading-tight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
+                        onClick={() => setMenu(menu === 'context' ? 'none' : 'context')}
+                        title={t('ctx.capsule')}
+                    >
+                        <span className="char-avatar-ring h-5 w-5 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" /></span>
+                        <span className="truncate text-[color:var(--fg-primary)]">
+                            {s.chat ? `${card?.name ?? s.chat.charDir} · ${s.chat.title}` : t('chat.none')}
+                        </span>
+                        <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={13} /></span>
+                    </button>
                 </div>
-            )}
+                <div className="flex shrink-0 items-center gap-1">
+                    {s.isMobile ? (
+                        <button
+                            className="ghost-btn h-8 gap-1.5 border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 text-[12px] text-[color:var(--fg-primary)]"
+                            onClick={() => s.setSheetSnap('half')}
+                        >
+                            <Icon name="panelRight" size={15} /><span>{t('mob.panel')}</span>
+                        </button>
+                    ) : (
+                        <button className="ghost-btn h-8 w-8" onClick={s.toggleWorkbench} title={t('chrome.workbench')}>
+                            <Icon name="panelRight" size={20} active={s.workbenchOpen} />
+                        </button>
+                    )}
+                </div>
+            </header>
             {/* 规范稿离线 banner L1324-1332 */}
             {offline && (
                 <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2" style={{ background: 'rgba(248, 113, 113, 0.09)', borderColor: 'rgba(248, 113, 113, 0.28)' }}>
@@ -885,21 +1007,30 @@ export function ChatStage() {
                     </button>
                 </div>
             )}
-            {/* 消息流 */}
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
-                {loadErr && (
-                    <div className="mx-auto my-6 max-w-[680px] rounded-[12px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-4 text-center">
-                        <div className="break-all font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{loadErr}</div>
-                        <button className="ghost-btn mt-2 h-6 px-2.5 text-[10.5px]" onClick={() => void reload()}>{t('panel.retry')}</button>
-                    </div>
+            {/* 规范稿三弹层锚在 section(绝对位),不是 composer 里 */}
+            {menu === 'context' && <ContextPop onClose={() => setMenu('none')} />}
+            {menu === 'slash' && <SlashMenu onPick={onSlash} onClose={() => setMenu('none')} />}
+            {menu === 'preset' && <PresetPop onClose={() => setMenu('none')} />}
+            {/* 消息流:spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask + bgMode 底图 */}
+            <div ref={scrollRef} className="scroll-fade-mask relative min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-8">
+                {s.chatSettings.bgMode !== 'none' && (
+                    <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ background: `url('/assets/backgrounds/${s.chatSettings.bgMode}.png') center/cover no-repeat` }} />
                 )}
-                {msgs.filter((m) => m.role !== 'system' || m.content).map((m, i) => <Msg key={m.id} m={m} idx={i} ops={opsOf(m, i)} />)}
+                <div className="relative z-10 mx-auto max-w-[660px] space-y-7 pb-6">
+                    {loadErr && (
+                        <div className="my-6 rounded-[12px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-4 text-center">
+                            <div className="break-all font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{loadErr}</div>
+                            <button className="ghost-btn mt-2 h-6 px-2.5 text-[10.5px]" onClick={() => void reload()}>{t('panel.retry')}</button>
+                        </div>
+                    )}
+                    {msgs.filter((m) => m.role !== 'system' || m.content).map((m, i) => <Msg key={m.id} m={m} idx={i} ops={opsOf(m, i)} />)}
+                </div>
             </div>
-            {/* composer-shell:textarea + 底行(/ · token 胶囊 · ctx · 预设/模型⌄ · 发送/中止) */}
-            <div className="shrink-0 px-4 pb-4 pt-1">
+            {/* composer-shell:QR 条 + form p-3(textarea + 底行 /·token | 预设⌄·send) */}
+            <div className="shrink-0 px-4 pb-4 pt-1 sm:px-6">
                 {/* 规范稿 QR 条 L1339-1346:仅 chat 形态 + 无弹层时;空档整条不出 */}
-                {qrOpen && qrChips.length > 0 && menu === 'none' && (s.chat?.stage ?? 'chat') === 'chat' && (
-                    <div className="mx-auto mb-2 flex w-full max-w-[680px] items-center gap-1.5">
+                {qrVisible && (
+                    <div className="mx-auto mb-2 flex w-full max-w-[660px] items-center gap-1.5">
                         <div className="no-scrollbar flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto pr-3" style={{ WebkitMaskImage: 'linear-gradient(to right, black 88%, transparent 100%)', maskImage: 'linear-gradient(to right, black 88%, transparent 100%)' }}>
                             {qrChips.map((q) => (
                                 <button
@@ -922,10 +1053,7 @@ export function ChatStage() {
                         </button>
                     </div>
                 )}
-                <div className="composer-shell relative mx-auto w-full max-w-[680px] rounded-[14px]">
-                    {menu === 'slash' && <SlashMenu onPick={onSlash} onClose={() => setMenu('none')} />}
-                    {menu === 'context' && <ContextPop onClose={() => setMenu('none')} />}
-                    {menu === 'preset' && <PresetPop onClose={() => setMenu('none')} />}
+                <div className="composer-shell mx-auto w-full max-w-[660px] space-y-2.5 rounded-[14px] p-3">
                     <textarea
                         value={draft}
                         onChange={(e) => setDraft(e.target.value)}
@@ -934,67 +1062,76 @@ export function ChatStage() {
                             if (e.key === '/' && !draft) { e.preventDefault(); setMenu('slash'); }
                         }}
                         placeholder={t('composer.placeholder')}
-                        rows={3}
-                        className="chat-body-text w-full resize-none bg-transparent px-3.5 pb-1 pt-3 outline-none"
+                        rows={1}
+                        className="max-h-32 w-full resize-none bg-transparent text-[14px] leading-relaxed text-[color:var(--fg-primary)] outline-none"
                     />
-                    <div className="flex items-center gap-1.5 px-2.5 pb-2.5">
-                        <button className="ghost-btn h-7 w-7 rounded-md border border-[color:var(--border-subtle)]" onClick={() => setMenu(menu === 'slash' ? 'none' : 'slash')} title={t('slash.menu.title')}>
-                            <Icon name="slash" size={13} />
-                        </button>
-                        {/* 规范稿 token 胶囊 L1353-1356:上轮组装 tokens / ctxLen,点击开 trace 面 */}
-                        <button
-                            className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 font-mono-ui text-[10.5px] text-[color:var(--fg-muted)] transition-colors hover:bg-[color:var(--bg-active)]"
-                            title={t('stage.token.title')}
-                            onClick={() => s.openPanel('diag', lastJobId ? diagTraceParams(lastJobId) : { sub: 'jobs' })}
-                        >
-                            <span>{lastTokens != null ? (s.isMobile ? `${(lastTokens / 1000).toFixed(1)}k` : lastTokens.toLocaleString()) : '—'} / {Math.round(effectiveCtxLen / 1000)}k</span>
-                            <span className="hidden h-1 w-8 overflow-hidden rounded-full sm:block" style={{ background: 'var(--bg-active)' }}>
-                                <span className="block h-full rounded-full" style={{ width: `${tokenPct}%`, background: 'var(--brand)' }} />
-                            </span>
-                        </button>
-                        <button
-                            className="ghost-btn h-7 gap-1 rounded-md px-1.5 font-mono-ui text-[10px] text-[color:var(--fg-muted)]"
-                            onClick={() => setMenu(menu === 'context' ? 'none' : 'context')}
-                            style={menu === 'context' ? { color: 'var(--brand)' } : undefined}
-                            title={t('ctx.capsule')}
-                        >
-                            {Object.entries(s.mvu).slice(0, 2).map(([k, v]) => `${k} ${v}`).join(' · ')}
-                            <Icon name="bookOpen" size={11} />
-                        </button>
-                        <span className="flex-1" />
-                        <button
-                            className="ghost-btn h-7 gap-1 rounded-md px-2 font-mono-ui text-[10.5px]"
-                            style={menu === 'preset' ? { color: 'var(--brand)' } : { color: 'var(--fg-secondary)' }}
-                            onClick={() => setMenu(menu === 'preset' ? 'none' : 'preset')}
-                        >
-                            <span className="hidden sm:inline">{model?.short ?? t('composer.presetModel')}</span>
-                            <span className="sm:hidden">{t('composer.presetModel')}</span>
-                            <Icon name="chevronDown" size={9} />
-                        </button>
-                        {streaming ? (
-                            /* 规范稿中止钮 L1365-1366:brand 圆 + 白方块 */
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                            {/* SLASH COMMAND BUTTON("/"):稿 ghost-btn w-8 h-8 rounded-[8px] */}
                             <button
-                                className="flex h-7 w-7 items-center justify-center rounded-full transition-transform active:scale-90"
-                                style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
-                                onClick={() => void onStop()}
-                                title={t('stage.abort.title')}
+                                type="button"
+                                className="ghost-btn h-8 w-8 shrink-0 rounded-[8px]"
+                                style={menu === 'slash' ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
+                                onClick={() => setMenu(menu === 'slash' ? 'none' : 'slash')}
+                                title={t('slash.menu.title')}
                             >
-                                <span className="block h-2.5 w-2.5 rounded-[2px] bg-white" />
+                                <Icon name="slash" size={20} active={menu === 'slash'} />
                             </button>
-                        ) : (
+                            {/* 规范稿 token 胶囊 L1353-1356:上轮组装 tokens / ctxLen,点击开 trace 面 */}
                             <button
-                                className="flex h-7 w-7 items-center justify-center rounded-full transition-transform active:scale-90"
-                                style={{ color: draft.trim() ? 'var(--brand)' : 'var(--fg-secondary)', opacity: offline ? 0.35 : 1 }}
-                                onClick={() => void send(draft)}
-                                disabled={offline || busy}
-                                title={t('composer.send')}
+                                type="button"
+                                className="inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 font-mono-ui text-[10.5px] text-[color:var(--fg-muted)] transition-colors hover:bg-[color:var(--bg-active)]"
+                                title={t('stage.token.title')}
+                                onClick={() => s.openPanel('diag', lastJobId ? diagTraceParams(lastJobId) : { sub: 'jobs' })}
                             >
-                                <Icon name="send" size={16} />
+                                <span>{lastTokens != null ? (s.isMobile ? `${(lastTokens / 1000).toFixed(1)}k` : lastTokens.toLocaleString()) : '—'} / {Math.round(effectiveCtxLen / 1000)}k</span>
+                                <span className="hidden h-1 w-8 overflow-hidden rounded-full sm:block" style={{ background: 'var(--bg-active)' }}>
+                                    <span className="block h-full rounded-full" style={{ width: `${tokenPct}%`, background: 'var(--brand)' }} />
+                                </span>
                             </button>
-                        )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                            {/* 点模型原地弹「预设与模型」快捷调参 */}
+                            <button
+                                type="button"
+                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 font-mono-ui text-[11.5px] transition-colors"
+                                style={menu === 'preset' ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
+                                onClick={() => setMenu(menu === 'preset' ? 'none' : 'preset')}
+                                title={t('composer.presetModel')}
+                            >
+                                <span className="hidden sm:inline">{model?.short ?? t('composer.presetModel')}</span>
+                                <span className="sm:hidden">{t('composer.presetModel')}</span>
+                                <Icon name="chevronDown" size={12} />
+                            </button>
+                            {streaming ? (
+                                /* 规范稿中止钮 L1365-1366:w-8 h-8 brand 圆 + 白方块 */
+                                <button
+                                    type="button"
+                                    className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-90"
+                                    style={{ background: 'var(--brand)', color: '#fff' }}
+                                    onClick={() => void onStop()}
+                                    title={t('stage.abort.title')}
+                                >
+                                    <span className="block h-2.5 w-2.5 rounded-[2px] bg-white" />
+                                </button>
+                            ) : (
+                                <button
+                                    id="btn-send"
+                                    type="button"
+                                    data-ready={!!draft.trim() || undefined}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full transition-transform active:scale-90"
+                                    style={{ color: draft.trim() ? 'var(--brand)' : 'var(--fg-secondary)', opacity: offline ? 0.35 : 1 }}
+                                    onClick={() => void send(draft)}
+                                    disabled={offline || busy}
+                                    title={t('composer.send')}
+                                >
+                                    <Icon name="send" size={26} active={!!draft.trim()} />
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
     );
 }
