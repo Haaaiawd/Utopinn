@@ -88,6 +88,8 @@ const zh: Record<string, string> = {
     'st.customCss.ph': '/* 可在此覆盖任意语义变量 --bg-canvas / --fg-primary */',
     'mob.menu': '菜单', 'mob.panel': '面板', 'mob.hub.home': '首页', 'mob.hub.chat': '会话', 'mob.hub.panels': '面板', 'mob.hub.me': '我的',
     'mob.sheet.half': '半屏', 'mob.sheet.full': '全屏', 'mob.sheet.collapse': '收起', 'mob.hub.assetSub': '卡库 · 世界书',
+    'mob.view.noMobile': '该视图还没有移动端形态 —— 先回到对话,或换桌面视口查看',
+    'mob.view.back': '返回对话',
 
     // diag/stats surface —— 观测面词条(diag 四子页 / stats 汇总与 WI 命中 /
     // top-job-slot / launcher 三桶 / 拆出钮)。append-only 块,勿并入上文。

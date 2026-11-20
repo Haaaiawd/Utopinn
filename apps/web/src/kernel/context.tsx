@@ -9,7 +9,7 @@ import type { CardItem } from '../api/characters';
 import type { ImportDraft } from '../api/import';
 import type { ActivePersona } from '../api/personas';
 import type {
-    BuiltinPluginItem, GlobalLoreItem, ImChannel, MarketPluginItem, ModelItem,
+    GlobalLoreItem, ImChannel, ModelItem,
     NovelChapter, PresetItem, VnData, WorldbookItem,
 } from '../api/mock';
 import type { ChatSummary, ServerStatus, ViewId } from '../types';
@@ -166,10 +166,6 @@ export interface ShellCtx {
     worldbook: WorldbookItem[];
     selectedLoreId: string;
     setSelectedLoreId: (id: string) => void;
-    builtinPlugins: BuiltinPluginItem[];
-    toggleBuiltinPlugin: (id: string) => void;
-    marketPlugins: MarketPluginItem[];
-    toggleMarketPlugin: (id: string) => void;
     notesText: string;
     setNotesText: (s: string) => void;
     chatSettings: ChatSettings;
