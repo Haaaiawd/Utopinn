@@ -11,16 +11,21 @@ name: utopinn-server
 plugins:
   - id: utopinn-library
     module: ./plugins/utopinn-library.js
+    core: true
   - id: utopinn-diag
     module: ./plugins/utopinn-diag.js
+    core: true
   - id: utopinn-generate
     module: ./plugins/utopinn-generate.js
+    core: true
   - id: utopinn-mvu
     module: ./plugins/utopinn-mvu.js
   - id: utopinn-delivery
     module: ./plugins/utopinn-delivery.js
+    core: true
   - id: utopinn-plugins
     module: ./plugins/utopinn-plugins.js
+    core: true
   - id: utopinn-script
     module: ./plugins/utopinn-script.js
   - id: utopinn-th

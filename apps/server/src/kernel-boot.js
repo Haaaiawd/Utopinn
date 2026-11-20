@@ -161,6 +161,7 @@ export const pluginManager = {
     async disable(id) {
         const row = await this.row(id);
         if (!row) return { ok: false, code: 404, error: `no such plugin: ${id}` };
+        if (row.core === true) return { ok: false, code: 400, error: `plugin ${id} is core and cannot be disabled` };
         await upsertPatchRow(row.id, true);
         const fiber = fibers.get(id);
         if (fiber) {
