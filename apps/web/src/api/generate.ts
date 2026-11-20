@@ -79,8 +79,15 @@ export async function streamJob(jobId: string, h: JobStreamHandlers): Promise<()
     let pending = '';
     ws.onopen = () => ws.send(JSON.stringify({ type: 'resume', request_id: jobId, from_seq: 1 }));
     ws.onmessage = (ev) => {
-        let frame: { type?: string; data?: string; message?: string };
+        let frame: { type?: string; data?: string; message?: string; ts?: number };
         try { frame = JSON.parse(String(ev.data)); } catch { return; }
+        // 应用层心跳:utopinn-delivery 对 WS_SERVER_PONG_TIMEOUT_MS(70s)内
+        // 无 pong 的 socket 直接 terminate —— ping 必须回 {type:'pong',
+        // ts 回显}(对齐 packages/api-client stream.ts,服务端只看 type)。
+        if (frame.type === 'ping') {
+            try { ws.send(JSON.stringify({ type: 'pong', ts: frame.ts })); } catch { /* dying socket */ }
+            return;
+        }
         if (frame.type === 'chunk' && frame.data) {
             pending += b64decode(String(frame.data));
             const cut = pending.lastIndexOf('\n\n');

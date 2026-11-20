@@ -276,11 +276,14 @@ export async function appendAssistantMessage(
 }
 
 /**
- * Rename a chat file. Uses the legacy /api/chats/rename route (the utopinn
- * router has no rename yet) — body fields are `original_file`/`renamed_file`
- * WITH the .jsonl suffix; `avatar_url` carries the charDir + .png, matching
- * append/patch above. Resolves to the server's sanitized new base name so the
- * caller can rebuild the ChatSummary id even when sanitize() rewrote input.
+ * Rename a chat file. Uses the legacy /api/chats/rename route — body fields
+ * are `original_file`/`renamed_file` WITH the .jsonl suffix; `avatar_url`
+ * carries the charDir + .png, matching append/patch above. Resolves to the
+ * server's sanitized new base name so the caller can rebuild the ChatSummary
+ * id even when sanitize() rewrote input.
+ * 注:utopinn 原生面已存在 —— POST /api/utopinn/characters/:dir/chats/:name/
+ * rename(body {newName} → {name,fileName},utopinn-library.js,且顺带维护
+ * recent 索引);本函数暂留 legacy 契约,迁原生面时返回值口径同为新基名。
  */
 export async function renameChat(charDir: string, oldName: string, newName: string): Promise<string> {
     const res = await apiPost<{ ok: boolean; sanitizedFileName?: string }>('/api/chats/rename', {

@@ -74,7 +74,7 @@ export function HomeView() {
                             onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
                         >
                             <div className="flex h-[150px] items-center justify-center bg-[color:var(--bg-active)] text-[28px]" style={{ color: 'var(--brand)' }}>
-                                {c.avatar ? <img src={`/api/utopinn/characters/${encodeURIComponent(c.charDir)}/image`} alt="" className="h-full w-full object-cover" /> : (c.name?.[0] ?? c.charDir[0])}
+                                {c.avatar ? <img src={charImageUrl(c.avatar)} alt="" className="h-full w-full object-cover" onError={charImgFallback} /> : (c.name?.[0] ?? c.charDir[0])}
                             </div>
                             <div className="p-2.5">
                                 <div className="truncate text-[12px] font-medium text-[color:var(--fg-primary)]">{c.name || c.charDir}</div>
