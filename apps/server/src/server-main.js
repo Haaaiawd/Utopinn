@@ -384,11 +384,29 @@ app.get('/callback/:source?', (request, response) => {
 // Host login page
 app.get('/login', loginPageMiddleware);
 
-// Host frontend assets
+// Host frontend assets.
+// LUKER_SERVE_LEGACY=1 keeps serving the bundled jQuery UI from public/
+// (e2e browser harness + golden-diff capture need it; set in _lib/server.js).
+// Default off: kernel-only deployments get a minimal status page at /.
 const webpackMiddleware = getWebpackServeMiddleware();
 app.use(webpackMiddleware);
 app.use(userCssMiddleware);
-app.use(express.static(path.join(serverDirectory, 'public'), {}));
+if (process.env.LUKER_SERVE_LEGACY === '1') {
+    app.use(express.static(path.join(serverDirectory, 'public'), {}));
+} else {
+    app.get('/', (_req, res) => {
+        res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Utopinn kernel</title>
+<body style="font:13px/1.6 system-ui,sans-serif;max-width:560px;margin:64px auto;color:#ddd;background:#141414">
+<h1 style="font-size:20px">Utopinn kernel</h1>
+<p>服务端内核在运行,但本进程未挂载旧版前端 UI。</p>
+<ul>
+<li>Web SPA:<code>pnpm --filter @utopinn/web dev</code></li>
+<li>CLI:<code>node apps/cli/utopinn-cli.mjs doctor --server http://&lt;host&gt;:${process.env.SERVER_PORT || ''}</code></li>
+<li>诊断:<code>GET /api/utopinn/diag/stats</code></li>
+<li>旧 UI(仅参考):以 <code>LUKER_SERVE_LEGACY=1</code> 重启</li>
+</ul></body>`);
+    });
+}
 
 // Tokenizer libs and data — let the browser run tokenization directly instead
 // of going through /api/tokenizers/* for every count. Read-only static assets.
