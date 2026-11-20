@@ -71,6 +71,8 @@ import {
     getCharacterStateSidecarPath,
     readCharacterStateSidecar,
     mapCharacterStatePatchError,
+    // 角色写面(C-3):原子 PNG 重写 + ccv3/chara 双 chunk + 缓存失效,与 legacy /edit 同管线。
+    writeCharacterData,
 } from '../endpoints/characters.js';
 import {
     isValidApiId,
@@ -131,28 +133,40 @@ export function sendError(response, error, logPrefix) {
 const CHARACTER_IMAGE_EXTS = new Set(['.png', '.webp']);
 
 /**
+ * 读取一张角色卡并报告承载文件:<charDir>.png(或 .webp)优先,退回 <charDir>.json。
+ * 探测顺序即 PATCH 写回的落点判据 —— 同一个文件读出来就写回同一个面。
+ * @param {import('../users.js').UserDirectoryList} directories
+ * @param {string} charDir 不含扩展名的角色目录名
+ * @returns {Promise<{card: object|null, source: {kind:'image', filePath:string, ext:string}|{kind:'json', filePath:string}|null}>}
+ */
+async function loadCharacterDocDetailed(directories, charDir) {
+    const dir = directories.characters;
+    for (const ext of ['.png', '.webp']) {
+        const filePath = path.join(dir, `${charDir}${ext}`);
+        try {
+            const raw = await fs.promises.readFile(filePath);
+            return { card: JSON.parse(readCharacterCard(raw)), source: { kind: 'image', filePath, ext } };
+        } catch {
+            // 该扩展名不存在或不含卡数据 → 继续尝试下一个
+        }
+    }
+    try {
+        const filePath = path.join(dir, `${charDir}.json`);
+        const raw = await fs.promises.readFile(filePath, 'utf8');
+        return { card: JSON.parse(raw), source: { kind: 'json', filePath } };
+    } catch {
+        return { card: null, source: null };
+    }
+}
+
+/**
  * 读取一张角色卡:<charDir>.png(或 .webp)优先,退回 <charDir>.json。
  * @param {import('../users.js').UserDirectoryList} directories
  * @param {string} charDir 不含扩展名的角色目录名
  * @returns {Promise<object|null>} 解析后的卡对象(CCv2 形状,data.* 持有字段);找不到返回 null
  */
 async function loadCharacterDoc(directories, charDir) {
-    const dir = directories.characters;
-    for (const ext of ['.png', '.webp']) {
-        const imagePath = path.join(dir, `${charDir}${ext}`);
-        try {
-            const raw = await fs.promises.readFile(imagePath);
-            return JSON.parse(readCharacterCard(raw));
-        } catch {
-            // 该扩展名不存在或不含卡数据 → 继续尝试下一个
-        }
-    }
-    try {
-        const raw = await fs.promises.readFile(path.join(dir, `${charDir}.json`), 'utf8');
-        return JSON.parse(raw);
-    } catch {
-        return null;
-    }
+    return (await loadCharacterDocDetailed(directories, charDir)).card;
 }
 
 /**
@@ -167,6 +181,47 @@ async function resolveAvatarFileName(directories, charDir) {
         } catch { /* 下一个扩展名 */ }
     }
     return `${charDir}.png`;
+}
+
+/**
+ * PATCH /characters/:charDir 可写字段 —— 浅合并进 card.data
+ * (v1/无 data 卡回落根层,PNG 写回经 toStoredV2Character 提升到 data.*)。
+ */
+const PATCHABLE_CHAR_STRING_FIELDS = new Set([
+    'name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example',
+    'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version',
+]);
+const PATCHABLE_CHAR_FIELDS = new Set([...PATCHABLE_CHAR_STRING_FIELDS, 'tags', 'extensions']);
+/**
+ * extensions 子键白名单:world=世界书绑定 / alternate_greetings / regex_scripts。
+ * card_app 与资产二进制字段一律不放行 —— 那些走专用管线(card-app/charx 导入面)。
+ */
+const PATCHABLE_CHAR_EXTENSIONS_KEYS = new Set(['world', 'alternate_greetings', 'regex_scripts']);
+
+/**
+ * `<avatarFile>.state.<ns>.json` 侧车随卡文件改名迁移(.webp→.png 转换面用)。
+ * 与 characters.js renameAllCharacterStateSidecars 同规则的本地最小实现:
+ * 碰撞不覆盖(目标已存在跳过),失败只告警不阻塞 —— 卡写已成功。
+ */
+function migrateCharacterStateSidecars(charactersDir, oldFileName, newFileName) {
+    const prefix = `${oldFileName}.state.`;
+    let entries;
+    try {
+        entries = fs.readdirSync(charactersDir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+    for (const entry of entries) {
+        if (!entry.isFile() || !entry.name.startsWith(prefix) || !entry.name.endsWith('.json')) continue;
+        const suffix = entry.name.slice(oldFileName.length); // '.state.<ns>.json'
+        const targetPath = path.join(charactersDir, `${newFileName}${suffix}`);
+        if (fs.existsSync(targetPath)) continue;
+        try {
+            fs.renameSync(path.join(charactersDir, entry.name), targetPath);
+        } catch (error) {
+            console.warn(`Failed to migrate character state sidecar ${entry.name}:`, error);
+        }
+    }
 }
 
 /** 从卡对象提取展示名与标签(兼容 v1 平铺与 v2 data.*)。 */
@@ -224,11 +279,20 @@ export function sanitizeSettingsDoc(value) {
 }
 
 /**
- * PATCH /settings 允许的顶层段。
+ * PATCH /settings 允许的顶层段(对象值,逐键浅合并)。
  * `oai_settings` 承载连接配置(source/baseUrl/model 选择,连接设置 tab 依赖);
+ * `world_info_settings` 承载 WI 引擎开关与 world_info.globalSelect/charLore("全局栈")。
  * 合入前过 sanitizeSettingsDoc——api_key_* 形字段一律拒绝落盘,密钥走 /secrets。
  */
-const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings']);
+const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings']);
+/**
+ * 允许的顶层标量键(非对象段,直写不合并)。
+ * `preset_settings_openai` 是"当前 openai 预设"选择指针:生成侧读顶层
+ * (generate-context resolvedPresetName),canonical 槽位却在 oai_settings
+ * .preset_settings_openai(frontend/settings 响应侧优先读它)。两个读者并存,
+ * 任一侧写入都双向镜像 —— 否则"设为默认"写一半静默不生效。
+ */
+const PATCHABLE_SETTINGS_SCALAR_KEYS = new Set(['preset_settings_openai']);
 
 // ---------------------------------------------------------------------------
 // 路由注册
@@ -556,9 +620,11 @@ export function apply(ctx) {
     });
 
     /**
-     * PATCH /settings —— 受限浅合并:{power_user:{...}, extension_settings:{...}}。
-     * 顶层键必须全部落在白名单里,每段值必须是对象(逐键浅合并进现有段);
-     * 其余顶层字段(oai_settings/world_info/预设选择等)不可经此端点写。
+     * PATCH /settings —— 受限浅合并:{power_user:{…}, extension_settings:{…},
+     * oai_settings:{…}, world_info_settings:{…}} 逐键浅合并进现有段;
+     * 另放标量键 preset_settings_openai(预设选择指针,直写并镜像进
+     * oai_settings.preset_settings_openai——两个读取面保持一致)。
+     * 顶层键必须全部落在白名单里;其余顶层字段不可经此端点写。
      */
     regPost(`${P}/settings`, 'PATCH', async function (request, response) {
         try {
@@ -570,13 +636,21 @@ export function apply(ctx) {
             if (keys.length === 0) {
                 return response.status(400).send({ error: 'No settings sections provided' });
             }
-            const rejected = keys.filter((key) => !PATCHABLE_SETTINGS_SECTIONS.has(key));
+            const allowed = [...PATCHABLE_SETTINGS_SECTIONS, ...PATCHABLE_SETTINGS_SCALAR_KEYS];
+            const rejected = keys.filter((key) => !PATCHABLE_SETTINGS_SECTIONS.has(key) && !PATCHABLE_SETTINGS_SCALAR_KEYS.has(key));
             if (rejected.length > 0) {
                 return response.status(400).send({
-                    error: `Settings sections not patchable via this endpoint: ${rejected.join(', ')}. Allowed: ${[...PATCHABLE_SETTINGS_SECTIONS].join(', ')}`,
+                    error: `Settings sections not patchable via this endpoint: ${rejected.join(', ')}. Allowed: ${allowed.join(', ')}`,
                 });
             }
             for (const key of keys) {
+                if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) {
+                    // 标量键:string 直写,null 删键(merge-patch 语义)
+                    if (patch[key] !== null && typeof patch[key] !== 'string') {
+                        return response.status(422).send({ error: `Setting "${key}" must be a string` });
+                    }
+                    continue;
+                }
                 if (!patch[key] || typeof patch[key] !== 'object' || Array.isArray(patch[key])) {
                     return response.status(422).send({ error: `Section "${key}" must be a JSON object` });
                 }
@@ -588,13 +662,214 @@ export function apply(ctx) {
             const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
             const next = { ...base };
             for (const key of keys) {
+                if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) continue; // 标量键在段合并后统一落,保证同 patch 内顶键优先
                 const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
                 next[key] = { ...section, ...sanitizeSettingsDoc(patch[key]) };
             }
+
+            // preset 选择指针双向镜像:写 oai_settings.preset_settings_openai
+            // → 同步顶层(generate-context 读顶层);写顶层 → 同步 oai_settings
+            // (settings 响应侧优先读 canonical 槽位)。两者同 patch 时顶层优先。
+            const presetViaOai = Object.hasOwn(patch, 'oai_settings')
+                && patch.oai_settings && typeof patch.oai_settings === 'object' && !Array.isArray(patch.oai_settings)
+                && Object.hasOwn(patch.oai_settings, 'preset_settings_openai');
+            const presetViaTop = Object.hasOwn(patch, 'preset_settings_openai');
+            if (presetViaOai || presetViaTop) {
+                const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
+                    ? { ...next.oai_settings }
+                    : {};
+                if (presetViaOai) {
+                    next.preset_settings_openai = nextOai.preset_settings_openai;
+                }
+                if (presetViaTop) {
+                    if (patch.preset_settings_openai === null) {
+                        delete next.preset_settings_openai;
+                        delete nextOai.preset_settings_openai;
+                    } else {
+                        next.preset_settings_openai = patch.preset_settings_openai;
+                        nextOai.preset_settings_openai = patch.preset_settings_openai;
+                    }
+                }
+                next.oai_settings = nextOai;
+            }
+
             await repo.save(handle, next);
             return response.send({ settings: sanitizeSettingsDoc(next) });
         } catch (error) {
             return sendError(response, error, 'utopinn/settings patch');
+        }
+    });
+
+    /**
+     * PATCH /characters/:charDir —— 角色卡字段级写(C-3)。
+     *
+     * body(JSON Merge Patch 风格,只允许白名单键):
+     *   name/description/personality/scenario/first_mes/mes_example/creator_notes/
+     *   system_prompt/post_history_instructions/creator/character_version → string;
+     *   tags → string[];extensions → 对象,逐键合并一层,仅放
+     *   world(世界书绑定,空串解绑)/alternate_greetings(string[])/regex_scripts(object[])。
+     *   card_app 与资产二进制字段不放行 —— 走专用管线。null = 删键(name 除外)。
+     *
+     * 合并落点:v2/v3 卡 → card.data.* / card.data.extensions.*;
+     *   v1 卡(无 data) → 根层/根 extensions,PNG 写回时经
+     *   toStoredV2Character 提升到 data.*(同 legacy 升格管线)。
+     *
+     * name 只改显示名:charDir 是存储键(文件名/会话目录/state 侧车全挂它),
+     *   重命名是另一个面,这里绝不同步。
+     *
+     * 写回:PNG 卡走 writeCharacterData(原子 tmp+rename + ccv3/chara 双 chunk
+     *   + memory/disk 缓存失效,legacy /edit 同管线);.json 卡原子直写;
+     *   .webp 卡(实为 PNG 字节才能读到这)经 jimp 转 <charDir>.png 并迁移
+     *   <file>.state.* 侧车、摘除旧 .webp,防双源漂移。
+     *
+     * 响应:写后完整角色对象(同 GET 形状);extensions.world 先经
+     *   WorldInfoRepo.resolveName 归一到 canonical 书名(同 legacy /edit 自愈)。
+     */
+    regPost(`${P}/characters/:charDir`, 'PATCH', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const patch = request.body;
+            if (!patch || typeof patch !== 'object' || Array.isArray(patch) || Object.keys(patch).length === 0) {
+                return response.status(400).send({ error: 'Request body must be a non-empty JSON object' });
+            }
+            const rejected = Object.keys(patch).filter((key) => !PATCHABLE_CHAR_FIELDS.has(key));
+            if (rejected.length > 0) {
+                return response.status(400).send({
+                    error: `Character fields not patchable: ${rejected.join(', ')}. Allowed: ${[...PATCHABLE_CHAR_FIELDS].join(', ')}`,
+                });
+            }
+            for (const [key, value] of Object.entries(patch)) {
+                if (key === 'extensions') continue;
+                if (value === null) {
+                    // merge-patch 删键;name 必须有值
+                    if (key === 'name') {
+                        return response.status(400).send({ error: 'Character name must not be null or empty.' });
+                    }
+                    continue;
+                }
+                if (key === 'tags') {
+                    if (!Array.isArray(value) || !value.every((tag) => typeof tag === 'string')) {
+                        return response.status(422).send({ error: 'Field "tags" must be an array of strings' });
+                    }
+                    continue;
+                }
+                if (typeof value !== 'string') {
+                    return response.status(422).send({ error: `Field "${key}" must be a string` });
+                }
+                if (key === 'name' && (value.trim() === '' || value.trim() === '.')) {
+                    return response.status(400).send({ error: 'Character name must not be empty.' });
+                }
+            }
+            let extensionsPatch = null;
+            if (patch.extensions !== undefined) {
+                if (typeof patch.extensions !== 'object' || patch.extensions === null || Array.isArray(patch.extensions)) {
+                    return response.status(422).send({ error: 'Field "extensions" must be a JSON object (per-key merge)' });
+                }
+                const extRejected = Object.keys(patch.extensions).filter((key) => !PATCHABLE_CHAR_EXTENSIONS_KEYS.has(key));
+                if (extRejected.length > 0) {
+                    return response.status(400).send({
+                        error: `extensions keys not patchable: ${extRejected.join(', ')}. Allowed: ${[...PATCHABLE_CHAR_EXTENSIONS_KEYS].join(', ')}`,
+                    });
+                }
+                for (const [key, value] of Object.entries(patch.extensions)) {
+                    if (value === null) continue; // 删键
+                    if (key === 'world' && typeof value !== 'string') {
+                        return response.status(422).send({ error: 'extensions.world must be a string (world book name, empty to unbind)' });
+                    }
+                    if (key === 'alternate_greetings' && (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))) {
+                        return response.status(422).send({ error: 'extensions.alternate_greetings must be an array of strings' });
+                    }
+                    if (key === 'regex_scripts' && (!Array.isArray(value) || !value.every((item) => item && typeof item === 'object' && !Array.isArray(item)))) {
+                        return response.status(422).send({ error: 'extensions.regex_scripts must be an array of objects' });
+                    }
+                }
+                extensionsPatch = patch.extensions;
+            }
+
+            const { card, source } = await loadCharacterDocDetailed(request.user.directories, charDir);
+            if (!card || typeof card !== 'object' || Array.isArray(card) || !source) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+
+            // 合并:v2/v3 → data.*;v1/无 data → 根层(PNG 写出时升格提升)。
+            const next = _.cloneDeep(card);
+            const hasData = next.data && typeof next.data === 'object' && !Array.isArray(next.data);
+            const fieldTarget = hasData ? next.data : next;
+            for (const [key, value] of Object.entries(patch)) {
+                if (key === 'extensions') continue;
+                if (value === null) {
+                    delete fieldTarget[key];
+                } else {
+                    fieldTarget[key] = value;
+                }
+            }
+            if (extensionsPatch) {
+                const extensionsTarget = hasData
+                    ? (next.data.extensions = (next.data.extensions && typeof next.data.extensions === 'object' && !Array.isArray(next.data.extensions)) ? next.data.extensions : {})
+                    : (next.extensions = (next.extensions && typeof next.extensions === 'object' && !Array.isArray(next.extensions)) ? next.extensions : {});
+                for (const [key, value] of Object.entries(extensionsPatch)) {
+                    if (value === null) {
+                        delete extensionsTarget[key];
+                    } else {
+                        extensionsTarget[key] = value;
+                    }
+                }
+            }
+
+            // extensions.world 归一到 canonical 书名(同 legacy /edit 的
+            // healCharacterWorldBinding):容忍匹配命中的漂移名一次写正。
+            const handle = request.user.profile.handle;
+            const worldSlots = hasData ? ['data.extensions.world'] : ['extensions.world', 'world'];
+            for (const slot of worldSlots) {
+                const bound = String(_.get(next, slot, '') || '').trim();
+                if (!bound) continue;
+                try {
+                    const canonical = await getWorldInfoRepo().resolveName(handle, bound);
+                    if (canonical && canonical !== bound) {
+                        console.info(`utopinn/characters patch: healing ${slot}: "${bound}" -> "${canonical}"`);
+                        _.set(next, slot, canonical);
+                    }
+                } catch (healError) {
+                    console.warn('utopinn/characters patch: world binding heal failed', healError);
+                }
+            }
+
+            if (source.kind === 'json') {
+                writeFileAtomicSync(source.filePath, JSON.stringify(next), 'utf8');
+            } else {
+                // spec 缺失(v1)→ 先盖章走 toStoredV2Character 升格;否则
+                // normalizeCharacterCardForStorage 会走 convertToV2 表单路径,
+                // 把 extensions.world/system_prompt 等非表单字段清零。
+                if (next.spec === undefined) {
+                    next.spec = 'chara_card_v2';
+                    next.spec_version = '2.0';
+                }
+                const writeOk = await writeCharacterData(source.filePath, JSON.stringify(next), charDir, request, undefined, {
+                    allowMissingInputFallback: false,
+                    // .webp → .png 转换面输出档本来不存在,不能要求它在
+                    requireExistingOutput: source.ext === '.png',
+                    normalize: true,
+                });
+                if (!writeOk) {
+                    const cause = request.lastWriteCharacterDataError || 'unknown write error';
+                    return response.status(500).send({ error: `Failed to persist character data: ${cause}` });
+                }
+                if (source.ext !== '.png') {
+                    // 写产物恒为 <charDir>.png——摘除旧图档并迁移 char_state
+                    // 侧车,否则列表/读面在双源间漂移。
+                    try {
+                        fs.unlinkSync(source.filePath);
+                    } catch (unlinkError) {
+                        console.warn(`Failed to remove superseded character file ${source.filePath}:`, unlinkError);
+                    }
+                    migrateCharacterStateSidecars(request.user.directories.characters, path.basename(source.filePath), `${charDir}.png`);
+                }
+            }
+
+            const written = await loadCharacterDoc(request.user.directories, charDir);
+            return response.send(written ?? next);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters patch');
         }
     });
 
