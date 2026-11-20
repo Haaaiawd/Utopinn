@@ -1,4 +1,7 @@
 // 规范稿 plugins 域(renderPluginsMain + renderPluginsSections)—— 真服务端面。
+// 职能分工:rail 插件页 = 详情面(点插件行 → 滚动区顶部详情卡,回答
+//   「这是什么 / 给界面贡献了什么」);settings 插件签 = 批量开关面
+//   (PluginsSections full 三段全出,扫一遍启停)。
 // 数据全部走 /api/utopinn/plugins(TASK-021 管理面):
 //   · 内核锁定段 = 服务端 CORE_PLUGINS ∪ 自锁件(utopinn-plugins 拒自己的
 //     disable/reload),清单来自真 list,锁定身份与后端同一集合;
@@ -6,13 +9,14 @@
 //   · 市场段 = ui.contrib 读面有、安装面未备(C12)—— 目录行渲染「已内置 /
 //     计划中」徽标,不做假安装钮。
 // PluginsSections 与 settings 的「Cordis 插件」页签共享(规范稿同一函数两处用)。
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { PanelError, useRemote, type Remote } from '../panels/panelShared';
 import { disablePlugin, enablePlugin, listPlugins, reloadPlugin, type PluginItem } from '../../api/plugins';
+import { listUiContrib, type UiContribItem } from '../../api/contrib';
 import { MOCK_MARKET_PLUGINS } from '../../api/mock';
 
 /* ------------------------------------------------------------------ */
@@ -54,6 +58,26 @@ export function useServerPlugins() {
 
 export type ServerPlugins = Remote<{ items: PluginItem[] }>;
 
+/** 启停/热重载动作面 —— PluginsSections 与详情卡共享(busy 锁 + hint + reload)。 */
+function usePluginAct(plugins: ServerPlugins) {
+    const { t } = useI18n();
+    const s = useShell();
+    const [busy, setBusy] = useState<string | null>(null);
+    const act = (id: string, fn: () => Promise<{ ok: boolean; error?: string }>, doneMsg?: string) => {
+        if (busy) return;
+        setBusy(id);
+        void fn()
+            .then((r) => {
+                if (r && r.ok === false) throw new Error(r.error ?? 'failed');
+                if (doneMsg) s.hint(doneMsg);
+            })
+            .then(() => plugins.reload())
+            .catch((e) => s.hint(`${t('plugins.actFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(null));
+    };
+    return { busy, act };
+}
+
 /* ------------------------------------------------------------------ */
 /* PluginsSections —— 规范稿 renderPluginsSections 三段。                */
 /*   full(settings 页签)= 无视 pluginsNav 过滤,三段全出;                */
@@ -83,24 +107,11 @@ function PluginRowShell({ icon, title, sub, right }: { icon: IconName; title: st
 export function PluginsSections({ full = false, plugins }: { full?: boolean; plugins: ServerPlugins }) {
     const { t } = useI18n();
     const s = useShell();
-    const [busy, setBusy] = useState<string | null>(null);
+    const { busy, act } = usePluginAct(plugins);
     const items = plugins.data?.items ?? [];
     const core = items.filter((p) => CORE_LOCKED.has(p.id));
     const rest = items.filter((p) => !CORE_LOCKED.has(p.id));
     const showSys = full || s.pluginsNav === 'installed';
-
-    const act = (id: string, fn: () => Promise<{ ok: boolean; error?: string }>, doneMsg?: string) => {
-        if (busy) return;
-        setBusy(id);
-        void fn()
-            .then((r) => {
-                if (r && r.ok === false) throw new Error(r.error ?? 'failed');
-                if (doneMsg) s.hint(doneMsg);
-            })
-            .then(() => plugins.reload())
-            .catch((e) => s.hint(`${t('plugins.actFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setBusy(null));
-    };
 
     return (
         <div className="space-y-5">
@@ -219,6 +230,180 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
 }
 
 /* ------------------------------------------------------------------ */
+/* PluginDetailCard —— 插件详情面(域树点插件行的落点;规范稿无对应,自      */
+/*   设计贴 inset-group/PluginRowShell 既有件)。                          */
+/*   服务端件:徽标行(status/patch/locked)+ module 路径 + 启停/重载 +       */
+/*   ui.contrib 贡献清单(按 slot 分组);市场件('mkt:' 前缀):meta + 计划    */
+/*   中卡 —— 安装面未备不做假钮。                                         */
+/* ------------------------------------------------------------------ */
+
+/** 徽标小条(详情卡内通用)。 */
+function DetailBadge({ text, color = 'var(--fg-muted)' }: { text: string; color?: string }) {
+    return (
+        <span className="rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--bg-active)', color }}>
+            {text}
+        </span>
+    );
+}
+
+function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugins }) {
+    const { t } = useI18n();
+    const s = useShell();
+    const { busy, act } = usePluginAct(plugins);
+    const isMkt = sel.startsWith('mkt:');
+    const mkt = isMkt ? (MOCK_MARKET_PLUGINS.find((p) => `mkt:${p.id}` === sel) ?? null) : null;
+    const item = isMkt ? null : ((plugins.data?.items ?? []).find((p) => p.id === sel) ?? null);
+    /* 贡献清单:ui.contrib 全量拉一次按 plugin 过滤,按 slot 分组列条;
+       市场件没有服务端面,不发请求。 */
+    const contrib = useRemote(isMkt ? null : `ui-contrib:${sel}`, listUiContrib);
+    const contribGroups = useMemo(() => {
+        const g = new Map<string, UiContribItem[]>();
+        for (const it of contrib.data?.items ?? []) {
+            if (it.plugin !== sel) continue;
+            const list = g.get(it.slot) ?? [];
+            list.push(it);
+            g.set(it.slot, list);
+        }
+        return [...g.entries()];
+    }, [contrib.data, sel]);
+
+    const icon: IconName = isMkt ? ((mkt?.icon ?? 'puzzle') as IconName) : pluginIcon(sel);
+    const name = isMkt ? (mkt?.name ?? sel.slice(4)) : pluginLabel(sel);
+    const desc = isMkt ? (mkt?.desc ?? '') : (item ? pluginDesc(item) : '');
+    const missing = !isMkt && !item && !!plugins.data; // 清单已回但找不到 → 件已下线
+
+    return (
+        <div
+            className="space-y-4 rounded-[14px] p-4 sm:p-5"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', boxShadow: 'var(--shadow-card)' }}
+        >
+            {/* 头:图标 + 名 + 描述;右上 × 回总览 */}
+            <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                    <span
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
+                        style={{ background: 'var(--bg-active)', border: '1px solid var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    >
+                        <Icon name={icon} size={20} />
+                    </span>
+                    <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                            <span className="truncate text-[14px] font-semibold text-[color:var(--fg-primary)]">{name}</span>
+                            {mkt && <DetailBadge text={mkt.category} />}
+                        </div>
+                        {desc && <div className="mt-0.5 text-[12px] leading-relaxed text-[color:var(--fg-muted)]">{desc}</div>}
+                    </div>
+                </div>
+                <button className="ghost-btn h-7 w-7 shrink-0" title={t('plugins.detail.back')} onClick={() => s.setSelectedPlugin(null)}>
+                    <Icon name="x" size={14} />
+                </button>
+            </div>
+
+            {/* 服务端件:徽标行 + module + 动作(非 CORE_LOCKED 才给写面) */}
+            {item && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                    <DetailBadge
+                        text={item.status}
+                        color={item.status === 'failed' ? 'var(--status-danger)' : item.status === 'active' ? 'var(--status-ok)' : 'var(--fg-muted)'}
+                    />
+                    {item.patch && <DetailBadge text="patch" />}
+                    {CORE_LOCKED.has(item.id) && <DetailBadge text={t('plugins.locked')} />}
+                    {item.disabled && <DetailBadge text="disabled" />}
+                    <span className="min-w-0 flex-1 truncate text-right font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]" title={item.module}>
+                        {item.module}
+                    </span>
+                    {!CORE_LOCKED.has(item.id) && (
+                        <span className="flex shrink-0 items-center gap-1.5">
+                            <button
+                                className="ghost-btn h-7 w-7"
+                                title={t('plugins.reload')}
+                                disabled={busy === item.id}
+                                onClick={() => act(item.id, () => reloadPlugin(item.id), `${t('plugins.reloadDone')}:${pluginLabel(item.id)}`)}
+                            >
+                                <Icon name="refresh" size={14} />
+                            </button>
+                            <button
+                                className="sh-switch"
+                                data-checked={!item.disabled || undefined}
+                                disabled={busy === item.id}
+                                style={busy === item.id ? { opacity: 0.5 } : undefined}
+                                onClick={() => act(item.id, () => (item.disabled ? enablePlugin(item.id) : disablePlugin(item.id)))}
+                            >
+                                <span className="sh-switch-thumb" />
+                            </button>
+                        </span>
+                    )}
+                </div>
+            )}
+            {missing && (
+                <div className="inset-group">
+                    <div className="inset-row text-[11.5px] text-[color:var(--fg-faint)]">{t('plugins.detail.gone')}</div>
+                </div>
+            )}
+
+            {/* 市场件:meta + 计划中卡(安装面未备) */}
+            {isMkt && (
+                <div className="inset-group">
+                    <div className="inset-row">
+                        <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('plugins.detail.planned')}</span>
+                        {mkt && <DetailBadge text={mkt.installed ? t('plugins.bundled') : t('plugins.planned')} />}
+                    </div>
+                </div>
+            )}
+
+            {/* 服务端件:UI 贡献清单(slot 分组 · contribution.type/title 摘要) */}
+            {!isMkt && (
+                <div className="space-y-2">
+                    <div className="flex items-center justify-between px-0.5">
+                        <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('plugins.detail.contribs')}</span>
+                        <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">ui.contrib</span>
+                    </div>
+                    {contrib.error ? (
+                        <div className="inset-group">
+                            <div className="inset-row"><span className="break-all font-mono-ui text-[10.5px]" style={{ color: 'var(--status-danger)' }}>{contrib.error}</span></div>
+                        </div>
+                    ) : contribGroups.length > 0 ? (
+                        contribGroups.map(([slot, list]) => (
+                            <div key={slot} className="space-y-1.5">
+                                <div className="px-0.5 font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{slot}</div>
+                                <div className="inset-group">
+                                    {list.map((it, i) => {
+                                        const c = it.contribution;
+                                        const label = String(c.title ?? c.type ?? c.id ?? '—');
+                                        const sub = c.type && c.type !== c.title ? String(c.type) : null;
+                                        return (
+                                            <div key={`${slot}:${i}`} className="inset-row">
+                                                <div className="min-w-0">
+                                                    <div className="truncate text-[12.5px] text-[color:var(--fg-primary)]">{label}</div>
+                                                    {sub && <div className="truncate font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{sub}</div>}
+                                                </div>
+                                                <span className="flex shrink-0 items-center gap-1.5">
+                                                    {it.core && <DetailBadge text="core" />}
+                                                    {it.disabled && <DetailBadge text="disabled" />}
+                                                    {typeof c.wired === 'boolean' && (
+                                                        <DetailBadge text={c.wired ? 'wired' : 'unwired'} color={c.wired ? 'var(--status-ok)' : 'var(--status-warn)'} />
+                                                    )}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ))
+                    ) : (
+                        <div className="inset-group">
+                            <div className="inset-row text-[11.5px] text-[color:var(--fg-faint)]">
+                                {contrib.loading ? '…' : t('plugins.detail.noContribs')}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* PluginsView —— 规范稿 renderPluginsMain:滚动页壳 + 头行(移动前置       */
 /* 菜单钮)+ 右上动作钮。添加安装面未备 → 头钮诚实落为「刷新清单」。          */
 /* ------------------------------------------------------------------ */
@@ -253,6 +438,8 @@ export function PluginsView() {
                             </button>
                         </div>
                     </div>
+                    {/* 详情卡:域树点插件行的落点(详情面,在总览三段之上)。 */}
+                    {s.selectedPlugin && <PluginDetailCard sel={s.selectedPlugin} plugins={plugins} />}
                     <PluginsSections plugins={plugins} />
                 </div>
             </div>

@@ -97,6 +97,7 @@ function Shell() {
     const [narrow, setNarrow] = useState(() => window.innerWidth <= MOBILE_BP);
     const [studioNav, setStudioNav] = useState('lore');
     const [pluginsNav, setPluginsNav] = useState<'installed' | 'market'>('installed');
+    const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
 
     /* ——— SPEC-DATA 目录态(待接:目录全是 mock 种子,消费面已标) ——— */
     const [activeModel, setActiveModel] = useState(MOCK_MODELS[0]!.id);
@@ -295,10 +296,29 @@ function Shell() {
         else if (op === 'levy') mvuStep('灵石', 5);
     }, [mvuStep]);
 
+    /** 规范稿 open-settings:settingsModalOpen=true + mobileDrawerOpen=false。 */
+    const openSettings = useCallback((tab?: string) => {
+        if (tab) setSettingsTab(tab);
+        setSettingsOpen(true);
+        setMobileDrawer(false);
+    }, []);
+
     const shell = useMemo<ShellCtx>(() => ({
         registry,
-        /* 规范稿 rail 动作:mobileDrawerOpen=false(抽屉内导航一律收屉)。 */
-        view, setView: (v: ViewId) => { setView(v); setMobileDrawer(false); }, railTab,
+        /* 规范稿 rail 动作:mobileDrawerOpen=false(抽屉内导航一律收屉)。
+           移动态导航收敛 —— 真视图只有 chat + hub:plugins 落设置页签
+           (不换 view),studio/home 折回 hub/chat;桌面原样直换。 */
+        view,
+        setView: (v: ViewId) => {
+            if (isMobile) {
+                if (v === 'plugins') { openSettings('plugins'); return; }
+                if (v === 'studio') v = 'hub';
+                else if (v === 'home') v = 'chat';
+            }
+            setView(v);
+            setMobileDrawer(false);
+        },
+        railTab,
         chats, activeChat, chat,
         selectChat: (id) => {
             setActiveChat(id);
@@ -368,8 +388,7 @@ function Shell() {
         openDropdown, setOpenDropdown,
         accountPopOpen, setAccountPopOpen,
         settingsOpen, settingsTab,
-        /* 规范稿 open-settings:settingsModalOpen=true + mobileDrawerOpen=false。 */
-        openSettings: (tab?: string) => { if (tab) setSettingsTab(tab); setSettingsOpen(true); setMobileDrawer(false); },
+        openSettings,
         closeSettings: () => setSettingsOpen(false),
         setSettingsTab,
         cmdkOpen, setCmdkOpen,
@@ -380,6 +399,7 @@ function Shell() {
         setStudioNav: (v: string) => { setStudioNav(v); setMobileDrawer(false); },
         pluginsNav,
         setPluginsNav: (v: 'installed' | 'market') => { setPluginsNav(v); setMobileDrawer(false); },
+        selectedPlugin, setSelectedPlugin,
         models: MOCK_MODELS, activeModel, setActiveModel,
         presets: MOCK_PRESETS, activePresetId,
         pickPreset: (id) => {
@@ -409,10 +429,10 @@ function Shell() {
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,
         accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
-        sheetSnap, vpMode, isMobile, studioNav, pluginsNav, activeModel,
+        sheetSnap, vpMode, isMobile, studioNav, pluginsNav, selectedPlugin,
         activePresetId, presetParams, globalLore, worldbook, selectedLoreId,
         notesText, chatSettings, mvu, mvuStep,
-        echoMvu, bridgeOp, stageData,
+        echoMvu, bridgeOp, stageData, openSettings, activeModel,
     ]);
 
     return (

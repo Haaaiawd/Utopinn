@@ -69,6 +69,15 @@ rerun LOOM before every tool call: persist and restore at meaningful work bounda
 `loom` command is the stable project-local invocation. If it is not on PATH in a source checkout, use
 the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative path from this project.
 
+## 提交署名约定(硬性)
+
+- 所有 git commit 必须带双共同作者 trailer,缺一不可:
+  ```
+  Co-Authored-By: YuFan Luo <129919749+Haaaiawd@users.noreply.github.com>
+  Co-Authored-By: Devin <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+  ```
+- 历史已整体重写(2026-11-20,281 笔),远端 `backup/pre-coauthor-rewrite` 是重写前备份。子代理产出的 commit 同样适用——收格时若发现漏挂,`git commit --amend` 补上再推。
+
 ## 运维备忘
 
 - **WSL 9P 环境病**：/mnt/d 是 9P 挂的 Windows 盘，高并发 I/O 会楔死（进程 D 态 `p9_client_rpc`）。**元凶常是 vite/chokidar 在 /mnt/d 上 watch 几万文件**——CLI 测试前先杀旧 dev 服。稳启配方：`LUKER_SKIP_WEBPACK=1 node server.js --dataRoot /tmp/<快照>`（webpack 整段剥离，`LUKER_PREBUILT_BUNDLES_DIR=<dataRoot>/_webpack/<hash>/output` 亦可）；dataRoot 别放 /mnt/d。

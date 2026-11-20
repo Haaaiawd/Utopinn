@@ -22,6 +22,10 @@ export const pluginsFeature: Feature = {
                 'plugins.none': '此组没有插件', 'plugins.market': 'Stage 形态与扩展市场',
                 'plugins.marketHint': '计划中 · C12 ui.contrib',
                 'plugins.bundled': '已内置', 'plugins.planned': '计划中',
+                /* 详情卡(rail 页详情面) */
+                'plugins.detail.back': '返回总览', 'plugins.detail.contribs': 'UI 贡献清单',
+                'plugins.detail.noContribs': '无 UI 贡献', 'plugins.detail.gone': '该插件不在当前清单中 —— 可能刚被移除或改名',
+                'plugins.detail.planned': '计划中 · 安装面未备(C12 只读 manifest)',
             },
             en: {},
         });

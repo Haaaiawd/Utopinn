@@ -201,8 +201,9 @@ export function PluginsTree() {
         ...(plugins.data?.items ?? [])
             .filter((p) => !p.disabled)
             .map((p) => ({ id: p.id, name: pluginLabel(p.id), icon: pluginIcon(p.id) })),
+        /* 市场目录件加 'mkt:' 前缀 —— 与服务端插件 id 区分(详情卡按前缀分面)。 */
         ...MOCK_MARKET_PLUGINS.filter((p) => p.installed)
-            .map((p) => ({ id: p.id, name: p.name, icon: p.icon as IconName })),
+            .map((p) => ({ id: `mkt:${p.id}`, name: p.name, icon: p.icon as IconName })),
     ];
     return (
         <div className="flex h-full min-h-0 flex-col">
@@ -233,22 +234,28 @@ export function PluginsTree() {
                 {activeList.length > 0 && (
                     <div className="space-y-1">
                         <div className={sect}><span>{t('tree.activePlugins')}</span></div>
-                        {activeList.map((p) => (
-                            <button
-                                key={p.id}
-                                className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface)]"
-                                style={{ color: 'var(--fg-secondary)' }}
-                                onClick={() => shell.openSettings('plugins')}
-                            >
-                                <span
-                                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--border-hairline)]"
-                                    style={{ background: 'var(--bg-active)', color: 'var(--fg-primary)' }}
+                        {activeList.map((p) => {
+                            const sel = shell.selectedPlugin === p.id;
+                            return (
+                                <button
+                                    key={p.id}
+                                    className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface)]"
+                                    style={sel
+                                        ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' }
+                                        : { color: 'var(--fg-secondary)' }}
+                                    /* 点行落详情卡(不跳设置)—— rail 页 = 详情面,批量开关归 settings 签。 */
+                                    onClick={() => { shell.setPluginsNav('installed'); shell.setSelectedPlugin(p.id); }}
                                 >
-                                    <Icon name={p.icon} size={12} />
-                                </span>
-                                <span className="truncate">{p.name}</span>
-                            </button>
-                        ))}
+                                    <span
+                                        className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[color:var(--border-hairline)]"
+                                        style={{ background: 'var(--bg-active)', color: 'var(--fg-primary)' }}
+                                    >
+                                        <Icon name={p.icon} size={12} />
+                                    </span>
+                                    <span className="truncate">{p.name}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
             </div>

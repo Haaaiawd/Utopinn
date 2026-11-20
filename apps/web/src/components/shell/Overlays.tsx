@@ -142,9 +142,9 @@ export function MobileFrame() {
                                         <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
                                     </span>
                                 </button>
-                                {/* 插件域入口(规范稿 plugins 域在移动端无 rail —— drawer 底补一个直达钮,
-                                    与 settings 页签的插件面并存)。 */}
-                                <button className="ghost-btn h-8 w-8 shrink-0" title={t('nav.plugins')} onClick={() => s.setView('plugins')}>
+                                {/* 插件入口:移动端导航收敛 chat+hub,plugins 域无真视图 ——
+                                    drawer 底直达 settings 插件页签(批量开关面,共享真数据)。 */}
+                                <button className="ghost-btn h-8 w-8 shrink-0" title={t('nav.plugins')} onClick={() => s.openSettings('plugins')}>
                                     <Icon name="plugins" size={16} />
                                 </button>
                                 <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { s.setMobileDrawer(false); s.openSettings('api'); }} title={t('settings.title')}>

@@ -177,7 +177,9 @@ export function LeftChrome() {
     const { t } = useI18n();
     const shell = useShell();
     const trees = useContribs('sidebar.tree');
-    const domain = shell.railTab;
+    /* 规范稿 renderSidebarBody:studio 特例 + plugins 域树,其余 rail 全回落
+       chat 会话树 —— home 无专属树,与移动 drawer(drawerDomain)同一规则。 */
+    const domain = shell.railTab === 'home' ? 'chat' : shell.railTab;
     const domainTrees = trees.filter((tr) => tr.rail === domain);
     return (
         <aside className="left-chrome" data-open={shell.sidebarOpen || undefined}>
