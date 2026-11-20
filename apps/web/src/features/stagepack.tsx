@@ -1,8 +1,10 @@
 // feature:stagepack — 舞台形态注册(novel/messenger/galgame 三种形态)。
-// 形态体与聊天形态共享 stage header/composer 骨架;数据走 stageData(mock 种子)。
+// 形态体与聊天形态共享 StageFrame(stage-header/弹层/QR/composer/生成引擎),
+// 本文件只管形态内容;数据走 stageData(mock 种子)+ 帧内统一 send 流。
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
 import { charImageUrl } from '../api/characters';
+import { StageFrame } from '../components/stage/StageFrame';
 import type { Feature } from '../kernel/kernel';
 
 /** 卡头像环(形态内复用:会话卡图,无卡 → default-char 占位)。 */
@@ -19,7 +21,7 @@ function StageRing({ size }: { size: number }) {
 
 /** novel 形态(规范稿:px-5 sm:px-10 py-6 + scroll-fade-mask / 640px 栏 /
  *  章头左对齐 mono num + serif 题 / novel-p 点选出「润色此段」行)。 */
-function NovelStage() {
+function NovelBody() {
     const { t } = useI18n();
     const s = useShell();
     return (
@@ -71,7 +73,7 @@ function NovelStage() {
 }
 
 /** messenger 形态(规范稿:频道 pill 条 + 620px 泡列 / 非己方带 w-8 头像环)。 */
-function MessengerStage() {
+function MessengerBody() {
     const s = useShell();
     const ch = s.stageData.channels.find((c) => c.id === s.stageData.activeChannel) ?? s.stageData.channels[0]!;
     return (
@@ -121,13 +123,14 @@ function MessengerStage() {
 
 /** galgame 形态(规范稿:stage-galgame 全屏底图 + 三段渐变 + 场景/赏景 pill
  *  + 84% 选项列 + backdrop-blur 对话卡[w-11 头像环])。 */
-function GalgameStage() {
+function GalgameBody() {
     const { t } = useI18n();
     const s = useShell();
     const vn = s.stageData.vn;
     return (
         <div className="relative flex min-h-0 flex-1 flex-col justify-between overflow-hidden">
-            <img src="/assets/backgrounds/stage-galgame.png" alt="Scene" className="absolute inset-0 h-full w-full object-cover" />
+            {/* 规范稿 vnBg = hallBg(云栖宗正殿内景,spec 内嵌图已抽为静态资产) */}
+            <img src="/assets/backgrounds/stage-hall.jpg" alt="Scene" className="absolute inset-0 h-full w-full object-cover" />
             <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, rgba(14,14,16,0.48) 0%, rgba(14,14,16,0.08) 48%, rgba(14,14,16,0.92) 100%)' }} />
             <div className="relative z-10 flex items-center justify-between p-3.5">
                 <span className="rounded-full px-3 py-1 text-[11.5px] text-white/90 backdrop-blur-md" style={{ background: 'rgba(18,18,20,0.58)', border: '1px solid rgba(255,255,255,0.12)' }}>
@@ -170,6 +173,11 @@ function GalgameStage() {
         </div>
     );
 }
+
+/* ——— 形态注册:全部套 StageFrame(规范稿四形态共享帧头+composer)——— */
+const NovelStage = () => <StageFrame><NovelBody /></StageFrame>;
+const MessengerStage = () => <StageFrame><MessengerBody /></StageFrame>;
+const GalgameStage = () => <StageFrame><GalgameBody /></StageFrame>;
 
 export const stagepackFeature: Feature = {
     name: 'stagepack',

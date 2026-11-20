@@ -10,7 +10,7 @@ import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { LogoU } from '../LogoU';
 import { WorkbenchBody } from './Workbench';
-import { ChatStage } from '../stage/CenterStage';
+import { CenterStage } from '../stage/CenterStage';
 import { useRemote } from '../panels/panelShared';
 import { cardData, charImageUrl, getCharacter } from '../../api/characters';
 import { getSettings } from '../../api/settings';
@@ -74,7 +74,7 @@ export function MobileFrame() {
             <div className="mobile-shell" ref={shellRef}>
                 <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
                     {isChat ? (
-                        <ChatStage />
+                        <CenterStage />
                     ) : ViewC ? (
                         <ViewC />
                     ) : (
@@ -601,12 +601,7 @@ function ConnectionSection() {
     const str = (v: unknown) => (typeof v === 'string' ? v : '');
     const source = str(oai.chat_completion_source);
     const baseUrl = str(oai.reverse_proxy) || str(oai.custom_url);
-    const SOURCES = ['openai', 'claude', 'openrouter', 'makersuite', 'mistralai', 'custom', 'deepseek', 'ai21', 'horde'];
-    if (source && !SOURCES.includes(source)) SOURCES.unshift(source);
-
-    const [addKey, setAddKey] = useState('api_key_openai');
     const [addVal, setAddVal] = useState('');
-    const [addLabel, setAddLabel] = useState('');
     const [busy, setBusy] = useState(false);
     const act = (fn: () => Promise<unknown>, done?: () => void) => {
         if (busy) return;
@@ -617,60 +612,90 @@ function ConnectionSection() {
     };
     const secretKeys = Object.keys(secrets.data?.secrets ?? {});
     const groups = secretKeys.filter((k) => secrets.data!.secrets[k]?.length);
+    /* 规范稿单密钥模型:当前 source 对应 key 的激活条 → mask;无 → 未配置 */
+    const curKey = `api_key_${source || 'openai'}`;
+    const curEntry = (secrets.data?.secrets?.[curKey] ?? []).find((en) => en.active) ?? secrets.data?.secrets?.[curKey]?.[0];
+    const hasSecret = !!curEntry;
+    /* 规范稿四源 pills(openai/deepseek/anthropic/custom) */
+    const PILL_SRCS = [['openai', 'OpenAI'], ['deepseek', 'DeepSeek'], ['anthropic', 'Anthropic'], ['custom', 'Custom']];
     return (
-        <>
-            <div className="inset-row">
-                <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.conn.source')}</span>
-                <div className="flex items-center gap-1.5">
-                    <select disabled value={source || ''} className="rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-1.5 py-1 text-[11px] opacity-50 outline-none">
-                        {SOURCES.map((v) => <option key={v} value={v}>{v || '—'}</option>)}
-                    </select>
-                    <WiredBadge warn>C1</WiredBadge>
+        <div className="space-y-4">
+            {/* 规范稿 source 分段 pills(真源点亮,余禁用 + C1 标) */}
+            <div className="flex items-center gap-1.5">
+                <div className="inline-flex rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
+                    {PILL_SRCS.map(([k, lbl]) => (
+                        <button key={k} disabled title={t('st.conn.unwired')} className="rounded-md px-2.5 py-1 text-[11.5px] font-medium disabled:cursor-not-allowed" style={source === k ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-muted)', opacity: source ? 0.55 : 1 }}>
+                            {lbl}
+                        </button>
+                    ))}
                 </div>
+                <WiredBadge warn>C1</WiredBadge>
             </div>
-            <div className="inset-row">
-                <span className="text-[12px] text-[color:var(--fg-secondary)]">Base URL</span>
-                <div className="flex items-center gap-1.5">
-                    <input disabled value={baseUrl} placeholder={t('st.conn.basePh')} className={`w-[200px] rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-2 py-1 text-[10.5px] opacity-50 outline-none ${mono}`} />
-                    <button className="ghost-btn h-6 rounded-md px-2 text-[10.5px] opacity-50" disabled title={t('st.conn.unwired')}>{t('st.conn.test')}</button>
-                    <WiredBadge warn>C2</WiredBadge>
-                </div>
-            </div>
-            {/* 真 secrets 脱敏面 */}
-            {groups.map((key) => (secrets.data!.secrets[key] ?? []).map((en: SecretEntry) => (
-                <div key={`${key}:${en.id}`} className="inset-row">
-                    <div className="min-w-0">
-                        <div className={`truncate text-[11.5px] font-medium text-[color:var(--fg-primary)] ${mono}`}>{key}{en.label ? <span className="ml-1.5 text-[10px] font-normal text-[color:var(--fg-muted)]">{en.label}</span> : null}</div>
-                        <div className={`truncate text-[10px] text-[color:var(--fg-faint)] ${mono}`}>{en.value}{en.active ? ` · ${t('st.secrets.active')}` : ''}</div>
+            <div className="inset-group">
+                {/* 规范稿上游 Base URL 行(列式 + 全宽 mono 输入) */}
+                <div className="inset-row flex-col !items-stretch gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.baseLabel')}</label>
+                        <WiredBadge warn>C2</WiredBadge>
                     </div>
-                    <button className="ghost-btn h-6 w-6 shrink-0" disabled={busy} title={t('st.secrets.delete')} onClick={() => act(() => deleteSecret(key, en.id))} style={{ color: 'var(--status-danger)' }}>
-                        <Icon name="trash" size={11} />
-                    </button>
+                    <input disabled value={baseUrl} placeholder={t('st.conn.basePh')} className={`h-8 w-full rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs opacity-60 outline-none ${mono}`} />
                 </div>
-            )))}
-            {secrets.data && !groups.length && <div className="inset-row"><span className="text-[11.5px] text-[color:var(--fg-faint)]">{t('st.secrets.none')}</span></div>}
-            {secrets.error && <div className="inset-row"><span className={`break-all text-[10.5px] ${mono}`} style={{ color: 'var(--status-danger)' }}>{secrets.error}</span></div>}
-            <div className="inset-row flex-col !items-stretch gap-1.5">
-                <span className="text-[10.5px] text-[color:var(--fg-faint)]">{t('st.secrets.add')}</span>
-                <div className="flex gap-1.5">
-                    <select value={addKey} onChange={(e) => setAddKey(e.target.value)} className={`rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-1.5 py-1 text-[10.5px] outline-none ${mono}`}>
-                        {(secretKeys.length ? secretKeys : [addKey]).map((k) => <option key={k} value={k}>{k}</option>)}
-                    </select>
-                    <input value={addVal} onChange={(e) => setAddVal(e.target.value)} type="password" placeholder={t('st.secrets.value')} className={`h-7 min-w-0 flex-1 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-2 text-[10.5px] outline-none ${mono}`} />
+                {/* 规范稿 API 密钥行(mask 状态 + 覆盖写入 + 保存/清除) */}
+                <div className="inset-row flex-col !items-stretch gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')}</label>
+                        <span className={`text-[10.5px] ${mono}`} style={{ color: hasSecret ? 'var(--status-ok)' : 'var(--status-warn)' }}>
+                            {hasSecret ? `${t('st.secrets.managed')} · ${curEntry!.value}` : t('st.secrets.none2')}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <input value={addVal} onChange={(e) => setAddVal(e.target.value)} type="password" placeholder={t('st.conn.secretPh')} className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs outline-none ${mono}`} />
+                        <button
+                            className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
+                            style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy || !addVal.trim() ? 0.5 : 1 }}
+                            disabled={busy || !addVal.trim()}
+                            onClick={() => act(() => putSecret(curKey, addVal.trim()), () => setAddVal(''))}
+                        >
+                            {t('st.secrets.save')}
+                        </button>
+                        {hasSecret && (
+                            <button className="h-8 shrink-0 rounded-lg px-2.5 text-[11.5px]" style={{ background: 'var(--bg-active)', color: 'var(--status-danger)' }} disabled={busy}
+                                onClick={() => act(() => deleteSecret(curKey, curEntry!.id))}>
+                                {t('st.secrets.clear')}
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex items-center justify-between gap-1.5">
-                    <input value={addLabel} onChange={(e) => setAddLabel(e.target.value)} placeholder={t('st.secrets.labelPh')} className="h-7 min-w-0 flex-1 rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] px-2 text-[10.5px] outline-none" />
-                    <button
-                        className="h-7 shrink-0 rounded-lg px-2.5 text-[11px] font-medium"
-                        style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy || !addVal.trim() ? 0.5 : 1 }}
-                        disabled={busy || !addVal.trim()}
-                        onClick={() => act(() => putSecret(addKey, addVal.trim(), addLabel.trim() || undefined), () => { setAddVal(''); setAddLabel(''); })}
-                    >
-                        {t('st.secrets.save')}
-                    </button>
+                {/* 规范稿连通性探测行 */}
+                <div className="inset-row">
+                    <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('st.conn.probe')}</div>
+                        <div className={`mt-0.5 text-[11px] ${mono} text-[color:var(--fg-muted)]`}>{t('st.conn.probeHint')}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button disabled title={t('st.conn.unwired')} className="h-8 rounded-lg px-3 text-[11.5px] font-medium opacity-50" style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}>{t('st.conn.test')}</button>
+                        <WiredBadge warn>C2</WiredBadge>
+                    </div>
                 </div>
             </div>
-        </>
+            {/* 真 secrets 脱敏面(规范稿未画,保留为附加 inset-group) */}
+            {(groups.length > 0 || secrets.error) && (
+                <div className="inset-group">
+                    {groups.map((key) => (secrets.data!.secrets[key] ?? []).map((en: SecretEntry) => (
+                        <div key={`${key}:${en.id}`} className="inset-row">
+                            <div className="min-w-0">
+                                <div className={`truncate text-[11.5px] font-medium text-[color:var(--fg-primary)] ${mono}`}>{key}{en.label ? <span className="ml-1.5 text-[10px] font-normal text-[color:var(--fg-muted)]">{en.label}</span> : null}</div>
+                                <div className={`truncate text-[10px] text-[color:var(--fg-faint)] ${mono}`}>{en.value}{en.active ? ` · ${t('st.secrets.active')}` : ''}</div>
+                            </div>
+                            <button className="ghost-btn h-6 w-6 shrink-0" disabled={busy} title={t('st.secrets.delete')} onClick={() => act(() => deleteSecret(key, en.id))} style={{ color: 'var(--status-danger)' }}>
+                                <Icon name="trash" size={11} />
+                            </button>
+                        </div>
+                    )))}
+                    {secrets.error && <div className="inset-row"><span className={`break-all text-[10.5px] ${mono}`} style={{ color: 'var(--status-danger)' }}>{secrets.error}</span></div>}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -747,7 +772,7 @@ function SettingsSheet() {
                                 </div>
                                 <div className="space-y-1.5">
                                     <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.customCss')}</div>
-                                    <textarea rows={3} value={cs.customCss} onChange={(e) => s.setChatSetting('customCss', e.target.value)} className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none" />
+                                    <textarea rows={3} value={cs.customCss} placeholder={t('st.customCss.ph')} onChange={(e) => s.setChatSetting('customCss', e.target.value)} className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none" />
                                 </div>
                             </div>
                         )}
