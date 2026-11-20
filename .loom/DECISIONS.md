@@ -266,3 +266,11 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - 兼容层宿主形态:右侧栏标签页(wb-tab)+ 可拆出受控悬浮窗(float-win);移动端落底 sheet。
 - 设计稿 assets/u_ui_codex_linear_shadcn_ui.html 的 ledger 面板是 mock 复刻——真宿主需 cardapp 面板类型:sandboxed iframe + postMessage ctx 桥 → /api/utopinn/chats/:id/state/chat_state。
 - bridgeOp(op) 的"面板→MVU/状态→toast"通道形状即兼容层的目标契约,mock 时先按它接。
+
+## 2026-11-20 §C 协议缺口收尾裁定
+
+- C2 连接测试、C5 模型清单、C3 卡面写面、C7 正则管理、C12 ui.contrib manifest —— 已交付(a91446a/0afb4c5/cfe3975/d163357,84 路由 named 全满)。
+- **C8 /attach 附件协议:砍掉。** 产品裁定"可能没必要"——附件(图片/文件注入上下文)暂不进协议,slash 菜单 /attach 维持 disabled 占位。
+- **C9 群聊/频道:砍掉。** 频道面板维持 wired:false 示例态;不做多人多角色群聊后端。
+- C6 trace 归一化:已消解(规范稿词表对齐后端,零映射)。
+- §C 全部关闭。审计档 assets/spec-v2-requirements-check.md §C 列此裁定为准。
