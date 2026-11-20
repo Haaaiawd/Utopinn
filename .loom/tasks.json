@@ -2953,6 +2953,7 @@
         "全量回归+实弹+golden-diff 绿"
       ],
       "reads": [
+        ".loom/design/v2-stack-decisions.md",
         "apps/server/src/endpoints/chats.js",
         "apps/server/public/scripts/openai.js"
       ],
@@ -3525,6 +3526,7 @@
         "TASK-013"
       ],
       "reads": [
+        ".loom/design/v2-stack-decisions.md",
         "apps/server/src/services/mvu-settle.js"
       ],
       "touches": [
@@ -3566,6 +3568,7 @@
         "TASK-009"
       ],
       "reads": [
+        ".loom/design/v2-stack-decisions.md",
         ".loom/design/cardapp-web-host.md",
         ".loom/capabilities/sandboxed-card-apps/capability.md"
       ],
@@ -3606,6 +3609,7 @@
       ],
       "depends_on": [],
       "reads": [
+        ".loom/design/v2-stack-decisions.md",
         "apps/web/vite.config.ts"
       ],
       "touches": [
@@ -3646,6 +3650,7 @@
         "TASK-041"
       ],
       "reads": [
+        ".loom/design/v2-stack-decisions.md",
         "apps/server/src/plugins/utopinn-connection.js"
       ],
       "touches": [

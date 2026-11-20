@@ -32,6 +32,7 @@
 
 ## Design document map
 
+- `design/v2-stack-decisions.md`(system)— V2 全栈分层拍板:后端双API面收敛/存储引擎语义分层/登录不造系统/前端优先级脊骨+执行序
 - `design/plugin-architecture.md`(system)— cordis 内核+profile/patch组合+事件五模式+服务四角色+seam 清单+插件UI贡献点
 - `design/core-engine.md`(system)— 服务端大脑移植的责任、边界、副作用分层
 - `design/generation-api.md`(contract)— /api/generate + WS ticket 生成管线契约
