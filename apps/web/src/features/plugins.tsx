@@ -6,7 +6,7 @@ import { PluginsTree } from '../components/sidebar/trees';
 export const pluginsFeature: Feature = {
     name: 'plugins',
     apply(ctx) {
-        ctx.add('nav.rail', { view: 'plugins', icon: 'puzzle', order: 40 });
+        ctx.add('nav.rail', { view: 'plugins', icon: 'plugins', order: 40 });
         ctx.add('view', { view: 'plugins', Component: PluginsView });
         ctx.add('sidebar.tree', { rail: 'plugins', order: 10, Component: PluginsTree });
         ctx.locale('plugins', {

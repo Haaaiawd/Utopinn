@@ -162,6 +162,15 @@ function Shell() {
     }, []);
 
     useEffect(() => { void refreshCards(); }, [refreshCards]);
+    /* serverStatus 探针:c07f8eb 重写丢的线 —— 挂回。listAllChats 握手判定
+       online/offline;online 后由下方 effect 拉真 chats/cards(live=true
+       解锁 QR 条/真楼层/离线 banner 等 live-only 面)。 */
+    useEffect(() => {
+        if (serverStatus !== 'checking') return;
+        let dead = false;
+        void refreshChats().then((ok) => { if (!dead) setServerStatus(ok ? 'online' : 'offline'); });
+        return () => { dead = true; };
+    }, [serverStatus, refreshChats]);
     useEffect(() => {
         if (serverStatus === 'online') {
             void refreshChats();
@@ -292,17 +301,14 @@ function Shell() {
             setActiveChat(id);
             setView('chat');
             if (window.innerWidth <= 920) setSidebarOpen(false);
-            // 规范稿 s.defaultTabs —— 会话自带板块,选中即补开。
-            const s = chats.find((c) => c.id === id);
-            if (s?.defaultTabs?.length) {
-                setOpenTabs((prev) => {
-                    const next = [...prev];
-                    for (const t of s.defaultTabs!) if (!next.includes(t)) next.push(t);
-                    return next;
-                });
-                setActiveTab(s.defaultTabs[0]!);
-                setWorkbenchOpen(true);
-            }
+            /* 规范稿 select-session:openTabs 整包替换为会话 defaultTabs
+             * (空 → newtab launcher 页),并重置 novel 段选 —— 不合入旧 tab。 */
+            const sc = chats.find((c) => c.id === id);
+            const tabs = [...(sc?.defaultTabs ?? [])];
+            setOpenTabs(tabs);
+            setActiveTab(tabs[0] ?? 'newtab');
+            setStageData((prev) => ({ ...prev, selParaId: null }));
+            if (tabs.length) setWorkbenchOpen(true);
         },
         newChat: onNewChat,
         renameChat: onRenameChat,

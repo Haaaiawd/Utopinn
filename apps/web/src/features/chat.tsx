@@ -8,8 +8,9 @@ import { HomeView } from '../components/views/SpecViews';
 export const chatFeature: Feature = {
     name: 'chat',
     apply(ctx) {
-        ctx.add('nav.rail', { view: 'chat', icon: 'chat', order: 10 });
-        ctx.add('nav.rail', { view: 'home', icon: 'cards', order: 20 });
+        /* 规范稿 rail 序:home,cards→chat,studio,plugins 品牌图标键 */
+        ctx.add('nav.rail', { view: 'home', icon: 'home', order: 10 });
+        ctx.add('nav.rail', { view: 'chat', icon: 'chat', order: 20 });
         ctx.add('view', { view: 'chat', Component: CenterStage });
         ctx.add('view', { view: 'home', Component: HomeView });
         ctx.add('stage.form', { kind: 'chat', order: 0, Component: ChatStage });

@@ -8,7 +8,7 @@ import { StudioTree } from '../components/sidebar/trees';
 export const studioFeature: Feature = {
     name: 'studio',
     apply(ctx) {
-        ctx.add('nav.rail', { view: 'studio', icon: 'bookOpen', order: 30 });
+        ctx.add('nav.rail', { view: 'studio', icon: 'studio', order: 30 });
         ctx.add('view', { view: 'studio', Component: StudioView });
         // 移动端资产工坊 —— view:'hub' 贡献(VIEW_IDS 已含 'hub')。
         ctx.add('view', { view: 'hub', Component: MobileHubView });
