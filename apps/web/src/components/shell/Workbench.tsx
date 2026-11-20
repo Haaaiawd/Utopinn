@@ -27,7 +27,9 @@ function panelTitle(t: (k: string) => string, c?: PanelTypeContribution, fallbac
     return c.title ? t(c.title) : t(`panel.type.${c.type}`);
 }
 
-/** 新键 launcher(规范稿 newtab 页:搜索 + 「新键」目录格 + 「建议」行)。 */
+/** 新键 launcher(规范稿 newtab 页:搜索 + PANEL_CATALOG 三桶 ——
+ *  cardapp 卡提供面板行(1.5px 粗边 + 「iframe 宿主」尾注,整宽显眼位)
+ *  system 系统面板两列格 / suggested 建议行(三方贡献逃生位)。 */
 function Launcher() {
     const { t } = useI18n();
     const shell = useShell();
@@ -35,7 +37,8 @@ function Launcher() {
     const q = shell.launcherSearch.trim().toLowerCase();
     const match = (c: PanelTypeContribution) =>
         !q || panelTitle(t, c).toLowerCase().includes(q) || c.type.includes(q) || (c.desc ? t(c.desc).toLowerCase().includes(q) : false);
-    const fresh = contribs.filter((c) => (c.category ?? 'new') === 'new' && match(c));
+    const cardItems = contribs.filter((c) => c.category === 'cardapp' && match(c));
+    const sysItems = contribs.filter((c) => (c.category ?? 'system') === 'system' && match(c));
     const suggested = contribs.filter((c) => c.category === 'suggested' && match(c));
     return (
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
@@ -49,24 +52,49 @@ function Launcher() {
                     className="w-full bg-transparent text-[12.5px] outline-none"
                 />
             </div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('wb.launcher.new')}</div>
-            <div className="grid grid-cols-2 gap-2">
-                {fresh.map((c) => (
-                    <button
-                        key={c.type}
-                        className="inset-group inset-row-btn flex items-center gap-2.5 !border-[color:var(--border-hairline)] px-3 py-2.5 text-left"
-                        onClick={() => shell.openPanel(c.type)}
-                    >
-                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--bg-active)] text-[color:var(--fg-secondary)]">
-                            <Icon name={c.icon} size={14} />
-                        </span>
-                        <span className="min-w-0">
-                            <span className="block truncate text-[12px] text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
-                            {c.desc && <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{t(c.desc)}</span>}
-                        </span>
-                    </button>
-                ))}
-            </div>
+            {cardItems.length > 0 && (
+                <>
+                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('wb.launcher.cardapp')}</div>
+                    <div className="mb-4 space-y-2">
+                        {cardItems.map((c) => (
+                            <button
+                                key={c.type}
+                                className="inset-row-btn flex w-full items-center justify-between gap-3 rounded-[10px] p-3.5 text-left"
+                                style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-bold)', boxShadow: 'var(--shadow-card)' }}
+                                onClick={() => shell.openPanel(c.type)}
+                            >
+                                <span className="flex min-w-0 items-center gap-3">
+                                    <Icon name={c.icon} size={18} className="shrink-0 text-[color:var(--fg-primary)]" />
+                                    <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
+                                </span>
+                                <span className="shrink-0 font-mono-ui text-[10.5px] text-[color:var(--brand)]">{t('wb.launcher.iframe')}</span>
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
+            {sysItems.length > 0 && (
+                <>
+                    <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('wb.launcher.system')}</div>
+                    <div className="grid grid-cols-2 gap-2">
+                        {sysItems.map((c) => (
+                            <button
+                                key={c.type}
+                                className="inset-group inset-row-btn flex items-center gap-2.5 !border-[color:var(--border-hairline)] px-3 py-2.5 text-left"
+                                onClick={() => shell.openPanel(c.type)}
+                            >
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[color:var(--bg-active)] text-[color:var(--fg-secondary)]">
+                                    <Icon name={c.icon} size={14} />
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block truncate text-[12px] text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
+                                    {c.badge && <span className="block truncate text-[9px] text-[color:var(--fg-faint)]">{t(c.badge)}</span>}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </>
+            )}
             {suggested.length > 0 && (
                 <>
                     <div className="mb-1.5 mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('wb.launcher.suggested')}</div>
@@ -132,6 +160,16 @@ export function Workbench() {
                     <Icon name="plus" size={13} />
                 </button>
                 <span className="flex-1" />
+                {/* 规范稿 detach-panel:激活板块拆出为受控悬浮窗(launcher 页无对象不画)。 */}
+                {!launcherActive && shell.activeTab && (
+                    <button
+                        className="ghost-btn h-6 w-6 shrink-0"
+                        onClick={() => shell.detachPanel(shell.activeTab)}
+                        title={t('wb.detach')}
+                    >
+                        <Icon name="detach" size={12} />
+                    </button>
+                )}
                 <button className="ghost-btn h-6 w-6 shrink-0" onClick={shell.toggleWorkbench} title={t('wb.collapse')}>
                     <Icon name="panelRight" size={12} />
                 </button>

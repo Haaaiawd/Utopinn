@@ -96,8 +96,15 @@ export interface ShellCtx {
     selectTab: (id: string) => void;
     openNewTab: () => void;
     closeTab: (id: string) => void;
-    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。 */
-    openPanel: (type: PanelType) => void;
+    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。
+     *  params 是随行载荷 —— 写进 panelParams[type] 后由板块体自行消费,
+     *  如 openPanel('diag', { sub:'trace', job }) 直开某 job 的 trace 页;
+     *  不传 params 保留该类型上次的现场(重开=恢复)。 */
+    openPanel: (type: PanelType, params?: unknown) => void;
+    /** 板块载荷袋(键=板块类型,值=体自释形状;壳不解释,透传不透解)。 */
+    panelParams: Record<string, unknown>;
+    /** 整包替换某类型的载荷;板块体内部导航也走它(现场跨 tab 切换保持)。 */
+    setPanelParams: (type: PanelType, params: unknown) => void;
     /** 拆出为受控悬浮窗(规范稿 detach-panel)。 */
     detachPanel: (type: PanelType) => void;
     dockBack: () => void;
