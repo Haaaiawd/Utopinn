@@ -2,11 +2,13 @@
 
 ## Intended result
 
-**V1(2026-11-10 收缩拍板)= 旧 Luker/酒馆 UI 皮 + 服务端大脑真接线。** 循序渐进:apps/server/public 旧 UI 是正式前端(不再是过渡件),所有生成入口一次性改道 `/api/utopinn/generate`(服务端组装+派发+落盘),浏览器端原版组装引擎(openai.js/world-info.js ~14k 行)留码停用、只作行为对照。性能目标=分离本身:WI扫描/tokenize/正则管线全在服务端,浏览器只渲染+交互。
+**V2(2026-11-20 方向再拍板)= apps/web 新 SPA 即正式前端 + Cordis 插件后端 + CLI 参考客户端。** 方向已回暖:11 个 utopinn-* 插件管全部服务端域(profile.yaml 声明式装载,84 路由),前端 cordis 语义微内核(贡献点:nav.rail/view/sidebar.tree/panel.type/renderer/ctbar/locale)按规范稿高保真还原,CLI 覆盖 83 具名路由(词表派生+加载期对账)。服务端大脑唯一组装路径(/api/utopinn/generate),浏览器零组装。
 
-**搁置(非删除)**:apps/web 新 SPA、apps/mobile RN 端、CardApp WebView 面板、RP 形态/阅读器形态工作全部 parked——代码保留、设计文档转 reference,方向回暖可直接续。utopinn 服务端插件面(/api/utopinn/*)即产品服务端,不是为新 UI 预备的旁路。
+**当前里程碑 = 真玩通卡**:正经导入→大厅显图→连接→生成→MVU 结算→CardApp 宿主,端到端验收(TASK-045~048)。之后才是形态深化(novel/galgame)与移动端。
 
-长期愿景(回温时恢复):DSH 式全插件产品——内核=真 cordis,酒馆语义皆插件;SPA 管理端 + RN 手机端 + CardApp 沙箱面板。MVU 服务端 settle、TH T0/T1、旧 ST 服务端插件 adapter 的既有成果全部保留为 V1 资产。
+**角色分工**:apps/web = 全功能管理端+游玩端;apps/cli = 参考客户端/验收面;apps/mobile = 薄客户端(Expo,chat 主+资产工坊+设置收一切);apps/server/public 旧 jQuery UI = 兼容 harness(LUKER_SERVE_LEGACY,仅 e2e/golden 用)。
+
+**搁置(非删除)**:RN 真机端、RP 形态/阅读器形态 P0(TASK-026/028 停泊)、群聊/频道(§C C9 砍)、附件(§C C8 砍)。
 
 ## People and operating reality
 
@@ -26,7 +28,7 @@
 - 高级功能不得挤占移动端主界面——藏进设置或仅 web 可见
 - 个人云为主,ST 式多用户隔离沿用不深化;online-first,客户端缓存只读
 - i18n=中英双字典起步(locale-owned 文案纪律);移动端=Expo dev build
-- V1 边界:不动旧 jQuery UI 渲染层(性能靠分离,不靠重写);旧 UI 生成入口全切服务端,客户端引擎留码停用可对照
+- V2 边界:旧 jQuery UI 仅兼容 harness,不再演进;SPA 是唯一演进前端;移动端收敛 chat+hub+设置一套导航
 
 ## Design document map
 

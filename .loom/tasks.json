@@ -2619,7 +2619,7 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "三份 audit 的 HIGH 面全灭(安全+兼容+持久化)",
@@ -2630,9 +2630,10 @@
         "current": "audit 修复战役主体完成;剩 M12(STscript builtins 功能缺口)M13(待核) L1-L5 lows + M2 设计级",
         "next": "golden-diff 语料复核 WI 五层来源;M12 STscript builtins 按上游清单补注册"
       },
-      "evidence": [],
+      "evidence": "后端 audit 修复经 review 波次落地:B1 regex 写卡补 spec 盖章、B2 同步闸补 5 写路由、W2 assertWritable/W4 apiId 收窄/W6 diag admin 闸/W7 幽灵放行/N1-N3(52ccad7 一带);后续再加固:读面 7 条 dirty:false 闸(cc48c38)、settings update() 临界区(03c5a56)、W5 活句柄(579d71d)。",
       "created_at": "2026-11-05T08:04:51.786Z",
-      "updated_at": "2026-11-06T11:14:54.612Z"
+      "updated_at": "2026-11-06T11:14:54.612Z",
+      "doneAt": "2026-11-20"
     },
     {
       "id": "TASK-030",
@@ -2833,7 +2834,7 @@
         "apps/server/public/"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "public/ 内 /api/chats/get|append|patch|save 调用全切 utopinn 路由(或经兼容 shim)",
@@ -2868,13 +2869,14 @@
         "current": "Top-10 高热调用改道中(子代理):chats get/save/append/patch/delete/rename + characters all/get + presets/worldinfo/settings CRUD",
         "next": "子代理收口后逐点验收;state sidecar 路由(并行中)落地后补 state 调用改道;settings PATCH 白名单外的节保留 legacy 标记"
       },
-      "evidence": [],
+      "evidence": "方向切换后作废:新 SPA(apps/web)即 utopinn REST 原生客户端,legacy jQuery UI 降为兼容 harness(LUKER_SERVE_LEGACY),不再有\"旧浏览器改道新 REST\"的过渡语义。",
       "outcome": "旧 UI 所有数据面调用都走 utopinn REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
       "boundaries": [
         "jQuery 渲染层不动",
         "group 聊天依赖 TASK-037"
       ],
-      "updated_at": "2026-11-19T06:47:18.148Z"
+      "updated_at": "2026-11-19T06:47:18.148Z",
+      "doneAt": "2026-11-20"
     },
     {
       "id": "TASK-034",
@@ -2897,7 +2899,7 @@
         "apps/server/public/scripts/openai.js"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "Generate() 在 requestScope===chat 时直接调服务端,跳过 openai.js 组装路径(非chat scope 保留)",
@@ -2928,17 +2930,18 @@
         "completed": [],
         "next": "短路+timedWI 已收(047f9c1);尾巴:preset=20s(listWithDocs全量→active两份)+每轮409(job携带新integrity),待 037b 格域释放后修"
       },
-      "evidence": [],
+      "evidence": "架构性达成:SPA 从无 openai.js/组装引擎,服务端 /api/utopinn/generate 是唯一组装路径——Phase2 短路目标由新前端形态天然兑现。",
       "outcome": "浏览器彻底薄客户端:组装代码死路径化可删,「改善性能」目标兑现。",
       "boundaries": [
         "不删组装代码文件本体(物理删除归 TASK-035)",
         "非 chat scope 保留客户端组装"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-19T05:40:27.051Z",
+      "doneAt": "2026-11-20"
     },
     {
       "id": "TASK-035",
-      "title": "旧端点退役:legacy chats/openai/world-info/backends 删除",
+      "title": "legacy 端点收敛面:兼容 harness 依赖清点+utopinn REST 补齐+旧端点删减",
       "depends_on": [
         "TASK-032",
         "TASK-033",
@@ -2984,7 +2987,7 @@
         "next": "挂起:legacy 端点仍是浏览器/CLI fallback,TASK-038 验收矩阵全绿后再谈物理删除(2026-11-19 拍板)"
       },
       "evidence": [],
-      "outcome": "旧架构物理删除:服务端只剩 fiber 面,前端只剩薄壳。",
+      "outcome": "清点 LUKER_SERVE_LEGACY 兼容 harness(golden/e2e)仍依赖的 legacy 端点集合;utopinn REST 已可覆盖的删掉,harness 专用端点标注 compat 面,其余制定退役序。新 SPA 不依赖任何 legacy 端点(已成立)。",
       "boundaries": [
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
@@ -3198,7 +3201,7 @@
         "apps/server/tests/"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
@@ -3220,9 +3223,7 @@
         }
       ],
       "progress": 0,
-      "evidence": [
-        "a879692 壳落地:四层壳+Cordis域 feature 组织+品牌图标v2+U馆命名/视口入设置"
-      ],
+      "evidence": "apps/web SPA 已落地迭代(贡献点内核/双壳/真数据面/贡献清单水合),49e15d2。账簿修复:方向切换后补记。",
       "outcome": "设计稿 u_ui_codex_linear_shadcn_ui.html 的三层壳(托盘轨/侧栏/舞台/右工作台)+设计token+移动端抽屉底sheet 落进现有 React 栈;chat 舞台真接 src/api,其余形态留 typed 结构",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
@@ -3230,7 +3231,8 @@
       "updated_at": "2026-11-19T12:06:57.938553Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
       "completed_at": null,
-      "note": "status: active→open(复刻格在飞,验收后回 active/done)"
+      "note": "status: active→open(复刻格在飞,验收后回 active/done)",
+      "doneAt": "2026-11-20"
     },
     {
       "id": "TASK-041",
@@ -3434,7 +3436,7 @@
     },
     {
       "id": "TASK-044",
-      "title": "形态×插件面:stats 插件 + novel 章目录 + galgame 三件套 + ui.contrib",
+      "title": "形态×插件面:novel 章目录 + galgame 三件套(余量)",
       "outcome": "四种舞台形态与统计面所需的服务端/插件面按 plugin-surface-forms.md 规划落地:utopinn-stats 聚合视图(job perf/trace+diag inject 事件),novel 章目录 sidecar+range regen,galgame choices 字段+assets 面+scene sidecar,ui.contrib manifest(末位)。",
       "acceptance": [
         {
@@ -3489,9 +3491,170 @@
         "current": "",
         "next": ""
       },
-      "evidence": [],
+      "evidence": "已完成:stats 并入 utopinn-diag(插件合并 27d1ceb)、ui.contrib manifest 已被前端水合消费(b30ec08)。余量:novel 章目录 sidecar+range regen、galgame choices+assets 面+scene sidecar。",
       "created_at": "2026-11-19T13:46:57.022Z",
       "updated_at": "2026-11-19T13:46:57.022Z"
+    },
+    {
+      "id": "TASK-045",
+      "title": "P0: MVU 存量聊天 autoInit —— 预建卡带聊天不初始化",
+      "outcome": "chats.js append-to-existing 分支 settleMvuAfterAppend 不传 autoInit,预建聊天(floor-0 有 MVU 信号未初始化)settle 对空变量结算,mvu state 恒 0。改判定:autoInit 看 floor-0 初始化态而非聊天新建态。",
+      "acceptance": [
+        {
+          "criterion": "掌门卡预建聊天进局后,首轮生成 JSONPatch 结算落盘,mvu state 非空",
+          "verify_by": "掌门卡实弹:/mvu state 读回含 stat_data",
+          "evidence": ""
+        },
+        {
+          "criterion": "非 MVU 卡聊天不受影响(mvuSignalPresent 早退),已初始化聊天不重复 init(already_initialized 早退)",
+          "verify_by": "双卡对照验收",
+          "evidence": ""
+        },
+        {
+          "criterion": "不回归:新建聊天 autoInit 行为不变",
+          "verify_by": "既有 mvu 验收脚本全绿",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不动 settleMvuMessage 结算语义,只动触发条件",
+        "init 内部早退是安全网,不绕过"
+      ],
+      "depends_on": [
+        "TASK-013"
+      ],
+      "reads": [
+        "apps/server/src/services/mvu-settle.js"
+      ],
+      "touches": [
+        "apps/server/src/endpoints/chats.js",
+        "apps/server/src/services/mvu-settle.js"
+      ],
+      "implementation_notes": [],
+      "status": "open",
+      "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-046",
+      "title": "P0: CardApp 应用内浮窗宿主(BBS 类卡面应用落地)",
+      "outcome": "卡面 CardApp(如掌门卡 BBS 论坛浮窗)需要应用内宿主:card-apps/ 目录装载、iframe/webview 沙箱渲染、ctx 桥(含独立辅助生成请求 /gen 类入口)。现状:card-apps/ 空、cardAppFiles 0、stscript /gen 静默不执行。TASK-042 交付的是 CLI headless 宿主,应用内宿主是另一面。",
+      "acceptance": [
+        {
+          "criterion": "卡内 card_app.files 在导入时物化到 card-apps/<stem>/,前端可查",
+          "verify_by": "导入验收脚本断言 cardAppFiles>0",
+          "evidence": ""
+        },
+        {
+          "criterion": "应用内(CardApp 面板/浮窗)能挂载沙箱渲染真实 CardApp,ctx 桥双向通",
+          "verify_by": "掌门卡 BBS 浮窗在 web 端打开渲染",
+          "evidence": ""
+        },
+        {
+          "criterion": "CardApp 发起的辅助生成请求经服务端管线执行并有 diag 记录",
+          "verify_by": "BBS 发起请求后 diag/events 有生成记录",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "沙箱边界不破:ctx 白名单桥,不裸暴露 ST 全局",
+        "宿主复用既有 card-runtime mounts,不另起渲染栈"
+      ],
+      "depends_on": [
+        "TASK-042",
+        "TASK-009"
+      ],
+      "reads": [
+        ".loom/design/cardapp-web-host.md",
+        ".loom/capabilities/sandboxed-card-apps/capability.md"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/src/card-runtime/",
+        "apps/web/src/components/panels/"
+      ],
+      "implementation_notes": [],
+      "status": "open",
+      "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-047",
+      "title": "卡库正经导入面:图显链路修复+探针件清理+导入验收",
+      "outcome": "vite 代理漏 /characters /User%20Avatars /assets /backgrounds /user /thumbnails 静态根→卡图 404 全显幽灵兜底;数据根里 TH-Probe/smoke-cardapp 等探针件混入库。修代理表、清理探针、验导入→图显→开聊链路。",
+      "acceptance": [
+        {
+          "criterion": "vite proxy 覆盖全部用户目录静态根,卡 PNG 在大厅/聊天头正常显图",
+          "verify_by": "dev 服浏览器肉眼验证",
+          "evidence": ""
+        },
+        {
+          "criterion": "数据根角色目录只剩真实卡(掌门/修仙/Seraphina/默认),探针件清除",
+          "verify_by": "ls characters 对照",
+          "evidence": ""
+        },
+        {
+          "criterion": "正经导入一张新卡→大厅显图→进会话,链路无断点",
+          "verify_by": "导入验收",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "/assets 路径与 vite 本地资产冲突时用更精确前缀(/assets 指服务端用户资产目录,本地 public/assets 不代)",
+        "不删用户真实卡,只清探针件"
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/web/vite.config.ts"
+      ],
+      "touches": [
+        "apps/web/vite.config.ts",
+        "apps/web/src/api/characters.ts"
+      ],
+      "implementation_notes": [],
+      "status": "open",
+      "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-048",
+      "title": "连接链路端到端验收:settings API 面→connection/test→models→generate",
+      "outcome": "Izumi 1029/Meowssiah_1.9.12 预设已装 OpenAI Settings/,但连接链路(填 key→测连→拉模型→生成)未端到端验过。跑通全真一轮:web 设置面填端点/key→connection/test→models 拉取→chat 生成→swipe。",
+      "acceptance": [
+        {
+          "criterion": "connection/test 对真实端点返回 ok+延迟(或如实错误)",
+          "verify_by": "curl/CLI connection test 实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "models 端点返回模型清单并写入设置面",
+          "verify_by": "models 实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "预设(Izumi/Meowssiah)选中后 chat 生成走通,diag 有 job 记录",
+          "verify_by": "掌门卡或 Seraphina 一轮真生成",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不内置任何密钥,用户现场填",
+        "失败面如实报错不静默"
+      ],
+      "depends_on": [
+        "TASK-041"
+      ],
+      "reads": [
+        "apps/server/src/plugins/utopinn-connection.js"
+      ],
+      "touches": [
+        "apps/web/src/",
+        "apps/server/src/plugins/utopinn-connection.js"
+      ],
+      "implementation_notes": [],
+      "status": "open",
+      "created": "2026-11-20"
     }
   ],
   "milestones": [

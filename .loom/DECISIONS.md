@@ -274,3 +274,9 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - **C9 群聊/频道:砍掉。** 频道面板维持 wired:false 示例态;不做多人多角色群聊后端。
 - C6 trace 归一化:已消解(规范稿词表对齐后端,零映射)。
 - §C 全部关闭。审计档 assets/spec-v2-requirements-check.md §C 列此裁定为准。
+
+## D-2026-11-20-rwvq: 方向再拍板(2026-11-20):V1 旧UI皮方案到期,V2 = apps/web 新SPA 即正式前端。实际工作早已沿此推进(cordis 11 插件+SPA 微内核+CLI 词表派生),本次为账簿追认:PROJECT.md 方向改写;TASK-040/033/034 按已达成或作废收账,TASK-035 重划为 legacy 收敛面,TASK-044 收窄到 novel+galgame 余量;新开 TASK-045(MVU 存量聊天 autoInit,P0-2 实测 bug)、TASK-046(CardApp 应用内浮窗宿主,BBS 类卡面应用)、TASK-047(卡图显链路+导入验收)、TASK-048(连接链路端到端)。
+
+- Changed: .loom/PROJECT.md, .loom/tasks.json
+- Affected tasks: TASK-029, TASK-033, TASK-034, TASK-035, TASK-040, TASK-044, TASK-045, TASK-046, TASK-047, TASK-048
+- At: 2026-11-20T10:45:23.894Z
