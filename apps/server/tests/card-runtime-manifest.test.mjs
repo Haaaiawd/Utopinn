@@ -36,7 +36,9 @@ test('minimal manifest: entry defaults, permissions normalized', () => {
     assert.equal(r.manifest.entryKind, 'module');
     assert.equal(r.manifest.enabled, true);
     assert.deepEqual(r.manifest.permissions.stateNamespaces, []);
-    assert.deepEqual(r.manifest.permissions.api, ['ctx']);
+    // TASK-046:module 入口默认 ctx+th 双 face(ctx 承载 init(ctx)+ctx.*,
+    // th 兼容 T0 表);document 入口保持 TH 默认。permissions.api 显式声明可收窄。
+    assert.deepEqual(r.manifest.permissions.api, ['ctx', 'th']);
 });
 
 test('document entry kinds recognized', () => {

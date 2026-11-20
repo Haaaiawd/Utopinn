@@ -142,7 +142,7 @@ async function resolveGroupGenerationPlan({ request, body }) {
  * presetDoc → chat-completions 派发 body 参数段(透传生成参数,
  * 与前端发往 /generate 的 oai_settings 子集同构)。
  */
-function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
+export function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
     const d = presetDoc ?? {};
     const passthrough = {};
     for (const [k, v] of Object.entries(d)) {

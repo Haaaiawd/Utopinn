@@ -2,7 +2,19 @@
 // (RN WebView / web iframe) and sandboxed card code. Nonce + allowlist +
 // request-id correlation per mount. See .loom/design/mobile-panels.md.
 
-/** Methods a mounted CardApp may invoke through the bridge (Luker CardApp ctx face). */
+/** Methods a mounted CardApp may invoke through the bridge (Luker CardApp ctx face).
+ * The second block (TASK-046) is the surface the web/RN ctx shim actually
+ * crosses the wire for — everything else on the shim's ctx object
+ * (container/eventSource/lukerContext/timers/…) is realm-local and never
+ * touches the bridge. Semantics mirror apps/cli/cardapp-host.mjs ctxDispatch:
+ *   ctx.setVariable      {key, value}            → chat_metadata.variables[key] = value (whole-key replace)
+ *   ctx.editMessage      {messageId, text}       → /body/<i>/mes (+active swipe slot)
+ *   ctx.executeSlashCommand {script}             → stscript triggerSlash semantics
+ *   ctx.setExtensionPrompt {key,value,position,depth,scan,role} → settings.extension_prompts[key]
+ *   ctx.generate         {type?, quietPrompt?}   → POST /api/utopinn/generate (aux/quiet path included)
+ *   ctx.getWorldBooks    {withSource?}           → composite book list (chat/character/aux/global/persona)
+ *   ctx.eventEmit        {name, args?}           → card → host event fan-out (worldinfo_force_activate 等)
+ */
 export const PANEL_METHODS = [
     'ctx.sendMessage',
     'ctx.swipe',
@@ -19,6 +31,15 @@ export const PANEL_METHODS = [
     'ctx.off',
     'ctx.setTimer',
     'ctx.dispose',
+    // ── TASK-046 ctx-face web 宿主补齐面 ──────────────────────────────────
+    'ctx.setVariable',
+    'ctx.editMessage',
+    'ctx.executeSlashCommand',
+    'ctx.setExtensionPrompt',
+    'ctx.generate',
+    'ctx.getWorldBooks',
+    'ctx.eventEmit',
+    'ctx.deleteChatState',
 ] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];
 
@@ -233,8 +254,10 @@ export interface PanelPush {
     channel: 'utopinn-panel';
     direction: 'push';
     nonce: string;
-    event: 'chat.updated' | 'swipe.changed' | 'state.changed' | 'lifecycle.unmount' | 'th.event';
-    /** th.event → {name: ThTavernEventT0|string, args: unknown[]}; others free-form. */
+    event: 'chat.updated' | 'swipe.changed' | 'state.changed' | 'lifecycle.unmount' | 'th.event' | 'host.event';
+    /** th.event/host.event → {name: ThTavernEventT0|string, args: unknown[]}; others free-form.
+     * 'host.event' is the ctx-face counterpart (cardapp-web-host.md): the shim
+     * re-emits payload.name on ctx.eventSource with payload.args. */
     payload?: Record<string, unknown>;
 }
 
@@ -256,6 +279,12 @@ export interface PanelBootstrap {
     messageId?: number;
     /** th face only: names resolve for waitGlobalInitialized('X') without host round-trip. */
     initializedGlobals?: string[];
+    /** ctx face: chat this mount is bound to (no .jsonl) — seeds ctx.getChatId/lukerContext.chatId. */
+    chatName?: string;
+    /** ctx face: mount-scoped asset base ('/card-runtime/m/<id>/') — seeds ctx.assetBase. */
+    assetBase?: string;
+    /** ctx face: mount manifest entry path — the init-caller imports it. */
+    entry?: string;
 }
 
 export function isPanelMethod(v: unknown): v is AnyPanelMethod {

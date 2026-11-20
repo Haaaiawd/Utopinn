@@ -292,6 +292,63 @@ test('shim endpoint serves t0 runtime without a session', async () => {
     assert.equal(bad.status, 404);
 });
 
+// ---------- ctx face (TASK-046): ?shim=ctx + public ctx-shim ----------
+
+test('shim endpoint serves ctx runtime without a session', async () => {
+    const res = await fetch(`${BASE}/card-runtime/shim/ctx.js`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /javascript/);
+    const body = await res.text();
+    assert.match(body, /__CARDAPP_CTX__/);
+    // bare alias works too
+    const alias = await fetch(`${BASE}/card-runtime/shim/ctx`);
+    assert.equal(alias.status, 200);
+});
+
+test('?shim=ctx on module entry: bootstrap + ctx shim + init-caller, no bare module tag', async () => {
+    const mm = globalThis.__modMount;
+    const shell = await (await fetch(`${BASE}${mm.entryUrl}?shim=ctx`)).text();
+    // bootstrap precedes shim; nonce + face=ctx + mountId seeded
+    assert.match(shell, /data-card-runtime-bootstrap/);
+    assert.match(shell, new RegExp(`__UTOPINN_PANEL_NONCE__=${JSON.stringify(mm.bridgeNonce)}`));
+    assert.match(shell, /"face":"ctx"/);
+    assert.match(shell, /\/card-runtime\/shim\/ctx\.js/);
+    // init-caller imports the entry and invokes init(ctx) — the bare
+    // <script type="module" src> path must NOT appear alongside it.
+    assert.match(shell, /data-card-runtime-init/);
+    assert.match(shell, /await import\("\.\/index\.js"\)/);
+    assert.match(shell, /__mod\.init\(__ctx\)/);
+    assert.ok(!/<script type="module" src="\.\/index\.js">/.test(shell), 'bare module tag must be replaced by init-caller');
+    assert.match(shell, /window\.__CARDAPP_CTX__/);
+});
+
+test('?shim=ctx on document entry: bootstrap + ctx shim spliced before card scripts', async () => {
+    const m = globalThis.__docMount;
+    const res = await fetch(`${BASE}${m.entryUrl}?shim=ctx`);
+    const html = await res.text();
+    assert.match(html, /"face":"ctx"/);
+    assert.match(html, /\/card-runtime\/shim\/ctx\.js/);
+    const shimAt = html.indexOf('data-card-runtime-shim');
+    const cardAt = html.indexOf('./app.js');
+    assert.ok(shimAt > 0 && shimAt < cardAt, 'ctx shim must precede card script');
+});
+
+test('mount bundle exposes chatName + ctxShimUrl for the host', async () => {
+    const res = await fetch(`${BASE}/api/card-runtime/mounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ charId: 'mod-card', chatName: 'story-1' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.chatName, 'story-1');
+    assert.match(String(body.ctxShimUrl ?? ''), /\/card-runtime\/shim\/ctx\.js/);
+    // module default api faces = ctx+th (TASK-046 manifest default)
+    assert.deepEqual(body.manifest.permissions.api, ['ctx', 'th']);
+    // 不留在注册表里 —— 后续 owner-scope 断言数 mod-card mount 恰好为 1。
+    await fetch(`${BASE}/api/card-runtime/mounts/${body.mountId}`, { method: 'DELETE' });
+});
+
 // ---------- CDN proxy through the mount ----------
 
 test('cdn proxy: known CDN admitted, cached, ETag; foreign host 403', async () => {

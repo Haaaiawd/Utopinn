@@ -175,6 +175,31 @@ test('buildGenerationContext — storage → WI → prompt', async (t) => {
                 buildGenerationContext({ request, charDir: CHAR, chatName: 'c1', card: CARD, presetName: 'NoSuch', user: { name: 'User' } }),
                 /Preset not found/);
         });
+
+        // TASK-046 段3b:panel-t0 th.injectPrompts 写 chat_state ns
+        // 'th.inject' {prompts: ThInjectedPrompt[]} —— 组装读侧消费进
+        // extension_prompts(IN_CHAT/depth/role/scan),注入内容必须进
+        // builtPrompt;'none' 位与无 state 聊天不受影响。
+        await t.test('chat_state th.inject prompts land in builtPrompt', async () => {
+            await getChatRepo().setState(HANDLE, CHAR, 'c1', 'th.inject', {
+                prompts: [
+                    { id: 'inj-1', position: 'in_chat', depth: 1, role: 'system', content: 'SECRET_INJECTED_BANNER', should_scan: false },
+                    { id: 'inj-none', position: 'none', content: 'SHOULD_NOT_APPEAR' },
+                ],
+            });
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'c1', card: CARD, user: { name: 'User' },
+            });
+            const text = allText(builtPrompt);
+            assert.match(text, /SECRET_INJECTED_BANNER/, 'in_chat inject must reach the prompt');
+            assert.ok(!/SHOULD_NOT_APPEAR/.test(text), 'position:none inject stays dormant');
+            // 清掉后不再注入 —— 读写闭环(uninject 语义)。
+            await getChatRepo().setState(HANDLE, CHAR, 'c1', 'th.inject', { prompts: [] });
+            const { builtPrompt: after } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'c1', card: CARD, user: { name: 'User' },
+            });
+            assert.ok(!/SECRET_INJECTED_BANNER/.test(allText(after)), 'cleared inject must not linger');
+        });
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }

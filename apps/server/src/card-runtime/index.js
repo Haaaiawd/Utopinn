@@ -12,6 +12,7 @@
  *                                        (?url=…&integrity=sha256-…)
  *   GET /card-runtime/m/:mountId/*       card asset inside the mount space
  *   GET /card-runtime/shim/t0.js         TH-face shim runtime (host code)
+ *   GET /card-runtime/shim/ctx.js        ctx-face shim runtime (module-entry init(ctx) face)
  *
  *   Authorization = the mountId capability (128-bit random, sliding TTL).
  *   No session cookie is required OR consulted — the WebView never gets user
@@ -78,8 +79,8 @@ function selfOrigin(request) {
 
 /**
  * POST /mounts — mint a mount for a card's card_app.
- * Body: { charId: string, ttlMs?: number }
- * → 201 { mountId, entryUrl, assetBaseUrl, cdnUrl, shimUrl, csp, manifest, … }
+ * Body: { charId: string, ttlMs?: number, chatName?: string }
+ * → 201 { mountId, entryUrl, assetBaseUrl, cdnUrl, shimUrl, ctxShimUrl, csp, manifest, … }
  */
 cardRuntimeApiRouter.post('/mounts', async (request, response) => {
     try {
@@ -89,6 +90,7 @@ cardRuntimeApiRouter.post('/mounts', async (request, response) => {
             directories: request.user.directories,
             charId,
             ttlMs: request.body?.ttlMs,
+            chatName: request.body?.chatName,
         });
         const bundle = publicMount(record);
         bundle.csp = buildCardRuntimeCsp({

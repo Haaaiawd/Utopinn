@@ -8,7 +8,8 @@
  *   persistSettings → extension_settings.variables.global 整档回写
  *   runQuickReply → QuickReplies/*.json qrList 按 label 递归
  *   UI seam(notify/popup/input)收敛进 sinks(调用方决定回执形态)
- *   generateQuiet/triggerGeneration 未绑定 —— 引擎按 seam 缺失降级
+ *   generateQuiet → services/quiet-generation.js(真 job 链 + diag)
+ *   triggerGeneration 仍未绑定 —— 引擎按 seam 缺失降级
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,6 +20,7 @@ import {
 } from '@utopinn/core';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getChatRepo, getSettingsRepo } from '../storage/index.js';
+import { runQuietGeneration } from './quiet-generation.js';
 
 export async function loadCard(directories, charDir) {
     const pngPath = path.join(directories.characters, `${charDir}.png`);
@@ -166,6 +168,31 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
         currentCharAvatar: charDir ? `${charDir}.png` : undefined,
         neutralCharacterName: name2 === 'Assistant' ? 'Assistant' : undefined,
         countTokens: (text) => Math.ceil(String(text).length / 4),
+        // /gen → 服务端 quiet job(组装+派发+终态+ack+diag 全链)。
+        // 上游 generateQuietPrompt 失败回 ''(toast 化)——同语义:错误进
+        // sinks.notifications + diag,不把脚本整棵打死。
+        generateQuiet: async (prompt, params = {}) => {
+            if (!charDir || !chatName) {
+                sinks.notifications.push({ severity: 'warning', text: '/gen: no character/chat bound — skipped' });
+                return '';
+            }
+            try {
+                const r = await runQuietGeneration({
+                    handle,
+                    directories,
+                    charDir,
+                    chatName,
+                    card,
+                    prompt,
+                    params,
+                    userName: name1,
+                });
+                return r.text;
+            } catch (error) {
+                sinks.notifications.push({ severity: 'error', text: `/gen failed: ${error?.message ?? error}` });
+                return '';
+            }
+        },
         avatarUrl: (kind, id) => (kind === 'avatar' ? `characters/${id}` : `personas/${id}`),
         defaultAvatar: 'user-default.png',
         runQuickReply: async (name) => {

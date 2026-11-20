@@ -1,10 +1,12 @@
-// ctxApi — 'utopinn-panel' bridge method → server dispatch (TASK-022/025).
-// The panel shim (packages/panel-shim) calls th.* methods; the host forwards
-// them to POST /api/utopinn/th/call, whose method table is the single source
-// of truth for what the server actually implements. Methods outside the
-// table come back {unsupported:true} — surfaced here as an explicit
-// `unsupported_method` error, never a silent stub.
+// ctxApi — 'utopinn-panel' bridge method → dispatch (TASK-022/025 + TASK-046).
+// Composite host dispatch mirrors apps/cli/cardapp-host.mjs:
+//   ctx.* → CardAppHost.ctxDispatch (web host implementation, ctxHost.ts)
+//   th.*  → T0 table → createPanelT0Handler (api-client, client-side)
+//           else     → POST /api/utopinn/th/call 透传 (server T1+)
+// The legacy host-less path forwards th.* verbatim — kept for callers that
+// predate the composite host; CardAppFrame always passes a CardAppHost.
 import { apiPost } from '../api/client';
+import type { CardAppHost } from './ctxHost';
 
 export interface PanelCallArgs {
     type?: string;          // 'chat' | 'global' | 'message' (variables scope)
@@ -27,10 +29,19 @@ interface ThCallResult {
 }
 
 /**
- * Host-side dispatch: every 'th.*' method is forwarded verbatim to the
- * server TH-compat layer. Non-th methods are rejected locally.
+ * Host-side dispatch entry. With a CardAppHost → composite table
+ * (ctx.* + th.* T0-local + th/call fallback). Without → legacy th-only
+ * passthrough to the server TH layer; everything else rejected locally.
  */
-export async function dispatchPanelCall(method: string, args: PanelCallArgs, ctx: PanelContext): Promise<unknown> {
+export async function dispatchPanelCall(
+    method: string,
+    args: PanelCallArgs,
+    ctx: PanelContext,
+    host?: CardAppHost,
+): Promise<unknown> {
+    if (host) {
+        return await host.dispatch(method, args as Record<string, unknown>);
+    }
     if (!method.startsWith('th.')) {
         throw new Error(`unsupported_method: ${method}`);
     }

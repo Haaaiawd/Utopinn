@@ -1,22 +1,31 @@
-// CardAppFrame — web host for untrusted card HTML (TASK-022).
-// Flow: POST /api/card-runtime/mounts {charId} → mount bundle (entryUrl +
-// bridgeNonce + manifest) → <iframe sandbox> at entryUrl?shim=t0 →
-// 'utopinn-panel' postMessage bridge → ctxApi → server TH layer.
+// CardAppFrame — web host for untrusted card HTML (TASK-022 + TASK-046).
+// Flow: POST /api/card-runtime/mounts {charId,chatName} → mount bundle
+// (entryUrl + bridgeNonce + manifest) → <iframe sandbox> at
+// entryUrl?shim=<ctx|t0> → 'utopinn-panel' postMessage bridge →
+// CardAppHost composite dispatch (ctx.* table + th.* T0-local + th/call).
+//
+// Face selection (manifest.entryKind):
+//   module   → ?shim=ctx — ctx-shim builds __CARDAPP_CTX__; the server shell
+//              emits an init-caller that invokes module.init(ctx).
+//   document → ?shim=t0  — TH-face T0 table (ecosystem default).
+//   document + ctx-only manifest → degraded badge (no init(ctx) convention
+//              exists for document entries; ctx needs a module entry).
 //
 // Security posture (design/cardapp-web-host.md + protocol/panels.ts):
 // - opaque-origin sandbox by default; manifest.permissions.sameOrigin
 //   lifts it for cards that explicitly ask (and accept the weaker posture);
 // - inbound requests authenticate via `ev.source === iframe.contentWindow`
-//   AND the mount-scoped bridge nonce the shim echoes back — a forged or
-//   nonce-less request is denied, never dispatched;
+//   AND the mount-scoped bridge nonce the shim echoes back;
 // - the method allowlist is expanded from manifest.permissions.api
-//   (absent/empty → ecosystem default = the full T0 table);
-// - 'ctx'-only manifests degrade to a badge: the t0 shim serves the th
-//   face, ctx calls are not wired yet.
+//   (absent/empty → document: T0 table / module: ctx+th).
+// - the event pump polls the chat doc and pushes subscribed host.event /
+//   th.event frames — no host event bus exists yet; poll-based diff is the
+//   minimal honest delivery joint.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { expandApiGrants, PanelBridge } from './bridge';
+import { CardAppHost } from './ctxHost';
 import { useI18n } from '../i18n';
 import { Icon } from '../components/Icon';
 
@@ -24,6 +33,7 @@ import { Icon } from '../components/Icon';
 interface MountBundle {
     mountId?: string;
     charId?: string;
+    chatName?: string | null;
     entryUrl: string;
     bridgeNonce?: string;
     manifest?: {
@@ -46,25 +56,30 @@ type Phase =
     | { kind: 'degraded'; reason: 'ctx-face' }
     | { kind: 'error'; message: string };
 
+/** 事件泵轮询间隔 —— 面板开着的 8s 一次 chat diff,够浮窗感知楼层变化。 */
+const POLL_MS = 8_000;
+
 export function CardAppFrame({ charDir, chatName }: PanelContext) {
     const { t } = useI18n();
     const [mount, setMount] = useState<MountBundle | null>(null);
     const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
     const [attempt, setAttempt] = useState(0);
     const frameRef = useRef<HTMLIFrameElement>(null);
+    const bridgeRef = useRef<PanelBridge | null>(null);
 
     useEffect(() => {
         let dead = false;
         setMount(null);
         setPhase({ kind: 'mounting' });
-        apiPost<MountBundle>('/api/card-runtime/mounts', { charId: charDir })
+        apiPost<MountBundle>('/api/card-runtime/mounts', { charId: charDir, chatName })
             .then((m) => {
                 if (dead) return;
                 setMount(m);
                 const grants = expandApiGrants(m.manifest?.permissions?.api);
-                // ctx-only manifest: nothing the t0 shim can lawfully call —
-                // still render the frame (static UI survives) under a badge.
-                setPhase(grants.ctxFace && !grants.thFace
+                // ctx-only manifest on a document entry — nothing lawful to
+                // serve (no init(ctx) convention for documents): degrade.
+                const isModule = m.manifest?.entryKind === 'module';
+                setPhase(grants.ctxFace && !grants.thFace && !isModule
                     ? { kind: 'degraded', reason: 'ctx-face' }
                     : { kind: 'ready' });
             })
@@ -72,7 +87,7 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                 if (!dead) setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
             });
         return () => { dead = true; };
-    }, [charDir, attempt]);
+    }, [charDir, chatName, attempt]);
 
     const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api), [mount]);
 
@@ -84,12 +99,25 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
             nonce: mount.bridgeNonce ?? '',
             allowed: grants.allowed,
             getWindow: () => frameRef.current?.contentWindow ?? null,
-            dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }),
+            dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }, host),
         });
+        const host = new CardAppHost({
+            charDir,
+            chatName: chatName ?? mount.chatName ?? undefined,
+            push: (event, payload) => bridge.push(event, payload),
+        });
+        bridgeRef.current = bridge;
+        // 种子快照先于卡 init 竞速(ctx.__ready 也在自己拉 getChat,
+        // 双份同值无害 —— host 侧缓存喂的是事件 diff)。
+        void host.seed();
+        const poll = window.setInterval(() => { void host.pollChat(); }, POLL_MS);
         window.addEventListener('message', bridge.onMessage);
         return () => {
+            window.clearInterval(poll);
             window.removeEventListener('message', bridge.onMessage);
             bridge.dispose();
+            host.dispose();
+            bridgeRef.current = null;
         };
     }, [mount, grants, charDir, chatName]);
 
@@ -133,7 +161,9 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
         );
     }
 
-    const src = `${mount.entryUrl}${mount.entryUrl.includes('?') ? '&' : '?'}shim=t0`;
+    const isModule = mount.manifest?.entryKind === 'module';
+    const shim = isModule ? 'ctx' : 't0';
+    const src = `${mount.entryUrl}${mount.entryUrl.includes('?') ? '&' : '?'}shim=${shim}`;
     const sandbox = mount.manifest?.permissions?.sameOrigin === true
         ? 'allow-scripts allow-same-origin'
         : 'allow-scripts';

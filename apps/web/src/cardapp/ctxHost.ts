@@ -1,0 +1,440 @@
+// ctxHost — web 宿主的 ctx 面 + 复合 dispatch(TASK-046,镜像
+// apps/cli/cardapp-host.mjs 的 ctxDispatch/runCardGeneration 语义)。
+//
+// 结构:
+//   dispatch(method,args)
+//     th.*  → T0 表 → createPanelT0Handler(client) 本地求值
+//             其余  → POST /api/utopinn/th/call 透传(服务端 T1+)
+//     ctx.* → 本文件 ctxDispatch 表 —— chat/变量/状态/生成/斜杠/WI/prompts
+//
+// 事件泵:宿主没有 ST 事件总线可挂 —— pollChat() 对 chat doc 做快照 diff,
+// 命中的楼层级事件经 push() 注回 iframe('host.event' {name,args}),只发
+// 卡订阅过的(ctx.on / th.eventOn 记账)。生成请求首尾泵
+// generation_started/ended——卡片「发一个请求拿到结果」的最小闭环。
+import {
+    createPanelT0Handler,
+    UtopinnClient,
+    type JsonPatchOp,
+} from '@utopinn/api-client';
+import { PANEL_METHODS_TH_T0 } from '@utopinn/protocol';
+
+export interface CtxHostOpts {
+    charDir: string;
+    chatName?: string;
+    /** 宿主 → iframe push 投递(CardAppFrame 接 PanelBridge.push)。 */
+    push: (event: 'host.event' | 'th.event' | 'chat.updated', payload: Record<string, unknown>) => void;
+    /** 诊断/日志行(默认 console)。 */
+    log?: (msg: string) => void;
+    /** 轮询/生成等待预算(ms)。 */
+    generationWaitMs?: number;
+    /** 发消息用的用户名(默认 User)。 */
+    userName?: string;
+}
+
+interface ChatDoc {
+    header?: { chat_metadata?: Record<string, unknown> } & Record<string, unknown>;
+    messages?: Record<string, unknown>[];
+    integrity?: string;
+    [k: string]: unknown;
+}
+
+const esc = (s: string) => s.replace(/~/g, '~0').replace(/\//g, '~1');
+
+/** th/call 响应是判别联合 —— dispatch 层只需要宽松访问。 */
+interface LooseThResult {
+    ok?: boolean;
+    unsupported?: boolean;
+    result?: unknown;
+    error?: string;
+    method?: string;
+}
+const loose = (r: unknown): LooseThResult => (r ?? {}) as LooseThResult;
+const jsonClone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)) as T);
+
+export class CardAppHost {
+    private readonly charDir: string;
+    private readonly chatName?: string;
+    private readonly avatarUrl: string;
+    private readonly chatFileName?: string;
+    private readonly pushEvent: CtxHostOpts['push'];
+    private readonly log: (msg: string) => void;
+    private readonly generationWaitMs: number;
+    private readonly userName: string;
+
+    private client: UtopinnClient;
+    private chatDoc: ChatDoc | null = null;
+    private varCache: Record<string, unknown> = {};
+    private ctxSubscribed = new Set<string>();
+    private panelT0: ReturnType<typeof createPanelT0Handler> & { subscribedEvents?: () => string[] };
+    private dead = false;
+
+    constructor(opts: CtxHostOpts, client?: UtopinnClient) {
+        this.charDir = opts.charDir;
+        this.chatName = opts.chatName;
+        this.avatarUrl = `${opts.charDir}.png`;
+        this.chatFileName = opts.chatName ? `${opts.chatName}.jsonl` : undefined;
+        this.pushEvent = opts.push;
+        this.log = opts.log ?? ((m) => console.warn('[cardapp-host]', m));
+        this.generationWaitMs = opts.generationWaitMs ?? 120_000;
+        this.userName = opts.userName ?? 'User';
+        this.client = client ?? new UtopinnClient({ baseUrl: window.location.origin });
+        this.panelT0 = createPanelT0Handler({
+            client: this.client,
+            avatarUrl: this.avatarUrl,
+            chatFileName: this.chatFileName ?? '',
+            mountMessageId: 0,
+            emitToPanels: (ev: string, args: unknown[]) => { this.pushEvent('th.event', { name: ev, args: jsonClone(args) ?? [] }); },
+            getCharacterCard: async () => {
+                const res = loose(await this.client.th.call('getCharacter', { target: { charDir: this.charDir } }));
+                return res?.result as Record<string, unknown>;
+            },
+        }) as CardAppHost['panelT0'];
+    }
+
+    // ── 快照面 ─────────────────────────────────────────────────────────────
+    private messages(): Record<string, unknown>[] {
+        return Array.isArray(this.chatDoc?.messages) ? this.chatDoc!.messages! : [];
+    }
+
+    private async syncChat(): Promise<{ prev: ChatDoc | null; next: ChatDoc | null } | null> {
+        if (!this.chatName) return null;
+        try {
+            const doc = await this.client.library.chatGet(this.charDir, this.chatName);
+            if (doc && 'corrupted' in doc && doc.corrupted) return null;
+            const prev = this.chatDoc;
+            this.chatDoc = doc as unknown as ChatDoc;
+            this.varCache = (this.chatDoc?.header?.chat_metadata?.variables as Record<string, unknown>) ?? {};
+            return { prev, next: doc as unknown as ChatDoc };
+        } catch (e) {
+            this.log(`syncChat failed: ${e instanceof Error ? e.message : e}`);
+            return null;
+        }
+    }
+
+    /** 事件泵:楼层数 diff → 命中的楼层事件推给卡(仅订阅项)。 */
+    private diffAndEmitChat(prev: ChatDoc | null, next: ChatDoc | null): void {
+        if (!next) return;
+        const pa = Array.isArray(prev?.messages) ? prev!.messages! : [];
+        const na = Array.isArray(next?.messages) ? next!.messages! : [];
+        if (na.length > pa.length) {
+            for (let i = pa.length; i < na.length; i++) {
+                const m = na[i] as { is_user?: boolean };
+                const rendered = m?.is_user ? 'user_message_rendered' : 'char_message_rendered';
+                this.emitCtx(rendered, [i]);
+                this.emitTh(rendered, [i]);
+                this.emitTh(m?.is_user ? 'message_sent' : 'message_received', [i]);
+            }
+            this.pushEvent('chat.updated', {});
+        } else if (na.length < pa.length) {
+            this.emitCtx('message_deleted', []);
+            this.emitTh('message_deleted', []);
+            this.pushEvent('chat.updated', {});
+        }
+    }
+
+    private emitCtx(name: string, args: unknown[]): void {
+        if (!this.ctxSubscribed.has(name)) return;
+        this.pushEvent('host.event', { name, args: jsonClone(args) ?? [] });
+    }
+
+    private emitTh(name: string, args: unknown[]): void {
+        const want = this.panelT0?.subscribedEvents?.() ?? [];
+        if (!want.includes(name)) return;
+        this.pushEvent('th.event', { name, args: jsonClone(args) ?? [] });
+    }
+
+    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated。 */
+    async pollChat(): Promise<void> {
+        if (this.dead) return;
+        const r = await this.syncChat();
+        if (r) this.diffAndEmitChat(r.prev, r.next);
+    }
+
+    /** 初次快照——bridge 就位后调一次,让 ctx.getChat/varCache 有真值。 */
+    async seed(): Promise<void> {
+        await this.syncChat();
+    }
+
+    // ── 生成面(ctx.sendMessage 非 silent + ctx.generate + lukerContext.generate)
+    private async runCardGeneration(params: { type?: string; quietPrompt?: string } = {}): Promise<{ jobId: string | null; status: Record<string, unknown> | null }> {
+        const type = params.type ?? 'normal';
+        this.emitCtx('generation_started', [type]);
+        this.emitTh('generation_started', [type]);
+        const jobId = globalThis.crypto?.randomUUID?.() ?? `job-${Date.now()}`;
+        const body: Record<string, unknown> = {
+            charDir: this.charDir,
+            chatName: this.chatName,
+            type,
+            stream: false,
+            user: { name: this.userName },
+            luker_generation: {
+                job_id: jobId,
+                persist_target: (type === 'normal' || type === 'regenerate')
+                    ? { kind: 'character', avatar_url: this.avatarUrl, file_name: this.chatFileName, char_name: this.charDir }
+                    : { kind: 'none' },
+            },
+        };
+        if (params.quietPrompt) body.overrides = { quietPrompt: params.quietPrompt };
+        try {
+            await this.client.generation.generate(body as never, { timeout: 60_000 });
+        } catch (e) {
+            this.emitCtx('generation_ended', []);
+            this.emitTh('generation_ended', []);
+            throw e;
+        }
+        const deadline = Date.now() + this.generationWaitMs;
+        let status: Record<string, unknown> | null = null;
+        while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 800));
+            try {
+                const j = await this.client.generation.jobGet(jobId) as unknown as Record<string, unknown> | null;
+                if (j?.persisted || ['completed', 'failed', 'cancelled', 'awaiting_ack'].includes(String(j?.status))) { status = j; break; }
+            } catch { /* poll errors retry until deadline */ }
+        }
+        await this.syncChat();
+        const ok = status?.status === 'completed' || status?.status === 'awaiting_ack' || status?.persisted;
+        this.emitCtx(ok ? 'generation_ended' : 'generation_stopped', []);
+        this.emitTh(ok ? 'generation_ended' : 'generation_stopped', []);
+        return { jobId, status };
+    }
+
+    // ── ctxDispatch(与 cardapp-host.mjs 同语义)───────────────────────────
+    private async setExtensionPrompt(key: string, value: string, position: unknown, depth: unknown, scan: unknown, role: unknown): Promise<void> {
+        const escKey = esc(String(key));
+        const settings = await this.client.settingsGet().catch(() => null) as Record<string, unknown> | null;
+        const ops: JsonPatchOp[] = [];
+        if (!settings || typeof settings !== 'object' || settings.extension_prompts === undefined) {
+            ops.push({ op: 'add', path: '/extension_prompts', value: {} });
+        }
+        ops.push({
+            op: 'add', path: `/extension_prompts/${escKey}`,
+            value: { value: String(value ?? ''), position: position ?? -1, depth, scan: !!scan, role },
+        });
+        await this.client.settingsPatch(ops);
+    }
+
+    private async getWorldBooks(options: { withSource?: boolean } = {}): Promise<unknown> {
+        const out: { name: string; source: string }[] = [];
+        const seen = new Set<string>();
+        const push = (name: unknown, source: string) => {
+            const n = String(name ?? '').trim();
+            if (n && !seen.has(n)) { seen.add(n); out.push({ name: n, source }); }
+        };
+        const chatMeta = (this.chatDoc?.header?.chat_metadata ?? {}) as Record<string, unknown>;
+        const chatBound = Array.isArray(chatMeta.world_info) ? chatMeta.world_info : (chatMeta.world_info ? [chatMeta.world_info] : []);
+        for (const n of chatBound) push(n, 'chat');
+        try {
+            const settings = await this.client.library.settings().catch(() => null) as Record<string, any> | null;
+            const wis = settings?.world_info_settings?.world_info ?? settings?.settings?.world_info_settings?.world_info;
+            for (const n of wis?.globalSelect ?? []) push(n, 'global');
+            for (const lore of wis?.charLore ?? []) {
+                if (lore?.name === this.charDir) for (const n of lore.extraBooks ?? []) push(n, 'character_aux');
+            }
+            const personaBook = settings?.power_user?.persona_description_lorebook ?? settings?.settings?.power_user?.persona_description_lorebook;
+            if (personaBook) push(personaBook, 'persona');
+        } catch { }
+        try {
+            const charDoc = await this.client.library.char(this.charDir).catch(() => null) as Record<string, any> | null;
+            const world = (charDoc?.card ?? charDoc)?.data?.extensions?.world;
+            if (world) push(world, 'character');
+        } catch { }
+        return options.withSource ? out : out.map((b) => b.name);
+    }
+
+    private async getWorldBookEntries(name: string): Promise<unknown> {
+        try { return await this.client.library.worldGet(String(name)); }
+        catch { return null; }
+    }
+
+    private async ctxDispatch(sub: string, args: Record<string, unknown>): Promise<unknown> {
+        switch (sub) {
+            case 'getChat':
+                await this.syncChat();
+                return { messages: this.messages(), header: this.chatDoc?.header ?? null };
+
+            case 'sendMessage': {
+                const text = String(args?.text ?? args?.mes ?? '');
+                const options = (args?.options ?? {}) as { silent?: boolean };
+                if (options.silent) {
+                    const r = await this.runCardGeneration({ type: 'quiet', quietPrompt: text });
+                    return { ok: true, text: (r?.status?.text ?? r?.status?.result ?? null) as string | null };
+                }
+                const prev = this.chatDoc;
+                await this.client.library.appendMessages(this.charDir, this.chatName!, [{
+                    name: this.userName, is_user: true, is_system: false,
+                    send_date: new Date().toISOString(), mes: text,
+                }]);
+                this.emitTh('message_sent', []);
+                this.emitCtx('message_sent', []);
+                const r = await this.runCardGeneration({ type: 'normal' });
+                const synced = await this.syncChat();
+                this.diffAndEmitChat(prev, synced?.next ?? this.chatDoc);
+                return { ok: true, jobId: r?.jobId ?? null, text: (r?.status?.text ?? null) as string | null };
+            }
+
+            case 'generate':
+                return this.runCardGeneration({ type: String(args?.type ?? 'normal'), quietPrompt: args?.quietPrompt ? String(args.quietPrompt) : undefined });
+            case 'regenerate':
+                return this.runCardGeneration({ type: 'regenerate' });
+            case 'swipe':
+                return this.runCardGeneration({ type: 'swipe' });
+
+            case 'editMessage': {
+                const i = Number(args?.messageId);
+                const msg = this.messages()[i] as { swipes?: unknown[]; swipe_id?: number } | undefined;
+                if (!msg) return { ok: true, edited: false };
+                const text = String(args?.text ?? '');
+                const ops: JsonPatchOp[] = [{ op: 'replace', path: `/body/${i}/mes`, value: text }];
+                const swipes = Array.isArray(msg.swipes) ? msg.swipes : null;
+                const swipeId = Number.isInteger(msg.swipe_id) ? msg.swipe_id! : null;
+                if (swipes && swipeId != null && swipeId < swipes.length) {
+                    ops.push({ op: 'replace', path: `/body/${i}/swipes/${swipeId}`, value: text });
+                }
+                await this.client.library.patchChat(this.charDir, this.chatName!, ops);
+                await this.syncChat();
+                this.emitCtx('message_edited', [i]);
+                this.emitTh('message_edited', [i]);
+                return { ok: true, edited: true };
+            }
+
+            case 'setVariable': {
+                const key = String(args?.key ?? '');
+                const v = jsonClone(args?.value);
+                this.varCache[key] = v;
+                const ops: JsonPatchOp[] = [
+                    { op: 'add', path: `/header/chat_metadata/variables/${esc(key)}`, value: v },
+                ];
+                try {
+                    await this.client.library.patchChat(this.charDir, this.chatName!, ops);
+                } catch (e) {
+                    // variables 父键缺席 → 先立 {} 再写(409 missing-parent 判别)
+                    await this.client.library.patchChat(this.charDir, this.chatName!, [
+                        { op: 'add', path: '/header/chat_metadata/variables', value: {} },
+                    ]).catch(() => { });
+                    await this.client.library.patchChat(this.charDir, this.chatName!, ops);
+                }
+                return args?.value;
+            }
+
+            case 'getChatState': {
+                try {
+                    const res = await this.client.state.chat.get(
+                        { avatar_url: this.avatarUrl, file_name: this.chatFileName! }, String(args?.namespace ?? ''));
+                    return { ok: true, state: (res as { data?: unknown })?.data ?? res ?? null };
+                } catch (e) {
+                    return { ok: false, state: null, reason: 'transport', hint: String(e instanceof Error ? e.message : e) };
+                }
+            }
+            case 'updateChatState': {
+                const ns = String(args?.namespace ?? '');
+                const target = { avatar_url: this.avatarUrl, file_name: this.chatFileName! };
+                try {
+                    if (Array.isArray(args?.operations)) {
+                        await this.client.state.chat.patch(target, ns, args!.operations as JsonPatchOp[]);
+                        return { ok: true };
+                    }
+                    const v = jsonClone(args?.state ?? args?.value) ?? {};
+                    await this.client.state.chat.patch(target, ns, [{ op: 'replace', path: '', value: v }]);
+                    return { ok: true, state: v, updated: true };
+                } catch (e) {
+                    return { ok: false, reason: 'transport', hint: String(e instanceof Error ? e.message : e) };
+                }
+            }
+            case 'deleteChatState': {
+                try {
+                    await this.client.state.chat.delete(
+                        { avatar_url: this.avatarUrl, file_name: this.chatFileName! }, String(args?.namespace ?? ''));
+                    return { ok: true };
+                } catch (e) {
+                    return { ok: false, reason: 'transport', hint: String(e instanceof Error ? e.message : e) };
+                }
+            }
+            case 'getCharacterState': {
+                const st = await this.client.state.char.get({ avatar_url: this.avatarUrl }, String(args?.namespace ?? '')).catch(() => null);
+                return { ok: true, state: (st as { data?: unknown } | null)?.data ?? st ?? null };
+            }
+            case 'updateCharacterState': {
+                const ns = String(args?.namespace ?? '');
+                const cur = ((await this.client.state.char.get({ avatar_url: this.avatarUrl }, ns).catch(() => null)) as { data?: Record<string, unknown> } | null)?.data ?? {};
+                const next = { ...cur, ...(jsonClone(args?.state ?? args?.value) as Record<string, unknown> ?? {}) };
+                await this.client.state.char.set({ avatar_url: this.avatarUrl }, ns, next as Record<string, unknown>);
+                return { ok: true, state: next };
+            }
+
+            case 'getCharacter': {
+                const res = loose(await this.client.th.call('getCharacter', { target: { charDir: this.charDir } }));
+                return res?.result;
+            }
+            case 'getWorldBooks':
+                return this.getWorldBooks({ withSource: !!(args as { withSource?: boolean })?.withSource });
+            case 'getWorldBook': {
+                const name = args?.name ?? ((await this.getWorldBooks({})) as string[])[0];
+                return name ? this.getWorldBookEntries(String(name)) : null;
+            }
+            case 'updateWorldBookEntry': {
+                const name = args?.name ?? ((await this.getWorldBooks({})) as string[])[0];
+                if (!name) return { ok: false, reason: 'no_book' };
+                const doc = await this.getWorldBookEntries(String(name)) as { entries?: Record<string, Record<string, unknown>> } | null;
+                if (!doc?.entries) return { ok: false, reason: 'no_book' };
+                const uid = args?.uid ?? args?.entryId;
+                const fields = (args?.fields ?? args?.data ?? {}) as Record<string, unknown>;
+                const key = String(uid ?? Object.keys(doc.entries).length);
+                doc.entries[key] = { ...(doc.entries[key] ?? {}), ...(fields as Record<string, unknown>) };
+                await this.client.library.worldEdit(String(name), doc as { entries: Record<string, unknown> });
+                return { ok: true };
+            }
+
+            case 'executeSlashCommand': {
+                const res = loose(await this.client.th.call('triggerSlash', {
+                    target: { charDir: this.charDir, chatName: this.chatName },
+                    args: { script: String(args?.script ?? '') },
+                }));
+                if (res?.ok === false) throw new Error(res?.error ?? 'triggerSlash failed');
+                return res?.result;
+            }
+            case 'setExtensionPrompt': {
+                await this.setExtensionPrompt(
+                    String(args?.key ?? ''), String(args?.value ?? ''),
+                    args?.position, args?.depth, args?.scan, args?.role);
+                return { ok: true };
+            }
+            case 'eventEmit': {
+                // 卡→宿主扇出(worldinfo_force_activate 等):当前面没有服务端
+                // 消费者 —— 收下并留痕,不伪装成功语义。
+                this.log(`ctx.eventEmit ${String(args?.name)} (no host consumer)`);
+                return { ok: true, delivered: 'log' };
+            }
+
+            case 'on': { this.ctxSubscribed.add(String(args?.event)); return null; }
+            case 'off': { this.ctxSubscribed.delete(String(args?.event)); return null; }
+            case 'setTimer': return null;
+            case 'dispose': return null; // 真 dispose 由 CardAppFrame unmount 触发
+            default: throw new Error(`unsupported_method: ctx.${sub}`);
+        }
+    }
+
+    /** bridge dispatch 入口:th.* 复合 + ctx.* 表,其它一律 unsupported。 */
+    async dispatch(method: string, args: Record<string, unknown>): Promise<unknown> {
+        if (method.startsWith('th.')) {
+            if ((PANEL_METHODS_TH_T0 as readonly string[]).includes(method)) {
+                return await this.panelT0(method as never, args);
+            }
+            const res = loose(await this.client.th.call(method.slice(3), {
+                target: { charDir: this.charDir, chatName: this.chatName },
+                args: args ?? {},
+            }));
+            if (res?.unsupported) throw new Error(`unsupported_method: ${method.slice(3)}`);
+            if (res?.ok === false) throw new Error(res?.error ?? `th_call_failed: ${method.slice(3)}`);
+            return res?.result;
+        }
+        if (method.startsWith('ctx.')) {
+            return await this.ctxDispatch(method.slice(4), args);
+        }
+        throw new Error(`unsupported_method: ${method}`);
+    }
+
+    dispose(): void {
+        this.dead = true;
+        this.ctxSubscribed.clear();
+    }
+}

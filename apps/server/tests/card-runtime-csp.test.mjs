@@ -16,7 +16,9 @@ test('default policy: sandbox + path-scoped runtime only', () => {
     const csp = buildCardRuntimeCsp({ selfOrigin: ORIGIN, permissions: {} });
     const d = directives(csp);
 
-    assert.match(d['sandbox'], /^sandbox allow-scripts allow-modals allow-downloads$/);
+    // 设计稿边界(cardapp-web-host.md):allow-modals/allow-downloads 不给——
+    // 卡 UI 走桥协议弹层,不弹原生 alert/下载。
+    assert.match(d['sandbox'], /^sandbox allow-scripts$/);
     assert.match(d['sandbox'], /^(?!.*allow-same-origin).*$/);
     assert.match(d['default-src'], /'none'/);
     assert.match(d['script-src'], new RegExp(`${ORIGIN.replace(/\./g, '\\.')}/card-runtime/`));

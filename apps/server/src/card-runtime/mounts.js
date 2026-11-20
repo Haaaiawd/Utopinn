@@ -167,7 +167,7 @@ export function entryFileExists(mount) {
  * @returns {Promise<MountRecord>}
  * @throws {CardRuntimeError}
  */
-export async function createMount({ handle, directories, charId, ttlMs }) {
+export async function createMount({ handle, directories, charId, ttlMs, chatName }) {
     const cleanId = sanitize(String(charId ?? '').trim());
     if (!cleanId) throw new CardRuntimeError(400, 'bad_char_id', 'charId is required');
 
@@ -204,6 +204,9 @@ export async function createMount({ handle, directories, charId, ttlMs }) {
         handle: String(handle || ''),
         directories,
         charId: cleanId,
+        // ctx face seeds: chat the host bound this mount to (no .jsonl) —
+        // feeds PanelBootstrap.chatName → ctx.getChatId/lukerContext.chatId.
+        chatName: typeof chatName === 'string' && chatName.trim() ? chatName.trim() : null,
         manifest,
         bridgeNonce: crypto.randomBytes(16).toString('hex'),
         warnings,
@@ -278,12 +281,14 @@ export function publicMount(record) {
     return {
         mountId: record.id,
         charId: record.charId,
+        chatName: record.chatName ?? null,
         entryKind: record.manifest.entryKind,
         entry: record.manifest.entry,
         entryUrl,
         assetBaseUrl: base,
         cdnUrl: `${base}cdn`,
         shimUrl: '/card-runtime/shim/t0.js',
+        ctxShimUrl: '/card-runtime/shim/ctx.js',
         bridgeNonce: record.bridgeNonce,
         manifest: record.manifest,
         warnings: record.warnings,

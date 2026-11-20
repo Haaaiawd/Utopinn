@@ -213,9 +213,11 @@ export function parseCardAppManifest(card) {
         }
     }
 
-    // 缺省面:th(TH 兼容是生态契约,ctx 面 shim 未立前未声明的卡不该
-    // 落进降级徽标)。要 ctx 面的卡显式声明 api:['ctx']。
-    let api = ['th'];
+    // 缺省面:document 入口 → th(TH 兼容是生态契约);module 入口 →
+    // ['ctx','th'](module 入口本身就是 Luker ctx-face loader 约定,
+    // TASK-046 ctx shim 落地后未声明卡不该再吃降级徽标)。
+    // 要收窄面的卡显式声明 permissions.api。
+    let api = entryKind === 'module' ? ['ctx', 'th'] : ['th'];
     if (perms?.api !== undefined) {
         if (!Array.isArray(perms.api)) {
             errors.push('card_app.permissions.api: must be an array of face/method names');

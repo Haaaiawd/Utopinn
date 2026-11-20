@@ -41,6 +41,11 @@ import { emit as diagEmit } from './diag-bus.js';
 /** 毫秒保留 1 位小数(打表口径) */
 const ms = (v) => Math.round(v * 10) / 10;
 
+/** chat_state 命名空间:panel-t0 th.injectPrompts 的持久化位(与 packages/api-client NS_INJECT 同键) */
+const TH_INJECT_NS = 'th.inject';
+/** mergedExtPrompts 注入键前缀(与 script_inject_* 并列,免撞名) */
+const TH_INJECT_KEY_PREFIX = 'th_inject_';
+
 /**
  * [perf] 摘要行。约定:调用方把 endpoint 侧 cardMs 并入 perf.cardMs
  * 与 perf.totalMs 后再打,totalMs = 含卡加载的整段耗时。
@@ -260,12 +265,19 @@ async function buildGenerationContextImpl({
     const worldInfoRepo = getWorldInfoRepo();
 
     const isGroup = Boolean(group);
-    const [chatDoc, settingsDoc] = await Promise.all([
+    const [chatDoc, settingsDoc, thInjectState] = await Promise.all([
         isGroup
             // 群聊文件寻址同 /api/chats/group/*:{charDir:'',name:chatId,isGroup,groupId}
             ? chatRepo.get(handle, '', String(group.chatId), { isGroup: true, groupId: String(group.chatId) })
             : chatRepo.get(handle, charDir, chatName),
         settingsRepo.get(handle),
+        // chat_state ns `th.inject` 读侧(TASK-046 段3b):panel-t0 的
+        // th.injectPrompts 写 {prompts: ThInjectedPrompt[]} 进该 ns,
+        // 这里把它消费进 extension_prompts 面 —— 卡面注入真正影响本轮组装。
+        isGroup
+            ? chatRepo.getState(handle, '', String(group.chatId), TH_INJECT_NS,
+                { isGroup: true, groupId: String(group.chatId) }).catch(() => null)
+            : chatRepo.getState(handle, charDir, chatName, TH_INJECT_NS).catch(() => null),
     ]);
     perf.loadMs += performance.now() - seg;
     if (!chatDoc) throw new Error(isGroup ? `Group chat not found: ${group.chatId}` : `Chat not found: ${charDir}/${chatName}`);
@@ -463,6 +475,31 @@ async function buildGenerationContextImpl({
         if (inject && typeof inject === 'object') {
             mergedExtPrompts[`${SCRIPT_INJECT_KEY_PREFIX}${id}`] = inject;
         }
+    }
+    // chat_state ns `th.inject` → extension_prompts(TASK-046 段3b 读侧):
+    // ThInjectedPrompt {id,position:'in_chat'|'none',depth,role,content,should_scan}
+    // 映射 = 上游 extension_prompts 条目形 {value,position,depth,scan,role}。
+    // 'none' → NONE(占位不注入,uninject 前保留语义);filter 字段不落地
+    // (同 normalizeExtensionPrompts 注释 —— 服务端无闭包求值,shim 端已预过滤)。
+    const thInjectPrompts = Array.isArray(thInjectState?.prompts) ? thInjectState.prompts : [];
+    for (const p of thInjectPrompts) {
+        if (!p || typeof p !== 'object' || p.content == null) continue;
+        const key = `${TH_INJECT_KEY_PREFIX}${String(p.id ?? thInjectPrompts.indexOf(p))}`;
+        mergedExtPrompts[key] = {
+            value: String(p.content),
+            position: p.position === 'in_chat'
+                ? extension_prompt_types.IN_CHAT
+                : extension_prompt_types.NONE,
+            depth: Number.isFinite(Number(p.depth)) ? Number(p.depth) : 4,
+            scan: !!p.should_scan,
+            role: roleByName(p.role ?? 'system'),
+        };
+    }
+    if (thInjectPrompts.length) {
+        injectEvt('th_inject', {
+            injected: thInjectPrompts.length,
+            ids: thInjectPrompts.map((p) => p?.id).filter(Boolean).slice(0, 8),
+        });
     }
 
     // —— Author's Note + 卡 depth_prompt + persona 通道(上游在 WI 扫描前置位,

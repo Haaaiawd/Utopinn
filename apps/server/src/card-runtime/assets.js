@@ -25,9 +25,16 @@ import { createRequire } from 'node:module';
 import { resolveAssetPath, entryFileExists } from './mounts.js';
 import { cardRuntimeSecurityHeaders } from './csp.js';
 
-/** Server-shim names the `?shim=` knob may splice into entry documents. */
+/**
+ * Server-shim names the ?shim= knob may splice into entry documents.
+ * 'face' is the bridge contract the shim implements — the bootstrap JSON and
+ * (for module entries) the init-caller follow it:
+ *   t0  → TH-face T0 table (panel-shim runtime.js, th.* wire methods)
+ *   ctx → Luker ctx face (panel-shim ctx-shim.js, ctx.* wire methods + init caller)
+ */
 const SHIM_URLS = new Map([
-    ['t0', '/card-runtime/shim/t0.js'],
+    ['t0', { url: '/card-runtime/shim/t0.js', face: 'th' }],
+    ['ctx', { url: '/card-runtime/shim/ctx.js', face: 'ctx' }],
 ]);
 
 function selfOrigin(request) {
@@ -43,21 +50,35 @@ function setSecurityHeaders(request, response, mount) {
 }
 
 /**
- * Splice a `<script src>` shim tag as early as possible — before card code.
- * @param {string} html
- * @param {string} shimUrl
+ * Per-shim bridge bootstrap -- nonce + face + ctx seeds, emitted before the
+ * shim source so card code can read but not forge the bridge identity.
+ * @param {object} mount
+ * @param {{face:string}} shimSpec
  */
-export function injectShimTag(html, shimUrl, mount) {
-    // bridge bootstrap 先于 shim 源下发:nonce 由 mount 服务端持有,卡代码
-    // 可读但不可伪造来源(ev.source / RN 侧 nonce 校验各自消费)。
-    const bootstrap = mount?.bridgeNonce ? `<script data-card-runtime-bootstrap>window.__UTOPINN_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UTOPINN_PANEL_BOOTSTRAP__=${JSON.stringify({
-        face: 'th',
+function bootstrapTag(mount, shimSpec) {
+    if (!mount?.bridgeNonce) return '';
+    return `<script data-card-runtime-bootstrap>window.__UTOPINN_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UTOPINN_PANEL_BOOTSTRAP__=${JSON.stringify({
+        face: shimSpec.face,
         mountId: mount.id,
         charId: mount.charId,
+        chatName: mount.chatName ?? undefined,
+        entry: mount.manifest?.entry,
+        assetBase: `/card-runtime/m/${mount.id}/`,
         stateNamespaces: mount.manifest?.permissions?.stateNamespaces ?? [],
         initializedGlobals: [],
-    })};</script>` : '';
-    const tag = `${bootstrap}<script src="${shimUrl}" data-card-runtime-shim></script>`;
+    })};</script>`;
+}
+
+/**
+ * Splice a <script src> shim tag as early as possible -- before card code.
+ * @param {string} html
+ * @param {{url:string,face:string}} shimSpec
+ */
+export function injectShimTag(html, shimSpec, mount) {
+    // bridge bootstrap 先于 shim 源下发:nonce 由 mount 服务端持有,卡代码
+    // 可读但不可伪造来源(ev.source / RN 侧 nonce 校验各自消费)。
+    const bootstrap = bootstrapTag(mount, shimSpec);
+    const tag = `${bootstrap}<script src="${shimSpec.url}" data-card-runtime-shim></script>`;
     const head = html.match(/<head[^>]*>/i);
     if (head) {
         const at = head.index + head[0].length;
@@ -74,27 +95,36 @@ export function injectShimTag(html, shimUrl, mount) {
 /**
  * Synthesized shell for ES-module entries (Luker CardApp convention:
  * module exports init(ctx); style.css in the same folder is auto-loaded).
+ * ctx face(?shim=ctx)时附加 init-caller:等 ctx-shim 把 __CARDAPP_CTX__
+ * 挂好(含 varCache/chatCache 种子)再 invoke module.init(ctx)——
+ * 否则 module 只是裸脚本,export 的 init 永远不跑(掌门卡即此病)。
  * @param {object} mount
- * @param {string} shimUrl|null
- * @param {string} nonceAttr unused for now — host bridges over postMessage
+ * @param {{url:string,face:string}|null} shimSpec
  */
-export function buildModuleShell(mount, shimUrl = null) {
+export function buildModuleShell(mount, shimSpec = null) {
     const entryDir = path.posix.dirname(mount.manifest.entry);
     const stylePath = entryDir === '.' ? 'style.css' : `${entryDir}/style.css`;
     const hasStyle = !!resolveAssetPath(mount, stylePath);
     // module 入口与 document 同待遇:shim 前下发 bootstrap(nonce+face),
     // 否则宿主 nonce 门全拒——桥死。
-    const bootstrap = shimUrl && mount?.bridgeNonce
-        ? `<script data-card-runtime-bootstrap>window.__UTOPINN_PANEL_NONCE__=${JSON.stringify(mount.bridgeNonce)};window.__UTOPINN_PANEL_BOOTSTRAP__=${JSON.stringify({
-            face: 'th',
-            mountId: mount.id,
-            charId: mount.charId,
-            stateNamespaces: mount.manifest?.permissions?.stateNamespaces ?? [],
-            initializedGlobals: [],
-        })};</script>\n`
-        : '';
-    const shim = shimUrl ? `${bootstrap}<script src="${shimUrl}" data-card-runtime-shim></script>\n` : '';
+    const shim = shimSpec ? `${bootstrapTag(mount, shimSpec)}<script src="${shimSpec.url}" data-card-runtime-shim></script>
+` : '';
     const style = hasStyle ? `<link rel="stylesheet" href="./${stylePath}">` : '';
+    const entryRef = JSON.stringify(`./${mount.manifest.entry}`);
+    const initCaller = shimSpec?.face === 'ctx'
+        ? `<script type="module" data-card-runtime-init>
+  const __mod = await import(${entryRef});
+  const __ctx = window.__CARDAPP_CTX__;
+  if (__ctx && typeof __mod?.init === 'function') {
+    try { await __ctx.__ready; } catch { /* 种子失败不拦 init */ }
+    try { await __mod.init(__ctx); window.__CARDAPP_INIT__ = { ok: true }; }
+    catch (err) { window.__CARDAPP_INIT__ = { ok: false, error: String(err?.stack || err) }; console.error('[card-runtime] init(ctx) failed:', err); }
+  } else {
+    window.__CARDAPP_INIT__ = { ok: false, error: __mod?.init ? 'ctx_shim_missing' : 'no_init_export' };
+  }
+</script>`
+        : '';
+    const moduleTag = initCaller ? '' : `<script type="module" src="./${mount.manifest.entry}"></script>`;
     return [
         '<!doctype html>',
         '<html>',
@@ -107,7 +137,7 @@ export function buildModuleShell(mount, shimUrl = null) {
         '</head>',
         '<body>',
         '<div id="card-app-container"></div>',
-        `<script type="module" src="./${mount.manifest.entry}"></script>`,
+        moduleTag || initCaller,
         '</body>',
         '</html>',
     ].filter(Boolean).join('\n');
@@ -132,20 +162,20 @@ function sendDocument(request, response, mount, body) {
 
 /**
  * `GET /m/:id/` — entry document: redirect for document entries, synthesized
- * shell for module entries. `?shim=t0` splices the shim tag for web hosts that
- * cannot inject before card scripts.
+ * shell for module entries. `?shim=t0|ctx` splices the shim tag for hosts that
+ * cannot inject before card scripts (ctx also drives the module init-caller).
  */
 export function entryHandler(request, response) {
     const mount = request.cardRuntimeMount;
-    const shimUrl = SHIM_URLS.get(String(request.query.shim || '')) || null;
+    const shimSpec = SHIM_URLS.get(String(request.query.shim || '')) || null;
     if (mount.manifest.entryKind === 'document') {
-        const target = `./${mount.manifest.entry}${shimUrl ? '?shim=' + encodeURIComponent(String(request.query.shim)) : ''}`;
+        const target = `./${mount.manifest.entry}${shimSpec ? '?shim=' + encodeURIComponent(String(request.query.shim)) : ''}`;
         return response.redirect(302, target);
     }
     if (!entryFileExists(mount)) {
         return response.status(404).json({ error: 'entry_not_found' });
     }
-    return sendDocument(request, response, mount, buildModuleShell(mount, shimUrl));
+    return sendDocument(request, response, mount, buildModuleShell(mount, shimSpec));
 }
 
 /**
@@ -168,8 +198,8 @@ export function assetHandler(request, response) {
     const ext = path.extname(fullPath).toLowerCase();
     if (ext === '.html' || ext === '.htm') {
         let body = fs.readFileSync(fullPath, 'utf8');
-        const shimUrl = SHIM_URLS.get(String(request.query.shim || '')) || null;
-        if (shimUrl) body = injectShimTag(body, shimUrl, mount);
+        const shimSpec = SHIM_URLS.get(String(request.query.shim || '')) || null;
+        if (shimSpec) body = injectShimTag(body, shimSpec, mount);
         return sendDocument(request, response, mount, body);
     }
 
@@ -188,29 +218,38 @@ export function assetHandler(request, response) {
 }
 
 // ---------- host-side shim (public, session-free) ----------
-// The TH-face T0 runtime from @utopinn/panel-shim, re-served on the public
-// surface so WebViews without a session can load it (mirrors
+// TH-face T0 runtime + ctx-face runtime from @utopinn/panel-shim, re-served on
+// the public surface so WebViews without a session can load it (mirrors
 // endpoints/panel-shim.js, which stays on the authenticated side for admin use).
 
-let shimCache = null;
+const SHIM_FILES = new Map([
+    ['t0.js', 'runtime.js'],
+    ['t0', 'runtime.js'],
+    ['ctx.js', 'ctx-shim.js'],
+    ['ctx', 'ctx-shim.js'],
+]);
 
-function loadShimRuntime() {
-    if (shimCache) return shimCache;
+const shimCache = new Map();
+
+function loadShimRuntime(file) {
+    if (shimCache.has(file)) return shimCache.get(file);
     const require = createRequire(import.meta.url);
     const pkgDir = path.dirname(require.resolve('@utopinn/panel-shim/package.json'));
-    const source = fs.readFileSync(path.join(pkgDir, 'src', 'runtime.js'), 'utf8');
+    const source = fs.readFileSync(path.join(pkgDir, 'src', file), 'utf8');
     const etag = `W/"${crypto.createHash('sha256').update(source).digest('hex').slice(0, 24)}"`;
-    shimCache = { source, etag };
-    return shimCache;
+    const entry = { source, etag };
+    shimCache.set(file, entry);
+    return entry;
 }
 
-/** `GET /shim/:name` — allowlisted host-side scripts (t0 = TH-face shim). */
+/** `GET /shim/:name` -- allowlisted host-side scripts (t0 = TH-face, ctx = ctx-face). */
 export function shimHandler(request, response) {
-    if (request.params.name !== 't0.js' && request.params.name !== 't0') {
+    const file = SHIM_FILES.get(request.params.name);
+    if (!file) {
         return response.status(404).json({ error: 'unknown_shim' });
     }
     try {
-        const { source, etag } = loadShimRuntime();
+        const { source, etag } = loadShimRuntime(file);
         if (request.headers['if-none-match'] === etag) return response.status(304).end();
         response.set({
             'Content-Type': 'application/javascript; charset=utf-8',

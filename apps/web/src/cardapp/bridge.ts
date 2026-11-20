@@ -5,6 +5,7 @@
 // in packages/protocol/src/panels.ts — do not re-invent them here.
 import {
     isPanelRequest,
+    PANEL_METHODS,
     PANEL_METHODS_TH_T0,
     type AnyPanelMethod,
     type PanelPush,
@@ -26,8 +27,8 @@ export interface ApiGrants {
  * Expand `permissions.api` grants:
  *   'th'      → the whole T0 table (PANEL_METHODS_TH_T0)
  *   'th.xxx'  → that single method
- *   'ctx'/'ctx.xxx' → ctx face requested (host can't serve it yet — caller
- *                     degrades when no 'th' grant exists alongside)
+ *   'ctx'     → the whole ctx face (PANEL_METHODS) — ctx shim serves it
+ *   'ctx.xxx' → that single ctx method (shim still gets its local members)
  * api empty/undeclared → the ecosystem default = full T0 table.
  */
 export function expandApiGrants(api: string[] | undefined): ApiGrants {
@@ -41,8 +42,12 @@ export function expandApiGrants(api: string[] | undefined): ApiGrants {
         if (grant === 'th') {
             thFace = true;
             for (const m of PANEL_METHODS_TH_T0) allowed.add(m);
-        } else if (grant === 'ctx' || grant.startsWith('ctx.')) {
+        } else if (grant === 'ctx') {
             ctxFace = true;
+            for (const m of PANEL_METHODS) allowed.add(m);
+        } else if (grant.startsWith('ctx.')) {
+            ctxFace = true;
+            allowed.add(grant);
         } else if (grant.startsWith('th.')) {
             thFace = true;
             allowed.add(grant);
