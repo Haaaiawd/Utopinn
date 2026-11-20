@@ -125,6 +125,12 @@ export const GATED_ROUTES = Object.freeze([
     route(/^\/api\/utopinn\/state\/chat\/(patch|delete)$/i, ['chats']),
     route(/^\/api\/utopinn\/state\/char\/(set|patch|delete)$/i, ['characters']),
     route(/^\/api\/utopinn\/state\/preset\/(patch|delete|delete-all|rename)$/i, PRESET_CATEGORY_IDS),
+    // 读面 POST(body 载 target/namespace):dirty:false 持读者槽 —— 防
+    // sync writer 撕读 sidecar/chat 索引;不落脏标记。
+    route(/^\/api\/utopinn\/chats\/recent$/i, ['chats'], { dirty: false }),
+    route(/^\/api\/utopinn\/state\/chat\/(get|get-batch)$/i, ['chats'], { dirty: false }),
+    route(/^\/api\/utopinn\/state\/char\/(get|get-batch)$/i, ['characters'], { dirty: false }),
+    route(/^\/api\/utopinn\/state\/preset\/(get|get-batch)$/i, PRESET_CATEGORY_IDS, { dirty: false }),
     route(/^\/api\/utopinn\/import\/commit$/i, ALL_CATEGORY_IDS, { wholesale: true }),
     route(/^\/api\/utopinn\/lan\/import$/i, ALL_CATEGORY_IDS, { wholesale: true }),
     route(/^\/api\/utopinn\/(import\/(preview|scan-st)|backup|lan\/offer)$/i, ALL_CATEGORY_IDS, { dirty: false }),
