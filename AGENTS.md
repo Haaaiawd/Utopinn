@@ -85,6 +85,7 @@ the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative 
 - 兼容语料：tests/corpus/cards/ 进 git（公开卡）；tests/corpus-private/ 已 gitignore（用户私有卡，由用户提供）；ref/cards/GuiXu 为本地参考样本。
 - golden 捕获用 `tests/golden-diff/capture.sh <card.png>`（自动备齐 Playwright 缺的系统库、设 LD_LIBRARY_PATH）。私有卡产物自动落 golden-private/(gitignore)。前置条件：server.js 的 E2E_SCRATCH_ROOT/E2E_READY_TIMEOUT_MS 已由脚本内置；前端不会自动连 API，捕获脚本会显式点 #api_button_openai。
 - pnpm 布局下 `apps/server/node_modules/base64-js` 不存在（依赖提升），js-tiktoken bundle 合成会 500——已从 .pnpm 实体拷贝兜底；升级依赖时注意复査。
+- `packages/protocol/dist/` 是 gitignored 构建产物却在运行时被消费（CLI host/bridge 的 `isPanelMethod` 白名单）——**升级/clone 后必须先 `tsc` build protocol**，否则新 ctx 方法被当 bad_request 拒掉。
 
 ## 运维备忘(WSL 环境)
 
