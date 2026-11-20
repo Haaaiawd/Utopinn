@@ -59,6 +59,8 @@ const zh: Record<string, string> = {
     'composer.ph.messenger': '发送群聊或私聊消息…',
     'composer.ph.galgame': '自由输入台词打破分支…',
     'chat.none': '未选会话', 'chat.persona': ' Persona',
+    'chat.pick.title': '选择一个会话', 'chat.pick.desc': '从左侧会话列表挑一段对话,或新建会话开始',
+    'chat.pick.btn': '选择会话', 'home.hero': '继续你的故事',
     'chat.send.failed': '发送失败', 'chat.rename': '重命名会话', 'chat.rename.failed': '重命名失败',
     'chat.delete.confirm': '删除会话?', 'chat.delete.failed': '删除失败', 'sidebar.newChat': '新会话',
     /* 左树 */
