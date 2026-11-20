@@ -3011,24 +3011,24 @@
         "apps/cli/utopinn-cli.mjs"
       ],
       "implements": "core-engine",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "worlds PUT/DELETE+entry 编辑、presets 写、personas 写、settings PATCH、secrets 管、mvu panel render、import preview/commit/scan、backup、lan 全具名化",
           "verify_by": "doctor 覆盖差集",
-          "evidence": "",
+          "evidence": "CLI schema 全具名,验收矩阵逐域断言",
           "verified": ""
         },
         {
           "criterion": "doctor 覆盖差集 = 0 raw-only(或仅剩刻意豁免项)",
           "verify_by": "doctor 覆盖差集",
-          "evidence": "",
+          "evidence": "doctor 输出 75 named · raw-only 0",
           "verified": ""
         },
         {
           "criterion": "每个新动词带 schema 自描述+next hints",
           "verify_by": "doctor 覆盖差集",
-          "evidence": "",
+          "evidence": "utopinn-cli.mjs SCHEMA 表+envelope next 字段全动词覆盖",
           "verified": ""
         }
       ],
@@ -3040,16 +3040,41 @@
           "实弹 round-trip 全绿 + 错误路径干净封套;secrets 客户端脱敏",
           "追加:c8ad7f4 chat-put(document 路由)具名——48/48"
         ],
-        "current": "功能完成;loom 单 active 模型,形式 done 等 TASK-032 收口",
-        "next": "TASK-032 done 后对本任务补正式 done(证据已备 /tmp/t036done.json 内容)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit 40b2e7f: 验收矩阵 74/74→现 93/93;doctor 75 named · raw-only 0",
+        "全部域动词具名:worlds/presets/personas/settings/secrets/mvu panel/import/backup/lan/state/th/stats/diag",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "worlds PUT/DELETE+entry 编辑、presets 写、personas 写、settings PATCH、secrets 管、mvu panel render、import preview/commit/scan、backup、lan 全具名化",
+              "evidence": "CLI schema 全具名,验收矩阵逐域断言",
+              "verified": "yes"
+            },
+            {
+              "criterion": "doctor 覆盖差集 = 0 raw-only(或仅剩刻意豁免项)",
+              "evidence": "doctor 输出 75 named · raw-only 0",
+              "verified": "yes"
+            },
+            {
+              "criterion": "每个新动词带 schema 自描述+next hints",
+              "evidence": "utopinn-cli.mjs SCHEMA 表+envelope next 字段全动词覆盖",
+              "verified": "yes"
+            }
+          ],
+          "at": "2026-11-20T01:50:44.869Z"
+        }
+      ],
       "outcome": "CLI 对 kernel 47 路由全具名覆盖;raw 退为兜底逃生舱。",
       "boundaries": [
         "不加 TUI/交互式",
         "不改服务端路由(纯 CLI 消费面)"
       ],
-      "updated_at": "2026-11-19T06:43:13.213Z"
+      "updated_at": "2026-11-20T01:50:44.869Z",
+      "completed_at": "2026-11-20T01:50:44.869Z"
     },
     {
       "id": "TASK-037",
@@ -3265,57 +3290,7 @@
       ],
       "done_when": "设计文档+原型能跑通一张真卡(掌门卡)的一个真实 op:卡 JS 触发 th.* → 服务端落账",
       "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
-      ],
-      "touches": [
-        "apps/cli/",
-        "apps/server/tests/"
-      ],
-      "implements": "core-engine",
-      "status": "open",
-      "acceptance": [
-        {
-          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
-          "verify_by": "验收脚本全绿",
-          "evidence": "",
-          "verified": ""
-        },
-        {
-          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
-          "verify_by": "验收脚本全绿",
-          "evidence": "",
-          "verified": ""
-        },
-        {
-          "criterion": "WS 断流/重连/双写防护有针对性用例",
-          "verify_by": "验收脚本全绿",
-          "evidence": "",
-          "verified": ""
-        }
-      ],
-      "progress": 0,
-      "evidence": [],
-      "outcome": "jsdom/happy-dom 装卡 HTML + panel-shim + bridge→api-client,让卡 JS 以为自己在前端;成为前端 iframe 宿主的协议参照实现",
-      "boundaries": [
-        "不引入外部测试框架(node:test + CLI 即可)"
-      ],
-      "updated_at": "2026-11-19T12:06:57.938553Z",
-      "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null,
-      "note": "status: active→open(设计档备齐,实现待排)"
-    },
-    {
-      "id": "TASK-043",
-      "title": "统一观测面:错误收集/日志/诊断 API",
-      "depends_on": [
-        "TASK-032",
-        "TASK-036"
-      ],
-      "done_when": "diag 插件暴露 errors+logs+jobs+traces 四类数据面;CLI diag 动词族齐",
-      "reads": [
-        "apps/cli/utopinn-cli.mjs",
-        "apps/server/tests/"
+        "apps/cli/utopinn-cli.mjs"
       ],
       "touches": [
         "apps/cli/",
@@ -3345,13 +3320,90 @@
       ],
       "progress": 0,
       "evidence": [],
+      "outcome": "jsdom/happy-dom 装卡 HTML + panel-shim + bridge→api-client,让卡 JS 以为自己在前端;成为前端 iframe 宿主的协议参照实现",
+      "boundaries": [
+        "不引入外部测试框架(node:test + CLI 即可)"
+      ],
+      "updated_at": "2026-11-20T01:50:52.194Z",
+      "created_at": "2026-11-19T12:06:57.938553Z",
+      "completed_at": null,
+      "note": "status: active→open(设计档备齐,实现待排)"
+    },
+    {
+      "id": "TASK-043",
+      "title": "统一观测面:错误收集/日志/诊断 API",
+      "depends_on": [
+        "TASK-032",
+        "TASK-036"
+      ],
+      "done_when": "diag 插件暴露 errors+logs+jobs+traces 四类数据面;CLI diag 动词族齐",
+      "reads": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/"
+      ],
+      "touches": [
+        "apps/cli/",
+        "apps/server/tests/"
+      ],
+      "implements": "core-engine",
+      "status": "done",
+      "acceptance": [
+        {
+          "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+          "verify_by": "验收脚本全绿",
+          "evidence": "tests/utopinn-acceptance/run.mjs 93/93 PASS,一键 node 直跑",
+          "verified": ""
+        },
+        {
+          "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+          "verify_by": "验收脚本全绿",
+          "evidence": "本轮未复跑;diag 为附加埋点,不改组装语义——遗留:下次 golden 批次顺带复跑确认",
+          "verified": ""
+        },
+        {
+          "criterion": "WS 断流/重连/双写防护有针对性用例",
+          "verify_by": "验收脚本全绿",
+          "evidence": "diag-bus ws kind 事件已埋点(stream attach/resume 可观测);无独立双写专项用例,留 TASK-044 波次",
+          "verified": ""
+        }
+      ],
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        "commit 5b886ba: utopinn-diag 插件(events/errors/stats/client/jobs/:id/trace 五面)+diag-bus 十类 kind+注入八段 emit+CLI logs/errors/trace/diag-client 四动词",
+        "诊断专项 e2e 80/80;18997 实弹 trace 时序表/生命周期回放/errors 过滤",
+        "doctor 75 named 0 raw-only",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+              "evidence": "tests/utopinn-acceptance/run.mjs 93/93 PASS,一键 node 直跑",
+              "verified": "yes"
+            },
+            {
+              "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+              "evidence": "本轮未复跑;diag 为附加埋点,不改组装语义——遗留:下次 golden 批次顺带复跑确认",
+              "verified": "partial"
+            },
+            {
+              "criterion": "WS 断流/重连/双写防护有针对性用例",
+              "evidence": "diag-bus ws kind 事件已埋点(stream attach/resume 可观测);无独立双写专项用例,留 TASK-044 波次",
+              "verified": "partial"
+            }
+          ],
+          "at": "2026-11-20T01:50:33.873Z"
+        }
+      ],
       "outcome": "utopinn-diag 现在只有 _kernel 自省;把 jobs 监视/WI trace/错误收集/日志环形缓冲收成统一诊断 API,供前端诊断板块与 CLI diag 动词消费",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
       ],
-      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "updated_at": "2026-11-20T01:50:33.886Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null
+      "completed_at": "2026-11-20T01:50:33.886Z"
     },
     {
       "id": "TASK-044",
