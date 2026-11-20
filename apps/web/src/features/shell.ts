@@ -18,27 +18,33 @@ const zh: Record<string, string> = {
     'wb.newtab': '新标签页', 'wb.collapse': '收起工作台', 'wb.dock': '收回工作台', 'wb.close': '关闭',
     'wb.launcher.search': '搜索面板、预设调参、MVU 或插件…', 'wb.launcher.new': '新键', 'wb.launcher.suggested': '建议',
     'panel.unregistered': '未注册板块',
-    'panel.type.preset': '预设 / 模型', 'panel.type.mvu': 'MVU 变量', 'panel.type.notes': '手记',
-    'panel.type.ledger': '卡面板 · 云栖宗总簿', 'panel.type.lore': '世界书', 'panel.type.chapters': '章节', 'panel.type.channels': '频道',
+    'panel.type.preset': '预设 / 模型', 'panel.type.mvu': 'MVU 状态树', 'panel.type.notes': '随手笔记',
+    'panel.type.ledger': '卡面板 · 云栖宗总簿', 'panel.type.lore': '世界书命中', 'panel.type.chapters': '章节与伏笔', 'panel.type.channels': '频道与群成员',
     'panel.loadFailed': '加载失败',
-    'panel.desc.preset': '预设与生成参数', 'panel.desc.mvu': 'MVU 快照变量', 'panel.desc.notes': '随手记',
-    'panel.desc.ledger': 'CardApp 宿主', 'panel.desc.lore': '作品世界书条目', 'panel.desc.chapters': '小说章节目录', 'panel.desc.channels': '群聊频道',
+    'panel.desc.preset': '预设与生成参数', 'panel.desc.mvu': 'MVU 快照变量', 'panel.desc.notes': '记录人物关系、设定备忘与灵感',
+    'panel.desc.ledger': 'CardApp 宿主', 'panel.desc.lore': '作品世界书条目', 'panel.desc.chapters': '小说章节目录', 'panel.desc.channels': '多群聊/私聊切换与 NPC 情绪',
+    'panel.channels.list': '群聊与私聊列表', 'panel.channels.msgs': '条消息',
     'panel.badge.cardapp': 'CardApp', 'panel.badge.unwired': '待服务端面',
     'panel.unwired.note': '示例数据 · 服务端面未接,仅供预览。',
     'panel.needChat': '选卡后可用', 'panel.retry': '重试',
     'panel.preset.preset': '预设', 'panel.preset.model': '模型', 'panel.preset.blocks': '提示词条目', 'panel.preset.more': '打开完整预设板块',
     'panel.preset.empty': '该家族还没有预设', 'panel.preset.readonly': '只读 · 写面未接',
-    'param.temp': '温度', 'param.topP': 'Top-P', 'param.ctxLen': '上下文', 'param.maxReply': '最大回复',
-    'panel.mvu.vars': '变量', 'panel.mvu.table': '表格', 'panel.mvu.bridge': '总簿联动',
-    'panel.mvu.empty': '该会话还没有 MVU 变量', 'panel.mvu.receipts': '结算回执',
+    'panel.preset.title': '预设与模型调参', 'panel.preset.sub': '边聊边调，与顶部世界书上下文栈完全解耦',
+    'panel.preset.modelSel': '对话补全模型', 'panel.preset.presetSel': '对话补全预设 (JSON)',
+    'panel.preset.sampling': '采样与上下文窗口', 'panel.preset.blocksLabel': '预设提示词条目开关',
+    'param.temp': '温度 (Temperature)', 'param.topP': '核采样 (Top P)', 'param.ctxLen': '上下文窗口', 'param.maxReply': '最大回复长度',
+    'param.ctxLenTokens': '上下文长度 (Tokens)',
+    'panel.mvu.vars': '变量', 'panel.mvu.snapshot': 'MVU 变量快照', 'panel.mvu.table': '列表', 'panel.mvu.bridge': '总簿联动',
+    'panel.mvu.empty': '暂无 MVU 状态变量', 'panel.mvu.emptyDesc': '当角色卡挂载 mvu 引擎并结算首轮后,变量快照将显示于此', 'panel.mvu.receipts': '结算回执',
     'panel.mvu.settle': '重结算', 'panel.mvu.resettle': '重建投影',
     'panel.mvu.floor': '楼', 'panel.mvu.changed': '已改', 'panel.mvu.unchanged': '无变化',
     'bridge.repair': '拨款修缮大殿 (+15 耐久)', 'bridge.stipend': '发放月俸 (+2 声望)', 'bridge.levy': '征收香火钱 (+5 灵石)',
     'panel.mvu.note': '变量读自服务端 stat_data 投影;手动改值可能被下次结算覆盖。',
     'panel.notes.saving': '保存中…', 'panel.notes.saved': '已保存', 'panel.notes.dirty': '有未保存更改',
     'panel.notes.failed': '保存失败', 'panel.notes.conflict': '状态被改,刷新重试', 'panel.notes.reload': '重载',
-    'panel.lore.entries': '作品世界书', 'panel.lore.global': '全局常驻',
-    'panel.chapters.paras': '段', 'panel.chapters.current': '当前',
+    'panel.lore.title': '当前生效上下文',
+    'panel.chapters.paras': '段',
+    'panel.chapters.title': '章节目录', 'panel.chapters.new': '+ 新章', 'panel.chapters.added': '已新建章节',
     /* ctbar 胶囊 + 弹层 */
     'ctx.capsule': '上下文', 'ctx.title': '世界书与上下文栈', 'ctx.bound': '绑定形态',
     'ctx.globalLore': '全局常驻 JSON 书', 'ctx.openPreset': '在右侧打开「预设与模型」精细调参',
@@ -66,7 +72,7 @@ const zh: Record<string, string> = {
     'ledger.repair': '正殿东头修缮度', 'ledger.op.repair': '拨款修缮东头屋瓦', 'ledger.op.repair.cost': '-10 灵石 · +15%',
     'ledger.op.stipend': '发放弟子月俸与灵米', 'ledger.op.stipend.cost': '-6 灵石 · +3 声望',
     'ledger.op.levy': '下山征收香火供奉', 'ledger.op.levy.cost': '+12 灵石',
-    'studio.nav.lore': '世界书', 'studio.nav.chars': '角色', 'studio.nav.prompts': '提示词', 'studio.nav.regex': '正则', 'studio.nav.files': '文件',
+    'studio.nav.lore': '世界书', 'studio.nav.chars': '角色', 'studio.nav.prompts': '提示词', 'studio.nav.regex': '正则与兼容脚本', 'studio.nav.files': '文件',
     'plugins.nav.installed': '已安装', 'plugins.nav.market': '市场',
     /* 状态/导入 */
     'status.stub': '骨架阶段', 'imp.tooLarge': '文件超过 64MB 上限', 'imp.queued': '已加入导入队列', 'imp.veil': '松手导入卡/书/预设',
@@ -83,7 +89,7 @@ const zh: Record<string, string> = {
 
     // diag/stats surface —— 观测面词条(diag 四子页 / stats 汇总与 WI 命中 /
     // top-job-slot / launcher 三桶 / 拆出钮)。append-only 块,勿并入上文。
-    'panel.type.diag': '诊断', 'panel.type.stats': '统计',
+    'panel.type.diag': '诊断与观测', 'panel.type.stats': '统计与命中率',
     'panel.desc.diag': 'Jobs · Trace · 报错 · 日志', 'panel.desc.stats': '生成统计与 WI 命中',
     'wb.detach': '拆出为悬浮窗',
     'wb.launcher.cardapp': '卡绑面板(CardApp 宿主)', 'wb.launcher.system': '系统面板', 'wb.launcher.iframe': 'iframe 宿主',
@@ -116,7 +122,7 @@ const zh: Record<string, string> = {
 
     // stage interactions —— 中列舞台楼层交互词条(swipe/中止/错误楼/楼操作条/
     // QR 条/斜杠增补/离线 banner/token 胶囊)。append-only 块,勿并入上文。
-    'composer.presetModel': '预设与模型',
+    'composer.presetModel': '预设与模型', 'composer.presetModelShort': '预设/模型',
     'slash.menu.title': '斜杠指令',
     'slash.continue.desc': '沿当前剧情无缝续写下一段',
     'slash.regen.desc': '覆盖重刷最新一条 AI 回复',
@@ -137,7 +143,7 @@ const zh: Record<string, string> = {
     'stage.patch.failed': '写入失败',
     'stage.rewind.done': '已回滚并重结算 MVU', 'stage.rewind.failed': '回滚失败',
     'stage.mvu.synced': 'MVU 已重结算', 'stage.mvu.failed': 'MVU 重结算失败',
-    'stage.offline.banner': '连接已断开 —— 正在离线展示缓存内容', 'stage.offline.reconnect': '重新连接',
+    'stage.offline.banner': '服务端连接已断开（降级只读模式）', 'stage.offline.reconnect': '重新连接',
     'stage.token.title': '上轮组装 Token(来自最近 job trace)· 点击查看诊断',
     'stage.qr.collapse': '收起快捷回复', 'stage.abort.title': '中止生成',
     'stage.script.failed': '指令执行失败', 'stage.script.popup': '该指令请求交互弹层 —— 本壳未接',
@@ -209,8 +215,8 @@ const zh: Record<string, string> = {
     'st.secrets.none': '还没有配置密钥', 'st.secrets.failed': '密钥操作失败',
     /* 移动资产工坊 */
     'mob.hub.assetHub': '资产工坊', 'mob.hub.back': '返回对话',
-    'mob.hub.cards': '角色卡库', 'mob.hub.cardsN': '张卡', 'mob.hub.worldbook': '作品世界书',
-    'mob.hub.global': '全局常驻', 'mob.hub.import': '导入卡 / 世界书 / 预设',
+    'mob.hub.cards': '角色卡库', 'mob.hub.cardsN': '张作品卡', 'mob.hub.worldbook': '作品世界书',
+    'mob.hub.global': '全局常驻栈', 'mob.hub.import': '导入角色卡 / 世界书 JSON',
 };
 
 const en: Record<string, string> = Object.fromEntries(Object.keys(zh).map((k) => [k, k]));
