@@ -32,18 +32,18 @@ const items = r.body?.items ?? [];
 log('plugins 清单', r.status === 200 && items.length >= 7, `count=${items.length} ids=${items.map(i => i.id).join(',')}`);
 log('全 active', items.every(i => i.status === 'active'));
 
-// 2. disable utopinn-import → 其路由应实时消失
-r = await req('POST', '/api/utopinn/plugins/utopinn-import/disable');
+// 2. disable utopinn-data → 其路由应实时消失(import 面已并入 data fiber)
+r = await req('POST', '/api/utopinn/plugins/utopinn-data/disable');
 log('disable 200', r.status === 200 && r.body?.status === 'disabled');
 r = await req('POST', '/api/utopinn/import/preview', { name: 'x.json', dataBase64: 'e30=' });
 log('disable 后路由消失', r.status === 404 || r.status === 405, `status=${r.status}`);
 r = await req('GET', '/api/utopinn/plugins');
-const imp = r.body?.items?.find(i => i.id === 'utopinn-import');
+const imp = r.body?.items?.find(i => i.id === 'utopinn-data');
 log('清单回读 disabled', imp?.status === 'disabled' && imp?.disabled === true, JSON.stringify(imp));
 log('patch 文件落盘', fs.existsSync('apps/server/src/profile.patch.yaml'));
 
 // 3. enable → 路由恢复
-r = await req('POST', '/api/utopinn/plugins/utopinn-import/enable');
+r = await req('POST', '/api/utopinn/plugins/utopinn-data/enable');
 log('enable 200', r.status === 200 && r.body?.status === 'active');
 const card = { spec: 'chara_card_v2', data: { name: 'X', description: '', first_mes: '' } };
 r = await req('POST', '/api/utopinn/import/preview', { name: 'x.json', dataBase64: Buffer.from(JSON.stringify(card)).toString('base64') });
