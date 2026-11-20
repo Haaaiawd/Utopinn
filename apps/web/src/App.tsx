@@ -411,9 +411,12 @@ function Shell() {
                     <TopChrome />
                     <div className="flex min-h-0 flex-1">
                         <LeftChrome />
-                        <div className="workspace-inset m-1.5 ml-0">
-                            <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
-                            <Workbench />
+                        {/* 规范稿:inset 画布外裹 pr-[10px] pb-[10px] 呼吸容器 */}
+                        <div className="flex min-w-0 flex-1 overflow-hidden pr-[10px] pb-[10px] pl-0 pt-0">
+                            <div className="workspace-inset">
+                                <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
+                                <Workbench />
+                            </div>
                         </div>
                     </div>
                     <FloatingWin />

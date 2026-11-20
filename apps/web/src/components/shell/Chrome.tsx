@@ -1,9 +1,10 @@
-// 规范稿外框:top-chrome-bar(36px)| left-chrome(rail 52px + tree 224px +
-// account-dock 92/52px)。壳不识域:rail 按钮/树体全走贡献点(nav.rail /
+// 规范稿外框:top-chrome-bar(36px)| left-chrome(rail 56px + tree 228px +
+// account-dock 102/58px)。壳不识域:rail 按钮/树体全走贡献点(nav.rail /
 // sidebar.tree),齿轮→settings,头像→account pop。
 import { useEffect, useState } from 'react';
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
+import { useTheme } from '../../theme';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
 import { listJobs, type JobSummary } from '../../api/jobs';
@@ -84,103 +85,78 @@ function TopJobSlot() {
     );
 }
 
-/** 36px 顶条:左 logo+分隔+域标题,右 vp 切换 + workbench 开关 + 状态点。 */
+/** 36px 顶条:左双灯点 + 「Utopinn ·」字标;右 job-slot + Desktop/Mobile 分段。 */
 export function TopChrome() {
-    const { t } = useI18n();
     const shell = useShell();
-    const navs = useContribs('nav.rail');
-    const cur = navs.find((n) => n.view === shell.railTab);
-    const label = cur ? t(`nav.${cur.view}`) : t(`nav.${shell.view}`) !== `nav.${shell.view}` ? t(`nav.${shell.view}`) : t('app.name');
     return (
         <header className="top-chrome-bar">
-            <div className="flex min-w-0 items-center gap-2">
-                <button
-                    className="logo-btn ghost-btn h-7 w-7 text-[color:var(--brand)]"
-                    onClick={shell.toggleSidebar}
-                    title={t('chrome.toggleSidebar')}
-                    aria-label="Utopinn"
-                >
-                    <LogoU size={18} />
-                </button>
-                <span className="heading-tight truncate text-[12.5px] font-semibold text-[color:var(--fg-primary)]">{t('app.name')}</span>
-                <span className="heading-tight truncate text-[12.5px] text-[color:var(--fg-secondary)]">· {label}</span>
+            <div className="flex items-center">
+                <div className="flex w-[32px] items-center justify-center gap-1.5" aria-hidden="true">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--border-strong)' }} />
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--border-subtle)' }} />
+                </div>
+                <span className="heading-tight ml-3 flex items-center gap-1.5 text-[12px] font-medium text-[color:var(--fg-secondary)]">
+                    <span>Utopinn</span>
+                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--brand)' }} />
+                </span>
             </div>
-            <div className="flex items-center gap-1">
-                <button className="ghost-btn h-7 w-7" onClick={() => shell.setCmdkOpen(true)} title="⌘K">
-                    <Icon name="search" size={14} />
-                </button>
-                <button
-                    className="ghost-btn h-7 w-7"
-                    data-active={shell.workbenchOpen || undefined}
-                    style={shell.workbenchOpen ? { color: 'var(--brand)' } : undefined}
-                    onClick={shell.toggleWorkbench}
-                    title={t('chrome.workbench')}
-                >
-                    <Icon name="penNib" size={14} />
-                </button>
+            <div className="flex items-center gap-2">
                 {/* 规范稿 top-job-slot:vp 切换左侧的 job 指示位 */}
                 <TopJobSlot />
                 {/* 规范稿 Desktop/Mobile 分段控件 */}
-                <div className="ml-1 flex h-6 items-center rounded-full border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] p-0.5">
-                    {(['desktop', 'mobile'] as const).map((m) => (
-                        <button
-                            key={m}
-                            className="h-5 rounded-full px-2.5 text-[10px]"
-                            style={(m === 'mobile') === shell.isMobile ? { background: 'var(--fg-primary)', color: 'var(--bg-canvas)' } : { color: 'var(--fg-muted)' }}
-                            onClick={() => shell.setVpMode(m === 'mobile' ? 'mobile' : 'auto')}
-                        >
-                            {m === 'mobile' ? 'Mobile' : 'Desktop'}
-                        </button>
-                    ))}
+                <div className="inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
+                    {(['desktop', 'mobile'] as const).map((m) => {
+                        const act = (m === 'mobile') === shell.isMobile;
+                        return (
+                            <button
+                                key={m}
+                                className="rounded-[6px] px-2.5 py-0.5 text-[11px] font-medium transition-colors"
+                                style={act ? { background: 'var(--primary-bg)', color: 'var(--primary-fg)' } : { color: 'var(--fg-secondary)' }}
+                                onClick={() => shell.setVpMode(m === 'mobile' ? 'mobile' : 'auto')}
+                            >
+                                {m === 'mobile' ? 'Mobile' : 'Desktop'}
+                            </button>
+                        );
+                    })}
                 </div>
-                <span
-                    className="ml-1 inline-block h-1.5 w-1.5 rounded-full"
-                    title={shell.serverStatus}
-                    style={{
-                        background: shell.serverStatus === 'online' ? 'var(--status-ok)'
-                            : shell.serverStatus === 'mock' ? 'var(--status-warn)'
-                            : shell.serverStatus === 'offline' ? 'var(--status-danger)' : 'var(--fg-faint)',
-                    }}
-                />
             </div>
         </header>
     );
 }
 
-/** 52px rail 窄条(规范稿左侧 chrome 的固定列,logo 之外五个域按钮)。 */
+/** 56px rail 窄条(规范稿左侧 chrome 的固定列,四域按钮 38×38 / icon 20)。 */
 function Rail() {
     const { t } = useI18n();
     const shell = useShell();
     const navs = useContribs('nav.rail');
     return (
-        <div className="flex w-[52px] shrink-0 flex-col items-center gap-1 pb-2 pt-1">
+        <nav className="flex w-[56px] shrink-0 flex-col items-center gap-1.5 pt-1">
             {navs.map((n) => {
                 const active = shell.railTab === n.view;
                 return (
                     <button
                         key={n.view}
-                        className="rail-btn ghost-btn h-9 w-9"
+                        className="rail-btn flex h-[38px] w-[38px] items-center justify-center rounded-[10px] transition-colors"
                         data-active={active || undefined}
-                        style={active ? { color: 'var(--brand)', background: 'var(--bg-active)' } : undefined}
+                        style={active ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
                         title={t(`nav.${n.view}`)}
                         onClick={() => {
                             shell.setView(n.view);
                             if (!shell.sidebarOpen) shell.toggleSidebar();
                         }}
                     >
-                        <Icon name={n.icon} size={17} />
+                        <Icon name={n.icon} size={20} active={active} />
                     </button>
                 );
             })}
-        </div>
+        </nav>
     );
 }
 
-/** 账户 dock:收起 92px 高(头像在上齿轮弧入),展开 52px(头像+双行文字+右侧齿轮)。 */
+/** 账户 dock:收起 102px 高(头像在上齿轮弧入),展开 58px(头像+双行文字+右侧齿轮)。 */
 function AccountDock() {
     const { t } = useI18n();
     const shell = useShell();
-    const open = shell.sidebarOpen;
     return (
         <div className="account-dock">
             <button
@@ -189,14 +165,15 @@ function AccountDock() {
                 title={t('acct.menu')}
             >
                 <span
-                    className="dock-avatar-circle"
-                    style={{ background: 'linear-gradient(135deg, var(--brand), #b04a3f)', color: 'var(--brand-fg)' }}
+                    className="dock-avatar-circle border"
+                    style={{ background: 'var(--bg-active)', borderColor: shell.accountPopOpen ? 'var(--brand)' : 'var(--border-strong)' }}
                 >
-                    掌
+                    <img src="/assets/avatars/user-redpanda.png" alt="" className="h-full w-full rounded-full object-cover" />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: 'var(--status-ok)', borderColor: 'var(--bg-chrome)' }} />
                 </span>
                 <span className="dock-meta-text">
-                    <span className="truncate text-[12px] font-medium text-[color:var(--fg-primary)]">{t('acct.name')}</span>
-                    <span className="truncate text-[10px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
+                    <span className="truncate text-[12.5px] font-medium leading-none text-[color:var(--fg-primary)]">{t('acct.name')}</span>
+                    <span className="mt-0.5 truncate text-[10.5px] leading-none text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
                 </span>
             </button>
             <button
@@ -204,86 +181,106 @@ function AccountDock() {
                 onClick={() => shell.openSettings('api')}
                 title={t('settings.title')}
             >
-                <Icon name="gear" size={15} />
+                <Icon name="settings" size={20} active={shell.settingsOpen} />
             </button>
             {shell.accountPopOpen && <AccountPop />}
         </div>
     );
 }
 
-/** 账户锚点弹层(规范稿 account pop:左下弹出 pop-in)。 */
+/** 账户锚点弹层(规范稿 account pop:左下 64px 锚定,字号/主题/语言/设置四行)。 */
 function AccountPop() {
-    const { t } = useI18n();
+    const { t, locale, setLocale } = useI18n();
     const shell = useShell();
-    const items: [string, import('../Icon').IconName][] = [
-        ['acct.profile', 'user'],
-        ['acct.usage', 'chart'],
-        ['acct.theme', 'moon'],
-        ['acct.signout', 'signOut'],
-    ];
+    const { theme, toggle } = useTheme();
+    const fs = shell.chatSettings.fontSize;
+    const rowCls = 'flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-[12.5px] transition-colors hover:bg-[color:var(--bg-active)]';
     return (
         <>
-            <div className="fixed inset-0 z-[79]" onClick={() => shell.setAccountPopOpen(false)} />
+            <div className="fixed inset-0 z-[75]" onClick={() => shell.setAccountPopOpen(false)} />
             <div
-                className="pop-in absolute bottom-1 left-1.5 z-[80] w-[188px] rounded-[10px] p-1"
+                className="pop-in fixed bottom-2.5 left-[64px] z-[75] w-[248px] space-y-0.5 rounded-2xl p-1.5"
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}
             >
-                <div className="px-2.5 pb-2 pt-2">
-                    <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('acct.name')}</div>
-                    <div className="mt-0.5 text-[10.5px] text-[color:var(--fg-muted)]">{t('acct.mail')}</div>
+                <div className="mb-1 flex items-center justify-between border-b border-[color:var(--border-hairline)] px-2.5 py-2">
+                    <div className="min-w-0">
+                        <div className="truncate text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('acct.name')}</div>
+                        <div className="truncate text-[11.5px] text-[color:var(--fg-muted)]">{t('acct.plan')}</div>
+                    </div>
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: 'var(--status-ok)' }} />
                 </div>
-                <div className="my-1 h-px bg-[color:var(--border-hairline)]" />
-                {items.map(([k, icon]) => (
-                    <button
-                        key={k}
-                        className="ghost-btn w-full justify-start gap-2.5 rounded-md px-2.5 py-[7px] text-[12px]"
-                        onClick={() => {
-                            shell.setAccountPopOpen(false);
-                            if (k === 'acct.theme') {
-                                document.documentElement.classList.toggle('light');
-                            } else if (k === 'acct.signout') {
-                                shell.hint(t('acct.signout.hint'));
-                            } else {
-                                shell.openSettings('chat');
-                            }
-                        }}
-                    >
-                        <Icon name={icon} size={13} />
-                        {t(k)}
-                    </button>
-                ))}
+                {/* 规范稿字号行:A- / 值 / A+ */}
+                <div className="flex items-center justify-between rounded-xl px-2.5 py-1.5">
+                    <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('acct.fontSize')}</span>
+                    <div className="flex items-center gap-1">
+                        <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.max(12, fs - 0.5))}>A-</button>
+                        <span className="w-8 text-center font-mono-ui text-[11px] text-[color:var(--fg-primary)]">{fs}</span>
+                        <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.min(18, fs + 0.5))}>A+</button>
+                    </div>
+                </div>
+                <button className={rowCls} onClick={toggle}>
+                    <span className="flex items-center gap-2.5">
+                        <span className="text-[color:var(--fg-secondary)]"><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></span>
+                        <span className="text-[color:var(--fg-primary)]">{t('acct.theme')}</span>
+                    </span>
+                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{theme === 'dark' ? t('acct.theme.dark') : t('acct.theme.light')}</span>
+                </button>
+                <button className={rowCls} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}>
+                    <span className="flex items-center gap-2.5">
+                        <span className="text-[color:var(--fg-secondary)]"><Icon name="globe" size={16} /></span>
+                        <span className="text-[color:var(--fg-primary)]">{t('acct.lang')}</span>
+                    </span>
+                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{locale === 'zh-CN' ? '简体中文' : 'English'}</span>
+                </button>
+                <div className="my-1 h-px" style={{ background: 'var(--border-hairline)' }} />
+                <button className={rowCls} onClick={() => { shell.setAccountPopOpen(false); shell.openSettings('api'); }}>
+                    <span className="flex items-center gap-2.5">
+                        <span className="text-[color:var(--fg-secondary)]"><Icon name="settings" size={16} /></span>
+                        <span className="text-[color:var(--fg-primary)]">{t('settings.title')}</span>
+                    </span>
+                </button>
             </div>
         </>
     );
 }
 
-/** 左 chrome:52px rail 常驻 + 224px tree 面板(276-52)滑入 + 底部账户 dock。 */
+/** 左 chrome:brand-header-row + 56px rail 常驻 + 228px tree 面板滑入 + 账户 dock。 */
 export function LeftChrome() {
+    const { t } = useI18n();
     const shell = useShell();
     const trees = useContribs('sidebar.tree');
     const domain = shell.railTab;
     const domainTrees = trees.filter((tr) => tr.rail === domain);
     return (
         <aside className="left-chrome" data-open={shell.sidebarOpen || undefined}>
-            <div className="flex min-h-0 flex-1">
-                <Rail />
-                <div className="left-tree-pane">
-                    <div className="flex h-9 shrink-0 items-center justify-between px-3">
-                        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">
-                            {domainTrees[0] ? <PaneTitle domain={domain} /> : ''}
-                        </span>
-                    </div>
-                    <div className="scroll-fade-mask min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-                        {domainTrees.map((tr) => <tr.Component key={tr.rail + String(tr.order)} />)}
-                    </div>
+            {/* Unified Top Brand Row:Logo+Utopinn 单按钮 + 右侧成对动作标 */}
+            <div className="brand-header-row">
+                <button
+                    className="brand-pill-btn logo-btn"
+                    onClick={shell.toggleSidebar}
+                    title={t('chrome.toggleSidebar')}
+                    aria-label="Utopinn"
+                >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={26} /></span>
+                    <span className="brand-wordmark pr-1.5">{t('app.name')}</span>
+                </button>
+                <div className="brand-actions">
+                    <button className="ghost-btn h-8 w-8 rounded-[8px]" onClick={() => shell.setCmdkOpen(true)} title={t('chrome.search')}>
+                        <Icon name="search" size={16} />
+                    </button>
+                    <button className="ghost-btn h-8 w-8 rounded-[8px]" onClick={() => shell.setView('home')} title={t('chrome.newCard')}>
+                        <Icon name="pencil" size={16} />
+                    </button>
                 </div>
+            </div>
+            {/* Middle:56px rail + 228px tree(域树体由 sidebar.tree 贡献点出) */}
+            <div className="flex min-h-0 flex-1 overflow-hidden">
+                <Rail />
+                <aside className="left-tree-pane">
+                    {domainTrees.map((tr) => <tr.Component key={tr.rail + String(tr.order)} />)}
+                </aside>
             </div>
             <AccountDock />
         </aside>
     );
-}
-
-function PaneTitle({ domain }: { domain: string }) {
-    const { t } = useI18n();
-    return <>{t(`pane.${domain}`)}</>;
 }

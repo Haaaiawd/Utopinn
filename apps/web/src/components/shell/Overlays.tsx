@@ -9,9 +9,8 @@ import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { LogoU } from '../LogoU';
-import { PanelBody } from './Workbench';
+import { WorkbenchBody } from './Workbench';
 import { ChatStage } from '../stage/CenterStage';
-import { ChatTree } from '../sidebar/trees';
 import { useRemote } from '../panels/panelShared';
 import { cardData, charImageUrl, getCharacter } from '../../api/characters';
 import { getSettings } from '../../api/settings';
@@ -37,69 +36,124 @@ export function MobileFrame() {
     const { t } = useI18n();
     const s = useShell();
     const views = useContribs('view');
+    const trees = useContribs('sidebar.tree');
     const ViewC = views.find((v) => v.view === s.view)?.Component;
     const isChat = s.view === 'chat';
+    const domainTrees = trees.filter((tr) => tr.rail === (s.railTab === 'home' ? 'chat' : s.railTab));
+    const shellRef = useRef<HTMLDivElement>(null);
+    const sheetRef = useRef<HTMLDivElement>(null);
+
+    /* 规范稿 wireMobileSheetDrag:手柄行按下(钮除外)→ 百分比跟手;
+     * 松手 >72% full / >24% half / 否则 closed。 */
+    const onHandleDown = (e: React.PointerEvent) => {
+        if ((e.target as HTMLElement).closest('button')) return;
+        e.preventDefault();
+        const sheet = sheetRef.current, shellEl = shellRef.current;
+        if (!sheet || !shellEl) return;
+        const shellH = shellEl.getBoundingClientRect().height;
+        const startY = e.clientY;
+        const startH = sheet.getBoundingClientRect().height;
+        sheet.classList.add('dragging');
+        const onMove = (ev: PointerEvent) => {
+            sheet.style.height = `${Math.max(0, Math.min(94, ((startH + (startY - ev.clientY)) / shellH) * 100))}%`;
+        };
+        const onUp = () => {
+            sheet.classList.remove('dragging');
+            const finalPct = (sheet.getBoundingClientRect().height / shellH) * 100;
+            sheet.style.height = '';
+            s.setSheetSnap(finalPct > 72 ? 'full' : finalPct > 24 ? 'half' : 'closed');
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    };
+
     return (
         <div className="mobile-wrap">
-            <div className="mobile-shell">
-                {isChat ? (
-                    <>
-                        {/* hub 条:≡ | 卡名 · 会话名 ⌄ | 📖 面板 */}
-                        <div className="flex h-11 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-3">
-                            <button className="ghost-btn h-7 w-7" onClick={() => s.setMobileDrawer(true)}><Icon name="list" size={15} /></button>
-                            <button className="flex min-w-0 items-center gap-1.5" onClick={() => s.setMobileDrawer(true)}>
-                                <span className="char-avatar-ring flex h-5 w-5 items-center justify-center text-[8.5px] font-semibold" style={{ background: 'linear-gradient(135deg,#4a6a8a,#2a3a4a)', color: 'var(--fg-primary)' }}>{(s.chat?.title ?? '云')[0]}</span>
-                                <span className="heading-tight truncate text-[12px] text-[color:var(--fg-primary)]">{s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : t('app.name')}</span>
-                                <Icon name="chevronDown" size={9} className="text-[color:var(--fg-faint)]" />
+            <div className="mobile-shell" ref={shellRef}>
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                    {isChat ? (
+                        <ChatStage />
+                    ) : ViewC ? (
+                        <ViewC />
+                    ) : (
+                        <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-[color:var(--fg-faint)]">{t(`nav.${s.view}`)}</div>
+                    )}
+                    {/* drawer 遮罩(规范稿 absolute inset-0 z-50 rgba(0,0,0,0.5)) */}
+                    {s.mobileDrawer && <div className="absolute inset-0 z-50" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => s.setMobileDrawer(false)} />}
+                    <aside className="mob-drawer" data-open={s.mobileDrawer || undefined}>
+                        {/* 规范稿移动 drawer 头:logo + Utopinn[·域] + 搜索 + 关 */}
+                        <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
+                            <div className="flex items-center gap-2">
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={22} /></span>
+                                <span className={`heading-tight ${isChat ? 'text-[15px] font-semibold' : 'text-[13.5px] font-medium'} text-[color:var(--fg-primary)]`}>
+                                    {isChat ? t('app.name') : `${t('app.name')} · ${t(`nav.${s.view}`)}`}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button className="ghost-btn h-8 w-8" title={t('chrome.search')} onClick={() => { s.setMobileDrawer(false); s.setCmdkOpen(true); }}><Icon name="search" size={16} /></button>
+                                <button className="ghost-btn h-8 w-8" onClick={() => s.setMobileDrawer(false)}><Icon name="x" size={15} /></button>
+                            </div>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => s.setMobileDrawer(false)}>
+                            {domainTrees.map((tr) => <tr.Component key={tr.rail + String(tr.order)} />)}
+                        </div>
+                        {/* 规范稿 drawer 底:资产工坊钮 + 账户行 + 齿轮 */}
+                        <div className="shrink-0 space-y-1.5 border-t border-[color:var(--border-hairline)] p-2">
+                            <button
+                                className="flex w-full items-center justify-between rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3 py-2 text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface-hover)]"
+                                onClick={() => { s.setMobileDrawer(false); s.setView('hub'); }}
+                            >
+                                <span className="flex items-center gap-2"><Icon name="home" size={16} /><span className="font-medium text-[color:var(--fg-primary)]">{t('mob.hub.assetHub')}</span></span>
+                                <span className="text-[10.5px] text-[color:var(--fg-muted)]">{t('mob.hub.assetSub')}</span>
                             </button>
-                            <button className="ghost-btn h-7 gap-1 rounded-md px-2 text-[10.5px] text-[color:var(--fg-secondary)]" onClick={() => s.setSheetSnap('half')}>
-                                <Icon name="bookOpen" size={12} /> 面板
+                            <div className="flex items-center justify-between gap-1">
+                                <button
+                                    className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[color:var(--bg-surface)]"
+                                    onClick={() => s.setMobileDrawer(false)}
+                                >
+                                    <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border" style={{ background: 'var(--bg-active)', borderColor: 'var(--border-strong)' }}>
+                                        <img src="/assets/avatars/user-redpanda.png" alt="" className="h-full w-full rounded-full object-cover" />
+                                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: 'var(--status-ok)', borderColor: 'var(--bg-sidebar)' }} />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{t('acct.name')}</span>
+                                        <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
+                                    </span>
+                                </button>
+                                <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { s.setMobileDrawer(false); s.openSettings('api'); }}>
+                                    <Icon name="settings" size={16} />
+                                </button>
+                            </div>
+                        </div>
+                    </aside>
+                    {/* 规范稿:sheet full 态遮罩(点按收回) */}
+                    {s.sheetSnap === 'full' && <div className="absolute inset-0 z-40" style={{ background: 'rgba(0,0,0,0.48)' }} onClick={() => s.setSheetSnap('closed')} />}
+                    <div ref={sheetRef} className="vaul-sheet" data-snap={s.sheetSnap}>
+                        {/* 规范稿 sheet-drag-handle:左 snap 钮组,中 w-10 手柄,右「收起」 */}
+                        <div
+                            className="flex shrink-0 cursor-ns-resize touch-none items-center justify-between border-b border-[color:var(--border-hairline)] px-3.5 pb-2 pt-2.5"
+                            onPointerDown={onHandleDown}
+                        >
+                            <div className="flex items-center gap-1">
+                                {(['half', 'full'] as const).map((snap) => (
+                                    <button
+                                        key={snap}
+                                        className="rounded-md px-2 py-0.5 text-[10.5px]"
+                                        style={s.sheetSnap === snap ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
+                                        onClick={() => s.setSheetSnap(snap)}
+                                    >
+                                        {t(`mob.sheet.${snap}`)}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="h-1.5 w-10 rounded-full" style={{ background: 'var(--border-strong)' }} />
+                            <button className="rounded-md px-2 py-0.5 text-[10.5px] text-[color:var(--fg-muted)]" onClick={() => s.setSheetSnap('closed')}>
+                                {t('mob.sheet.collapse')}
                             </button>
                         </div>
-                        <div className="flex min-h-0 flex-1 flex-col"><ChatStage /></div>
-                    </>
-                ) : ViewC ? (
-                    <ViewC />
-                ) : (
-                    <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-[color:var(--fg-faint)]">{t(`nav.${s.view}`)}</div>
-                )}
-                {s.mobileDrawer && <div className="fixed inset-0 z-[54] bg-black/40" onClick={() => s.setMobileDrawer(false)} />}
-                <div className="mob-drawer" data-open={s.mobileDrawer || undefined}>
-                    <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[color:var(--border-hairline)] px-3 text-[color:var(--brand)]"><LogoU size={16} /><span className="heading-tight text-[12.5px] text-[color:var(--fg-primary)]">{t('app.name')}</span></div>
-                    <div className="min-h-0 flex-1 overflow-y-auto p-2" onClick={() => s.setMobileDrawer(false)}>
-                        {/* 域导航:会话 ↔ 资产工坊(端稿移动壳入口) */}
-                        <div className="mb-1.5 flex gap-1.5">
-                            <button
-                                className="inset-row-btn flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11.5px]"
-                                style={isChat ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
-                                onClick={() => s.setView('chat')}
-                            >
-                                <Icon name="chat" size={13} />{t('mob.hub.chat')}
-                            </button>
-                            <button
-                                className="inset-row-btn flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[11.5px]"
-                                style={!isChat ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
-                                onClick={() => s.setView('hub')}
-                            >
-                                <Icon name="home" size={13} />{t('mob.hub.assetHub')}
-                            </button>
-                        </div>
-                        <ChatTree />
-                    </div>
-                </div>
-                <div className="vaul-sheet" data-snap={s.sheetSnap}>
-                    <button className="mx-auto my-2 h-1 w-9 shrink-0 rounded-full bg-[color:var(--border-strong)]" onClick={() => s.setSheetSnap(s.sheetSnap === 'full' ? 'half' : s.sheetSnap === 'half' ? 'closed' : 'full')} />
-                    <div className="flex h-8 shrink-0 items-center gap-1 border-b border-[color:var(--border-hairline)] px-2">
-                        {s.openTabs.map((type) => (
-                            <button key={type} className="wb-tab ghost-btn h-6 gap-1 rounded-md px-2 text-[10.5px]" data-active={s.activeTab === type || undefined} onClick={() => s.selectTab(type)}>
-                                {t(`panel.type.${type}`)}
-                                <span className="wb-tab-close" onClick={(e) => { e.stopPropagation(); s.closeTab(type); }}><Icon name="x" size={8} /></span>
-                            </button>
-                        ))}
-                        <button className="ghost-btn h-6 w-6" onClick={s.openNewTab}><Icon name="plus" size={12} /></button>
-                    </div>
-                    <div className="min-h-0 flex-1 overflow-y-auto">
-                        {s.activeTab && s.activeTab !== 'newtab' ? <PanelBody type={s.activeTab} /> : null}
+                        <div className="min-h-0 flex-1 overflow-hidden"><WorkbenchBody isMobile /></div>
                     </div>
                 </div>
             </div>
@@ -227,7 +281,7 @@ function ImportModal() {
 
     return (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={closeImportModal}>
-            <div className="pop-in flex max-h-[84vh] w-[560px] max-w-[94vw] flex-col overflow-hidden rounded-[14px]" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="pop-in flex max-h-[82vh] w-full max-w-[540px] flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
                 <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
                     <span className="heading-tight text-[14px] font-medium text-[color:var(--fg-primary)]">{t('ov.import.title')}</span>
                     <button className="ghost-btn h-7 w-7" onClick={closeImportModal}><Icon name="x" size={14} /></button>
@@ -428,7 +482,7 @@ function CharEditorModal() {
 
     return (
         <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={closeCharEditor}>
-            <div className="pop-in flex max-h-[86vh] w-[560px] max-w-[94vw] flex-col overflow-hidden rounded-[14px]" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="pop-in flex max-h-[82vh] w-full max-w-[600px] flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
                 <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-[color:var(--border-hairline)] px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
                         {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
@@ -478,33 +532,54 @@ export function Cmdk() {
     const { t } = useI18n();
     const s = useShell();
     const panels = useContribs('panel.type');
-    const navs = useContribs('nav.rail');
     const [q, setQ] = useState('');
     if (!s.cmdkOpen) return null;
     const qq = q.trim().toLowerCase();
-    const viewItems = navs.filter((n) => !qq || t(`nav.${n.view}`).toLowerCase().includes(qq));
-    const panelItems = panels.filter((p) => !qq || t(`panel.type.${p.type}`).toLowerCase().includes(qq) || p.type.includes(qq));
+    /* 规范稿 cmdk 两组:角色卡与会话(头像+card·title+形态)/ 右栏面板(截 4) */
+    const sHits = s.chats.filter((c) =>
+        !qq || c.title.toLowerCase().includes(qq) || (s.cards.get(c.charDir)?.name ?? c.charDir).toLowerCase().includes(qq));
+    const pHits = panels.filter((p) =>
+        !qq || t(`panel.type.${p.type}`).toLowerCase().includes(qq) || p.type.includes(qq));
     return (
-        <div className="fixed inset-0 z-[85] flex items-start justify-center bg-black/50 pt-[14vh]" onClick={() => s.setCmdkOpen(false)}>
-            <div className="pop-in w-[440px] max-w-[92vw] overflow-hidden rounded-[14px]" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-2 border-b border-[color:var(--border-hairline)] px-3.5 py-2.5">
-                    <Icon name="search" size={14} className="text-[color:var(--fg-faint)]" />
-                    <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('cmdk.placeholder')} className="w-full bg-transparent text-[13px] outline-none" />
+        <div className="fixed inset-0 z-[85] flex items-start justify-center px-4 pt-20" style={{ background: 'rgba(0,0,0,0.52)', backdropFilter: 'blur(2px)' }} onClick={() => s.setCmdkOpen(false)}>
+            <div className="w-full max-w-[480px] overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+                <div className="flex h-12 items-center gap-2.5 border-b border-[color:var(--border-hairline)] px-4">
+                    <span className="text-[color:var(--fg-muted)]"><Icon name="search" size={16} /></span>
+                    <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('cmdk.placeholder')} className="w-full bg-transparent text-[13.5px] text-[color:var(--fg-primary)] outline-none" />
+                    <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-muted)]">ESC</span>
                 </div>
-                <div className="max-h-[46vh] overflow-y-auto p-1.5">
-                    <div className="px-2 pb-1 pt-1.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('cmdk.views')}</div>
-                    {viewItems.map((n) => (
-                        <button key={n.view} className="inset-row-btn flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] text-[color:var(--fg-secondary)]" onClick={() => { s.setView(n.view); s.setCmdkOpen(false); }}>
-                            <Icon name={n.icon} size={13} />{t(`nav.${n.view}`)}
-                        </button>
-                    ))}
-                    <div className="px-2 pb-1 pt-1.5 text-[9.5px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]">{t('cmdk.panels')}</div>
-                    {panelItems.map((p) => (
-                        <button key={p.type} className="inset-row-btn flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[12px] text-[color:var(--fg-secondary)]" onClick={() => { s.openPanel(p.type); s.setCmdkOpen(false); }}>
-                            <Icon name={p.icon} size={13} />{t(`panel.type.${p.type}`)}
-                        </button>
-                    ))}
-                    {!viewItems.length && !panelItems.length && <div className="px-3 py-4 text-center text-[11.5px] text-[color:var(--fg-faint)]">{t('cmdk.empty')}</div>}
+                <div className="max-h-72 space-y-3 overflow-y-auto p-2">
+                    {sHits.length > 0 && (
+                        <div>
+                            <div className="px-2.5 py-1 text-[10.5px] font-medium text-[color:var(--fg-muted)]">{t('tree.cardSessions')}</div>
+                            {sHits.map((c) => {
+                                const card = s.cards.get(c.charDir);
+                                return (
+                                    <button key={c.id} className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.selectChat(c.id); s.setCmdkOpen(false); }}>
+                                        <span className="flex min-w-0 items-center gap-2.5">
+                                            <img src={card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png'} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" />
+                                            <span className="truncate text-[13px] text-[color:var(--fg-primary)]">{card?.name ?? c.charDir} · {c.title}</span>
+                                        </span>
+                                        <span className="shrink-0 text-[11px] text-[color:var(--fg-muted)]">{t(`stage.label.${c.stage ?? 'chat'}`)}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {pHits.length > 0 && (
+                        <div>
+                            <div className="px-2.5 py-1 text-[10.5px] font-medium text-[color:var(--fg-muted)]">{t('cmdk.panels')}</div>
+                            {pHits.slice(0, 4).map((p) => (
+                                <button key={p.type} className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.openPanel(p.type); s.setCmdkOpen(false); }}>
+                                    <span className="flex min-w-0 items-center gap-2.5">
+                                        <span className="text-[color:var(--fg-secondary)]"><Icon name={p.icon} size={15} /></span>
+                                        <span className="truncate text-[13px] text-[color:var(--fg-primary)]">{t(`panel.type.${p.type}`)}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                    {!sHits.length && !pHits.length && <div className="px-3 py-4 text-center text-[11.5px] text-[color:var(--fg-faint)]">{t('cmdk.empty')}</div>}
                 </div>
             </div>
         </div>
@@ -603,34 +678,107 @@ function SettingsSheet() {
     const { t } = useI18n();
     const s = useShell();
     if (!s.settingsOpen) return null;
-    const tabs = ['account', 'api', 'chat', 'appearance', 'about'];
+    /* 规范稿六 tab(api/chat/appearance/plugins/diagnostics/account)带图标 */
+    const tabs: { id: string; icon: IconName }[] = [
+        { id: 'api', icon: 'cpu' }, { id: 'chat', icon: 'chat' }, { id: 'appearance', icon: 'sparkles' },
+        { id: 'plugins', icon: 'plugins' }, { id: 'diagnostics', icon: 'code' }, { id: 'account', icon: 'user' },
+    ];
     const cs = s.chatSettings;
     const sw = (on: boolean, fn: () => void) => <button className="sh-switch" data-checked={on || undefined} onClick={fn}><span className="sh-switch-thumb" /></button>;
+    const rowLbl = 'text-[12px] text-[color:var(--fg-secondary)]';
+    /* 规范稿背景格:文件名即 bgMode(接 CenterStage /assets/backgrounds/<mode>.png) */
+    const bgOpts: { k: string; lbl: string }[] = [
+        { k: 'none', lbl: '纯炭灰' }, { k: 'app-dark', lbl: '暗室底纹' }, { k: 'aurora-dark', lbl: '极光' }, { k: 'drawer-dark', lbl: '抽屉纹' },
+    ];
     return (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50" onClick={s.closeSettings}>
-            <div className="pop-in flex h-[460px] w-[680px] max-w-[94vw] overflow-hidden rounded-[14px]" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
-                <div className="w-[150px] shrink-0 border-r border-[color:var(--border-hairline)] p-2">
-                    {tabs.map((tb) => (
-                        <button key={tb} className="inset-row-btn mb-0.5 w-full rounded-md px-2.5 py-2 text-left text-[12px]" style={s.settingsTab === tb ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }} onClick={() => s.setSettingsTab(tb)}>
-                            {t(`st.${tb}`)}
-                        </button>
-                    ))}
-                </div>
-                <div className="min-w-0 flex-1 overflow-y-auto p-4">
-                    <div className="inset-group">
-                        {s.settingsTab === 'api' && <ConnectionSection />}
-                        {s.settingsTab === 'chat' && (<>
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.renderCount')}</span><input type="range" min={5} max={100} value={cs.renderCount} onChange={(e) => s.setChatSetting('renderCount', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.renderCount}</span></div>
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.fontSize')}</span><input type="range" min={12} max={18} step={0.5} value={cs.fontSize} onChange={(e) => s.setChatSetting('fontSize', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.fontSize}</span></div>
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.showFloorNum')}</span>{sw(cs.showFloorNum, () => s.setChatSetting('showFloorNum', !cs.showFloorNum))}</div>
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.autoParseThink')}</span>{sw(cs.autoParseThink, () => s.setChatSetting('autoParseThink', !cs.autoParseThink))}</div>
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.confirmDelete')}</span>{sw(cs.confirmDelete, () => s.setChatSetting('confirmDelete', !cs.confirmDelete))}</div>
-                        </>)}
-                        {s.settingsTab === 'appearance' && (
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-secondary)]">{t('st.customCss')}</span><textarea value={cs.customCss} onChange={(e) => s.setChatSetting('customCss', e.target.value)} className="h-20 w-[260px] resize-none rounded-md border border-[color:var(--border-subtle)] bg-[color:var(--bg-surface)] p-2 font-mono-ui text-[10px] outline-none" /></div>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)' }} onClick={s.closeSettings}>
+            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-canvas)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+                <aside className="flex w-[192px] shrink-0 flex-col border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-sidebar)' }}>
+                    <div className="flex h-12 shrink-0 items-center px-4"><span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('settings.title')}</span></div>
+                    <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-4">
+                        {tabs.map((tb) => {
+                            const act = s.settingsTab === tb.id;
+                            return (
+                                <button key={tb.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors" style={act ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }} onClick={() => s.setSettingsTab(tb.id)}>
+                                    <span style={{ color: act ? 'var(--fg-primary)' : 'var(--fg-muted)' }}><Icon name={tb.icon} size={17} active={act} /></span>
+                                    <span>{t(`st.${tb.id}`)}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </aside>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-5">
+                        <span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t(`st.${s.settingsTab}`)}</span>
+                        <button className="ghost-btn h-7 w-7" onClick={s.closeSettings}><Icon name="x" size={15} /></button>
+                    </div>
+                    <div className="flex-1 select-text overflow-y-auto p-5">
+                        {s.settingsTab === 'api' && <div className="inset-group"><ConnectionSection /></div>}
+                        {s.settingsTab === 'chat' && (
+                            <div className="inset-group">
+                                <div className="inset-row"><span className={rowLbl}>{t('st.renderCount')}</span><input type="range" min={5} max={100} value={cs.renderCount} onChange={(e) => s.setChatSetting('renderCount', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.renderCount}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.streamFps')}</span><input type="range" min={10} max={60} step={5} value={cs.streamFps} onChange={(e) => s.setChatSetting('streamFps', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.streamFps}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.fontSize')}</span><input type="range" min={12} max={18} step={0.5} value={cs.fontSize} onChange={(e) => s.setChatSetting('fontSize', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.fontSize}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.showFloorNum')}</span>{sw(cs.showFloorNum, () => s.setChatSetting('showFloorNum', !cs.showFloorNum))}</div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.autoParseThink')}</span>{sw(cs.autoParseThink, () => s.setChatSetting('autoParseThink', !cs.autoParseThink))}</div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.autoExpandThink')}</span>{sw(cs.autoExpandThink, () => s.setChatSetting('autoExpandThink', !cs.autoExpandThink))}</div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.confirmDelete')}</span>{sw(cs.confirmDelete, () => s.setChatSetting('confirmDelete', !cs.confirmDelete))}</div>
+                            </div>
                         )}
-                        {(s.settingsTab === 'account' || s.settingsTab === 'about') && (
-                            <div className="inset-row"><span className="text-[12px] text-[color:var(--fg-muted)]">{t('app.name')} · {s.settingsTab === 'about' ? 'spec-faithful shell' : t('acct.plan')}</span></div>
+                        {s.settingsTab === 'appearance' && (
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.bgMode')}</div>
+                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                                        {bgOpts.map(({ k, lbl }) => (
+                                            <button
+                                                key={k}
+                                                className="overflow-hidden rounded-xl border text-left transition-all"
+                                                style={{ borderColor: cs.bgMode === k ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
+                                                onClick={() => s.setChatSetting('bgMode', k)}
+                                            >
+                                                {k === 'none'
+                                                    ? <div className="flex h-12 items-center justify-center text-[11px] text-[color:var(--fg-muted)]">无图</div>
+                                                    : <img src={`/assets/backgrounds/${k}.png`} alt="" className="h-12 w-full object-cover" />}
+                                                <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">{lbl}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.customCss')}</div>
+                                    <textarea rows={3} value={cs.customCss} onChange={(e) => s.setChatSetting('customCss', e.target.value)} className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none" />
+                                </div>
+                            </div>
+                        )}
+                        {s.settingsTab === 'plugins' && (
+                            <div className="inset-group">
+                                {s.builtinPlugins.map((p) => (
+                                    <div key={p.id} className="inset-row">
+                                        <div className="min-w-0">
+                                            <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{p.name}</div>
+                                            <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{p.desc}</div>
+                                        </div>
+                                        <span className="sh-switch" data-checked={p.enabled || undefined}><span className="sh-switch-thumb" /></span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        {s.settingsTab === 'diagnostics' && (
+                            <div className="inset-group">
+                                <button className="inset-row inset-row-btn" onClick={() => { s.closeSettings(); s.openPanel('diag'); }}>
+                                    <span className={rowLbl}>{t('panel.type.diag')}</span><Icon name="detach" size={13} className="text-[color:var(--fg-faint)]" />
+                                </button>
+                                <button className="inset-row inset-row-btn" onClick={() => { s.closeSettings(); s.openPanel('stats'); }}>
+                                    <span className={rowLbl}>{t('panel.type.stats')}</span><Icon name="detach" size={13} className="text-[color:var(--fg-faint)]" />
+                                </button>
+                            </div>
+                        )}
+                        {s.settingsTab === 'account' && (
+                            <div className="inset-group">
+                                <div className="inset-row"><span className={rowLbl}>{t('acct.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.mail')}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('app.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span></div>
+                            </div>
                         )}
                     </div>
                 </div>
