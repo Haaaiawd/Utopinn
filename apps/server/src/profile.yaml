@@ -31,3 +31,7 @@ plugins:
     module: ./plugins/utopinn-data.js
   - id: utopinn-stats
     module: ./plugins/utopinn-stats.js
+  - id: utopinn-connection
+    module: ./plugins/utopinn-connection.js
+  - id: utopinn-regex
+    module: ./plugins/utopinn-regex.js

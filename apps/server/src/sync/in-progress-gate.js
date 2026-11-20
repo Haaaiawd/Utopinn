@@ -115,6 +115,7 @@ export const GATED_ROUTES = Object.freeze([
     route(/^\/api\/utopinn\/mvu\/panel\/render$/i, ['chats'], { dirty: false }),
     route(/^\/api\/utopinn\/(th\/call|script\/run)$/i, ['chats', 'characters', 'worlds', 'settings']),
     route(/^\/api\/utopinn\/settings$/i, ['settings']),
+    route(/^\/api\/utopinn\/regex(\/[^/]+)?$/i, ['settings', 'characters', ...PRESET_CATEGORY_IDS]),
     route(/^\/api\/utopinn\/presets\/[^/]+$/i, PRESET_CATEGORY_IDS),
     route(/^\/api\/utopinn\/worlds\/[^/]+$/i, ['worlds']),
     route(/^\/api\/utopinn\/personas\/[^/]+$/i, ['settings']),
