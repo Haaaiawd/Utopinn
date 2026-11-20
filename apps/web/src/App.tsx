@@ -70,6 +70,7 @@ function Shell() {
     const [workbenchOpen, setWorkbenchOpen] = useState(() => window.innerWidth > 1180);
     const [openTabs, setOpenTabs] = useState<PanelType[]>(['ledger']);
     const [activeTab, setActiveTab] = useState<string>('ledger');
+    const [panelParams, setPanelParamsMap] = useState<Record<string, unknown>>({});
     const [floatingType, setFloatingType] = useState<PanelType | null>(null);
     const [floatingPos, setFloatingPos] = useState({ x: 96, y: 96 });
     const [launcherSearch, setLauncherSearch] = useState('');
@@ -253,8 +254,12 @@ function Shell() {
             .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
 
-    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。 */
-    const openPanel = useCallback((type: PanelType) => {
+    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。
+     *  params 随行 → panelParams[type](板块体自取;不传保留上次现场)。 */
+    const openPanel = useCallback((type: PanelType, params?: unknown) => {
+        if (params !== undefined) {
+            setPanelParamsMap((prev) => ({ ...prev, [type]: params }));
+        }
         if (type === 'newtab') {
             setActiveTab('newtab');
         } else {
@@ -322,6 +327,15 @@ function Shell() {
             });
         },
         openPanel,
+        panelParams,
+        setPanelParams: (type, params) => setPanelParamsMap((prev) => {
+            if (params === undefined) {
+                const next = { ...prev };
+                delete next[type];
+                return next;
+            }
+            return { ...prev, [type]: params };
+        }),
         detachPanel: (type) => {
             setFloatingType(type);
             setOpenTabs((prev) => prev.filter((x) => x !== type));
@@ -377,7 +391,7 @@ function Shell() {
         serverStatus,
     }), [
         view, railTab, chats, chat, activeChat, sidebarOpen, workbenchOpen,
-        openTabs, activeTab, floatingType, floatingPos, launcherSearch,
+        openTabs, activeTab, floatingType, floatingPos, launcherSearch, panelParams,
         showHint, serverStatus, onNewChat, onRenameChat, onDeleteChat, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,

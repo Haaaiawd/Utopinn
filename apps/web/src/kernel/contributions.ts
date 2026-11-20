@@ -33,10 +33,12 @@ export interface PanelTypeContribution {
     /** wb-tab 显示名 —— i18n 键(t() 回落键名);规范稿 PANEL_CATALOG.title。 */
     title?: string;
     /** launcher 目录元数据:desc/badge 是 i18n 键(t() 回落键名);
-     *  category 决定落在 launcher 的「新键」格还是「建议」组。 */
+     *  category 决定 launcher 分组 —— 规范稿 PANEL_CATALOG 三桶:
+     *  'system' 系统面板格 / 'cardapp' 卡提供面板行(iframe 宿主) /
+     *  'suggested' 建议组(缺省按 system 收)。 */
     desc?: string;
     badge?: string;
-    category?: 'new' | 'suggested';
+    category?: 'system' | 'cardapp' | 'suggested';
 }
 
 /** 左树面板贡献:归属 rail 域,壳按当前 railTab 渲染全部匹配贡献
