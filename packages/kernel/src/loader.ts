@@ -17,6 +17,12 @@ export interface LoadedPlugin {
     reason?: string;
     /** ctx.plugin 返回的 Fiber —— 管理面 enable/disable/reload 靠它 dispose */
     fiber?: { dispose(): Promise<void> };
+    /**
+     * 活模块实例(W5)—— 观测面(contrib manifest 等)读"运行中代码的声明",
+     * 不做第二次 import(双 ESM 实例:顶层副作用跑两遍、读面与运行面漂移)。
+     * 仅 active 行携带;disabled/failed/degraded 天然无句柄。
+     */
+    module?: PluginModule;
 }
 
 export interface Profile {
@@ -128,7 +134,7 @@ export async function loadProfile(
             // cordis 4:ctx.plugin() 返回 thenable —— await 走 fiber.await(),
             // async apply() 的 reject 会在这里抛出;不 await 则假 active。
             await (fiber as unknown as PromiseLike<unknown>);
-            results.push({ id: row.id, status: 'active', fiber });
+            results.push({ id: row.id, status: 'active', fiber, module: mod });
         } catch (e) {
             results.push({ id: row.id, status: 'failed', reason: (e as Error).message });
         }
