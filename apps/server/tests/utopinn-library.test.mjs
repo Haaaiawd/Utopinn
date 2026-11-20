@@ -374,8 +374,15 @@ test('PATCH /settings — allowlist shallow-merge only', async () => {
     const again = await api('/api/utopinn/settings');
     assert.equal(again.body.settings.power_user.new_key, 'yes');
 
-    const rejected = await api('/api/utopinn/settings', {
+    // oai_settings / world_info_settings 在 0afb4c5 后同属白名单
+    const oai = await api('/api/utopinn/settings', {
         method: 'PATCH', body: { oai_settings: { chat_completion_source: 'claude' } },
+    });
+    assert.equal(oai.status, 200);
+    assert.equal(oai.body.settings.oai_settings.chat_completion_source, 'claude');
+
+    const rejected = await api('/api/utopinn/settings', {
+        method: 'PATCH', body: { world_info: { charLore: [] } },
     });
     assert.equal(rejected.status, 400);
     assert.match(rejected.body.error, /not patchable/);

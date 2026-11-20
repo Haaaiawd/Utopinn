@@ -45,4 +45,27 @@ describe.each(CONTRACT_HARNESSES)('SettingsRepo on $name', ({ make }) => {
         await expect(repo.patch(h.handle, [{ op: 'replace', path: '/a', value: 1 }]))
             .rejects.toBeInstanceOf(NotFoundError);
     });
+
+    test('update runs read-modify-write inside the tx critical section', async () => {
+        await repo.save(h.handle, { a: 1 });
+        // 慢 fn 占住临界区;若 fn 不在 tx 内跑,fast 会基于过期快照
+        // 覆写 → _tortoise 或 _hare 必丢其一。
+        const slow = repo.update(h.handle, async (doc) => {
+            await new Promise((r) => setTimeout(r, 30));
+            return { ...doc, _tortoise: 1 };
+        });
+        const fast = repo.update(h.handle, (doc) => ({ ...doc, _hare: 2 }));
+        await Promise.all([slow, fast]);
+        expect(await repo.get(h.handle)).toEqual({ a: 1, _tortoise: 1, _hare: 2 });
+    });
+
+    test('update uses base for missing/non-object doc; fn throw writes nothing', async () => {
+        const wrote = await repo.update(h.handle, (doc) => ({ ...doc, x: 1 }));
+        expect(wrote).toEqual({ x: 1 });
+        expect(await repo.get(h.handle)).toEqual({ x: 1 });
+
+        await expect(repo.update(h.handle, () => { throw new Error('boom'); }))
+            .rejects.toThrow('boom');
+        expect(await repo.get(h.handle)).toEqual({ x: 1 }); // 全滚,盘上不动
+    });
 });

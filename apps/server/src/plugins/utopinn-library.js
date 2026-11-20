@@ -681,18 +681,9 @@ export function apply(ctx) {
 
             const repo = getSettingsRepo();
             const handle = request.user.profile.handle;
-            const existing = await repo.get(handle);
-            const base = (existing && typeof existing === 'object' && !Array.isArray(existing)) ? existing : {};
-            const next = { ...base };
-            for (const key of keys) {
-                if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) continue; // 标量键在段合并后统一落,保证同 patch 内顶键优先
-                const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
-                next[key] = { ...section, ...sanitizeSettingsDoc(patch[key]) };
-            }
 
-            // preset 选择指针双向镜像:写 oai_settings.preset_settings_openai
-            // → 同步顶层(generate-context 读顶层);写顶层 → 同步 oai_settings
-            // (settings 响应侧优先读 canonical 槽位)。两者同 patch 时顶层优先。
+            // preset 选择指针双向镜像的输入校验:全部 4xx 前置在 tx 外,
+            // 进 update() 临界区后唯一失败源是存储故障(那种情况全滚才对)。
             const presetViaOai = Object.hasOwn(patch, 'oai_settings')
                 && patch.oai_settings && typeof patch.oai_settings === 'object' && !Array.isArray(patch.oai_settings)
                 && Object.hasOwn(patch.oai_settings, 'preset_settings_openai');
@@ -705,25 +696,43 @@ export function apply(ctx) {
                 if (mirrorVal !== null && typeof mirrorVal !== 'string') {
                     return response.status(422).send({ error: 'preset_settings_openai must be a string or null.' });
                 }
-                const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
-                    ? { ...next.oai_settings }
-                    : {};
-                if (presetViaOai) {
-                    next.preset_settings_openai = nextOai.preset_settings_openai;
-                }
-                if (presetViaTop) {
-                    if (patch.preset_settings_openai === null) {
-                        delete next.preset_settings_openai;
-                        delete nextOai.preset_settings_openai;
-                    } else {
-                        next.preset_settings_openai = patch.preset_settings_openai;
-                        nextOai.preset_settings_openai = patch.preset_settings_openai;
-                    }
-                }
-                next.oai_settings = nextOai;
             }
 
-            await repo.save(handle, next);
+            // 读→合并→写整体进 update() 的 per-handle 临界区:并发 PATCH 异键
+            // 不再整文档互覆(各键自合),同键按 tx 到达序后写胜。合并输入是
+            // 绝对值,正确语义即 per-key last-wins —— 不上 CAS/test 锚,无 409。
+            const next = await repo.update(handle, (base) => {
+                const next = { ...base };
+                for (const key of keys) {
+                    if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) continue; // 标量键在段合并后统一落,保证同 patch 内顶键优先
+                    const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
+                    next[key] = { ...section, ...sanitizeSettingsDoc(patch[key]) };
+                }
+
+                // preset 选择指针双向镜像:写 oai_settings.preset_settings_openai
+                // → 同步顶层(generate-context 读顶层);写顶层 → 同步 oai_settings
+                // (settings 响应侧优先读 canonical 槽位)。两者同 patch 时顶层优先。
+                // 镜像对在同一 tx 内同生共死 —— 单 tx 全或无,不写一半。
+                if (presetViaOai || presetViaTop) {
+                    const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
+                        ? { ...next.oai_settings }
+                        : {};
+                    if (presetViaOai) {
+                        next.preset_settings_openai = nextOai.preset_settings_openai;
+                    }
+                    if (presetViaTop) {
+                        if (patch.preset_settings_openai === null) {
+                            delete next.preset_settings_openai;
+                            delete nextOai.preset_settings_openai;
+                        } else {
+                            next.preset_settings_openai = patch.preset_settings_openai;
+                            nextOai.preset_settings_openai = patch.preset_settings_openai;
+                        }
+                    }
+                    next.oai_settings = nextOai;
+                }
+                return next;
+            });
             return response.send({ settings: sanitizeSettingsDoc(next) });
         } catch (error) {
             return sendError(response, error, 'utopinn/settings patch');
