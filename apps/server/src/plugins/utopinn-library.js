@@ -32,6 +32,8 @@ import {
 } from '../storage/errors.js';
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
+import { createCardListCache } from '../services/card-list-cache.js';
+import { emit as diagEmit } from '../services/diag-bus.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
 // TASK-032 写盘面统一:ack/integrity/gen-id/settle 机制与 legacy /api/chats 同源。
@@ -306,9 +308,17 @@ export function apply(ctx) {
     const reg = (path, handler) => ctx.effect(() => ws.register({ kind: 'pattern', method: 'GET', path, handler }));
     const regPost = (path, method, handler) => ctx.effect(() => ws.register({ kind: 'pattern', method, path, handler }));
 
+    // 角色列表浅字段索引:apply() 闭包内,reload/dispose 随之清(插件契约)。
+    const cardListCache = createCardListCache();
+
     /**
      * GET /characters —— 角色库列表。
      * {items:[{charDir,name,avatar,fileName,fileSize,tags}],total}
+     *
+     * 浅字段走 cardListCache:每次列表 readdir+stat(便宜)出指纹,
+     * {fileName,size,mtimeMs,ctimeMs} 一致就复用上次的 name/tags/readable,
+     * 变了才 loadCharacterDoc 重解 —— PNG 卡不再每请求整档重解。
+     * dateLastChat 不缓存(chat repo 现查,不在卡文件里)。
      */
     reg(`${P}/characters`, async function (request, response) {
         try {
@@ -320,42 +330,47 @@ export function apply(ctx) {
                 entries = [];
             }
 
-            // 收集候选 charDir:图片卡按文件名;json 卡只在无同名图片时列出
-            const stems = new Map(); // charDir -> {fileName, fileSize, isImage}
+            // 收集候选 charDir:每个 stem 把 png/webp/json 候选档全部记入
+            // 指纹(loadCharacterDoc 坏档 fallthrough,只看承载档会漏失效);
+            // 列表展示档 = 图档(.png 优先于 .webp,同解析探测序),无图退 .json。
+            const stems = new Map(); // charDir -> {listed, isImage, files}
             for (const entry of entries) {
                 if (!entry.isFile()) continue;
                 const ext = path.extname(entry.name).toLowerCase();
                 const stem = entry.name.slice(0, -ext.length);
                 if (!stem) continue;
-                if (CHARACTER_IMAGE_EXTS.has(ext)) {
-                    const stat = await fs.promises.stat(path.join(dir, entry.name)).catch(() => null);
-                    stems.set(stem, {
-                        fileName: entry.name,
-                        fileSize: stat?.size ?? 0,
-                        ctimeMs: stat?.ctimeMs ?? 0,
-                        isImage: true,
-                    });
-                }
-            }
-            for (const entry of entries) {
-                if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== '.json') continue;
-                const stem = entry.name.slice(0, -'.json'.length);
-                if (!stem || stems.has(stem)) continue;
+                const isImage = CHARACTER_IMAGE_EXTS.has(ext);
+                const isJson = ext === '.json';
+                if (!isImage && !isJson) continue;
                 const stat = await fs.promises.stat(path.join(dir, entry.name)).catch(() => null);
-                stems.set(stem, {
+                const rec = stems.get(stem) ?? { listed: null, isImage: false, files: [] };
+                rec.files.push({
                     fileName: entry.name,
-                    fileSize: stat?.size ?? 0,
+                    size: stat?.size ?? 0,
+                    mtimeMs: stat?.mtimeMs ?? 0,
                     ctimeMs: stat?.ctimeMs ?? 0,
-                    isImage: false,
                 });
+                if (isImage && (!rec.isImage || ext === '.png')) {
+                    rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
+                    rec.isImage = true;
+                } else if (isJson && !rec.isImage && !rec.listed) {
+                    rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
+                }
+                stems.set(stem, rec);
             }
 
             const handle = request.user.profile.handle;
             const repo = getChatRepo();
             const items = [];
+            let cacheHits = 0;
             for (const [charDir, info] of stems) {
-                const card = await loadCharacterDoc(request.user.directories, charDir);
-                const fields = card ? cardFields(card) : { name: '', tags: [] };
+                if (!info.listed) continue; // 构造上不可能,防御跳过防空响应 500
+                const fields = await cardListCache.get(dir, charDir, info.files, async () => {
+                    const card = await loadCharacterDoc(request.user.directories, charDir);
+                    const parsed = card ? cardFields(card) : { name: '', tags: [] };
+                    return { name: parsed.name, tags: parsed.tags, readable: card != null };
+                });
+                if (fields.cached) cacheHits++;
                 // legacy /api/characters/all 语义:date_last_chat = 该角色全部会话 updatedAt 最大值
                 let dateLastChat = 0;
                 try {
@@ -368,17 +383,24 @@ export function apply(ctx) {
                 items.push({
                     charDir,
                     name: fields.name || charDir,
-                    avatar: info.isImage ? info.fileName : null,
-                    fileName: info.fileName,
-                    fileSize: info.fileSize,
+                    avatar: info.isImage ? info.listed.fileName : null,
+                    fileName: info.listed.fileName,
+                    fileSize: info.listed.fileSize,
                     tags: fields.tags,
                     // 卡文件存在但解析失败时仍列出,名字退化回 charDir
-                    readable: card != null,
+                    readable: fields.readable,
                     // legacy:date_added = 卡文件 ctime;date_last_chat = 最近会话活跃
-                    dateAdded: info.ctimeMs ?? 0,
+                    dateAdded: info.listed.ctimeMs ?? 0,
                     dateLastChat,
                 });
             }
+            cardListCache.prune(dir, stems);
+            diagEmit({
+                lvl: 'debug', kind: 'plugin', code: 'card_list_scan',
+                msg: `characters list: ${items.length} card(s), ${cacheHits} cached, ${items.length - cacheHits} parsed`,
+                ctx: { route: `${P}/characters`, handle },
+                data: { total: items.length, hits: cacheHits, misses: items.length - cacheHits },
+            });
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length });
         } catch (error) {
