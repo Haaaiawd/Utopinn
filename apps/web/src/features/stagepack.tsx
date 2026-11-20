@@ -4,17 +4,17 @@
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
 import { charImageUrl } from '../api/characters';
-import { StageFrame } from '../components/stage/StageFrame';
+import { StageFrame, charImgFallback } from '../components/stage/StageFrame';
 import type { Feature } from '../kernel/kernel';
 
-/** 卡头像环(形态内复用:会话卡图,无卡 → default-char 占位)。 */
+/** 卡头像环(形态内复用:会话卡图,无卡/离线 404 → default-char 占位)。 */
 function StageRing({ size }: { size: number }) {
     const s = useShell();
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
     return (
         <span className="char-avatar-ring shrink-0" style={{ width: size, height: size }}>
-            <img src={src} alt="" className="h-full w-full object-cover" />
+            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} />
         </span>
     );
 }

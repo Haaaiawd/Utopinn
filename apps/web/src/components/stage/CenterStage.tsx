@@ -23,7 +23,7 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { charImageUrl } from '../../api/characters';
 import type { FloorMsg } from '../../api/chats';
-import { StageFrame, useStageEngine, type FloorOps } from './StageFrame';
+import { StageFrame, useStageEngine, charImgFallback, type FloorOps } from './StageFrame';
 
 /** 贡献点出口:chat.stage → stage.form 组件;无匹配回落 ChatStage。 */
 export function CenterStage() {
@@ -42,7 +42,7 @@ function StageAvatar({ name }: { name: string }) {
     const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
     return (
         <span className="char-avatar-ring mt-0.5 h-9 w-9 shrink-0">
-            <img src={src} alt={name} className="h-full w-full object-cover" />
+            <img src={src} alt={name} className="h-full w-full object-cover" onError={charImgFallback} />
         </span>
     );
 }

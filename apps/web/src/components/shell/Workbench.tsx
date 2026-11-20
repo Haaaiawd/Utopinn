@@ -30,7 +30,7 @@ function panelTitle(t: (k: string) => string, c?: PanelTypeContribution, fallbac
 /** 新键 launcher(规范稿 renderNewTabLauncher:px-5 py-8 垂直居中 + 440px 栏 —
  *  圆角搜索条 → cardapp 卡提供面板行(1.5px 粗边 + 「iframe 宿主」尾注)→
  *  system 系统面板两列格;suggested 是三方贡献逃生位,稿内未画,沿用 inset 行式)。 */
-function Launcher() {
+function Launcher({ isMobile = false }: { isMobile?: boolean }) {
     const { t } = useI18n();
     const shell = useShell();
     const contribs = useContribs('panel.type');
@@ -50,7 +50,9 @@ function Launcher() {
                 >
                     <span className="text-[color:var(--fg-muted)]"><Icon name="search" size={15} /></span>
                     <input
-                        autoFocus
+                        /* 移动 sheet 收起时 launcher 也在 DOM 里 —— autoFocus 会抢焦点
+                           并把 overflow:hidden 壳滚动 40px 顶走 stage-header。 */
+                        autoFocus={!isMobile}
                         value={shell.launcherSearch}
                         onChange={(e) => shell.setLauncherSearch(e.target.value)}
                         placeholder={t('wb.launcher.search')}
@@ -176,7 +178,7 @@ export function WorkbenchBody({ isMobile = false }: { isMobile?: boolean }) {
                 </div>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-                {launcherActive ? <Launcher /> : <PanelBody type={shell.activeTab} />}
+                {launcherActive ? <Launcher isMobile={isMobile} /> : <PanelBody type={shell.activeTab} />}
             </div>
         </div>
     );
