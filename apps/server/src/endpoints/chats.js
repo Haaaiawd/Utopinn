@@ -1619,8 +1619,13 @@ export async function resettleMvuAfterWrite(request, { group = false } = {}) {
     }
 }
 
-/** /append 后末楼 settle;新建聊天带 autoInit(floor-0 未初始化先补 init)。 */
-export async function settleMvuAfterAppend(request, { group = false, autoInit = false } = {}) {
+/**
+ * /append 后末楼 settle。autoInit 默认开(TASK-045):settle 遇 no_baseline
+ * (floor-0 未初始化)即探测补 init——判据是楼层初始化态,不是「聊天刚建」;
+ * 卡带/导入的预建聊天首次 append 同样自愈。initializeMvuChat 内部
+ * not_mvu/already_initialized/no_chat 早退兜底,非 MVU 聊天不会误初始化。
+ */
+export async function settleMvuAfterAppend(request, { group = false, autoInit = true } = {}) {
     try {
         const args = mvuRepoArgsFromRequest(request, { group });
         if (!args) return;
@@ -2386,8 +2391,8 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
             // hint-ack 收紧:append 里没有非 user 楼层(纯 say/user 写)
             // 不算生成落盘,不许 ack 孤儿 job。
             acknowledgeGenerationFromValueOrPersistTarget(request, messages, messages.some(m => m && m.is_user === false) ? buildCharacterPersistTargetHint(request) : null);
-            // TASK-013 auto-resettle:新建聊天 floor-0 未初始化 → autoInit 补 init 再结算。
-            await settleMvuAfterAppend(request, { autoInit: true });
+            // TASK-013/045 auto-resettle:末楼 settle;floor-0 未初始化时 seam 内自动补 init。
+            await settleMvuAfterAppend(request);
             return response.send({ ok: true, appended: cleanedMessages.length, created: true, integrity: newIntegrity });
         }
 
@@ -2452,7 +2457,8 @@ router.post('/append', validateAvatarUrlMiddleware, async function (request, res
 
         await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: String(request.body.avatar_url || '') });
         acknowledgeGenerationFromValueOrPersistTarget(request, messages, messages.some(m => m && m.is_user === false) ? buildCharacterPersistTargetHint(request) : null);
-        // TASK-013 auto-resettle:末楼 settle(无 autoInit——存量聊天不主动初始化)。
+        // TASK-045 auto-resettle:末楼 settle;autoInit 默认开——预建聊天
+        // (floor-0 有 MVU 信号、无 variables)在此探测补 init,存量≠不初始化。
         await settleMvuAfterAppend(request);
         return response.send({
             ok: true,
@@ -3730,8 +3736,8 @@ router.post('/group/append', async function (request, response) {
 
         await refreshRecentChatIndexEntry(request, chatFilePath);
         acknowledgeGenerationFromValueOrPersistTarget(request, messages, buildGroupPersistTargetHint(request));
-        // TASK-013 auto-resettle:末楼 settle;新建聊天带 autoInit。
-        await settleMvuAfterAppend(request, { group: true, autoInit: result?.created === true });
+        // TASK-045 auto-resettle:末楼 settle;autoInit 默认开——预建群聊同自愈。
+        await settleMvuAfterAppend(request, { group: true });
         return response.send({ ok: true, ...result });
     } catch (error) {
         if (error instanceof IntegrityMismatchError) {

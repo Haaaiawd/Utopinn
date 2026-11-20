@@ -3492,17 +3492,17 @@
         {
           "criterion": "掌门卡预建聊天进局后,首轮生成 JSONPatch 结算落盘,mvu state 非空",
           "verify_by": "掌门卡实弹:/mvu state 读回含 stat_data",
-          "evidence": ""
+          "evidence": "2026-11-20 修复+实测:route(b)——autoInit 语义改为「no_baseline(=floor-0 未初始化)即探测补 init」,默认开(settlePersistedMvuMessage 内 args.autoInit !== false;settleMvuAfterAppend 默认 true);chats.js:2390/2455、:3734 三处调用点不再各自判断「聊天刚建」。实测(node --test tests/mvu-settle.test.mjs,10/10 绿):预建聊天 floor-0 <initvar> 信号+无 variables → POST /api/chats/append 实弹 → floor-0 init(hp:66)+末楼 fold _.set → variables[0].stat_data.hp=33、chat_metadata.variables 镜像非空;预建群聊 POST /group/append → floor-0 init(morale:10)+ _.add → 15。"
         },
         {
           "criterion": "非 MVU 卡聊天不受影响(mvuSignalPresent 早退),已初始化聊天不重复 init(already_initialized 早退)",
           "verify_by": "双卡对照验收",
-          "evidence": ""
+          "evidence": "双卡对照已测:非 MVU 聊天(无信号)默认探测 → not_mvu 早退——body 无 variables、chat_metadata 无镜像、integrity 不变、无 mvu 侧车;已初始化聊天 append+settle → settled,kind:init 日志仍 1 条,不重复 init。(tests/mvu-settle.test.mjs 「非 MVU 聊天:探测 not_mvu 早退」「已初始化聊天 append+settle 不重复 init」)"
         },
         {
           "criterion": "不回归:新建聊天 autoInit 行为不变",
           "verify_by": "既有 mvu 验收脚本全绿",
-          "evidence": ""
+          "evidence": "不回归:新建聊天路径 settleMvuAfterAppend(request) 行为不变(原来即 autoInit:true);既有 mvu 用例全绿(10/10):init 书目口径/floor-0 初始化/autoInit no_baseline→init+settle/messageIndex 0 不二次 fold/非 MVU resettle 跳过重放;显式 autoInit:false 退化为纯结算(no_baseline 原样返回不写回)。luker-generation persist ×2 与 utopinn-library create 路径仍显式 autoInit:true,行为不变。"
         }
       ],
       "done_when": [],
@@ -3521,7 +3521,9 @@
         "apps/server/src/endpoints/chats.js",
         "apps/server/src/services/mvu-settle.js"
       ],
-      "implementation_notes": [],
+      "implementation_notes": [
+        "路线选 (b) 弃 (a):no_baseline 本身就是「floor-0 需要初始化」的判据(findMvuBaselineIndex 扫不到快照);(a) 把判断留在各调用侧正是 bug 成因(append 存量分支判「非新建→不 init」,group 判 created===true 仍漏预建),且探测成本相同。改 seam 内部默认开后,文件域外同病点免费自愈:utopinn-library.js:1283 settleMvuAfterAppend(writeReq)、utopinn-mvu.js POST /settle(手动 settle 对未初始化 MVU 聊天亦得 initCheck 等价自愈)。代价:每个 no_baseline settle 多一次只读探测(resolve lorebooks+repo.get→init 内早退),任务预算内已接受。"
+      ],
       "status": "open",
       "created": "2026-11-20"
     },

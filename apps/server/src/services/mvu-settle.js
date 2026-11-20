@@ -354,8 +354,12 @@ export async function initializeMvuChat(args) {
  * @param {number} [args.messageIndex] 目标楼层,默认 body 末楼。
  * @param {boolean} [args.updateChatVariables] 是否镜像到 chat_metadata.variables
  *   (upstream 「更新到聊天变量」开关;默认 true——MVU 卡普遍依赖 getvar 读它)。
- * @param {boolean} [args.autoInit] no_baseline 且 body[0] 存在时先跑
- *   initializeMvuChat(floor-0 初始化),再重试本 settle;每调用最多触发一次。
+ * @param {boolean} [args.autoInit] no_baseline(= floor-0 未初始化)时先跑
+ *   initializeMvuChat(upstream initCheck 等价),再重试本 settle;每调用最多
+ *   触发一次。默认 true——判据是楼层初始化态,不是「聊天刚建」:预建/导入
+ *   聊天(卡带 JSONL)首次 settle 同样自愈(TASK-045)。init 内部
+ *   not_mvu/already_initialized/no_chat 早退兜底,非 MVU 聊天只多一次只读
+ *   探测;显式传 false 退化为纯结算(不补 init)。
  * @param {import('@utopinn/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
  * @param {string} [args.primaryLorebookName] autoInit 主书名。
  * @param {object} [args.directories] autoInit 自解书目所需用户目录(.characters 读卡)。
@@ -366,7 +370,9 @@ export async function settlePersistedMvuMessage(args) {
     const repo = getChatRepo();
     const opts = { isGroup: !!args.isGroup, groupId: args.groupId };
     const updateChatVariables = args.updateChatVariables !== false;
-    const autoInit = args.autoInit === true;
+    // TASK-045:autoInit 默认开——触发条件是 no_baseline(楼层初始化态),
+    // 不是「聊天刚建」(调用方判断);显式 false 才关闭探测。
+    const autoInit = args.autoInit !== false;
     let initAttempted = false;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {

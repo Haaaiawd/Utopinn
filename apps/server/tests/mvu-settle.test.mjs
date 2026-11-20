@@ -5,6 +5,11 @@
  *   - initializeMvuChat floor-0 初始化:variables[i] + chat_metadata 镜像 + kind:'init' 日志;已初始化早退
  *   - settlePersistedMvuMessage autoInit:no_baseline → 先 init 再 settle
  *   - resettleChatMvu 无变化跳过(非 MVU 聊天不整写)
+ * 覆盖 TASK-045:
+ *   - autoInit 默认开:预建/导入聊天(floor-0 有信号、无 variables)settle 自愈
+ *   - 非 MVU 聊天探测 not_mvu 早退(无 variables、integrity 不动)
+ *   - 已初始化聊天不重复 init;显式 autoInit:false = 纯结算
+ *   - settleMvuAfterAppend(chats.js /append seam)默认开:角色+群聊预建聊天
  * 跑法:node --test tests/mvu-settle.test.mjs
  */
 import test from 'node:test';
@@ -12,6 +17,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isMvuData, MVU_STATUS_PLACEHOLDER } from '@utopinn/core';
 import {
     getChatRepo,
@@ -19,6 +25,7 @@ import {
     getWorldInfoRepo,
     initStorage,
 } from '../src/storage/index.js';
+import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
 import {
     MVU_STATE_NAMESPACE,
     initializeMvuChat,
@@ -26,6 +33,8 @@ import {
     resettleChatMvu,
     settlePersistedMvuMessage,
 } from '../src/services/mvu-settle.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const HANDLE = 'h1';
 const CHAR = 'Alice';
@@ -219,9 +228,10 @@ test('settlePersistedMvuMessage autoInit — no_baseline 先 init 再 settle', a
             entries: [{ content: 'hp: 100', comment: '[initvar]' }],
         }];
 
-        // 不开 autoInit:no_baseline 原样返回,不写回。
+        // 显式 autoInit:false(TASK-045 后的纯结算退化开关):
+        // 不探测,no_baseline 原样返回,不写回。
         const before = await repo.get(HANDLE, CHAR, 'c3');
-        const plain = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'c3' });
+        const plain = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'c3', autoInit: false });
         assert.equal(plain.status, 'no_baseline');
         const afterPlain = await repo.get(HANDLE, CHAR, 'c3');
         assert.equal(afterPlain.integrity, before.integrity, 'no_baseline 不动文档');
@@ -319,6 +329,184 @@ test('resettleChatMvu — 非 MVU 聊天无变化跳过整写;MVU 聊天改文�
         assert.equal(doc.body[1].variables['0'].stat_data.hp, 60, '重放按新命令重折');
         assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 60);
     } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// ---------- TASK-045:autoInit 判据 = floor-0 初始化态,不再依赖「聊天刚建」 ----------
+
+test('TASK-045 — 预建聊天 settle 默认探测:no_baseline 触发补 init(不传 autoInit)', async () => {
+    // 掌门卡式预建/导入聊天:JSONL 已存在,floor-0 greeting 带 <initvar>
+    // 信号但无 variables;首次 append 后 settle 必须自愈。
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-prebuilt-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'prebuilt', { user_name: 'User', chat_metadata: {} }, [
+            { is_user: false, name: CHAR, mes: '开局。\n<initvar>\n{"hp": 77, "gold": 12}\n</initvar>', swipe_id: 0 },
+        ], null);
+        // 存量 /append:追加一楼(assistant 回复带 _.set),再跑 seam settle ——
+        // 不传 autoInit,TASK-045 后默认探测。
+        const before = await repo.get(HANDLE, CHAR, 'prebuilt');
+        await repo.save(HANDLE, CHAR, 'prebuilt', before.header, [
+            ...before.body,
+            { is_user: false, name: CHAR, mes: "她收剑还鞘。\n_.set('hp', 55);", swipe_id: 0 },
+        ], before.integrity);
+
+        const r = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'prebuilt' });
+        assert.equal(r.status, 'settled');
+
+        const doc = await repo.get(HANDLE, CHAR, 'prebuilt');
+        // floor-0 探测补 init(<initvar> 覆盖 → hp 77/gold 12)
+        assert.ok(isMvuData(doc.body[0].variables['0']), 'floor-0 被探测补 init');
+        assert.equal(doc.body[0].variables['0'].stat_data.hp, 77);
+        assert.equal(doc.body[0].variables['0'].stat_data.gold, 12);
+        // 末楼以 floor-0 为基底 fold _.set → hp 55,mvu state 非空
+        assert.ok(isMvuData(doc.body[1].variables['0']));
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 55);
+        assert.ok(doc.body[1].mes.endsWith(MVU_STATUS_PLACEHOLDER));
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 55);
+        const state = await repo.getState(HANDLE, CHAR, 'prebuilt', MVU_STATE_NAMESPACE);
+        assert.equal(state.ops.filter(e => e.kind === 'init').length, 1, 'init 只跑一次');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('TASK-045 — 非 MVU 聊天:探测 not_mvu 早退,无 variables、integrity 不动', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-notmvu-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'plain2', { user_name: 'User', chat_metadata: {} }, [
+            { is_user: false, name: CHAR, mes: '普通开场白,没有信号。', swipe_id: 0 },
+            { is_user: true, name: 'User', mes: '普通回复。' },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'plain2');
+        // 默认 autoInit 探测仍跑,但 mvuSignalPresent 全灭 → not_mvu 早退。
+        const r = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'plain2' });
+        assert.equal(r.status, 'no_baseline');
+        const doc = await repo.get(HANDLE, CHAR, 'plain2');
+        assert.equal(doc.body[0].variables, undefined, 'floor-0 不长出快照');
+        assert.equal(doc.body[1].variables, undefined, '末楼无快照');
+        assert.equal(doc.header.chat_metadata?.variables, undefined, 'metadata 无镜像');
+        assert.equal(doc.integrity, before.integrity, '探测早退不推高 integrity');
+        const state = await repo.getState(HANDLE, CHAR, 'plain2', MVU_STATE_NAMESPACE).catch(() => null);
+        assert.equal(state, null, '非 MVU 聊天不产生 mvu 侧车');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('TASK-045 — 已初始化聊天 append+settle 不重复 init', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-noreinit-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'inited', { user_name: 'User', chat_metadata: {} }, [
+            { is_user: false, name: CHAR, mes: '开场白,很长足够过五字。', swipe_id: 0 },
+        ], null);
+        const lorebooks = [{
+            name: 'CharBook',
+            isPrimary: true,
+            entries: [{ content: 'hp: 100', comment: '[initvar]' }],
+        }];
+        const r1 = await initializeMvuChat({
+            handle: HANDLE, charDir: CHAR, name: 'inited',
+            lorebooks, primaryLorebookName: 'CharBook',
+        });
+        assert.equal(r1.status, 'initialized');
+        // 追加一楼后走默认 settle:floor-0 已初始化 → baseline 命中,
+        // no_baseline 不成立 → init 探测根本不触发。
+        const before = await repo.get(HANDLE, CHAR, 'inited');
+        await repo.save(HANDLE, CHAR, 'inited', before.header, [
+            ...before.body,
+            { is_user: false, name: CHAR, mes: "第一刀。\n_.set('hp', 90);", swipe_id: 0 },
+        ], before.integrity);
+        const r = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'inited' });
+        assert.equal(r.status, 'settled');
+        const doc = await repo.get(HANDLE, CHAR, 'inited');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 90);
+        const state = await repo.getState(HANDLE, CHAR, 'inited', MVU_STATE_NAMESPACE);
+        assert.equal(state.ops.filter(e => e.kind === 'init').length, 1, 'init 日志仍一条,未重复初始化');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('TASK-045 — /api/chats/append + /group/append 真实路由:预建聊天自愈', async () => {
+    // chats.js 模块级 getConfigValue(backups.*/generationAckGraceMs)需 config
+    // 就绪 —— 先指到 default/config.yaml 再动态 import(utopinn-library 同款)。
+    if (!getConfigFilePath()) {
+        setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
+    }
+    reloadConfigCache();
+    process.env.LUKER_PERFORMANCE_USEDISKCACHE = 'false';
+    process.env.LUKER_PERFORMANCE_USE_DISK_CACHE = 'false';
+    const { router: chatsRouter } = await import('../src/endpoints/chats.js');
+    const { default: express } = await import('express');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-seam-'));
+    let server;
+    try {
+        const dirs = makeDirs(tmpDir);
+        fs.mkdirSync(dirs.backups, { recursive: true });
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const repo = getChatRepo();
+
+        const app = express();
+        app.use(express.json());
+        app.use((request, _response, next) => {
+            request.user = { profile: { handle: HANDLE, name: 'User' }, directories: dirs };
+            next();
+        });
+        app.use('/api/chats', chatsRouter);
+        await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+        const BASE = `http://127.0.0.1:${server.address().port}`;
+        const post = (pathname, body) => fetch(`${BASE}${pathname}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        }).then(async (res) => ({ status: res.status, body: await res.json().catch(() => null) }));
+
+        // 掌门卡式预建角色聊天:floor-0 <initvar> 信号、无 variables。
+        await repo.save(HANDLE, CHAR, 'seam1', { user_name: 'User', chat_metadata: {} }, [
+            { is_user: false, name: CHAR, mes: '开场。\n<initvar>\n{"hp": 66}\n</initvar>', swipe_id: 0 },
+        ], null);
+        // /append 存量分支(真实 HTTP)——TASK-045 前这里 settle 不带 autoInit。
+        const r1 = await post('/api/chats/append', {
+            avatar_url: 'Alice.png',
+            file_name: 'seam1.jsonl',
+            message: { is_user: false, name: CHAR, mes: "出手。\n_.set('hp', 33);", swipe_id: 0 },
+        });
+        assert.equal(r1.status, 200);
+        assert.equal(r1.body?.ok, true);
+        assert.equal(r1.body?.appended, 1);
+        let doc = await repo.get(HANDLE, CHAR, 'seam1');
+        assert.ok(isMvuData(doc.body[0].variables['0']), '角色预建聊天 floor-0 自愈');
+        assert.ok(isMvuData(doc.body[1].variables['0']));
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 33);
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 33);
+
+        // 预建群聊:同病同治(POST /group/append 真实路径)。
+        await repo.save(HANDLE, '', 'g1', { user_name: 'User', chat_metadata: {} }, [
+            { is_user: false, name: CHAR, mes: '群开局。\n<initvar>\n{"morale": 10}\n</initvar>', swipe_id: 0 },
+        ], null, { isGroup: true, groupId: 'g1' });
+        const r2 = await post('/api/chats/group/append', {
+            id: 'g1',
+            message: { is_user: false, name: CHAR, mes: "众人响应。\n_.add('morale', 5);", swipe_id: 0 },
+        });
+        assert.equal(r2.status, 200);
+        assert.equal(r2.body?.ok, true);
+        doc = await repo.get(HANDLE, '', 'g1', { isGroup: true, groupId: 'g1' });
+        assert.ok(isMvuData(doc.body[0].variables['0']), '群聊 floor-0 自愈');
+        assert.ok(isMvuData(doc.body[1].variables['0']));
+        assert.equal(doc.body[1].variables['0'].stat_data.morale, 15);
+    } finally {
+        server?.close();
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
