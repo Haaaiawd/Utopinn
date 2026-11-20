@@ -27,6 +27,7 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--quiet') flags.quietMode = true;
     else if (a === '--full') flags.full = true;
     else if (a === '--force') flags.force = true;
+    else if (a === '--fresh') flags.fresh = true;
     else if (a === '--stdin' || a === '-') flags.stdin = true;
     else if (a === '--no-stream') flags.noStream = true;
     else if (a === '--write') flags.write = true;
@@ -73,6 +74,13 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--gchat') flags.gchat = argv[++i];
     else if (a === '--member') flags.member = argv[++i];
     else if (a === '--no-chain') flags.noChain = true;
+    else if (a === '--global') flags.global = true;
+    else if (a === '--enable') flags.enable = true;
+    else if (a === '--disable') flags.disable = true;
+    else if (a === '--allow') flags.allow = true;
+    else if (a === '--disallow') flags.disallow = true;
+    else if (a === '--put') flags.put = true;
+    else if (a === '--delete') flags.deleteFlag = true;
     else if (a === '--by') flags.by = argv[++i];
     else if (a === '--range') flags.range = argv[++i];
     else if (a === '--set') {
@@ -1088,8 +1096,12 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'GET|pattern|/api/utopinn/secrets',
     'PUT|pattern|/api/utopinn/secrets/:key',
     'DELETE|pattern|/api/utopinn/secrets/:key/:id',
+    // —— 连接面(conn test / models)——
+    'POST|pattern|/api/utopinn/connection/test',
+    'GET|pattern|/api/utopinn/models',
     // —— 组件面 ——
     'GET|pattern|/api/utopinn/plugins',
+    'GET|exact|/api/utopinn/ui/contrib',
     'POST|pattern|/api/utopinn/plugins/:id/enable',
     'POST|pattern|/api/utopinn/plugins/:id/disable',
     'POST|pattern|/api/utopinn/plugins/:id/reload',
@@ -1200,6 +1212,7 @@ const SCHEMA = {
         { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
         { cmd: 'utopinn chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
         { cmd: 'utopinn char <name>', desc: '[library] 角色卡全文(模糊名→目录名)', out: '{card}' },
+        { cmd: 'utopinn char-edit <name> [json|--json-file|--stdin|--set k=v]', desc: '[library] 卡字段 merge-patch(11 个字符串字段+tags+extensions{world|alternate_greetings|regex_scripts};name 只改显示名不动 charDir)', out: '{card}' },
         { cmd: 'utopinn send <text>|--stdin', desc: 'append user 楼+生成+append AI 楼', out: 'stream text + footer' },
         { cmd: 'utopinn say <text>', desc: '只写 user 楼不生成', out: 'floor' },
         { cmd: 'utopinn regen', desc: '删末 AI 楼重生成', out: 'stream text' },
@@ -1224,14 +1237,20 @@ const SCHEMA = {
         { cmd: 'utopinn preset-edit <name> [json|--json-file|--stdin]', desc: '[library] 预设整档写回(upsert)', out: '{ok,name,apiId}' },
         { cmd: 'utopinn preset-delete <name>', desc: '[library] 删预设(--api 族)', out: '204' },
         { cmd: 'utopinn settings', desc: '[library] 服务端 settings(脱敏视图)', out: '{settings}' },
-        { cmd: 'utopinn settings-set <json|--json-file|--stdin>', desc: '[library] settings 受限合并(仅 power_user|extension_settings)', out: '{settings}' },
+        { cmd: 'utopinn settings-set <json|--json-file|--stdin>', desc: '[library] settings 受限合并(power_user|extension_settings|oai_settings|world_info_settings|preset_settings_openai)', out: '{settings}' },
         { cmd: 'utopinn secrets', desc: '[secrets] 全键脱敏态(value 恒打码)', out: '{key:[{id,masked,label,active}]}' },
         { cmd: 'utopinn secret-set <key> --value v|--stdin [--label l]', desc: '[secrets] 写新 secret(服务端铸 id,不回显明文)', out: '{ok,id,entries*masked}' },
         { cmd: 'utopinn secret-delete <key> <id>', desc: '[secrets] 按 id 删一条', out: '204' },
+        { cmd: 'utopinn conn test', desc: '[connection] 上游连接探测(读 oai_settings+secrets,密钥不回显)', out: '{ok,latencyMs,modelCount?,upstreamStatus,error?}' },
+        { cmd: 'utopinn models [--fresh] [-n N]', desc: '[connection] 上游模型清单(30s 缓存,--fresh 强制重拉)', out: '{items:[{id,owned_by?}],stale?}' },
         { cmd: 'utopinn worlds', desc: '[library] 世界书列表', out: '[{name,displayName}]' },
         { cmd: 'utopinn wi <book> [-n N] [--full] [--out f]', desc: '[library] 世界书条目(uid/keys/constant/off)', out: '[entry]' },
         { cmd: 'utopinn world-edit <name> [json|--json-file|--stdin]', desc: '[library] 世界书整档写回{entries:{}}(upsert)', out: '{ok,name}' },
         { cmd: 'utopinn world-delete <name>', desc: '[library] 删世界书(显式名)', out: '204' },
+        { cmd: 'utopinn regex [--global|--char d|--preset n --api id] [--full]', desc: '[regex] 三层脚本全量视图/分面明细', out: '{global,allowed,chars,presets}' },
+        { cmd: 'utopinn regex --put [arr|--json-file|--stdin] [scope]', desc: '[regex] 该域整组写回(坏正则 400 不落盘)', out: '{ok,count}' },
+        { cmd: 'utopinn regex <id> --enable|--disable|--delete [scope]', desc: '[regex] 单条启停/删(id 或下标)', out: '{ok,script|remaining}' },
+        { cmd: 'utopinn regex --allow|--disallow --char d|--preset n', desc: '[regex] scoped/preset 放行表开关(character_allowed_regex / preset_allowed_regex)', out: '{ok,allow}' },
         { cmd: 'utopinn kernel', desc: '[diag] cordis 路由+服务清单(能力面)', out: '{routes,services}' },
         { cmd: 'utopinn logs [--kind k] [--lvl l] [-n N|--tail n] [--since ts] [--code c] [--job id]', desc: '[diag] 事件总线日志(http/job/generate/inject/th/plugin/client)', out: '[{seq,ts,lvl,kind,code,msg,ctx,data}]' },
         { cmd: 'utopinn errors [-n N]', desc: '[diag] warn+ 事件快捷面(http_4xx/5xx/job_failed/th/…)', out: '[{…}]' },
@@ -1242,6 +1261,7 @@ const SCHEMA = {
         { cmd: 'utopinn stats inject [--chat <charDir>/]<chat>', desc: '[stats] 注入源命中率+token 占比;worldinfo 条目级命中表', out: '{sources[],entries[]}' },
         { cmd: 'utopinn plugins', desc: '[plugins] fiber 清单', out: '[{id,disabled}]' },
         { cmd: 'utopinn plugin <id> <enable|disable|reload>', desc: '[plugins] 组件生命周期(admin)', out: '{ok}' },
+        { cmd: 'utopinn contrib', desc: '[plugins] UI 贡献点清单(ui.contrib manifest × 内核映射;admin)', out: '[{plugin,slot,contribution,core?}]' },
         { cmd: 'utopinn mvu [state]', desc: '[mvu] chat 变量+settle 回执(=悬浮窗数据源)', out: '{variables,receipts}' },
         { cmd: 'utopinn mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
         { cmd: 'utopinn mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
@@ -2079,6 +2099,26 @@ async function cmdPlugin() {
     footer();
 }
 
+// utopinn contrib —— §C-12 插件 UI 贡献点清单(GET /api/utopinn/ui/contrib)。
+// items:[{plugin,slot,contribution,core?,disabled?}] + slots 词表参照。
+async function cmdContrib() {
+    const { data, status } = await req('GET', '/api/utopinn/ui/contrib', undefined, { allowFail: true });
+    if (status >= 400) return void fail('server', `ui/contrib → ${status}:${data?.error ?? 'denied?'}`, { hint: '需要 admin profile' });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(data, null, 2)); warn(`wrote ${flags.out}`); }
+    if (JSON_MODE) return out(data, [{ cmd: 'utopinn plugins' }]);
+    if (!items.length) console.log('no ui contributions declared');
+    console.log(`  ${'plugin'.padEnd(20)} ${'slot'.padEnd(14)} contribution`);
+    for (const it of items) {
+        const mark = `${it.core ? '\x1b[36m●\x1b[0m' : ' '}${it.disabled ? '\x1b[2m○\x1b[0m' : ' '}`;
+        console.log(` ${mark}${String(it.plugin ?? '?').padEnd(20)} ${String(it.slot ?? '?').padEnd(14)} ${trunc(JSON.stringify(it.contribution), 80)}`);
+    }
+    console.log(`\n${items.length} contributions · ●=core ○=disabled`);
+    next('utopinn plugins');
+    footer();
+    return items;
+}
+
 function mvuTarget() {
     const c = needCtx();
     if (!c) return null;
@@ -2206,6 +2246,34 @@ async function cmdChar() {
     footer();
 }
 
+// —— 角色卡写面(C-3):字段级 merge-patch;extensions 仅 world/alternate_greetings/regex_scripts ——
+async function cmdCharEdit() {
+    const char = await resolveChar(positional[1]);
+    if (!char) return;
+    const charDir = stripExt(char.avatar, 'png');
+    let body = {};
+    if (flags.jsonFile || flags.stdin || positional[2] !== undefined) {
+        const doc = await readJsonBody(positional.slice(2), 'char-edit 需要 JSON patch 或 --set k=v');
+        if (doc === undefined) return;
+        if (!doc || typeof doc !== 'object' || Array.isArray(doc)) return void fail('usage', 'char patch 必须是对象', { rc: 2 });
+        body = doc;
+    }
+    // --set k=v 逐键并入;extensions 子键用 {"extensions":{"world":"…"}} 形给
+    body = { ...body, ...(flags.set ?? {}) };
+    if (!Object.keys(body).length) return void fail('usage', 'char-edit 无字段可写——给 JSON patch 或 --set name=…', { hint: '字段:name/description/personality/scenario/first_mes/mes_example/creator_notes/system_prompt/post_history_instructions/tags/creator/character_version + extensions{world|alternate_greetings|regex_scripts}', rc: 2 });
+    const { data, status } = await req('PATCH', `/api/utopinn/characters/${encodeURIComponent(charDir)}`, body, { allowFail: true });
+    if (status === 404) return void fail('not_found', `char: ${charDir}`, { hint: 'utopinn chars 看全表' });
+    if (status === 400 || status === 422) return void fail('usage', `char-edit 被拒:${data?.error ?? status}`, { status, rc: 2 });
+    if (status >= 400 || data?.error) return void fail('server', `char-edit ${charDir} 失败:${data?.error ?? status}`, { status });
+    const n = [{ cmd: `utopinn char ${charDir}`, why: '看写后卡' }];
+    if (JSON_MODE) return out(data, n);
+    const d = (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) ? data.data : data;
+    console.log(`char ${charDir} patched — name="${d?.name ?? ''}"${d?.extensions?.world ? ` · world=${d.extensions.world}` : ''}`);
+    footer();
+    nextHints = n;
+    console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
+}
+
 async function cmdChatGet() {
     // charDir = --char | ctx.char;chatName = 位置参 | ctx.chat —— 两组独立来源
     const charDir = flags.char ? stripExt(flags.char, 'png') : state.char?.dir;
@@ -2312,6 +2380,113 @@ async function cmdWorldDelete() {
     footer();
 }
 
+// —— regex 面(utopinn-regex:global/char/preset 三层存储 + 放行表)——
+function regexScope() {
+    if (flags.preset) {
+        if ('char' in flags) return void fail('usage', '--char 与 --preset 二选一', { rc: 2 });
+        return { scope: 'preset', apiId: flags.api ?? 'openai', preset: flags.preset };
+    }
+    if ('char' in flags) {
+        const charDir = flags.char ?? state.char?.dir;
+        if (!charDir) return void fail('usage', '--char 需要 <dir>,或先 utopinn use 绑卡', { rc: 2 });
+        return { scope: 'char', char: charDir };
+    }
+    return { scope: 'global' }; // --global 显式/缺省同义
+}
+const regexScopeBody = (s) => s.scope === 'char' ? { scope: 'char', char: s.char }
+    : s.scope === 'preset' ? { scope: 'preset', apiId: s.apiId, preset: s.preset }
+    : { scope: 'global' };
+const regexScopeQs = (s) => {
+    const q = { scope: s.scope };
+    if (s.scope === 'char') q.char = s.char;
+    if (s.scope === 'preset') { q.apiId = s.apiId; q.preset = s.preset; }
+    return '?' + new URLSearchParams(q).toString();
+};
+const regexScopeLabel = (s) => s.scope === 'char' ? `char ${s.char}` : s.scope === 'preset' ? `preset ${s.apiId}/${s.preset}` : 'global';
+const regexRow = (s, i) => {
+    const mark = s?.disabled ? '·off' : ' ✓  ';
+    const id = (s?.id ? String(s.id) : `#${i}`).slice(0, 8);
+    return ` ${mark} ${id.padEnd(10)} ${trunc(s?.scriptName || '(unnamed)', 26).padEnd(27)} ${trunc(String(s?.findRegex ?? ''), 40)}${s?.replaceString ? ` → ${trunc(String(s.replaceString), 24)}` : ''}`;
+};
+
+async function cmdRegex() {
+    const id = positional[1];
+    const scope = regexScope();
+    if (!scope) return;
+
+    // 整组写回:utopinn regex --put [arr|--json-file f|--stdin] [scope]
+    if (flags.put) {
+        const doc = await readJsonBody(positional.slice(1), 'regex --put 需要脚本数组 [{…}] 或 {scripts:[…]}');
+        if (doc === undefined) return;
+        const scripts = Array.isArray(doc) ? doc : doc?.scripts;
+        if (!Array.isArray(scripts)) return void fail('usage', '--put 载荷须为脚本数组或 {scripts:[…]}', { rc: 2 });
+        const { data, status } = await req('PUT', '/api/utopinn/regex', { ...regexScopeBody(scope), scripts }, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail(status === 400 ? 'usage' : 'server', `regex put 失败:${data?.error ?? status}`, { status, rc: status === 400 ? 2 : 1 });
+        if (JSON_MODE) return out(data, [{ cmd: 'utopinn regex', why: '验证写回' }]);
+        console.log(`${regexScopeLabel(scope)} — ${data?.count ?? scripts.length} scripts saved`);
+        next('utopinn regex'); footer(); return;
+    }
+
+    // 放行开关:utopinn regex --allow|--disallow --char <dir>|--preset <n> [--api id]
+    if (flags.allow || flags.disallow) {
+        if (scope.scope === 'global') return void fail('usage', 'global 域无放行表(恒活,disabledExtensions 管全灭)', { rc: 2 });
+        const { data, status } = await req('PUT', '/api/utopinn/regex', { ...regexScopeBody(scope), allow: !!flags.allow }, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `regex allow 失败:${data?.error ?? status}`, { status });
+        if (JSON_MODE) return out(data);
+        console.log(`${regexScopeLabel(scope)} — regex scripts ${flags.allow ? 'allowed' : 'disallowed'}`);
+        footer(); return;
+    }
+
+    // 单条:utopinn regex <id> --enable|--disable|--delete [scope]
+    if (flags.enable || flags.disable || flags.deleteFlag) {
+        if (!id) return void fail('usage', 'utopinn regex <id> --enable|--disable|--delete(脚本 id 或下标)', { rc: 2 });
+        if (flags.deleteFlag) {
+            const { data, status } = await req('DELETE', `/api/utopinn/regex/${encodeURIComponent(id)}${regexScopeQs(scope)}`, undefined, { allowFail: true });
+            if (status === 404) return void fail('not_found', `regex script: ${id} (${regexScopeLabel(scope)})`);
+            if (status >= 400 || data?.error) return void fail('server', `regex delete 失败:${data?.error ?? status}`, { status });
+            if (JSON_MODE) return out(data);
+            console.log(`deleted ${id} from ${regexScopeLabel(scope)} (${data?.remaining ?? '?'} left)`);
+            footer(); return;
+        }
+        const { data, status } = await req('PATCH', `/api/utopinn/regex/${encodeURIComponent(id)}`, { ...regexScopeBody(scope), set: { disabled: !flags.enable } }, { allowFail: true });
+        if (status === 404) return void fail('not_found', `regex script: ${id} (${regexScopeLabel(scope)})`);
+        if (status >= 400 || data?.error) return void fail('server', `regex patch 失败:${data?.error ?? status}`, { status });
+        if (JSON_MODE) return out(data);
+        console.log(`${regexScopeLabel(scope)} — "${data?.script?.scriptName ?? id}" ${flags.enable ? 'enabled' : 'disabled'}`);
+        footer(); return;
+    }
+    if (id) return void fail('usage', `regex ${id} 需要动作:--enable|--disable|--delete`, { hint: '列表用 utopinn regex;整组写回 --put', rc: 2 });
+
+    // 读面:无 scope flag → 全量视图;有 → 分面明细
+    if (!flags.global && !('char' in flags) && !flags.preset) {
+        const { data, status } = await req('GET', '/api/utopinn/regex', undefined, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `regex 读取失败:${data?.error ?? status}`, { status });
+        if (JSON_MODE) return out(data, [{ cmd: 'utopinn regex --global', why: '看全局脚本' }]);
+        const allowedChars = new Set(data?.allowed?.characters ?? []);
+        console.log(`global — ${data?.global?.length ?? 0} scripts${data?.extensionDisabled ? '  \x1b[31m(disabledExtensions 全灭中)\x1b[0m' : ''}`);
+        (data?.global ?? []).forEach((s, i) => console.log(regexRow(s, i)));
+        for (const c of data?.chars ?? []) {
+            console.log(`char ${c.charDir} (${c.name}) — ${allowedChars.has(c.avatar) ? 'allowed' : '·off'} · ${c.count} scripts`);
+            if (flags.full) (c.scripts ?? []).forEach((s, i) => console.log(regexRow(s, i)));
+        }
+        for (const p of data?.presets ?? []) {
+            console.log(`preset ${p.apiId}/${p.name} — ${p.allowed ? 'allowed' : '·off'} · ${p.count} scripts`);
+            if (flags.full) (p.scripts ?? []).forEach((s, i) => console.log(regexRow(s, i)));
+        }
+        next('utopinn regex --global'); footer(); return;
+    }
+
+    const { data, status } = await req('GET', `/api/utopinn/regex${regexScopeQs(scope)}`, undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `${regexScopeLabel(scope)}`, { hint: 'utopinn regex 看全量' });
+    if (status >= 400 || data?.error) return void fail('server', `regex 读取失败:${data?.error ?? status}`, { status });
+    if (JSON_MODE) return out(data);
+    const scripts = data?.scripts ?? [];
+    const tag = data?.allowed === false ? '·off' : (data?.allowed ? 'allowed' : '');
+    console.log(`${regexScopeLabel(scope)}${tag ? ` — ${tag}` : ''} · ${scripts.length} scripts`);
+    for (let i = 0; i < scripts.length; i++) console.log(regexRow(scripts[i], i));
+    footer();
+}
+
 // —— presets 写面(apiId 默认 openai,--api 换族)——
 const presetPath = (name) => `/api/utopinn/presets/${encodeURIComponent(name)}?apiId=${encodeURIComponent(flags.api ?? 'openai')}`;
 
@@ -2410,8 +2585,10 @@ async function cmdPersonaDelete() {
     footer();
 }
 
-// —— settings 面(服务端已脱敏;PATCH 仅 power_user|extension_settings 白名单)——
-const SETTINGS_PATCHABLE = new Set(['power_user', 'extension_settings']);
+// —— settings 面(服务端已脱敏;PATCH 白名单同 utopinn-library PATCHABLE_SETTINGS_*)——
+const SETTINGS_PATCHABLE = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings', 'preset_settings_openai']);
+// 标量键(非对象段):preset_settings_openai 预设选择指针 —— 服务端直写并镜像 oai_settings。
+const SETTINGS_SCALAR_KEYS = new Set(['preset_settings_openai']);
 
 async function cmdSettings() {
     const { data, status } = await req('GET', '/api/utopinn/settings', undefined, { allowFail: true });
@@ -2442,6 +2619,10 @@ async function cmdSettingsSet() {
         return void fail('usage', `不可写顶层段: ${rejected.join(', ')}`, { hint: `此端点只放 ${[...SETTINGS_PATCHABLE].join(' | ')};其余段走服务端管理面`, rc: 2 });
     }
     for (const [k, v] of Object.entries(patch)) {
+        if (SETTINGS_SCALAR_KEYS.has(k)) {
+            if (v !== null && typeof v !== 'string') return void fail('usage', `"${k}" 必须是字符串(预设名)`, { rc: 2 });
+            continue;
+        }
         if (!v || typeof v !== 'object' || Array.isArray(v)) {
             return void fail('usage', `section "${k}" 必须是 JSON 对象(逐键浅合并)`, { rc: 2 });
         }
@@ -2450,7 +2631,7 @@ async function cmdSettingsSet() {
     if (status >= 400 || data?.error) return void fail('server', `settings-set 失败:${data?.error ?? status}`, { status });
     const n = [{ cmd: 'utopinn settings', why: '看合并后视图' }];
     if (JSON_MODE) return out(data, n);
-    console.log(`settings merged: ${Object.keys(patch).map(k => `${k}(+${Object.keys(patch[k]).length})`).join(' · ')}`);
+    console.log(`settings merged: ${Object.keys(patch).map(k => SETTINGS_SCALAR_KEYS.has(k) ? `${k}=${JSON.stringify(patch[k])}` : `${k}(+${Object.keys(patch[k]).length})`).join(' · ')}`);
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
@@ -2518,6 +2699,42 @@ async function cmdSecretDelete() {
     if (JSON_MODE) return out({ deleted: { key, id } }, [{ cmd: 'utopinn secrets' }]);
     console.log(`deleted secret ${key}/${String(id).slice(0, 8)}`);
     footer();
+}
+
+// —— 连接面:conn test / models(读服务端生效配置,密钥不出服务端)——
+async function cmdConn() {
+    const sub = positional[1] ?? 'test';
+    if (sub !== 'test') return void fail('usage', 'utopinn conn test', { hint: '目前只有 test 一个动词', rc: 2 });
+    // 服务端探针 8s 上限;客户端给 15s 留网络余量
+    const { data, status } = await req('POST', '/api/utopinn/connection/test', {}, { allowFail: true, timeout: 15_000 });
+    if (status >= 400) return void fail('server', `conn test → ${status}: ${data?.error ?? ''}`, { status });
+    if (JSON_MODE) return out(data, data?.ok ? [{ cmd: 'utopinn models' }] : [{ cmd: 'utopinn secrets', why: '查密钥槽' }, { cmd: 'utopinn settings', why: '查 oai_settings' }]);
+    if (data?.ok) {
+        console.log(`\x1b[32m✓\x1b[0m ${data.source} · ${data.latencyMs}ms · ${data.modelCount ?? '?'} models (HTTP ${data.upstreamStatus})`);
+        next('utopinn models');
+    } else {
+        exitCode = 5; // upstream failed — SCHEMA.exitCodes[5]
+        console.log(`\x1b[31m✗\x1b[0m ${data?.source ?? '?'} · ${data?.error ?? 'failed'}${data?.upstreamStatus ? ` (HTTP ${data.upstreamStatus})` : ''}${data?.latencyMs != null ? ` · ${data.latencyMs}ms` : ''}`);
+        if (data?.detail) console.log(`  \x1b[2m${data.detail}\x1b[0m`);
+        next(data?.error === 'not_configured' ? 'utopinn secrets' : 'utopinn conn test');
+    }
+    footer();
+    return data;
+}
+
+async function cmdModels() {
+    const q = flags.fresh ? '?fresh=1' : '';
+    const { data, status } = await req('GET', `/api/utopinn/models${q}`, undefined, { allowFail: true, timeout: 15_000 });
+    if (status >= 400) return void fail('server', `models → ${status}: ${data?.error ?? ''}`, { status });
+    const items = Array.isArray(data?.items) ? data.items : [];
+    if (JSON_MODE) return out(data, data?.error ? [{ cmd: 'utopinn conn test', why: '探测链路' }] : []);
+    if (data?.error) console.log(`\x1b[33m!\x1b[0m ${data.source ?? '?'} ${data.error}${data?.upstreamStatus ? ` (HTTP ${data.upstreamStatus})` : ''}${data?.detail ? ` — ${data.detail}` : ''}${data?.stale ? ' \x1b[2m[stale cache]\x1b[0m' : ''}`);
+    const show = flags.n ? items.slice(0, flags.n) : items;
+    for (const m of show) console.log(`  ${m.id}${m.owned_by ? `  \x1b[2m${m.owned_by}\x1b[0m` : ''}`);
+    console.log(`\n${items.length} models${data?.stale ? ' (stale)' : ''}${flags.n && items.length > flags.n ? ` · showing ${flags.n}` : ''}`);
+    next('utopinn conn test');
+    footer();
+    return items;
 }
 
 // —— 数据面:import / backup / lan ——
@@ -2884,6 +3101,7 @@ try {
         case 'chat-rename': await cmdChatRename(); break;
         case 'chat-delete': await cmdChatDelete(); break;
         case 'char': await cmdChar(); break;
+        case 'char-edit': await cmdCharEdit(); break;
         case 'history': await cmdHistory(); break;
         case 'edit': await cmdEdit(); break;
         case 'jobs': await cmdJobs(); break;
@@ -2910,6 +3128,8 @@ try {
         case 'secrets': await cmdSecrets(); break;
         case 'secret-set': await cmdSecretSet(); break;
         case 'secret-delete': await cmdSecretDelete(); break;
+        case 'conn': await cmdConn(); break;
+        case 'models': await cmdModels(); break;
         case 'send': case 'say': case 'regen': case 'continue': case 'impersonate': case 'quiet': {
             const text = CMD === 'send' || CMD === 'say' || CMD === 'quiet'
                 ? await readTextArg(positional.slice(1))
@@ -2926,9 +3146,11 @@ try {
         case 'wi': await cmdWi(); break;
         case 'world-edit': await cmdWorldEdit(); break;
         case 'world-delete': await cmdWorldDelete(); break;
+        case 'regex': await cmdRegex(); break;
         case 'kernel': case 'caps': await cmdKernel(); break;
         case 'plugins': await cmdPlugins(); break;
         case 'plugin': await cmdPlugin(); break;
+        case 'contrib': await cmdContrib(); break;
         case 'mvu': await cmdMvu(); break;
         case 'script': case 'stscript': await cmdScript(); break;
         case 'th': await cmdTh(); break;
