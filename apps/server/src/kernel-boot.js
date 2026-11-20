@@ -13,6 +13,7 @@
  *   list()                      合并态清单(profile × patch × 运行时)
  *   disable(id)/enable(id)      patch 落盘 + fiber dispose / 重新 ctx.plugin
  *   reload(id)                  dispose + cache-bust 重导入 + 重新 apply
+ *   module(id)                  活模块实例(W5;读面吃运行中声明,disabled/failed 无)
  *   —— 必须先于 loadProfileFile provide,否则 inject 等位失败。
  *
  * 顶层 await:ESM TLA,server-startup import 本模块时自然等插件就绪
@@ -124,7 +125,7 @@ async function applyRow(row) {
     const plugin = mod.apply ? { ...mod, name: mod.name ?? row.id } : mod;
     const fiber = appCtx.plugin(plugin, row.config);
     fibers.set(row.id, fiber);
-    results.set(row.id, { id: row.id, status: 'active', fiber });
+    results.set(row.id, { id: row.id, status: 'active', fiber, module: mod });
     // cordis 4:返回值 thenable 暴露 fiber.await() —— async apply() reject 在此抛出。
     await fiber;
     return fiber;
@@ -156,6 +157,15 @@ export const pluginManager = {
     /** 返回合并行或 undefined */
     async row(id) {
         return mergedRows(await readPatchRows()).find((r) => r.id === id);
+    },
+
+    /**
+     * 活模块实例句柄(W5):contrib 等读面吃"运行中代码的声明",不为读
+     * manifest 再造第二个 ESM 实例。disabled/failed 的 results 行天然无
+     * module 字段 → undefined;reload 后返回新实例。只读约定,勿改模块状态。
+     */
+    module(id) {
+        return results.get(id)?.module;
     },
 
     async disable(id) {

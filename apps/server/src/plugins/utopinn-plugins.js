@@ -127,14 +127,20 @@ function readManifestContrib(mod) {
 
 /**
  * profile 行 → 模块对象(manifest 读取用,不跑 apply)。
- * 相对 specifier 按 mtime 缓存:文件没变 → 复用已导入模块;编辑/reload 后
- * mtime 变 → cache-bust 重导入,manifest 跟盘不跟运行时快照。每文件版本至多
- * 一个模块实例 —— 不按请求 bust(?t= 每发一次是一个永不回收的 ESM 实例,
- * 观测面被轮询时会慢性漏)。裸 specifier/<inline> 行无法 stat,走普通导入。
+ * W5 活实例优先:插件 fiber 在场时直接吃 pluginManager.module(id) ——
+ * manifest 语义="运行中代码的声明",不做第二次 import(旧 ?t=mtime 读法
+ * 让 active 插件存在两个 ESM 实例:顶层副作用跑两遍、声明随盘漂移于运行中
+ * 代码之前)。顺带让 <inline>/裸 specifier 行也能读到 manifest。
+ * 无活实例(failed/degraded/未装载)回退文件导入,按 mtime 缓存:文件没变
+ * → 复用已导入模块;编辑后 mtime 变 → cache-bust 重导入。每文件版本至多一个
+ * 模块实例 —— 不按请求 bust(?t= 每发一次是一个永不回收的 ESM 实例,观测面
+ * 被轮询时会慢性漏)。裸 specifier/<inline> 行无法 stat,走普通导入。
  * import 失败(failed/坏 specifier)回 null,不连坐。
  */
 const manifestCache = new Map(); // specifier → {mtimeMs, mod}
-async function importRowModule(row) {
+async function importRowModule(row, pm) {
+    const live = pm?.module?.(row.id);
+    if (live) return live;
     const spec = row?.module;
     if (typeof spec !== 'string' || spec === '<inline>') return null;
     if (!spec.startsWith('.')) {
@@ -193,7 +199,7 @@ export function apply(ctx) {
             for (const row of await pm.list()) {
                 const entries = [...(BUILTIN_CONTRIB[row.id] ?? [])];
                 if (!row.disabled) {
-                    entries.push(...readManifestContrib(await importRowModule(row)));
+                    entries.push(...readManifestContrib(await importRowModule(row, pm)));
                 }
                 for (const e of entries) {
                     const contribution = wireSafe(e.contribution);
