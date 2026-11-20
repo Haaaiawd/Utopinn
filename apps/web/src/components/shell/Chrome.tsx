@@ -112,7 +112,7 @@ export function TopChrome() {
                                 key={m}
                                 className="rounded-[6px] px-2.5 py-0.5 text-[11px] font-medium transition-colors"
                                 style={act ? { background: 'var(--primary-bg)', color: 'var(--primary-fg)' } : { color: 'var(--fg-secondary)' }}
-                                onClick={() => shell.setVpMode(m === 'mobile' ? 'mobile' : 'auto')}
+                                onClick={() => shell.setVpMode(m)}
                             >
                                 {m === 'mobile' ? 'Mobile' : 'Desktop'}
                             </button>
@@ -188,57 +188,65 @@ function AccountDock() {
     );
 }
 
-/** 账户锚点弹层(规范稿 account pop:左下 64px 锚定,字号/主题/语言/设置四行)。 */
-function AccountPop() {
+/** 账户弹层卡片体 —— 桌面 fixed 锚卡 / 移动 in-shell 卡共用内容
+ * (规范稿 renderAccountPopoverHtml 同一份 markup,仅锚定方式不同)。 */
+export function AccountPopCard() {
     const { t, locale, setLocale } = useI18n();
     const shell = useShell();
     const { theme, toggle } = useTheme();
     const fs = shell.chatSettings.fontSize;
     const rowCls = 'flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-[12.5px] transition-colors hover:bg-[color:var(--bg-active)]';
     return (
+        <div className="space-y-0.5 rounded-2xl p-1.5" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}>
+            <div className="mb-1 flex items-center justify-between border-b border-[color:var(--border-hairline)] px-2.5 py-2">
+                <div className="min-w-0">
+                    <div className="truncate text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('acct.name')}</div>
+                    <div className="truncate text-[11.5px] text-[color:var(--fg-muted)]">{t('acct.plan')}</div>
+                </div>
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: 'var(--status-ok)' }} />
+            </div>
+            {/* 规范稿字号行:A- / 值 / A+ */}
+            <div className="flex items-center justify-between rounded-xl px-2.5 py-1.5">
+                <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('acct.fontSize')}</span>
+                <div className="flex items-center gap-1">
+                    <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.max(12, fs - 0.5))}>A-</button>
+                    <span className="w-8 text-center font-mono-ui text-[11px] text-[color:var(--fg-primary)]">{fs}</span>
+                    <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.min(18, fs + 0.5))}>A+</button>
+                </div>
+            </div>
+            <button className={rowCls} onClick={toggle}>
+                <span className="flex items-center gap-2.5">
+                    <span className="text-[color:var(--fg-secondary)]"><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></span>
+                    <span className="text-[color:var(--fg-primary)]">{t('acct.theme')}</span>
+                </span>
+                <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{theme === 'dark' ? t('acct.theme.dark') : t('acct.theme.light')}</span>
+            </button>
+            <button className={rowCls} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}>
+                <span className="flex items-center gap-2.5">
+                    <span className="text-[color:var(--fg-secondary)]"><Icon name="globe" size={16} /></span>
+                    <span className="text-[color:var(--fg-primary)]">{t('acct.lang')}</span>
+                </span>
+                <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{locale === 'zh-CN' ? '简体中文' : 'English'}</span>
+            </button>
+            <div className="my-1 h-px" style={{ background: 'var(--border-hairline)' }} />
+            <button className={rowCls} onClick={() => { shell.setAccountPopOpen(false); shell.openSettings('api'); }}>
+                <span className="flex items-center gap-2.5">
+                    <span className="text-[color:var(--fg-secondary)]"><Icon name="settings" size={16} /></span>
+                    <span className="text-[color:var(--fg-primary)]">{t('settings.title')}</span>
+                </span>
+            </button>
+        </div>
+    );
+}
+
+/** 账户锚点弹层(规范稿 account pop:左下 64px 锚定,字号/主题/语言/设置四行)。 */
+function AccountPop() {
+    const shell = useShell();
+    return (
         <>
             <div className="fixed inset-0 z-[75]" onClick={() => shell.setAccountPopOpen(false)} />
-            <div
-                className="pop-in fixed bottom-2.5 left-[64px] z-[75] w-[248px] space-y-0.5 rounded-2xl p-1.5"
-                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}
-            >
-                <div className="mb-1 flex items-center justify-between border-b border-[color:var(--border-hairline)] px-2.5 py-2">
-                    <div className="min-w-0">
-                        <div className="truncate text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('acct.name')}</div>
-                        <div className="truncate text-[11.5px] text-[color:var(--fg-muted)]">{t('acct.plan')}</div>
-                    </div>
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: 'var(--status-ok)' }} />
-                </div>
-                {/* 规范稿字号行:A- / 值 / A+ */}
-                <div className="flex items-center justify-between rounded-xl px-2.5 py-1.5">
-                    <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('acct.fontSize')}</span>
-                    <div className="flex items-center gap-1">
-                        <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.max(12, fs - 0.5))}>A-</button>
-                        <span className="w-8 text-center font-mono-ui text-[11px] text-[color:var(--fg-primary)]">{fs}</span>
-                        <button className="ghost-btn h-6 w-6 text-xs" onClick={() => shell.setChatSetting('fontSize', Math.min(18, fs + 0.5))}>A+</button>
-                    </div>
-                </div>
-                <button className={rowCls} onClick={toggle}>
-                    <span className="flex items-center gap-2.5">
-                        <span className="text-[color:var(--fg-secondary)]"><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></span>
-                        <span className="text-[color:var(--fg-primary)]">{t('acct.theme')}</span>
-                    </span>
-                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{theme === 'dark' ? t('acct.theme.dark') : t('acct.theme.light')}</span>
-                </button>
-                <button className={rowCls} onClick={() => setLocale(locale === 'zh-CN' ? 'en' : 'zh-CN')}>
-                    <span className="flex items-center gap-2.5">
-                        <span className="text-[color:var(--fg-secondary)]"><Icon name="globe" size={16} /></span>
-                        <span className="text-[color:var(--fg-primary)]">{t('acct.lang')}</span>
-                    </span>
-                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{locale === 'zh-CN' ? '简体中文' : 'English'}</span>
-                </button>
-                <div className="my-1 h-px" style={{ background: 'var(--border-hairline)' }} />
-                <button className={rowCls} onClick={() => { shell.setAccountPopOpen(false); shell.openSettings('api'); }}>
-                    <span className="flex items-center gap-2.5">
-                        <span className="text-[color:var(--fg-secondary)]"><Icon name="settings" size={16} /></span>
-                        <span className="text-[color:var(--fg-primary)]">{t('settings.title')}</span>
-                    </span>
-                </button>
+            <div className="pop-in fixed bottom-2.5 left-[64px] z-[75] w-[248px]">
+                <AccountPopCard />
             </div>
         </>
     );

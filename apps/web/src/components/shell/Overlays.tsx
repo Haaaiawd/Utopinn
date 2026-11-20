@@ -10,6 +10,7 @@ import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { LogoU } from '../LogoU';
 import { WorkbenchBody } from './Workbench';
+import { AccountPopCard } from './Chrome';
 import { CenterStage } from '../stage/CenterStage';
 import { charImgFallback } from '../stage/StageFrame';
 import { useRemote } from '../panels/panelShared';
@@ -40,7 +41,10 @@ export function MobileFrame() {
     const trees = useContribs('sidebar.tree');
     const ViewC = views.find((v) => v.view === s.view)?.Component;
     const isChat = s.view === 'chat';
-    const domainTrees = trees.filter((tr) => tr.rail === (s.railTab === 'home' ? 'chat' : s.railTab));
+    /* 规范稿 drawer 头随「域」走:home 域落到 chat 树/头,studio/plugins 各自域头。 */
+    const drawerDomain = s.railTab === 'home' ? 'chat' : s.railTab;
+    const isChatDomain = drawerDomain === 'chat';
+    const domainTrees = trees.filter((tr) => tr.rail === drawerDomain);
     const shellRef = useRef<HTMLDivElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -84,20 +88,24 @@ export function MobileFrame() {
                     {/* drawer 遮罩(规范稿 absolute inset-0 z-50 rgba(0,0,0,0.5)) */}
                     {s.mobileDrawer && <div className="absolute inset-0 z-50" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => s.setMobileDrawer(false)} />}
                     <aside className="mob-drawer" data-open={s.mobileDrawer || undefined}>
-                        {/* 规范稿移动 drawer 头:logo + Utopinn[·域] + 搜索 + 关 */}
-                        <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
+                        {/* 规范稿移动 drawer 头:logo + Utopinn[·域] + 搜索(仅 chat 域) + 关 */}
+                        <div className={`flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4 ${isChatDomain ? 'mb-2.5' : 'mb-2'}`}>
                             <div className="flex items-center gap-2">
                                 <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={22} /></span>
-                                <span className={`heading-tight ${isChat ? 'text-[15px] font-semibold' : 'text-[13.5px] font-medium'} text-[color:var(--fg-primary)]`}>
-                                    {isChat ? t('app.name') : `${t('app.name')} · ${t(`nav.${s.view}`)}`}
+                                <span className={`heading-tight ${isChatDomain ? 'text-[15px] font-semibold' : 'text-[13.5px] font-medium'} text-[color:var(--fg-primary)]`}>
+                                    {isChatDomain ? t('app.name') : `${t('app.name')} · ${t(`nav.${s.view}`)}`}
                                 </span>
                             </div>
                             <div className="flex items-center gap-1">
-                                <button className="ghost-btn h-8 w-8" title={t('chrome.search')} onClick={() => { s.setMobileDrawer(false); s.setCmdkOpen(true); }}><Icon name="search" size={16} /></button>
+                                {isChatDomain && (
+                                    <button className="ghost-btn h-8 w-8" title={t('chrome.search')} onClick={() => { s.setMobileDrawer(false); s.setCmdkOpen(true); }}><Icon name="search" size={16} /></button>
+                                )}
                                 <button className="ghost-btn h-8 w-8" onClick={() => s.setMobileDrawer(false)}><Icon name="x" size={15} /></button>
                             </div>
                         </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto" onClick={() => s.setMobileDrawer(false)}>
+                        {/* 树体自管滚动(规范稿:pick 钮钉在头下,树列独立滚);
+                            收屉只走 select-chat / rail-nav / close —— 点组头折叠不收屉。 */}
+                        <div className="flex min-h-0 flex-1 flex-col">
                             {domainTrees.map((tr) => <tr.Component key={tr.rail + String(tr.order)} />)}
                         </div>
                         {/* 规范稿 drawer 底:资产工坊钮 + 账户行 + 齿轮 */}
@@ -112,7 +120,8 @@ export function MobileFrame() {
                             <div className="flex items-center justify-between gap-1">
                                 <button
                                     className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-[color:var(--bg-surface)]"
-                                    onClick={() => s.setMobileDrawer(false)}
+                                    onClick={() => s.setAccountPopOpen(true)}
+                                    title={t('acct.menu')}
                                 >
                                     <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border" style={{ background: 'var(--bg-active)', borderColor: 'var(--border-strong)' }}>
                                         <img src="/assets/avatars/user-redpanda.png" alt="" className="h-full w-full rounded-full object-cover" />
@@ -156,7 +165,26 @@ export function MobileFrame() {
                         </div>
                         <div className="min-h-0 flex-1 overflow-hidden"><WorkbenchBody isMobile /></div>
                     </div>
+                    {/* 规范稿:accountPop / settings / import / charEditor 均 absolute
+                        锚在 mobile-shell 内(in-shell 全页/弹层),不挂全局 fixed。 */}
+                    <MobileAccountPop />
+                    <MobileSettingsSheet />
+                    <ImportModal mobile />
+                    <CharEditorModal mobile />
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/** 移动账户弹层(规范稿:veil absolute inset-0 z-75 + left-3 right-3 bottom-16 卡)。 */
+function MobileAccountPop() {
+    const s = useShell();
+    if (!s.accountPopOpen) return null;
+    return (
+        <div className="absolute inset-0 z-[75]" onClick={() => s.setAccountPopOpen(false)}>
+            <div className="pop-in absolute inset-x-3 bottom-16" onClick={(e) => e.stopPropagation()}>
+                <AccountPopCard />
             </div>
         </div>
     );
@@ -183,7 +211,7 @@ interface DraftRow {
     done: string | null;
 }
 
-function ImportModal() {
+function ImportModal({ mobile }: { mobile?: boolean }) {
     const { t } = useI18n();
     const s = useShell();
     const ov = useOverlay();
@@ -270,7 +298,7 @@ function ImportModal() {
     if (!ov.importOpen) {
         return (
             <button
-                className="pop-in fixed bottom-4 right-4 z-[80] flex items-center gap-2 rounded-full px-3.5 py-2 text-[12px] font-medium"
+                className={`pop-in ${mobile ? 'absolute' : 'fixed'} bottom-4 right-4 z-[80] flex items-center gap-2 rounded-full px-3.5 py-2 text-[12px] font-medium`}
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-float)', color: 'var(--fg-primary)' }}
                 onClick={openImportModal}
             >
@@ -280,9 +308,20 @@ function ImportModal() {
         );
     }
 
+    /* 规范稿 importModal:移动端 absolute inset-0 全页壳(w-full h-full),桌面固定弹层。 */
     return (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={closeImportModal}>
-            <div className="pop-in flex max-h-[82vh] w-full max-w-[540px] flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+        <div
+            className={`${mobile ? 'absolute' : 'fixed'} inset-0 z-[82] flex items-center justify-center bg-black/50 ${mobile ? '' : 'p-4'}`}
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={closeImportModal}
+        >
+            <div
+                className={mobile
+                    ? 'pop-in flex h-full w-full flex-col overflow-hidden'
+                    : 'pop-in flex max-h-[82vh] w-full max-w-[540px] flex-col overflow-hidden rounded-2xl'}
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
                     <span className="heading-tight text-[14px] font-medium text-[color:var(--fg-primary)]">{t('ov.import.title')}</span>
                     <button className="ghost-btn h-7 w-7" onClick={closeImportModal}><Icon name="x" size={14} /></button>
@@ -454,7 +493,7 @@ function ImportPreviewCard({ draft, row, onConflict, onCommit, onRemove }: {
 /* 全控件只读(写面 C3 未备):name/description/first_mes/绑定书/ext JSON。    */
 /* ------------------------------------------------------------------ */
 
-function CharEditorModal() {
+function CharEditorModal({ mobile }: { mobile?: boolean }) {
     const { t } = useI18n();
     const s = useShell();
     const ov = useOverlay();
@@ -481,9 +520,20 @@ function CharEditorModal() {
         </div>
     );
 
+    /* 规范稿 charEditor:移动端 absolute inset-0 全页壳,桌面固定弹层。 */
     return (
-        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-black/50 p-4" onClick={closeCharEditor}>
-            <div className="pop-in flex max-h-[82vh] w-full max-w-[600px] flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+        <div
+            className={`${mobile ? 'absolute' : 'fixed'} inset-0 z-[82] flex items-center justify-center bg-black/50 ${mobile ? '' : 'p-4'}`}
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={closeCharEditor}
+        >
+            <div
+                className={mobile
+                    ? 'pop-in flex h-full w-full flex-col overflow-hidden'
+                    : 'pop-in flex max-h-[82vh] w-full max-w-[600px] flex-col overflow-hidden rounded-2xl'}
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-[color:var(--border-hairline)] px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
                         {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" onError={charImgFallback} /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
@@ -700,15 +750,16 @@ function ConnectionSection() {
     );
 }
 
-function SettingsSheet() {
+/* 规范稿六 tab(api/chat/appearance/plugins/diagnostics/account)。 */
+const SETTINGS_TABS: { id: string; icon: IconName }[] = [
+    { id: 'api', icon: 'cpu' }, { id: 'chat', icon: 'chat' }, { id: 'appearance', icon: 'sparkles' },
+    { id: 'plugins', icon: 'plugins' }, { id: 'diagnostics', icon: 'code' }, { id: 'account', icon: 'user' },
+];
+
+/** 设置内容体 —— 桌面两栏模态与移动全页 sheet 共用(规范稿同一份 content)。 */
+function SettingsTabContent() {
     const { t } = useI18n();
     const s = useShell();
-    if (!s.settingsOpen) return null;
-    /* 规范稿六 tab(api/chat/appearance/plugins/diagnostics/account)带图标 */
-    const tabs: { id: string; icon: IconName }[] = [
-        { id: 'api', icon: 'cpu' }, { id: 'chat', icon: 'chat' }, { id: 'appearance', icon: 'sparkles' },
-        { id: 'plugins', icon: 'plugins' }, { id: 'diagnostics', icon: 'code' }, { id: 'account', icon: 'user' },
-    ];
     const cs = s.chatSettings;
     const sw = (on: boolean, fn: () => void) => <button className="sh-switch" data-checked={on || undefined} onClick={fn}><span className="sh-switch-thumb" /></button>;
     const rowLbl = 'text-[12px] text-[color:var(--fg-secondary)]';
@@ -717,29 +768,8 @@ function SettingsSheet() {
         { k: 'none', lbl: '纯炭灰' }, { k: 'app-dark', lbl: '暗室底纹' }, { k: 'aurora-dark', lbl: '极光' }, { k: 'drawer-dark', lbl: '抽屉纹' },
     ];
     return (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)' }} onClick={s.closeSettings}>
-            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-canvas)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
-                <aside className="flex w-[192px] shrink-0 flex-col border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-sidebar)' }}>
-                    <div className="flex h-12 shrink-0 items-center px-4"><span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('settings.title')}</span></div>
-                    <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-4">
-                        {tabs.map((tb) => {
-                            const act = s.settingsTab === tb.id;
-                            return (
-                                <button key={tb.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors" style={act ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }} onClick={() => s.setSettingsTab(tb.id)}>
-                                    <span style={{ color: act ? 'var(--fg-primary)' : 'var(--fg-muted)' }}><Icon name={tb.icon} size={17} active={act} /></span>
-                                    <span>{t(`st.${tb.id}`)}</span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </aside>
-                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                    <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-5">
-                        <span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t(`st.${s.settingsTab}`)}</span>
-                        <button className="ghost-btn h-7 w-7" onClick={s.closeSettings}><Icon name="x" size={15} /></button>
-                    </div>
-                    <div className="flex-1 select-text overflow-y-auto p-5">
-                        {s.settingsTab === 'api' && <div className="inset-group"><ConnectionSection /></div>}
+        <>
+            {s.settingsTab === 'api' && <div className="inset-group"><ConnectionSection /></div>}
                         {s.settingsTab === 'chat' && (
                             <div className="inset-group">
                                 <div className="inset-row"><span className={rowLbl}>{t('st.renderCount')}</span><input type="range" min={5} max={100} value={cs.renderCount} onChange={(e) => s.setChatSetting('renderCount', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.renderCount}</span></div>
@@ -800,14 +830,89 @@ function SettingsSheet() {
                                 </button>
                             </div>
                         )}
-                        {s.settingsTab === 'account' && (
-                            <div className="inset-group">
-                                <div className="inset-row"><span className={rowLbl}>{t('acct.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.mail')}</span></div>
-                                <div className="inset-row"><span className={rowLbl}>{t('app.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span></div>
-                            </div>
-                        )}
+            {s.settingsTab === 'account' && (
+                <div className="inset-group">
+                    <div className="inset-row"><span className={rowLbl}>{t('acct.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.mail')}</span></div>
+                    <div className="inset-row"><span className={rowLbl}>{t('app.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span></div>
+                </div>
+            )}
+        </>
+    );
+}
+
+/** 桌面设置:fixed 居中两栏模态(规范稿 renderSettingsModalHtml 桌面分支)。 */
+function SettingsSheet() {
+    const { t } = useI18n();
+    const s = useShell();
+    if (!s.settingsOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)' }} onClick={s.closeSettings}>
+            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-canvas)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+                <aside className="flex w-[192px] shrink-0 flex-col border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-sidebar)' }}>
+                    <div className="flex h-12 shrink-0 items-center px-4"><span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('settings.title')}</span></div>
+                    <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-4">
+                        {SETTINGS_TABS.map((tb) => {
+                            const act = s.settingsTab === tb.id;
+                            return (
+                                <button key={tb.id} className="flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors" style={act ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }} onClick={() => s.setSettingsTab(tb.id)}>
+                                    <span style={{ color: act ? 'var(--fg-primary)' : 'var(--fg-muted)' }}><Icon name={tb.icon} size={17} active={act} /></span>
+                                    <span>{t(`st.${tb.id}`)}</span>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </aside>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                    <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-5">
+                        <span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t(`st.${s.settingsTab}`)}</span>
+                        <button className="ghost-btn h-7 w-7" onClick={s.closeSettings}><Icon name="x" size={15} /></button>
+                    </div>
+                    <div className="flex-1 select-text overflow-y-auto p-5">
+                        <SettingsTabContent />
                     </div>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+/** 移动设置:in-shell 全页 sheet(规范稿 L2063 —— ‹设置 + × 头行,
+ *  横滚 tab pills,内容 p-4)。挂进 MobileFrame 内层容器。 */
+function MobileSettingsSheet() {
+    const { t } = useI18n();
+    const s = useShell();
+    if (!s.settingsOpen) return null;
+    return (
+        <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: 'var(--bg-canvas)' }}>
+            <header
+                className="flex h-12 shrink-0 items-center justify-between border-b px-3"
+                style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border-hairline)' }}
+            >
+                <button className="ghost-btn h-8 gap-1 px-2 text-[13px] font-medium" onClick={s.closeSettings}>
+                    <Icon name="arrowLeft" size={16} /><span>{t('settings.title')}</span>
+                </button>
+                <button className="ghost-btn h-8 w-8" onClick={s.closeSettings}><Icon name="x" size={15} /></button>
+            </header>
+            <div
+                className="no-scrollbar flex shrink-0 items-center gap-1 overflow-x-auto border-b px-3 py-2"
+                style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border-hairline)' }}
+            >
+                {SETTINGS_TABS.map((tb) => {
+                    const act = s.settingsTab === tb.id;
+                    return (
+                        <button
+                            key={tb.id}
+                            className="shrink-0 rounded-lg px-2.5 py-1 text-[12px] font-medium"
+                            style={act ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
+                            onClick={() => s.setSettingsTab(tb.id)}
+                        >
+                            {t(`st.${tb.id}`)}
+                        </button>
+                    );
+                })}
+            </div>
+            <div className="flex-1 select-text overflow-y-auto p-4">
+                <SettingsTabContent />
             </div>
         </div>
     );

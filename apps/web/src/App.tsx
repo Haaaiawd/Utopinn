@@ -89,7 +89,11 @@ function Shell() {
     const [cmdkOpen, setCmdkOpen] = useState(false);
     const [mobileDrawer, setMobileDrawer] = useState(false);
     const [sheetSnap, setSheetSnap] = useState<SheetSnap>('closed');
-    const [vpMode, setVpMode] = useState<VpMode>('auto');
+    /* ?vp=mobile|desktop 直进预览态(截图 harness 与顶条分段同一入口)。 */
+    const [vpMode, setVpMode] = useState<VpMode>(() => {
+        const v = new URLSearchParams(window.location.search).get('vp');
+        return v === 'mobile' || v === 'desktop' ? v : 'auto';
+    });
     const [narrow, setNarrow] = useState(() => window.innerWidth <= MOBILE_BP);
     const [studioNav, setStudioNav] = useState('lore');
     const [pluginsNav, setPluginsNav] = useState<'installed' | 'market'>('installed');
@@ -295,12 +299,15 @@ function Shell() {
 
     const shell = useMemo<ShellCtx>(() => ({
         registry,
-        view, setView, railTab,
+        /* 规范稿 rail 动作:mobileDrawerOpen=false(抽屉内导航一律收屉)。 */
+        view, setView: (v: ViewId) => { setView(v); setMobileDrawer(false); }, railTab,
         chats, activeChat, chat,
         selectChat: (id) => {
             setActiveChat(id);
             setView('chat');
             if (window.innerWidth <= 920) setSidebarOpen(false);
+            /* 规范稿 select-session:mobileDrawerOpen=false。 */
+            setMobileDrawer(false);
             /* 规范稿 select-session:openTabs 整包替换为会话 defaultTabs
              * (空 → newtab launcher 页),并重置 novel 段选 —— 不合入旧 tab。 */
             const sc = chats.find((c) => c.id === id);
@@ -363,14 +370,18 @@ function Shell() {
         openDropdown, setOpenDropdown,
         accountPopOpen, setAccountPopOpen,
         settingsOpen, settingsTab,
-        openSettings: (tab?: string) => { if (tab) setSettingsTab(tab); setSettingsOpen(true); },
+        /* 规范稿 open-settings:settingsModalOpen=true + mobileDrawerOpen=false。 */
+        openSettings: (tab?: string) => { if (tab) setSettingsTab(tab); setSettingsOpen(true); setMobileDrawer(false); },
         closeSettings: () => setSettingsOpen(false),
         setSettingsTab,
         cmdkOpen, setCmdkOpen,
         mobileDrawer, setMobileDrawer,
         sheetSnap, setSheetSnap,
         vpMode, setVpMode, isMobile,
-        studioNav, setStudioNav, pluginsNav, setPluginsNav,
+        studioNav,
+        setStudioNav: (v: string) => { setStudioNav(v); setMobileDrawer(false); },
+        pluginsNav,
+        setPluginsNav: (v: 'installed' | 'market') => { setPluginsNav(v); setMobileDrawer(false); },
         models: MOCK_MODELS, activeModel, setActiveModel,
         presets: MOCK_PRESETS, activePresetId,
         pickPreset: (id) => {
@@ -410,26 +421,34 @@ function Shell() {
 
     return (
         <ShellProvider value={shell}>
-            {isMobile ? (
-                <MobileFrame />
-            ) : (
-                <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
-                    <TopChrome />
-                    <div className="flex min-h-0 flex-1">
-                        <LeftChrome />
-                        {/* 规范稿:inset 画布外裹 pr-[10px] pb-[10px] 呼吸容器 */}
-                        <div className="flex min-w-0 flex-1 overflow-hidden pr-[10px] pb-[10px] pl-0 pt-0">
-                            <div className="workspace-inset">
-                                <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
-                                <Workbench />
+            <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
+                {/* 规范稿:top-chrome-bar 在 root 外。vpMode=mobile 的预览态保留
+                    36px 顶条(回 Desktop 的唯一出口);真窄屏 auto 分支不进此列。 */}
+                {(!isMobile || vpMode === 'mobile') && <TopChrome />}
+                {isMobile ? (
+                    <main className="min-h-0 flex-1">
+                        <MobileFrame />
+                    </main>
+                ) : (
+                    <>
+                        <div className="flex min-h-0 flex-1">
+                            <LeftChrome />
+                            {/* 规范稿:inset 画布外裹 pr-[10px] pb-[10px] 呼吸容器 */}
+                            <div className="flex min-w-0 flex-1 overflow-hidden pr-[10px] pb-[10px] pl-0 pt-0">
+                                <div className="workspace-inset">
+                                    <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
+                                    <Workbench />
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <FloatingWin />
-                </div>
-            )}
+                        <FloatingWin />
+                    </>
+                )}
+            </div>
             <Cmdk />
-            <SettingsModal />
+            {/* 移动端模态(settings/import/charEditor/accountPop)锚在 mobile-shell
+                内部(规范稿 absolute inset-0),由 MobileFrame 自挂 —— 桌面板才走全局。 */}
+            {!isMobile && <SettingsModal />}
             {hintState && <div className={`hint-pill spec-toast${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
             {dropVeil && (
                 <div className="drop-veil">
