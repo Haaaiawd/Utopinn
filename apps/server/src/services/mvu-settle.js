@@ -20,7 +20,7 @@
  */
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
-import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@utopinn/core';
+import { settleMvuMessage, isMvuData, initializeMvuVariables, convertCharacterBook } from '@utopinn/core';
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
 import { loadCard } from './stscript-env.js';
@@ -177,7 +177,14 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
     const lorebooks = [];
     for (const name of uniqueNames) {
         const raw = await worldInfoRepo.get(handle, name).catch(() => null);
-        const doc = raw?.doc ?? raw;
+        let doc = raw?.doc ?? raw;
+        // 与 generate-context worldCache 同兜底(上游 importEmbeddedWorldInfo
+        // 语义):主书尚未物化时用卡内嵌 character_book 即时转换顶上——必须走
+        // convertCharacterBook(v2 卡书→world 文件形,uid/keys 归位),直接塞
+        // 原始卡书会让全本共享 "world.undefined" 去重键,整本书塌成一条。
+        if (!doc && name === primaryName && card?.data?.character_book?.entries) {
+            doc = convertCharacterBook(card.data.character_book);
+        }
         const entries = Object.values(doc?.entries ?? {})
             .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
             .map((e) => ({

@@ -23,6 +23,7 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
+import { convertCharacterBook } from '@utopinn/core';
 import { isPng, readCardFromPng, toV2, writeCardToPng } from '@utopinn/formats';
 import { getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { InvalidArgumentError, NotFoundError, StorageReadOnlyError } from '../storage/errors.js';
@@ -220,6 +221,35 @@ function invalidateAvatarThumbnail(directories, stem) {
 }
 
 /**
+ * 内嵌 character_book → worlds/<extensions.world>.json(上游
+ * importEmbeddedWorldInfo 的服务端等价,与 generate-context/mvu-settle
+ * 的内存兜底同一物化路径——都走 convertCharacterBook 做 v2 卡书→world
+ * 文件形转换,否则全本共享 "world.undefined" 去重键塌成一条)。
+ * 同名书已存在不覆盖用户独立书;extensions.world 为空不造名;
+ * 写失败只警告不毁导入。
+ * @returns {Promise<string[]>} 追加到 commit 响应 warnings 的条目
+ */
+async function materializeEmbeddedWorld(request, card) {
+    const bookEntries = card?.data?.character_book?.entries;
+    const worldName = String(card?.data?.extensions?.world ?? card?.extensions?.world ?? '').trim();
+    if (!Array.isArray(bookEntries) || bookEntries.length === 0 || !worldName) {
+        return [];
+    }
+    const repo = getWorldInfoRepo();
+    const handle = request.user.profile.handle;
+    try {
+        if (await repo.resolveName(handle, worldName) != null) {
+            return [];
+        }
+        await repo.save(handle, worldName, convertCharacterBook(card.data.character_book));
+        return [`Embedded character_book materialized to world "${worldName}" (${bookEntries.length} entries).`];
+    } catch (error) {
+        console.warn(`utopinn/import: failed to materialize embedded world "${worldName}":`, error);
+        return [`Embedded character_book could not be materialized to world "${worldName}": ${error?.message ?? error}`];
+    }
+}
+
+/**
  * 直写 PNG:formats 的 writeCardToPng 把 card JSON 嵌进底图原子落盘。
  * 相对 writeCharacterData 的优势:原图字节保留(jimp 重编码在本环境
  * wasm codec 拉不起来时会静默退化到默认头像,真实环境也有重编码损耗)、
@@ -293,7 +323,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
             if (overwrite) {
                 invalidateAvatarThumbnail(directories, stem);
             }
-            return { ok: true };
+            return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
         } catch (error) {
             // 底图畸形 / 默认头像缺失等 → 退回 writeCharacterData 的兜底链
             console.warn('utopinn/import: direct PNG write failed, falling back to writeCharacterData:', error);
@@ -305,7 +335,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
     if (!ok) {
         return { ok: false, error: request?.lastWriteCharacterDataError || 'character write failed' };
     }
-    return { ok: true };
+    return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
 }
 
 // ---------------------------------------------------------------------------
