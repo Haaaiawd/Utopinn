@@ -1072,6 +1072,12 @@ const NAMED_UTOPINN_ROUTES = new Set([
     // —— library 读面(chars/chats 显示已切 kernel;legacy 仅留内部解析用)——
     'GET|pattern|/api/utopinn/characters',
     'GET|pattern|/api/utopinn/characters/:charDir',
+    'PATCH|pattern|/api/utopinn/characters/:charDir',
+    // —— regex 管理面(utopinn-regex:global/char/preset 三层)——
+    'GET|pattern|/api/utopinn/regex',
+    'PUT|pattern|/api/utopinn/regex',
+    'PATCH|pattern|/api/utopinn/regex/:id',
+    'DELETE|pattern|/api/utopinn/regex/:id',
     'GET|pattern|/api/utopinn/characters/:charDir/chats',
     'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
     // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
