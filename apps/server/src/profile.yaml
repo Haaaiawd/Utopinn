@@ -29,3 +29,5 @@ plugins:
     module: ./plugins/utopinn-th.js
   - id: utopinn-data
     module: ./plugins/utopinn-data.js
+  - id: utopinn-stats
+    module: ./plugins/utopinn-stats.js

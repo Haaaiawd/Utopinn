@@ -217,6 +217,7 @@ REST 直达与 kernel 表面外 legacy 端点。
 | utopinn-library | `utopinn secrets` / `secret-set <k>` / `secret-delete <k> <id>` | `--value\|--stdin` | 脱敏态;写新(PUT 铸 id)/按 id 删——值永不回显 |
 | utopinn-library | `utopinn char <n>` / `chat-get [c]` / `chat-create <n>` | — | 卡全文/utopinn doc/立即建空聊天 |
 | utopinn-diag | `utopinn kernel`(`caps`) | — | `routes[] + services[]`(远端能力清单) |
+| utopinn-stats | `utopinn stats [--by char\|model\|day] [--range 1h\|24h\|7d\|all]` / `stats char <id>` / `stats inject [--chat <charDir>/]<chat>` | `--by,--range,--chat,-n,--full` | jobs×inspector 聚合分组表 / 单卡 floors·gens·WI 命中 / 注入源命中率+token 占比(WI 条目级) |
 | utopinn-plugins | `utopinn plugins` | — | `● id` fiber 状态表 |
 | utopinn-plugins | `utopinn plugin <id> <enable\|disable\|reload>` | — | 生命周期操作(admin;utopinn-plugins 自锁) |
 | utopinn-mvu | `utopinn mvu [state]` | `-n,--full,--out` | chat 变量表 + settle 回执数(=悬浮窗/状态板数据源) |
