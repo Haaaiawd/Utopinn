@@ -26,8 +26,8 @@
  * fiber dispose / reload 随之清掉,不留模块级残态。
  */
 
-/** 两个指纹是否相同(fileName 升序数组逐元素比对)。 */
-function sameFingerprint(a, b) {
+/** 两个指纹是否相同(fileName 升序数组逐元素比对)。单文件指纹传一元数组。 */
+export function sameFingerprint(a, b) {
     if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
     for (let i = 0; i < a.length; i++) {
         const x = a[i];

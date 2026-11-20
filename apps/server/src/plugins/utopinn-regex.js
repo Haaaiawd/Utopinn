@@ -37,8 +37,9 @@ import path from 'node:path';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { regexFromString } from '@utopinn/core';
 
-import { read as readCharacterCard } from '../character-card-parser.js';
-import { writeCharacterData } from '../endpoints/characters.js';
+import { readCharacterData, writeCharacterData } from '../endpoints/characters.js';
+import { createFileStatIndex } from '../services/file-stat-index.js';
+import { emit as diagEmit } from '../services/diag-bus.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
 import { assertWritable } from '../storage/read-only-mode.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
@@ -297,22 +298,102 @@ async function resolveAvatarFileName(directories, charDir) {
     return `${charDir}.png`;
 }
 
+/**
+ * 解析单个卡文件:png/webp 走 readCharacterData(mtime 键 memoryCache +
+ * diskCache,legacy /edit 同款管线),json 直读。解析失败/文件不存在抛错,
+ * 由调用方决定是负缓存还是跳下一位候选。
+ */
+async function readCardJson(file, ext) {
+    if (ext === '.json') {
+        return JSON.parse(await fs.promises.readFile(file, 'utf8'));
+    }
+    return JSON.parse(await readCharacterData(file, 'png'));
+}
+
 /** 读一张卡(png/webp 走卡解析,json 直读)。返回解析后对象或 null。 */
 async function loadRegexCard(directories, charDir) {
     const dir = directories.characters;
     for (const ext of ['.png', '.webp']) {
+        const file = path.join(dir, `${charDir}${ext}`);
         try {
-            const raw = await fs.promises.readFile(path.join(dir, `${charDir}${ext}`));
-            return { card: JSON.parse(readCharacterCard(raw)), ext, file: path.join(dir, `${charDir}${ext}`) };
+            return { card: await readCardJson(file, ext), ext, file };
         } catch { /* 无此文件或不含卡数据 → 下一个 */ }
     }
     try {
         const file = path.join(dir, `${charDir}.json`);
-        const raw = await fs.promises.readFile(file, 'utf8');
-        return { card: JSON.parse(raw), ext: '.json', file };
+        return { card: await readCardJson(file, '.json'), ext: '.json', file };
     } catch {
         return null;
     }
+}
+
+// ---------------------------------------------------------------------------
+// 卡正则 slim 索引(设计:deferred-surgery.md W3 方案 B)
+//
+//   Map<charactersDir, Map<absPath, {fingerprint, value}>>,file-stat-index
+//   实现:指纹 = {fileName,size,mtimeMs,ctimeMs}(复用 card-list-cache 的
+//   normalizeFingerprint/sameFingerprint)。不枚举写路径挂钩 —— legacy edit、
+//   library PATCH、import、手丢文件全靠 stat 不匹配惰性重解;mutateCharScripts
+//   写完 put() 回填只是省一次重解析的优化。
+//
+//   value = {ext, name, scripts};scripts === null 是"已判不可解析"
+//   (.webp/坏 PNG/坏 JSON)的负缓存,同键失效,坏卡不会每请求重复读全盘。
+//
+//   entry.scripts 只读契约:响应直接序列化不拷贝;所有写都经
+//   mutateCharScripts 的 mutator → scripts.slice() 产新数组,索引条
+//   永不被原地改。
+// ---------------------------------------------------------------------------
+
+const CHAR_RESOLVE_EXTS = ['.png', '.webp', '.json'];
+const CHAR_RESOLVE_EXT_SET = new Set(CHAR_RESOLVE_EXTS);
+const CHAR_EXT_RANK = { '.png': 0, '.webp': 1, '.json': 2 };
+
+/** 卡名投影:与 scopedCharView 的 data.name || charDir 语义一致。 */
+function cardViewName(card, charDir) {
+    const data = (card?.data && typeof card.data === 'object') ? card.data : card ?? {};
+    return typeof data.name === 'string' && data.name ? data.name : charDir;
+}
+
+/**
+ * 解析单张卡文件 → 索引 payload;不可解析 → {scripts:null} 负缓存条。
+ * scripts 只读契约:响应直接序列化不拷贝,写路径永远经 mutator 产新数组。
+ */
+async function loadCardIndexPayload(absPath, ext, charDir) {
+    try {
+        const card = await readCardJson(absPath, ext);
+        return { ext, name: cardViewName(card, charDir), scripts: cardRegexScripts(card) };
+    } catch {
+        return { ext, name: '', scripts: null };
+    }
+}
+
+/** avatar 文件名 = 首个在场的图档(.png>.webp),无图退 .json,再兜底 .png。 */
+function avatarForCandidates(charDir, candidates) {
+    for (const c of candidates) {
+        if (c.ext === '.png' || c.ext === '.webp') return c.fileName;
+    }
+    if (candidates.some((c) => c.ext === '.json')) return `${charDir}.json`;
+    return `${charDir}.png`;
+}
+
+/**
+ * 按 resolveCharFile 的 .png>.webp>.json 优先级走候选文件:首个可解析
+ * (scripts !== null)的候选就是承载文件,返回视图投影;全灭返回 null。
+ * 指纹命中直接复用条目,未命中惰性解析回填 —— 坏 png + 好 json 这类
+ * fallthrough 场景每个文件各管各的指纹,互不误伤。
+ */
+async function resolveIndexedCard(index, dir, charDir, candidates, stats) {
+    for (const c of candidates) {
+        const r = await index.get(dir, c.absPath, async (p) => {
+            if (stats) stats.loads = (stats.loads ?? 0) + 1; // 实解析次数(并发归并后)
+            return loadCardIndexPayload(p, c.ext, charDir);
+        });
+        if (r.missing) continue; // readdir/probe 后消失
+        if (stats) stats[r.cached ? 'hits' : 'misses']++;
+        if (r.value.scripts === null) continue;
+        return { file: c.absPath, ext: c.ext, name: r.value.name || charDir, scripts: r.value.scripts };
+    }
+    return null;
 }
 
 /**
@@ -320,8 +401,9 @@ async function loadRegexCard(directories, charDir) {
  * legacy merge-attributes 同路径);.json 原子写 JSON;.webp 不支持写(legacy
  * merge-attributes 同样拒非 png —— 400)。
  * @param {(oldScripts:object[])=>object[]} mutator 旧数组 → 新数组(抛错即不写)
+ * @param {object} index 卡正则索引(可为空,跳过回填)
  */
-async function mutateCharScripts(request, charDir, mutator) {
+async function mutateCharScripts(request, charDir, mutator, index) {
     const directories = request.user.directories;
     const target = resolveCharFile(directories, charDir);
     if (!target) throw new NotFoundError('character card', { charDir });
@@ -354,6 +436,13 @@ async function mutateCharScripts(request, charDir, mutator) {
         } else {
             writeFileAtomicSync(loaded.file, JSON.stringify(loaded.card, null, 2), 'utf8');
         }
+        // 写完顺手回填 slim index:put 内部重取 stat 立指纹,命中下次扫描 —
+        // 纯优化,正确性仍只靠 stat 三元组惰性失效(回填失败也无碍)。
+        index?.put(directories.characters, loaded.file, {
+            ext: loaded.ext,
+            name: cardViewName(loaded.card, charDir),
+            scripts: next,
+        });
         return next;
     });
 }
@@ -375,42 +464,63 @@ async function readGlobalView(handle) {
     };
 }
 
-async function scopedCharView(request, charDir) {
-    const loaded = await loadRegexCard(request.user.directories, charDir);
-    if (!loaded) return null;
-    const avatar = await resolveAvatarFileName(request.user.directories, charDir);
-    const data = (loaded.card?.data && typeof loaded.card.data === 'object') ? loaded.card.data : loaded.card ?? {};
-    return {
-        file: loaded.file,
-        avatar,
-        name: typeof data.name === 'string' && data.name ? data.name : charDir,
-        scripts: cardRegexScripts(loaded.card),
-    };
+async function scopedCharView(request, charDir, index) {
+    const dir = request.user.directories.characters;
+    // 候选 = 存在探测过的三扩展名文件(existsSync 同 resolveCharFile 语义),
+    // avatar 在内存里定,消灭逐卡 fs.access 探测。
+    const candidates = [];
+    for (const ext of CHAR_RESOLVE_EXTS) {
+        const absPath = path.join(dir, `${charDir}${ext}`);
+        if (fs.existsSync(absPath)) candidates.push({ fileName: `${charDir}${ext}`, ext, absPath });
+    }
+    if (!candidates.length) return null;
+    const resolved = await resolveIndexedCard(index, dir, charDir, candidates, null);
+    if (!resolved) return null;
+    return { file: resolved.file, avatar: avatarForCandidates(charDir, candidates), name: resolved.name, scripts: resolved.scripts };
 }
 
 /** 全量视图:global + 有脚本/被放行的卡 + 有脚本/被放行的 LLM 预设。 */
-async function fullView(request) {
+async function fullView(request, index) {
     const handle = request.user.profile.handle;
     const g = await readGlobalView(handle);
+    const dir = request.user.directories.characters;
 
-    // 卡枚举:按 charDir 归组(png > webp > json),只列有脚本或被放行的。
-    const chars = [];
-    const stems = new Set();
+    // 卡枚举:一次 readdir 归组 charDir → 候选档(存在性零额外 I/O),
+    // 逐文件 stat 指纹走 slim index,只列有脚本或被放行的。
+    const stems = new Map(); // charDir -> candidates[]
     let files = [];
-    try { files = await fs.promises.readdir(request.user.directories.characters, { withFileTypes: true }); } catch { /* 空库 */ }
+    try { files = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { /* 空库 */ }
     for (const f of files) {
         if (!f.isFile()) continue;
         const ext = path.extname(f.name).toLowerCase();
-        if (!['.png', '.webp', '.json'].includes(ext)) continue;
-        stems.add(f.name.slice(0, -ext.length));
+        if (!CHAR_RESOLVE_EXT_SET.has(ext)) continue;
+        const stem = f.name.slice(0, -ext.length);
+        if (!stem) continue;
+        let rec = stems.get(stem);
+        if (!rec) { rec = []; stems.set(stem, rec); }
+        rec.push({ fileName: f.name, ext, absPath: path.join(dir, f.name) });
     }
-    for (const charDir of [...stems].sort()) {
-        const view = await scopedCharView(request, charDir).catch(() => null);
-        if (!view) continue;
-        const allowed = g.allowedChars.includes(view.avatar);
-        if (!allowed && view.scripts.length === 0) continue;
-        chars.push({ charDir, avatar: view.avatar, name: view.name, allowed, count: view.scripts.length, scripts: view.scripts });
+
+    const alivePaths = new Set();
+    const stats = { hits: 0, misses: 0 };
+    const chars = [];
+    for (const charDir of [...stems.keys()].sort()) {
+        const candidates = stems.get(charDir).sort((a, b) => CHAR_EXT_RANK[a.ext] - CHAR_EXT_RANK[b.ext]);
+        for (const c of candidates) alivePaths.add(c.absPath);
+        const resolved = await resolveIndexedCard(index, dir, charDir, candidates, stats).catch(() => null);
+        if (!resolved) continue;
+        const avatar = avatarForCandidates(charDir, candidates);
+        const allowed = g.allowedChars.includes(avatar);
+        if (!allowed && resolved.scripts.length === 0) continue;
+        chars.push({ charDir, avatar, name: resolved.name, allowed, count: resolved.scripts.length, scripts: resolved.scripts });
     }
+    index.sweep(dir, alivePaths);
+    diagEmit({
+        lvl: 'debug', kind: 'plugin', code: 'regex_index_scan',
+        msg: `regex full view: ${stems.size} stem(s), ${stats.hits} cached, ${stats.misses} parsed`,
+        ctx: { route: P, handle },
+        data: { stems: stems.size, gets: stats.hits + stats.misses, hits: stats.hits, misses: stats.misses, loads: stats.loads ?? 0 },
+    });
 
     // 预设枚举:LLM 族全扫(listWithDocs 60s 缓存),只列有脚本或被放行的。
     const presets = [];
@@ -443,12 +553,15 @@ export function apply(ctx) {
     const reg = (method, path_, handler) =>
         ctx.effect(() => ws.register({ kind: 'pattern', method, path: path_, handler }));
 
+    // 卡正则 slim 索引:apply() 闭包内,reload/dispose 随之清(插件契约)。
+    const regexCardIndex = createFileStatIndex();
+
     /** GET /regex —— ?scope=… 分面;无 scope 出全量视图。 */
     reg('GET', P, async function (request, response) {
         try {
             const hasScope = request.query && Object.prototype.hasOwnProperty.call(request.query, 'scope');
             if (!hasScope) {
-                return response.send(await fullView(request));
+                return response.send(await fullView(request, regexCardIndex));
             }
             const handle = request.user.profile.handle;
             const scope = resolveScope(request);
@@ -457,7 +570,7 @@ export function apply(ctx) {
                 return response.send({ scope: 'global', scripts: g.scripts, extensionDisabled: g.disabled.includes('regex') });
             }
             if (scope.scope === 'char') {
-                const [g, view] = await Promise.all([readGlobalView(handle), scopedCharView(request, scope.charDir)]);
+                const [g, view] = await Promise.all([readGlobalView(handle), scopedCharView(request, scope.charDir, regexCardIndex)]);
                 if (!view) {
                     return response.status(404).send({ error: `Character not found: ${scope.charDir}` });
                 }
@@ -510,7 +623,7 @@ export function apply(ctx) {
                     const settings = (await getSettingsRepo().get(handle)) ?? {};
                     await getSettingsRepo().patch(handle, putGlobalOps(settings, body.scripts));
                 } else if (scope.scope === 'char') {
-                    await mutateCharScripts(request, scope.charDir, () => body.scripts);
+                    await mutateCharScripts(request, scope.charDir, () => body.scripts, regexCardIndex);
                 } else {
                     const repo = getPresetRepo();
                     const doc = await repo.get(handle, scope.apiId, scope.name);
@@ -554,7 +667,6 @@ export function apply(ctx) {
      */
     reg('PATCH', `${P}/:id`, async function (request, response) {
         try {
-            const handle = request.user.profile.handle;
             const scope = resolveScope(request);
             const id = String(request.params.id ?? '');
             const set = request.body?.set;
@@ -578,7 +690,7 @@ export function apply(ctx) {
                 next[hit.index] = merged;
                 return next;
             };
-            await applyScopedMutation(request, scope, mutate);
+            await applyScopedMutation(request, scope, mutate, regexCardIndex);
             return response.send({ ok: true, id, scope: scope.scope, script: mergedScript });
         } catch (error) {
             return sendError(response, error, 'utopinn/regex patch');
@@ -597,7 +709,7 @@ export function apply(ctx) {
                 next.splice(hit.index, 1);
                 return next;
             };
-            const result = await applyScopedMutation(request, scope, mutate);
+            const result = await applyScopedMutation(request, scope, mutate, regexCardIndex);
             return response.send({ ok: true, id, scope: scope.scope, remaining: result.length });
         } catch (error) {
             return sendError(response, error, 'utopinn/regex delete');
@@ -609,9 +721,10 @@ export function apply(ctx) {
  * PATCH/DELETE 公共写机:按 scope 把 mutator(旧数组→新数组)落到对应存储。
  * settings/preset 用 test-op CAS 单 tx;char 走 keyed-tail 卡写。
  * @param {(old:object[])=>object[]} mutator
+ * @param {object} index 卡正则索引(char 域写完回填用)
  * @returns {Promise<object[]>} 落盘后的新数组
  */
-async function applyScopedMutation(request, scope, mutator) {
+async function applyScopedMutation(request, scope, mutator, index) {
     const handle = request.user.profile.handle;
     if (scope.scope === 'global') {
         const settings = (await getSettingsRepo().get(handle)) ?? {};
@@ -633,7 +746,7 @@ async function applyScopedMutation(request, scope, mutator) {
         return next;
     }
     if (scope.scope === 'char') {
-        return mutateCharScripts(request, scope.charDir, mutator);
+        return mutateCharScripts(request, scope.charDir, mutator, index);
     }
     const repo = getPresetRepo();
     const doc = await repo.get(handle, scope.apiId, scope.name);
