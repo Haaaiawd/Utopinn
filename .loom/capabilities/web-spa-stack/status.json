@@ -1,11 +1,11 @@
 {
-  "status": "provisional",
+  "status": "confirmed",
   "title": "Web 管理端 SPA 选型(框架/UI库/构建/状态)",
   "field": "前端 SPA 框架与 UI 库选型",
-  "scenario": "产品型管理端已落地:Vite+React19+Tailwind4+shadcn风格组件;api手写封装+mock兜底(C4/C5选型未定/发散);架构脊骨=自研贡献点微内核",
-  "confirmed_at": "",
+  "scenario": "SPA 栈已按 as-built 校正:C1-C3/C6 实证、C4/C5 标未定/发散、贡献点微内核章已补(用户拍板 2026-11-20)",
+  "confirmed_at": "2026-11-20T11:24:53.631Z",
   "created_at": "2026-11-02T08:51:51.791Z",
-  "updated_at": "2026-11-20T11:18:08.083Z",
-  "source": "agent",
-  "selected_at": "2026-11-20T11:18:08.083Z"
+  "updated_at": "2026-11-20T11:24:53.631Z",
+  "source": "human",
+  "selected_at": "2026-11-20T11:24:53.631Z"
 }

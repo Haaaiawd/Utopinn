@@ -146,7 +146,10 @@ function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
     const d = presetDoc ?? {};
     const passthrough = {};
     for (const [k, v] of Object.entries(d)) {
-        if (['prompts', 'prompt_order', 'extensions'].includes(k)) continue;
+        // model 是 wire 键不是设置键——oai_settings.model 是历史镜像残留,
+        // 透传会让 ??= 永远不触达 {source}_model/custom_model 的正典解析
+        // (getChatCompletionModel 同义),换源/换模型被旧值静默顶住。
+        if (['prompts', 'prompt_order', 'extensions', 'model'].includes(k)) continue;
         if (!includeConnection && CONNECTION_KEYS.has(k)) continue;
         passthrough[k] = v;
     }

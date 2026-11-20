@@ -3615,17 +3615,17 @@
         {
           "criterion": "connection/test 对真实端点返回 ok+延迟(或如实错误)",
           "verify_by": "curl/CLI connection test 实测",
-          "evidence": ""
+          "evidence": "管道验收完成(假端点+真中继双测):自建 mock OAI(:18999)下 connection/test → {ok:true,latencyMs:8-16,modelCount:2,upstreamStatus:200};恢复 openai+aiping.cn 反代后 → {ok:true,latencyMs:465,modelCount:136,upstreamStatus:200}(存量 proxy_password)。错误分类五连实测:not_configured(缺custom_url)/unreachable(ECONNREFUSED)/timeout(8s黑洞IP)/auth_failed(mock 401)/ok,全部如实返回 upstreamStatus+detail,失败进 diag connection_probe warn。CLI utopinn conn test 同果(✓ custom·9ms·2 models / ✗ unreachable 如实)。真密钥生成一轮:待用户现场key验收"
         },
         {
           "criterion": "models 端点返回模型清单并写入设置面",
           "verify_by": "models 实测",
-          "evidence": ""
+          "evidence": "GET /api/utopinn/models 对 mock → {items:[mock-alpha-9b,mock-beta-chat](owned_by透传)};对 aiping → 136 项;30s 缓存+?fresh=1 绕过均验;CLI utopinn models --fresh 同清单。设置面写回:PATCH oai_settings.custom_model=mock-beta-chat 后 generate 上行 model=mock-beta-chat(顺带修 bug:oai_settings.model 残留值曾静默顶掉 {source}_model 解析,已在 presetToDispatchParams 剥除 model 透传)。web 端尚无连接 UI(apps/web/src/api 无 connection.ts),模型清单仅经 API/CLI 面验"
         },
         {
           "criterion": "预设(Izumi/Meowssiah)选中后 chat 生成走通,diag 有 job 记录",
           "verify_by": "掌门卡或 Seraphina 一轮真生成",
-          "evidence": ""
+          "evidence": "GET /api/utopinn/presets?apiId=openai → Default/Izumi 1029/Meowssiah/Meowssiah_1.9.12 四件齐。generate 走通假端点:utopinn send → mock /v1/chat/completions(Bearer=secrets store 的 api_key_custom 实测上线)→ SSE 流→ Seraphina 楼写入 t048pipe.jsonl,job completed(40b182d8/9737fb75/3d345155/30c85cf9),swipe 同路通;diag/jobs 有记录。预设选中+真 key 生成+真卡 swipe:待用户现场key验收"
         }
       ],
       "done_when": [],
@@ -3643,7 +3643,9 @@
       "touches": [
         "apps/server/src/plugins/utopinn-connection.js"
       ],
-      "implementation_notes": [],
+      "implementation_notes": [
+        "2026-11-20 管道验收段(agent):dataRoot=/tmp/uto-048-data(rsync 自 uto-39611 快照,未污染 live),mock=/tmp/mock-oai-18999.mjs,server :8048 LUKER_SKIP_WEBPACK=1。修复:utopinn-generate.js presetToDispatchParams 排除 model 透传(设置态 model 残留遮蔽 {source}_model)。发现:PATCH /settings 会静默剥除 proxy_password 等密钥形字段(设计内,密钥走 /secrets;但 oai_settings.proxy_password 若已被 legacy 面写入,连接探测优先读它而非 secrets store——readProviderSecret 只在 proxy_password 缺席时兜底)。剩余:真密钥段=用户现场填 key 后 conn test/models/send/swipe 一轮。"
+      ],
       "status": "open",
       "created": "2026-11-20"
     }

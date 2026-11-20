@@ -11,7 +11,7 @@
 
 ## Project scenario
 
-产品型管理端已落地:Vite+React19+Tailwind4+shadcn风格组件;api手写封装+mock兜底(C4/C5选型未定/发散);架构脊骨=自研贡献点微内核
+SPA 栈已按 as-built 校正:C1-C3/C6 实证、C4/C5 标未定/发散、贡献点微内核章已补(用户拍板 2026-11-20)
 
 ## Decision tree
 
