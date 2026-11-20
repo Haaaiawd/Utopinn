@@ -22,7 +22,7 @@ import {
 } from '@utopinn/core';
 import { getChatRepo, getSettingsRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
-import { safeName, sendError } from './utopinn-library.js';
+import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 

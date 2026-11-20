@@ -19,8 +19,6 @@ plugins:
     module: ./plugins/utopinn-mvu.js
   - id: utopinn-delivery
     module: ./plugins/utopinn-delivery.js
-  - id: utopinn-import
-    module: ./plugins/utopinn-import.js
   - id: utopinn-plugins
     module: ./plugins/utopinn-plugins.js
   - id: utopinn-script
@@ -29,8 +27,6 @@ plugins:
     module: ./plugins/utopinn-th.js
   - id: utopinn-data
     module: ./plugins/utopinn-data.js
-  - id: utopinn-stats
-    module: ./plugins/utopinn-stats.js
   - id: utopinn-connection
     module: ./plugins/utopinn-connection.js
   - id: utopinn-regex

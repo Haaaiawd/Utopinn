@@ -39,7 +39,7 @@ import { fetchGoogleModels, GoogleModelsHttpError } from '../endpoints/backends/
 import { buildVertexModelsUrl, fetchVertexModels, VertexModelsHttpError } from '../endpoints/backends/vertex-models.js';
 import { getSettingsRepo } from '../storage/index.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
-import { sendError } from './utopinn-library.js';
+import { sendError } from './_shared/http-utils.js';
 
 export const inject = ['webServer'];
 

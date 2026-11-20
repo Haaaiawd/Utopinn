@@ -42,7 +42,7 @@ import { writeCharacterData } from '../endpoints/characters.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
 import { assertWritable } from '../storage/read-only-mode.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
-import { safeName, sendError } from './utopinn-library.js';
+import { safeName, sendError } from './_shared/http-utils.js';
 
 export const inject = ['webServer'];
 

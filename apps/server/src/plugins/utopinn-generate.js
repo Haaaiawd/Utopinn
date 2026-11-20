@@ -27,7 +27,7 @@ import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequ
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
-import { safeName, sendError } from './utopinn-library.js';
+import { safeName, sendError } from './_shared/http-utils.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import path from 'node:path';
 import fs from 'node:fs/promises';
