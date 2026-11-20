@@ -13,7 +13,7 @@ import { WorkbenchBody } from './Workbench';
 import { AccountPopCard } from './Chrome';
 import { CenterStage } from '../stage/CenterStage';
 import { charImgFallback } from '../stage/StageFrame';
-import { useRemote } from '../panels/panelShared';
+import { useRemote, PanelEmpty } from '../panels/panelShared';
 import { cardData, charImageUrl, getCharacter } from '../../api/characters';
 import { getSettings } from '../../api/settings';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry } from '../../api/secrets';
@@ -25,6 +25,7 @@ import {
 } from '../../api/import';
 import { closeCharEditor, closeImportModal, openImportModal, useOverlay } from './overlayBus';
 import { WiredBadge } from '../views/studio';
+import { PluginsSections, useServerPlugins } from '../views/plugins';
 
 const mono = 'font-mono-ui';
 const inputCls = 'w-full rounded-lg px-2.5 text-[12px] outline-none';
@@ -83,7 +84,16 @@ export function MobileFrame() {
                     ) : ViewC ? (
                         <ViewC />
                     ) : (
-                        <div className="flex min-h-0 flex-1 items-center justify-center text-[12px] text-[color:var(--fg-faint)]">{t(`nav.${s.view}`)}</div>
+                        /* 无贡献视图的引导兜底 —— 不许裸 nav.* 文本。 */
+                        <div className="flex min-h-0 flex-1 flex-col" style={{ background: 'var(--bg-canvas)' }}>
+                            <PanelEmpty
+                                icon="warning"
+                                desc={t('mob.view.noMobile')}
+                                action={{ label: t('mob.view.back'), onClick: () => s.setView('chat') }}
+                            >
+                                {t(`nav.${s.view}`)}
+                            </PanelEmpty>
+                        </div>
                     )}
                     {/* drawer 遮罩(规范稿 absolute inset-0 z-50 rgba(0,0,0,0.5)) */}
                     {s.mobileDrawer && <div className="absolute inset-0 z-50" style={{ background: 'rgba(0,0,0,0.5)' }} onClick={() => s.setMobileDrawer(false)} />}
@@ -132,7 +142,12 @@ export function MobileFrame() {
                                         <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
                                     </span>
                                 </button>
-                                <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { s.setMobileDrawer(false); s.openSettings('api'); }}>
+                                {/* 插件域入口(规范稿 plugins 域在移动端无 rail —— drawer 底补一个直达钮,
+                                    与 settings 页签的插件面并存)。 */}
+                                <button className="ghost-btn h-8 w-8 shrink-0" title={t('nav.plugins')} onClick={() => s.setView('plugins')}>
+                                    <Icon name="plugins" size={16} />
+                                </button>
+                                <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { s.setMobileDrawer(false); s.openSettings('api'); }} title={t('settings.title')}>
                                     <Icon name="settings" size={16} />
                                 </button>
                             </div>
@@ -761,6 +776,9 @@ function SettingsTabContent() {
     const { t } = useI18n();
     const s = useShell();
     const cs = s.chatSettings;
+    /* plugins 页签与插件页共享 PluginsSections(规范稿 renderPluginsSections
+       两处用)—— full 模式无视 pluginsNav 过滤,三段全出。 */
+    const serverPlugins = useServerPlugins();
     const sw = (on: boolean, fn: () => void) => <button className="sh-switch" data-checked={on || undefined} onClick={fn}><span className="sh-switch-thumb" /></button>;
     const rowLbl = 'text-[12px] text-[color:var(--fg-secondary)]';
     /* 规范稿背景格:文件名即 bgMode(接 CenterStage /assets/backgrounds/<mode>.png) */
@@ -807,19 +825,7 @@ function SettingsTabContent() {
                                 </div>
                             </div>
                         )}
-                        {s.settingsTab === 'plugins' && (
-                            <div className="inset-group">
-                                {s.builtinPlugins.map((p) => (
-                                    <div key={p.id} className="inset-row">
-                                        <div className="min-w-0">
-                                            <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{p.name}</div>
-                                            <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{p.desc}</div>
-                                        </div>
-                                        <span className="sh-switch" data-checked={p.enabled || undefined}><span className="sh-switch-thumb" /></span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                        {s.settingsTab === 'plugins' && <PluginsSections full plugins={serverPlugins} />}
                         {s.settingsTab === 'diagnostics' && (
                             <div className="inset-group">
                                 <button className="inset-row inset-row-btn" onClick={() => { s.closeSettings(); s.openPanel('diag'); }}>

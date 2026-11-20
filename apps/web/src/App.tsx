@@ -7,8 +7,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import {
-    MOCK_BUILTIN_PLUGINS, MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
-    MOCK_IM_CHANNELS, MOCK_MARKET_PLUGINS, MOCK_MODELS, MOCK_MVU,
+    MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
+    MOCK_IM_CHANNELS, MOCK_MODELS, MOCK_MVU,
     MOCK_NOTES_TEXT, MOCK_NOVEL_CHAPTERS, MOCK_PRESET_BLOCKS, MOCK_PRESETS,
     MOCK_STAGE_SESSIONS, MOCK_VN, MOCK_WORLDBOOK,
 } from './api/mock';
@@ -108,8 +108,6 @@ function Shell() {
     const [globalLore, setGlobalLore] = useState(MOCK_GLOBAL_LORE);
     const [worldbook, setWorldbook] = useState(MOCK_WORLDBOOK);
     const [selectedLoreId, setSelectedLoreId] = useState(MOCK_WORLDBOOK[0]!.id);
-    const [builtinPlugins, setBuiltinPlugins] = useState(MOCK_BUILTIN_PLUGINS);
-    const [marketPlugins, setMarketPlugins] = useState(MOCK_MARKET_PLUGINS);
     const [notesText, setNotesText] = useState(MOCK_NOTES_TEXT);
     const [mvu, setMvu] = useState<Record<string, string | number>>(MOCK_MVU);
     const [echoMvu, setEchoMvu] = useState(false);
@@ -396,8 +394,6 @@ function Shell() {
         })),
         globalLore, toggleGlobalLore: (id) => setGlobalLore((prev) => prev.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g))),
         worldbook, selectedLoreId, setSelectedLoreId,
-        builtinPlugins, toggleBuiltinPlugin: (id) => setBuiltinPlugins((prev) => prev.map((p) => (p.id === id ? { ...p, enabled: !p.enabled } : p))),
-        marketPlugins, toggleMarketPlugin: (id) => setMarketPlugins((prev) => prev.map((m) => (m.id === id ? { ...m, installed: !m.installed } : m))),
         notesText, setNotesText,
         chatSettings,
         setChatSetting: (k, v) => setChatSettings((prev) => ({ ...prev, [k]: v })),
@@ -415,7 +411,7 @@ function Shell() {
         accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, activeModel,
         activePresetId, presetParams, globalLore, worldbook, selectedLoreId,
-        builtinPlugins, marketPlugins, notesText, chatSettings, mvu, mvuStep,
+        notesText, chatSettings, mvu, mvuStep,
         echoMvu, bridgeOp, stageData,
     ]);
 
