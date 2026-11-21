@@ -16,7 +16,7 @@ import { abortJob, getJob, listJobs } from '../../api/jobs';
 import { getPreset } from '../../api/presets';
 import { getMvuState, settleMvu, type MvuTarget } from '../../api/mvu';
 import {
-    appendAssistantMessage, appendUserMessage, getChat, mkAssistantFloor, patchChat, patchSwipe,
+    appendAssistantMessage, appendUserMessage, floorRawText, getChat, mkAssistantFloor, patchChat, patchSwipe,
     type ChatPatchOp, type FloorMsg, type GenerateBody, type GenerateVerb,
 } from '../../api/chats';
 import { ApiError, apiGet, apiPost } from '../../api/client';
@@ -705,11 +705,12 @@ export function StageFrame({ children }: { children: ReactNode }) {
         }
         if (next < 0) return;
         const content = m.swipes?.[next]?.content ?? m.content;
-        patchFloor(m.id, { activeSwipe: next, content });
+        /* reasoning 跟 swipe 走(swipe_info[i].extra 各自独立 —— 不换槽会留旧版推理) */
+        patchFloor(m.id, { activeSwipe: next, content, reasoning: m.swipes?.[next]?.reasoning });
         if (s.live && s.chat && m.id >= 0) {
             try { await patchSwipe(s.chat.charDir, s.chat.chatName, m.id, next); void refreshMvu(); }
             catch (e) {
-                patchFloor(m.id, { activeSwipe: active, content: m.content });
+                patchFloor(m.id, { activeSwipe: active, content: m.content, reasoning: m.reasoning });
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
             }
         }
@@ -757,7 +758,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
             if (m.swipes && m.activeSwipe !== undefined) {
                 ops.push({ op: 'replace', path: `/body/${m.id}/swipes/${m.activeSwipe}`, value: text });
             }
-            try { await patchChat(s.chat.charDir, s.chat.chatName, ops); void refreshMvu(); }
+            /* 保存后 reload —— 本地 content 是编辑原文,重拉让 regex 展示
+               投影重新生效(顺带刷新 m.raw,再编时种子仍是真原文)。 */
+            try { await patchChat(s.chat.charDir, s.chat.chatName, ops); void refreshMvu(); void reload(); }
             catch (e) {
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
                 void reload();
@@ -855,7 +858,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
         onSwipe: (mm, dir) => onSwipe(mm, dir),
         onSwipeTo: (mm, i) => onSwipeTo(mm, i),
         onCopy,
-        onEdit: (mm) => setEditing({ id: mm.id, text: mm.displayContent ?? mm.content }),
+        /* 编辑框种子=存储原文(ST:编辑框给原文)—— content 槽是 GH#3 展示
+           投影文本,直接用会把投影烤进 mes/swipes[k]。 */
+        onEdit: (mm) => setEditing({ id: mm.id, text: floorRawText(mm) }),
         onEditText: (text) => setEditing((prev) => (prev ? { ...prev, text } : prev)),
         onSaveEdit: (mm) => void onSaveEdit(mm),
         onCancelEdit: () => setEditing(null),

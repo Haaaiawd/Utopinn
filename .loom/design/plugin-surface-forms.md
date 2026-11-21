@@ -23,6 +23,19 @@ generate+delivery+state 三族+mvu+th 覆盖。无结构性缺口,剩 polish。
 ### 3. messenger —— 纯表现层,不需要插件
 
 ### 4. galgame(剧场形态)—— 需要真插件(最重的形态)
+
+<!-- V2.1 校准(2026-11-21):方向重定义为「剧场小说」壳(stagepack
+     TheaterBody)——下方服务端面清单仍成立,但渲染语义变了:
+     · 立绘双人位废除 → assets 清单面降为可选(cast 头像用
+       /characters/<avatar>.png 卡面图+persona 图,不需要表情差分);
+     · choices 契约 = 楼层 extra.choices({text}[] 宽松解析)不变;
+     · scene sidecar 落点 = 楼层 extra.scene.bg 不变;
+     · 新增旁白契约 = 楼层 extra.narrator(或 system/无名楼自动判);
+     · 物品栏(hotbar)读楼层 variables 快照(MVU stat_data 投影,
+       多键探测 inventory/items/物品栏/背包/物品/行囊/道具/装备),
+       不需要新面 —— set_message_variable 宏族写进快照即生效;
+     · stToView 已透传 extra/variables 进 FloorMsg(此前是死钩位)。 -->
+
 - **场景资产**:立绘/背景引用。角色卡 extensions 已有 assets 概念,library 域补
   `GET /api/utopinn/chars/:id/assets` 清单面(立绘表情差分)
 - **选项分支**:两条路——

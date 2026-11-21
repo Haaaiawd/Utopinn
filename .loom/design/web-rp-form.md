@@ -6,6 +6,18 @@
 > 否决双壳馆/场(IA 附录裁决不变:聊天即舞台是视图态不是导航范式)。
 > vs-V2: partially-stale
 <!-- V2 校准:P0 大部已在 TASK-040 壳落地,余量随 TASK-026 停泊 -->
+<!-- V2.1 修订(2026-11-21,TASK-050 壳):theater 方向重定义 ——
+     不做 galgame/VN,是「剧场小说」:聊天楼层演成舞台剧。
+     · 台上幕 = 末楼前最近 N 楼:cast 楼 → 头像框+名签+气泡
+       (user/persona 归右位,其余 speaker 归左;群聊逐名查卡登台,
+       查无此卡 → 首字符圆块,不伪造立绘);旁白楼居中叙述条
+       (契约:extra.narrator 显式标 | system 楼 | 无名非 user 楼)。
+     · 底条 fixture = extra.choices/swipe 分支 → hotbar(MC 式 9 槽,
+       最近楼层 variables 快照多键探测物品数组;点槽 = 退沉浸 +
+       openPanel('cardapp'),hotbar 是入口不是全功能背包) → 对话条
+       (当前拍 + ▸ advance,推进语义不变)。
+     · 左立绘右 persona 的双人位废除;场景契约 extra.scene.bg 不变。
+     「形态是渲染器选择,不是平台差异」的判断不受影响。 -->
 
 ## 0. 判据
 

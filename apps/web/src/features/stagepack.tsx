@@ -4,13 +4,15 @@
 //   · 楼层轨 —— useStageEngine().msgs,真实数据(加载逻辑见 StageFrame);
 //   · 预演轨 —— stageData 种子,st-* 会话服务端不存(404 → 楼层空)时兜底,
 //     侧栏/场景签如实标注「预演」,不装作真数据。
-// theater 另有「沉浸接管」壳层:激活即 portal 全幅覆盖(chrome 让位不卸载,
+// theater 方向已重定义为「剧场小说」(非 galgame/VN):聊天楼层演成舞台剧
+// —— 台上幕(cast 气泡/居中旁白条)+ 底条(choices/hotbar/对话条),
+// 另有「沉浸接管」壳层:激活即 portal 全幅覆盖(chrome 让位不卸载,
 // 退出即回)+ 真 Fullscreen/移动横屏锁(失败静默回落),详见 TheaterBody。
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
-import { charImageUrl } from '../api/characters';
+import { charImageUrl, type CardItem } from '../api/characters';
 import type { FloorMsg } from '../api/chats';
 import { Icon } from '../components/Icon';
 import { StageFrame, charImgFallback, useStageEngine } from '../components/stage/StageFrame';
@@ -409,8 +411,12 @@ function MessengerBody() {
     );
 }
 
+
 /* =========================================================================
-   theater —— 三件套:对话框(末楼 speaker)/ 立绘位 / 选项区
+   theater —— 剧场小说:聊天楼层演成舞台剧(方向重定义,不是 galgame/VN)
+   台上幕 = 末楼之前最近 N 楼:cast 头像框+气泡(user/persona 归右位,群聊
+           逐 speaker 各自登台)/ 旁白楼层居中叙述条;旧幕滚出台口淡出。
+   底条 fixture = choices(额外支) → hotbar(9 槽物品栏) → 对话条(advance)。
    ========================================================================= */
 
 interface VnOption {
@@ -422,7 +428,7 @@ interface VnOption {
 }
 
 /** 未来协议钩位:generate 响应 choices 字段落进楼层 extra 后此处自动生效
- *  (服务端面 = TASK-044 theater choices;形状 {text}[] 宽松解析)。 */
+ *  (服务端面 = TASK-044/050 theater choices;形状 {text}[] 宽松解析)。 */
 function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOption[] {
     const raw = m?.extra?.choices;
     if (!Array.isArray(raw)) return [];
@@ -434,9 +440,94 @@ function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOptio
         .filter((o): o is VnOption => o !== null);
 }
 
-/** theater 形态 —— 壳层沉浸接管 + 内容层三件套。
+/* ——— 台上幕:楼层 → cast 气泡 / 旁白叙述条 ——— */
+
+/** 台上幕容量:末楼进底部对话条,其前最近 N 楼在台;更早的滚出台口。 */
+const STAGE_BEATS = 4;
+
+/** 旁白判定:extra.narrator 显式标 | system 楼 | 非 user 无名楼 —— 居中叙述条。 */
+const isNarratorFloor = (m: FloorMsg) =>
+    !!m.extra?.narrator || m.role === 'system' || (m.role !== 'user' && !m.name.trim());
+
+/** 演员头像:有图用图;挂图/无图 → 首字符圆块(诚实空态,不伪造立绘)。 */
+function BeatAvatar({ url, name, size = 34 }: { url: string | null; name: string; size?: number }) {
+    const [bad, setBad] = useState(false);
+    useEffect(() => setBad(false), [url]);
+    return (
+        <span
+            className="flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-serif-ui text-white/85"
+            style={{ width: size, height: size, background: 'rgba(22,22,28,0.78)', border: '1px solid rgba(255,255,255,0.16)', fontSize: Math.round(size * 0.42) }}
+        >
+            {url && !bad
+                ? <img src={url} alt={name} className="h-full w-full rounded-full object-cover" onError={() => setBad(true)} />
+                : (name.trim()[0] ?? '·')}
+        </span>
+    );
+}
+
+/* ——— hotbar:楼层 variables 快照 → 9 槽物品栏 ——— */
+
+const HOTBAR_SLOTS = 9;
+
+interface HotItem { name: string; icon?: string; count?: number }
+
+/** 物品数组键候选 —— MVU stat_data 各家卡字段名不一,按序探测;
+ *  读不到 = 空槽(诚实空态,不伪造物品)。 */
+const INV_KEYS = ['inventory', 'items', 'hotbar', 'bag', '物品栏', '背包', '物品', '行囊', '道具', '装备'];
+
+/** 槽元素归一:字符串 → {name};对象 → name/icon/count 多键取。 */
+const normItem = (x: unknown): HotItem | null => {
+    if (typeof x === 'string') return x.trim() ? { name: x.trim() } : null;
+    if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
+    const o = x as Record<string, unknown>;
+    const pickStr = (keys: string[]) =>
+        keys.map((k) => o[k]).find((v): v is string => typeof v === 'string' && !!v.trim());
+    const name = pickStr(['name', 'label', 'title', '名称', '名字', 'id']);
+    if (!name) return null;
+    const icon = pickStr(['icon', 'image', 'img', 'pic', '图标']);
+    const count = ['count', 'qty', 'num', 'n', '数量'].map((k) => o[k])
+        .find((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    return { name: name.trim(), icon: icon?.trim() || undefined, count };
+};
+
+/** 袋层探测:先按 INV_KEYS 直查数组,再向 stat_data 系容器下钻(≤3 层防深袋)。 */
+function probeBag(bag: unknown, depth: number): HotItem[] | null {
+    if (!bag || typeof bag !== 'object' || Array.isArray(bag) || depth > 3) return null;
+    const o = bag as Record<string, unknown>;
+    for (const k of INV_KEYS) {
+        const v = o[k];
+        if (!Array.isArray(v)) continue;
+        const items = v.map(normItem).filter((i): i is HotItem => i !== null);
+        if (items.length) return items;
+    }
+    for (const nest of ['stat_data', 'statData', 'state', 'data', 'vars']) {
+        const hit = probeBag(o[nest], depth + 1);
+        if (hit) return hit;
+    }
+    return null;
+}
+
+/** 楼层 variables = {[swipeId]: stat_data 投影}:袋本体 → activeSwipe 位 → 最大数字键。 */
+function floorItems(m: FloorMsg): HotItem[] {
+    const bag = m.variables;
+    if (!bag || typeof bag !== 'object') return [];
+    const direct = probeBag(bag, 0);
+    if (direct) return direct;
+    const swipeKeys = Object.keys(bag).filter((k) => /^\d+$/.test(k)).map(Number).sort((a, b) => b - a);
+    const ordered = [...new Set([...(m.activeSwipe != null ? [m.activeSwipe] : []), ...swipeKeys])];
+    for (const k of ordered) {
+        const hit = probeBag(bag[String(k)], 0);
+        if (hit) return hit;
+    }
+    return [];
+}
+
+/** icon 字段判定:URL/文件路径 → <img>;短串(emoji/单字)→ 文本字形。 */
+const isIconUrl = (s: string) => /^(\/|https?:\/\/|data:)/.test(s) || /\.(png|jpe?g|webp|gif|svg|avif)(\?.*)?$/i.test(s);
+
+/** theater 形态 —— 剧场小说:壳层沉浸接管 + 台上幕 + 底条 fixture。
  *
- *  壳层(本格新增):激活 theater 即 portal「fixed inset-0 z-78」全幅覆盖 ——
+ *  壳层(同 TASK-044):激活 theater 即 portal「fixed inset-0 z-78」全幅覆盖 ——
  *  rail/工作台/浮窗被压在下面(让位但不卸载,状态保留,退出即回);
  *  toast/弹窗/cmdk(z≥80)仍在上层,保留系统级逃生口。Chrome/shell 零改动。
  *  · 顶排:场景签 | 赏景(hideHud)+ 真全屏 ⛶ + 退出沉浸 ✕。
@@ -445,14 +536,15 @@ function extraChoices(m: FloorMsg | null, send: (text: string) => void): VnOptio
  *    (覆盖层本身已是全幅接管,视觉无差)。
  *  · 移动横屏:fullscreen 成功后尝试 orientation.lock('landscape');
  *    失败/未锁 → 竖屏下露「旋转设备」提示层(可关)。
- *  · 布局 landscape 优先一套:底锚通栏对话条 + 左右立绘位,竖屏同结构缩小。
  *
- *  内容层(三件套,楼层轨优先 —— 零楼层回落 vn 预演种子,场景签带「预演」徽标):
- *    对话框 = 末楼 speaker/正文(流式带光标,末楼 speaker 名签提亮)+ 推进钩位;
- *    立绘层 = 左位主卡立绘(玩家楼时压暗)｜右位当前人设头像(仅玩家台词楼登场);
- *             无图 → 空槽/空位,不伪造立绘;
- *    选项区 = 末楼 extra.choices 钩位 → swipe 分支(点击直跳版) → 空态;
- *    背景层 = 末楼 extra.scene.bg 钩位 → 规范稿 vnBg 资产 → 挂图/无图落深空渐变。 */
+ *  舞台(剧场小说重定义,楼层轨优先 —— 零楼层回落 vn 预演种子,场景签带「预演」徽标):
+ *    台上幕 = 末楼之前最近 STAGE_BEATS 楼:cast 楼 → 头像框+名签+气泡
+ *             (user/persona 归右,其余 speaker 归左;群聊逐名查卡登台,
+ *             查不到卡 → 首字符圆块,不伪造头像);旁白楼 → 居中叙述条;
+ *    底条   = extra.choices/swipe 分支选项 → hotbar(最近快照 variables
+ *             探测物品数组,9 槽;点槽 → 退沉浸 + openPanel('cardapp'))
+ *             → 对话条(末楼 speaker/正文 + 流式光标 + ▸ 推进);
+ *    背景   = 末楼 extra.scene.bg 钩位 → 规范稿 stage-hall 资产 → 挂图落深空渐变。 */
 function TheaterBody() {
     const { t } = useI18n();
     const s = useShell();
@@ -460,35 +552,75 @@ function TheaterBody() {
     const vn = s.stageData.vn;
     const floors = eng.msgs.filter(bookable);
     const last = [...floors].reverse().find((m) => m.content.trim() || m.streaming) ?? null;
+    const lastPos = last ? floors.lastIndexOf(last) : -1;
     const fromFloors = floors.length > 0;
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
-    const sprite = card?.avatar ? charImageUrl(card.avatar) : null;
     const ops = last ? eng.opsOf(last, eng.msgs.indexOf(last)) : null;
 
-    /* 对话框:末楼 speaker 名签 + 正文;user 楼按线名照显(它是玩家台词)。 */
+    /* 楼层名 → 卡查表(name/charDir 双键小写);群聊逐 speaker 各自登台。 */
+    const castTable = useMemo(() => {
+        const m = new Map<string, CardItem>();
+        for (const c of s.cards.values()) {
+            m.set(c.name.trim().toLowerCase(), c);
+            m.set(c.charDir.trim().toLowerCase(), c);
+        }
+        return m;
+    }, [s.cards]);
+
+    const castOf = useCallback((name: string): CardItem | undefined => {
+        const key = name.trim().toLowerCase();
+        if (!key) return undefined;
+        const exact = castTable.get(key);
+        if (exact) return exact;
+        /* 楼层名常带称谓/前缀缀尾(「林砚(大师兄)」「云栖宗 · 陈修线」)——
+           剥括号段与间隔号后缀再试;仍不中 → undefined → 首字符块。 */
+        const stripped = key.replace(/\s*[([{（【].*$/u, '').replace(/\s*[·・—–\-:：].*$/u, '').trim();
+        return stripped && stripped !== key ? castTable.get(stripped) : undefined;
+    }, [castTable]);
+
+    const personaUrl = s.persona?.avatar ? `/User%20Avatars/${encodeURIComponent(s.persona.avatar)}` : null;
+    /** 楼层 → 台上身份:{url 头像源(空 → 首字符块), name 名签}。 */
+    const roleOf = useCallback((m: FloorMsg): { url: string | null; name: string } => {
+        if (m.role === 'user') return { url: personaUrl, name: m.name || s.persona?.name || '你' };
+        const c = castOf(m.name);
+        return { url: c?.avatar ? charImageUrl(c.avatar) : null, name: m.name || c?.name || '?' };
+    }, [personaUrl, castOf, s.persona?.name]);
+
+    /* 台上幕 = 末楼之前的最近 N 楼(末楼独白归底部对话条);
+       narrator 判定与头像在渲染处逐拍解析。 */
+    const beatFloors = lastPos > 0 ? floors.slice(Math.max(0, lastPos - STAGE_BEATS), lastPos) : [];
+
+    /* 对话条:末楼 speaker 名签 + 正文;user 楼按线名照显(它是玩家台词)。 */
     const speaker = fromFloors ? (last?.name || card?.name || '—') : vn.speaker;
     const line = fromFloors ? (last ? (last.displayContent ?? last.content) : '') : vn.line;
     const streaming = !!last?.streaming;
+    const lastNarrator = !!last && isNarratorFloor(last);
+    const lastRole = last ? roleOf(last) : null;
 
     /* 场景底图源:楼层 extra.scene.bg 钩位(未来场景 sidecar 落点)→ 规范稿
-       vnBg(云栖宗正殿内景,已抽为静态资产);挂图/无图 → 深空渐变兜底。 */
+       stage-hall(云栖宗正殿内景,已抽为静态资产);挂图/无图 → 深空渐变兜底。 */
     const sceneBg = (() => {
         const sc = last?.extra?.scene;
         const bg = sc && typeof sc === 'object' ? (sc as Record<string, unknown>).bg : null;
         return typeof bg === 'string' && bg ? bg : '/assets/backgrounds/stage-hall.jpg';
     })();
     const [bgBad, setBgBad] = useState(false);
-    /* 右位立绘 = 当前人设头像(ST User Avatars 实数据);仅玩家台词楼登场,
-       无人设/挂图 → 空位。 */
-    const userSprite = last?.role === 'user' && s.persona?.avatar
-        ? `/User%20Avatars/${encodeURIComponent(s.persona.avatar)}` : null;
-    const [userSpriteBad, setUserSpriteBad] = useState(false);
 
     /* ——— 沉浸壳状态 ——— */
     const [immersive, setImmersive] = useState(true);
     const [fsOn, setFsOn] = useState(false);
     const [portrait, setPortrait] = useState(false);
     const [rotateHint, setRotateHint] = useState(true);
+
+    /* 台上幕滚动袋(frame/immersive 两处实例 → Set 收双份,新拍到底各自贴底;
+       ref 卸载时拿不到元素 → 贴底前顺手清掉已断开的旧节点)。 */
+    const beatScrolls = useRef(new Set<HTMLDivElement>());
+    useEffect(() => {
+        beatScrolls.current.forEach((el) => {
+            if (!el.isConnected) beatScrolls.current.delete(el);
+            else el.scrollTop = el.scrollHeight;
+        });
+    }, [floors.length, lastPos]);
 
     /* 选项区:extra.choices 钩位 → swipe 分支 → 空态;
        分支 +1 位 = 「再生成一支」(swipe 生成,仅末楼有意义)。 */
@@ -514,6 +646,12 @@ function TheaterBody() {
             });
         }
     }
+
+    /* hotbar:最近一层带 variables 快照的楼(MVU 投影 = 该楼结算后状态);
+       探测多键,读不到 → 9 空槽(诚实空态)。floors 每渲即新数组,memo 无意义。 */
+    const invFloor = [...floors].reverse().find((m) => m.variables && Object.keys(m.variables).length > 0);
+    const items = invFloor ? floorItems(invFloor) : [];
+    const slots: (HotItem | null)[] = Array.from({ length: HOTBAR_SLOTS }, (_, i) => items[i] ?? null);
 
     /* 推进钩位:末楼可锚才露面 —— eng.advance = normal 生成下一拍。 */
     const canAdvance = fromFloors && !!ops?.isLast && !last?.streaming && !last?.error;
@@ -556,9 +694,8 @@ function TheaterBody() {
         try { screen.orientation?.unlock(); } catch { /* noop */ }
     }, []);
 
-    /* 场景/右位立绘源随楼层变化 → 挂图标记复位重试。 */
+    /* 场景底图源随楼层变化 → 挂图标记复位重试。 */
     useEffect(() => { setBgBad(false); }, [sceneBg]);
-    useEffect(() => { setUserSpriteBad(false); }, [userSprite]);
 
     const enterFs = () => {
         const el = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
@@ -578,6 +715,14 @@ function TheaterBody() {
     };
     const leaveImmersive = () => { exitFs(); setImmersive(false); };
 
+    /* hotbar → 卡自带面板:沉浸壳(z-78)压在工作台上,先退沉浸再切面板,
+       真联动不假装;面板类型按卡 manifest —— 'cardapp' 宿主(CardAppFrame)
+       自行解析卡的 entry/manifest 面;params 透传点击位,面板愿消费自取。 */
+    const openBag = (item?: HotItem) => {
+        if (immersive) leaveImmersive();
+        s.openPanel('cardapp', { from: 'theater.hotbar', item: item?.name });
+    };
+
     /* 进入即尝试全屏+横屏锁(任务书口径);无用户手势浏览器拒绝 → 静默,
        移动竖屏由提示层接管。 */
     useEffect(() => { if (s.isMobile) enterFs(); /* mount-only */ }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -587,46 +732,14 @@ function TheaterBody() {
     const scene = (mode: 'frame' | 'immersive') => (
         <div
             className={mode === 'immersive'
-                ? 'fixed inset-0 z-[78] flex flex-col justify-between overflow-hidden bg-black'
-                : 'relative flex min-h-0 flex-1 flex-col justify-between overflow-hidden'}
+                ? 'fixed inset-0 z-[78] flex flex-col overflow-hidden bg-black'
+                : 'relative flex min-h-0 flex-1 flex-col overflow-hidden'}
         >
             {/* 背景层:深空渐变托底;场景图 cover 铺满,挂图/无图 → 只剩渐变 */}
             <div className="absolute inset-0" style={{ background: 'radial-gradient(130% 95% at 50% 16%, #21263f 0%, #12141f 55%, #07080d 100%)' }} />
             {!bgBad && <img src={sceneBg} alt="Scene" className="absolute inset-0 h-full w-full object-cover" onError={() => setBgBad(true)} />}
-            {/* 立绘层左右位:左 = 主卡 cast(玩家楼压暗);右 = 玩家人设(仅其台词楼登场) */}
-            <div
-                className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] flex items-end justify-between px-[3%]"
-                style={{ height: mode === 'immersive' ? '72%' : '62%' }}
-            >
-                <div className="flex h-full w-[46%] items-end justify-center transition-opacity duration-300" style={{ opacity: last?.role === 'user' ? 0.5 : 1 }}>
-                    {sprite ? (
-                        <img
-                            src={sprite} alt={card?.name ?? ''} className="h-full object-contain"
-                            style={{ maskImage: 'linear-gradient(to bottom, black 84%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 84%, transparent 100%)' }}
-                            onError={charImgFallback}
-                        />
-                    ) : (
-                        <div
-                            className={`${mode === 'immersive' ? 'mb-32' : 'mb-24'} flex flex-col items-center gap-1.5 rounded-2xl border border-dashed px-5 py-3 text-white/45 backdrop-blur-sm`}
-                            style={{ borderColor: 'rgba(255,255,255,0.22)' }}
-                        >
-                            <Icon name="image" size={18} />
-                            <span className="text-[11px]">{t('gal.sprite.empty')}</span>
-                        </div>
-                    )}
-                </div>
-                <div className="flex h-full w-[46%] items-end justify-center">
-                    {userSprite && !userSpriteBad && (
-                        <img
-                            src={userSprite} alt={s.persona?.name ?? ''} className="h-full object-contain"
-                            style={{ maskImage: 'linear-gradient(to bottom, black 84%, transparent 100%)', WebkitMaskImage: 'linear-gradient(to bottom, black 84%, transparent 100%)' }}
-                            onError={() => setUserSpriteBad(true)}
-                        />
-                    )}
-                </div>
-            </div>
-            {/* 三段渐变压暗 */}
-            <div className="absolute inset-0 z-[6]" style={{ background: 'linear-gradient(180deg, rgba(14,14,16,0.48) 0%, rgba(14,14,16,0.08) 48%, rgba(14,14,16,0.92) 100%)' }} />
+            {/* 三段渐变压暗(台口压重些,托住幕列与底条) */}
+            <div className="absolute inset-0 z-[6]" style={{ background: 'linear-gradient(180deg, rgba(14,14,16,0.52) 0%, rgba(14,14,16,0.14) 42%, rgba(14,14,16,0.94) 100%)' }} />
             {/* 顶排:场景签 | 赏景/真全屏/退出 */}
             <div className="relative z-10 flex items-center justify-between gap-2 p-3.5">
                 <span className="rounded-full px-3 py-1 text-[11.5px] text-white/90 backdrop-blur-md" style={pillStyle}>
@@ -685,53 +798,139 @@ function TheaterBody() {
                 </div>
             )}
             {vn.hideHud ? <div className="flex-1" /> : (
-                <div className={mode === 'immersive' ? 'relative z-10 space-y-3 px-4 pb-4 sm:px-8 sm:pb-6' : 'relative z-10 mx-auto w-full max-w-[640px] space-y-3 p-4 sm:p-6'}>
-                    <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-1.5">
-                        {choices.map((c) => (
-                            <button
-                                key={c.key}
-                                className="w-full rounded-xl px-4 py-2.5 text-left text-[13px] text-white/95 backdrop-blur-md transition-colors hover:bg-white/15 sm:w-[84%]"
-                                style={{ background: 'rgba(20,20,24,0.72)', border: '1px solid rgba(255,255,255,0.14)' }}
-                                onClick={c.onPick}
-                            >
-                                {c.badge && <span className="mr-2 font-mono-ui text-[10px] text-white/45">{c.badge}</span>}
-                                {c.text}
-                            </button>
-                        ))}
-                        {fromFloors && !choices.length && (
-                            <div className="rounded-full px-3 py-1 text-[10.5px] text-white/40">{t('gal.choices.empty')}</div>
-                        )}
-                    </div>
-                    {/* 对话条:底锚半透明通栏;speaker+正文+推进钩位(点条 = ▸) */}
-                    <div
-                        className={`flex select-text items-start gap-3.5 rounded-2xl p-4 text-white backdrop-blur-xl sm:p-5 ${canAdvance ? 'cursor-pointer' : ''}`}
-                        style={{ background: 'rgba(16,16,19,0.84)', border: '1px solid rgba(255,255,255,0.12)' }}
-                        onClick={() => { if (canAdvance) eng.advance(); }}
-                    >
-                        <span className="mt-0.5"><StageRing size={44} /></span>
-                        <div className="min-w-0 flex-1 space-y-1">
-                            {/* 末楼 speaker 名签提亮;user 楼带「你」侧标 */}
-                            <div className="text-[12px] font-semibold text-white/90">
-                                {speaker}
-                                {last?.role === 'user' && <span className="ml-1.5 font-normal text-white/40">· {t('gal.you')}</span>}
-                            </div>
-                            <div className="whitespace-pre-line text-[14.5px] leading-relaxed text-white/95">
-                                {line || <span className="italic text-white/40">{t('gal.line.empty')}</span>}
-                                {streaming && <span className="cursor-bar" />}
+                <>
+                    {/* 台上幕:底锚幕列,台口向上淡出;每楼一拍,新拍浮现 */}
+                    <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-end">
+                        <div
+                            ref={(el) => { if (el) beatScrolls.current.add(el); }}
+                            className="stage-scroll no-scrollbar max-h-full overflow-y-auto px-4 sm:px-8"
+                        >
+                            <div className="mx-auto flex w-full max-w-[720px] flex-col gap-2.5 pb-2.5 pt-14">
+                                {beatFloors.map((m) => {
+                                    const text = (m.displayContent ?? m.content).trim();
+                                    if (!text) return null;
+                                    if (isNarratorFloor(m)) {
+                                        /* 旁白:居中叙述条(舞台指示位,无头像) */
+                                        return (
+                                            <div key={m.id} className="stage-beat flex justify-center">
+                                                <div
+                                                    className="max-w-[86%] select-text rounded-xl px-4 py-2 text-center text-[12.5px] italic leading-relaxed text-white/75 backdrop-blur-sm"
+                                                    style={{ background: 'rgba(14,14,18,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}
+                                                >
+                                                    {text}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    const r = roleOf(m);
+                                    const right = m.role === 'user';
+                                    return (
+                                        <div key={m.id} className={`stage-beat flex items-end gap-2.5 ${right ? 'flex-row-reverse' : ''}`}>
+                                            <BeatAvatar url={r.url} name={r.name} />
+                                            <div className={`min-w-0 max-w-[78%] space-y-0.5 ${right ? 'text-right' : ''}`}>
+                                                <div className="truncate px-1.5 text-[10.5px] font-medium text-white/45">{r.name}</div>
+                                                <div
+                                                    className={`select-text whitespace-pre-line px-3.5 py-2.5 text-[13.5px] leading-relaxed text-white/92 backdrop-blur-md ${right ? 'rounded-2xl rounded-br-md' : 'rounded-2xl rounded-bl-md'}`}
+                                                    style={{
+                                                        background: right ? 'rgba(34,37,48,0.74)' : 'rgba(16,16,20,0.68)',
+                                                        border: '1px solid rgba(255,255,255,0.1)',
+                                                    }}
+                                                >
+                                                    {text}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         </div>
-                        {canAdvance && (
-                            <button
-                                className="mt-1 shrink-0 rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white/90"
-                                title={t('gal.advance')}
-                                onClick={(e) => { e.stopPropagation(); eng.advance(); }}
-                            >
-                                <Icon name="fastForward" size={15} />
-                            </button>
-                        )}
                     </div>
-                    <StageErrorFloors />
-                </div>
+                    {/* 底条 fixture:choices → hotbar → 对话条 */}
+                    <div className={mode === 'immersive' ? 'relative z-10 space-y-2.5 px-4 pb-4 sm:px-8 sm:pb-6' : 'relative z-10 mx-auto w-full max-w-[720px] space-y-2.5 p-4 sm:p-6'}>
+                        <div className="mx-auto flex w-full max-w-[640px] flex-col items-center gap-1.5">
+                            {choices.map((c) => (
+                                <button
+                                    key={c.key}
+                                    className="w-full rounded-xl px-4 py-2.5 text-left text-[13px] text-white/95 backdrop-blur-md transition-colors hover:bg-white/15 sm:w-[84%]"
+                                    style={{ background: 'rgba(20,20,24,0.72)', border: '1px solid rgba(255,255,255,0.14)' }}
+                                    onClick={c.onPick}
+                                >
+                                    {c.badge && <span className="mr-2 font-mono-ui text-[10px] text-white/45">{c.badge}</span>}
+                                    {c.text}
+                                </button>
+                            ))}
+                            {fromFloors && !choices.length && (
+                                <div className="rounded-full px-3 py-1 text-[10.5px] text-white/40">{t('gal.choices.empty')}</div>
+                            )}
+                        </div>
+                        {/* hotbar:Minecraft 式 9 槽物品栏 —— 入口不是全功能背包,
+                            点槽/背包钮 → 退沉浸 + 右侧工作台卡自带面板(cardapp)。 */}
+                        <div className="mx-auto flex items-center justify-center gap-1.5">
+                            {slots.map((it, i) => (
+                                <button
+                                    key={i}
+                                    className="hotbar-slot"
+                                    title={it ? it.name : t('gal.bag.open')}
+                                    onClick={() => openBag(it ?? undefined)}
+                                >
+                                    {it && (
+                                        it.icon && isIconUrl(it.icon)
+                                            ? <img src={it.icon} alt={it.name} className="h-5 w-5 rounded-[3px] object-cover" />
+                                            : <span className="max-w-full truncate px-0.5 font-serif-ui text-[12px] leading-none text-white/88">
+                                                {it.icon && it.icon.length <= 4 ? it.icon : it.name.trim()[0]}
+                                            </span>
+                                    )}
+                                    {it?.count != null && it.count > 1 && <span className="hotbar-count">{it.count}</span>}
+                                </button>
+                            ))}
+                            <button className="hotbar-slot hotbar-bag" title={t('gal.bag.open')} onClick={() => openBag()}>
+                                <Icon name="layers" size={14} />
+                            </button>
+                        </div>
+                        {/* 对话条:底锚通栏;当前拍 speaker+正文+推进(点条 = ▸);
+                            旁白末楼居中叙述,不占演员位 */}
+                        <div
+                            className={`flex select-text items-start gap-3.5 rounded-2xl p-4 text-white backdrop-blur-xl sm:p-5 ${canAdvance ? 'cursor-pointer' : ''}`}
+                            style={{ background: 'rgba(16,16,19,0.84)', border: '1px solid rgba(255,255,255,0.12)' }}
+                            onClick={() => { if (canAdvance) eng.advance(); }}
+                        >
+                            {lastNarrator ? (
+                                <div className="min-w-0 flex-1 space-y-1 text-center">
+                                    <div className="text-[10px] italic tracking-[0.3em] text-white/40">{t('gal.narrator')}</div>
+                                    <div className="whitespace-pre-line text-[13.5px] italic leading-relaxed text-white/85">
+                                        {line}
+                                        {streaming && <span className="cursor-bar" />}
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <span className="mt-0.5"><BeatAvatar url={lastRole?.url ?? null} name={lastRole?.name ?? speaker} size={42} /></span>
+                                    <div className="min-w-0 flex-1 space-y-1">
+                                        {/* 末楼 speaker 名签提亮;user 楼带「你」侧标 */}
+                                        <div className="text-[12px] font-semibold text-white/90">
+                                            {speaker}
+                                            {last?.role === 'user' && <span className="ml-1.5 font-normal text-white/40">· {t('gal.you')}</span>}
+                                        </div>
+                                        <div className="whitespace-pre-line text-[14.5px] leading-relaxed text-white/95">
+                                            {line || <span className="italic text-white/40">{t('gal.line.empty')}</span>}
+                                            {streaming && <span className="cursor-bar" />}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
+                            {canAdvance && (
+                                <button
+                                    className="mt-1 shrink-0 self-center rounded-full p-1.5 text-white/50 transition-colors hover:bg-white/10 hover:text-white/90"
+                                    title={t('gal.advance')}
+                                    onClick={(e) => { e.stopPropagation(); eng.advance(); }}
+                                >
+                                    <Icon name="fastForward" size={15} />
+                                </button>
+                            )}
+                        </div>
+                        <StageErrorFloors />
+                    </div>
+                </>
             )}
         </div>
     );
@@ -760,10 +959,10 @@ const zh: Record<string, string> = {
     'novel.strategy.single': '单章兜底 · 无分章标记', 'novel.strategy.seed': '预演种子 · 非本会话楼层',
     'novel.strategy.empty': '暂无章节',
     'gal.seed': '预演', 'gal.you': '你', 'gal.line.empty': '……尚无台词',
-    'gal.sprite.empty': '无立绘资产',
     'gal.choices.empty': '暂无分支选项 —— 用下方台词推进',
     'gal.choice.blank': '(空分支)', 'gal.choice.regen': '再生成一支',
     'gal.immersive.enter': '沉浸接管', 'gal.immersive.exit': '退出沉浸',
+    'gal.narrator': '旁 白', 'gal.bag.open': '打开背包面板',
     'gal.fs.enter': '真全屏', 'gal.fs.exit': '退出全屏',
     'gal.rotate.hint': '旋转设备体验更佳', 'gal.advance': '推进',
 };
