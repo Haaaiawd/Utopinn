@@ -87,6 +87,7 @@ test.before(async () => {
     for (const [key, rel] of Object.entries(USER_DIRS)) dirs[key] = path.join(ROOT, rel);
     fs.mkdirSync(dirs.characters, { recursive: true });
     fs.mkdirSync(dirs.chats, { recursive: true });
+    fs.mkdirSync(dirs.worlds, { recursive: true });
     await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
 
     // 种子:角色 JSON + 会话(2 楼)
@@ -505,4 +506,262 @@ test('th.generate 失败可见:ok:false + generation_requested/stopped 信箱 + 
     const stopped = log.body.result.entries.find((e) => e.event === 'generation_stopped');
     assert.equal(stopped.origin, 'server');
     assert.ok(String(stopped.args[0]).length > 0, 'stopped 携带失败原因');
+});
+
+// ── E. 消息写家族(TH 字段名,楼层一致 + 信箱事件) ──────────────────────
+
+test('createChatMessages:尾部追加+insert_before 插入,写后读回+信箱事件', async () => {
+    const s0 = (await call('getEventLog', {})).body.result.seq;
+    // 尾插 user+assistant
+    let r = await call('createChatMessages', {
+        chat_messages: [
+            { role: 'user', message: 'u-floor' },
+            { role: 'assistant', message: 'a-floor', data: { tag: 1 } },
+        ],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const ids = r.body.result.message_ids;
+    assert.equal(ids.length, 2);
+    const n = (await call('getChatMessages', {})).body.result.length;
+    assert.equal(ids[1], n - 1, '尾插落在最后');
+    const body = (await call('getChatMessages', {})).body.result;
+    assert.equal(body[ids[0]].is_user, true);
+    assert.equal(body[ids[0]].mes, 'u-floor');
+    assert.equal(body[ids[1]].mes, 'a-floor');
+    assert.deepEqual(body[ids[1]].variables, [{ tag: 1 }], 'data → variables[0]');
+    // insert_before=0 头插
+    r = await call('createChatMessages', {
+        chat_messages: [{ role: 'system', message: 'sys-head' }],
+        insert_before: 0,
+    });
+    const head = (await call('getChatMessages', {})).body.result[0];
+    assert.equal(head.mes, 'sys-head');
+    assert.equal(head.extra?.type, 'narrator', 'system 楼 extra.type');
+    // 校验面
+    r = await call('createChatMessages', { chat_messages: [{ role: 'ghost', message: 'x' }] });
+    assert.equal(r.status, 400);
+    r = await call('createChatMessages', { chat_messages: [] });
+    assert.equal(r.status, 400);
+    // 信箱:user→message_sent,assistant/system→message_received,chat_changed 兜底
+    const log = await call('getEventLog', { since: s0 });
+    const events = log.body.result.entries.map((e) => e.event);
+    assert.ok(events.includes('message_sent'), `message_sent 入信箱: ${events}`);
+    assert.ok(events.includes('message_received'), `message_received 入信箱: ${events}`);
+    assert.ok(events.includes('chat_changed'), `chat_changed 入信箱: ${events}`);
+    // ghost chat → 404
+    r = await call('createChatMessages', { chat_messages: [{ role: 'user', message: 'x' }] }, { charDir: CHAR, chatName: 'ghost' });
+    assert.equal(r.status, 404);
+});
+
+test('setChatMessages/setChatMessage:正文/data/swipe 面写 + message_edited', async () => {
+    const s0 = (await call('getEventLog', {})).body.result.seq;
+    const body = (await call('getChatMessages', {})).body.result;
+    const mid = body.length - 1;
+    // 正文写:mes + swipes[swipe_id] 同步(TH 语义)
+    let r = await call('setChatMessages', { chat_messages: [{ message_id: mid, message: 'edited-text', data: { hp: 42 } }] });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.body.result.edited, [mid]);
+    let m = (await call('getChatMessages', {})).body.result[mid];
+    assert.equal(m.mes, 'edited-text');
+    assert.deepEqual(m.variables[m.swipe_id ?? 0], { hp: 42 });
+    // swipe 面:新 swipes 数组 + swipe_id 切换 → mes/extra 跟当前页
+    r = await call('setChatMessages', {
+        chat_messages: [{ message_id: mid, swipes: ['s0', 's1'], swipe_id: 1, swipes_data: [{ d: 0 }, { d: 1 }] }],
+    });
+    assert.equal(r.status, 200);
+    m = (await call('getChatMessages', {})).body.result[mid];
+    assert.deepEqual(m.swipes, ['s0', 's1']);
+    assert.equal(m.swipe_id, 1);
+    assert.equal(m.mes, 's1', 'mes 同步当前 swipe');
+    assert.deepEqual(m.variables, [{ d: 0 }, { d: 1 }]);
+    // role/is_hidden 面
+    r = await call('setChatMessage', { message_id: mid, message: 'via-setChatMessage', is_hidden: true });
+    assert.equal(r.status, 200);
+    m = (await call('getChatMessages', {})).body.result[mid];
+    assert.equal(m.mes, 'via-setChatMessage');
+    assert.equal(m.is_system, true, 'is_hidden → is_system');
+    // 越界 mid 静默跳过(TH:对不存在楼层 no-op)
+    r = await call('setChatMessages', { chat_messages: [{ message_id: 9999, message: 'x' }] });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result.edited.length, 0);
+    // 校验
+    r = await call('setChatMessages', { chat_messages: 'x' });
+    assert.equal(r.status, 400);
+    r = await call('setChatMessage', { message: 'x' });
+    assert.equal(r.status, 400);
+    // 信箱
+    const events = (await call('getEventLog', { since: s0 })).body.result.entries.map((e) => e.event);
+    assert.ok(events.includes('message_edited'), `message_edited 入信箱: ${events}`);
+    // refreshOneMessage → refresh_message 信箱事件
+    r = await call('refreshOneMessage', { message_id: mid });
+    assert.equal(r.status, 200);
+    const log2 = await call('getEventLog', {});
+    assert.ok(log2.body.result.entries.some((e) => e.event === 'refresh_message' && e.args[0] === mid));
+});
+
+test('deleteChatMessages + rotateChatMessages:楼层一致 + chat_changed', async () => {
+    const s0 = (await call('getEventLog', {})).body.result.seq;
+    // 现状 len;rotate [0,1)[1,len) → [1,len)[0,1):头楼移尾
+    const before = (await call('getChatMessages', {})).body.result.map((m) => m.mes);
+    const n = before.length;
+    let r = await call('rotateChatMessages', { begin: 0, middle: 1, end: n });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result.rotated, true);
+    let after = (await call('getChatMessages', {})).body.result.map((m) => m.mes);
+    assert.equal(after.length, n);
+    assert.equal(after[0], before[1], 'rotate:原 idx1 到首');
+    assert.equal(after[n - 1], before[0], 'rotate:原 idx0 到尾');
+    // delete 尾楼 + 头楼
+    r = await call('deleteChatMessages', { message_ids: [0, -1] });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result.deleted.length, 2);
+    after = (await call('getChatMessages', {})).body.result.map((m) => m.mes);
+    assert.equal(after.length, n - 2);
+    // 校验
+    r = await call('deleteChatMessages', { message_ids: [] });
+    assert.equal(r.status, 400);
+    r = await call('rotateChatMessages', { begin: 0, middle: 1 });
+    assert.equal(r.status, 400);
+    const events = (await call('getEventLog', { since: s0 })).body.result.entries.map((e) => e.event);
+    assert.ok(events.includes('message_deleted'), `message_deleted 入信箱: ${events}`);
+    assert.ok(events.includes('chat_changed'), `chat_changed 入信箱: ${events}`);
+});
+
+// ── F. 世界书 TH 面 ───────────────────────────────────────────────────
+
+test('lorebook CRUD:建→条目写→TH 视图读回→合并/删除→绑定', async () => {
+    // 建书 + 名单
+    let r = await call('createLorebook', { lorebook: 'Forum' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.result.created, true);
+    r = await call('getLorebooks', {});
+    assert.ok(r.body.result.includes('Forum'));
+    // 条目创建(TH 平铺字段)→ TH 视图读回
+    r = await call('createLorebookEntries', {
+        lorebook: 'Forum',
+        entries: [{ comment: 'e1', keys: ['论坛'], content: 'BBS 正文', type: 'constant', position: 'after_character_definition' }],
+    });
+    assert.equal(r.status, 200);
+    const uid = r.body.result.new_uids[0];
+    assert.equal(typeof uid, 'number');
+    let ent = r.body.result.entries.find((e) => e.uid === uid);
+    assert.equal(ent.comment, 'e1');
+    assert.deepEqual(ent.keys, ['论坛']);
+    assert.equal(ent.position, 'after_character_definition', 'TH position 字符串回读');
+    assert.equal(ent.enabled, true);
+    // setLorebookEntries merge-by-uid
+    r = await call('setLorebookEntries', { lorebook: 'Forum', entries: [{ uid, content: 'BBS 改', enabled: false }] });
+    ent = r.body.result.entries.find((e) => e.uid === uid);
+    assert.equal(ent.content, 'BBS 改');
+    assert.equal(ent.enabled, false, 'enabled → disable 反向映射');
+    assert.equal(ent.comment, 'e1', '未写字段不动');
+    // getLorebookEntries 读面一致
+    r = await call('getLorebookEntries', { lorebook: 'Forum' });
+    assert.equal(r.body.result.entries.length, 1);
+    // replaceLorebookEntries 全量替换
+    r = await call('replaceLorebookEntries', {
+        lorebook: 'Forum',
+        entries: [{ comment: 'only', content: 'x', type: 'selective' }],
+    });
+    assert.equal(r.body.result.entries.length, 1);
+    assert.equal(r.body.result.entries[0].comment, 'only');
+    // deleteLorebookEntries
+    const uid2 = r.body.result.entries[0].uid;
+    r = await call('deleteLorebookEntries', { lorebook: 'Forum', uids: [uid2] });
+    assert.equal(r.body.result.delete_occurred, true);
+    assert.equal(r.body.result.entries.length, 0);
+    // 绑定:getChatLorebook null → setChatLorebook → getOrCreateChatLorebook
+    r = await call('getChatLorebook', {});
+    assert.equal(r.body.result, null);
+    r = await call('setChatLorebook', { lorebook: 'Forum' });
+    assert.equal(r.status, 200);
+    r = await call('getChatLorebook', {});
+    assert.equal(r.body.result, 'Forum');
+    r = await call('setChatLorebook', { lorebook: null });
+    r = await call('getChatLorebook', {});
+    assert.equal(r.body.result, null, 'null 解绑落盘');
+    r = await call('getOrCreateChatLorebook', { lorebook: 'AutoBook' });
+    assert.equal(r.body.result, 'AutoBook');
+    // 角色书绑定读面(EvtCard 无绑书 → primary null)
+    r = await call('getCharLorebooks', {});
+    assert.equal(r.body.result.primary, null);
+    // 错误面
+    r = await call('getLorebookEntries', { lorebook: 'ghost-book' });
+    assert.equal(r.status, 404);
+    r = await call('createLorebookEntries', { lorebook: 'Forum', entries: [] });
+    assert.equal(r.status, 400);
+    r = await call('setLorebookEntries', { lorebook: 'Forum', entries: [{ content: 'x' }] });
+    assert.equal(r.status, 400, '无 uid → 400');
+    r = await call('deleteLorebook', { lorebook: 'Forum' });
+    assert.equal(r.body.result.deleted, true);
+});
+
+// ── G. 正则 TH 面 ─────────────────────────────────────────────────────
+
+test('tavern regex:global/character 读写 TH 视图 + formatAs + 放行判定', async () => {
+    // global 写(TH 视图)→ 读回同视图
+    const script = {
+        id: 'r1', script_name: 'strip-x', enabled: true,
+        find_regex: '/x+/g', trim_strings: [], replace_string: 'Y',
+        source: { ai_output: true, user_input: false, slash_command: false, world_info: false, reasoning: false },
+        destination: { display: false, prompt: true },
+        run_on_edit: false, min_depth: null, max_depth: null,
+    };
+    let r = await call('replaceTavernRegexes', { type: 'global', regexes: [script] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    r = await call('getTavernRegexes', { type: 'global' });
+    assert.equal(r.body.result.length, 1);
+    const v = r.body.result[0];
+    assert.equal(v.script_name, 'strip-x');
+    assert.equal(v.enabled, true);
+    assert.equal(v.find_regex, '/x+/g');
+    assert.equal(v.source.ai_output, true);
+    // formatAs(TH 签名 source/destination 为字符串):AI_OUTPUT+prompt → 'YhiY'
+    r = await call('formatAsTavernRegexedString', { text: 'xxhixx', source: 'ai_output', destination: 'prompt' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result, 'YhiY', `regex 应用: ${JSON.stringify(r.body)}`);
+    // destination 不命中(display 域本脚本未挂)→ 原文不动(TH 车道语义)
+    r = await call('formatAsTavernRegexedString', { text: 'xxhixx', source: 'ai_output', destination: 'display' });
+    assert.equal(r.body.result, 'xxhixx');
+    // character 域:写卡(json 卡原子写)→ 读回
+    r = await call('replaceTavernRegexes', { type: 'character', regexes: [{ ...script, id: 'r2', script_name: 'card-script' }] });
+    assert.equal(r.status, 200);
+    r = await call('getTavernRegexes', { type: 'character' });
+    assert.equal(r.body.result.length, 1);
+    assert.equal(r.body.result[0].script_name, 'card-script');
+    // 写后卡文件里 regex_scripts 落在 data.extensions(canonical 槽)
+    const card = JSON.parse(fs.readFileSync(path.join(dirs.characters, `${CHAR}.json`), 'utf8'));
+    assert.ok(Array.isArray(card.data.extensions.regex_scripts));
+    assert.equal(card.data.extensions.regex_scripts[0].scriptName, 'card-script');
+    assert.equal('regex_scripts' in (card.extensions ?? {}), false, '旧槽已摘');
+    // 放行判定(未放行 → false)
+    r = await call('isCharacterTavernRegexesEnabled', {});
+    assert.equal(r.body.result, false);
+    // updateTavernRegexesWith:ship 结果全量替换
+    r = await call('updateTavernRegexesWith', { type: 'global', result: [] });
+    assert.equal(r.status, 200);
+    r = await call('getTavernRegexes', { type: 'global' });
+    assert.equal(r.body.result.length, 0);
+    // substituteMacros:{{user}}/{{char}} 真上下文替换
+    r = await call('substituteMacros', { text: 'hi {{char}}, I am {{user}}' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result, `hi ${CHAR}, I am User`, `宏替换: ${JSON.stringify(r.body)}`);
+    // 错误面
+    r = await call('getTavernRegexes', { type: 'bogus' });
+    assert.equal(r.status, 400);
+    r = await call('replaceTavernRegexes', { type: 'character', name: 'ghostchar', regexes: [] });
+    assert.equal(r.status, 404);
+    r = await call('replaceTavernRegexes', {});
+    assert.equal(r.status, 400);
+});
+
+// ── H. stopGeneration ─────────────────────────────────────────────────
+
+test('stopGeneration:generation_id 未命中 → 404;无活跃 → cancelled:0 如实', async () => {
+    let r = await call('stopGeneration', { generation_id: 'nope-job' });
+    assert.equal(r.status, 404);
+    r = await call('stopGeneration', {});
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result.cancelled, 0);
+    assert.ok(r.body.result.covered, '覆盖口径如实标注');
 });

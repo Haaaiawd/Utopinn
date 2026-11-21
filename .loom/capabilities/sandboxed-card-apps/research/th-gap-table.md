@@ -2,7 +2,9 @@
 
 数据源:
 - API 面清单:`./tavern-helper-api-surface.md` §API 面清单(L15-23)
-- server 实现:`apps/server/src/plugins/utopinn-th.js` METHODS(L238-,11+10 法;event 家族 L350-466,信箱/影子 L137-236)
+- server 实现:`apps/server/src/plugins/utopinn-th.js` METHODS(~50 法;变量 :690-780,
+  生成 :825-930 + stopGeneration :1267,消息写 :931-1051,世界书 :1052-1178,
+  正则 :1179-1266,event 家族 :1292-1440,信箱/影子 L137-236)
 - host T0:`packages/api-client/src/panel-t0.ts` handle(事件段 L229-281;订阅记账 L49-65;影子转发 L70-77)
 - TH shim:`packages/panel-shim/src/runtime.js` api(L110-,事件族 L135-186)
 - ctx shim:`packages/panel-shim/src/ctx-shim.js`(ctx.eventOn 家族 L229-295;th.* 未授权回落 ctx.on)
@@ -48,7 +50,7 @@ mount(origin 去重,不回流本 mount)。
 | insertVariables | server:321 + T0:212 | **实**(defaultsDeep 深补缺,既有不动) |
 | updateVariablesWith | server:340 + T0:216(shim 本地求值 ship result) | **实**(TH 本体=replaceVariables(result) 全量回写) |
 | deleteVariable | server:350 + T0:221 | **实** |
-| getMvuData / replaceMvuData | — | **缺**(T1 列名在 protocol:87-88;语义=变量面薄封,下格随消息写一起做) |
+| getMvuData / replaceMvuData | —(T1:87-88) | **缺**(MVU 语义薄封;message 域变量+丢根护栏已铺底,下格) |
 
 ## 消息家族
 
@@ -57,12 +59,12 @@ mount(origin 去重,不回流本 mount)。
 | getChatMessages | server:269(start/end 形)+ T0:163(TH range 形) | **实**(两形并存——server start/end;T0 range/role/hide/swipes) |
 | getLastMessageId | server:323 + T0:174 | **实** |
 | getCurrentMessageId | server:328 + T0:178 | **实**(语义=数组下标/挂载楼层) |
-| setChatMessages | —(protocol T1:76) | **缺**(消息写面,下格) |
-| createChatMessages | —(T1:77) | **缺** |
-| deleteChatMessages | —(T1:78) | **缺** |
-| rotateChatMessages | — | **缺**(未列 protocol;同下格消息写面) |
-| setChatMessage | — | **缺**(单楼写,下格) |
-| refreshOneMessage | —(T1:79) | **缺**(宿主重渲信号,随 displayed_message) |
+| setChatMessages | server:931(克隆体 mutate+CAS 落盘;message/data/swipes/swipe_id/is_hidden 面;越界楼静默跳过=TH no-op;信箱 message_edited+chat_changed) | **实** |
+| createChatMessages | server:965(role→is_user/narrator extra.type;data→variables[0];insert_before 归一;user→message_sent、余→message_received+chat_changed 信箱) | **实** |
+| deleteChatMessages | server:1005(负 id 归一;message_deleted+chat_changed) | **实** |
+| rotateChatMessages | server:1021(begin/middle/end 三段旋转;chat_changed) | **实** |
+| setChatMessage | server:952(单楼薄封→setChatMessages;mes 与 swipes[swipe_id] 同步=TH 语义) | **实** |
+| refreshOneMessage | server:1044(信箱 refresh_message;真重渲仍随 displayed_message) | **实**(信号面) |
 | formatAsDisplayedMessage | —(T1:85) | **缺**(displayed_message 渲染本体,下格结构项) |
 | retrieveDisplayedMessage | — | **缺**(同上) |
 
@@ -86,39 +88,69 @@ mount(origin 去重,不回流本 mount)。
 | createOrReplaceCharacter / deleteCharacter / replaceCharacter / updateCharacterWith | — | **缺**(角色写面;写卡目录,风险面单列下格) |
 | getCurrentCharacter*(其余成员) | — | **缺** |
 
-## 世界书家族(缺,下格)
+## 世界书家族(本格落地)
 
-`lorebook.ts + lorebook_entry.ts` 全套(get/create/update/delete book 与 entry):
-protocol 已列 th.getLorebook / th.getLorebookEntries / th.setLorebookEntries(T1:80-82),
-server 尚无。**缺**——走 worldInfo repo + 五层来源模型,下格。
+`lorebook.ts + lorebook_entry.ts` 全套——worldInfo repo 承载,TH 平铺视图⇄ST
+条目双向往返(uid/keys/type/position/depth/order/enabled/概率系):
 
-## 正则家族(缺,下格)
+| TH 法 | server 位置 | 状态 |
+|---|---|---|
+| getLorebooks | :1052(书名清单) | **实** |
+| getLorebook / getLorebookEntries | :1055/:1063(TH 视图读) | **实** |
+| setLorebookEntries | :1065(uid merge,未带字段不动) | **实** |
+| replaceLorebookEntries | :1080(全量替换) | **实** |
+| updateLorebookEntriesWith | :1085(shim 求值 result 全量回写=TH) | **实** |
+| createLorebookEntries | :1089(uid 分配+new_uids 回执) | **实** |
+| deleteLorebookEntries | :1107 | **实** |
+| createLorebook / deleteLorebook | :1116/:1124 | **实** |
+| getChatLorebook / setChatLorebook | :1133/:1140(chat_metadata.world_info;null 解绑走 undefined 覆键) | **实** |
+| getOrCreateChatLorebook | :1150 | **实** |
+| getCharLorebooks | :1161(primary=ext.world∨embedded char book) | **实**(辅书槽读面;写入未列) |
 
-`tavern_regex.ts`(读/写/执行 regex 脚本)。**缺**——server 侧有
-utopinn-regex.js 管线可锚(TH 面 = regex 脚本 CRUD+run,下格)。
+## 正则家族(本格落地)
+
+`tavern_regex.ts` 三域读/写/执行——global(settings.extension_settings.regex,
+repo.update 原子 RMW)/character(卡 extensions.regex_scripts,.json 原子写
++.png writeCharacterData;.webp 拒)/preset(repo patch;'in_use' 解析未实,
+传名可用):
+
+| TH 法 | server 位置 | 状态 |
+|---|---|---|
+| getTavernRegexes | :1179(TH 视图往返) | **实** |
+| replaceTavernRegexes | :1185 | **实** |
+| updateTavernRegexesWith | :1198(result 全量=TH) | **实** |
+| isCharacterTavernRegexesEnabled | :1202(character_allowed_regex 成员判定) | **实** |
+| formatAsTavernRegexedString | :1216(签名 text/source字符串/destination字符串;
+  脚本集=上游 allowedOnly 口径:global 恒入+character 仅放行;preset 因 in_use
+  未实不入;末段再过 substituteParams=TH) | **实** |
+| substituteMacros | :1260(chat/chatMetadata/globalVariables 真宏上下文) | **实** |
 
 ## 生成家族(GH#9 已实最小面)
 
 `function/generate/*`(触发/停止/流式回调)。protocol 已列
 th.generate / th.generateRaw / th.stopGeneration(T1:89-91)。
-- `generate(config)` | server:375 + shim api.generate | **实**(走 quiet-generation
+- `generate(config)` | server:825 + shim api.generate | **实**(走 quiet-generation
   同链:quietPrompt 系统注入 + skipWIAN,persist_target=none 不落楼层;
   config 面 user_input/prompt、max_tokens|responseLength、stop、trimToSentence、
   timeout_ms、quiet_name;未映射 TH 键(injects/overrides/custom_api/
   should_stream/image/tools/json_schema/max_chat_history)→ 回执 warnings 明示;
   生命周期 generation_requested/started/ended|stopped 经 th.events 信箱扇出,
   GENERATION_ENDED 负载=最终文本;失败 ok:false+diag th_generate_failed)。
-- `generateRaw(config)` | server:430 + shim | **实**(prompt/user_input 直通同链;
+- `generateRaw(config)` | server:880 + shim | **实**(prompt/user_input 直通同链;
   ordered_prompts 自定义消息序无 quiet 映射 → 诚实 unsupported)。
-- `stopGeneration` | — | **缺**(job cancel 面,下格)。
+- `stopGeneration` | server:1267 + shim stopGeneration/stopGenerationById | **实**
+  (generation_id 定点停 job→404 未命中;缺省停本 chat 活跃 job,
+  chat-persisted 键 avatar_url/file_name 寻址;quiet 任务 persist_target=none
+  不在 chatKey 面→回执 covered 如实标注)。
 - `should_stream` / 流式回推 | — | **缺**(下格)。
 
 ## 其他
 
 | TH 法 | 状态 |
 |---|---|
-| triggerSlash | **实**(server:297,共享 stscript-env) |
-| substituteMacros | **缺**(T1:86;core 宏面可锚) |
+| triggerSlash | **实**(server,共享 stscript-env) |
+| substituteMacros | **实**(server:1260;buildSubstCtx 真宏上下文) |
+| getMvuData / replaceMvuData | **缺**(T1:87-88;MVU 薄封——getVariables message 域 + 丢根护栏已铺底,语义封层随下格) |
 | displayed_message 渲染本体 | **缺**(结构项:卡 HTML 渲进消息位 iframe;TASK-049 done_when 第五条,下格) |
 | audio | **降**(TH 音效面,宿主 chrome 生态,不追) |
 | presets / personas / import_raw / render_character | **降**(宿主管理面,卡 API 语境不成立) |
@@ -128,6 +160,12 @@ th.generate / th.generateRaw / th.stopGeneration(T1:89-91)。
 
 - 研究档 ~50 法面:本格前 **实 11(server)+ 8(host T0 独有)≈ 19/50**。
 - 本格落地:事件家族 10 法全齐(shim 本地语义 + T0 记账 + server 影子/信箱),
-  宿主→卡通道真事件(message_received/edited/swipe/chat_changed/generation_*)。
-- 下格:消息写面(6)、世界书(3+)、正则、生成(2)、宏、MVU 薄封、
-  角色写/清单面、displayed_message+iframe 基建。
+  宿主→卡通道真事件(message_received/edited/swipe/chat_changed/generation_*);
+  变量 GH#4 护栏双端;generate/generateRaw(GH#9)+stopGeneration;
+  **消息写 6 法**(set/setOne/create/delete/rotate/refresh 信号);
+  **世界书 13 法**;**正则 5 法 + substituteMacros**。
+- 实测:tests/utopinn-th-events.test.mjs 18/18(事件+变量+生成+消息写+
+  lorebook+regex+stopGeneration 全绿)。
+- 下格:displayed_message 渲染本体+iframe 基建(formatAsDisplayedMessage/
+  retrieveDisplayedMessage/third_party_*)、MVU 薄封(getMvuData/replaceMvuData)、
+  流式 should_stream、角色写/清单面、generateRaw ordered_prompts。

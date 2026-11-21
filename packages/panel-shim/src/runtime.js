@@ -199,6 +199,96 @@
             if (typeof BOOTSTRAP.messageId === 'number') return Promise.resolve(BOOTSTRAP.messageId);
             return request('th.getCurrentMessageId');
         },
+        setChatMessages: function (chatMessages, o) {
+            return request('th.setChatMessages', { chat_messages: chatMessages, refresh: o && o.refresh });
+        },
+        setChatMessage: function (message, messageId, o) {
+            return request('th.setChatMessage', Object.assign({ message: message, message_id: messageId }, o || {}));
+        },
+        createChatMessages: function (chatMessages, o) {
+            return request('th.createChatMessages', {
+                chat_messages: chatMessages,
+                insert_before: o && o.insert_before, insert_at: o && o.insert_at, refresh: o && o.refresh,
+            });
+        },
+        deleteChatMessages: function (messageIds, o) {
+            return request('th.deleteChatMessages', { message_ids: messageIds, refresh: o && o.refresh });
+        },
+        rotateChatMessages: function (begin, middle, end, o) {
+            return request('th.rotateChatMessages', { begin: begin, middle: middle, end: end, refresh: o && o.refresh });
+        },
+        refreshOneMessage: function (messageId) {
+            return request('th.refreshOneMessage', { message_id: messageId });
+        },
+
+        // lorebook (TH 形字段;条目 CRUD 与绑定)
+        getLorebooks: function () { return request('th.getLorebooks'); },
+        getLorebookEntries: function (lorebook) {
+            return request('th.getLorebookEntries', { lorebook: lorebook }).then(function (r) {
+                return (r && r.entries) ? r.entries : r;
+            });
+        },
+        setLorebookEntries: function (lorebook, entries) {
+            return request('th.setLorebookEntries', { lorebook: lorebook, entries: entries }).then(function (r) {
+                return (r && r.entries) ? r.entries : r;
+            });
+        },
+        replaceLorebookEntries: function (lorebook, entries) {
+            return request('th.replaceLorebookEntries', { lorebook: lorebook, entries: entries });
+        },
+        updateLorebookEntriesWith: function (lorebook, updater) {
+            return api.getLorebookEntries(lorebook).then(function (entries) {
+                return request('th.updateLorebookEntriesWith', { lorebook: lorebook, result: updater(entries) }).then(function (r) {
+                    return (r && r.entries) ? r.entries : r;
+                });
+            });
+        },
+        createLorebookEntries: function (lorebook, entries) {
+            return request('th.createLorebookEntries', { lorebook: lorebook, entries: entries });
+        },
+        deleteLorebookEntries: function (lorebook, uids) {
+            return request('th.deleteLorebookEntries', { lorebook: lorebook, uids: uids });
+        },
+        createLorebook: function (lorebook) {
+            return request('th.createLorebook', { lorebook: lorebook }).then(function (r) { return !!(r && r.created); });
+        },
+        deleteLorebook: function (lorebook) {
+            return request('th.deleteLorebook', { lorebook: lorebook }).then(function (r) { return !!(r && r.deleted); });
+        },
+        getChatLorebook: function () { return request('th.getChatLorebook'); },
+        setChatLorebook: function (lorebook) { return request('th.setChatLorebook', { lorebook: lorebook }); },
+        getOrCreateChatLorebook: function (lorebook) { return request('th.getOrCreateChatLorebook', { lorebook: lorebook }); },
+        getCharLorebooks: function (o) {
+            return request('th.getCharLorebooks', { name: o && o.name, type: o && o.type });
+        },
+        getCurrentCharPrimaryLorebook: function () {
+            return api.getCharLorebooks().then(function (r) { return (r && r.primary) || null; });
+        },
+
+        // tavern regex(TH 视图字段;global/character/preset 三域)
+        getTavernRegexes: function (o) { return request('th.getTavernRegexes', o || {}); },
+        replaceTavernRegexes: function (regexes, o) {
+            return request('th.replaceTavernRegexes', Object.assign({ regexes: regexes }, o || {}));
+        },
+        updateTavernRegexesWith: function (updater, o) {
+            return api.getTavernRegexes(o).then(function (regexes) {
+                return request('th.updateTavernRegexesWith', Object.assign({ result: updater(regexes) }, o || {}));
+            });
+        },
+        isCharacterTavernRegexesEnabled: function () { return request('th.isCharacterTavernRegexesEnabled'); },
+        // TH 签名 (text, source, destination, options)
+        formatAsTavernRegexedString: function (text, source, destination, o) {
+            return request('th.formatAsTavernRegexedString', Object.assign(
+                { text: text, source: source, destination: destination }, o || {}));
+        },
+        substituteMacros: function (text) {
+            return request('th.substituteMacros', { text: text });
+        },
+
+        stopGeneration: function () { return request('th.stopGeneration', {}); },
+        stopGenerationById: function (generationId) {
+            return request('th.stopGeneration', { generation_id: generationId });
+        },
 
         // injected prompts
         injectPrompts: function (prompts) { return request('th.injectPrompts', { prompts: prompts }); },

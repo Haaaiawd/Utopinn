@@ -31,8 +31,11 @@
 import {
     executeSlashCommandsWithOptions,
     registerBuiltinCommands,
+    getRegexedString,
+    regex_placement,
+    substituteParams,
 } from '@utopinn/core';
-import { getChatRepo, getSettingsRepo, getStorageEngine } from '../storage/index.js';
+import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
@@ -198,6 +201,423 @@ async function recordThEvent(ctx2, event, args) {
         });
     } catch { /* 生命周期事件失败不掩主结果 */ }
 }
+
+// ── 消息写助手(TH 字段名 → ST 楼层形) ──────────────────────────────
+/** message_id 归一:负数 = 从尾数(TH normalizeMessageId)。 */
+function normMessageId(id, len) {
+    const n = Number(id);
+    if (!Number.isInteger(n)) return null;
+    return n < 0 ? len + n : n;
+}
+/**
+ * body RMW + CAS:读 doc → mutate(body) → save(header,body,integrity)。
+ * integrity 撞车(并发写)→ 409。mutate 返回值进 out。
+ */
+async function mutateChatBody(ctx2, mutate) {
+    if (!ctx2.charDir || !ctx2.chatName) {
+        return { error: 'target.charDir + target.chatName required', status: 400 };
+    }
+    const repo = getChatRepo();
+    const doc = await repo.get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+    if (!doc) return { error: `chat not found: ${ctx2.charDir}/${ctx2.chatName}`, status: 404 };
+    const body = Array.isArray(doc.body) ? structuredClone(doc.body) : [];
+    const out = mutate(body);
+    try {
+        await repo.save(ctx2.handle, ctx2.charDir, ctx2.chatName, doc.header ?? {}, body, doc.integrity);
+    } catch (e) {
+        if (String(e?.name) === 'ConflictError' || /integrity_mismatch/i.test(String(e?.message))) {
+            return { error: 'chat integrity mismatch (concurrent write) — retry', status: 409 };
+        }
+        throw e;
+    }
+    return { out };
+}
+const pad = (arr, len, fill) => Array.from({ length: len }, (_, i) => arr?.[i] ?? (fill && typeof fill === 'object' ? {} : fill));
+/** TH setChatMessages 单楼补丁 → ST 楼层字段(镜像 TH modify 语义)。 */
+function applyThMessagePatch(m, patch) {
+    if (patch.name !== undefined) m.name = patch.name;
+    if (patch.role !== undefined) {
+        m.is_user = patch.role === 'user';
+        if (patch.role === 'system') { (m.extra ??= {}).type = 'narrator'; }
+        else if (m.extra && m.extra.type === 'narrator') delete m.extra.type;
+    }
+    if (patch.is_hidden !== undefined) m.is_system = !!patch.is_hidden;
+    const isChatMessage = patch.message !== undefined || patch.data !== undefined;
+    if (isChatMessage) {
+        if (patch.message !== undefined) {
+            m.mes = patch.message;
+            if (Array.isArray(m.swipes)) m.swipes[m.swipe_id ?? 0] = patch.message;
+        }
+        if (patch.data !== undefined) {
+            if (!Array.isArray(m.variables)) m.variables = pad([], Math.max(1, m.swipes?.length ?? 1), {});
+            m.variables[m.swipe_id ?? 0] = patch.data;
+        }
+        if (patch.extra !== undefined) {
+            if (!Array.isArray(m.swipe_info)) m.swipe_info = pad([], Math.max(1, m.swipes?.length ?? 1), {});
+            m.extra = patch.extra;
+            m.swipe_info[m.swipe_id ?? 0] = patch.extra;
+        }
+    } else if (patch.swipe_id !== undefined || patch.swipes !== undefined
+        || patch.swipes_data !== undefined || patch.swipes_info !== undefined) {
+        // swipe 面写:数组补到 max_length,swipe_id 钳位,mes/extra 同步当前页
+        const maxLen = Math.max(
+            patch.swipes?.length ?? 0, patch.swipes_data?.length ?? 0,
+            patch.swipes_info?.length ?? 0, m.swipes?.length ?? 1, 1);
+        const sid = Math.max(0, Math.min(maxLen - 1, patch.swipe_id ?? m.swipe_id ?? 0));
+        const swipes = pad(patch.swipes ?? m.swipes ?? [m.mes], maxLen, '');
+        const sdata = pad(patch.swipes_data ?? m.variables ?? [{}], maxLen, {});
+        const sinfo = pad(patch.swipes_info ?? m.swipe_info ?? [{}], maxLen, {});
+        m.swipes = swipes;
+        m.variables = sdata;
+        m.swipe_info = sinfo;
+        m.swipe_id = sid;
+        m.mes = swipes[sid] ?? '';
+        m.extra = sinfo[sid] ?? {};
+    }
+}
+
+// ── 世界书助手(TH 平铺字段 ↔ ST entries 原档) ───────────────────────
+const LB_POS_TO_TH = {
+    0: 'before_character_definition', 1: 'after_character_definition',
+    5: 'before_example_messages', 6: 'after_example_messages',
+    2: 'before_author_note', 3: 'after_author_note',
+};
+const LB_POS_TO_ST = {
+    before_character_definition: 0, after_character_definition: 1,
+    before_example_messages: 5, after_example_messages: 6,
+    before_author_note: 2, after_author_note: 3,
+    at_depth_as_system: 4, at_depth_as_user: 4, at_depth_as_assistant: 4,
+};
+const LB_ROLE_TO_ST = { at_depth_as_system: 0, at_depth_as_user: 1, at_depth_as_assistant: 2 };
+const LB_LOGIC_TO_TH = { 0: 'and_any', 1: 'not_all', 2: 'not_any', 3: 'and_all' };
+const LB_LOGIC_TO_ST = { and_any: 0, not_all: 1, not_any: 2, and_all: 3 };
+
+/** ST 原档 entry → TH 平铺视图(镜像 JSR toLorebookEntry)。 */
+function stEntryToTh(e) {
+    const uid = Number(e?.uid);
+    return {
+        uid,
+        display_index: e?.displayIndex ?? 0,
+        comment: e?.comment ?? '',
+        enabled: !e?.disable,
+        type: e?.constant ? 'constant' : e?.vectorized ? 'vectorized' : 'selective',
+        position: LB_POS_TO_TH[e?.position]
+            ?? (e?.role === 1 ? 'at_depth_as_user' : e?.role === 2 ? 'at_depth_as_assistant' : 'at_depth_as_system'),
+        depth: e?.position === 4 ? (e?.depth ?? null) : null,
+        order: e?.order ?? 100,
+        probability: e?.probability ?? 100,
+        key: e?.key ?? [],
+        keys: e?.key ?? [],
+        logic: LB_LOGIC_TO_TH[e?.selectiveLogic] ?? 'and_any',
+        filter: e?.keysecondary ?? [],
+        filters: e?.keysecondary ?? [],
+        scan_depth: e?.scanDepth ?? 'same_as_global',
+        case_sensitive: e?.caseSensitive ?? 'same_as_global',
+        match_whole_words: e?.matchWholeWords ?? 'same_as_global',
+        use_group_scoring: e?.useGroupScoring ?? 'same_as_global',
+        automation_id: e?.automationId || null,
+        exclude_recursion: !!e?.excludeRecursion,
+        prevent_recursion: !!e?.preventRecursion,
+        delay_until_recursion: e?.delayUntilRecursion ?? false,
+        content: e?.content ?? '',
+        group: e?.group ?? '',
+        group_prioritized: !!e?.groupOverride,
+        group_weight: e?.groupWeight ?? 100,
+        sticky: e?.sticky ?? null,
+        cooldown: e?.cooldown ?? null,
+        delay: e?.delay ?? null,
+    };
+}
+/** TH 平铺 patch → ST 原档 patch(仅提供的字段)。 */
+function thPatchToSt(p) {
+    const st = {};
+    const put = (k, v) => { if (v !== undefined) st[k] = v; };
+    if (p.uid !== undefined) put('uid', Number(p.uid));
+    if (p.display_index !== undefined) put('displayIndex', p.display_index);
+    if (p.comment !== undefined) put('comment', p.comment);
+    if (p.enabled !== undefined) put('disable', !p.enabled);
+    if (p.type !== undefined) { st.constant = p.type === 'constant'; st.vectorized = p.type === 'vectorized'; }
+    if (p.position !== undefined) {
+        put('position', LB_POS_TO_ST[p.position] ?? 0);
+        if (p.position.startsWith('at_depth_as_')) st.role = LB_ROLE_TO_ST[p.position] ?? 0;
+    }
+    if (p.depth !== undefined) put('depth', p.depth === null ? 4 : p.depth);
+    put('order', p.order);
+    put('probability', p.probability);
+    if (p.keys !== undefined) put('key', p.keys);
+    if (p.logic !== undefined) put('selectiveLogic', LB_LOGIC_TO_ST[p.logic] ?? 0);
+    if (p.filters !== undefined) put('keysecondary', p.filters);
+    if (p.scan_depth !== undefined) put('scanDepth', p.scan_depth === 'same_as_global' ? null : p.scan_depth);
+    if (p.case_sensitive !== undefined) put('caseSensitive', p.case_sensitive === 'same_as_global' ? null : p.case_sensitive);
+    if (p.match_whole_words !== undefined) put('matchWholeWords', p.match_whole_words === 'same_as_global' ? null : p.match_whole_words);
+    if (p.use_group_scoring !== undefined) put('useGroupScoring', p.use_group_scoring === 'same_as_global' ? null : p.use_group_scoring);
+    if (p.automation_id !== undefined) put('automationId', p.automation_id === null ? '' : p.automation_id);
+    if (p.exclude_recursion !== undefined) put('excludeRecursion', p.exclude_recursion);
+    if (p.prevent_recursion !== undefined) put('preventRecursion', p.prevent_recursion);
+    if (p.delay_until_recursion !== undefined) put('delayUntilRecursion', p.delay_until_recursion);
+    put('content', p.content);
+    if (p.group !== undefined) put('group', p.group);
+    if (p.group_prioritized !== undefined) put('groupOverride', p.group_prioritized);
+    if (p.group_weight !== undefined) put('groupWeight', p.group_weight);
+    if (p.sticky !== undefined) put('sticky', p.sticky === null ? 0 : p.sticky);
+    if (p.cooldown !== undefined) put('cooldown', p.cooldown === null ? 0 : p.cooldown);
+    if (p.delay !== undefined) put('delay', p.delay === null ? 0 : p.delay);
+    return st;
+}
+/** TH patch 合进 TH 视图 entry(setLorebookEntries 的 _.merge 语义,数组/标量替)。 */
+function deepAssignThEntry(dst, patch) {
+    for (const [k, v] of Object.entries(patch)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        dst[k] = v;
+    }
+}
+const LB_DEFAULTS = {
+    key: [], keysecondary: [], comment: '', content: '', constant: false,
+    vectorized: false, selective: true, selectiveLogic: 0, addMemo: true,
+    order: 100, position: 0, disable: false, excludeRecursion: false,
+    preventRecursion: false, matchPersonaDescription: false,
+    matchCharacterDescription: false, matchCharacterPersonality: false,
+    matchCharacterDepthPrompt: false, matchScenario: false,
+    matchCreatorNotes: false, delayUntilRecursion: 0, probability: 100,
+    useProbability: true, depth: 4, group: '', groupOverride: false,
+    groupWeight: 100, scanDepth: null, caseSensitive: null,
+    matchWholeWords: null, useGroupScoring: null, automationId: '',
+    role: 0, sticky: null, cooldown: null, delay: null,
+};
+/** TH 视图 → {entries:{uid:ST原档}}(collision 消解+display_index 兜底)。 */
+function thEntriesToStDoc(thEntries) {
+    const used = new Set();
+    let nextIndex = Math.max(-1, ...thEntries.map((e) => e.display_index ?? -1)) + 1;
+    const doc = { entries: {} };
+    for (const e of thEntries) {
+        let uid = Number(e.uid);
+        if (!Number.isFinite(uid) || used.has(uid)) { uid = 0; while (used.has(uid) && uid < 1_000_000) uid++; }
+        used.add(uid);
+        const st = { ...LB_DEFAULTS, ...thPatchToSt({ ...e, uid, display_index: e.display_index ?? nextIndex++ }) };
+        st.selective = !(st.constant || st.vectorized);
+        doc.entries[uid] = st;
+    }
+    return doc;
+}
+function lorebookToTh(doc) {
+    return Object.values(doc?.entries ?? {})
+        .map(stEntryToTh)
+        .sort((a, b) => (a.display_index ?? 0) - (b.display_index ?? 0));
+}
+async function resolveLorebook(ctx2, rawName) {
+    const name = String(rawName ?? '').trim();
+    if (!name) return { ok: false, status: 400, error: 'args.lorebook required' };
+    let safe;
+    try { safe = safeName(name, 'args.lorebook'); } catch (e) { return { ok: false, status: 400, error: String(e?.message ?? e) }; }
+    const canonical = await getWorldInfoRepo().resolveName(ctx2.handle, safe);
+    return { ok: true, name: canonical ?? safe };
+}
+/**
+ * 书 RMW:resolve → get → toTh[] → mutate → toStDoc → save。
+ * mutate 返回数组(全量新表)或 {entries, extra}。成功 result 始终含最新 entries。
+ */
+async function lorebookMutate(ctx2, rawName, mutate) {
+    const resolved = await resolveLorebook(ctx2, rawName);
+    if (!resolved.ok) return resolved;
+    const repo = getWorldInfoRepo();
+    const doc = await repo.get(ctx2.handle, resolved.name);
+    if (!doc) return { ok: false, status: 404, error: `lorebook not found: ${rawName}` };
+    const thEntries = lorebookToTh(doc);
+    const r = mutate(thEntries);
+    const nextEntries = Array.isArray(r) ? r : r?.entries;
+    const extra = Array.isArray(r) ? {} : (r?.extra ?? {});
+    if (!Array.isArray(nextEntries)) return { ok: false, status: 400, error: 'mutator must return entries' };
+    await repo.save(ctx2.handle, resolved.name, thEntriesToStDoc(nextEntries));
+    return { ok: true, result: { name: resolved.name, entries: lorebookToTh(await repo.get(ctx2.handle, resolved.name)), ...extra } };
+}
+
+// ── 正则助手(TavernRegex 视图 ↔ RegexScriptData) ──────────────────
+/** 'name.png'/'name'/'current' → charDir(TH character 形参同款)。 */
+function resolveCharTarget(name) {
+    if (!name || name === 'current') return null;
+    return String(name).replace(/\.png$/i, '');
+}
+function toTavernRegexView(s) {
+    const placement = Array.isArray(s?.placement) ? s.placement : [];
+    const n = (v) => typeof v === 'number' ? v : null;
+    return {
+        id: s?.id,
+        script_name: s?.scriptName ?? '',
+        enabled: !s?.disabled,
+        find_regex: s?.findRegex ?? '',
+        trim_strings: Array.isArray(s?.trimStrings) ? s.trimStrings : [],
+        replace_string: s?.replaceString ?? '',
+        source: {
+            user_input: placement.includes(regex_placement.USER_INPUT),
+            ai_output: placement.includes(regex_placement.AI_OUTPUT),
+            slash_command: placement.includes(regex_placement.SLASH_COMMAND),
+            world_info: placement.includes(regex_placement.WORLD_INFO),
+            reasoning: placement.includes(regex_placement.REASONING),
+        },
+        destination: { display: !!s?.markdownOnly, prompt: !!s?.promptOnly },
+        run_on_edit: !!s?.runOnEdit,
+        min_depth: n(s?.minDepth),
+        max_depth: n(s?.maxDepth),
+    };
+}
+function fromTavernRegexView(r) {
+    const src = r?.source ?? {};
+    const placement = [
+        ...(src.user_input ? [regex_placement.USER_INPUT] : []),
+        ...(src.ai_output ? [regex_placement.AI_OUTPUT] : []),
+        ...(src.slash_command ? [regex_placement.SLASH_COMMAND] : []),
+        ...(src.world_info ? [regex_placement.WORLD_INFO] : []),
+        ...(src.reasoning ? [regex_placement.REASONING] : []),
+    ];
+    const dest = r?.destination ?? {};
+    return {
+        id: r?.id,
+        scriptName: r?.script_name ?? '',
+        disabled: !r?.enabled,
+        runOnEdit: !!r?.run_on_edit,
+        findRegex: r?.find_regex ?? '',
+        trimStrings: Array.isArray(r?.trim_strings) ? r.trim_strings : [],
+        replaceString: r?.replace_string ?? '',
+        placement,
+        minDepth: r?.min_depth ?? null,
+        maxDepth: r?.max_depth ?? null,
+        markdownOnly: !!dest.display,
+        promptOnly: !!dest.prompt,
+    };
+}
+/** regex 三域读:global(settings)/character(卡)/preset(preset repo)。 */
+async function readRegexScope(ctx2, a) {
+    const type = a?.type ?? 'global';
+    if (type === 'global') {
+        const settings = await getSettingsRepo().get(ctx2.handle) ?? {};
+        return { scripts: Array.isArray(settings?.extension_settings?.regex) ? settings.extension_settings.regex : [] };
+    }
+    if (type === 'character') {
+        const charDir = resolveCharTarget(a?.name) ?? ctx2.charDir;
+        if (!charDir) return { error: 'character scope requires name or target.charDir', status: 400 };
+        try {
+            const card = await loadCard(ctx2.directories, charDir);
+            if (!card) return { error: `character not found: ${charDir}`, status: 404 };
+            const scoped = card?.data?.extensions?.regex_scripts ?? card?.extensions?.regex_scripts;
+            return { scripts: Array.isArray(scoped) ? scoped : [] };
+        } catch (e) { return { error: String(e?.message ?? e), status: 404 }; }
+    }
+    if (type === 'preset') {
+        const apiId = a?.api_id ?? a?.apiId ?? 'openai';
+        const presetName = a?.name === 'in_use' ? a?.preset_in_use ?? a?.name : a?.name;
+        if (!presetName || presetName === 'in_use') {
+            return { error: "preset scope requires name('in_use' 解析未实——传具体预设名)", status: 400 };
+        }
+        const doc = await getPresetRepo().get(ctx2.handle, apiId, safeName(String(presetName), 'args.name'));
+        if (!doc) return { error: `preset not found: ${apiId}/${presetName}`, status: 404 };
+        return { scripts: Array.isArray(doc?.extensions?.regex_scripts) ? doc.extensions.regex_scripts : [] };
+    }
+    return { error: `type must be global|character|preset`, status: 400 };
+}
+/** 卡文件写面(.json 原子写;.png 走 writeCharacterData 懒加载;.webp 拒)。 */
+async function writeCardRegexScripts(ctx2, charDir, scripts) {
+    const dir = ctx2.directories.characters;
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const candidates = ['.png', '.webp', '.json'].map((ext) => ({ file: path.join(dir, `${charDir}${ext}`), ext }));
+    const target = candidates.find((c) => fs.existsSync(c.file));
+    if (!target) return { error: `character file not found: ${charDir}`, status: 404 };
+    if (target.ext === '.webp') {
+        return { error: `scoped regex write supports .png/.json cards only: ${charDir}.webp`, status: 400 };
+    }
+    let card;
+    if (target.ext === '.json') {
+        card = JSON.parse(await fs.promises.readFile(target.file, 'utf8'));
+    } else {
+        const { readCharacterData } = await import('../endpoints/characters.js');
+        card = JSON.parse(await readCharacterData(target.file, 'png'));
+    }
+    if (!card.data || typeof card.data !== 'object' || Array.isArray(card.data)) card.data = {};
+    if (!card.data.extensions || typeof card.data.extensions !== 'object' || Array.isArray(card.data.extensions)) {
+        card.data.extensions = {};
+    }
+    card.data.extensions.regex_scripts = scripts;
+    if (card.extensions && typeof card.extensions === 'object') delete card.extensions.regex_scripts;
+    if (card.spec === undefined) { card.spec = 'chara_card_v2'; card.spec_version = '2.0'; }
+    if (target.ext === '.json') {
+        const { sync: writeFileAtomicSync } = await import('write-file-atomic');
+        writeFileAtomicSync(target.file, JSON.stringify(card, null, 2), 'utf8');
+    } else {
+        const { writeCharacterData } = await import('../endpoints/characters.js');
+        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName } }, lastWriteCharacterDataError: undefined };
+        const ok = await writeCharacterData(target.file, JSON.stringify(card), charDir, fakeReq, undefined,
+            { allowMissingInputFallback: false, requireExistingOutput: true });
+        if (!ok) return { error: fakeReq.lastWriteCharacterDataError ?? 'character card write failed', status: 500 };
+    }
+    return { ok: true };
+}
+async function resolveAvatarName(directories, charDir) {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    for (const ext of ['.png', '.webp']) {
+        if (fs.existsSync(path.join(directories.characters, `${charDir}${ext}`))) return `${charDir}${ext}`;
+    }
+    return `${charDir}.json`;
+}
+/** 真宏上下文:chat/chatMetadata/globalVariables 缺一即炸(getChatIdHash 等)。 */
+async function buildSubstCtx(ctx2, settings = null) {
+    const s = settings ?? (await getSettingsRepo().get(ctx2.handle)) ?? {};
+    let chatDoc = null;
+    if (ctx2.charDir && ctx2.chatName) {
+        try { chatDoc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName); } catch { chatDoc = null; }
+    }
+    return {
+        chat: Array.isArray(chatDoc?.body) ? chatDoc.body : [],
+        chatMetadata: { ...(chatDoc?.header?.chat_metadata ?? {}) },
+        globalVariables: s?.extension_settings?.variables?.global ?? {},
+        name1: ctx2.userName ?? 'User',
+        name2: ctx2.charDir ?? '',
+        currentChatId: ctx2.chatName ?? '',
+    };
+}
+/** regex 三域写:global=settings repo.update(原子 RMW);character=卡文件;preset=repo patch。 */
+async function writeRegexScope(ctx2, a, scripts) {
+    const type = a?.type ?? 'global';
+    if (type === 'global') {
+        const repo = getSettingsRepo();
+        // update:缺席文档落 base、事务内原子 RMW(比 get+patch 干净,免 404)
+        await repo.update(ctx2.handle, (doc) => {
+            const out = (doc && typeof doc === 'object' && !Array.isArray(doc)) ? doc : {};
+            if (typeof out.extension_settings !== 'object' || out.extension_settings === null || Array.isArray(out.extension_settings)) {
+                out.extension_settings = {};
+            }
+            out.extension_settings.regex = scripts;
+            return out;
+        });
+        return { ok: true };
+    }
+    if (type === 'character') {
+        const charDir = resolveCharTarget(a?.name) ?? ctx2.charDir;
+        if (!charDir) return { error: 'character scope requires name or target.charDir', status: 400 };
+        return writeCardRegexScripts(ctx2, charDir, scripts);
+    }
+    if (type === 'preset') {
+        const apiId = a?.api_id ?? a?.apiId ?? 'openai';
+        const presetName = a?.name === 'in_use' ? a?.preset_in_use ?? a?.name : a?.name;
+        if (!presetName || presetName === 'in_use') {
+            return { error: "preset scope requires name('in_use' 解析未实——传具体预设名)", status: 400 };
+        }
+        const safe = safeName(String(presetName), 'args.name');
+        const doc = await getPresetRepo().get(ctx2.handle, apiId, safe);
+        if (!doc) return { error: `preset not found: ${apiId}/${presetName}`, status: 404 };
+        const ops = [];
+        if (typeof doc.extensions !== 'object' || doc.extensions === null || Array.isArray(doc.extensions)) {
+            ops.push({ op: 'add', path: '/extensions', value: {} });
+        }
+        const cur = doc?.extensions?.regex_scripts;
+        if (cur === undefined) ops.push({ op: 'add', path: '/extensions/regex_scripts', value: scripts });
+        else ops.push({ op: 'test', path: '/extensions/regex_scripts', value: cur }, { op: 'replace', path: '/extensions/regex_scripts', value: scripts });
+        await getPresetRepo().patch(ctx2.handle, apiId, safe, ops);
+        return { ok: true };
+    }
+    return { error: 'type must be global|character|preset', status: 400 };
+}
+
 /** 监听器定位:listener_id 优先;否则取该 event 最近一条(TH 形参 fn 不可序列化)。 */
 function findListenerIndex(doc, a) {
     const lid = String(a?.listener_id ?? '').trim();
@@ -503,6 +923,369 @@ const METHODS = {
                 : { name: s?.name ?? `script-${i}`, script: s?.script ?? s?.content ?? '' })
             .filter(s => s.script);
         return { ok: true, result: list };
+    },
+
+    // ── 消息写家族(T1):TH 字段名 → ST 楼层形;写后信箱事件 ──────────
+    /** {chat_messages:[{message_id, name?, role?, is_hidden?, message?, data?,
+     *  extra?, swipe_id?, swipes?, swipes_data?, swipes_info?}], refresh?} */
+    async setChatMessages(a, _scope, ctx2) {
+        const list = Array.isArray(a?.chat_messages) ? a.chat_messages : null;
+        if (!list?.length) return { ok: false, status: 400, error: 'args.chat_messages must be a non-empty array' };
+        const r = await mutateChatBody(ctx2, (body) => {
+            const edits = new Set();
+            for (const patch of list) {
+                const mid = normMessageId(patch?.message_id, body.length);
+                if (mid === null || mid < 0 || mid >= body.length) continue;
+                const m = body[mid];
+                if (!m || typeof m !== 'object') continue;
+                applyThMessagePatch(m, patch);
+                edits.add(mid);
+            }
+            return { affected: [...edits] };
+        });
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        for (const mid of r.out.affected) await recordThEvent(ctx2, 'message_edited', [mid]);
+        if (r.out.affected.length) await recordThEvent(ctx2, 'chat_changed', [{ chat: ctx2.chatName }]);
+        return { ok: true, result: { edited: r.out.affected } };
+    },
+    /** 单楼便捷写:TH setChatMessage(message, message_id, option)。 */
+    async setChatMessage(a, _scope, ctx2) {
+        const mid = Number(a?.message_id);
+        if (!Number.isInteger(mid)) return { ok: false, status: 400, error: 'args.message_id required' };
+        const patch = { message_id: mid };
+        if (typeof a?.message === 'string') patch.message = a.message;
+        else if (a?.message && typeof a.message === 'object') Object.assign(patch, a.message);
+        for (const k of ['name', 'role', 'is_hidden', 'data', 'extra', 'swipes', 'swipe_id', 'swipes_data', 'swipes_info']) {
+            if (a?.[k] !== undefined) patch[k] = a[k];
+        }
+        return METHODS.setChatMessages({ chat_messages: [patch], refresh: a?.refresh }, _scope, ctx2);
+    },
+    /** {chat_messages:[{role, message, name?, is_hidden?, data?, extra?}],
+     *  insert_before?:number|'end', refresh?} — TH role/message 必填。 */
+    async createChatMessages(a, _scope, ctx2) {
+        const list = Array.isArray(a?.chat_messages) ? a.chat_messages : null;
+        if (!list?.length) return { ok: false, status: 400, error: 'args.chat_messages must be a non-empty array' };
+        const roles = new Set(['user', 'assistant', 'system']);
+        for (const [i, m] of list.entries()) {
+            if (!roles.has(m?.role) || typeof m?.message !== 'string') {
+                return { ok: false, status: 400, error: `chat_messages[${i}]: role(user|assistant|system) + message(string) required` };
+            }
+        }
+        // 默认名:system→'system' user→persona assistant→卡名(TH convert 同款)。
+        let charName = ctx2.charDir;
+        try { const c = ctx2.charDir && await loadCard(ctx2.directories, ctx2.charDir); charName = c?.data?.name ?? c?.name ?? charName; } catch { /* 名兜底 */ }
+        const insertAt = a?.insert_at ?? a?.insert_before ?? 'end';
+        const r = await mutateChatBody(ctx2, (body) => {
+            const at = insertAt === 'end' ? body.length
+                : Math.max(0, Math.min(body.length, normMessageId(insertAt, body.length) ?? body.length));
+            const created = list.map((m) => {
+                const msg = {
+                    name: m.name ?? (m.role === 'system' ? 'system' : m.role === 'user' ? (ctx2.userName || 'User') : charName),
+                    is_user: m.role === 'user',
+                    is_system: m.is_hidden ?? false,
+                    mes: m.message,
+                    send_date: Date.now(),
+                };
+                if (m.extra) msg.extra = m.extra;
+                else if (m.role === 'system') msg.extra = { type: 'narrator' };
+                if (m.data) msg.variables = [m.data];
+                return msg;
+            });
+            body.splice(at, 0, ...created);
+            return { at, ids: created.map((_, i) => at + i), msgs: created };
+        });
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        // TH:MESSAGE_SENT(自建 user 楼)/MESSAGE_RECEIVED(其它)+ 渲染事件由宿主泵补。
+        for (const [i, mid] of r.out.ids.entries()) {
+            await recordThEvent(ctx2, r.out.msgs[i].is_user ? 'message_sent' : 'message_received', [mid]);
+        }
+        await recordThEvent(ctx2, 'chat_changed', [{ chat: ctx2.chatName }]);
+        return { ok: true, result: { message_ids: r.out.ids, count: r.out.ids.length } };
+    },
+    async deleteChatMessages(a, _scope, ctx2) {
+        const ids = Array.isArray(a?.message_ids) ? a.message_ids : null;
+        if (!ids?.length) return { ok: false, status: 400, error: 'args.message_ids must be a non-empty array' };
+        const r = await mutateChatBody(ctx2, (body) => {
+            const mids = [...new Set(ids.map((id) => normMessageId(id, body.length)))]
+                .filter((m) => m !== null && m >= 0 && m < body.length)
+                .sort((x, y) => y - x);
+            for (const mid of mids) body.splice(mid, 1);
+            return { deleted: mids.sort((x, y) => x - y) };
+        });
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        for (const mid of r.out.deleted) await recordThEvent(ctx2, 'message_deleted', [mid]);
+        if (r.out.deleted.length) await recordThEvent(ctx2, 'chat_changed', [{ chat: ctx2.chatName }]);
+        return { ok: true, result: { deleted: r.out.deleted } };
+    },
+    /** [begin,middle)[middle,end) → [middle,end)[begin,middle)。 */
+    async rotateChatMessages(a, _scope, ctx2) {
+        if (a?.begin === undefined || a?.middle === undefined || a?.end === undefined) {
+            return { ok: false, status: 400, error: 'args.begin + args.middle + args.end required' };
+        }
+        const r = await mutateChatBody(ctx2, (body) => {
+            const n = body.length;
+            const begin = Math.max(0, normMessageId(a.begin, n) ?? 0);
+            const middle = Math.min(n, normMessageId(a.middle, n) ?? n);
+            const end = Math.min(n, normMessageId(a.end, n) ?? n);
+            if (!(begin < middle && middle <= end)) return { rotated: false, begin, middle, end };
+            const head = body.slice(0, begin);
+            const first = body.slice(begin, middle);
+            const second = body.slice(middle, end);
+            const tail = body.slice(end);
+            body.length = 0;
+            body.push(...head, ...second, ...first, ...tail);
+            return { rotated: true, begin, middle, end };
+        });
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        if (r.out.rotated) await recordThEvent(ctx2, 'chat_changed', [{ chat: ctx2.chatName }]);
+        return { ok: true, result: r.out };
+    },
+    /** TH refreshOneMessage:重渲信号——信箱推 refresh_message,宿主侧决定动作。 */
+    async refreshOneMessage(a, _scope, ctx2) {
+        const mid = Number(a?.message_id);
+        if (!Number.isInteger(mid)) return { ok: false, status: 400, error: 'args.message_id required' };
+        await recordThEvent(ctx2, 'refresh_message', [mid]);
+        return { ok: true };
+    },
+
+    // ── 世界书家族(T1):TH 形字段 ↔ ST entries 对象 ────────────────────
+    async getLorebooks(_a, _scope, ctx2) {
+        return { ok: true, result: await getWorldInfoRepo().listNames(ctx2.handle) };
+    },
+    async getLorebookEntries(a, _scope, ctx2) {
+        const name = await resolveLorebook(ctx2, a?.lorebook ?? a?.name);
+        if (!name.ok) return name;
+        const doc = await getWorldInfoRepo().get(ctx2.handle, name.name);
+        if (!doc) return { ok: false, status: 404, error: `lorebook not found: ${a?.lorebook ?? a?.name}` };
+        return { ok: true, result: { name: name.name, entries: lorebookToTh(doc) } };
+    },
+    /** getLorebook 非 TH 法名(protocol 占位),语义=含原档的整本视图。 */
+    async getLorebook(a, scope, ctx2) { return METHODS.getLorebookEntries(a, scope, ctx2); },
+    /** {lorebook, entries:[{uid, ...patch}]} merge-by-uid(TH setLorebookEntries)。 */
+    async setLorebookEntries(a, _scope, ctx2) {
+        const list = Array.isArray(a?.entries) ? a.entries : null;
+        if (!list?.length) return { ok: false, status: 400, error: 'args.entries must be a non-empty array' };
+        if (list.some((e) => !Number.isFinite(Number(e?.uid)))) {
+            return { ok: false, status: 400, error: 'every entry requires uid' };
+        }
+        return lorebookMutate(ctx2, a?.lorebook ?? a?.name, (thEntries) => {
+            for (const patch of list) {
+                const cur = thEntries.find((e) => e.uid === Number(patch.uid));
+                if (cur) deepAssignThEntry(cur, patch);
+            }
+            return thEntries;
+        });
+    },
+    /** 全量替换(TH replaceLorebookEntries;uid 冲突消解+display_index 补序)。 */
+    async replaceLorebookEntries(a, _scope, ctx2) {
+        const list = Array.isArray(a?.entries) ? a.entries : [];
+        return lorebookMutate(ctx2, a?.lorebook ?? a?.name, () => list);
+    },
+    /** shim 本地跑 updater ship 全量结果(TH 本体=replaceLorebookEntries(result))。 */
+    async updateLorebookEntriesWith(a, scope, ctx2) {
+        return METHODS.replaceLorebookEntries({ ...a, entries: a?.result ?? a?.entries }, scope, ctx2);
+    },
+    /** {lorebook, entries:[partial]} → {entries, new_uids}(TH createLorebookEntries)。 */
+    async createLorebookEntries(a, _scope, ctx2) {
+        const list = Array.isArray(a?.entries) ? a.entries : null;
+        if (!list?.length) return { ok: false, status: 400, error: 'args.entries must be a non-empty array' };
+        return lorebookMutate(ctx2, a?.lorebook ?? a?.name, (thEntries) => {
+            const used = new Set(thEntries.map((e) => e.uid));
+            let nextUid = 0;
+            const freeUid = () => { while (used.has(nextUid) && nextUid < 1_000_000) nextUid++; used.add(nextUid); return nextUid; };
+            let nextIndex = Math.max(-1, ...thEntries.map((e) => e.display_index ?? -1)) + 1;
+            const newUids = [];
+            for (const patch of list) {
+                const uid = Number.isFinite(Number(patch.uid)) && !used.has(Number(patch.uid)) ? Number(patch.uid) : freeUid();
+                used.add(uid); newUids.push(uid);
+                thEntries.push({ ...patch, uid, display_index: patch.display_index ?? nextIndex++ });
+            }
+            return { entries: thEntries, extra: { new_uids: newUids } };
+        });
+    },
+    /** {lorebook, uids:number[]} → {entries, delete_occurred}。 */
+    async deleteLorebookEntries(a, _scope, ctx2) {
+        const uids = Array.isArray(a?.uids) ? new Set(a.uids.map(Number)) : null;
+        if (!uids?.size) return { ok: false, status: 400, error: 'args.uids must be a non-empty array' };
+        return lorebookMutate(ctx2, a?.lorebook ?? a?.name, (thEntries) => {
+            const before = thEntries.length;
+            const keep = thEntries.filter((e) => !uids.has(e.uid));
+            return { entries: keep, extra: { delete_occurred: before !== keep.length } };
+        });
+    },
+    async createLorebook(a, _scope, ctx2) {
+        const name = String(a?.lorebook ?? a?.name ?? '').trim();
+        if (!name) return { ok: false, status: 400, error: 'args.lorebook required' };
+        let safe;
+        try { safe = safeName(name, 'args.lorebook'); } catch (e) { return { ok: false, status: 400, error: String(e?.message ?? e) }; }
+        const r = await getWorldInfoRepo().createIfAbsent(ctx2.handle, safe, { entries: {} });
+        return { ok: true, result: { created: !!r?.created, name: r?.name ?? safe } };
+    },
+    async deleteLorebook(a, _scope, ctx2) {
+        const name = String(a?.lorebook ?? a?.name ?? '').trim();
+        if (!name) return { ok: false, status: 400, error: 'args.lorebook required' };
+        let safe;
+        try { safe = safeName(name, 'args.lorebook'); } catch (e) { return { ok: false, status: 400, error: String(e?.message ?? e) }; }
+        const deleted = await getWorldInfoRepo().delete(ctx2.handle, safe);
+        return { ok: true, result: { deleted: !!deleted, name: safe } };
+    },
+    /** 聊天绑定书 = chat_metadata.world_info(原版 METADATA_KEY)。 */
+    async getChatLorebook(_a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) return { ok: false, status: 400, error: 'target.charDir + target.chatName required' };
+        const doc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+        if (!doc) return { ok: false, status: 404, error: 'chat not found' };
+        const w = doc.header?.chat_metadata?.world_info;
+        return { ok: true, result: typeof w === 'string' && w ? w : null };
+    },
+    async setChatLorebook(a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) return { ok: false, status: 400, error: 'target.charDir + target.chatName required' };
+        const doc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+        if (!doc) return { ok: false, status: 404, error: 'chat not found' };
+        const name = a?.lorebook === null ? null : String(a?.lorebook ?? a?.name ?? '').trim() || null;
+        // undefined 显式覆盖旧值(updateChatMetadata 是浅合,序列化丢 undefined → 删键)
+        await getChatRepo().updateChatMetadata(ctx2.handle, ctx2.charDir, ctx2.chatName, { world_info: name ?? undefined });
+        return { ok: true, result: { lorebook: name } };
+    },
+    /** TH getOrCreateChatLorebook:绑了就回名;没绑 → 建(或认领)+绑。 */
+    async getOrCreateChatLorebook(a, scope, ctx2) {
+        const cur = await METHODS.getChatLorebook(a, scope, ctx2);
+        if (cur.ok === false) return cur;
+        if (cur.result) return cur;
+        const name = String(a?.lorebook ?? a?.name ?? '').trim() || `${ctx2.chatName}-lorebook`;
+        const cr = await METHODS.createLorebook({ lorebook: name }, scope, ctx2);
+        if (cr.ok === false) return cr;
+        const bind = await METHODS.setChatLorebook({ lorebook: cr.result.name }, scope, ctx2);
+        return bind.ok === false ? bind : { ok: true, result: cr.result.name };
+    },
+    /** 角色书绑定最小读面:primary=ext.world 外绑书或内嵌 character_book。 */
+    async getCharLorebooks(a, _scope, ctx2) {
+        const charDir = resolveCharTarget(a?.name ?? a?.charDir ?? ctx2.charDir);
+        if (!charDir) return { ok: false, status: 400, error: 'character name required' };
+        const card = await loadCard(ctx2.directories, charDir);
+        if (!card) return { ok: false, status: 404, error: `character not found: ${charDir}` };
+        const ext = card?.data?.extensions ?? {};
+        const embedded = card?.data?.character_book?.name ?? null;
+        return {
+            ok: true,
+            result: {
+                primary: typeof ext.world === 'string' && ext.world ? ext.world : embedded,
+                additional: Array.isArray(ext.additional_books) ? ext.additional_books : [],
+                embedded: embedded,
+            },
+        };
+    },
+
+    // ── 正则家族(T1):TavernRegex 视图 ↔ RegexScriptData ─────────────
+    async getTavernRegexes(a, _scope, ctx2) {
+        const r = await readRegexScope(ctx2, a);
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        return { ok: true, result: (r.scripts ?? []).map(toTavernRegexView) };
+    },
+    /** {regexes|TavernRegex[], type, name?} 全量替换(TH:会触发 CHAT_CHANGED)。 */
+    async replaceTavernRegexes(a, _scope, ctx2) {
+        const list = Array.isArray(a?.regexes) ? a.regexes : null;
+        if (!list) return { ok: false, status: 400, error: 'args.regexes must be an array' };
+        const scripts = list.map((r) => r && typeof r === 'object'
+            ? (r.script_name !== undefined || r.find_regex !== undefined ? fromTavernRegexView(r) : r)
+            : r);
+        const r = await writeRegexScope(ctx2, a, scripts);
+        if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
+        // TH 文档:替换正则触发 CHAT_CHANGED 重载楼层。
+        if (ctx2.charDir && ctx2.chatName) await recordThEvent(ctx2, 'chat_changed', [{ chat: ctx2.chatName }]);
+        return { ok: true, result: { count: scripts.length } };
+    },
+    /** shim 本地跑 updater ship 全量结果(TH 本体=replaceTavernRegexes(result))。 */
+    async updateTavernRegexesWith(a, scope, ctx2) {
+        return METHODS.replaceTavernRegexes({ ...a, regexes: a?.result ?? a?.regexes }, scope, ctx2);
+    },
+    /** 卡作用域放行表成员判定(character_allowed_regex 含 avatar)。 */
+    async isCharacterTavernRegexesEnabled(a, _scope, ctx2) {
+        const charDir = resolveCharTarget(a?.name ?? a?.charDir ?? ctx2.charDir);
+        if (!charDir) return { ok: false, status: 400, error: 'character name required' };
+        const settings = await getSettingsRepo().get(ctx2.handle) ?? {};
+        const list = settings?.extension_settings?.character_allowed_regex;
+        const avatar = await resolveAvatarName(ctx2.directories, charDir);
+        return { ok: true, result: Array.isArray(list) && list.includes(avatar) };
+    },
+    /** TH formatAsTavernRegexedString(text, source, destination, {depth, character_name})
+     *  source: 'user_input'|'ai_output'|'slash_command'|'world_info'|'reasoning'(单值字符串;
+     *          宽松兼容 flags 对象形)。destination: 'display'|'prompt'(兼容对象形)。
+     *  脚本集=上游 getRegexScripts({allowedOnly:true}) 口径:global 恒入;
+     *  character 仅 character_allowed_regex 放行;preset 因 in_use 解析未实不入(见对照表)。
+     *  后段对齐 TH:结果再过一遍 substituteParams(正文里的 {{}} 宏)。 */
+    async formatAsTavernRegexedString(a, _scope, ctx2) {
+        const text = String(a?.text ?? '');
+        const srcKey = typeof a?.source === 'string' ? a.source
+            : a?.source?.user_input ? 'user_input'
+                : a?.source?.slash_command ? 'slash_command'
+                    : a?.source?.world_info ? 'world_info'
+                        : a?.source?.reasoning ? 'reasoning' : 'ai_output';
+        const placement = {
+            user_input: regex_placement.USER_INPUT,
+            ai_output: regex_placement.AI_OUTPUT,
+            slash_command: regex_placement.SLASH_COMMAND,
+            world_info: regex_placement.WORLD_INFO,
+            reasoning: regex_placement.REASONING,
+        }[srcKey];
+        const destKey = typeof a?.destination === 'string' ? a.destination
+            : a?.destination?.prompt ? 'prompt' : 'display';
+        const settings = (await getSettingsRepo().get(ctx2.handle)) ?? {};
+        const scripts = [];
+        if (Array.isArray(settings?.extension_settings?.regex)) scripts.push(...settings.extension_settings.regex);
+        if (ctx2.charDir) {
+            const avatar = await resolveAvatarName(ctx2.directories, ctx2.charDir);
+            const allowed = Array.isArray(settings?.extension_settings?.character_allowed_regex)
+                && settings.extension_settings.character_allowed_regex.includes(avatar);
+            if (allowed) {
+                try {
+                    const card = await loadCard(ctx2.directories, ctx2.charDir);
+                    const scoped = card?.data?.extensions?.regex_scripts ?? card?.extensions?.regex_scripts;
+                    if (Array.isArray(scoped)) scripts.push(...scoped);
+                } catch { /* 卡缺省只过全局 */ }
+            }
+        }
+        const substCtx = await buildSubstCtx(ctx2, settings);
+        let out = getRegexedString(text, placement, {
+            scripts,
+            characterOverride: a?.character_name,
+            isMarkdown: destKey === 'display',
+            isPrompt: destKey === 'prompt',
+            depth: a?.depth,
+        }, substCtx);
+        out = substituteParams(out, substCtx);
+        return { ok: true, result: out };
+    },
+    /** TH substituteMacros(text):纯宏替换({{user}}/{{char}}/{{getvar}} 等),
+     *  与 formatAs 同一 substCtx(chat+chatMetadata+globalVariables 真上下文)。 */
+    async substituteMacros(a, _scope, ctx2) {
+        const settings = (await getSettingsRepo().get(ctx2.handle)) ?? {};
+        const substCtx = await buildSubstCtx(ctx2, settings);
+        return { ok: true, result: substituteParams(String(a?.text ?? ''), substCtx) };
+    },
+
+    /** TH stopGeneration:generation_id → 定点停;缺省 → 停本 chat 活跃 job。 */
+    async stopGeneration(a, _scope, ctx2) {
+        const jobs = await import('../endpoints/backends/luker-generation.js');
+        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName } } };
+        if (a?.generation_id) {
+            const job = jobs.getGenerationJobForRequest(fakeReq, a.generation_id);
+            if (!job) return { ok: false, status: 404, error: `job not found: ${a.generation_id}` };
+            const stopped = jobs.abortGenerationJobForInspector(job, 'stopped via th.stopGeneration');
+            await recordThEvent(ctx2, 'generation_stopped', [String(a.generation_id)]);
+            return { ok: true, result: { stopped, job_id: String(a.generation_id) } };
+        }
+        const target = ctx2.charDir && ctx2.chatName
+            ? { kind: 'chat', avatar_url: `${ctx2.charDir}.png`, file_name: `${ctx2.chatName}.jsonl` }
+            : null;
+        const active = jobs.getActiveGenerationJobsForRequest(fakeReq, target);
+        let cancelled = 0;
+        for (const j of active) {
+            const job = jobs.getGenerationJobForRequest(fakeReq, j.id);
+            if (job && jobs.abortGenerationJobForInspector(job, 'stopped via th.stopGeneration')) cancelled++;
+        }
+        if (cancelled) await recordThEvent(ctx2, 'generation_stopped', [`${cancelled} jobs`]);
+        // quiet 任务 persist_target=none 不在 chatKey 面——如实标注覆盖口径。
+        return { ok: true, result: { cancelled, covered: 'chat-persisted jobs; quiet jobs need generation_id' } };
     },
 
     // ── 事件家族(TASK-049):影子注册表 + 信箱;真 listener 在卡 realm ──
