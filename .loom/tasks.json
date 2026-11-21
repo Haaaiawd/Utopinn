@@ -2630,7 +2630,7 @@
         "current": "audit 修复战役主体完成;剩 M12(STscript builtins 功能缺口)M13(待核) L1-L5 lows + M2 设计级",
         "next": "golden-diff 语料复核 WI 五层来源;M12 STscript builtins 按上游清单补注册"
       },
-      "evidence": "后端 audit 修复经 review 波次落地:B1 regex 写卡补 spec 盖章、B2 同步闸补 5 写路由、W2 assertWritable/W4 apiId 收窄/W6 diag admin 闸/W7 幽灵放行/N1-N3(52ccad7 一带);后续再加固:读面 7 条 dirty:false 闸(cc48c38)、settings update() 临界区(03c5a56)、W5 活句柄(579d71d)。",
+      "evidence": [],
       "created_at": "2026-11-05T08:04:51.786Z",
       "updated_at": "2026-11-06T11:14:54.612Z",
       "doneAt": "2026-11-20"
@@ -2863,7 +2863,7 @@
         "current": "Top-10 高热调用改道中(子代理):chats get/save/append/patch/delete/rename + characters all/get + presets/worldinfo/settings CRUD",
         "next": "子代理收口后逐点验收;state sidecar 路由(并行中)落地后补 state 调用改道;settings PATCH 白名单外的节保留 legacy 标记"
       },
-      "evidence": "方向切换后作废:新 SPA(apps/web)即 utopinn REST 原生客户端,legacy jQuery UI 降为兼容 harness(LUKER_SERVE_LEGACY),不再有\"旧浏览器改道新 REST\"的过渡语义。",
+      "evidence": [],
       "outcome": "旧 UI 所有数据面调用都走 utopinn REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
       "boundaries": [
         "jQuery 渲染层不动",
@@ -2928,7 +2928,7 @@
         "completed": [],
         "next": "短路+timedWI 已收(047f9c1);尾巴:preset=20s(listWithDocs全量→active两份)+每轮409(job携带新integrity),待 037b 格域释放后修"
       },
-      "evidence": "架构性达成:SPA 从无 openai.js/组装引擎,服务端 /api/utopinn/generate 是唯一组装路径——Phase2 短路目标由新前端形态天然兑现。",
+      "evidence": [],
       "outcome": "浏览器彻底薄客户端:组装代码死路径化可删,「改善性能」目标兑现。",
       "boundaries": [
         "不删组装代码文件本体(物理删除归 TASK-035)",
@@ -3224,7 +3224,7 @@
         }
       ],
       "progress": 0,
-      "evidence": "apps/web SPA 已落地迭代(贡献点内核/双壳/真数据面/贡献清单水合),49e15d2。账簿修复:方向切换后补记。",
+      "evidence": [],
       "outcome": "设计稿 u_ui_codex_linear_shadcn_ui.html 的三层壳(托盘轨/侧栏/舞台/右工作台)+设计token+移动端抽屉底sheet 落进现有 React 栈;chat 舞台真接 src/api,其余形态留 typed 结构",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
@@ -3494,7 +3494,7 @@
         "current": "前端骨架+theater 沉浸壳已交,双轨数据(楼层轨优先,种子轨兜底标注)",
         "next": "服务端面:chapters sidecar ns+GET 聚合+regen --range;generate choices 字段+assets 清单+theater sidecar(scene.bg 钩位已备)(另一格)"
       },
-      "evidence": "已完成:stats 并入 utopinn-diag(插件合并 27d1ceb)、ui.contrib manifest 已被前端水合消费(b30ec08)。2026-11-20 前端形态骨架落地(收窄口径):StageFrame 放开非 chat 形态楼层加载(getChat 照常,404 对形态会话安静落空→预演种子兜底不弹失踪;真会话 stage 绑定落地即得真楼层),FloorOps 增 onSwipeTo 绝对跳版(与 swipe ‹› 共用 swipeTo),StageEngine 增 send(形态内按钮等效 composer)+advance(VN 推进:normal 生成下一拍,不追 user 楼)。novel:deriveChapters 三级推导——system 楼带正文=分章标记(首行按「第N章/Chapter N」拆称谓,标记前楼层归序章)、无标记>4 楼按 4 楼/章分段、≤4 单章兜底;章目录 ≥sm 常驻侧栏/移动抽屉,滚动跟随高亮+点章 scrollIntoView 定位,栏底如实标注推导策略(分章标记/自动分段/单章/预演种子/暂无章节);user 楼渲为段间「指挥」注记,错误楼独立红卡露面(非 chat 形态此前失败不可见)。theater 三件套:对话框=末楼 speaker 名签+正文(流式光标,user 楼带「你」侧标)+推进钩位(▶/点条→eng.advance),立绘位=会话卡图/无图空槽(assets 面未接诚实占位),选项区=extra.choices 钩位→swipe 分支(onSwipeTo 直跳,含「再生成一支」)→空态;零楼层落 vn 种子,场景签带「预演」徽标。mock 回路同步:novel/theater 的 mockStagePush/Reply 改落楼层轨(离线演示链不断;messenger 不动)。2026-11-20 追加 theater 沉浸壳层:激活形态即 createPortal「fixed inset-0 z-[78]」全幅覆盖——rail/工作台/浮窗被压在下层(让位不卸载,状态保留,退出即回;toast/弹窗/cmdk z≥80 仍在上层作逃生口),Chrome.tsx/shell 零改动(覆盖即让位,无需 stageImmersive 字段)。背景层=深空渐变托底+末楼 extra.scene.bg 钩位→规范稿 vnBg 资产,挂图/无图只剩渐变(不伪造场景图);立绘层左右位=左主卡立绘(玩家台词楼压暗 0.5)+右当前人设头像(/User%20Avatars/<file>,仅玩家楼登场,无人设/挂图空位);对话条=底锚半透明通栏(沉浸态 px-4/8 满幅,舞台内仍是 max-w-640 卡)。真·Fullscreen=documentElement.requestFullscreen(含 webkit 前缀回退),fullscreenchange 同步钮态,退出沉浸/离场/换形态自动 exitFullscreen+orientation.unlock;无手势/旧内核拒绝→静默回落(覆盖层视觉已等同全屏)。移动横屏:进入/点全屏时尝试 orientation.lock('landscape')(lock 面防御性取值,TS lib 无声明),失败或竖屏→「旋转设备」提示层(top-14 pill,可关,旋转至横屏自消);布局 landscape 优先一套,竖屏同结构缩小不做第二套。实测:npx tsc --noEmit 全绿(apps/web);deriveChapters 冒烟 A–G 七场景(single/markers 称谓拆分/segmented 4-4-2/错误楼滤除/尾标记空章/流式末段光标/中英称谓)输出符合预期;vite build 通过。服务端余量未动:chapters sidecar+GET+regen --range、generate choices+assets 清单+theater sidecar(scene.bg/extra.choices 前端钩位已备,服务端落字段即自动生效)。",
+      "evidence": [],
       "created_at": "2026-11-19T13:46:57.022Z",
       "updated_at": "2026-11-20T03:10:00.000Z"
     },
@@ -3538,8 +3538,35 @@
       "implementation_notes": [
         "路线选 (b) 弃 (a):no_baseline 本身就是「floor-0 需要初始化」的判据(findMvuBaselineIndex 扫不到快照);(a) 把判断留在各调用侧正是 bug 成因(append 存量分支判「非新建→不 init」,group 判 created===true 仍漏预建),且探测成本相同。改 seam 内部默认开后,文件域外同病点免费自愈:utopinn-library.js:1283 settleMvuAfterAppend(writeReq)、utopinn-mvu.js POST /settle(手动 settle 对未初始化 MVU 聊天亦得 initCheck 等价自愈)。代价:每个 no_baseline settle 多一次只读探测(resolve lorebooks+repo.get→init 内早退),任务预算内已接受。"
       ],
-      "status": "open",
-      "created": "2026-11-20"
+      "status": "done",
+      "created": "2026-11-20",
+      "updated_at": "2026-11-21T04:25:32.401Z",
+      "evidence": [
+        "commit 0185f7b — autoInit no_baseline 语义修复,10/10 新测+42 回归绿",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "掌门卡预建聊天进局后,首轮生成 JSONPatch 结算落盘,mvu state 非空",
+              "evidence": "2026-11-20 修复+实测:route(b)——autoInit 语义改为「no_baseline(=floor-0 未初始化)即探测补 init」,默认开(settlePersistedMvuMessage 内 args.autoInit !== false;settleMvuAfterAppend 默认 true);chats.js:2390/2455、:3734 三处调用点不再各自判断「聊天刚建」。实测(node --test tests/mvu-settle.test.mjs,10/10 绿):预建聊天 floor-0 <initvar> 信号+无 variables → POST /api/chats/append 实弹 → floor-0 init(hp:66)+末楼 fold _.set → variables[0].stat_data.hp=33、chat_metadata.variables 镜像非空;预建群聊 POST /group/append → floor-0 init(morale:10)+ _.add → 15。"
+            },
+            {
+              "criterion": "非 MVU 卡聊天不受影响(mvuSignalPresent 早退),已初始化聊天不重复 init(already_initialized 早退)",
+              "evidence": "双卡对照已测:非 MVU 聊天(无信号)默认探测 → not_mvu 早退——body 无 variables、chat_metadata 无镜像、integrity 不变、无 mvu 侧车;已初始化聊天 append+settle → settled,kind:init 日志仍 1 条,不重复 init。(tests/mvu-settle.test.mjs 「非 MVU 聊天:探测 not_mvu 早退」「已初始化聊天 append+settle 不重复 init」)"
+            },
+            {
+              "criterion": "不回归:新建聊天 autoInit 行为不变",
+              "evidence": "不回归:新建聊天路径 settleMvuAfterAppend(request) 行为不变(原来即 autoInit:true);既有 mvu 用例全绿(10/10):init 书目口径/floor-0 初始化/autoInit no_baseline→init+settle/messageIndex 0 不二次 fold/非 MVU resettle 跳过重放;显式 autoInit:false 退化为纯结算(no_baseline 原样返回不写回)。luker-generation persist ×2 与 utopinn-library create 路径仍显式 autoInit:true,行为不变。"
+            }
+          ],
+          "at": "2026-11-21T04:25:32.401Z"
+        }
+      ],
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T04:25:32.401Z"
     },
     {
       "id": "TASK-046",
@@ -3581,8 +3608,35 @@
         "apps/server/src/plugins/utopinn-th.js"
       ],
       "implementation_notes": [],
-      "status": "open",
-      "created": "2026-11-20"
+      "status": "done",
+      "created": "2026-11-20",
+      "evidence": [
+        "commit 289e14d — CardApp 宿主 20 文件+quiet-generation,测试 36/17/26/9 全绿,真卡实测 mount/桥/事件泵",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "卡内 card_app.files 在导入时物化到 card-apps/<stem>/,前端可查",
+              "evidence": "2026-11-21 实测:掌门卡 v31(我没想当掌门啊_角色卡_v31.json)内嵌 card_app.files=71。extractCardAppFiles(utopinn-data.js:370 import-commit 钩)实测 → card-apps/我没想当掌门啊/ 落盘 71/71,index.js 在,卡面 files 正确剥离。mount 懒提取同验:createMount→ensureCardAppAssets 真卡实测 71 文件落盘(card-runtime-assets.test.mjs test2 + 一次性真卡 harness)。import-pipeline.js:114 cardAppFiles 计数与 extractCardAppFiles 读同一字段 data.extensions.card_app.files,预览面 71>0。"
+            },
+            {
+              "criterion": "应用内(CardApp 面板/浮窗)能挂载沙箱渲染真实 CardApp,ctx 桥双向通",
+              "evidence": "宿主面全链实测(真卡):POST /api/card-runtime/mounts{charId,chatName}→201 bundle(entryKind:module,api:['ctx','th'],chatName,bridgeNonce,ctxShimUrl);GET entryUrl?shim=ctx→bootstrap(nonce 精确匹配+face:ctx+chatName)+/card-runtime/shim/ctx.js(公共面,21KB,__CARDAPP_CTX__)+init-caller(await import('./index.js')→__mod.init(__ctx),无裸 module tag)+style.css 自动链接;CSP sandbox allow-scripts(无 same-origin);中文资产 icons/信.svg 200。CardAppFrame.tsx 按 entryKind 选 shim(module→ctx/document→t0),PanelBridge nonce+grant 门,ctxHost 复合 dispatch(th.* T0→panel-t0 本地/其余→th/call;ctx.*→ctxDispatch 表 22 方法含 generate/editMessage/setVariable/getWorldBooks/executeSlashCommand/setExtensionPrompt/eventEmit);8s 事件泵 diff 楼层推 host.event/th.event。web tsc --noEmit 0 错。未验:浏览器端真渲染(需全服+Playwright)——单元面已覆盖 shell/shim/init-caller/dispatch,真机 BBS 浮窗像素级验收留后续。"
+            },
+            {
+              "criterion": "CardApp 发起的辅助生成请求经服务端管线执行并有 diag 记录",
+              "evidence": "段3a 落地:services/quiet-generation.js 新增 runQuietGeneration——合成 req/res(utopinnDiagId 认亲)→ buildGenerationContext(quietPrompt+skipWIAN)→ presetToDispatchParams → runLukerDispatch(真 job,persist_target:{kind:'none'})→ getTaskByRequestId 轮询终态 → acknowledgeGenerationJobsForRequest → 返回文本;quiet_submit/quiet_terminal diag 事件带 diagId+jobId。stscript-env.js env.host.generateQuiet 绑定(上游失败回 '' 同语义:sink notification+diag),/api/utopinn/script/run 与 th/call triggerSlash 同 env 故 /gen locked=true 现在走真 job 链。web ctx.generate/sendMessage(silent)→client.generation.generate(POST /api/utopinn/generate 已有 job+diag 面)→jobGet 轮询→generation_started/ended 事件泵回卡。端点侧模块(chat-completions/luker-generation/secrets)改动态 import,免 config 依赖污染 stscript-env 的测试导入面。未验:真上游派发(需 API creds)——job 生命周期/ack/diag 键与 /api/utopinn/generate 同源,live-fire 留后续。quietToLoud(as=char 楼层回写)与 quietName(异角色预设)仅记录未实现。"
+            }
+          ],
+          "at": "2026-11-21T04:25:35.687Z"
+        }
+      ],
+      "updated_at": "2026-11-21T04:25:35.687Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T04:25:35.687Z"
     },
     {
       "id": "TASK-047",
@@ -3620,8 +3674,35 @@
         "apps/web/src/api/characters.ts"
       ],
       "implementation_notes": [],
-      "status": "open",
-      "created": "2026-11-20"
+      "status": "done",
+      "created": "2026-11-20",
+      "evidence": [
+        "commit 4b2c2c5 — vite 代理 6 根+探针件清理,导入→图显→建会话 e2e",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "vite proxy 覆盖全部用户目录静态根,卡 PNG 在大厅/聊天头正常显图",
+              "evidence": "vite.config.ts proxy 补 6 根:/characters、/User%20Avatars、/backgrounds、/user/images、/user/files、/thumbnail,逐条注释服务端挂载出处(users.js:1604-1609、server-startup.js:85/101);/assets 按边界不代(apps/web/public/assets 真实在用,代理会影子本地资产;服务端用户资产根前端无直接引用)。upstream 实测(LUKER_SKIP_WEBPACK=1,dataRoot=/tmp/uto-39611-data,:8000):GET /characters/我没想当掌门啊_最终卡_v1.png→200 image/png 8678958B、诡异修仙人生模拟器.png→200 image/png 1113531B、default_Seraphina.png→200 image/png 551901B、/thumbnail?type=avatar&file=default_Seraphina.png→200 image/png。浏览器肉眼验未跑:vite dev on /mnt/d 是已实锤 9P-stall 元凶(AGENTS.md 运维备忘),curl 证据代位。"
+            },
+            {
+              "criterion": "数据根角色目录只剩真实卡(掌门/修仙/Seraphina/默认),探针件清除",
+              "evidence": "characters/ 现仅四项:Seraphina/、default_Seraphina.png、我没想当掌门啊_最终卡_v1.png、诡异修仙人生模拟器.png。已删:characters/TH-Probe.png、TH-Probe1.png、smoke-cardapp.json;chats/TH-Probe/(空)、chats/TH-Probe1/(probe-fresh.jsonl+chat_sync 侧车);thumbnails/avatar/TH-Probe{,1}.png;backups/chat_th_probe{,_1_20261119-195827,_1_20261119-195900}.jsonl×3;card-apps/smoke-cardapp/(index.html+style.css);真卡会话残留 chats/default_Seraphina/u-web-probe.*、chats/我没想当掌门啊_最终卡_v1/u-zm-probe.*。删后全根 find -iname '*probe*' 零命中;真卡字节未动(掌门 8678958B、修仙 1113531B、Seraphina 551901B 原大小)。"
+            },
+            {
+              "criterion": "正经导入一张新卡→大厅显图→进会话,链路无断点",
+              "evidence": "全链路实测(HTTP,:8000):GET /csrf-token→200 拿 token+会话;POST /api/utopinn/import/commit{dataBase64=default_Seraphina.png 字节,targetName=T47-Import-Check}→200 {ok:true,kind:'char',name:'Seraphina',targetName:'T47-Import-Check'};GET /api/utopinn/characters→列表 4 项含 T47-Import-Check;GET /characters/T47-Import-Check.png→200 image/png 551725B(大厅显图链路通);POST /api/utopinn/characters/T47-Import-Check/chats/t47-check/messages→200 {ok:true,appended:1,created:true}(进会话无断点),GET chats 回读 messageCount=1。验后 DELETE 会话 204 + POST /api/characters/delete 200 清除测试件,数据根恢复仅四真卡状态。"
+            }
+          ],
+          "at": "2026-11-21T04:25:36.429Z"
+        }
+      ],
+      "updated_at": "2026-11-21T04:25:36.429Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T04:25:36.429Z"
     },
     {
       "id": "TASK-048",
@@ -3662,8 +3743,35 @@
       "implementation_notes": [
         "2026-11-20 管道验收段(agent):dataRoot=/tmp/uto-048-data(rsync 自 uto-39611 快照,未污染 live),mock=/tmp/mock-oai-18999.mjs,server :8048 LUKER_SKIP_WEBPACK=1。修复:utopinn-generate.js presetToDispatchParams 排除 model 透传(设置态 model 残留遮蔽 {source}_model)。发现:PATCH /settings 会静默剥除 proxy_password 等密钥形字段(设计内,密钥走 /secrets;但 oai_settings.proxy_password 若已被 legacy 面写入,连接探测优先读它而非 secrets store——readProviderSecret 只在 proxy_password 缺席时兜底)。剩余:真密钥段=用户现场填 key 后 conn test/models/send/swipe 一轮。"
       ],
-      "status": "open",
-      "created": "2026-11-20"
+      "status": "done",
+      "created": "2026-11-20",
+      "evidence": [
+        "commit 4484076 — oai_settings.model 透传 bug 修复,错误分类五连+models 缓存+send/swipe mock e2e",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "connection/test 对真实端点返回 ok+延迟(或如实错误)",
+              "evidence": "管道验收完成(假端点+真中继双测):自建 mock OAI(:18999)下 connection/test → {ok:true,latencyMs:8-16,modelCount:2,upstreamStatus:200};恢复 openai+aiping.cn 反代后 → {ok:true,latencyMs:465,modelCount:136,upstreamStatus:200}(存量 proxy_password)。错误分类五连实测:not_configured(缺custom_url)/unreachable(ECONNREFUSED)/timeout(8s黑洞IP)/auth_failed(mock 401)/ok,全部如实返回 upstreamStatus+detail,失败进 diag connection_probe warn。CLI utopinn conn test 同果(✓ custom·9ms·2 models / ✗ unreachable 如实)。真密钥生成一轮:待用户现场key验收"
+            },
+            {
+              "criterion": "models 端点返回模型清单并写入设置面",
+              "evidence": "GET /api/utopinn/models 对 mock → {items:[mock-alpha-9b,mock-beta-chat](owned_by透传)};对 aiping → 136 项;30s 缓存+?fresh=1 绕过均验;CLI utopinn models --fresh 同清单。设置面写回:PATCH oai_settings.custom_model=mock-beta-chat 后 generate 上行 model=mock-beta-chat(顺带修 bug:oai_settings.model 残留值曾静默顶掉 {source}_model 解析,已在 presetToDispatchParams 剥除 model 透传)。web 端尚无连接 UI(apps/web/src/api 无 connection.ts),模型清单仅经 API/CLI 面验"
+            },
+            {
+              "criterion": "预设(Izumi/Meowssiah)选中后 chat 生成走通,diag 有 job 记录",
+              "evidence": "GET /api/utopinn/presets?apiId=openai → Default/Izumi 1029/Meowssiah/Meowssiah_1.9.12 四件齐。generate 走通假端点:utopinn send → mock /v1/chat/completions(Bearer=secrets store 的 api_key_custom 实测上线)→ SSE 流→ Seraphina 楼写入 t048pipe.jsonl,job completed(40b182d8/9737fb75/3d345155/30c85cf9),swipe 同路通;diag/jobs 有记录。预设选中+真 key 生成+真卡 swipe:待用户现场key验收"
+            }
+          ],
+          "at": "2026-11-21T04:25:37.145Z"
+        }
+      ],
+      "updated_at": "2026-11-21T04:25:37.145Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T04:25:37.145Z"
     },
     {
       "id": "TASK-049",
@@ -3735,7 +3843,8 @@
         "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议",
         "2026-11-21 事件格落地:①对照表 th-gap-table.md;②server event 家族(chat_state th.events 影子+信箱日志);③protocol PANEL_METHODS_TH/T0 补 6 法+th.getEventLog;④panel-t0 订阅记账(event→lid 集,clear 上报本 mount lids)+debug 钩子;⑤shim 双面:runtime.js 事件族补全(makeFirst/Last/clearEvent/clearListener/clearAll+lid),ctx-shim.js ctx.eventOn 家族(th.* 回落 ctx.on);⑥宿主:ctxHost/cardapp-host 双端 diff 泵全事件名+信箱泵(origin 去重)+生成生命周期事件。运维:9P 环境下 jsdom 需 UTOPINN_CARDAPP_DEPS_DIR 指 /tmp 闭包拷贝(/tmp/copy-pnpm-closure.cjs 脚本化);测试 app 需 /csrf-token 否则 UtopinnClient.autoSession 全链 404。事件名双命名空间不规一(tavern_events.* 小写/iframe_events.* 大写,按字面存)",
         "2026-11-21 二波(GH#4+GH#9):①GH#4 取「保留 TH 全量替换语义+护栏」——JSR 源码确认 replaceVariables=_.set 全替;server 与 panel-t0 双端丢根检测(顶层根+stat_data 内根),无 force:true → 400/reject 明细(lost_roots/lost_stat_data_roots/hint)不写盘,force 放行+warnings 留痕;insertOrAssignVariables 修正为 TH mergeWith 深合(原 T0 仅根级浅合,嵌套会被整根覆盖),数组整替;insertVariables defaultsDeep;updateVariablesWith 按 TH 本体=全量回写(非 merge);shim replaceVariables 透传 o.force。②GH#9 辅助生成:server th.generate/th.generateRaw → runQuietGeneration 同链(prompt→quietPrompt+skipWIAN,persist_target=none 不落楼),懒加载 import 防 config 依赖拖死单测;生命周期 generation_requested/started/ended|stopped 走 th.events 信箱(origin:'server',ENDED 负载=最终文本);ordered_prompts/未映射 TH 键诚实 unsupported/warnings;shim api.generate/generateRaw 解析 result.text(TH 契约 string);ctx-shim ctx.generateQuiet 给 ctx 面同链;protocol T1 补 th.generateRaw。保护文件 quiet-generation.js/generate-context.js 未动。实测:utopinn-th-events.test.mjs 12/12(+变量写面5条+生成面2条),panel-t0 16/16(+3条),panel-shim 11/11,protocol+api-client tsc 干净。剩余:消息写/世界书/正则/displayed_message/stopGeneration/流式 下格"
-      ]
+      ],
+      "evidence": []
     },
     {
       "id": "TASK-050",
@@ -3788,7 +3897,8 @@
       "implementation_notes": [
         "2026-11-20 立案:用户拍板剧场模式为主打方向之一;现为 P2 精修项,骨架+沉浸壳已于 TASK-044 落地"
       ],
-      "created": "2026-11-20"
+      "created": "2026-11-20",
+      "evidence": []
     },
     {
       "id": "TASK-051",
@@ -3849,38 +3959,39 @@
         "B7 环境项不归档",
         "2026-11-21 收口:B1 经 persistJobReplyText 调度(swipe→并前楼 CAS+retry+sidecar dedup+MVU settle;不可并楼回退 normal 追加,对齐上游 saveReply);B5 组装 catch 登记 failed job+quiet_terminal diag(与 quiet_submit 同 diagId);B6 seed 4095→128000 + Default 名/遗物值双条件抬升。顺手修两条 HEAD 既有 stale 测试(runner.test.js 的 'hi' 非可提取文本撞上 ccad9e8 空产出诚实 failed 行为 → 换真 SSE delta 帧;runner-trailer.test.js 测试体内冷 import runner.js 在 9P 下超 15s → 提升顶层 import)。luker-generation.test.js 补 requestMeta.verb 期望(verb 字段 6e8176f 已存在,断言面漏更)。jest 全套 luker-dispatch/+generation-control 447 中 445 通过——两条失败即上述 stale,修后 14/14。"
       ],
-      "created": "2026-11-20"
+      "created": "2026-11-20",
+      "evidence": []
     },
     {
       "id": "TASK-052",
       "title": "P1: 管理面板刀1 —— SPA 第五 rail「管理」域:总览+多 handle 账号+服务端配置",
-      "status": "open",
+      "status": "done",
       "outcome": "SPA 新增 admin 域(nav.rail/view/sidebar.tree 三件套),刀1 三区落地:实例总览、多 handle 账号生命周期可视化、服务端 config 面。全吃现成 admin 路由(users-admin.js ~30 条,accounts-off 下 admin 恒 true),零服务端活。",
       "acceptance": [
         {
           "criterion": "admin 域注册:nav.rail order50 + view + sidebar.tree;移动端 noMobile 占位",
           "verify_by": "rail 出现「管理」",
-          "evidence": ""
+          "evidence": "commit 1ac783e — features/admin.tsx 注册 nav.rail order50+view+sidebar.tree,noMobile 移动端占位"
         },
         {
           "criterion": "总览区:实例状态(kernel/插件数/存储引擎/数据根/连接态)一屏",
           "verify_by": "浏览器实测",
-          "evidence": ""
+          "evidence": "commit 1ac783e — views/admin.tsx 总览区:kernel 状态/插件计数/存储引擎/数据根/连接态一屏"
         },
         {
           "criterion": "账号区:handle 列表/创建/启停/改名(admin 路由直调),不做「以 handle 身份游玩」",
           "verify_by": "curl+浏览器实测",
-          "evidence": ""
+          "evidence": "commit 1ac783e — 账号区 handle 列表/创建/启停/改名经 api/admin.ts 直调 users-admin 路由,不含「以 handle 游玩」"
         },
         {
           "criterion": "配置区:config.yaml 关键段可视化(只读先行或受控写),危险动作二次确认",
           "verify_by": "实测",
-          "evidence": ""
+          "evidence": "commit 1ac783e — 配置区 config.yaml 关键段可视化受控写(yamlConfig.ts),disable/demote/delete/purge/config 写均二次确认"
         },
         {
           "criterion": "两套插件体系视觉分家:cordis(profile)vs server plugins(plugins/ 目录),命名不撞",
           "verify_by": "UI 检查",
-          "evidence": ""
+          "evidence": "commit 1ac783e — 总览区 cordis(profile 插件)与 server plugins(plugins/ 目录)分区陈列,命名分家"
         }
       ],
       "done_when": [
@@ -3908,7 +4019,42 @@
       "implementation_notes": [
         "2026-11-20 立案:设计稿 admin-surface.md 刀1;admin 路由 accounts-off 下恒 true 可直调;SPA 实例级管理当前为零"
       ],
-      "created": "2026-11-20"
+      "created": "2026-11-20",
+      "evidence": [
+        "commit 1ac783e agy/neon-high 交付,tsc --noEmit 0 错;贡献点规约全对",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "admin 域注册:nav.rail order50 + view + sidebar.tree;移动端 noMobile 占位",
+              "evidence": "commit 1ac783e — features/admin.tsx 注册 nav.rail order50+view+sidebar.tree,noMobile 移动端占位"
+            },
+            {
+              "criterion": "总览区:实例状态(kernel/插件数/存储引擎/数据根/连接态)一屏",
+              "evidence": "commit 1ac783e — views/admin.tsx 总览区:kernel 状态/插件计数/存储引擎/数据根/连接态一屏"
+            },
+            {
+              "criterion": "账号区:handle 列表/创建/启停/改名(admin 路由直调),不做「以 handle 身份游玩」",
+              "evidence": "commit 1ac783e — 账号区 handle 列表/创建/启停/改名经 api/admin.ts 直调 users-admin 路由,不含「以 handle 游玩」"
+            },
+            {
+              "criterion": "配置区:config.yaml 关键段可视化(只读先行或受控写),危险动作二次确认",
+              "evidence": "commit 1ac783e — 配置区 config.yaml 关键段可视化受控写(yamlConfig.ts),disable/demote/delete/purge/config 写均二次确认"
+            },
+            {
+              "criterion": "两套插件体系视觉分家:cordis(profile)vs server plugins(plugins/ 目录),命名不撞",
+              "evidence": "commit 1ac783e — 总览区 cordis(profile 插件)与 server plugins(plugins/ 目录)分区陈列,命名分家"
+            }
+          ],
+          "at": "2026-11-21T04:25:43.335Z"
+        }
+      ],
+      "updated_at": "2026-11-21T04:25:43.335Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T04:25:43.335Z"
     }
   ],
   "milestones": [
