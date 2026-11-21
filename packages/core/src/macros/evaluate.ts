@@ -6,7 +6,12 @@
 import droll from 'droll';
 import moment from 'moment';
 import seedrandom from 'seedrandom';
+import { stringify as yamlStringify } from 'yaml';
 import { escapeRegex, getStringHash, isDigitsOnly } from '../utils.js';
+import {
+    get as lodashGet,
+    set as lodashSet,
+} from '../mvu/lodash.js';
 import {
     addVariable,
     decrementVariable,
@@ -28,6 +33,12 @@ export interface MacroChatMessage {
     swipes?: unknown[];
     swipe_id?: number;
     send_date?: string | number;
+    /**
+     * TH/MVU 楼层变量袋:`variables[swipe_id]` = 该楼当前 swipe 槽位的
+     * MvuData 快照(stat_data/schema/…)。message 域变量宏的读源 —
+     * host 传活引用时 set_message_variable 的同请求回读才一致。
+     */
+    variables?: Record<string | number, unknown> | unknown[];
 }
 
 export interface MacroInstructSettings {
@@ -62,6 +73,25 @@ export interface MacroContext {
     };
     /** Global (extension_settings.variables.global) store. */
     globalVariables: VarStore;
+    /**
+     * TH 'character'/'char' 域变量源 — 卡级变量,宿主绑
+     * `card.data.extensions.tavern_helper.variables`(旧键
+     * `TavernHelper_characterScriptVariables` 由宿主在绑定时折叠)。
+     * 活引用;set_char_variable 直接改写,持久化取决于宿主写面。
+     */
+    charVariables?: VarStore;
+    /**
+     * TH 'preset' 域变量源 — `presetDoc.extensions.tavern_helper.variables`
+     * 活引用(TH store/settings/preset.ts:预设 extensions.tavern_helper)。
+     */
+    presetVariables?: VarStore;
+    /**
+     * 变量写回钉(op 日志形):set_X_variable / setvar 家族每次写后 push
+     * `{domain, path, value}`。宿主在组装末按域落盘
+     * (message/chat→chat_metadata CAS;global→settings 整档;preset→preset
+     * 文档;char→无卡写通道时记 volatile diag)。未提供 = 写仅活在请求内。
+     */
+    variableWrites?: { domain: string; path?: string; value?: unknown }[];
     /** Current chat id used for {{pick}} seeding when chat_id_hash is unset. */
     currentChatId?: string;
     /** Instruct + context-template settings. */
@@ -208,7 +238,184 @@ function getInstructMacros(ctx: MacroContext, env: MacroEnv): Macro[] {
     return macros;
 }
 
-/** {{setvar/getvar/...}} local + global variable macros. */
+/**
+ * TH `_.unescape` 路径还原 — 宏参数里的 HTML 实体
+ * (&amp;/&lt;/&gt;/&quot;/&#39;)。TH macro_like getWithout$ 同款预处理,
+ * 世界书/卡面手写的转义路径必须能命中变量键。
+ */
+function unescapeVarPath(path: string): string {
+    return String(path)
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+}
+
+/**
+ * TH `omitDeepBy(_, key.startsWith('$'))` 等价 — 深遍历剔除 `$meta`/`$internal`
+ * 等内部键(MVU stat_data 的 schema/缓存键不进 prompt 回显)。
+ * 数组按元素映射;循环引用按首次出现剪枝(同 omitDeep 的迭代语义,防死循环)。
+ */
+function withoutInternalKeys(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
+    if (value === null || typeof value !== 'object') {
+        return value;
+    }
+    if (seen.has(value)) {
+        return seen.get(value);
+    }
+    if (Array.isArray(value)) {
+        const out: unknown[] = [];
+        seen.set(value, out);
+        for (const item of value) {
+            out.push(withoutInternalKeys(item, seen));
+        }
+        return out;
+    }
+    const out: Record<string, unknown> = {};
+    seen.set(value, out);
+    for (const [key, item] of Object.entries(value)) {
+        if (key.startsWith('$')) {
+            continue;
+        }
+        out[key] = withoutInternalKeys(item, seen);
+    }
+    return out;
+}
+
+/**
+ * TH `chat.findLastIndex(m => _.isObject(m.variables?.[m.swipe_id ?? 0]))`:
+ * 最新带「当前 swipe 槽位快照对象」的楼层 —— message 域的读/写目标。
+ */
+function latestMessageSnapshot(ctx: MacroContext): VarStore | null {
+    const chat = ctx.chat ?? [];
+    for (let i = chat.length - 1; i >= 0; i--) {
+        const message = chat[i]!;
+        const snapshot = message.variables?.[message.swipe_id ?? 0];
+        if (snapshot !== null && typeof snapshot === 'object') {
+            return snapshot as VarStore;
+        }
+    }
+    return null;
+}
+
+/**
+ * TH get_variables_without_clone 的域 → store 解析:
+ *   message → 最新楼层快照,缺席回退 chat_metadata.variables
+ *             (MVU 镜像 —— settle 每轮把 stat_data/schema 等顶层键
+ *             同步进来;口径对齐 issue:聊天变量 = 快照读、镜像兜底)。
+ *   chat    → chat_metadata.variables(ST {{setvar}} 同一 store)。
+ *   char/character → ctx.charVariables(TH tavern_helper 卡级变量)。
+ *   preset  → ctx.presetVariables(TH 预设 extensions.tavern_helper.variables)。
+ *   global  → ctx.globalVariables(extension_settings.variables.global)。
+ */
+function variableDomainStore(ctx: MacroContext, domain: string): VarStore | null {
+    switch (domain) {
+        case 'message': {
+            const snapshot = latestMessageSnapshot(ctx);
+            if (snapshot) {
+                return snapshot;
+            }
+            return (ctx.chatMetadata.variables ??= {});
+        }
+        case 'chat': {
+            return (ctx.chatMetadata.variables ??= {});
+        }
+        case 'char':
+        case 'character': {
+            return ctx.charVariables ?? null;
+        }
+        case 'preset': {
+            return ctx.presetVariables ?? null;
+        }
+        case 'global': {
+            return (ctx.globalVariables ??= {});
+        }
+        default:
+            return null;
+    }
+}
+
+/** `{{set_*_variable::path::value}}` 的值解析:JSON 字面量优先,原样字符串兜底。 */
+function parseMacroSetValue(raw: string): unknown {
+    try {
+        return JSON.parse(raw);
+    } catch {
+        return raw;
+    }
+}
+
+const TH_VAR_DOMAIN_ALT = 'message|chat|character|char|preset|global';
+const TH_FORMAT_VAR_RE = new RegExp(`^(.*)\\{\\{format_(${TH_VAR_DOMAIN_ALT})_variable::(.*?)\\}\\}`, 'im');
+const TH_FORMAT_VAR_QUOTED_RE = new RegExp(`^(.*)\\{\\{format_(${TH_VAR_DOMAIN_ALT})_variable_quoted::(.*?)\\}\\}`, 'im');
+
+/**
+ * TH `applyFormatVariable` — `{{format_X_variable::path}}` 把域内 path 子树
+ * 序列化成 YAML(`blockQuote:'literal'`,quoted 变体全量双引号),并按
+ * 「行内前缀长度」对齐续行缩进(同一行可叠多个 format 宏,递归先解靠前者)。
+ * 字符串原样输出(不包 YAML 引号),缺失路径 → 'null'。
+ */
+function applyFormatVariable(ctx: MacroContext, prefix: string, domain: string, path: string, { quoted = false } = {}): string {
+    const innerRe = quoted ? TH_FORMAT_VAR_QUOTED_RE : TH_FORMAT_VAR_RE;
+    const earlier = prefix.match(innerRe);
+    if (earlier) {
+        prefix = applyFormatVariable(ctx, earlier[1]!, earlier[2]!, earlier[3]!, { quoted })
+            + prefix.slice(earlier[0].length);
+    }
+    const store = variableDomainStore(ctx, domain);
+    const value = withoutInternalKeys(lodashGet(store ?? {}, unescapeVarPath(path)) ?? null);
+    const rendered = typeof value === 'string'
+        ? value
+        : yamlStringify(value, quoted
+            ? { blockQuote: 'literal', defaultKeyType: 'PLAIN', defaultStringType: 'QUOTE_DOUBLE' }
+            : { blockQuote: 'literal' }).trimEnd();
+    return prefix + rendered.replaceAll('\n', '\n' + ' '.repeat(prefix.length));
+}
+
+/**
+ * `{{set_X_variable::path::value}}` — 宏展开为空串但执行域写(TH replaceVariables
+ * 语义;持久化由宿主按 ctx.variableWrites 落盘,宏本身不保证写穿)。
+ * message 域双写:楼层快照(请求内回读一致)+ chat_metadata.variables 镜像
+ * ({{getvar}}/chat 域读同键、updateChatMetadata 持久通道)。
+ */
+function applySetVariable(ctx: MacroContext, domain: string, path: string, rawValue: string): void {
+    const value = parseMacroSetValue(rawValue);
+    const p = unescapeVarPath(path);
+    switch (domain) {
+        case 'message': {
+            const snapshot = latestMessageSnapshot(ctx);
+            if (snapshot) {
+                lodashSet(snapshot, p, value);
+            }
+            lodashSet((ctx.chatMetadata.variables ??= {}), p, value);
+            ctx.variableWrites?.push({ domain: 'message', path: p, value });
+            break;
+        }
+        case 'chat': {
+            lodashSet((ctx.chatMetadata.variables ??= {}), p, value);
+            ctx.variableWrites?.push({ domain: 'chat', path: p, value });
+            break;
+        }
+        case 'char':
+        case 'character': {
+            lodashSet((ctx.charVariables ??= {}), p, value);
+            ctx.variableWrites?.push({ domain: 'char', path: p, value });
+            break;
+        }
+        case 'preset': {
+            lodashSet((ctx.presetVariables ??= {}), p, value);
+            ctx.variableWrites?.push({ domain: 'preset', path: p, value });
+            break;
+        }
+        case 'global': {
+            lodashSet((ctx.globalVariables ??= {}), p, value);
+            ctx.variableWrites?.push({ domain: 'global', path: p, value });
+            break;
+        }
+    }
+}
+
+/** {{setvar/getvar/...}} local + global variable macros + TH/MVU 三域变量宏家族。 */
 function getVariableMacros(ctx: MacroContext): Macro[] {
     const local = () => {
         if (!ctx.chatMetadata.variables) {
@@ -217,18 +424,49 @@ function getVariableMacros(ctx: MacroContext): Macro[] {
         return ctx.chatMetadata.variables;
     };
     const global = () => ctx.globalVariables;
+    const markLocal = (path?: string, value?: unknown) => ctx.variableWrites?.push({ domain: 'chat', path, value });
+    const markGlobal = (path?: string, value?: unknown) => ctx.variableWrites?.push({ domain: 'global', path, value });
 
     return [
-        { regex: /{{setvar::([^:]+)::([^}]*)}}/gi, replace: (_m, name, value) => { setVariable(local(), name.trim(), value); return ''; } },
-        { regex: /{{addvar::([^:]+)::([^}]+)}}/gi, replace: (_m, name, value) => { addVariable(local(), name.trim(), value); return ''; } },
-        { regex: /{{incvar::([^}]+)}}/gi, replace: (_m, name) => String(incrementVariable(local(), name.trim()) ?? '') },
-        { regex: /{{decvar::([^}]+)}}/gi, replace: (_m, name) => String(decrementVariable(local(), name.trim()) ?? '') },
+        { regex: /{{setvar::([^:]+)::([^}]*)}}/gi, replace: (_m, name, value) => { setVariable(local(), name.trim(), value); markLocal(name.trim(), value); return ''; } },
+        { regex: /{{addvar::([^:]+)::([^}]+)}}/gi, replace: (_m, name, value) => { addVariable(local(), name.trim(), value); markLocal(name.trim()); return ''; } },
+        { regex: /{{incvar::([^}]+)}}/gi, replace: (_m, name) => { const v = incrementVariable(local(), name.trim()); markLocal(name.trim(), v); return String(v ?? ''); } },
+        { regex: /{{decvar::([^}]+)}}/gi, replace: (_m, name) => { const v = decrementVariable(local(), name.trim()); markLocal(name.trim(), v); return String(v ?? ''); } },
         { regex: /{{getvar::([^}]+)}}/gi, replace: (_m, name) => String(getVariable(local(), name.trim()) ?? '') },
-        { regex: /{{setglobalvar::([^:]+)::([^}]*)}}/gi, replace: (_m, name, value) => { setVariable(global(), name.trim(), value); return ''; } },
-        { regex: /{{addglobalvar::([^:]+)::([^}]+)}}/gi, replace: (_m, name, value) => { addVariable(global(), name.trim(), value); return ''; } },
-        { regex: /{{incglobalvar::([^}]+)}}/gi, replace: (_m, name) => String(incrementVariable(global(), name.trim()) ?? '') },
-        { regex: /{{decglobalvar::([^}]+)}}/gi, replace: (_m, name) => String(decrementVariable(global(), name.trim()) ?? '') },
+        { regex: /{{setglobalvar::([^:]+)::([^}]*)}}/gi, replace: (_m, name, value) => { setVariable(global(), name.trim(), value); markGlobal(name.trim(), value); return ''; } },
+        { regex: /{{addglobalvar::([^:]+)::([^}]+)}}/gi, replace: (_m, name, value) => { addVariable(global(), name.trim(), value); markGlobal(name.trim()); return ''; } },
+        { regex: /{{incglobalvar::([^}]+)}}/gi, replace: (_m, name) => { const v = incrementVariable(global(), name.trim()); markGlobal(name.trim(), v); return String(v ?? ''); } },
+        { regex: /{{decglobalvar::([^}]+)}}/gi, replace: (_m, name) => { const v = decrementVariable(global(), name.trim()); markGlobal(name.trim(), v); return String(v ?? ''); } },
         { regex: /{{getglobalvar::([^}]+)}}/gi, replace: (_m, name) => String(getVariable(global(), name.trim()) ?? '') },
+
+        // —— TH/MVU 变量宏家族(TASK issue#2):set/get/format_quoted/format ×
+        //    message|chat|character|char|preset|global。
+        //    过序约定:set 先跑整串 → 同串里文本位置在后的 get/format 读到
+        //    set 后的状态(与上方 setvar→getvar 原生顺序一致);format 收尾,
+        //    其行内前缀里不应再残留未展开的变量宏(TH macro_like 同款顺序)。 ——
+        {
+            regex: new RegExp(`\\{\\{set_(${TH_VAR_DOMAIN_ALT})_variable::(.*?)::([\\s\\S]*?)\\}\\}`, 'gi'),
+            replace: (_m, domain, path, rawValue) => {
+                applySetVariable(ctx, domain, path, rawValue);
+                return '';
+            },
+        },
+        {
+            regex: new RegExp(`\\{\\{get_(${TH_VAR_DOMAIN_ALT})_variable::(.*?)\\}\\}`, 'gi'),
+            replace: (_m, domain, path) => {
+                const store = variableDomainStore(ctx, domain);
+                const value = withoutInternalKeys(lodashGet(store ?? {}, unescapeVarPath(path)) ?? null);
+                return typeof value === 'string' ? value : JSON.stringify(value);
+            },
+        },
+        {
+            regex: new RegExp(`^(.*)\\{\\{format_(${TH_VAR_DOMAIN_ALT})_variable_quoted::(.*?)\\}\\}`, 'gim'),
+            replace: (_m, prefix, domain, path) => applyFormatVariable(ctx, prefix, domain, path, { quoted: true }),
+        },
+        {
+            regex: new RegExp(`^(.*)\\{\\{format_(${TH_VAR_DOMAIN_ALT})_variable::(.*?)\\}\\}`, 'gim'),
+            replace: (_m, prefix, domain, path) => applyFormatVariable(ctx, prefix, domain, path),
+        },
     ];
 }
 

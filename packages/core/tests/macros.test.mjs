@@ -57,6 +57,148 @@ test('全局变量宏:setglobalvar/getglobalvar 走 globalVariables', () => {
     assert.equal(g.world, 'eden');
 });
 
+// ---------- TH/MVU 变量宏家族(issue#2)----------
+// 语义基准:ref/extensions/JS-Slash-Runner/src/function/macro_like.ts
+//   + variables.ts(get_variables_without_clone 五域)。
+// 域口径:message = 最新楼层 variables[swipe_id] 快照,缺席回退
+//   chat_metadata.variables(MVU 镜像);chat = chat_metadata.variables;
+//   char|character = ctx.charVariables;preset = ctx.presetVariables;
+//   global = ctx.globalVariables。
+
+/** MVU 楼层:variables[swipe_id] = MvuData 快照。 */
+function mvuFloor(snap, { swipeId = 0, mes = 'floor' } = {}) {
+    return { mes, is_user: false, swipe_id: swipeId, swipes: [mes], variables: { [swipeId]: snap } };
+}
+
+test('get_message_variable:楼层快照读(TH findLastIndex 口径)', () => {
+    const snap = { stat_data: { hp: [80, 'desc'], name: 'Mira' }, schema: {} };
+    const chat = [mvuFloor({ stat_data: { hp: [1, 'old'] }, schema: {} }), mvuFloor(snap)];
+    const meta = { variables: { stat_data: { hp: 999 } } };
+    const c = ctx({ chat, chatMetadata: meta });
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.name}}', {}, undefined, c), 'Mira');
+    // 对象 → JSON.stringify(TH literal);缺失 → 'null'
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.hp}}', {}, undefined, c), '[80,"desc"]');
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.nope}}', {}, undefined, c), 'null');
+    // 读的是最新快照楼,不是镜像(meta.variables.hp=999 不可见)
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.hp[0]}}', {}, undefined, c), '80');
+});
+
+test('get_message_variable:无快照楼层回退 chat_metadata.variables 镜像', () => {
+    const chat = [{ mes: 'plain', is_user: false }];
+    const meta = { variables: { stat_data: { mood: 'calm' } } };
+    const c = ctx({ chat, chatMetadata: meta });
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.mood}}', {}, undefined, c), 'calm');
+    assert.equal(evaluateMacros('{{get_chat_variable::stat_data.mood}}', {}, undefined, c), 'calm');
+});
+
+test('get_message_variable:$ 内部键深剔除(MVU $meta/$internal)', () => {
+    const snap = { stat_data: { $meta: { strict: true }, hp: 5, nested: { $internal: { d: 1 }, v: 2 } } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: {} });
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data}}', {}, undefined, c), '{"hp":5,"nested":{"v":2}}');
+    // TH getWithout$ 是 post-get 剔除:直接寻址 $ 键会命中(TH 忠实口径)。
+    assert.equal(evaluateMacros('{{get_message_variable::stat_data.$meta}}', {}, undefined, c), '{"strict":true}');
+});
+
+test('format_message_variable:YAML 回显 + 行内前缀对齐', () => {
+    const snap = { stat_data: { hp: 80, inv: { sword: 1 } } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: {} });
+    const r = evaluateMacros('---\n<status>\n{{format_message_variable::stat_data}}\n</status>', {}, undefined, c);
+    assert.equal(r, '---\n<status>\nhp: 80\ninv:\n  sword: 1\n</status>');
+    // 缩进前缀:续行按前缀长度对齐(TH prefix.length padding)
+    const indented = evaluateMacros('X {{format_message_variable::stat_data}}', {}, undefined, c);
+    assert.equal(indented, 'X hp: 80\n  inv:\n    sword: 1');
+    // 缺失路径 → 'null'
+    assert.equal(evaluateMacros('{{format_message_variable::nope}}', {}, undefined, c), 'null');
+    // 字符串子树原样输出(不包引号)
+    const c2 = ctx({ chat: [mvuFloor({ stat_data: { note: 'hi\nthere' } })], chatMetadata: {} });
+    assert.equal(evaluateMacros('{{format_message_variable::stat_data.note}}', {}, undefined, c2), 'hi\nthere');
+});
+
+test('format_message_variable_quoted:字符串全量双引号', () => {
+    const snap = { stat_data: { name: 'Mira', hp: 80 } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: {} });
+    const r = evaluateMacros('{{format_message_variable_quoted::stat_data}}', {}, undefined, c);
+    assert.equal(r, 'name: "Mira"\nhp: 80');
+});
+
+test('format_message_variable:同一行叠多个 format 宏(递归)', () => {
+    const snap = { a: { x: 1 }, b: { y: 2 } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: {} });
+    const r = evaluateMacros('{{format_message_variable::a}}|{{format_message_variable::b}}', {}, undefined, c);
+    assert.equal(r, 'x: 1|y: 2');
+});
+
+test('get/set_char_variable + character 别名:卡级变量域', () => {
+    const charVars = { affection: 10 };
+    const c = ctx({ extra: { charVariables: charVars, variableWrites: [] } });
+    assert.equal(evaluateMacros('{{get_char_variable::affection}}|{{get_character_variable::affection}}', {}, undefined, c), '10|10');
+    assert.equal(evaluateMacros('{{set_char_variable::affection::20}}[{{get_char_variable::affection}}]', {}, undefined, c), '[20]');
+    assert.equal(charVars.affection, 20);
+    assert.deepEqual(c.variableWrites, [{ domain: 'char', path: 'affection', value: 20 }]);
+    // 未绑定 → 'null'
+    const c2 = ctx();
+    assert.equal(evaluateMacros('{{get_char_variable::affection}}', {}, undefined, c2), 'null');
+});
+
+test('get/set_global_variable:全局域读写 + 写回钉', () => {
+    const g = { world: 'eden' };
+    const c = ctx({ globalVariables: g, extra: { variableWrites: [] } });
+    assert.equal(evaluateMacros('{{get_global_variable::world}}', {}, undefined, c), 'eden');
+    assert.equal(evaluateMacros('{{set_global_variable::world::utopia}}[{{get_global_variable::world}}]', {}, undefined, c), '[utopia]');
+    assert.equal(g.world, 'utopia');
+    assert.equal(c.variableWrites.at(-1).domain, 'global');
+});
+
+test('set_message_variable:展开空串,快照+镜像双写,variableWrites 带 path+value', () => {
+    const snap = { stat_data: { hp: 1 }, schema: {} };
+    const meta = { variables: { stat_data: { hp: 1 } } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: meta, extra: { variableWrites: [] } });
+    const r = evaluateMacros('{{set_message_variable::stat_data.hp::42}}', {}, undefined, c);
+    assert.equal(r, '');
+    assert.equal(snap.stat_data.hp, 42);
+    assert.equal(meta.variables.stat_data.hp, 42);
+    assert.deepEqual(c.variableWrites, [{ domain: 'message', path: 'stat_data.hp', value: 42 }]);
+});
+
+test('set_message_variable:无快照楼层写镜像;值 JSON 解析优先', () => {
+    const meta = {};
+    const c = ctx({ chat: [], chatMetadata: meta, extra: { variableWrites: [] } });
+    evaluateMacros('{{set_message_variable::a.b::[1,2]}}', {}, undefined, c);
+    assert.deepEqual(meta.variables.a.b, [1, 2]);
+    evaluateMacros('{{set_message_variable::a.s::hello}}', {}, undefined, c);
+    assert.equal(meta.variables.a.s, 'hello');
+});
+
+test('set_chat_variable:chat 域写镜像 + 钉', () => {
+    const meta = {};
+    const c = ctx({ chatMetadata: meta, extra: { variableWrites: [] } });
+    assert.equal(evaluateMacros('{{set_chat_variable::flag::true}}', {}, undefined, c), '');
+    assert.equal(meta.variables.flag, true);
+    assert.deepEqual(c.variableWrites, [{ domain: 'chat', path: 'flag', value: true }]);
+});
+
+test('set_preset_variable:预设域绑定', () => {
+    const p = {};
+    const c = ctx({ extra: { presetVariables: p, variableWrites: [] } });
+    evaluateMacros('{{set_preset_variable::tone::dark}}', {}, undefined, c);
+    assert.equal(p.tone, 'dark');
+    assert.equal(evaluateMacros('{{get_preset_variable::tone}}', {}, undefined, c), 'dark');
+});
+
+test('setvar/setglobalvar 家族同样推写回钉', () => {
+    const meta = {};
+    const g = {};
+    const c = ctx({ chatMetadata: meta, globalVariables: g, extra: { variableWrites: [] } });
+    evaluateMacros('{{setvar::hp::1}}{{incvar::hp}}{{setglobalvar::g::x}}', {}, undefined, c);
+    assert.deepEqual(c.variableWrites.map((w) => w.domain), ['chat', 'chat', 'global']);
+});
+
+test('TH 域宏:HTML 实体路径还原(_.unescape 语义)', () => {
+    const snap = { 'a<b': { 'c&d': 7 } };
+    const c = ctx({ chat: [mvuFloor(snap)], chatMetadata: {} });
+    assert.equal(evaluateMacros('{{get_message_variable::a&lt;b.c&amp;d}}', {}, undefined, c), '7');
+});
+
 test('getvar 数值 coercion:"42" → 数字 42', () => {
     const meta = { variables: { n: '42' } };
     const c = ctx({ chatMetadata: meta });
