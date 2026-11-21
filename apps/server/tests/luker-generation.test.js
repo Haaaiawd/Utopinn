@@ -102,6 +102,7 @@ describe('createGenerationJob', () => {
         });
         const job = createGenerationJob(req, { job_id: jobId });
         expect(job.requestMeta).toEqual({
+            verb: '',
             api: 'openai',
             char_name: 'Assistant',
             model: 'gpt-4',

@@ -3733,7 +3733,8 @@
       ],
       "implementation_notes": [
         "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议",
-        "2026-11-21 事件格落地:①对照表 th-gap-table.md;②server event 家族(chat_state th.events 影子+信箱日志);③protocol PANEL_METHODS_TH/T0 补 6 法+th.getEventLog;④panel-t0 订阅记账(event→lid 集,clear 上报本 mount lids)+debug 钩子;⑤shim 双面:runtime.js 事件族补全(makeFirst/Last/clearEvent/clearListener/clearAll+lid),ctx-shim.js ctx.eventOn 家族(th.* 回落 ctx.on);⑥宿主:ctxHost/cardapp-host 双端 diff 泵全事件名+信箱泵(origin 去重)+生成生命周期事件。运维:9P 环境下 jsdom 需 UTOPINN_CARDAPP_DEPS_DIR 指 /tmp 闭包拷贝(/tmp/copy-pnpm-closure.cjs 脚本化);测试 app 需 /csrf-token 否则 UtopinnClient.autoSession 全链 404。事件名双命名空间不规一(tavern_events.* 小写/iframe_events.* 大写,按字面存)"
+        "2026-11-21 事件格落地:①对照表 th-gap-table.md;②server event 家族(chat_state th.events 影子+信箱日志);③protocol PANEL_METHODS_TH/T0 补 6 法+th.getEventLog;④panel-t0 订阅记账(event→lid 集,clear 上报本 mount lids)+debug 钩子;⑤shim 双面:runtime.js 事件族补全(makeFirst/Last/clearEvent/clearListener/clearAll+lid),ctx-shim.js ctx.eventOn 家族(th.* 回落 ctx.on);⑥宿主:ctxHost/cardapp-host 双端 diff 泵全事件名+信箱泵(origin 去重)+生成生命周期事件。运维:9P 环境下 jsdom 需 UTOPINN_CARDAPP_DEPS_DIR 指 /tmp 闭包拷贝(/tmp/copy-pnpm-closure.cjs 脚本化);测试 app 需 /csrf-token 否则 UtopinnClient.autoSession 全链 404。事件名双命名空间不规一(tavern_events.* 小写/iframe_events.* 大写,按字面存)",
+        "2026-11-21 二波(GH#4+GH#9):①GH#4 取「保留 TH 全量替换语义+护栏」——JSR 源码确认 replaceVariables=_.set 全替;server 与 panel-t0 双端丢根检测(顶层根+stat_data 内根),无 force:true → 400/reject 明细(lost_roots/lost_stat_data_roots/hint)不写盘,force 放行+warnings 留痕;insertOrAssignVariables 修正为 TH mergeWith 深合(原 T0 仅根级浅合,嵌套会被整根覆盖),数组整替;insertVariables defaultsDeep;updateVariablesWith 按 TH 本体=全量回写(非 merge);shim replaceVariables 透传 o.force。②GH#9 辅助生成:server th.generate/th.generateRaw → runQuietGeneration 同链(prompt→quietPrompt+skipWIAN,persist_target=none 不落楼),懒加载 import 防 config 依赖拖死单测;生命周期 generation_requested/started/ended|stopped 走 th.events 信箱(origin:'server',ENDED 负载=最终文本);ordered_prompts/未映射 TH 键诚实 unsupported/warnings;shim api.generate/generateRaw 解析 result.text(TH 契约 string);ctx-shim ctx.generateQuiet 给 ctx 面同链;protocol T1 补 th.generateRaw。保护文件 quiet-generation.js/generate-context.js 未动。实测:utopinn-th-events.test.mjs 12/12(+变量写面5条+生成面2条),panel-t0 16/16(+3条),panel-shim 11/11,protocol+api-client tsc 干净。剩余:消息写/世界书/正则/displayed_message/stopGeneration/流式 下格"
       ]
     },
     {
@@ -3792,23 +3793,23 @@
     {
       "id": "TASK-051",
       "title": "生成/挂载契约缺口收口:swipe 落盘语义 + quiet 组装失败登记 + 预设口径",
-      "status": "open",
+      "status": "done",
       "outcome": "全链路实测(2026-11-20)发现的契约缺口收口:API 直生成方的 swipe 语义与 ST 楼层惯例对齐;quiet 组装失败也有终态记录;预设默认口径适配大卡。",
       "acceptance": [
         {
           "criterion": "B1:服务端直持久化 AI 楼带 swipes[]/swipe_id;type:\"swipe\" job 并入前楼 swipes 而非追加新楼(或明确定义新契约并入档)",
           "verify_by": "生成+swipe 后 JSONL 回读验楼层结构",
-          "evidence": ""
+          "evidence": "node --test tests/luker-generation-swipe.test.mjs → 9/9 通过(真 FsEngine+ChatRepo 回读):type:'swipe' job 并楼后 body.length 不变、前楼 swipes ['v1','v2']→连续 swipe ['v1','v2','v3']、swipe_id 恒指尾、mes=新文本、swipe_info 同长;无 swipe 结构的旧楼回填槽0 再并楼;用户楼/extra.isSmallSys 小系统楼/空聊按上游 normal 回退追加新楼;gen-id 侧车命中重入不叠第二份;kind:group 群聊同语义并楼(extra.gen_id 覆盖)。普通 persist 新楼恒带 swipe_id:0+swipes:[mes]+swipe_info 快照(顶层 extra 剥 luker_generation_id,快照同形)。回归:node --test tests/utopinn-generate-e2e.test.mjs → 6/6(真服+mock LLM,『assistant reply persisted to chat JSONL』通过);jest luker-generation.test.js+task-store → 71/71。实现:luker-generation.js persistGeneratedReply 楼层三元组 + ensureFloorSwipeStructures(ensureSwipes 同语义) + persistGeneratedSwipe(repo.get→clone→CAS save(expectedIntegrity),integrity_mismatch 重读重试≤3,成功后写 gen-id 侧车+settlePersistedMvuMessage autoInit) + persistJobReplyText 调度(verb==='swipe'→并楼,不可并楼→persistGeneratedReply);kind:'none' 在前置守卫已拦不受影响。"
         },
         {
           "criterion": "B5:quiet 生成组装失败(assemble_failed)也登记 job 终态,不再只有 quiet_submit 无下文",
           "verify_by": "/gen 触发失败路径查 jobs 台账",
-          "evidence": ""
+          "evidence": "node --test tests/quiet-generation.test.mjs → 2/2 通过:Chat not found 与 Token budget exceeded 两条真实组装失败路径,(a) runQuietGeneration 原样抛回组装异常(调用方行为不变);(b) jobs 台账 getTaskByRequestId(jobId,handle) → status:'failed',error 含 'quiet generation assemble failed: <原因>',requestMeta.verb==='quiet',persistTarget {kind:'none'};(c) diag-bus 落 quiet_terminal(lvl:warn, ctx.verb='quiet'/charDir/chatId/diagId 与 quiet_submit 同认亲键, data.jobId 供台账回查 + stage:'assemble')。实现:quiet-generation.js 组装 try/catch → createGenerationJob(request,{job_id,persist_target:{kind:'none'}})+failGenerationJob 登记 + diagEmit quiet_terminal 后 rethrow。"
         },
         {
           "criterion": "B6:Default 预设 openai_max_context 对小上下文卡/大卡的适配口径定稿(默认上调或按卡调)",
           "verify_by": "掌门卡直生成不再 jailbreak 预算炸",
-          "evidence": ""
+          "evidence": "node --test tests/generate-context-b6.test.mjs → 4/4 通过:stock Default@4095+大卡(~6000 token 描述)组装成功且 inject:preset 事件 contextTokens=128000;非 Default 名同 4095 值视为意图不抬照炸 Token budget exceeded;Default@50000 用户调过的值原样生效;seed 文件断言。改动:default/content/presets/openai/Default.json 与 default/content/settings.json 的 openai_max_context 4095→128000(上游 max_128k 未知模型档兜底,与 apps/server/public/presets 新包 2000000 同思路偏保守档);buildGenerationContext 预设装载后仅对 resolvedPresetName==='Default' 且 openai_max_context≤4095 抬到 128000。取舍:不开新设置面;抬升按「未调过的库存值即遗物」收窄到内置 Default 名——trade-off 是用户在 Default 上刻意设 ≤4095 会被覆盖(与浏览器端 slider 行为一致,接受);换名复制预设与用户调过的值都视为意图不碰,存量/新装双路径同口径(LEGACY_DEFAULT_OPENAI_MAX_CONTEXT=4095 / DEFAULT_OPENAI_MAX_CONTEXT=128000 常量单点)。"
         }
       ],
       "done_when": [
@@ -3825,14 +3826,28 @@
       ],
       "reads": [
         "apps/server/src/endpoints/backends/luker-generation.js",
-        "apps/server/src/services/quiet-generation.js"
+        "apps/server/src/services/quiet-generation.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/default/content/settings.json",
+        "apps/server/default/content/presets/openai/Default.json"
       ],
       "touches": [
-        "apps/server/src/endpoints/backends/luker-generation.js"
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/src/services/quiet-generation.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/default/content/settings.json",
+        "apps/server/default/content/presets/openai/Default.json",
+        "apps/server/tests/luker-generation-swipe.test.mjs",
+        "apps/server/tests/quiet-generation.test.mjs",
+        "apps/server/tests/generate-context-b6.test.mjs",
+        "apps/server/tests/luker-generation.test.js",
+        "apps/server/tests/luker-dispatch/runner.test.js",
+        "apps/server/tests/luker-dispatch/runner-trailer.test.js"
       ],
       "implementation_notes": [
         "2026-11-20 立案:源自全链路实测发现清单 B1/B5/B6;B2(dist 陈旧)/B3(CSP img-src)/B4(cardapp CSS)当日已修",
-        "B7 环境项不归档"
+        "B7 环境项不归档",
+        "2026-11-21 收口:B1 经 persistJobReplyText 调度(swipe→并前楼 CAS+retry+sidecar dedup+MVU settle;不可并楼回退 normal 追加,对齐上游 saveReply);B5 组装 catch 登记 failed job+quiet_terminal diag(与 quiet_submit 同 diagId);B6 seed 4095→128000 + Default 名/遗物值双条件抬升。顺手修两条 HEAD 既有 stale 测试(runner.test.js 的 'hi' 非可提取文本撞上 ccad9e8 空产出诚实 failed 行为 → 换真 SSE delta 帧;runner-trailer.test.js 测试体内冷 import runner.js 在 9P 下超 15s → 提升顶层 import)。luker-generation.test.js 补 requestMeta.verb 期望(verb 字段 6e8176f 已存在,断言面漏更)。jest 全套 luker-dispatch/+generation-control 447 中 445 通过——两条失败即上述 stale,修后 14/14。"
       ],
       "created": "2026-11-20"
     },

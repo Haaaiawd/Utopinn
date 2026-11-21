@@ -156,7 +156,10 @@ describe('runLukerDispatch', () => {
         const req = fakeRequest({ requestId: 'complete-job-1', body: { model: 'test-model' } });
         const res = fakeResponse();
         const select = () => async (ctx) => {
-            ctx.emit.chunk(new TextEncoder().encode('hi'));
+            // OpenAI SSE delta frame — plain 'hi' carries no extractable
+            // text, and since ccad9e8 an empty-output job honestly goes
+            // 'failed' instead of hanging at awaiting_ack.
+            ctx.emit.chunk(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
             ctx.emit.end();
         };
         await runLukerDispatch(req, res, { endpoint: 'test', select });

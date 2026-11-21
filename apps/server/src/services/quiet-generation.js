@@ -33,6 +33,8 @@ async function loadDispatchLayer() {
         runLukerDispatch: runner.runLukerDispatch,
         getTaskByRequestId: jobs.getTaskByRequestId,
         acknowledgeGenerationJobsForRequest: jobs.acknowledgeGenerationJobsForRequest,
+        createGenerationJob: jobs.createGenerationJob,
+        failGenerationJob: jobs.failGenerationJob,
         getPromptNames: conv.getPromptNames,
         postProcessPrompt: conv.postProcessPrompt,
     };
@@ -108,7 +110,10 @@ export async function runQuietGeneration({
         user: { profile: { handle, name: userName }, directories },
         utopinnDiagId: diagId,
         once() { return this; },
-        body: {},
+        // 先置动词:派发体在 dispatch 前整体回填覆盖;组装失败路径上
+        // createGenerationJob 读 request.body.type 落 job.requestMeta.verb,
+        // 让台账里失败 job 也挂 'quiet' 而不是空串。
+        body: { type: 'quiet' },
     };
     diagEmit({
         lvl: 'info', kind: 'generate', code: 'quiet_submit',
@@ -125,21 +130,46 @@ export async function runQuietGeneration({
     const {
         presetToDispatchParams, selectChatCompletionDispatch, runLukerDispatch,
         getTaskByRequestId, acknowledgeGenerationJobsForRequest,
+        createGenerationJob, failGenerationJob,
         getPromptNames, postProcessPrompt,
     } = await loadDispatchLayer();
 
-    const { builtPrompt, presetDoc, oaiSettings, trace, sources, perf } = await buildGenerationContext({
-        request,
-        charDir,
-        chatName,
-        card,
-        user: { name: userName },
-        type: 'quiet',
-        // 上游 generateQuietPrompt:quiet 任务不进 WI/AN(skipWIAN),
-        // quietPrompt 作独立 system 注入(assemble.ts quietPrompt 位)。
-        overrides: { quietPrompt: String(prompt ?? ''), skipWIAN: true },
-        mainApi: 'openai',
-    });
+    let builtPrompt, presetDoc, oaiSettings, trace, sources, perf;
+    try {
+        ({ builtPrompt, presetDoc, oaiSettings, trace, sources, perf } = await buildGenerationContext({
+            request,
+            charDir,
+            chatName,
+            card,
+            user: { name: userName },
+            type: 'quiet',
+            // 上游 generateQuietPrompt:quiet 任务不进 WI/AN(skipWIAN),
+            // quietPrompt 作独立 system 注入(assemble.ts quietPrompt 位)。
+            overrides: { quietPrompt: String(prompt ?? ''), skipWIAN: true },
+            mainApi: 'openai',
+        }));
+    } catch (assembleError) {
+        // B5:组装失败(assemble_failed,如 Token budget exceeded)也要给
+        // 调用方留终态——登记 failed job(jobs 台账可查)再抛原异常;
+        // 否则 quiet_submit 之后再无下文,/jobs 里查无此任务。
+        const reason = String(assembleError?.message ?? assembleError ?? 'assemble failed');
+        try {
+            const failedJob = createGenerationJob(request, {
+                job_id: jobId,
+                persist_target: { kind: 'none' },
+            });
+            if (failedJob) {
+                failGenerationJob(failedJob, `quiet generation assemble failed: ${reason}`);
+            }
+        } catch { /* 台账登记失败不掩盖原始异常 */ }
+        diagEmit({
+            lvl: 'warn', kind: 'generate', code: 'quiet_terminal',
+            msg: `quiet gen ${charDir}/${chatName ?? '-'} failed: ${reason.slice(0, 200)}`,
+            ctx: { charDir, chatId: chatName, verb: 'quiet', diagId },
+            data: { jobId, stage: 'assemble' },
+        });
+        throw assembleError;
+    }
     request.utopinnPerf = perf;
     logPerfLine('utopinn/quiet-generate', perf, { charDir, chatName: chatName ?? '-' });
 

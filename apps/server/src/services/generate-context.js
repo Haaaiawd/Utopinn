@@ -20,7 +20,9 @@ import {
 import { createPromptBuilder, resolveTokenizer } from './prompt-builder.js';
 import { buildGroupCardFields, collectGroupDepthPrompts } from './group-orchestration.js';
 import {
+    applyChatFloorsPromptRegex,
     createDepthInjectionProvider,
+    createFloorRegexRunner,
     createWorldInfoRegexHook,
     CUSTOM_WI_OUTLET_PREFIX,
     DEPTH_PROMPT_KEY,
@@ -36,6 +38,7 @@ import {
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
+import _ from 'lodash';
 import { emit as diagEmit } from './diag-bus.js';
 
 /** 毫秒保留 1 位小数(打表口径) */
@@ -65,6 +68,16 @@ export function logPerfLine(label, perf, { charDir = '?', chatName = '?' } = {})
 
 /** openai.js promptManager 的全局序 dummyId(openai.js:1319-1324) */
 const OPENAI_ORDER_CHARACTER_ID = '100001';
+
+/**
+ * B6(TASK-051)口径:内置 openai/Default 预设的上下文预算。
+ * - LEGACY_DEFAULT_OPENAI_MAX_CONTEXT = 上游 gpt-3.5 时代库存值 max_4k;
+ *   存量 dataRoot 里未调过的 Default 仍是它,大卡 must-fit 必炸。
+ * - DEFAULT_OPENAI_MAX_CONTEXT = 新默认(上游 max_128k,未知模型档的
+ *   现代兜底位)。seed 与抬升共用同一数,单点改。
+ */
+const LEGACY_DEFAULT_OPENAI_MAX_CONTEXT = 4095;
+const DEFAULT_OPENAI_MAX_CONTEXT = 128000;
 
 /** extension_prompt_roles:number → string(openai.js getPromptRole 同款) */
 const PROMPT_ROLES = ['system', 'user', 'assistant'];
@@ -122,6 +135,10 @@ export function chatBodyToInput(messages) {
         swipes: m.swipes,
         force_avatar: m.force_avatar,
         extra: m.extra,
+        // TH/MVU 楼层变量袋透传(引用共享,不拷)——message 域变量宏
+        // ({{get/format/set_message_variable}})的楼层快照读源;宏 set 写回
+        // 经 variables 活引用同步本请求内读,持久化仍走 variables 写回钉。
+        variables: m.variables,
     }));
 }
 
@@ -286,9 +303,19 @@ async function buildGenerationContextImpl({
     const { engine: worldInfoSettings, state: worldInfoState, raw: wiRaw } = resolveWorldInfoSettings(settingsDoc);
     const resolvedPresetName = presetName ?? settingsDoc?.preset_settings_openai ?? 'Default';
     seg = performance.now();
-    const presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
+    let presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
     perf.presetMs += performance.now() - seg;
     if (!presetDoc) throw new Error(`Preset not found: openai/${resolvedPresetName}`);
+    // TASK-051 B6:内置 Default 的 openai_max_context=4095 是 gpt-3.5 时代
+    // 库存值(上游 max_4k;浏览器端靠 slider/模型上限放行,API 直生成无
+    // slider)——按「未调过的遗物」抬到现代默认 128000(上游 max_128k 兜底)。
+    // 口径刻意收窄:仅 openai/Default 名 + ≤4095 遗物值;换名复制的预设
+    // 与用户动过的值都视为意图,不碰。新装的 seed Default 已是 128000,
+    // 抬升只服务存量 dataRoot。
+    if (resolvedPresetName === 'Default'
+        && Number(presetDoc.openai_max_context ?? 0) <= LEGACY_DEFAULT_OPENAI_MAX_CONTEXT) {
+        presetDoc = { ...presetDoc, openai_max_context: DEFAULT_OPENAI_MAX_CONTEXT };
+    }
     injectEvt('preset', {
         injected: 1, name: resolvedPresetName,
         prompts: Array.isArray(presetDoc.prompts) ? presetDoc.prompts.length : 0,
@@ -359,9 +386,26 @@ async function buildGenerationContextImpl({
             send_date: m.send_date,
             swipe_id: m.swipe_id,
             swipes: m.swipes,
+            // 楼层快照活引用 —— TH message 域读口径
+            // (findLastIndex(m => isObject(m.variables?.[m.swipe_id ?? 0])))。
+            variables: m.variables,
         })),
         chatMetadata,
         globalVariables: settingsDoc?.extension_settings?.variables?.global ?? {},
+        // TH 'character'/'char' 域:card.data.extensions.tavern_helper.variables
+        // (TH store/settings/character.ts setting_field='tavern_helper'),
+        // 旧键 TavernHelper_characterScriptVariables 兜底(TH 迁移前形态)。
+        // 活引用绑给宏;set_char_variable 写它 —— 卡写回通道见 persist 段注释。
+        charVariables: card?.data?.extensions?.tavern_helper?.variables
+            ?? card?.data?.extensions?.TavernHelper_characterScriptVariables
+            ?? card?.extensions?.tavern_helper?.variables
+            ?? {},
+        // TH 'preset' 域:presetDoc.extensions.tavern_helper.variables
+        // (TH store/settings/preset.ts —— 预设 extensions.tavern_helper)。
+        presetVariables: presetDoc?.extensions?.tavern_helper?.variables ?? {},
+        // 变量写回钉:宏 set 家族每写一次 push {domain,path,value};装配末
+        // persistMacroVariableWrites 按域落盘/记 volatile diag。
+        variableWrites: [],
         currentChatId: isGroup ? String(group.chatId) : chatName,
         limits: { maxContext: presetDoc.openai_max_context, maxResponse: presetDoc.openai_max_tokens },
     };
@@ -621,7 +665,28 @@ async function buildGenerationContextImpl({
         entries: wiActivatedList,
         ms: ms(perf.wiMs),
     });
-    injectEvt('regex', { injected: regexApplied, scripts: wiRegexHookRaw.scriptCount ?? 0, applied: regexApplied });
+    // —— 楼层出参 regex 车道(issue #3;上游 script.js:8014-8022 coreChat 映射)——
+    // 历史楼层进 prompt 前的 persisted→isPrompt 串接:卡自带 promptOnly
+    // 脚本(MVU「对AI隐藏MVU标签」/「去除变量更新」)与 plain 脚本在此生效;
+    // depth 同上游 coreChat 口径(continue 末层 = -1)。落盘原文不动,
+    // chatPromptMessages 只喂组装面 —— WI 扫描与 substCtx.chat 仍持原文。
+    const floorRegexRunner = createFloorRegexRunner(extPromptSource, substCtx, {
+        card, charDir, presetDoc, presetName: resolvedPresetName,
+    });
+    let promptRegexApplied = 0;
+    let chatPromptMessages = chatMessages;
+    if (floorRegexRunner.scriptCount) {
+        const r = applyChatFloorsPromptRegex(chatMessages, floorRegexRunner, { isContinue: type === 'continue' });
+        chatPromptMessages = r.floors;
+        promptRegexApplied = r.applied;
+    }
+    injectEvt('regex', {
+        injected: regexApplied + promptRegexApplied,
+        scripts: floorRegexRunner.scriptCount ?? wiRegexHookRaw.scriptCount ?? 0,
+        applied: regexApplied + promptRegexApplied,
+        wiApplied: regexApplied,
+        promptApplied: promptRegexApplied,
+    });
 
     // —— WI 后注入通道(上游 script.js:4666-4684 同序)——
     // 1) ANTop/ANBottom 合并进 AN(上游 checkWorldInfo 内段,shouldWIAddPrompt 门控)
@@ -688,7 +753,7 @@ async function buildGenerationContextImpl({
             jailbreakOverride: card?.data?.post_history_instructions ?? card?.post_history_instructions,
         },
         user: { name: substCtx.name1, description: user?.description ?? powerUser.persona_description ?? '' },
-        chat: chatMessages,
+        chat: chatPromptMessages,
         prompts: Array.isArray(presetDoc.prompts) ? presetDoc.prompts : [],
         promptOrder: resolvePromptOrder(presetDoc),
         settings: presetToAssemblySettings(presetDoc, powerUser),
@@ -711,9 +776,10 @@ async function buildGenerationContextImpl({
         type,
         api: 'openai',
         model: presetDoc.openai_model,
-        // 上游 continue:cyclePrompt = 被续写楼层当前文本(script.js:8656)。
+        // 上游 continue:cyclePrompt = 被续写楼层当前文本(script.js:8656;
+        // 上游取的是已走 regex 的 coreChat 文本 → 用 chatPromptMessages 同口径)。
         // 服务端按末层推导;调用方仍可 overrides.cyclePrompt 显式覆盖。
-        ...(type === 'continue' ? { cyclePrompt: chatMessages.at(-1)?.mes ?? '' } : {}),
+        ...(type === 'continue' ? { cyclePrompt: chatPromptMessages.at(-1)?.mes ?? '' } : {}),
         ...overrides,
     };
 
@@ -749,6 +815,26 @@ async function buildGenerationContextImpl({
         ms: ms(perf.assembleMs),
     });
     injectEvt('macro', { injected: substCount, substitutions: substCount, banned: bannedInMacros.length });
+
+    // —— 变量宏写回落盘(issue#2):宏 set 家族(set_*_variable / setvar 系)在
+    //    装配期间往 substCtx.variableWrites 推 {domain,path,value};这里按域
+    //    persist。展开照常发生在请求内对象上,落盘走各域持久通道 ——
+    //    写不出去的域(char)如实记 volatile diag,不假装成了。
+    const macroVarPersist = await persistMacroVariableWrites({
+        chatRepo, settingsRepo, presetRepo,
+        handle, charDir, chatName,
+        isGroup, groupChatId: isGroup ? String(group.chatId) : null,
+        chatIntegrity: chatDoc.integrity ?? null,
+        chatMetadata, settingsDoc,
+        presetName: resolvedPresetName, presetDoc,
+        writes: substCtx.variableWrites,
+        dryRun,
+        diagId,
+        chatId: diagCtx.chatId,
+    });
+    if (macroVarPersist) {
+        injectEvt('macro_vars', macroVarPersist);
+    }
     diagEmit({
         lvl: 'info', kind: 'generate', code: dryRun ? 'preview' : 'assembled',
         msg: `${dryRun ? 'preview' : 'generate'} ${charDir}/${diagCtx.chatId}: ${builtPrompt.messages.length}msg ${usedTokens ?? '?'}tok ${ms(perf.totalMs)}ms`,
@@ -778,9 +864,11 @@ async function buildGenerationContextImpl({
         sources: {
             presetName: resolvedPresetName,
             model: presetDoc.openai_model,
-            worldInfoActivated: (wiActivated.worldInfoBeforeEntries?.length ?? 0)
-                + (wiActivated.worldInfoAfterEntries?.length ?? 0)
-                + (wiActivated.WIDepthEntries?.length ?? 0),
+            // 与下方 worldInfo.activated 同源(allActivatedEntries):字段名
+            // 是「激活条目数」,就得等于明细数组长度。不能靠分桶加总近似——
+            // 桶面漏 AN/EM/outlet 位,atDepth 桶按 depth+role 合并(桶数≠
+            // 条目数),regex 抹空内容的条目激活了但不进任何桶。
+            worldInfoActivated: wiActivatedList.length,
             // WI 激活轨迹(TASK-017 回放数据源):触发成功的条目级明细,
             // uid/world/key/comment/position/depth 足够客户端重建「哪本书
             // 哪条、被什么键命中、注入在哪个位置」。allActivatedEntries
@@ -810,6 +898,186 @@ async function buildGenerationContextImpl({
         chatMetadata,
         chatIntegrity: chatDoc.integrity ?? null,
     };
+}
+
+/**
+ * 变量宏写回落盘(issue#2 MagVarUpdate 变量宏家族)。
+ *
+ * 装配期 evaluate.ts 把 set_X_variable / setvar 家族的写推进
+ * `substCtx.variableWrites`(op 日志形,message 域带 path+value 可重放)。
+ * 这里在装配末按域持久化;每域独立 try,单域失败不拖垮生成:
+ *
+ *   message → chat RMW(repo.get → 最新快照楼层逐条重放 _.set +
+ *             chat_metadata.variables 顶层并入 → repo.save CAS×3)。
+ *             楼层快照与镜像一次写齐 —— 下次生成 message 域读回的是
+ *             同一投影;只写镜像会造成「快照还旧、镜像写丢」的假持久。
+ *   chat    → updateChatMetadata({variables}) CAS(与
+ *             persistWorldInfoTimedEffects 同语义;冲突重读做顶层键并集再写)。
+ *             message 写存在时镜像随 RMW 一并落,chat 通道跳过防双写。
+ *   global  → settingsRepo 整档回写(与 stscript persistSettings 同约定,
+ *             上游 saveSettingsDebounced 同位)。
+ *   preset  → presetRepo.patch /extensions/tavern_helper/variables,
+ *             父键缺席时逐级降级建枝(TH store/settings/preset.ts 契约)。
+ *   char    → 无卡写通道(卡持久 = PNG 重编码,生成路径不持写)——
+ *             写已进请求内活对象(同请求 get 回读一致),记 volatile
+ *             diag 如实降级,不假装落了盘。
+ *   dryRun  → 一律不落盘,记 dry 摘要(preview 无写副作用)。
+ *
+ * @returns {object|null} diag 摘要;无写 → null(不发空事件)。
+ */
+export async function persistMacroVariableWrites({
+    chatRepo, settingsRepo, presetRepo,
+    handle, charDir, chatName,
+    isGroup = false, groupChatId = null,
+    chatIntegrity, chatMetadata, settingsDoc,
+    presetName, presetDoc,
+    writes, dryRun = false,
+    diagId, chatId,
+}) {
+    const list = Array.isArray(writes) ? writes : [];
+    if (list.length === 0) return null;
+    const domains = [...new Set(list.map((w) => w?.domain).filter(Boolean))];
+    const summary = { writes: list.length, domains, persisted: [], volatile: [], failed: [], dry: !!dryRun };
+    const diagCtx = { charDir, chatId: chatId ?? chatName, verb: 'macro_vars', diagId };
+    const warn = (code, msg, data = {}) => diagEmit({
+        lvl: 'warn', kind: 'generate', code,
+        msg: `macro_vars ${charDir}/${diagCtx.chatId}: ${msg}`,
+        ctx: diagCtx, data,
+    });
+    if (dryRun) {
+        warn('macro_vars_dry', `${list.length} variable write(s) suppressed (dry run)`, { domains });
+        return summary;
+    }
+
+    const repoOpts = isGroup ? { isGroup: true, groupId: String(groupChatId) } : {};
+    const targetCharDir = isGroup ? '' : charDir;
+    const targetName = isGroup ? String(groupChatId) : chatName;
+    /** ourVars = 请求内已被宏改写的 chat_metadata.variables(并入 fresh 顶层键)。 */
+    const ourChatVars = (chatMetadata?.variables && typeof chatMetadata.variables === 'object' && !Array.isArray(chatMetadata.variables))
+        ? chatMetadata.variables : {};
+
+    // —— message 域:楼层快照 + 镜像一次写齐(repo.save CAS RMW)——
+    if (domains.includes('message')) {
+        const msgWrites = list.filter((w) => w?.domain === 'message' && typeof w?.path === 'string' && w.path);
+        let persisted = false;
+        let lastError = null;
+        for (let attempt = 0; attempt < 3 && !persisted; attempt++) {
+            try {
+                const fresh = await chatRepo.get(handle, targetCharDir, targetName, repoOpts);
+                const body = Array.isArray(fresh?.body) ? fresh.body.slice() : null;
+                if (!fresh || !body) break;
+                // 与宏读侧同一口径:findLastIndex(isObject(variables[swipe_id]))
+                let snapshot = null;
+                for (let i = body.length - 1; i >= 0; i--) {
+                    const candidate = body[i]?.variables?.[body[i]?.swipe_id ?? 0];
+                    if (candidate !== null && typeof candidate === 'object') { snapshot = candidate; break; }
+                }
+                if (snapshot) {
+                    for (const w of msgWrites) {
+                        _.set(snapshot, w.path, w.value);
+                    }
+                }
+                const header = {
+                    ...(fresh.header ?? {}),
+                    chat_metadata: {
+                        ...(fresh.header?.chat_metadata ?? {}),
+                        variables: {
+                            ...(fresh.header?.chat_metadata?.variables && typeof fresh.header.chat_metadata.variables === 'object'
+                                ? fresh.header.chat_metadata.variables : {}),
+                            ...ourChatVars,
+                        },
+                    },
+                };
+                await chatRepo.save(handle, targetCharDir, targetName, header, body, fresh.integrity ?? chatIntegrity, repoOpts);
+                persisted = true;
+            } catch (error) {
+                lastError = error;
+                if (error?.code !== 'integrity_mismatch') break;
+            }
+        }
+        if (persisted) {
+            summary.persisted.push('message');
+        } else {
+            summary.failed.push('message');
+            warn('macro_vars_persist_failed', `message domain writes did not persist: ${String(lastError?.message ?? lastError)}`, { writes: msgWrites.length });
+        }
+    }
+
+    // —— chat 域:message 已把镜像并入 RMW 时跳过防双写 ——
+    if (domains.includes('chat') && !summary.persisted.includes('message')) {
+        try {
+            await chatRepo.updateChatMetadata(handle, targetCharDir, targetName, { variables: ourChatVars }, chatIntegrity, repoOpts);
+            summary.persisted.push('chat');
+        } catch (error) {
+            if (error?.code === 'integrity_mismatch') {
+                try {
+                    const fresh = await chatRepo.get(handle, targetCharDir, targetName, repoOpts);
+                    if (!fresh) throw new Error('chat vanished');
+                    const freshVars = fresh.header?.chat_metadata?.variables;
+                    await chatRepo.updateChatMetadata(handle, targetCharDir, targetName, {
+                        variables: {
+                            ...(freshVars && typeof freshVars === 'object' ? freshVars : {}),
+                            ...ourChatVars,
+                        },
+                    }, fresh.integrity, repoOpts);
+                    summary.persisted.push('chat');
+                } catch (retryError) {
+                    summary.failed.push('chat');
+                    warn('macro_vars_persist_failed', `chat domain writes did not persist: ${String(retryError?.message ?? retryError)}`);
+                }
+            } else {
+                summary.failed.push('chat');
+                warn('macro_vars_persist_failed', `chat domain writes did not persist: ${String(error?.message ?? error)}`);
+            }
+        }
+    }
+
+    // —— global 域:settings 整档(与 stscript persistSettings 同约定)——
+    if (domains.includes('global')) {
+        try {
+            await settingsRepo.save(handle, settingsDoc);
+            summary.persisted.push('global');
+        } catch (error) {
+            summary.failed.push('global');
+            warn('macro_vars_persist_failed', `global domain writes did not persist: ${String(error?.message ?? error)}`);
+        }
+    }
+
+    // —— preset 域:/extensions/tavern_helper/variables 逐级补丁建枝 ——
+    if (domains.includes('preset')) {
+        const vars = (presetDoc?.extensions?.tavern_helper?.variables && typeof presetDoc.extensions.tavern_helper.variables === 'object')
+            ? presetDoc.extensions.tavern_helper.variables : {};
+        let persisted = false;
+        let lastError = null;
+        for (const [patchPath, value] of [
+            ['/extensions/tavern_helper/variables', vars],
+            ['/extensions/tavern_helper', { variables: vars }],
+            ['/extensions', { tavern_helper: { variables: vars } }],
+        ]) {
+            try {
+                await presetRepo.patch(handle, 'openai', presetName, [{ op: 'add', path: patchPath, value }]);
+                persisted = true;
+                break;
+            } catch (error) {
+                lastError = error;
+                if (error?.code !== 'patch_missing_parent') break;
+            }
+        }
+        if (persisted) {
+            summary.persisted.push('preset');
+        } else {
+            summary.failed.push('preset');
+            warn('macro_vars_persist_failed', `preset domain writes did not persist: ${String(lastError?.message ?? lastError)}`);
+        }
+    }
+
+    // —— char 域:请求内生效,卡写回通道缺席 —— 如实 volatile,不冒充持久。
+    if (domains.includes('char')) {
+        summary.volatile.push('char');
+        warn('macro_vars_volatile', 'char domain writes are request-scoped (no card persist channel); not durable across generations');
+    }
+
+    return summary;
 }
 
 /**

@@ -167,6 +167,32 @@ test('buildGenerationContext — storage → WI → prompt', async (t) => {
             assert.match(text, /Her sword is named Oath\./);
         });
 
+        // issue#8 回归:sources.worldInfoActivated 必须与 worldInfo.activated
+        // 明细同源——非 before 位(after/AN/atDepth)的激活也要进计数;
+        // 旧的 before(+after+depth 桶)加总会漏 AN/EM/outlet,且 atDepth 桶
+        // 按 depth+role 合并,桶数≠条目数。
+        await t.test('worldInfoActivated == worldInfo.activated.length(全位置口径)', async () => {
+            await getWorldInfoRepo().save(HANDLE, 'PosBook', {
+                entries: {
+                    '0': { ...wiEntry(0, 'dragon', 'AFTER_POS content.', 20), position: 1, ignoreBudget: true },
+                    '1': { ...wiEntry(1, 'dragon', 'AN_POS content.', 30), position: 2, ignoreBudget: true },
+                    '2': { ...wiEntry(2, 'dragon', 'DEPTH_POS content.', 40), position: 4, depth: 1, ignoreBudget: true },
+                },
+            });
+            await getChatRepo().save(HANDLE, CHAR, 'c3',
+                { user_name: 'User', chat_metadata: { world_info: 'PosBook' } },
+                [{ is_user: true, name: 'User', mes: 'dragon' }],
+                null);
+            const { sources } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'c3', card: CARD, user: { name: 'User' },
+            });
+            const activated = sources.worldInfo?.activated ?? [];
+            // PosBook 3 条全位置 + GlobalBook 的 dragon(globalSelect 全域)
+            assert.equal(activated.length, 4);
+            assert.equal(sources.worldInfoActivated, activated.length,
+                'worldInfoActivated 必须等于 activated 明细长度,不许漏非 before 位');
+        });
+
         await t.test('missing chat/preset fail loud', async () => {
             await assert.rejects(
                 buildGenerationContext({ request, charDir: CHAR, chatName: 'ghost', card: CARD, user: { name: 'User' } }),
@@ -470,6 +496,192 @@ test('audit regressions — settings + injection + persist', async (t) => {
             const reread = await getChatRepo().get(HANDLE, CHAR, 't1');
             assert.ok(Object.keys(reread.header.chat_metadata.timedWorldInfo?.sticky ?? {}).length > 0,
                 'timedWorldInfo persisted into chat header');
+        });
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+/**
+ * issue#2 端到端钉:MagVarUpdate 变量宏家族在装配全链里可用——
+ * MVU 世界书条目 `{{format_message_variable::stat_data}}` 必须把楼层
+ * 快照里的 stat_data 以 YAML 层级回显进 prompt;set 家族写走
+ * variableWrites → persistMacroVariableWrites 落盘闭环。
+ */
+test('issue#2 — MVU format/set_message_variable 进 prompt + 落盘', async (t) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-macro-'));
+    try {
+        const dirs = {
+            root: tmpDir,
+            characters: path.join(tmpDir, 'characters'),
+            chats: path.join(tmpDir, 'chats'),
+            worlds: path.join(tmpDir, 'worlds'),
+            groups: path.join(tmpDir, 'groups'),
+            openAI_Settings: path.join(tmpDir, 'OpenAI Settings'),
+            context: path.join(tmpDir, 'context'),
+            instruct: path.join(tmpDir, 'instruct'),
+            sysprompt: path.join(tmpDir, 'sysprompt'),
+            reasoning: path.join(tmpDir, 'reasoning'),
+            koboldAI_Settings: path.join(tmpDir, 'KoboldAI Settings'),
+            novelAI_Settings: path.join(tmpDir, 'NovelAI Settings'),
+            textGen_Settings: path.join(tmpDir, 'TextGen Settings'),
+        };
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const request = { user: { profile: { handle: HANDLE, name: 'User' } } };
+
+        await getSettingsRepo().save(HANDLE, {
+            power_user: {},
+            world_info_settings: {
+                world_info_depth: 2,
+                world_info_budget: 100,
+                world_info_recursive: false,
+                world_info_include_names: false,
+                world_info_match_whole_words: false,
+                world_info: { globalSelect: ['MvuBook'] },
+            },
+            preset_settings_openai: 'Default',
+            extension_settings: { variables: { global: { world: 'eden' } } },
+        });
+        await getPresetRepo().save(HANDLE, 'openai', 'Default', PRESET);
+
+        // MVU 卡典型形态:status_current_variables 块 + format_message_variable。
+        await getWorldInfoRepo().save(HANDLE, 'MvuBook', {
+            entries: {
+                '0': wiEntry(0, 'dragon', [
+                    '---',
+                    '<status_current_variables>',
+                    '{{format_message_variable::stat_data}}',
+                    '</status_current_variables>',
+                ].join('\n'), 100),
+                '1': wiEntry(1, 'wound', '{{set_message_variable::stat_data.hp::42}}', 90),
+                '2': wiEntry(2, 'realm', '{{set_global_variable::world::utopia}}', 80),
+            },
+        });
+
+        // MVU settle 形态:最新 assistant 楼携 variables[swipe_id] 快照,
+        // 顶层键镜像进 chat_metadata.variables。
+        const mvuSnapshot = () => ({
+            stat_data: {
+                hp: 80,
+                inv: { sword: 1 },
+                $meta: { internal: true }, // 内部键必须被剔除
+            },
+            schema: { type: 'object' },
+        });
+        const mvuFloor = (mes = 'I draw my blade.') => ({
+            is_user: false, name: 'Alice', mes,
+            swipe_id: 0, swipes: [mes],
+            variables: { 0: mvuSnapshot() },
+        });
+
+        await t.test('format_message_variable::stat_data YAML 回显进 assembled prompt', async () => {
+            await getChatRepo().save(HANDLE, CHAR, 'mvu1',
+                { user_name: 'User', chat_metadata: { variables: mvuSnapshot() } },
+                [
+                    { is_user: true, name: 'User', mes: 'dragon' },
+                    mvuFloor(),
+                ],
+                null);
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'mvu1', card: CARD, user: { name: 'User' },
+            });
+            const text = allText(builtPrompt);
+            assert.match(text, /<status_current_variables>/, 'MVU wrapper landed');
+            assert.match(text, /hp: 80/, 'stat_data.hp rendered as YAML');
+            assert.match(text, /inv:\r?\n\s+sword: 1/, 'nested subtree rendered');
+            assert.doesNotMatch(text, /\$meta/, '$ internal keys stripped');
+            assert.doesNotMatch(text, /\{\{format_message_variable/, 'no literal macro residue');
+        });
+
+        await t.test('set_message_variable 落盘:楼层快照 + chat_metadata.variables 双写', async () => {
+            await getChatRepo().save(HANDLE, CHAR, 'mvu2',
+                { user_name: 'User', chat_metadata: { variables: mvuSnapshot() } },
+                [
+                    { is_user: true, name: 'User', mes: 'wound' },
+                    mvuFloor(),
+                ],
+                null);
+            await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'mvu2', card: CARD, user: { name: 'User' },
+            });
+            const doc = await getChatRepo().get(HANDLE, CHAR, 'mvu2');
+            const floor = doc.body[1];
+            assert.equal(floor.variables[0].stat_data.hp, 42, 'floor snapshot updated on disk');
+            assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, 'chat_metadata mirror updated on disk');
+        });
+
+        await t.test('set_global_variable 落盘:settings.extension_settings.variables.global', async () => {
+            await getChatRepo().save(HANDLE, CHAR, 'mvu3',
+                { user_name: 'User', chat_metadata: { variables: mvuSnapshot() } },
+                [
+                    { is_user: true, name: 'User', mes: 'realm' },
+                    mvuFloor(),
+                ],
+                null);
+            await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'mvu3', card: CARD, user: { name: 'User' },
+            });
+            const settings = await getSettingsRepo().get(HANDLE);
+            assert.equal(settings.extension_settings.variables.global.world, 'utopia',
+                'global write persisted through settings channel');
+        });
+
+        await t.test('dryRun 不落盘:set 宏只活在本请求内', async () => {
+            // 上个子测试已把 global.world 写成 'utopia' —— 复位再断言。
+            const cur = await getSettingsRepo().get(HANDLE);
+            cur.extension_settings.variables.global.world = 'eden';
+            await getSettingsRepo().save(HANDLE, cur);
+            await getChatRepo().save(HANDLE, CHAR, 'mvu4',
+                { user_name: 'User', chat_metadata: { variables: mvuSnapshot() } },
+                [
+                    { is_user: true, name: 'User', mes: 'wound realm' },
+                    mvuFloor(),
+                ],
+                null);
+            await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'mvu4', card: CARD, user: { name: 'User' }, dryRun: true,
+            });
+            const doc = await getChatRepo().get(HANDLE, CHAR, 'mvu4');
+            assert.equal(doc.body[1].variables[0].stat_data.hp, 80, 'dryRun must not persist floor writes');
+            assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 80, 'dryRun must not persist mirror writes');
+            const settings = await getSettingsRepo().get(HANDLE);
+            assert.equal(settings.extension_settings.variables.global.world, 'eden', 'dryRun must not persist global writes');
+        });
+
+        await t.test('get_char_variable 读卡级 tavern_helper 变量', async () => {
+            const charCard = {
+                name: 'Alice',
+                data: {
+                    name: 'Alice',
+                    description: 'A wandering knight.',
+                    mes_example: '',
+                    extensions: { tavern_helper: { variables: { affection: 7 } } },
+                },
+            };
+            await getWorldInfoRepo().save(HANDLE, 'MvuCharBook', {
+                entries: { '0': wiEntry(0, 'bond', 'Affection={{get_char_variable::affection}}', 100) },
+            });
+            await getSettingsRepo().save(HANDLE, {
+                power_user: {},
+                world_info_settings: {
+                    world_info_depth: 2, world_info_budget: 100, world_info_recursive: false,
+                    world_info_include_names: false, world_info_match_whole_words: false,
+                    world_info: { globalSelect: ['MvuCharBook'] },
+                },
+                preset_settings_openai: 'Default',
+                extension_settings: { variables: { global: {} } },
+            });
+            await getChatRepo().save(HANDLE, CHAR, 'mvu5',
+                { user_name: 'User', chat_metadata: {} },
+                [
+                    { is_user: true, name: 'User', mes: 'bond' },
+                    { is_user: false, name: 'Alice', mes: 'aye.' },
+                ],
+                null);
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: CHAR, chatName: 'mvu5', card: charCard, user: { name: 'User' },
+            });
+            assert.match(allText(builtPrompt), /Affection=7/, 'char variable read from card extensions');
         });
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });

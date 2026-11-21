@@ -19,6 +19,12 @@
 // called emit.end, and (b) `persisted`/`status` reflect state AFTER
 // completeGenerationJobFromText fired.
 
+// Hoisted to module scope: an in-test `await import` pays the full cold
+// module-graph load inside the 15s test budget — on slow filesystems
+// (WSL 9P mounts) that alone exceeds the timeout. jest.setup.js runs
+// before this module, so top-level import sees the initialized config.
+import { runLukerDispatch } from '../../src/luker-dispatch/runner.js';
+
 function fakeRequest({ requestId, body = {}, handle = 'trailer-alice' } = {}) {
     return {
         headers: requestId ? { 'x-luker-request-id': requestId } : {},
@@ -48,7 +54,6 @@ function collectTrailer(ctx, collector) {
 
 describe('runLukerDispatch — trailer frame (Task 2C)', () => {
     test('trailer is emitted even after dispatch has already called emit.end (bypasses safeEmit terminal-lock)', async () => {
-        const { runLukerDispatch } = await import('../../src/luker-dispatch/runner.js');
         const req = fakeRequest({ requestId: 'trailer-after-end-1', body: { stream: true } });
         const res = fakeResponse();
         const trailerFrames = [];
@@ -89,7 +94,6 @@ describe('runLukerDispatch — trailer frame (Task 2C)', () => {
     // above.
 
     test('trailer is NOT emitted for non-streaming requests (would corrupt the single JSON body the client awaits response.json() on)', async () => {
-        const { runLukerDispatch } = await import('../../src/luker-dispatch/runner.js');
         const req = fakeRequest({ requestId: 'trailer-nonstream-1', body: { stream: false } });
         const res = fakeResponse();
         const trailerFrames = [];
@@ -104,7 +108,6 @@ describe('runLukerDispatch — trailer frame (Task 2C)', () => {
     });
 
     test('trailer is ordered AFTER dispatch chunks in the on-wire event sequence', async () => {
-        const { runLukerDispatch } = await import('../../src/luker-dispatch/runner.js');
         const req = fakeRequest({ requestId: 'trailer-order-1', body: { stream: true } });
         const res = fakeResponse();
         // Record every byte the client would see, in order. Both chunk and
