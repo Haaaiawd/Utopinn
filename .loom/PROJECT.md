@@ -37,6 +37,7 @@
 ### current
 
 - `design/v2-stack-decisions.md`(system)— V2 全栈分层拍板:后端双API面收敛/存储引擎语义分层/登录不造系统/前端优先级脊骨+执行序
+- `design/admin-surface.md`(design)— 管理面板:SPA 第五 rail「管理」域,九区四桶 IA+多 handle 生命周期可视化+构建方指引(刀1 P0=总览/账号/服务端配置,全吃现成 admin 路由)
 - `design/cordis-next.md`(system)— 插件单一声明源:五表收一(路由/CLI具名/闸表/ui.contrib/profile)+贡献点内核契约
 - `design/plugin-domain-map.md`(analysis)— 11 插件域解剖+合并判据+CORE_PLUGINS/profile 对账
 - `design/core-engine.md`(system)— 服务端大脑移植的责任、边界、副作用分层

@@ -3817,6 +3817,65 @@
         "B7 环境项不归档"
       ],
       "created": "2026-11-20"
+    },
+    {
+      "id": "TASK-052",
+      "title": "P1: 管理面板刀1 —— SPA 第五 rail「管理」域:总览+多 handle 账号+服务端配置",
+      "status": "open",
+      "outcome": "SPA 新增 admin 域(nav.rail/view/sidebar.tree 三件套),刀1 三区落地:实例总览、多 handle 账号生命周期可视化、服务端 config 面。全吃现成 admin 路由(users-admin.js ~30 条,accounts-off 下 admin 恒 true),零服务端活。",
+      "acceptance": [
+        {
+          "criterion": "admin 域注册:nav.rail order50 + view + sidebar.tree;移动端 noMobile 占位",
+          "verify_by": "rail 出现「管理」",
+          "evidence": ""
+        },
+        {
+          "criterion": "总览区:实例状态(kernel/插件数/存储引擎/数据根/连接态)一屏",
+          "verify_by": "浏览器实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "账号区:handle 列表/创建/启停/改名(admin 路由直调),不做「以 handle 身份游玩」",
+          "verify_by": "curl+浏览器实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "配置区:config.yaml 关键段可视化(只读先行或受控写),危险动作二次确认",
+          "verify_by": "实测",
+          "evidence": ""
+        },
+        {
+          "criterion": "两套插件体系视觉分家:cordis(profile)vs server plugins(plugins/ 目录),命名不撞",
+          "verify_by": "UI 检查",
+          "evidence": ""
+        }
+      ],
+      "done_when": [
+        "admin 域注册",
+        "总览",
+        "账号",
+        "配置",
+        "插件体系分家"
+      ],
+      "boundaries": [
+        "不造账号系统;多 handle=数据命名空间非身份",
+        "危险动作(purge/覆盖/git 更新)必须二次确认",
+        "utopinn settings 白名单的账不在本任务"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".loom/design/admin-surface.md",
+        "apps/server/src/endpoints/users-admin.js",
+        "apps/web/src/features/studio.tsx",
+        "apps/web/src/api/client.ts"
+      ],
+      "touches": [
+        "apps/web/src/features/admin.tsx"
+      ],
+      "implementation_notes": [
+        "2026-11-20 立案:设计稿 admin-surface.md 刀1;admin 路由 accounts-off 下恒 true 可直调;SPA 实例级管理当前为零"
+      ],
+      "created": "2026-11-20"
     }
   ],
   "milestones": [
