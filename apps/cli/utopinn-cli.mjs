@@ -5,11 +5,12 @@
  * 零依赖:Node ≥22 原生 fetch + WebSocket。
  */
 import { readFileSync, writeFileSync, renameSync, existsSync, statSync } from 'node:fs';
-import { resolve, basename, join } from 'node:path';
+import { resolve, basename, join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
-const VERSION = '0.3.0';
+const VERSION = '0.4.0';
 const DEFAULT_SERVER = 'http://127.0.0.1:8000';
 const DEFAULT_WAIT_MS = 180_000;
 const DEFAULT_REQ_TIMEOUT = 30_000;
@@ -148,6 +149,9 @@ function ctxSummary() {
         job: state.lastJob ? { id: state.lastJob.id, status: state.lastJob.status, type: state.lastJob.type } : null,
     };
 }
+// GH#11:dir 是寻址/persist_target 键,name 是卡面显示名(可撞车)——
+// 两值不同就并列打 dir(「name」),别让显示名把目录名吞了。
+const charLabel = (dir, name) => (name && dir && name !== dir ? `${dir}(「${name}」)` : (name ?? dir ?? ''));
 let exitCode = 0;
 let nextHints = [];
 const next = (...items) => { nextHints.push(...items.map(x => typeof x === 'string' ? { cmd: x, why: '' } : x)); };
@@ -155,7 +159,7 @@ function footer(extra = '') {
     if (JSON_MODE) return;
     const c = ctxSummary();
     const seg = [
-        c.charName ? `${c.charName} @ ${c.chatName ?? '?'}` : null,
+        c.charDir ? `${charLabel(c.charDir, c.charName)} @ ${c.chatName ?? '?'}` : null,
         c.floors != null ? `floors ${c.floors}` : null,
         c.job ? `job ${String(c.job.id).slice(0, 8)}:${c.job.status}` : null,
         extra || null,
@@ -258,7 +262,16 @@ async function resolveChar(fuzzy) {
     const chars = await listChars();
     const name = stripExt(String(fuzzy ?? ''), 'png');
     const exact = chars.find(c => stripExt(c.avatar, 'png') === name || c.name === name);
-    if (exact) return exact;
+    if (exact) {
+        // GH#11:显示名撞车(同名多卡)——已按 find 序绑第一张,提示改用目录名消歧。
+        if (exact.name && exact.name === name) {
+            const sameName = chars.filter(c => c.name === name);
+            if (sameName.length > 1) {
+                warn(`卡名「${name}」撞 ${sameName.length} 张 — 已绑目录名 ${stripExt(exact.avatar, 'png')}(寻址用目录名消歧:${sameName.map(c => stripExt(c.avatar, 'png')).join(' | ')})`);
+            }
+        }
+        return exact;
+    }
     const partial = chars.filter(c => stripExt(c.avatar, 'png').includes(name) || c.name?.includes(name));
     if (partial.length === 1) return partial[0];
     if (partial.length > 1) {
@@ -354,13 +367,17 @@ function userFloor({ persona, text }) {
     return { name: persona ?? 'User', is_user: true, is_system: false, send_date: isoNow(), mes: text };
 }
 
-// ═══ active-job 护栏(写盘/POST 前必查)═══
+// ═══ active-job 护栏(写盘/POST 前必查;TASK-058 走 GET /api/utopinn/jobs
+//     ?target=<dir>/<chat>&status=active —— target/status 语义与服务端
+//     getPersistChatKey 同构,等价于原 persist_target POST)═══
+const ACTIVE_JOB_STATUSES = ['running', 'queued', 'persisting', 'awaiting_ack'];
+function jobsActiveQuery(target) {
+    return `/api/utopinn/jobs?${new URLSearchParams({ target, status: 'active' })}`;
+}
 async function checkNoActiveJob(charDir, chatName) {
-    const { data } = await req('POST', '/api/backends/chat-completions/jobs/active', {
-        persist_target: { avatar_url: `${charDir}.png`, file_name: `${chatName}.jsonl` },
-    }, { allowFail: true });
-    const jobs = Array.isArray(data?.jobs) ? data.jobs : (Array.isArray(data) ? data : []);
-    const active = jobs.find(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
+    const { data } = await req('GET', jobsActiveQuery(`${charDir}/${chatName}`), undefined, { allowFail: true });
+    const jobs = Array.isArray(data?.items) ? data.items : [];
+    const active = jobs.find(j => ACTIVE_JOB_STATUSES.includes(j.status));
     if (active) {
         fail('active_job', `chat has active job ${active.id}`, {
             detail: `status=${active.status}`,
@@ -450,11 +467,9 @@ const groupAppendFloors = (chatId, messages, extra = {}) => groupWriteOp('append
 const groupPatchFloors = (chatId, operations, extra = {}) => groupWriteOp('patch', chatId, { operations, ...extra });
 
 async function checkNoActiveGroupJob(chatId) {
-    const { data } = await req('POST', '/api/backends/chat-completions/jobs/active', {
-        persist_target: { kind: 'group', id: chatId },
-    }, { allowFail: true });
-    const jobs = Array.isArray(data?.jobs) ? data.jobs : (Array.isArray(data) ? data : []);
-    const active = jobs.find(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
+    const { data } = await req('GET', jobsActiveQuery(`group:${chatId}`), undefined, { allowFail: true });
+    const jobs = Array.isArray(data?.items) ? data.items : [];
+    const active = jobs.find(j => ACTIVE_JOB_STATUSES.includes(j.status));
     if (active) {
         fail('active_job', `group chat has active job ${active.id}`, {
             detail: `status=${active.status}`,
@@ -1038,15 +1053,14 @@ async function cmdStatus() {
         // 不然「floors 0」看着像已绑了个空聊天文件(文件根本不存在)。
         const chatPending = cur?.new_chat === true;
         if (chatPending) floors = 0;   // 文件未建 = 事实 0 层,别让 null 混进来
-        // kernel GET /jobs 客户端过滤替代 legacy jobs/active:
-        // chatKey=char:<avatar_url>:<chatName-noext>(与 getPersistChatKey 同构)。
-        const chatKey = `char:${c.charDir}.png:${c.chatName}`;
-        const { data: active } = await req('GET', '/api/utopinn/jobs', undefined, { allowFail: true });
-        const jobs = (Array.isArray(active?.items) ? active.items : []).filter(j => j.chatKey === chatKey || j.chatKey == null);
-        const running = jobs.filter(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
+        // kernel GET /jobs ?target=<dir>/<chat>&status=active(TASK-058):
+        // target→chatKey 与 getPersistChatKey 同构(char:<dir>.png:<chat>),
+        // active = 护栏四态 —— 服务端过滤,与 checkNoActiveJob 同语义。
+        const { data: active } = await req('GET', jobsActiveQuery(`${c.charDir}/${c.chatName}`), undefined, { allowFail: true });
+        const running = (Array.isArray(active?.items) ? active.items : []).filter(j => ACTIVE_JOB_STATUSES.includes(j.status));
         const snap = { ...ctxSummary(), floors, integrity, swipe: lastSwipe, pending: chatPending || undefined, activeJobs: running.map(j => ({ id: j.id, status: j.status })) };
         if (JSON_MODE) return out(snap, running.length ? [{ cmd: `utopinn attach ${running[0].id}` }] : genNextFor('status', false));
-        console.log(`${c.charName} @ ${c.chatName} · floors ${floors} · integrity ${(integrity ?? '—').slice(0, 10)}${chatPending ? ' · pending(懒建坐标,文件未建;首条 send 落盘)' : ''}`);
+        console.log(`${charLabel(c.charDir, c.charName)} @ ${c.chatName} · floors ${floors} · integrity ${(integrity ?? '—').slice(0, 10)}${chatPending ? ' · pending(懒建坐标,文件未建;首条 send 落盘)' : ''}`);
         if (lastSwipe) console.log(`  last floor swipe ${lastSwipe.n}/${lastSwipe.total}`);
         console.log(running.length ? `  ⚠ active jobs: ${running.map(j => `${j.id.slice(0, 8)}:${j.status}`).join(', ')}` : '  no active jobs');
         footer();
@@ -1102,6 +1116,9 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'DELETE|pattern|/api/utopinn/regex/:id',
     'GET|pattern|/api/utopinn/characters/:charDir/chats',
     'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
+    // —— named-docs 只读面(TASK-058;buckets=quick-replies|themes|moving-ui)——
+    'GET|pattern|/api/utopinn/named-docs/:bucket',
+    'GET|pattern|/api/utopinn/named-docs/:bucket/:name',
     // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
     'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
     'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName/document',
@@ -1199,6 +1216,10 @@ const MVU_POST_SUBS = Object.keys(MVU_SUB_ROUTES)
 const OBSERVED_NAMED = [
     // diag-bus 聚合统计口:logs/errors/trace 已覆盖读面,此 GET 留观测命名(raw 可达)。
     'GET|pattern|/api/utopinn/diag/stats',
+    // named-docs 只读面(TASK-058):StageFrame QR 条/web 消费;CLI 无动词,
+    // raw 可达(需 ?account=<handle>,sendJsonResource 私有 ETag 读)。
+    'GET|pattern|/api/utopinn/named-docs/:bucket',
+    'GET|pattern|/api/utopinn/named-docs/:bucket/:name',
 ];
 
 /** 词表 → 具名串展开(程序化构造族 + OBSERVED)。字面族单例不参与 —— 只在钉样里。 */
@@ -1232,12 +1253,37 @@ if (_unpinned.length || _stale.length) {
     process.exit(2);
 }
 
+// CLI 文件定位 → 仓库根(apps/cli/utopinn-cli.mjs → ../../):doctor 工作区自检用。
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 async function cmdDoctor() {
     const steps = [];
     const step = async (name, fn) => {
         try { const v = await fn(); steps.push({ name, ok: true, detail: v }); return true; }
         catch (e) { steps.push({ name, ok: false, detail: e.message, hint: e.hint }); return false; }
     };
+    // GH#5 工作区自检(本地,先查):pnpm isolated 布局下判 CLI 自己的
+    // @utopinn 链接 —— 根 node_modules/@utopinn 为空是正常,不是缺链症状。
+    await step('workspace links', async () => {
+        const dir = join(REPO_ROOT, 'apps', 'cli', 'node_modules', '@utopinn');
+        if (!existsSync(dir)) {
+            throw Object.assign(new Error('apps/cli/node_modules/@utopinn 缺失(workspace 链接没建)'), {
+                hint: 'pnpm install --force(根 node_modules/@utopinn 空是正常的,别看它)',
+            });
+        }
+        return 'ok';
+    });
+    // GH#5:protocol dist 是 gitignored 构建产物却在运行时被消费
+    // (isPanelMethod 白名单等)——源改过/新 clone 必须先 build。
+    await step('protocol dist', async () => {
+        const dir = join(REPO_ROOT, 'packages', 'protocol', 'dist');
+        if (!existsSync(dir)) {
+            throw Object.assign(new Error('packages/protocol/dist 缺失(gitignored 构建产物,运行时仍消费)'), {
+                hint: 'cd packages/protocol && pnpm exec tsc -p tsconfig.json',
+            });
+        }
+        return 'ok';
+    });
     await step('server reachable', async () => {
         const r = await fetch(`${SERVER}/csrf-token`, { signal: AbortSignal.timeout(8000) });
         if (!r.ok) throw Object.assign(new Error(`HTTP ${r.status}`), { hint: 'server 没起或端口错' });
@@ -1290,7 +1336,7 @@ const SCHEMA = {
     commands: [
         { cmd: 'utopinn', desc: '状态快照+next(零网络)', out: 'snapshot' },
         { cmd: 'utopinn status', desc: '在线 ctx/floors/integrity/active jobs', out: 'ctx+jobs' },
-        { cmd: 'utopinn doctor', desc: '链路体检(server/session/ws/ctx)', out: 'steps[]' },
+        { cmd: 'utopinn doctor', desc: '链路体检(workspace 链接/protocol dist + server/session/ws/ctx;GH#5 构建病自查)', out: 'steps[]' },
         { cmd: 'utopinn schema', desc: '本目录(self-describing)', out: 'schema' },
         { cmd: 'utopinn chars [-n N]', desc: '角色列表', out: '[{dir,name,chat}]' },
         { cmd: 'utopinn chats [--char d]', desc: '当前/指定角色聊天列表', out: '[{name,floors,last}]' },
@@ -1298,8 +1344,8 @@ const SCHEMA = {
         { cmd: 'utopinn use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
         { cmd: 'utopinn groups', desc: '群列表(id/name/members/chat_id/strategy)', out: '[{id,name,members,chat_id}]' },
         { cmd: 'utopinn guse <id|name> [chatId]', desc: '绑群 ctx(send/regen/swipe 等自动走群路由;--member 点名,--gchat 换聊,--no-chain 只发第一人)', out: 'ctx' },
-        { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标(懒建:只绑不建文件,首条 send 落盘;use/status 可认,pending 标记)', out: 'chat' },
-        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chats 列表立即可见。要懒建用 chat-new)', out: '{ok,integrity}' },
+        { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标·懒建:只绑坐标不落文件,use/status 标 pending;首条 send 才真建文件——MVU autoInit 也在这次 append/settle 触发(判据 floor-0 no_baseline)', out: 'chat' },
+        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chats 列表立即可见)。注意:空文件≠MVU 已初始化——autoInit 判据是首条 append 的 no_baseline,不在建文件时跑;要连文件都不建就用 chat-new', out: '{ok,integrity}' },
         { cmd: 'utopinn chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
         { cmd: 'utopinn chat-get [chat]', desc: '[library] utopinn doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
@@ -1360,7 +1406,7 @@ const SCHEMA = {
         { cmd: 'utopinn mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
         { cmd: 'utopinn mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
         { cmd: 'utopinn script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
-        { cmd: 'utopinn th <method> [json]', desc: '[th] TavernHelper 调用面(变量/消息/slash)', out: '{result}' },
+        { cmd: 'utopinn th <method> [json] [--force]', desc: '[th] TavernHelper 调用面(变量/消息/slash)。replaceVariables=变量域【全量覆写】:丢根/违 stat_data schema 拒 400(root_loss|mvu_schema),确认覆写加 --force → args.force:true(明细降级进 warnings/schema_errors 留痕)', out: '{result,warnings?,schema_errors?}' },
         { cmd: 'utopinn cardapp <mount|eval|call|op|status|unmount>', desc: '[cardapp] headless CardApp 宿主(jsdom 真跑卡 HTML/JS;一次性进程语义)', out: '{mount,result,console}' },
         { cmd: 'utopinn import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
         { cmd: 'utopinn import-preview <file|--file f|--stdin>', desc: '[data] 格式探测+摘要+冲突,不落库', out: '{kind,summary,warnings,conflicts}' },
@@ -1374,11 +1420,11 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
-    flow: 'send: ctx → jobs/active 护栏 → append user 楼 → POST /api/utopinn/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
+    flow: 'send: ctx → GET /api/utopinn/jobs?target&status=active 护栏 → append user 楼 → POST /api/utopinn/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
 };
 
 async function cmdChars() {
@@ -1394,7 +1440,7 @@ async function cmdChars() {
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(rows, null, 2)); warn(`wrote ${flags.out}`); }
     const show = flags.n ? rows.slice(0, flags.n) : rows;
     if (JSON_MODE) return out(show, [{ cmd: 'utopinn use <dir>', why: '选卡进 ctx' }, { cmd: 'utopinn char <dir>', why: '看卡全文' }]);
-    for (const r of show) console.log(`${r.readable === false ? '\x1b[31m!\x1b[0m' : ' '}${r.dir.padEnd(36)} ${r.name} ${r.chat ? `· ${r.chat}` : ''}`);
+    for (const r of show) console.log(`${r.readable === false ? '\x1b[31m!\x1b[0m' : ' '}${r.dir.padEnd(36)} ${r.name}${r.name && r.name !== r.dir ? ' \x1b[2m(dir≠name)\x1b[0m' : ''} ${r.chat ? `· ${r.chat}` : ''}`);
     console.log(`\n${rows.length} characters`);
     next('utopinn use <dir>');
     footer();
@@ -1465,7 +1511,13 @@ async function cmdUse() {
         ? [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: chatPending ? '首条消息自动建文件' : '发消息' }]
         : [{ cmd: 'utopinn chat-new <name>', why: '此卡还没有聊天,建一个' }, { cmd: 'utopinn chats', why: '看聊天列表' }];
     if (JSON_MODE) return out({ charDir, charName: char.name, chatName, pending: chatPending || undefined }, n);
-    console.log(chatName ? `→ ${char.name ?? charDir} @ ${chatName}${chatPending ? '(懒建,文件未建;首条 send 落盘)' : ''}` : `→ ${char.name ?? charDir}(无聊天)`);
+    // GH#11:寻址/persist_target 键是目录名;dir≠name 时双值并列 + 一句 diff 提示,
+    // 免得「use <显示名>」绑上的卡看着像用显示名寻址。
+    const label = charLabel(charDir, char.name);
+    console.log(chatName ? `→ ${label} @ ${chatName}${chatPending ? '(懒建,文件未建;首条 send 落盘)' : ''}` : `→ ${label}(无聊天)`);
+    if (char.name && char.name !== charDir) {
+        console.log(`\x1b[2m  dir≠name:寻址/jobs target/persist_target 都用目录名 "${charDir}"\x1b[0m`);
+    }
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
@@ -2307,13 +2359,17 @@ async function cmdScript() {
 async function cmdTh() {
     // utopinn-th fiber:TavernHelper 兼容调用面。METHODS 见插件源码。
     const method = positional[1];
-    if (!method) return void fail('usage', 'utopinn th <method> [json-args|--stdin]', {
+    if (!method) return void fail('usage', 'utopinn th <method> [json-args|--stdin] [--force]', {
         detail: 'getVariables|replaceVariables|insertOrAssignVariables|deleteVariable|getChatMessages|triggerSlash|getCharacter|getCurrentCharacterName|getLastMessageId|getCurrentMessageId|getEmbeddedScripts',
+        hint: 'replaceVariables 是全量覆写:丢根/违 schema 拒 400,--force 确认覆写',
         rc: 2,
     });
     let args = {};
     if (flags.stdin) { try { args = JSON.parse(await readTextArg([])) ?? {}; } catch { args = {}; } }
     else if (positional[2] !== undefined) { try { args = JSON.parse(positional.slice(2).join(' ')) ?? {}; } catch { return void fail('usage', 'args 必须是 JSON', { rc: 2 }); } }
+    // TASK-055:--force → args.force:true(replaceVariables 丢根/schema 校验的覆写确认位;
+    // 服务端 force:true 语义已落地,CLI 只透传不改契约)。
+    if (flags.force) args.force = true;
     const c = needCtx() ?? {};
     const { data, status } = await req('POST', '/api/utopinn/th/call', {
         method,
@@ -2321,8 +2377,30 @@ async function cmdTh() {
         args,
     }, { allowFail: true });
     if (data?.unsupported) return void fail('not_found', `th method unsupported: ${method}`, { hint: '方法名拼写——见 usage detail' });
-    if (status >= 400 || data?.ok === false) return void fail('server', `th ${method} 失败:${data?.error ?? status}`, { detail: data });
+    if (status >= 400 || data?.ok === false) {
+        // TASK-055 写面错误契约镜像:root_loss/mvu_schema 给逐条明细,
+        // 服务端 hint 原样透传;schema_errors 逐 path 列(别整个 JSON 糊脸上)。
+        const detail = Array.isArray(data?.schema_errors) && data.schema_errors.length
+            ? data.schema_errors.map((e) => `${e.path || 'stat_data'}: ${e.message ?? e.code ?? 'schema violation'}`).join(' | ')
+            : (data?.lost_roots?.length || data?.lost_stat_data_roots?.length)
+                ? `lost_roots=${JSON.stringify(data.lost_roots ?? [])} lost_stat_data_roots=${JSON.stringify(data.lost_stat_data_roots ?? [])}`
+                : data;
+        return void fail('server', `th ${method} 失败:${data?.error ?? status}`, {
+            status,
+            detail,
+            hint: (data?.code === 'root_loss' || data?.code === 'mvu_schema')
+                ? '确认全量覆写加 --force(→ args.force:true;明细降级进 warnings/schema_errors 留痕)'
+                : data?.hint,
+        });
+    }
     if (JSON_MODE) return out(data);
+    // TASK-055 写面回执:warnings/schema_errors(--force 降级面)显式打,别藏 JSON 里
+    if (Array.isArray(data?.warnings) && data.warnings.length) {
+        for (const w of data.warnings) console.log(`\x1b[33m⚠ ${w}\x1b[0m`);
+    }
+    if (Array.isArray(data?.schema_errors) && data.schema_errors.length) {
+        console.log(`\x1b[2mschema_errors(--force 降级):${data.schema_errors.map((e) => e.path || 'stat_data').join(', ')}\x1b[0m`);
+    }
     console.log(JSON.stringify(data?.result ?? data, null, 2).slice(0, flags.full ? 1e9 : 8000));
     footer();
 }

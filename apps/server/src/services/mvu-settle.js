@@ -20,10 +20,11 @@
  */
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
-import { settleMvuMessage, isMvuData, initializeMvuVariables, convertCharacterBook } from '@utopinn/core';
+import { settleMvuMessage, isMvuData, initializeMvuVariables } from '@utopinn/core';
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { ConflictError } from '../storage/errors.js';
 import { loadCard } from './stscript-env.js';
+import { convertEmbeddedBook, primaryWorldName } from './embedded-world.js';
 import { getCharExtraBooks, resolveWorldInfoSettings } from './generate-context.js';
 
 /** chat_state sidecar 命名空间:回执 + op 日志("mes_var_ops" 等价物)。 */
@@ -101,6 +102,8 @@ function receiptToLogEntry(receipt, extra = {}) {
         modified: receipt?.modified === true,
         ops: Array.isArray(receipt?.ops) ? receipt.ops : [],
         errors: Array.isArray(receipt?.errors) ? receipt.errors : [],
+        // GH#14:「正文像有命令却零生效」的非致命告警透到 op 日志面。
+        warnings: Array.isArray(receipt?.warnings) ? receipt.warnings : [],
     };
 }
 
@@ -165,7 +168,10 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
     if (charDir && directories?.characters) {
         card = await loadCard(directories, charDir).catch(() => null);
     }
-    const primaryName = card?.data?.extensions?.world ?? card?.extensions?.world ?? null;
+    // 生效主书名:显式绑定 ‖ 内嵌书派生名(与 generate-context 同函数;
+    // 未物化的存量缺绑卡也指到同一个名 —— issue #10)。
+    const primaryName = primaryWorldName(card);
+    const embeddedDoc = convertEmbeddedBook(card);
 
     const names = [];
     for (const n of worldInfoState.globalSelect ?? []) if (n) names.push(String(n));
@@ -185,8 +191,8 @@ export async function resolveMvuInitLorebooks({ handle, charDir = '', directorie
         // book → world file shape, uid/keys restored); feeding the raw card
         // book in would leave every entry sharing the "world.undefined"
         // dedupe key and collapse the whole book into a single entry.
-        if (!doc && name === primaryName && card?.data?.character_book?.entries) {
-            doc = convertCharacterBook(card.data.character_book);
+        if (!doc && name === primaryName && embeddedDoc) {
+            doc = embeddedDoc;
         }
         const entries = Object.values(doc?.entries ?? {})
             .filter((e) => e && typeof e === 'object' && !Array.isArray(e))
@@ -437,7 +443,9 @@ export async function settlePersistedMvuMessage(args) {
         // (重放/重复调用不再推高 integrity,避免客户端下次写无谓冲突)。
         const patchNeeded = updateChatVariables && result.modified;
         const floorChanged = JSON.stringify(nextBody[messageIndex]) !== JSON.stringify(body[messageIndex]);
-        const receiptQuiet = (result.receipt?.ops?.length ?? 0) === 0 && (result.receipt?.errors?.length ?? 0) === 0;
+        const receiptQuiet = (result.receipt?.ops?.length ?? 0) === 0
+            && (result.receipt?.errors?.length ?? 0) === 0
+            && (result.receipt?.warnings?.length ?? 0) === 0;
         if (!floorChanged && !patchNeeded && receiptQuiet) {
             return {
                 status: 'settled',

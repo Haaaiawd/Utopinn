@@ -713,9 +713,21 @@ export function settleMvuVariables(
         reconcileAndApplySchema(variables);
     }
 
+    // GH#14:正文出现 _.cmd( 语法面却零指令生效 —— 大多数情况是模型
+    // 输出格式错(换行没分号/容器包裹/括号未闭合),静默丢令会把整段
+    // UpdateVariable 吃掉。回执留 warning 让 settle 调用方如实上报。
+    const warnings: string[] = [];
+    if (/_\.(?:set|insert|assign|remove|unset|delete|add)\s*\(/.test(processedContent)
+        && !ops.some(op => op.status === 'applied')) {
+        warnings.push(
+            `message contains _.command( syntax but no command applied ` +
+            `(${ops.length} extracted, ${ops.filter(op => op.status === 'error').length} errored)`,
+        );
+    }
+
     return {
         modified: isModified,
-        receipt: { version: 1, modified: isModified, ops, errors },
+        receipt: { version: 1, modified: isModified, ops, errors, warnings },
     };
 }
 

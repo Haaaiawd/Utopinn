@@ -377,7 +377,13 @@ export async function triggerGenerationCallback(args: NamedArguments, value: unk
     const env = envOf(args);
     const shouldAwait = isTrueBoolean(args?.['await']);
     env.ops.push({ type: 'trigger' });
-    const outerPromise = env.host.triggerGeneration?.(value ? String(value) : undefined) ?? Promise.resolve('');
+    // GH#9:seam 缺席时 `?? Promise.resolve('')` 让 /trigger 静默假装成功——
+    // 脚本以为楼层被生成了,实际什么都没发生。显式报错,让调用方看到
+    // 「本宿主没有正常生成触发面」的事实(quiet 链走 /gen,不是这里)。
+    if (!env.host.triggerGeneration) {
+        throw new Error('/trigger requires host.triggerGeneration seam — not bound on this host (use /gen for quiet generation)');
+    }
+    const outerPromise = env.host.triggerGeneration(value ? String(value) : undefined) ?? Promise.resolve('');
 
     if (shouldAwait) {
         await outerPromise;

@@ -448,7 +448,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setCtxLen(null);
     }, [chatKey, s.live]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    /* ——— QR 条:/api/quick-replies 第一册(named-doc bucket);空档整条不渲染 ——— */
+    /* ——— QR 条:/api/utopinn/named-docs/quick-replies 第一册(named-doc bucket,
+           TASK-058 只读面);空档整条不渲染 ——— */
     useEffect(() => {
         if (!s.live || !s.chat) { setQrChips([]); return; }
         let dead = false;
@@ -456,10 +457,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
             try {
                 /* sendJsonResource 读面需 ?account=<handle>(http-resource-cache.js L29);
                    enableUserAccounts=false → 恒 DEFAULT_USER(见 api/client.ts 头注)。 */
-                const { names } = await apiGet<{ names?: string[] }>('/api/quick-replies/list?account=default-user');
+                const { names } = await apiGet<{ names?: string[] }>('/api/utopinn/named-docs/quick-replies?account=default-user');
                 const first = names?.[0];
                 if (!first) { if (!dead) setQrChips([]); return; }
-                const doc = await apiGet<Record<string, unknown>>(`/api/quick-replies/get?name=${encodeURIComponent(first)}&account=default-user`);
+                const doc = await apiGet<Record<string, unknown>>(`/api/utopinn/named-docs/quick-replies/${encodeURIComponent(first)}?account=default-user`);
                 const raw = (doc as { qrList?: { label?: string; message?: string; isHidden?: boolean }[] }).qrList;
                 const chips = (Array.isArray(raw) ? raw : [])
                     .filter((q) => q && q.isHidden !== true && typeof q.message === 'string' && q.message.trim().length > 0)

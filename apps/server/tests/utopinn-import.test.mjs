@@ -262,6 +262,82 @@ test('preview PNG card — kind char, summary 列出书条目/regex/depth_prompt
     assert.ok(body.warnings.some((w) => /bound to world "GlobalBook"/i.test(w)));
 });
 
+test('preview — GH#3 regex_disabled:服务端总闸灭 + 卡侧全灭 + 可执行', async () => {
+    // 基线:CARD_ALICE 带 1 条未 disabled 的 regex —— 正常时应可执行。
+    const enabled = await api('/api/utopinn/import/preview', {
+        method: 'POST',
+        body: { name: 'alice-ok.png', dataBase64: pngCardB64(CARD_ALICE) },
+    });
+    assert.equal(enabled.status, 200);
+    assert.equal(enabled.body.summary.regexScripts, 1);
+    assert.equal(enabled.body.regex_disabled, false,
+        'script enabled + no server kill → regex_disabled=false');
+
+    // 服务端总闸:extension_settings.disabledExtensions 含 'regex'。
+    const settings = (await getSettingsRepo().get(HANDLE)) ?? {};
+    const killed = {
+        ...settings,
+        extension_settings: { ...(settings.extension_settings ?? {}), disabledExtensions: ['regex'] },
+    };
+    await getSettingsRepo().save(HANDLE, killed);
+    try {
+        const body = (await api('/api/utopinn/import/preview', {
+            method: 'POST',
+            body: { name: 'alice-killed.png', dataBase64: pngCardB64(CARD_ALICE) },
+        })).body;
+        assert.equal(body.regex_disabled, true, 'server disabledExtensions=[regex] → flagged');
+        assert.ok(body.warnings.some((w) => /disabledExtensions.*regex/i.test(w)),
+            `expected server-kill warning, got: ${JSON.stringify(body.warnings)}`);
+    } finally {
+        await getSettingsRepo().save(HANDLE, settings);
+    }
+
+    // 卡侧全灭:逐脚本 disabled:true(regexScripts camelCase 键也收)。
+    const disabledCard = JSON.stringify({
+        spec: 'chara_card_v2', spec_version: '2.0',
+        data: {
+            name: 'Dead', description: 'x', first_mes: 'y',
+            extensions: {
+                regexScripts: [
+                    { id: 'a', scriptName: 'A', findRegex: 'x', disabled: true },
+                    { id: 'b', scriptName: 'B', findRegex: 'y', disabled: true },
+                ],
+            },
+        },
+    });
+    const allDisabled = await api('/api/utopinn/import/preview', {
+        method: 'POST',
+        body: { name: 'dead.png', dataBase64: pngCardB64(disabledCard) },
+    });
+    assert.equal(allDisabled.status, 200);
+    assert.equal(allDisabled.body.summary.regexScripts, 2, 'regexScripts camelCase key counted');
+    assert.equal(allDisabled.body.summary.regexScriptsDisabled, 2);
+    assert.equal(allDisabled.body.summary.regexDisabled, true);
+    assert.equal(allDisabled.body.regex_disabled, true, 'all card-side disabled → flagged');
+    assert.ok(allDisabled.body.warnings.some((w) => /marked disabled/i.test(w)),
+        `expected all-disabled warning, got: ${JSON.stringify(allDisabled.body.warnings)}`);
+});
+
+test('commit — GH#3 regex_disabled 同样回传', async () => {
+    const settings = (await getSettingsRepo().get(HANDLE)) ?? {};
+    await getSettingsRepo().save(HANDLE, {
+        ...settings,
+        extension_settings: { ...(settings.extension_settings ?? {}), disabledExtensions: ['regex'] },
+    });
+    try {
+        const { status, body } = await api('/api/utopinn/import/commit', {
+            method: 'POST',
+            body: { name: 'alice-c.png', targetName: 'AliceCommit', dataBase64: pngCardB64(CARD_ALICE) },
+        });
+        assert.equal(status, 200);
+        assert.equal(body.ok, true);
+        assert.equal(body.regex_disabled, true, 'commit response also flags regex_disabled');
+        assert.ok(body.warnings.some((w) => /disabledExtensions.*regex/i.test(w)));
+    } finally {
+        await getSettingsRepo().save(HANDLE, settings);
+    }
+});
+
 test('preview JSON v1 card — char + 升级警告', async () => {
     const { status, body } = await api('/api/utopinn/import/preview', {
         method: 'POST',
@@ -670,6 +746,138 @@ test('overwrite 无内嵌书的卡 → 无世界书动静,行为不受影响', a
     assert.ok(
         !(second.body.warnings ?? []).some((w) => /character_book|world/i.test(w)),
         `no world-book warning expected, got: ${JSON.stringify(second.body.warnings)}`,
+    );
+});
+
+// ---------- 内嵌书无 extensions.world(issue #10:派生名物化+绑定,不再静默)----------
+
+/** 内嵌书但 extensions 无 world 绑定(extensions 整个缺省也覆盖)。 */
+function cardWithUnboundBook(name, entryCount, { bookName = null, extensions = {} } = {}) {
+    const book = {
+        entries: Array.from({ length: entryCount }, (_, i) => ({
+            keys: [`kw${i}`], content: `entry ${i}`, enabled: true, insertion_order: i,
+        })),
+    };
+    if (bookName != null) book.name = bookName;
+    return JSON.stringify({
+        spec: 'chara_card_v2', spec_version: '2.0',
+        data: { name, description: `${name} card.`, character_book: book, extensions },
+    });
+}
+
+test('issue #10: preview 无绑定内嵌书 → 派生名进 summary + fallback 警告', async () => {
+    const { status, body } = await api('/api/utopinn/import/preview', {
+        method: 'POST',
+        body: { name: 'drifter.png', dataBase64: pngCardB64(cardWithUnboundBook('Drifter', 3)) },
+    });
+    assert.equal(status, 200);
+    assert.equal(body.kind, 'char');
+    assert.equal(body.summary.boundWorld, null);
+    assert.equal(body.summary.embeddedWorldName, "Drifter's Lorebook");
+    assert.equal(body.summary.embeddedWorldFallback, true);
+    assert.ok(
+        body.warnings.some((w) => /not linked to a world.*materialize as "Drifter's Lorebook"/i.test(w)),
+        `expected fallback-name preview warning, got: ${JSON.stringify(body.warnings)}`,
+    );
+});
+
+test('issue #10: commit 派生名物化 + 绑定写回卡面 + embeddedBook 机读字段', async () => {
+    const commit = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { dataBase64: pngCardB64(cardWithUnboundBook('Drifter', 3)) },
+    });
+    assert.equal(commit.status, 200);
+    assert.equal(commit.body.ok, true);
+    assert.deepEqual(
+        commit.body.embeddedBook,
+        { worldName: "Drifter's Lorebook", fallback: true, outcome: 'materialized', entries: 3 },
+    );
+    assert.ok(
+        commit.body.warnings.some((w) => /materialized to world "Drifter's Lorebook" \(3 entries\)/.test(w)),
+        `expected materialize warning, got: ${JSON.stringify(commit.body.warnings)}`,
+    );
+    assert.ok(
+        commit.body.warnings.some((w) => /no bound world; derived name/i.test(w)),
+        `expected derived-name note, got: ${JSON.stringify(commit.body.warnings)}`,
+    );
+    // 书真的落了库
+    const doc = await getWorldInfoRepo().get(HANDLE, "Drifter's Lorebook");
+    assert.equal(Object.keys(doc.entries).length, 3);
+    // 绑定写回了卡面(上游 writeExtensionField 等价)——装配按此名解析
+    const stored = JSON.parse(readCardFromPng(fs.readFileSync(path.join(dirs.characters, 'Drifter.png'))));
+    assert.equal(stored.data.extensions.world, "Drifter's Lorebook");
+});
+
+test('issue #10: character_book.name 优先于角色名派生', async () => {
+    const commit = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { dataBase64: pngCardB64(cardWithUnboundBook('Nomad', 2, { bookName: 'Nomad Codex' })) },
+    });
+    assert.equal(commit.status, 200);
+    assert.equal(commit.body.embeddedBook.worldName, 'Nomad Codex');
+    assert.equal(commit.body.embeddedBook.fallback, true);
+    const doc = await getWorldInfoRepo().get(HANDLE, 'Nomad Codex');
+    assert.equal(Object.keys(doc.entries).length, 2);
+    const stored = JSON.parse(readCardFromPng(fs.readFileSync(path.join(dirs.characters, 'Nomad.png'))));
+    assert.equal(stored.data.extensions.world, 'Nomad Codex');
+});
+
+test('issue #7+#10: 派生名 overwrite 再导入 → 物化书同步刷新 + overwrote', async () => {
+    const first = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { dataBase64: pngCardB64(cardWithUnboundBook('Vagrant', 2)) },
+    });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.embeddedBook.outcome, 'materialized');
+
+    const second = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { conflict: 'overwrite', dataBase64: pngCardB64(cardWithUnboundBook('Vagrant', 5)) },
+    });
+    assert.equal(second.status, 200);
+    assert.equal(second.body.embeddedBook.outcome, 'overwrote');
+    assert.equal(second.body.embeddedBook.worldName, "Vagrant's Lorebook");
+    const doc = await getWorldInfoRepo().get(HANDLE, "Vagrant's Lorebook");
+    assert.equal(Object.keys(doc.entries).length, 5, 'overwrite must refresh the fallback-named world');
+    // 新卡仍指向派生名(重新绑定 —— 新卡文件同样不自带 extensions.world)
+    const stored = JSON.parse(readCardFromPng(fs.readFileSync(path.join(dirs.characters, 'Vagrant.png'))));
+    assert.equal(stored.data.extensions.world, "Vagrant's Lorebook");
+});
+
+test('issue #10: 派生名撞既有书 → skipped 不覆盖 + 卡仍绑定 + 警告齐', async () => {
+    // 预置一本同名但内容不同的既有书
+    await getWorldInfoRepo().save(HANDLE, "Castaway's Lorebook", {
+        entries: { '0': { uid: 0, key: ['other'], content: 'pre-existing lore', order: 1, position: 0 } },
+    });
+    const commit = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { dataBase64: pngCardB64(cardWithUnboundBook('Castaway', 4)) },
+    });
+    assert.equal(commit.status, 200);
+    assert.equal(commit.body.embeddedBook.outcome, 'skipped');
+    assert.equal(commit.body.embeddedBook.fallback, true);
+    assert.ok(
+        commit.body.warnings.some((w) => /skipped: world "Castaway's Lorebook" already exists/.test(w)),
+        `expected skipped warning, got: ${JSON.stringify(commit.body.warnings)}`,
+    );
+    const doc = await getWorldInfoRepo().get(HANDLE, "Castaway's Lorebook");
+    assert.equal(Object.keys(doc.entries).length, 1, 'existing world must not be clobbered');
+    // 卡仍绑定到该名 —— 装配时指向既有书,与显式绑定同语义
+    const stored = JSON.parse(readCardFromPng(fs.readFileSync(path.join(dirs.characters, 'Castaway.png'))));
+    assert.equal(stored.data.extensions.world, "Castaway's Lorebook");
+});
+
+test('issue #10: 同名既有书的 preview → 撞名预警(commit 前可见)', async () => {
+    // Castaway's Lorebook 由上一条测试留下
+    const { status, body } = await api('/api/utopinn/import/preview', {
+        method: 'POST',
+        body: { name: 'castaway2.png', dataBase64: pngCardB64(cardWithUnboundBook('Castaway', 7)) },
+    });
+    assert.equal(status, 200);
+    assert.equal(body.summary.embeddedWorldName, "Castaway's Lorebook");
+    assert.ok(
+        body.warnings.some((w) => /world named "Castaway's Lorebook" already exists.*will NOT overwrite/i.test(w)),
+        `expected existing-world preview warning, got: ${JSON.stringify(body.warnings)}`,
     );
 });
 

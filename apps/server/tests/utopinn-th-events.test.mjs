@@ -19,7 +19,8 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-import { getChatRepo, initStorage } from '../src/storage/index.js';
+import { getChatRepo, getPresetRepo, getWorldInfoRepo, initStorage } from '../src/storage/index.js';
+import { query as diagQuery } from '../src/services/diag-bus.js';
 import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
 
 const HANDLE = 'u1';
@@ -483,6 +484,83 @@ test('replaceVariables:丢根无 force → 400+明细且不写盘;force 照写+w
     assert.equal(r.status, 400);
 });
 
+test('GH#4 validateStatDataAgainstSchema:非变异 + 逐路径错', async () => {
+    // 纯函数面:逐路径 + 输入不毁(generateSchema 会就地消费 $meta,
+    // 校验面必须只读——这里钉死非变异契约)
+    const { validateStatDataAgainstSchema } = await import('@utopinn/core');
+    const schema = {
+        type: 'object', extensible: false,
+        properties: {
+            hp: { type: 'number', required: true },
+            inv: { type: 'array', elementType: { type: 'object', extensible: true, properties: { name: { type: 'string' } } } },
+        },
+    };
+    const data = { hp: 'x', inv: [{ name: 'sword', qty: 1 }, { name: 2 }], stray: 1, $meta: { extensible: true } };
+    const before = JSON.stringify(data);
+    const errs = validateStatDataAgainstSchema(data, schema);
+    assert.equal(JSON.stringify(data), before, '校验不得改动被校验数据');
+    const paths = errs.map((e) => e.path);
+    assert.ok(paths.includes('hp'), `hp type_mismatch: ${JSON.stringify(errs)}`);
+    assert.ok(paths.includes('inv[1].name'), `inv[1].name type_mismatch: ${JSON.stringify(errs)}`);
+    assert.ok(paths.includes('stray'), `stray unexpected_key: ${JSON.stringify(errs)}`);
+    assert.ok(!paths.includes('$meta'), '$meta 元数据位不进校验');
+    assert.ok(!paths.includes('inv[0].qty'), 'extensible 子对象额外键放行');
+    // required 缺位 → missing_required
+    const errs2 = validateStatDataAgainstSchema({ inv: [] }, schema);
+    assert.ok(errs2.some((e) => e.path === 'hp' && e.code === 'missing_required'), JSON.stringify(errs2));
+    // VWD 二元组:[值,"描述"] 只校验值位,描述串不算类型错
+    const s3 = { type: 'object', extensible: true, properties: { hp: { type: 'array', elementType: { type: 'number' } } } };
+    assert.equal(validateStatDataAgainstSchema({ hp: [10, '血量'] }, s3).length, 0, 'VWD 描述位不校验');
+    assert.ok(validateStatDataAgainstSchema({ hp: ['x', '血量'] }, s3).some((e) => e.path === 'hp[0]'), 'VWD 值位仍校验');
+});
+
+test('GH#4 schema 校验:replaceMvuData/replaceVariables 违规 → 400 逐路径 + 一字不落盘', async () => {
+    let r = await call('createChatMessages', {
+        chat_messages: [{ role: 'assistant', message: 'mvu-schema-floor' }],
+    });
+    assert.equal(r.status, 200);
+    const mid = r.body.result.message_ids[0];
+    const schema = { type: 'object', extensible: false, properties: { hp: { type: 'number', required: true } } };
+    // 违规:type_mismatch(hp 串) + unexpected_key(extra,非 extensible)→ 400 + 逐路径
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: { stat_data: { hp: 'ten', extra: 1 }, schema } });
+    assert.equal(r.status, 400, JSON.stringify(r.body));
+    assert.equal(r.body.code, 'mvu_schema');
+    const paths = r.body.schema_errors.map((e) => e.path);
+    assert.ok(paths.includes('hp') && paths.includes('extra'), `逐路径明细: ${JSON.stringify(r.body.schema_errors)}`);
+    // 不落盘:本楼仍非 MVU(data 空)
+    r = await call('getMvuData', { type: 'message', message_id: mid });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.mvu, false);
+    // required 缺位 → missing_required
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: { stat_data: {}, schema } });
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body.schema_errors.map((e) => e.code), ['missing_required']);
+    // 合规写 → 200(store 自此有 schema)
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: { stat_data: { hp: 10 }, schema } });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // replaceVariables 写 stat_data + 自带合法 schema → 违规也 400
+    r = await call('replaceVariables', { type: 'message', message_id: mid, variables: { stat_data: { hp: 'x' }, schema, other_root: 1 } });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.code, 'mvu_schema');
+    // 未落盘:hp 仍 10
+    r = await call('getMvuData', { type: 'message', message_id: mid });
+    assert.equal(r.body.result.stat_data.hp, 10);
+    // vars.schema 非法形 → 回落 store.schema 校验(schema 根在场不丢根)
+    r = await call('replaceVariables', { type: 'message', message_id: mid, variables: { stat_data: { hp: 'x' }, schema: 'bogus', other_root: 1 } });
+    assert.equal(r.status, 400, `store schema 兜底同样拦: ${JSON.stringify(r.body)}`);
+    // force:true → 降级 warnings 照写 + schema_errors 回执留痕
+    r = await call('replaceVariables', {
+        type: 'message', message_id: mid, force: true,
+        variables: { stat_data: { hp: 'x', bonus: 1 }, schema: { ...schema, extensible: true }, other_root: 1 },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok(r.body.warnings.some((w) => w.includes('schema_errors')), 'force 违规进 warnings');
+    assert.ok(Array.isArray(r.body.schema_errors), 'force 违规明细回执');
+    // 回收
+    r = await call('deleteChatMessages', { message_ids: [mid] });
+    assert.equal(r.status, 200);
+});
+
 // ── D. GH#9 辅助生成面 ────────────────────────────────────────────────
 
 test('th.generate 校验面:无 prompt/target → 400;generateRaw ordered_prompts → unsupported', async () => {
@@ -510,6 +588,87 @@ test('th.generate 失败可见:ok:false + generation_requested/stopped 信箱 + 
     const stopped = log.body.result.entries.find((e) => e.event === 'generation_stopped');
     assert.equal(stopped.origin, 'server');
     assert.ok(String(stopped.args[0]).length > 0, 'stopped 携带失败原因');
+});
+
+// 最小可用预设(lorebookEntries 选择性 WI 要过组装到 WI 段;
+// utopinn-generate-context.test.mjs PRESET 同构)
+const PRESET_MIN = {
+    openai_model: 'gpt-test',
+    openai_max_context: 8192,
+    openai_max_tokens: 200,
+    prompts: [
+        { identifier: 'main', role: 'system', content: 'You are {{char}}.' },
+        { identifier: 'worldInfoBefore', role: 'system', marker: true, content: '' },
+        { identifier: 'chatHistory', role: 'system', marker: true, content: '' },
+        { identifier: 'worldInfoAfter', role: 'system', marker: true, content: '' },
+    ],
+    prompt_order: [{
+        character_id: 100001,
+        order: ['main', 'worldInfoBefore', 'chatHistory', 'worldInfoAfter'].map((identifier) => ({ identifier, enabled: true })),
+    }],
+};
+
+test('th.generate lorebookEntries:选择性 WI 注入;全未命中 → 400;部分未命中 → warnings', async () => {
+    await getPresetRepo().save(HANDLE, 'openai', 'Default', PRESET_MIN);
+    await getWorldInfoRepo().save(HANDLE, 'SelBook', {
+        entries: {
+            '0': { uid: 0, comment: 'e1', key: ['论坛'], content: 'E1-sel', constant: false },
+            '1': { uid: 1, comment: 'e2', key: [], content: 'E2-const', constant: true },
+        },
+    });
+    await call('setChatLorebook', { lorebook: 'SelBook' });
+    try {
+        const since = Date.now();
+        // 校验形:非 array/object/string → 400
+        let r = await call('generate', { user_input: 'x', lorebookEntries: 42 });
+        assert.equal(r.status, 400, JSON.stringify(r.body));
+        // 全部未命中 → 组装侧 lorebook_entries_unresolved → 400(参数错,非后端事故)
+        r = await call('generate', { user_input: 'x', lorebookEntries: ['SelBook:999'], timeout_ms: 8000 });
+        assert.equal(r.status, 400, JSON.stringify(r.body));
+        assert.match(String(r.body.error), /unresolved/);
+        // 命中 e1 → 选择性注入(force-activated);dispatch 无后端失败,
+        // 但 worldinfo inject diag 先行 —— selective 段 + 激活明细只含 e1。
+        r = await call('generate', { user_input: 'x', lorebookEntries: [{ lorebook: 'SelBook', uid: 0 }], timeout_ms: 10000 });
+        const selEvts = diagQuery({ kind: 'inject', code: 'worldinfo', since })
+            .filter((e) => e.data?.selective);
+        assert.ok(selEvts.length >= 1, `选择性 WI diag: ${JSON.stringify(selEvts.map((e) => e.data))}`);
+        assert.equal(selEvts[0].data.selective.resolved, 1);
+        assert.deepEqual(selEvts[0].data.selective.unresolved, []);
+        assert.deepEqual(selEvts[0].data.entries.map((e) => e.uid), [0],
+            `只激活点名条目(e2 constant 不入选——整表替换合并池): ${JSON.stringify(selEvts[0].data.entries)}`);
+        // 部分未命中 → 圈定照常进组装;本 fixture 无后端 → 生成段 502,
+        // 但未命中名单不随事故吞掉:warnings 点名 GhostBook + lorebook
+        // 回执明细挂在错误体上(error.lorebook 由 quiet-generation 失败
+        // 路径回填)。
+        r = await call('generate', { user_input: 'x', lorebookEntries: ['SelBook:0', 'GhostBook:0'], timeout_ms: 10000 });
+        assert.equal(r.status, 502, JSON.stringify(r.body));
+        assert.ok((r.body.warnings ?? []).some((w) => String(w).includes('GhostBook')),
+            `部分未命中 warnings 点名: ${JSON.stringify(r.body)}`);
+        assert.deepEqual(r.body.lorebook?.unresolved, ['GhostBook:0'],
+            `失败路径 lorebook 回执: ${JSON.stringify(r.body)}`);
+        const sel2 = diagQuery({ kind: 'inject', code: 'worldinfo', since }).filter((e) => e.data?.selective);
+        assert.equal(sel2.length, 2);
+        assert.deepEqual(sel2[1].data.selective.unresolved, ['GhostBook:0']);
+        // generateRaw 同享(委托 generate)
+        r = await call('generateRaw', { user_input: 'x', lorebookEntries: ['SelBook:999'], timeout_ms: 8000 });
+        assert.equal(r.status, 400, 'generateRaw 同享 lorebookEntries→unresolved 400');
+    } finally {
+        await call('setChatLorebook', { lorebook: null });
+    }
+});
+
+test('triggerSlash:/gen → generateQuiet→runQuietGeneration 钉;/trigger 未绑定 → 显式错(GH#9)', async () => {
+    // /gen:host.generateQuiet 已绑 → 走真 quiet 链(组装/派发失败也诚实
+    // 经 sinks.notification 回执)——seam 缺失的旧行为是无声 ''。
+    let r = await call('triggerSlash', { script: '/gen hello' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok((r.body.ops ?? []).some((o) => o.type === 'gen'), `ops 含 gen: ${JSON.stringify(r.body.ops)}`);
+    assert.ok((r.body.notifications ?? []).some((n) => String(n.text).includes('/gen failed')),
+        `generateQuiet→runQuietGeneration 链真走(失败面经 sinks): ${JSON.stringify(r.body.notifications)}`);
+    // /trigger:seam 缺席 → 引擎显式抛错(不再静默假成功)
+    r = await call('triggerSlash', { script: '/trigger' });
+    assert.equal(r.status, 500, JSON.stringify(r.body));
+    assert.match(String(r.body.error), /triggerGeneration/);
 });
 
 // ── E. 消息写家族(TH 字段名,楼层一致 + 信箱事件) ──────────────────────
@@ -967,4 +1126,62 @@ test('card-runtime message doc mount:铸帧→出壳→shim 拼接→CSP', async
     assert.equal(res.status, 404);
     res = await fetch(`${BASE}/card-runtime/m/deadbeefdeadbeefdeadbeefdeadbeef`);
     assert.equal(res.status, 404);
+});
+
+// ── L. GH#15b ctx 订阅记账 + GH#13 归闲探针(headless)────────────────────
+
+test('subscribedEvents 含 ctx.on 登记(GH#15b);waitForIdle/is_send_press 探针(GH#13)', async (t) => {
+    let mountCardApp;
+    try {
+        ({ mountCardApp } = await import('../../cli/cardapp-host.mjs'));
+        await import('jsdom');
+    } catch (e) {
+        t.skip(`headless harness 不可用: ${e?.message ?? e}`);
+        return;
+    }
+    const cardPath = path.join(ROOT, 'idle-card.json');
+    fs.writeFileSync(cardPath, JSON.stringify({
+        name: CHAR,
+        data: {
+            name: CHAR,
+            extensions: {
+                card_app: { enabled: true, entry: 'index.html', files: { 'index.html': TEST_CARD_HTML } },
+            },
+        },
+    }));
+    const s = await mountCardApp({ server: BASE, charDir: CHAR, chatName: CHAT, card: cardPath, settleMs: 500 });
+    try {
+        // GH#15b:ctx.on 经桥登记进 ctxSubscribed —— subscribedEvents 必须吐它,
+        // 否则 op push 的 subscribed 永远只见 T0 面。
+        await waitFor(() => s.subscribedEvents().includes('message_received'));
+        await s.callDispatch('ctx.on', { event: 'ctx_custom_evt' });
+        assert.ok(s.subscribedEvents().includes('ctx_custom_evt'),
+            `ctx.on 进订阅面: ${JSON.stringify(s.subscribedEvents())}`);
+        assert.ok(s.subscribedEvents().includes('message_received'), 'T0 面仍在');
+        await s.callDispatch('ctx.off', { event: 'ctx_custom_evt' });
+        assert.ok(!s.subscribedEvents().includes('ctx_custom_evt'), 'ctx.off 摘除');
+
+        // GH#13:idle 会话 → waitForIdle 归闲(grace 窗内无条件等待,下限 ~graceMs)
+        const idle = await s.waitForIdle({ timeoutMs: 3000 });
+        assert.equal(idle.settled, true, JSON.stringify(idle));
+        assert.ok(idle.waitedMs >= 400, `grace 下限: ${idle.waitedMs}ms`);
+        assert.equal(idle.bridgePending, 0);
+        assert.equal(idle.activeGenerations, 0);
+        assert.equal(idle.isSendPress, false);
+
+        // 生成在途:runCardGeneration 同步段先 activeGenerations++(POST 前),
+        // is_send_press 活 getter 同步变真(旧常量 false 永远探不到)。
+        const genP = s.runCardGeneration({ type: 'quiet' }).catch((e) => ({ failed: String(e?.message ?? e) }));
+        assert.equal(s.idleSnapshot().activeGenerations, 1, 'job 台账在途');
+        assert.equal(s.idleSnapshot().isSendPress, true);
+        assert.equal(s.ctx.lukerContext.is_send_press, true, 'ctx.lukerContext.is_send_press 活 getter');
+        const r = await genP;   // 服务端无 /api/utopinn/generate 路由 → 快速失败终态
+        assert.ok(r, '失败也收敛');
+        assert.equal(s.idleSnapshot().activeGenerations, 0, 'finally 落账');
+        assert.equal(s.ctx.lukerContext.is_send_press, false);
+        const after = await s.waitForIdle({ timeoutMs: 3000, graceMs: 50 });
+        assert.equal(after.settled, true, JSON.stringify(after));
+    } finally {
+        await s.dispose().catch(() => { });
+    }
 });

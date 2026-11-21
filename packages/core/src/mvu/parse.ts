@@ -282,11 +282,28 @@ export function extractCommands(inputText: string): MvuCommand[] {
             continue;
         }
         let endPos = closeParen + 1;
-        if (endPos >= inputText.length || inputText[endPos] !== ';') {
+        // GH#14:命令终止符不再仅限 ';'。实卡(掌门卡等)按行写命令,
+        // upstream 状态机只认 ';' 会把整段 <UpdateVariable> 静默丢弃。
+        // 收命令的判据:
+        //   1) ';' / 全角 '；' —— 显式终止(消费它,注释照常尾随);
+        //   2) ')' 后至行尾(\n/EOF)仅有空白 —— 行终止命令;
+        //   3) ')' 后接 '//' —— 无分号但带行注释的命令;
+        //   4) ')' 后接 '<'/'>' —— 容器标签收尾(UpdateVariable 关闭、
+        //      catgodml registerPart 容器边界)。
+        // 其余随行内容(中文/英文正文、标点)仍拒收 —— prose 里碰巧出现
+        // _.set(...) 不升格为命令,防误抓面不放宽。
+        const lineEnd = inputText.indexOf('\n', endPos);
+        const lineTail = inputText.substring(endPos, lineEnd === -1 ? inputText.length : lineEnd);
+        const semicolon = inputText[endPos] === ';' || inputText[endPos] === '；';
+        const lineTerminated =
+            /^[ \t\r]*$/.test(lineTail) ||
+            /^[ \t\r]*\/\//.test(lineTail) ||
+            /^[ \t\r]*[<>]/.test(lineTail);
+        if (!semicolon && !lineTerminated) {
             i = closeParen + 1;
             continue;
         }
-        endPos++;
+        if (semicolon) endPos++;
 
         let comment = '';
         const potentialComment = inputText.substring(endPos).match(/^\s*\/\/(.*)/);

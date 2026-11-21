@@ -683,6 +683,181 @@ test('issue#2 — MVU format/set_message_variable 进 prompt + 落盘', async (t
             });
             assert.match(allText(builtPrompt), /Affection=7/, 'char variable read from card extensions');
         });
+
+        await t.test('set_char_variable 落盘 char_state 侧车;下轮生成经 overlay 读回(GH#2)', async () => {
+            // 卡文件在场(charDir → Alice.json),request 带 directories 才接得上
+            // 侧车通道 —— 无 directories 的请求维持 volatile 降级(上面用例)。
+            fs.mkdirSync(dirs.characters, { recursive: true });
+            fs.writeFileSync(path.join(dirs.characters, 'Alice.json'), JSON.stringify({ name: 'Alice', data: { name: 'Alice' } }));
+            const requestWithDirs = { user: { profile: { handle: HANDLE, name: 'User' }, directories: dirs } };
+
+            const sidecarPath = path.join(dirs.characters, 'Alice.state.tavern_helper.json');
+            // 预置 overlay:验证「卡种子 ∪ 侧车」合并读(数组整体覆盖语义)。
+            fs.writeFileSync(sidecarPath, JSON.stringify({ variables: { sect: 'azure', stats: { day: 1 } } }));
+
+            await getWorldInfoRepo().save(HANDLE, 'MvuCharBook2', {
+                entries: {
+                    '0': wiEntry(0, 'bond', [
+                        '{{set_char_variable::favor::99}}',
+                        '{{set_char_variable::stats.mood::calm}}',
+                        'Sect={{get_char_variable::sect}}',
+                        'Seed={{get_char_variable::affection}}',
+                        '{{format_char_variable::stats}}',
+                    ].join('\n'), 100),
+                    // 只读条目:第二轮生成只触发它 —— favor/mood 在场 ⇒ 侧车读回。
+                    '1': wiEntry(1, 'echo', 'Favor={{get_char_variable::favor}} Mood={{get_char_variable::stats.mood}}', 90),
+                },
+            });
+            await getSettingsRepo().save(HANDLE, {
+                power_user: {},
+                world_info_settings: {
+                    world_info_depth: 2, world_info_budget: 100, world_info_recursive: false,
+                    world_info_include_names: false, world_info_match_whole_words: false,
+                    world_info: { globalSelect: ['MvuCharBook2'] },
+                },
+                preset_settings_openai: 'Default',
+                extension_settings: { variables: { global: {} } },
+            });
+            const seedCard = {
+                name: 'Alice',
+                data: {
+                    name: 'Alice',
+                    description: 'A wandering knight.',
+                    mes_example: '',
+                    extensions: { tavern_helper: { variables: { affection: 7, stats: { hp: 50 } } } },
+                },
+            };
+            await getChatRepo().save(HANDLE, CHAR, 'mvu6',
+                { user_name: 'User', chat_metadata: {} },
+                [
+                    { is_user: true, name: 'User', mes: 'bond' },
+                    { is_user: false, name: 'Alice', mes: 'aye.' },
+                ],
+                null);
+
+            const { builtPrompt } = await buildGenerationContext({
+                request: requestWithDirs, charDir: CHAR, chatName: 'mvu6', card: seedCard, user: { name: 'User' },
+            });
+            const text = allText(builtPrompt);
+            // 合并读:overlay.sect ⊕ 卡种子 affection 同轮都可见
+            assert.match(text, /Sect=azure/, 'sidecar overlay read into char domain');
+            assert.match(text, /Seed=7/, 'card seed still visible under overlay merge');
+            // format_char_variable 输出 YAML 层级(合并后 stats:{hp,day,mood})
+            assert.match(text, /hp: 50/, 'format_char_variable renders seed subtree');
+            assert.match(text, /day: 1/, 'format_char_variable renders overlay subtree');
+            assert.match(text, /mood: calm/, 'format_char_variable renders same-request write');
+            assert.doesNotMatch(text, /\{\{(get|format|set)_char_variable/, 'no literal macro residue');
+
+            // 侧车落盘:稀疏 overlay 折叠(原有 sect/stats.day 保留,新路径并入)
+            const sidecar = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'));
+            assert.equal(sidecar.variables.favor, 99, 'char write folded into sidecar overlay');
+            assert.equal(sidecar.variables.stats.mood, 'calm', 'nested char write folded');
+            assert.equal(sidecar.variables.sect, 'azure', 'pre-existing overlay key preserved');
+            assert.equal(sidecar.variables.stats.day, 1, 'pre-existing nested overlay key preserved');
+
+            // 下一轮生成(新 chat):上一轮写入经侧车 overlay 读回 —— 跨生成持久。
+            // 'echo' 只触发只读条目,favor/mood 出现在 prompt ⇒ 只能来自侧车。
+            await getChatRepo().save(HANDLE, CHAR, 'mvu7',
+                { user_name: 'User', chat_metadata: {} },
+                [
+                    { is_user: true, name: 'User', mes: 'echo' },
+                    { is_user: false, name: 'Alice', mes: 'aye.' },
+                ],
+                null);
+            const { builtPrompt: next } = await buildGenerationContext({
+                request: requestWithDirs, charDir: CHAR, chatName: 'mvu7', card: seedCard, user: { name: 'User' },
+            });
+            const nextText = allText(next);
+            assert.match(nextText, /Favor=99/, 'next generation reads persisted char write via sidecar');
+            assert.match(nextText, /Mood=calm/, 'nested persisted char write readable next generation');
+        });
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+/**
+ * issue#10 回归钉:卡带内嵌 character_book 但无 extensions.world 时,
+ * 装配层按派生名(<名>'s Lorebook)解析——库无物化文件时内存即时
+ * 转换兜底;库存放派生名文件时文件供给。两条供给路共用同一个名。
+ */
+test('issue#10 — unbound embedded book resolves via derived name', async (t) => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-embworld-'));
+    try {
+        const dirs = {
+            root: tmpDir,
+            characters: path.join(tmpDir, 'characters'),
+            chats: path.join(tmpDir, 'chats'),
+            worlds: path.join(tmpDir, 'worlds'),
+            groups: path.join(tmpDir, 'groups'),
+            openAI_Settings: path.join(tmpDir, 'OpenAI Settings'),
+            context: path.join(tmpDir, 'context'),
+            instruct: path.join(tmpDir, 'instruct'),
+            sysprompt: path.join(tmpDir, 'sysprompt'),
+            reasoning: path.join(tmpDir, 'reasoning'),
+            koboldAI_Settings: path.join(tmpDir, 'KoboldAI Settings'),
+            novelAI_Settings: path.join(tmpDir, 'NovelAI Settings'),
+            textGen_Settings: path.join(tmpDir, 'TextGen Settings'),
+        };
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        const request = { user: { profile: { handle: HANDLE, name: 'User' } } };
+
+        await getSettingsRepo().save(HANDLE, {
+            power_user: {},
+            world_info_settings: {
+                world_info_depth: 2,
+                world_info_budget: 100,
+                world_info_recursive: false,
+                world_info_include_names: false,
+                world_info_match_whole_words: false,
+                world_info: {},
+            },
+            preset_settings_openai: 'Default',
+        });
+        await getPresetRepo().save(HANDLE, 'openai', 'Default', PRESET);
+
+        const EMBED_CARD = {
+            name: 'Ember',
+            data: {
+                name: 'Ember',
+                description: 'Keeper of old tales.',
+                mes_example: '',
+                extensions: {},
+                character_book: {
+                    entries: [
+                        { keys: ['dragonlore'], content: 'EMBEDDED_LORE_SIGNAL', enabled: true, insertion_order: 0 },
+                    ],
+                },
+            },
+        };
+        await getChatRepo().save(HANDLE, 'Ember', 'e1',
+            { user_name: 'User', chat_metadata: {} },
+            [{ is_user: true, name: 'User', mes: 'Tell me about dragonlore.' }],
+            null);
+
+        await t.test('未物化:派生名 + 内存兜底,条目进 prompt', async () => {
+            const { builtPrompt, sources } = await buildGenerationContext({
+                request, charDir: 'Ember', chatName: 'e1', card: EMBED_CARD, user: { name: 'User' },
+            });
+            assert.match(allText(builtPrompt), /EMBEDDED_LORE_SIGNAL/,
+                'embedded book entry must reach the prompt via derived name + in-memory convert');
+            assert.ok((sources.worldInfoActivated ?? 0) > 0, 'WI must report activation');
+        });
+
+        await t.test('物化后:派生名文件供给(库文件优先)', async () => {
+            await getWorldInfoRepo().save(HANDLE, "Ember's Lorebook", {
+                entries: { '0': wiEntry(0, 'starlore', 'FILE_LORE_SIGNAL', 100) },
+            });
+            await getChatRepo().save(HANDLE, 'Ember', 'e2',
+                { user_name: 'User', chat_metadata: {} },
+                [{ is_user: true, name: 'User', mes: 'starlore' }],
+                null);
+            const { builtPrompt } = await buildGenerationContext({
+                request, charDir: 'Ember', chatName: 'e2', card: EMBED_CARD, user: { name: 'User' },
+            });
+            assert.match(allText(builtPrompt), /FILE_LORE_SIGNAL/,
+                'materialized file under derived name must be the supply path');
+        });
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }

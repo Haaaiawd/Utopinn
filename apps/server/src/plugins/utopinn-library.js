@@ -17,7 +17,7 @@ import _ from 'lodash';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
+import { getChatRepo, getNamedDocRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { applyJsonPatch } from '../storage/repositories/json-patch.js';
 import { assertWritable } from '../storage/read-only-mode.js';
@@ -242,6 +242,32 @@ function cardFields(card) {
 // ---------------------------------------------------------------------------
 // 预设(预设 apiId 校验)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// 具名文档桶(TASK-058 只读面)
+// ---------------------------------------------------------------------------
+
+/**
+ * URL 桶名 → NamedDocRepo 桶名。白名单三桶与 legacy named-doc-routes
+ * 同源(themes/movingUI/quickReplies);read-only,不设写面。
+ */
+const NAMED_DOC_BUCKETS = Object.freeze({
+    'quick-replies': 'quickReplies',
+    'themes': 'themes',
+    'moving-ui': 'movingUI',
+});
+
+/** :bucket 参数 → repo 桶名;非法/未知 → InvalidArgumentError → 400。 */
+function namedDocBucket(raw) {
+    const key = safeName(raw, 'bucket');
+    const bucket = NAMED_DOC_BUCKETS[key];
+    if (!bucket) {
+        throw new InvalidArgumentError(
+            `bucket must be one of: ${Object.keys(NAMED_DOC_BUCKETS).join(', ')}`,
+        );
+    }
+    return bucket;
+}
 
 /** apiId 校验:不在映射表里 → InvalidArgumentError → 400。 */
 function presetApiId(raw) {
@@ -603,6 +629,74 @@ export function apply(ctx) {
             return response.send({ items, total: items.length, defaultPersona: defaultPersona || null });
         } catch (error) {
             return sendError(response, error, 'utopinn/personas list');
+        }
+    });
+
+    /**
+     * GET /named-docs/:bucket —— 具名文档桶名单(TASK-058 只读面)。
+     * bucket ∈ quick-replies|themes|moving-ui(NAMED_DOC_BUCKETS 白名单映射
+     * 到 repo camelCase 桶);只读,不设写面。
+     *
+     * 与 legacy /api/quick-replies|themes|moving-ui/list 同源同形:
+     *   {names:[…]};走 sendJsonResource(ETag 私有缓存,需 ?account=<handle>)
+     *   保持 StageFrame 等消费者的缓存语义不变。
+     */
+    reg(`${P}/named-docs/:bucket`, async function (request, response) {
+        try {
+            const bucket = namedDocBucket(request.params.bucket);
+            const entries = await getNamedDocRepo().list(request.user.profile.handle, bucket);
+            const names = entries
+                .map((entry) => entry?.key?.name)
+                .filter((name) => typeof name === 'string' && name.length > 0)
+                .sort((a, b) => a.localeCompare(b));
+            return sendJsonResource(request, response, { resource: `${bucket}:list`, value: { names } });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/named-docs list');
+        }
+    });
+
+    /**
+     * GET /named-docs/:bucket/:name —— 具名文档单体(只读)。
+     * 与 legacy /get 同序:先名单校验(不存在 → 404 not_found)再读档
+     * (doc==null → 422 invalid_resource);错误面沿用 {code,resource,detail}。
+     */
+    reg(`${P}/named-docs/:bucket/:name`, async function (request, response) {
+        const handle = request.user.profile.handle;
+        let bucket;
+        let name;
+        try {
+            bucket = namedDocBucket(request.params.bucket);
+            name = safeName(request.params.name, 'name');
+        } catch (error) {
+            return sendError(response, error, 'utopinn/named-docs get');
+        }
+        try {
+            const entries = await getNamedDocRepo().list(handle, bucket);
+            if (!entries.some((entry) => entry?.key?.name === name)) {
+                return sendResourceReadError(response, {
+                    code: 'not_found',
+                    resource: `${bucket}:${name}`,
+                    detail: `Named document not found in bucket ${bucket}: ${name}`,
+                    status: 404,
+                });
+            }
+            const doc = await getNamedDocRepo().get(handle, bucket, name);
+            if (doc == null) {
+                return sendResourceReadError(response, {
+                    code: 'invalid_resource',
+                    resource: `${bucket}:${name}`,
+                    detail: `Named document is not valid JSON: ${bucket}/${name}`,
+                    status: 422,
+                });
+            }
+            return sendJsonResource(request, response, { resource: `${bucket}:${name}`, value: doc });
+        } catch (error) {
+            return sendResourceReadError(response, {
+                code: 'read_failed',
+                resource: `${bucket}:${name}`,
+                detail: `Could not read named document: ${bucket}/${name}`,
+                status: 500,
+            });
         }
     });
 

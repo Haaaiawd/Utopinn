@@ -670,10 +670,17 @@ export async function mountCardApp(opts) {
         return all;
     };
 
+    // GH#13:卡触发生成的在途台账。is_send_press 语义 = 有未归闲的生成 job;
+    // cmd-cardapp op click/push 的 waitForIdle 靠它 + bridge.pending 判闲,
+    // 否则 60ms 定死会把异步决策按钮掐在生成途中(dispose 杀桥)。
+    let activeGenerations = 0;
+
     // 生成面(ctx.sendMessage 非 silent + lukerContext.generate):POST generate
     // → 轮终态 → 事件泵(started/ended + chat diff)。persist_target 复用
     // CLI runGeneration 的 character 形(服务端自落 AI 楼)。
     const runCardGeneration = async ({ type = 'normal', quietPrompt, pumpType } = {}) => {
+        activeGenerations++;
+        try {
         pushCtxEvent('generation_started', [pumpType ?? type]);
         pushThEvent('generation_started', [pumpType ?? type]);
         pushCtxEvent('GENERATION_STARTED', [pumpType ?? type]);
@@ -719,6 +726,30 @@ export async function mountCardApp(opts) {
         pushCtxEvent('GENERATION_ENDED', []);
         recordThEvent(okEnd ? 'generation_ended' : 'generation_stopped');
         return { jobId, accepted, status };
+        } finally { activeGenerations--; }
+    };
+
+    // GH#13 click/push 归闲探针:三门桥在途 bridge.pending(卡→宿主调用未回)、
+    // 宿主侧生成 job activeGenerations(is_send_press 真值源)。grace 窗内
+    // 无条件等待——点击处理链的 setTimeout/微任务尾巴里才发桥调,过早
+    // 判闲会把异步链掐死在摇篮里;过了 grace 才按快照判闲。
+    const idleSnapshot = () => ({
+        bridgePending: bridge?.pending?.size ?? 0,
+        activeGenerations,
+        isSendPress: activeGenerations > 0,
+    });
+    const waitForIdle = async ({ timeoutMs = 120_000, graceMs = 500, pollMs = 100 } = {}) => {
+        const start = Date.now();
+        const deadline = start + Math.max(0, Number(timeoutMs) || 0);
+        await new Promise(r => setTimeout(r, Math.min(graceMs, Math.max(0, deadline - Date.now()))));
+        while (Date.now() < deadline) {
+            const snap = idleSnapshot();
+            if (!snap.bridgePending && !snap.activeGenerations) {
+                return { settled: true, waitedMs: Date.now() - start, ...snap };
+            }
+            await new Promise(r => setTimeout(r, pollMs));
+        }
+        return { settled: false, waitedMs: Date.now() - start, ...idleSnapshot() };
     };
 
     /** 楼层 diff → 事件(ctxHost.diffAndEmitChat 同语义):
@@ -797,7 +828,9 @@ export async function mountCardApp(opts) {
                 eventSource,
                 setExtensionPrompt,
                 worldInfoEntry: { getSorted: getSortedWiEntries },
-                is_send_press: false,
+                // GH#13:活 getter——生成 job 在途即 true(ctxHost.ts
+                // is_send_press 同语义;旧常量 false 让卡永远探不到生成中)。
+                get is_send_press() { return activeGenerations > 0; },
                 generate: (type = 'normal') => runCardGeneration({ type }),
                 getContext: () => ctx.lukerContext,
     }, {
@@ -1248,6 +1281,7 @@ export async function mountCardApp(opts) {
             try { l.target?.removeEventListener?.(l.event, l.handler); } catch { }
         }
         eventSource.removeAllListeners();
+        ctxSubscribed.clear();
         bridge?.dispose();
         try { ctx.__parentDom?.window?.close(); } catch { }
         try { window.close(); } catch { }
@@ -1259,8 +1293,12 @@ export async function mountCardApp(opts) {
         mount: { mountId, charId, chatName, entry: manifest.entry, entryKind: manifest.entryKind, entryUrl: entryUrlPath, assetBaseUrl, bridgeNonce },
         face, grants, manifest, warnings, consoleLog,
         evalInCard, callDispatch, pushThEvent, pushCtxEvent,
-        subscribedEvents: () => panelT0?.subscribedEvents?.() ?? [],
+        // GH#15b:ctx.on 登记进 ctxSubscribed,却只吐 panelT0 的——
+        // op push 的 subscribed 永远 []。两面合并去重。
+        subscribedEvents: () => [...new Set([...(panelT0?.subscribedEvents?.() ?? []), ...ctxSubscribed])],
         syncChat, diffAndEmitChat, runCardGeneration, dispose,
+        // GH#13:click/push 后的归闲探针(三门桥 pending + 生成 job 台账)。
+        idleSnapshot, waitForIdle,
         pollMailbox, recordThEvent, hostId,
         varSnapshot: () => jsonClone(varCache),
         initCalled,

@@ -16,6 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import { writeCardToPng } from '@utopinn/formats';
 import {
     getChatRepo,
+    getNamedDocRepo,
     getPresetRepo,
     getSettingsRepo,
     getWorldInfoRepo,
@@ -171,6 +172,16 @@ test.before(async () => {
         world_info: { charLore: [] },
         preset_settings_openai: 'Default',
     });
+
+    // ---- 种子:具名文档桶(TASK-058;桶名走 repo camelCase) ----
+    await getNamedDocRepo().save(HANDLE, 'quickReplies', 'Zeta Pack', {
+        qrList: [
+            { label: 'Yes', message: 'Yes, proceed.' },
+            { label: 'Hidden', message: 'ghost', isHidden: true },
+        ],
+    });
+    await getNamedDocRepo().save(HANDLE, 'quickReplies', 'Alpha Pack', { qrList: [] });
+    await getNamedDocRepo().save(HANDLE, 'themes', 'midnight', { colors: { bg: '#000' } });
 
     const app = express();
     app.use(express.json());
@@ -336,6 +347,35 @@ test('GET /personas — merged personas + persona_descriptions view', async () =
     assert.equal(p.isDefault, true);
     // avatars/ 下没有真实图片文件 → hasImage false
     assert.equal(p.hasImage, false);
+});
+
+// ---------- Named docs(TASK-058 只读面;sendJsonResource 需 ?account=<handle>)----------
+
+test('GET /named-docs/quick-replies — {names} 字典序;?account 私有读闸', async () => {
+    // 无 ?account → sendJsonResource 的 sendPrivateRepresentation 拒私有读
+    const denied = await api('/api/utopinn/named-docs/quick-replies');
+    assert.notEqual(denied.status, 200);
+    const { status, body } = await api(`/api/utopinn/named-docs/quick-replies?account=${HANDLE}`);
+    assert.equal(status, 200);
+    assert.deepEqual(body.names, ['Alpha Pack', 'Zeta Pack']);
+});
+
+test('GET /named-docs/quick-replies/:name — 文档原文;404 missing;400 bad bucket', async () => {
+    const { status, body } = await api(`/api/utopinn/named-docs/quick-replies/${encodeURIComponent('Zeta Pack')}?account=${HANDLE}`);
+    assert.equal(status, 200);
+    assert.equal(body.qrList.length, 2);
+    assert.equal(body.qrList[1].isHidden, true);
+
+    const missing = await api(`/api/utopinn/named-docs/quick-replies/ghost?account=${HANDLE}`);
+    assert.equal(missing.status, 404);
+    assert.equal(missing.body.code, 'not_found');
+
+    const badBucket = await api(`/api/utopinn/named-docs/quickreplies?account=${HANDLE}`);
+    assert.equal(badBucket.status, 400); // camelCase 桶名不收,只收 URL 形白名单
+
+    const theme = await api(`/api/utopinn/named-docs/themes/midnight?account=${HANDLE}`);
+    assert.equal(theme.status, 200);
+    assert.equal(theme.body.colors.bg, '#000');
 });
 
 // ---------- Settings ----------

@@ -583,6 +583,33 @@ export type ThCallResponse =
     | { ok: false; error: string; status?: number };
 
 // =========================================================================
+// named-docs —— GET /named-docs/*(TASK-058 只读面,sendJsonResource ETag 私有读)
+// =========================================================================
+
+/** 白名单桶名(URL 形);服务端映射到 repo camelCase 桶。 */
+export const NAMED_DOC_BUCKETS = ['quick-replies', 'themes', 'moving-ui'] as const;
+export type NamedDocBucket = (typeof NAMED_DOC_BUCKETS)[number];
+
+/** GET /named-docs/:bucket → 名单(字典序)。 */
+export interface NamedDocListResponse {
+    names: string[];
+}
+
+/**
+ * GET /named-docs/:bucket/:name → 具名文档原文。
+ * 形状按桶而异(quick-replies = {qrList:[{label,message,isHidden,…}]},
+ * themes/moving-ui 为自由 JSON),消费方按桶解释。
+ */
+export type NamedDocGetResponse = Record<string, unknown>;
+
+/** named-docs 读面错误(sendResourceReadError 形,{code,resource,detail?})。 */
+export interface NamedDocErrorResponse {
+    code: 'not_found' | 'invalid_resource' | 'read_failed';
+    resource: string;
+    detail?: string;
+}
+
+// =========================================================================
 // data —— import / backup / lan
 // =========================================================================
 

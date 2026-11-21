@@ -9,7 +9,8 @@
  *   runQuickReply → QuickReplies/*.json qrList 按 label 递归
  *   UI seam(notify/popup/input)收敛进 sinks(调用方决定回执形态)
  *   generateQuiet → services/quiet-generation.js(真 job 链 + diag)
- *   triggerGeneration 仍未绑定 —— 引擎按 seam 缺失降级
+ *   triggerGeneration 仍未绑定 —— GH#9 起引擎显式报错(messages.ts
+ *     triggerGenerationCallback 抛错,不再静默假装触发成功)
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';

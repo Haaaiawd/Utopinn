@@ -69,13 +69,85 @@ test('extractCommands:_.set 提取路径/值/注释;非有效命令跳过', () =
     assert.match(cmds[0].full_match, /_\.set\('状态\.体力', 62\);/);
 });
 
-test('extractCommands:引号内 ); 不误截;缺分号命令跳过', () => {
+test('extractCommands:引号内 ); 不误截;行尾无分号也收(GH#14)', () => {
     const cmds = extractCommands(
         `_.set('a', ["inner);text"]);\n_.set('b', 1)\n_.set('c', 2);`,
     );
-    assert.equal(cmds.length, 2);
+    assert.equal(cmds.length, 3);
     assert.deepEqual(cmds[0].args, ["'a'", '["inner);text"]']);
-    assert.deepEqual(cmds[1].args, ["'c'", '2']);
+    assert.deepEqual(cmds[1].args, ["'b'", '1']);
+    assert.deepEqual(cmds[2].args, ["'c'", '2']);
+});
+
+// ---------- GH#14:换行终止 / catgodml 容器 / 零生效告警 ----------
+
+test('extractCommands(GH#14):行终止命令——EOF/行注释/容器收尾/全角分号', () => {
+    // EOF 直接收尾
+    assert.equal(extractCommands(`_.set('a', 1)`).length, 1);
+    // 无分号但带 // 行注释 → 收,注释进 reason
+    const commented = extractCommands(`_.set('a', 1) // 注释在这`);
+    assert.equal(commented.length, 1);
+    assert.equal(commented[0].reason, '注释在这');
+    // 命令紧贴 </UpdateVariable> 收尾标签
+    const tagClosed = extractCommands(`<UpdateVariable>\n_.set('a', 1)</UpdateVariable>`);
+    assert.equal(tagClosed.length, 1);
+    // 全角分号与半角等价(消费后注释照常尾随)
+    const fullWidth = extractCommands(`_.set('a', 1)；// 全角注释\n_.set('b', 2)；`);
+    assert.equal(fullWidth.length, 2);
+    assert.equal(fullWidth[0].reason, '全角注释');
+});
+
+test('extractCommands(GH#14):<catgodml|registerPart:extra:> 容器内命令照收', () => {
+    const text = [
+        `<catgodml|registerPart:extra: UpdateVariable`,
+        `_.set('day', 4)`,
+        `_.set('日务.0', {'事':'镖盟催旧账'})`,
+        `>`,
+    ].join('\n');
+    const cmds = extractCommands(text);
+    assert.equal(cmds.length, 2);
+    assert.deepEqual(cmds[0].args, ["'day'", '4']);
+    assert.deepEqual(cmds[1].args, ["'日务.0'", `{'事':'镖盟催旧账'}`]);
+});
+
+test('extractCommands(GH#14):) 后跟正文/标点仍拒收——prose 防误抓不放宽', () => {
+    // ')' 同行跟非空白非注释非容器字符 → 不升格为命令
+    assert.equal(extractCommands(`函数 _.set('a', 1) 返回新值`).length, 0);
+    assert.equal(extractCommands(`_.set('a', 1), 然后继续`).length, 0);
+    assert.equal(extractCommands(`_.set('a', 1)。下一句`).length, 0);
+    // 多行参数对象在容器内换行终止
+    const multi = extractCommands(
+        `<UpdateVariable>\n_.set('资源', {'灵石': 100,\n'声望': 50})\n</UpdateVariable>`,
+    );
+    assert.equal(multi.length, 1);
+});
+
+test('settle(GH#14):换行无分号命令整段 settle 生效(掌门卡行式)', () => {
+    const v = mvuData({ day: 1 });
+    const r = settleMvuVariables(
+        `<UpdateVariable>\n_.set('stat_data.day', 4)\n_.set('stat_data.资源', {'灵石': 310, '声望': 20})\n</UpdateVariable>`,
+        v,
+    );
+    assert.equal(r.modified, true);
+    assert.equal(v.stat_data.day, 4);
+    assert.deepEqual(v.stat_data.资源, { 灵石: 310, 声望: 20 });
+    assert.equal(r.receipt.warnings.length, 0);
+});
+
+test('settle(GH#14):_.cmd( 语法在场但零生效 → receipt.warnings 非空', () => {
+    const v = mvuData({ a: 1 });
+    // ')' 后跟正文 → 命令被拒收 → 零提取零生效 → 告警
+    const r = settleMvuVariables(`使用 _.set('a', 2) 更新变量`, v);
+    assert.equal(r.modified, false);
+    assert.equal(r.receipt.ops.length, 0);
+    assert.equal(r.receipt.warnings.length, 1);
+    assert.match(r.receipt.warnings[0], /no command applied/);
+    // 提取了但全 error 同样告警(零 applied)
+    const r2 = settleMvuVariables(`_.insert('a', 5);`, v);
+    assert.equal(r2.receipt.warnings.length, 1);
+    // 无 _.cmd( 语法 → 不告警
+    const r3 = settleMvuVariables(`普通正文没有命令`, v);
+    assert.equal(r3.receipt.warnings.length, 0);
 });
 
 test('extractCommands:别名命令与参数个数校验', () => {

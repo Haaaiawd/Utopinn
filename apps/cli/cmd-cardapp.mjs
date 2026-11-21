@@ -39,7 +39,7 @@ export async function run(io) {
             'cardapp mount [--card f(png|charx|json)] [--char d] [--chat n] [--with-parent-doc]',
             'cardapp eval <expr|--file f>          卡 window realm 求值(回 {result,console[]})',
             'cardapp call <method> [json]         直打 dispatch(th.getVariables|ctx.*|T1 透传)',
-            'cardapp op dom|click <sel>           DOM 读/点击(click 带 bubbles)',
+            'cardapp op dom|click <sel>           DOM 读/点击(click 带 bubbles;等桥/生成归闲,--timeout 上限)',
             'cardapp op input <sel> <value>      输入并派 input 事件',
             'cardapp op <sel> <click|input|focus|text|html> 面板+动作简写',
             'cardapp op dump [--out f]           document.outerHTML 落盘',
@@ -183,7 +183,7 @@ export async function run(io) {
                         const el = q(opSub);
                         if (!el) { await disposeSession(s); return noEl(opSub); }
                         const act = a[1];
-                        const payload = await doElementAction(s, el, act, a[2]);
+                        const payload = await doElementAction(s, el, act, a[2], { timeoutMs: flags.reqTimeout });
                         return settleOutput(s, { mount: mountBrief(s), result: payload }, `op ${act}`);
                     }
                     switch (opSub) {
@@ -199,8 +199,11 @@ export async function run(io) {
                             const el = q(a[1]);
                             if (!el) { await disposeSession(s); return noEl(a[1]); }
                             el.dispatchEvent(new s.window.MouseEvent('click', { bubbles: true, cancelable: true, view: s.window }));
-                            await new Promise(r => setTimeout(r, 60));   // 同步链+一拍异步尾巴
-                            return settleOutput(s, { mount: mountBrief(s), result: { clicked: a[1], dom: domInventory(s) } }, `op click ${a[1]}`);
+                            // GH#13:60ms 定死会掐断触发生成的异步决策按钮(dispose 杀桥)。
+                            // 等桥在途/生成 job 归闲;--timeout(flags.reqTimeout)覆写上限。
+                            const idle = await s.waitForIdle({ timeoutMs: flags.reqTimeout ?? 120_000 });
+                            const result = { clicked: a[1], ...idleResult(idle), dom: domInventory(s) };
+                            return settleOutput(s, { mount: mountBrief(s), result }, `op click ${a[1]}`);
                         }
                         case 'input': {
                             const el = q(a[1]);
@@ -222,8 +225,9 @@ export async function run(io) {
                             if (!Array.isArray(pargs)) pargs = [pargs];
                             s.pushThEvent(ev, pargs);
                             s.pushCtxEvent(ev, pargs);
-                            await new Promise(r => setTimeout(r, 80));
-                            return settleOutput(s, { mount: mountBrief(s), result: { pushed: ev, args: pargs, subscribed: s.subscribedEvents() } }, `op push ${ev}`);
+                            // GH#13:事件处理器同样可能触发生成——同 click 判闲。
+                            const idle = await s.waitForIdle({ timeoutMs: flags.reqTimeout ?? 120_000 });
+                            return settleOutput(s, { mount: mountBrief(s), result: { pushed: ev, args: pargs, subscribed: s.subscribedEvents(), ...idleResult(idle) } }, `op push ${ev}`);
                         }
                         case 'wait': {
                             const expr = a.slice(1).join(' ');
@@ -300,12 +304,24 @@ export async function run(io) {
     }
 }
 
-async function doElementAction(s, el, act, value) {
+/**
+ * GH#13:归闲探针结果 → 出参段。settled=false 时诚实标未收敛+残留在途台账,
+ * 不再裸报 clicked:true(旧形会让调用方以为异步副作用已生效)。
+ */
+function idleResult(idle) {
+    const r = { asyncSettled: idle.settled, waitedMs: idle.waitedMs };
+    if (!idle.settled) {
+        r.pending = { bridge: idle.bridgePending, generations: idle.activeGenerations, isSendPress: idle.isSendPress };
+        r.warning = `异步任务未归闲(${idle.waitedMs}ms 超时):bridge×${idle.bridgePending} gen×${idle.activeGenerations} — 动作已派发但副作用未收敛`;
+    }
+    return r;
+}
+
+async function doElementAction(s, el, act, value, opts = {}) {
     switch (act) {
         case 'click':
             el.dispatchEvent(new s.window.MouseEvent('click', { bubbles: true, cancelable: true, view: s.window }));
-            await new Promise(r => setTimeout(r, 60));
-            return { clicked: true };
+            return { clicked: true, ...idleResult(await s.waitForIdle({ timeoutMs: opts.timeoutMs ?? 120_000 })) };
         case 'focus': el.focus?.(); return { focused: true };
         case 'input':
             el.value = value ?? '';

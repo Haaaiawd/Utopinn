@@ -17,6 +17,7 @@ import {
 import {
     isArraySchema,
     isObjectSchema,
+    isValueWithDescription,
     type MvuArraySchema,
     type MvuData,
     type MvuObjectSchema,
@@ -267,6 +268,138 @@ export function cleanUpMetadata(data: unknown): void {
             cleanUpMetadata(data[key]);
         }
     }
+}
+
+// ─── GH#4:非变异结构校验(th.replaceVariables/replaceMvuData 写前守卫)─────
+
+/** 单条结构校验错误:path 为 a.b[0].c 形(数组段方括号),根 stat_data 记 ''。 */
+export interface MvuSchemaError {
+    path: string;
+    code: 'missing_required' | 'unexpected_key' | 'type_mismatch' | 'invalid_stat_data';
+    message: string;
+    expected?: string;
+    actual?: string;
+}
+
+const schemaValueType = (v: unknown): string =>
+    v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+
+const joinSchemaPath = (base: string, key: string | number): string =>
+    typeof key === 'number' ? `${base}[${key}]` : base ? `${base}.${key}` : String(key);
+
+/** 数组元素元数据位:EXTENSIBLE_MARKER / {$arrayMeta:true,$meta:{…}} 不进校验。 */
+const isArrayMetaItem = (item: unknown): boolean =>
+    item === EXTENSIBLE_MARKER
+    || (isPlainObject(item) && (item as Record<string, unknown>)['$arrayMeta'] === true && '$meta' in (item as object));
+
+/**
+ * GH#4:stat_data 对 schema 递归走查,逐路径报错;只读不写
+ * (generateSchema 会就地消费 $meta/EXTENSIBLE_MARKER —— 校验面不能复用它,
+ * 否则「校验」本身就毁了被校验对象)。
+ *
+ * 语义与 schema 约束面同口径:
+ * - 非 extensible 对象:data 出现 properties 外键 → unexpected_key;
+ *   recursiveExtensible 沿父链下传(存储 schema 已逐节点烘焙
+ *   extensible,手写 partial schema 靠继承兜住)。
+ * - properties[k].required===true 而 data 缺 k → missing_required。
+ * - 叶类型不符 → type_mismatch;'any' 通配,null 宽容
+ *   (generateSchema 把 null 归 'any',生态快照里 null 常态)。
+ * - [值, "描述"] VWD 二元组按上游语义只校验值位,描述串不进 schema。
+ * - 对象 $meta 键、数组元数据元素跳过(它们是 schema 载体不是数据)。
+ * - data 缺失(undefined)由父层 required 检查裁决,自身不递归。
+ */
+export function validateStatDataAgainstSchema(
+    data: unknown,
+    schema: MvuSchemaNode | null | undefined,
+    options: { maxErrors?: number } = {},
+): MvuSchemaError[] {
+    const errors: MvuSchemaError[] = [];
+    const max = Math.max(1, options.maxErrors ?? 50);
+    if (!schema) return errors;
+
+    const push = (e: MvuSchemaError) => {
+        if (errors.length < max) errors.push(e);
+    };
+
+    const walk = (
+        value: unknown,
+        node: MvuSchemaNode | undefined,
+        path: string,
+        inheritedRecursiveExtensible: boolean,
+    ): void => {
+        if (!node || errors.length >= max) return;
+        if (value === undefined) return;   // 缺位由父层 required 判
+        if (node.type === 'any') return;
+
+        if (isObjectSchema(node)) {
+            if (!isPlainObject(value)) {
+                push({
+                    path, code: 'type_mismatch', expected: 'object', actual: schemaValueType(value),
+                    message: `${path || 'stat_data'}: expected object, got ${schemaValueType(value)}`,
+                });
+                return;
+            }
+            const obj = value as Record<string, unknown>;
+            const props = node.properties ?? {};
+            const extensible = node.extensible === true || inheritedRecursiveExtensible;
+            const childRecursive = inheritedRecursiveExtensible || node.recursiveExtensible === true;
+            for (const key of Object.keys(obj)) {
+                if (key === '$meta') continue;
+                const child = props[key] as MvuSchemaNode | undefined;
+                if (!child) {
+                    if (!extensible) {
+                        push({
+                            path: joinSchemaPath(path, key), code: 'unexpected_key',
+                            actual: schemaValueType(obj[key]),
+                            message: `${joinSchemaPath(path, key)}: key not declared in schema (object not extensible)`,
+                        });
+                    }
+                    continue;
+                }
+                walk(obj[key], child, joinSchemaPath(path, key), childRecursive);
+            }
+            for (const [key, child] of Object.entries(props)) {
+                if ((child as MvuSchemaNode & { required?: boolean }).required === true && !(key in obj)) {
+                    push({
+                        path: joinSchemaPath(path, key), code: 'missing_required',
+                        message: `${joinSchemaPath(path, key)}: declared required by schema but absent`,
+                    });
+                }
+            }
+            return;
+        }
+
+        if (isArraySchema(node)) {
+            if (!Array.isArray(value)) {
+                push({
+                    path, code: 'type_mismatch', expected: 'array', actual: schemaValueType(value),
+                    message: `${path || 'stat_data'}: expected array, got ${schemaValueType(value)}`,
+                });
+                return;
+            }
+            // VWD 二元组:生态契约 [值, "描述"],只校验值位(下标 0)。
+            const items = isValueWithDescription(value) ? [value[0]] : value;
+            const childRecursive = inheritedRecursiveExtensible || node.recursiveExtensible === true;
+            for (let i = 0; i < items.length; i++) {
+                if (errors.length >= max) break;
+                if (isArrayMetaItem(items[i])) continue;
+                walk(items[i], node.elementType, joinSchemaPath(path, i), childRecursive);
+            }
+            return;
+        }
+
+        // 叶:string | number | boolean;null 宽容(见头注)
+        if (value === null) return;
+        if (typeof value !== node.type) {
+            push({
+                path, code: 'type_mismatch', expected: node.type, actual: schemaValueType(value),
+                message: `${path}: expected ${node.type}, got ${schemaValueType(value)}`,
+            });
+        }
+    };
+
+    walk(data, schema, '', false);
+    return errors;
 }
 
 /**

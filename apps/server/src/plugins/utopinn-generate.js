@@ -23,7 +23,7 @@ import { selectChatCompletionDispatch } from '../endpoints/backends/chat-complet
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
 import { TEXTGEN_TYPES } from '../constants.js';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
-import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequestId, failGenerationJob } from '../endpoints/backends/luker-generation.js';
+import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequestId, failGenerationJob, getPersistChatKey } from '../endpoints/backends/luker-generation.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
@@ -228,14 +228,97 @@ const CONNECTION_KEYS = new Set([
     'chutes_sort_models', 'electronhub_sort_models', 'electronhub_group_models',
 ]);
 
+/** jobs 状态全集:queued 暂无生产端写点,但 legacy 活动位口径含它(护栏同集)。 */
+const KNOWN_JOB_STATUSES = Object.freeze([
+    'running', 'queued', 'persisting', 'awaiting_ack',
+    'completed', 'failed', 'cancelled',
+]);
+
+/** status=active 别名 → 护栏四态;与 CLI checkNoActiveJob 判定同序。 */
+const ACTIVE_JOB_STATUSES = Object.freeze(['running', 'queued', 'persisting', 'awaiting_ack']);
+
+/**
+ * ?status 过滤值解析:'active' → 护栏四态;逗号分隔的具体状态 → 白名单校验
+ * (错名宁 400 不静默漏 —— 护栏消费者拿空列表会误判无事)。
+ * @returns {string[]|null} null = 非法
+ */
+function jobStatusesForFilter(raw) {
+    const text = String(raw ?? '').trim();
+    if (!text) return null;
+    if (text === 'active') return [...ACTIVE_JOB_STATUSES];
+    const parts = text.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    const known = new Set(KNOWN_JOB_STATUSES);
+    return parts.every((s) => known.has(s)) ? parts : null;
+}
+
+/**
+ * ?target 过滤值 → chatKey(与 getPersistChatKey 产出同构,护栏语义):
+ *   '<charDir>/<chatName>' → char:<dir>.png:<chat>(dir 容忍 .png/.webp 尾,
+ *                            chatName 容忍 .jsonl 尾 —— getPersistChatKey 内部剥);
+ *   'group:<chatId>' / 'group/<chatId>' → group:<chatId>。
+ * @returns {string|null} null = 非法形 → 400
+ */
+function chatKeyForJobsTarget(raw) {
+    const target = String(raw ?? '').trim();
+    if (!target) return null;
+    if (target.startsWith('group:') || target.startsWith('group/')) {
+        return getPersistChatKey({ kind: 'group', id: target.slice(6) });
+    }
+    const slash = target.indexOf('/');
+    if (slash < 0) return null;
+    const dir = target.slice(0, slash).replace(/\.(png|webp)$/i, '');
+    const file = target.slice(slash + 1);
+    if (!dir || !file) return null;
+    return getPersistChatKey({ avatar_url: `${dir}.png`, file_name: file });
+}
+
 export function apply(ctx) {
     const reg = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
     const regGet = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'GET', path, handler }));
 
     // —— TASK-017 生成任务监视/回放 ——
-    /** GET /jobs —— 本 handle 全部生成任务摘要(新→旧),监视面数据源。 */
+    /**
+     * GET /jobs —— 本 handle 生成任务摘要(新→旧),监视面数据源。
+     *
+     * TASK-058 过滤参数(可组合,无参全量):
+     *   ?target=<charDir>/<chatName>  单卡聊天(容忍 dir 带 .png/.webp 尾、
+     *                                 chatName 带 .jsonl 尾);
+     *             group:<chatId> 或 group/<chatId> 群聊。
+     *             恒走 getPersistChatKey 归一,chatKey 与 CLI
+     *             persist_target 护栏同构 —— 不会两套身份口径。
+     *   ?status=active              护栏四态 running|queued|persisting|
+     *                               awaiting_ack 的别名;
+     *             或逗号分隔的具体状态白名单。
+     *   非法 target / status → 400(护栏消费者宁可报错不许静默漏)。
+     */
     regGet('/api/utopinn/jobs', async function (request, response) {
-        return response.send({ items: listGenerationJobsForRequest(request) });
+        let items = listGenerationJobsForRequest(request);
+
+        const target = request.query?.target;
+        if (target !== undefined) {
+            const key = chatKeyForJobsTarget(target);
+            if (key == null) {
+                return response.status(400).send({
+                    error: 'target must be <charDir>/<chatName> or group:<chatId>',
+                });
+            }
+            items = items.filter((job) => job.chatKey === key);
+        }
+
+        const status = request.query?.status;
+        if (status !== undefined) {
+            const wanted = jobStatusesForFilter(status);
+            if (wanted == null) {
+                return response.status(400).send({
+                    error: `status must be "active" or a comma-separated subset of: ${KNOWN_JOB_STATUSES.join(', ')}`,
+                });
+            }
+            const set = new Set(wanted);
+            items = items.filter((job) => set.has(job.status));
+        }
+
+        return response.send({ items });
     });
 
     /**

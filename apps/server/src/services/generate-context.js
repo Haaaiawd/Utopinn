@@ -10,13 +10,16 @@
  *   → PromptBuildRequest → promptBuilder
  */
 import {
+    addMissingWorldInfoFields,
     checkWorldInfo,
-    convertCharacterBook,
     createInstructEngine,
     GENERATION_TYPE_TRIGGERS,
+    getStringHash,
     mergeLoreSources,
+    parseDecorators,
     substituteParams,
 } from '@utopinn/core';
+import { convertEmbeddedBook, primaryWorldName } from './embedded-world.js';
 import { createPromptBuilder, resolveTokenizer } from './prompt-builder.js';
 import { buildGroupCardFields, collectGroupDepthPrompts } from './group-orchestration.js';
 import {
@@ -36,6 +39,11 @@ import {
     extension_prompt_types,
 } from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
+import {
+    readCharacterStateSidecar,
+    resolveCharacterFilePath,
+    writeCharacterStateSidecar,
+} from './character-state.js';
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
 import _ from 'lodash';
@@ -46,6 +54,12 @@ const ms = (v) => Math.round(v * 10) / 10;
 
 /** chat_state 命名空间:panel-t0 th.injectPrompts 的持久化位(与 packages/api-client NS_INJECT 同键) */
 const TH_INJECT_NS = 'th.inject';
+/**
+ * char 域变量宏的持久落点:char_state 侧车 ns。
+ * 侧车文档 = `{variables:{...}}`(稀疏 overlay:只记宏写过的路径;
+ * 读侧与卡面 tavern_helper.variables 种子深合并,数组/标量整体覆盖)。
+ */
+const TH_CHAR_STATE_NS = 'tavern_helper';
 /** mergedExtPrompts 注入键前缀(与 script_inject_* 并列,免撞名) */
 const TH_INJECT_KEY_PREFIX = 'th_inject_';
 
@@ -117,6 +131,43 @@ export function presetToAssemblySettings(presetDoc, powerUser = {}) {
         squash_system_messages: d.squash_system_messages,
         pin_examples: powerUser.pin_examples ?? d.pin_examples,
     };
+}
+
+/**
+ * 数组替换式深合并(同 settle.ts correctlyMerge 语义):overlay 的标量/数组
+ * 整体覆盖 base,plain object 递归并入。产出新对象,不写输入 —— 卡面种子
+ * 与侧车文档本体都不被请求内宏写污染。
+ */
+function mergeVariableOverlay(base, overlay) {
+    if (overlay === undefined) return base;
+    if (overlay === null || typeof overlay !== 'object' || Array.isArray(overlay)) return overlay;
+    const out = (base !== null && typeof base === 'object' && !Array.isArray(base)) ? { ...base } : {};
+    for (const [key, value] of Object.entries(overlay)) {
+        out[key] = mergeVariableOverlay(out[key], value);
+    }
+    return out;
+}
+
+/**
+ * TH 'character'/'char' 域变量底座 = 卡面种子 ∪ char_state 侧车 overlay(GH#2):
+ *   种子   card.data.extensions.tavern_helper.variables(TH setting_field=
+ *          'tavern_helper';旧键 TavernHelper_characterScriptVariables 兜底)。
+ *   overlay <charFile>.state.tavern_helper.json 的 {variables} —— 服务端
+ *          set_char_variable 的持久落点(卡 PNG 不在生成路径重写,侧车是
+ *          /api/utopinn/state/char/* 与 CardApp char-state 的同一份读写面)。
+ * 卡文件不可解析(directories 缺位或 .png/.webp/.json 全不在)→ 纯种子,
+ * 写面在 persist 段如实 volatile。
+ */
+function resolveCharVariableBase(request, charDir, card) {
+    const seed = card?.data?.extensions?.tavern_helper?.variables
+        ?? card?.data?.extensions?.TavernHelper_characterScriptVariables
+        ?? card?.extensions?.tavern_helper?.variables;
+    const seedObj = (seed !== null && typeof seed === 'object' && !Array.isArray(seed)) ? seed : {};
+    const filePath = resolveCharacterFilePath(request?.user?.directories?.characters, charDir);
+    if (!filePath) return seedObj;
+    const overlay = readCharacterStateSidecar(filePath, TH_CHAR_STATE_NS)?.variables;
+    if (overlay === null || typeof overlay !== 'object' || Array.isArray(overlay)) return seedObj;
+    return mergeVariableOverlay(seedObj, overlay);
 }
 
 /** 聊天 JSONL body → ChatMessageInput[](core setOpenAIMessages 入参)。
@@ -191,11 +242,150 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
         ? chatMetadata.world_info : (chatMetadata.world_info ? [chatMetadata.world_info] : []);
     for (const n of chatBound) if (n) names.add(n);
     if (powerUser.persona_description_lorebook) names.add(powerUser.persona_description_lorebook);
-    if (card?.data?.extensions?.world) names.add(card.data.extensions.world);
+    // 生效主书名:显式绑定优先,缺绑带内嵌书时落到派生名(与 import
+    // 物化/绑定同名;无书无绑 → null 不加)。issue #10 后存量未物化卡
+    // 也走这条路,装配不再漏整本内嵌书。
+    const primary = primaryWorldName(card);
+    if (primary) names.add(primary);
     for (const b of getCharExtraBooks(worldInfoState, charDir)) if (b) names.add(b);
     // 上游:world_info_settings.world_info.globalSelect = 全局勾选书目
     for (const n of worldInfoState.globalSelect ?? []) if (n) names.add(n);
     return [...names];
+}
+
+/**
+ * GH#9 lorebookEntries 选择性 WI 注入:把显式圈定的条目解析成
+ * force-activated WIEntry[]。ref 三形:
+ *   '书名'                    → 该书全部启用(disable!==true)条目
+ *   '书名:uid'                → 指定条目(末段冒号+数字)
+ *   { lorebook|book|world: <书名>, uid|id|entry_uid: <n> | comment|entry|entry_name: <名> }
+ *   { uid|id|comment|entry: <定位> }(无书) → 五层合并池内搜
+ * 命中条目克隆为 constant/disable:false/probability:100,并清
+ * triggers/characterFilter/定时门禁(sticky/cooldown/delay/
+ * delayUntilRecursion);hash 重盖——timed-effects 按 hash 键台账,
+ * 新 hash 即豁免历史冷却状态。显式点名的语义就是本轮必注入,
+ * position/depth/order/budget 仍全走引擎面(不是绕过组装的塞入)。
+ * 未命中 ref 进 unresolved 回执;一个都不中时由调用方判定(本实现
+ * 全失败 → 抛 lorebook_entries_unresolved,见 buildGenerationContextImpl)。
+ * @param {unknown} rawRefs
+ * @param {{entries: object[], getWorldDoc: (name:string)=>Promise<object|null>}} ctx
+ * @returns {Promise<{entries: object[], unresolved: string[]}>}
+ */
+async function resolveLorebookEntryRefs(rawRefs, { entries, getWorldDoc }) {
+    const refs = Array.isArray(rawRefs) ? rawRefs : [rawRefs];
+    const resolved = [];
+    const unresolved = [];
+    const seen = new Set();   // world::uid 去重(重复点同一 ref 不重复注入)
+
+    const pick = (e) => {
+        const key = `${e.world}::${e.uid}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        const forced = {
+            ...e,
+            constant: true, disable: false, probability: 100,
+            delayUntilRecursion: 0, sticky: 0, cooldown: 0, delay: 0,
+        };
+        delete forced.triggers;
+        delete forced.characterFilter;
+        forced.hash = getStringHash(JSON.stringify(forced));
+        resolved.push(forced);
+    };
+    // 合并池外的书:按 mergeLoreSources 同款归一化(补模板字段/拆装饰器
+    // /盖 hash)——直接塞原始书条目会缺 world/hash,引擎台账乱套。
+    // uid/world 以解析结果为准(entriesOfWorld 同款剥 uid 再回填)。
+    const normalizeBookEntry = (raw, bookName, uid) => {
+        const { uid: _u, world: _w, ...rest } = JSON.parse(JSON.stringify(raw));
+        const e = { uid, world: bookName, ...addMissingWorldInfoFields([rest])[0] };
+        const [decorators, content] = parseDecorators(e.content || '');
+        const normed = { ...e, decorators, content };
+        normed.hash = getStringHash(JSON.stringify(normed));
+        return normed;
+    };
+    const BOOK_KEYS = ['lorebook', 'book', 'world'];
+    const UID_KEYS = ['uid', 'id', 'entry_uid', 'entryUid'];
+    const NAME_KEYS = ['comment', 'entry', 'entry_name', 'entryName'];
+    const parseRef = (ref) => {
+        if (typeof ref === 'string' || typeof ref === 'number') {
+            const s = String(ref).trim();
+            const m = s.match(/^(.*):(\d+)$/);
+            if (m) return { book: m[1].trim(), locator: { uid: Number(m[2]) } };
+            return { book: s, locator: null };
+        }
+        if (ref && typeof ref === 'object') {
+            const book = BOOK_KEYS.map((k) => ref[k]).find((v) => typeof v === 'string' && v.trim()) ?? null;
+            for (const k of UID_KEYS) {
+                if (ref[k] !== undefined && ref[k] !== null && ref[k] !== '') {
+                    const n = Number(ref[k]);
+                    if (Number.isFinite(n)) return { book: book ? String(book).trim() : null, locator: { uid: n } };
+                }
+            }
+            for (const k of NAME_KEYS) {
+                if (ref[k] !== undefined && ref[k] !== null && ref[k] !== '') {
+                    const v = String(ref[k]);
+                    // 数字 entry/comment 按 uid 解(TH getLorebookEntries 的 uid 域兼容)
+                    return /^\d+$/.test(v)
+                        ? { book: book ? String(book).trim() : null, locator: { uid: Number(v) } }
+                        : { book: book ? String(book).trim() : null, locator: { comment: v } };
+                }
+            }
+            return { book: book ? String(book).trim() : null, locator: null };
+        }
+        return { book: null, locator: null };
+    };
+
+    for (const ref of refs) {
+        const { book, locator } = parseRef(ref);
+        const label = typeof ref === 'string' ? ref : JSON.stringify(ref);
+        if (!book && !locator) { unresolved.push(label); continue; }
+        let matched = 0;
+        if (!book) {
+            // 无书 ref:合并池内按 uid/comment 搜(五层已绑书内)。
+            for (const e of entries) {
+                if (locator?.uid !== undefined ? e.uid === locator.uid : String(e.comment ?? '') === locator.comment) {
+                    pick(e); matched++;
+                }
+            }
+            if (!matched) unresolved.push(label);
+            continue;
+        }
+        // 先搜合并池(已归一化+五层优先级排序);未命中再整书拉取。
+        // 条目 uid 域缺席时以对象键为 uid(worlds 文件 {entries:{uid:entry}}
+        // 与 [{uid,...}] 两形都要活)。
+        const pool = entries.filter((e) => e.world === book);
+        const bookPairs = (doc) => {
+            const ents = doc?.entries && typeof doc.entries === 'object' ? doc.entries : {};
+            return Object.entries(ents).map(([k, raw]) => ({
+                key: k,
+                raw,
+                uid: raw?.uid ?? (/^\d+$/.test(k) ? Number(k) : undefined),
+            }));
+        };
+        if (locator === null) {
+            // 整书 ref:合并池有的用池内归一化形;池外书(未绑定)现拉整本。
+            if (pool.length) {
+                for (const e of pool) { if (e.disable !== true) { pick(e); matched++; } }
+            } else {
+                const doc = await getWorldDoc(book).catch(() => null);
+                for (const { raw, uid } of bookPairs(doc)) {
+                    if (raw?.disable === true) continue;
+                    pick(normalizeBookEntry(raw, book, uid)); matched++;
+                }
+            }
+        } else {
+            const hit = pool.find((e) =>
+                locator.uid !== undefined ? e.uid === locator.uid : String(e.comment ?? '') === locator.comment);
+            if (hit) { pick(hit); matched++; }
+            else {
+                const doc = await getWorldDoc(book).catch(() => null);
+                const found = bookPairs(doc).find(({ raw, uid }) =>
+                    locator.uid !== undefined ? uid === locator.uid : String(raw?.comment ?? '') === locator.comment);
+                if (found) { pick(normalizeBookEntry(found.raw, book, found.uid)); matched++; }
+            }
+        }
+        if (!matched) unresolved.push(label);
+    }
+    return { entries: resolved, unresolved };
 }
 
 /**
@@ -208,7 +398,8 @@ function collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, char
  * @param {string} [input.presetName] 预设名(默认 settings 里记录的当前预设)
  * @param {object} input.user 用户面 {name, description}
  * @param {string} [input.type] 生成类型
- * @param {object} [input.overrides] 直接覆盖请求字段(cyclePrompt/quietPrompt/extensionPrompts 等)
+ * @param {object} [input.overrides] 直接覆盖请求字段(cyclePrompt/quietPrompt/extensionPrompts/
+ *   lorebookEntries(GH#9 选择性 WI 注入,ref 形见 resolveLorebookEntryRefs) 等)
  * @param {boolean} [input.dryRun] preview/干跑:true → WI 不写 timed effects、返回值不含持久化义务
  * @param {string} [input.mainApi] 上游 main_api 同位量('openai'|'textgenerationwebui'|…);
  *   影响 substCtx.mainApi → mesExamples 块头/instruct 样例格式化路径(缺省 'openai')
@@ -335,9 +526,12 @@ async function buildGenerationContextImpl({
     const chatBoundWorlds = Array.isArray(chatMetadata.world_info)
         ? chatMetadata.world_info
         : (chatMetadata.world_info ? [chatMetadata.world_info] : []);
+    // 生效主书名 = extensions.world 绑定 ‖ 内嵌书派生名(与 collectWorldNames
+    // 内同函数同值;物化文件与内存兜底都寻址它)。
+    const primaryWorld = primaryWorldName(card);
     const loreInput = {
         selectedWorlds: worldInfoState.globalSelect ?? [],
-        characterPrimaryWorld: card?.data?.extensions?.world,
+        characterPrimaryWorld: primaryWorld,
         characterExtraBooks: getCharExtraBooks(worldInfoState, charDir),
         chatWorlds: chatBoundWorlds,
         personaWorld: powerUser.persona_description_lorebook,
@@ -347,14 +541,16 @@ async function buildGenerationContextImpl({
     const worldNames = collectWorldNames({ powerUser, card, chatMetadata, worldInfoState, charDir });
     seg = performance.now();
     const worldCache = new Map();
+    // 上游 importEmbeddedWorldInfo 语义:卡内嵌 character_book 但
+    // worlds/<主书名> 尚未物化时,内存里即时转换顶上(v2 卡书→world
+    // 文件形,uid/keys 归位——直接塞原始卡书会让全本共享
+    // "world.undefined" 去重键,整本书塌成一条)。对未物化的存量卡
+    // (缺绑、库无书)这同样是唯一的供给路径。
+    const embeddedDoc = convertEmbeddedBook(card);
     await Promise.all(worldNames.map(async (name) => {
         const doc = await worldInfoRepo.get(handle, name).catch(() => null);
-        // 上游 importEmbeddedWorldInfo 语义:卡内嵌 character_book 但
-        // worlds/<extensions.world> 尚未物化时,内存里即时转换顶上(v2
-        // 卡书→world 文件形,uid/keys 归位——直接塞原始卡书会让全本
-        // 共享 "world.undefined" 去重键,整本书塌成一条)。
-        if (!doc && name === card?.data?.extensions?.world && card?.data?.character_book?.entries) {
-            worldCache.set(name, convertCharacterBook(card.data.character_book));
+        if (!doc && name === primaryWorld && embeddedDoc) {
+            worldCache.set(name, embeddedDoc);
             return;
         }
         worldCache.set(name, doc?.doc ?? doc ?? undefined);
@@ -363,6 +559,30 @@ async function buildGenerationContextImpl({
         ...loreInput,
         getWorldData: (name) => worldCache.get(name),
     });
+    // GH#9 lorebookEntries 选择性 WI 注入(语义/形参见 resolveLorebookEntryRefs):
+    // 显式圈定本轮注入的条目,整表替换合并池——quiet 链 skipWIAN 默认空 WI,
+    // 这个口是唯一「只要这几条进组装」的供给;全部 ref 未命中时按调用方
+    // 显式选择的失败语义抛 lorebook_entries_unresolved(组装失败面同 B5:
+    // assemble_failed diag + failed job 登记,不静默跑空上下文)。
+    let lorebookSelection = null;
+    if (overrides?.lorebookEntries !== undefined) {
+        lorebookSelection = await resolveLorebookEntryRefs(overrides.lorebookEntries, {
+            entries,
+            getWorldDoc: async (name) => {
+                if (worldCache.get(name)) return worldCache.get(name);
+                if (name === primaryWorld && embeddedDoc) return embeddedDoc;
+                const doc = await worldInfoRepo.get(handle, name).catch(() => null);
+                return doc?.doc ?? doc ?? null;
+            },
+        });
+        entries = lorebookSelection.entries;
+        if (!lorebookSelection.entries.length && lorebookSelection.unresolved.length) {
+            const err = new Error(`lorebookEntries unresolved: ${lorebookSelection.unresolved.join(', ')}`);
+            err.code = 'lorebook_entries_unresolved';
+            err.detail = lorebookSelection.unresolved;
+            throw err;
+        }
+    }
     perf.wiMs += performance.now() - seg;
     injectEvt('charbook', {
         injected: entries.length,
@@ -392,14 +612,10 @@ async function buildGenerationContextImpl({
         })),
         chatMetadata,
         globalVariables: settingsDoc?.extension_settings?.variables?.global ?? {},
-        // TH 'character'/'char' 域:card.data.extensions.tavern_helper.variables
-        // (TH store/settings/character.ts setting_field='tavern_helper'),
-        // 旧键 TavernHelper_characterScriptVariables 兜底(TH 迁移前形态)。
-        // 活引用绑给宏;set_char_variable 写它 —— 卡写回通道见 persist 段注释。
-        charVariables: card?.data?.extensions?.tavern_helper?.variables
-            ?? card?.data?.extensions?.TavernHelper_characterScriptVariables
-            ?? card?.extensions?.tavern_helper?.variables
-            ?? {},
+        // TH 'character'/'char' 域:卡面种子 ∪ char_state 侧车 overlay
+        // (resolveCharVariableBase)。活引用绑给宏;set_char_variable 写它,
+        // 持久化回侧车见 persistMacroVariableWrites 的 char 段。
+        charVariables: resolveCharVariableBase(request, charDir, card),
         // TH 'preset' 域:presetDoc.extensions.tavern_helper.variables
         // (TH store/settings/preset.ts —— 预设 extensions.tavern_helper)。
         presetVariables: presetDoc?.extensions?.tavern_helper?.variables ?? {},
@@ -591,8 +807,10 @@ async function buildGenerationContextImpl({
     // 扫描输入清空 → checkWorldInfo 走空结果短路,不激活不推进 timed;
     // AN 槽位整键删除 → base AN 与 WI→AN/persona→AN 合并一并失效
     // (extPromptSource 持 mergedExtPrompts 引用,删除即贯通全注入面)。
+    // GH#9:lorebookEntries 显式圈定的条目不受 skipWIAN 影响——它的语义
+    // 本就是「这轮 quiet 只用这几条」,不是「恢复全部 WI」。
     if (overrides?.skipWIAN) {
-        entries = [];
+        if (!lorebookSelection) entries = [];
         delete mergedExtPrompts[NOTE_MODULE_NAME];
     }
 
@@ -657,6 +875,13 @@ async function buildGenerationContextImpl({
     injectEvt('worldinfo', {
         injected: wiActivatedList.length,
         scanned: entries.length,
+        // GH#9 选择性注入回执:圈定 ref 数/命中条目数/未命中名单(部分
+        // 命中继续跑,不装死)。
+        selective: lorebookSelection ? {
+            requested: (Array.isArray(overrides.lorebookEntries) ? overrides.lorebookEntries : [overrides.lorebookEntries]).length,
+            resolved: lorebookSelection.entries.length,
+            unresolved: lorebookSelection.unresolved,
+        } : undefined,
         before: wiActivated.worldInfoBeforeEntries?.length ?? 0,
         after: wiActivated.worldInfoAfterEntries?.length ?? 0,
         depthFloors: (wiActivated.WIDepthEntries ?? []).length,
@@ -819,10 +1044,11 @@ async function buildGenerationContextImpl({
     // —— 变量宏写回落盘(issue#2):宏 set 家族(set_*_variable / setvar 系)在
     //    装配期间往 substCtx.variableWrites 推 {domain,path,value};这里按域
     //    persist。展开照常发生在请求内对象上,落盘走各域持久通道 ——
-    //    写不出去的域(char)如实记 volatile diag,不假装成了。
+    //    char 域落 char_state 侧车;卡文件缺席时如实记 volatile diag。
     const macroVarPersist = await persistMacroVariableWrites({
         chatRepo, settingsRepo, presetRepo,
         handle, charDir, chatName,
+        directories: request.user?.directories,
         isGroup, groupChatId: isGroup ? String(group.chatId) : null,
         chatIntegrity: chatDoc.integrity ?? null,
         chatMetadata, settingsDoc,
@@ -890,6 +1116,12 @@ async function buildGenerationContextImpl({
                 // 与 activated 不同,这里要的是注入本体内容(string[])。
                 beforeEntries: wiActivated.worldInfoBeforeEntries ?? [],
                 afterEntries: wiActivated.worldInfoAfterEntries ?? [],
+                // GH#9 选择性注入回执(th.generate lorebook 段消费):
+                // 圈定命中/未命中明细。
+                selective: lorebookSelection ? {
+                    resolved: lorebookSelection.entries.map((e) => ({ world: e.world, uid: e.uid, comment: e.comment })),
+                    unresolved: lorebookSelection.unresolved,
+                } : undefined,
             },
             chatCount: chatMessages.length,
         },
@@ -918,9 +1150,10 @@ async function buildGenerationContextImpl({
  *             上游 saveSettingsDebounced 同位)。
  *   preset  → presetRepo.patch /extensions/tavern_helper/variables,
  *             父键缺席时逐级降级建枝(TH store/settings/preset.ts 契约)。
- *   char    → 无卡写通道(卡持久 = PNG 重编码,生成路径不持写)——
- *             写已进请求内活对象(同请求 get 回读一致),记 volatile
- *             diag 如实降级,不假装落了盘。
+ *   char    → char_state 侧车 RMW:<charFile>.state.tavern_helper.json 的
+ *             {variables} 稀疏 overlay,逐写 _.set 折叠(services/
+ *             character-state.js 同 /state/char/* 一份读写面)。卡文件
+ *             不可解析 → 退回 volatile diag,不假装落了盘。
  *   dryRun  → 一律不落盘,记 dry 摘要(preview 无写副作用)。
  *
  * @returns {object|null} diag 摘要;无写 → null(不发空事件)。
@@ -928,6 +1161,7 @@ async function buildGenerationContextImpl({
 export async function persistMacroVariableWrites({
     chatRepo, settingsRepo, presetRepo,
     handle, charDir, chatName,
+    directories,
     isGroup = false, groupChatId = null,
     chatIntegrity, chatMetadata, settingsDoc,
     presetName, presetDoc,
@@ -1071,10 +1305,31 @@ export async function persistMacroVariableWrites({
         }
     }
 
-    // —— char 域:请求内生效,卡写回通道缺席 —— 如实 volatile,不冒充持久。
+    // —— char 域:char_state 侧车 RMW(GH#2)。overlay 稀疏折叠 —— 只记
+    //    宏写过的路径;读侧与卡面种子深合并(resolveCharVariableBase)。
+    //    卡文件不可解析(directories 缺位/.png|.webp|.json 全不在)→
+    //    请求内生效仍成立,但如实 volatile,不冒充持久。
     if (domains.includes('char')) {
-        summary.volatile.push('char');
-        warn('macro_vars_volatile', 'char domain writes are request-scoped (no card persist channel); not durable across generations');
+        const charWrites = list.filter((w) => w?.domain === 'char' && typeof w?.path === 'string' && w.path);
+        const charFilePath = resolveCharacterFilePath(directories?.characters, charDir);
+        if (!charFilePath) {
+            summary.volatile.push('char');
+            warn('macro_vars_volatile', 'char domain writes are request-scoped (character file not resolvable); not durable across generations');
+        } else {
+            try {
+                const sidecar = readCharacterStateSidecar(charFilePath, TH_CHAR_STATE_NS) ?? {};
+                const vars = (sidecar.variables && typeof sidecar.variables === 'object' && !Array.isArray(sidecar.variables))
+                    ? sidecar.variables : {};
+                for (const w of charWrites) {
+                    _.set(vars, w.path, w.value);
+                }
+                writeCharacterStateSidecar(charFilePath, TH_CHAR_STATE_NS, { ...sidecar, variables: vars });
+                summary.persisted.push('char');
+            } catch (error) {
+                summary.failed.push('char');
+                warn('macro_vars_persist_failed', `char domain writes did not persist: ${String(error?.message ?? error)}`, { writes: charWrites.length });
+            }
+        }
     }
 
     return summary;

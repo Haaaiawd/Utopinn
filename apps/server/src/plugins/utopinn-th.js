@@ -36,11 +36,14 @@ import {
     substituteParams,
     extractFrontendBlocks,
     isMvuData,
+    isObjectSchema,
+    validateStatDataAgainstSchema,
 } from '@utopinn/core';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
+import { primaryWorldName } from '../services/embedded-world.js';
 import { createFloorRegexRunner, chatFloorRegexPlacement } from '../services/extension-prompts.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 
@@ -757,13 +760,37 @@ const METHODS = {
                 hint: '全量覆盖是预期行为则传 args.force:true;否则改用 insertOrAssignVariables(深合)或 updateVariablesWith。',
             };
         }
+        // GH#4 结构校验:写 stat_data 且本域存在 schema(变量包自带 schema
+        // 优先,否则用域内既有 schema)时,stat_data 必须合 schema——
+        // isMvuData 只查顶层键在不在,坏的嵌套值(type 错/缺 required/
+        // 非 extensible 下多键)放进去,卡下次读到的是崩掉的世界观。
+        // 失败 → 400 + 逐路径错,一字不落盘;force:true 降级为 warnings。
+        const schemaNode = isObjectSchema(vars.schema) ? vars.schema
+            : (isObjectSchema(scope.store?.schema) ? scope.store.schema : null);
+        let schemaErrors = [];
+        if (schemaNode && vars.stat_data !== undefined) {
+            schemaErrors = validateStatDataAgainstSchema(vars.stat_data, schemaNode);
+        }
+        if (schemaErrors.length && a?.force !== true) {
+            return {
+                ok: false, status: 400, code: 'mvu_schema',
+                error: `stat_data violates schema (${schemaErrors.length} error${schemaErrors.length > 1 ? 's' : ''})`,
+                schema_errors: schemaErrors,
+                hint: '逐 path 修正 stat_data;确知在干什么是则传 args.force:true(违规明细会进 warnings 留痕)。',
+            };
+        }
         const warnings = [];
         if (lostRoots.length) warnings.push(`lost_roots: ${lostRoots.join('/')}`);
         if (lostStatRoots.length) warnings.push(`lost stat_data roots: ${lostStatRoots.join('/')}`);
+        if (schemaErrors.length) warnings.push(`schema_errors(force): ${schemaErrors.map((e) => e.path || 'stat_data').join(', ')}`);
         for (const k of Object.keys(scope.store)) delete scope.store[k];
         Object.assign(scope.store, vars);
         await scope.persist();
-        return { ok: true, ...(warnings.length ? { warnings } : {}) };
+        return {
+            ok: true,
+            ...(warnings.length ? { warnings } : {}),
+            ...(schemaErrors.length ? { schema_errors: schemaErrors } : {}),
+        };
     },
     async insertOrAssignVariables(a, scope) {
         const vars = a?.variables;
@@ -879,6 +906,20 @@ const METHODS = {
             'tools', 'json_schema', 'max_chat_history', 'should_silence']
             .filter((k) => a?.[k] !== undefined);
         const warnings = ignored.length ? [`th.generate 暂未映射参数: ${ignored.join(',')}`] : [];
+        // GH#9 lorebookEntries 选择性 WI 注入:圈定本轮参与组装的世界书
+        // 条目(ref 形:'书名'|'书名:uid'|{book,uid|comment}——见
+        // generate-context.js resolveLorebookEntryRefs)。persist_target
+        // 恒 none 不动;全部未命中 → 组装侧 lorebook_entries_unresolved → 400。
+        const lorebookEntries = a?.lorebookEntries ?? a?.lorebook_entries;
+        if (lorebookEntries !== undefined
+            && !Array.isArray(lorebookEntries)
+            && (typeof lorebookEntries !== 'object' || lorebookEntries === null)
+            && typeof lorebookEntries !== 'string') {
+            return {
+                ok: false, status: 400,
+                error: 'args.lorebookEntries must be an array of refs (book | book:uid | {book,uid|comment})',
+            };
+        }
 
         await recordThEvent(ctx2, 'generation_requested', [{ type: 'quiet', via: 'th.generate' }]);
         try {
@@ -897,23 +938,45 @@ const METHODS = {
                     stop: a?.stop,
                     trimToSentence: !!a?.trim_to_sentence || !!a?.trimToSentence,
                     quietName: a?.quiet_name ? String(a.quiet_name) : undefined,
+                    ...(lorebookEntries !== undefined ? { lorebookEntries } : {}),
                 },
                 userName: ctx2.userName ?? 'User',
                 timeoutMs: Number(a?.timeout_ms ?? 0) || 180_000,
             });
+            // 部分 ref 未命中:跑完但回执点名(全部未命中走 catch → 400)。
+            if (r.lorebook?.unresolved?.length) {
+                warnings.push(`lorebookEntries 未命中: ${r.lorebook.unresolved.join(', ')}`);
+            }
             // TH GENERATION_ENDED 语义:负载=最终文本。
             await recordThEvent(ctx2, 'generation_ended', [r.text ?? '']);
             return {
                 ok: true,
-                result: { text: r.text ?? '', jobId: r.jobId, status: r.status, diagId: r.diagId },
+                result: {
+                    text: r.text ?? '', jobId: r.jobId, status: r.status, diagId: r.diagId,
+                    ...(r.lorebook ? { lorebook: r.lorebook } : {}),
+                },
                 ...(warnings.length ? { warnings } : {}),
             };
         } catch (error) {
             const msg = String(error?.message ?? error ?? 'generate failed');
             await recordThEvent(ctx2, 'generation_stopped', [msg.slice(0, 300)]);
+            // GH#9:圈定 ref 全部未命中是调用方参数错(400),不是后端事故(502)。
+            const isUnresolved = error?.code === 'lorebook_entries_unresolved'
+                || String(msg).startsWith('lorebookEntries unresolved');
+            const status = isUnresolved ? 400 : 502;
+            // 部分未命中 + 生成事故同发:未命中名单不随事故吞掉(error.lorebook
+            // 由 quiet-generation 失败路径回填)。
+            if (error?.lorebook?.unresolved?.length) {
+                warnings.push(`lorebookEntries 未命中: ${error.lorebook.unresolved.join(', ')}`);
+            }
             thEvent('th_generate_failed', `th generate failed: ${msg.slice(0, 200)}`,
-                { method: 'generate', charDir: ctx2.charDir, chatName: ctx2.chatName, status: 502, error });
-            return { ok: false, status: 502, error: msg, ...(warnings.length ? { warnings } : {}) };
+                { method: 'generate', charDir: ctx2.charDir, chatName: ctx2.chatName, status, error });
+            return {
+                ok: false, status, error: msg,
+                ...(error?.detail ? { unresolved: error.detail } : {}),
+                ...(error?.lorebook ? { lorebook: error.lorebook } : {}),
+                ...(warnings.length ? { warnings } : {}),
+            };
         }
     },
     /**
@@ -1201,7 +1264,9 @@ const METHODS = {
         const bind = await METHODS.setChatLorebook({ lorebook: cr.result.name }, scope, ctx2);
         return bind.ok === false ? bind : { ok: true, result: cr.result.name };
     },
-    /** 角色书绑定最小读面:primary=ext.world 外绑书或内嵌 character_book。 */
+    /** 角色书绑定最小读面:primary=ext.world 外绑书 ‖ 内嵌书派生名
+     *  (与装配层 primaryWorldName 同口径 —— 缺绑带书卡回报的就是
+     *  实际生效的名字;embedded 仍只报卡面原书名字段)。 */
     async getCharLorebooks(a, _scope, ctx2) {
         const charDir = resolveCharTarget(a?.name ?? a?.charDir ?? ctx2.charDir);
         if (!charDir) return { ok: false, status: 400, error: 'character name required' };
@@ -1212,7 +1277,7 @@ const METHODS = {
         return {
             ok: true,
             result: {
-                primary: typeof ext.world === 'string' && ext.world ? ext.world : embedded,
+                primary: primaryWorldName(card),
                 additional: Array.isArray(ext.additional_books) ? ext.additional_books : [],
                 embedded: embedded,
             },
@@ -1372,7 +1437,9 @@ const METHODS = {
         return { ok: true, result: v };
     },
     /** TH Mvu.replaceMvuData(data,{type,message_id}) —— 同 replaceVariables
-     *  (GH#4 丢根护栏同享);入参非 MVU 形 → 400(TH 校验面)。 */
+     *  (GH#4 丢根护栏 + schema 结构校验同享:stat_data 对自带 schema
+     *  走 validateStatDataAgainstSchema,违规 → 400 逐路径错不落盘);
+     *  入参非 MVU 形 → 400(TH 校验面)。 */
     async replaceMvuData(a, scope) {
         const vars = a?.data ?? a?.variables;
         if (!isPlainObj(vars)) return { ok: false, status: 400, error: 'args.data must be an object' };

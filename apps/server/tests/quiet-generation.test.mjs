@@ -16,7 +16,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
-import { initStorage, getChatRepo, getSettingsRepo, getPresetRepo } from '../src/storage/index.js';
+import fs from 'node:fs';
+import { initStorage, getChatRepo, getSettingsRepo, getPresetRepo, getWorldInfoRepo } from '../src/storage/index.js';
 import { makeTempFsEngine } from './storage/harness/fs-harness.js';
 import { query as diagQuery } from '../src/services/diag-bus.js';
 
@@ -164,6 +165,131 @@ test('B5 assemble_failed(Token budget exceeded)→ failed job 同语义登记', 
         assert.ok(job);
         assert.equal(job.status, 'failed');
         assert.match(String(job.error), /Token budget exceeded/);
+    } finally {
+        fixture.cleanup();
+    }
+});
+
+// ── GH#9:lorebookEntries 选择性 WI 注入 + /gen·/trigger seam 钉 ──────────
+
+const QUIET_PRESET = {
+    openai_model: 'gpt-test',
+    openai_max_context: 8192,
+    openai_max_tokens: 200,
+    prompts: [
+        { identifier: 'main', role: 'system', content: 'You are {{char}}.' },
+        { identifier: 'worldInfoBefore', role: 'system', marker: true, content: '' },
+        { identifier: 'chatHistory', role: 'system', marker: true, content: '' },
+        { identifier: 'worldInfoAfter', role: 'system', marker: true, content: '' },
+    ],
+    prompt_order: [{
+        character_id: 100001,
+        order: ['main', 'worldInfoBefore', 'chatHistory', 'worldInfoAfter'].map((identifier) => ({ identifier, enabled: true })),
+    }],
+};
+
+async function seedQuietBase(fixture, { withPreset = true } = {}) {
+    if (withPreset) {
+        await getPresetRepo().save(fixture.handle, 'openai', 'Default', QUIET_PRESET);
+    }
+    await getSettingsRepo().save(fixture.handle, { preset_settings_openai: 'Default', power_user: {} });
+    await getWorldInfoRepo().save(fixture.handle, 'Forum', {
+        entries: {
+            '0': { uid: 0, comment: 'e1', key: ['论坛'], content: 'E1-content', constant: false },
+            '1': { uid: 1, comment: 'e2', key: [], content: 'E2-content', constant: true },
+        },
+    });
+    await getChatRepo().save(fixture.handle, 'Alice', 'c1',
+        { user_name: 'User', chat_metadata: { world_info: ['Forum'] } },
+        [{ name: 'User', is_user: true, send_date: '2026-01-01T00:00:00.000Z', mes: 'hi' }],
+        null);
+}
+
+test('GH#9 lorebookEntries:选择性 WI 注入——只点名条目激活;全未命中 → lorebook_entries_unresolved', async () => {
+    const fixture = await makeTempFsEngine();
+    try {
+        await initStorage({ mode: 'fs', directoriesByHandle: () => fixture.dirs });
+        await seedQuietBase(fixture);
+        const { buildGenerationContext } = await import('../src/services/generate-context.js');
+        const req = () => ({ user: { profile: { handle: fixture.handle, name: 'User' } } });
+
+        // 点名单条:选择性注入(force-activated)——e1 激活,e2(constant)
+        // 不入选(圈定 = 整表替换合并池,不是「追加」)。
+        const ctx = await buildGenerationContext({
+            request: req(), charDir: 'Alice', chatName: 'c1', card: CARD,
+            user: { name: 'User' }, type: 'quiet',
+            overrides: { quietPrompt: 'x', skipWIAN: true, lorebookEntries: [{ lorebook: 'Forum', uid: 0 }] },
+        });
+        assert.deepEqual(ctx.sources.worldInfo.selective.unresolved, []);
+        assert.equal(ctx.sources.worldInfo.selective.resolved.length, 1);
+        assert.equal(ctx.sources.worldInfo.selective.resolved[0].uid, 0);
+        assert.deepEqual(ctx.sources.worldInfo.activated.map((e) => e.uid), [0],
+            `只激活点名条目: ${JSON.stringify(ctx.sources.worldInfo.activated)}`);
+
+        // 整书 ref → 全部启用条目都注入(e2 constant 也激活)
+        const ctx2 = await buildGenerationContext({
+            request: req(), charDir: 'Alice', chatName: 'c1', card: CARD,
+            user: { name: 'User' }, type: 'quiet',
+            overrides: { quietPrompt: 'x', skipWIAN: true, lorebookEntries: ['Forum'] },
+        });
+        assert.equal(ctx2.sources.worldInfo.activated.length, 2, '整书 ref 全条目');
+
+        // 无 lorebookEntries + skipWIAN → WI 全灭(旧契约对照)
+        const ctx3 = await buildGenerationContext({
+            request: req(), charDir: 'Alice', chatName: 'c1', card: CARD,
+            user: { name: 'User' }, type: 'quiet',
+            overrides: { quietPrompt: 'x', skipWIAN: true },
+        });
+        assert.equal(ctx3.sources.worldInfo.activated.length, 0, 'skipWIAN 无圈定 → 0 激活');
+
+        // params→overrides 直通钉:全未命中 ref → runQuietGeneration 抛
+        // lorebook_entries_unresolved(经 B5 失败面登记 failed job)
+        await assert.rejects(
+            runQuietGeneration(quietInput(fixture, { params: { lorebookEntries: ['Forum:999'] } })),
+            /lorebookEntries unresolved.*999/,
+        );
+        // 选择性回执经 diag worldinfo 事件(quiet 链真走 resolve)
+        const since = Date.now();
+        await runQuietGeneration(quietInput(fixture, { params: { lorebookEntries: ['Forum:0'] }, timeoutMs: 10_000 }))
+            .catch(() => { /* dispatch 无后端失败不影响选择性断言 */ });
+        const selEvts = diagQuery({ kind: 'inject', code: 'worldinfo', since })
+            .filter((e) => e.data?.selective);
+        assert.equal(selEvts.length, 1, JSON.stringify(selEvts.map((e) => e.data)));
+        assert.equal(selEvts[0].data.selective.resolved, 1);
+        assert.deepEqual(selEvts[0].data.entries.map((e) => e.uid), [0]);
+    } finally {
+        fixture.cleanup();
+    }
+});
+
+test('GH#9 STscript seam 钉:/gen → generateQuiet→runQuietGeneration;/trigger 未绑定 → 显式 execution_error', async () => {
+    const fixture = await makeTempFsEngine();
+    try {
+        await initStorage({ mode: 'fs', directoriesByHandle: () => fixture.dirs });
+        // 卡 + chat(stscript-env 要实体);不种预设 → /gen 在组装段快速失败,
+        // 失败面经 sinks.notification —— 证明链真走而不是 seam 缺席的空回。
+        fs.writeFileSync(path.join(fixture.dirs.characters, 'Alice.json'), JSON.stringify(CARD));
+        await getChatRepo().save(fixture.handle, 'Alice', 'c1',
+            { user_name: 'User', chat_metadata: {} }, [], null);
+        const { buildStscriptEnv } = await import('../src/services/stscript-env.js');
+        const { runStscript } = await import('@utopinn/core');
+        const built = await buildStscriptEnv({
+            handle: fixture.handle, directories: fixture.dirs,
+            charDir: 'Alice', chatName: 'c1', userName: 'User',
+        });
+        assert.ok(built.env, JSON.stringify(built));
+        assert.equal(typeof built.env.host.generateQuiet, 'function', 'generateQuiet seam 已绑');
+
+        const genOut = await runStscript(built.env, '/gen hello');
+        assert.equal(genOut.isError, false, JSON.stringify(genOut.error));
+        assert.ok(built.sinks.notifications.some((n) => String(n.text).includes('/gen failed')),
+            `/gen → runQuietGeneration 链真走: ${JSON.stringify(built.sinks.notifications)}`);
+
+        // /trigger:seam 缺席 → 引擎显式抛错(不再 `?? Promise.resolve('')` 装成功)
+        const trigOut = await runStscript(built.env, '/trigger');
+        assert.equal(trigOut.isError, true, JSON.stringify(trigOut));
+        assert.equal(trigOut.error?.code, 'execution_error');
+        assert.match(String(trigOut.error?.message ?? ''), /triggerGeneration/);
     } finally {
         fixture.cleanup();
     }

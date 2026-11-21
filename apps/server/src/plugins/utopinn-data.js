@@ -36,7 +36,6 @@ import os from 'node:os';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { convertCharacterBook } from '@utopinn/core';
 import { isPng, readCardFromPng, toV2, writeCardToPng } from '@utopinn/formats';
 import { createBackupArchive, normalizeUserBackupSelection } from '../users.js';
 import { createLanMigrationOffer, LAN_MIGRATION_PATH_PREFIX } from '../lan-migration.js';
@@ -59,6 +58,12 @@ import {
     repoTargetName,
     stripImportExt,
 } from '../services/import-pipeline.js';
+import {
+    bindEmbeddedWorld,
+    convertEmbeddedBook,
+    embeddedBookEntryCount,
+    embeddedWorldName,
+} from '../services/embedded-world.js';
 
 export const inject = ['webServer'];
 
@@ -302,10 +307,10 @@ function directWriteCard(directories, stem, baseImage, cardJson) {
  * @returns {Promise<{ok:boolean, error?:string}>}
  */
 /**
- * Materialize an embedded character_book to worlds/<extensions.world>.json
- * — the server-side equivalent of the upstream importEmbeddedWorldInfo and
- * the same materialization path as the in-memory fallbacks in
- * generate-context / mvu-settle. All of them MUST go through
+ * Materialize an embedded character_book to worlds/<name>.json — the
+ * server-side equivalent of the upstream importEmbeddedWorldInfo and the
+ * same materialization path as the in-memory fallbacks in generate-context /
+ * mvu-settle. All of them go through convertEmbeddedBook →
  * convertCharacterBook to turn the v2 card book into world-file shape
  * (uid/keys restored); stuffing the raw card book in would leave every
  * entry sharing the "world.undefined" dedupe key and collapse the whole
@@ -316,25 +321,46 @@ function directWriteCard(directories, stem, baseImage, cardJson) {
  * single exception is `overwrite` (import/commit conflict=overwrite), which
  * follows the upstream re-import semantics: replacing the card refreshes
  * the linked world too (upstream importEmbeddedWorldInfo overwrites the
- * same-named book on re-import). An empty extensions.world does not get a
- * name invented for it; a failed write only warns, it does not sink the
- * import. Every outcome — materialized / skipped / overwrote — leaves a
- * warnings entry so the caller can see what happened to the book.
- * @param {{overwrite?: boolean}} options `overwrite` is the caller's declared
- *   conflict policy (conflict=overwrite), applied to the world-name collision
- *   too — it does NOT hinge on the card file itself being replaced.
- * @returns {Promise<string[]>} entries appended to the commit response warnings
+ * same-named book on re-import). A failed write only warns, it does not
+ * sink the import. Every outcome — materialized / skipped / overwrote /
+ * failed / unresolved — leaves a warnings entry so the caller can see what
+ * happened to the book, and the structured embeddedBook field reports it
+ * to machine callers (issue #7/#10: never silent).
+ * @param {{overwrite?: boolean, link?: {worldName: string|null, fallback: boolean}|null}} options
+ *   `overwrite` is the caller's declared conflict policy (conflict=overwrite),
+ *   applied to the world-name collision too — it does NOT hinge on the card
+ *   file itself being replaced. `link` is commitCharacter's pre-serialize
+ *   bindEmbeddedWorld result (bound name or derived name + whether it was
+ *   derived); absent callers fall back to re-deriving it read-only.
+ * @returns {Promise<{warnings: string[], embeddedBook: {worldName: string|null, fallback: boolean, outcome: 'materialized'|'overwrote'|'skipped'|'failed'|'unresolved', entries: number}|null}>}
  */
-async function materializeEmbeddedWorld(request, card, { overwrite = false } = {}) {
-    const bookEntries = card?.data?.character_book?.entries;
-    const worldName = String(card?.data?.extensions?.world ?? card?.extensions?.world ?? '').trim();
-    if (!Array.isArray(bookEntries) || bookEntries.length === 0 || !worldName) {
-        return [];
+async function materializeEmbeddedWorld(request, card, { overwrite = false, link = undefined } = {}) {
+    const entryCount = embeddedBookEntryCount(card);
+    if (entryCount === 0) {
+        return { warnings: [], embeddedBook: null };
+    }
+    const bound = String(card?.data?.extensions?.world ?? card?.extensions?.world ?? '').trim();
+    const worldName = link?.worldName ?? bound ?? embeddedWorldName(card);
+    const fallback = link?.fallback ?? !bound;
+    // 派生名场景的可见注记:名字不是卡面原本写的,用户要能看到它从哪来。
+    const derivedNote = fallback ? ' — card had no bound world; derived name and bound the card to it' : '';
+    if (!worldName) {
+        // 理论不可达('Unnamed' 兜底保证非空);防御兜底也显式报告,不静默。
+        return {
+            warnings: [`Embedded character_book could not be materialized: no usable world name (${entryCount} entries). Set data.extensions.world or character_book.name and re-import.`],
+            embeddedBook: { worldName: null, fallback, outcome: 'unresolved', entries: entryCount },
+        };
     }
     const repo = getWorldInfoRepo();
     const handle = request.user.profile.handle;
     try {
-        const doc = convertCharacterBook(card.data.character_book);
+        const doc = convertEmbeddedBook(card);
+        if (!doc) {
+            return {
+                warnings: [`Embedded character_book could not be converted to a world book (${entryCount} entries) — entries shape unreadable.`],
+                embeddedBook: { worldName, fallback, outcome: 'failed', entries: entryCount },
+            };
+        }
         if (overwrite) {
             // 卡面被覆盖 ⇒ 绑定的世界书跟着刷新。resolve→save 是两步,但
             // overwrite 语义本身就是"卡的版本赢",不存在需要防的丢失写;
@@ -343,18 +369,30 @@ async function materializeEmbeddedWorld(request, card, { overwrite = false } = {
             const existing = await repo.resolveName(handle, worldName);
             await repo.save(handle, worldName, doc);
             const name = (await repo.resolveName(handle, worldName)) ?? worldName;
-            return [existing != null
-                ? `Embedded character_book overwrote world "${name}" (${bookEntries.length} entries).`
-                : `Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
+            const outcome = existing != null ? 'overwrote' : 'materialized';
+            const verb = existing != null ? 'overwrote' : 'materialized to';
+            return {
+                warnings: [`Embedded character_book ${verb} world "${name}" (${entryCount} entries).${derivedNote}`],
+                embeddedBook: { worldName: name, fallback, outcome, entries: entryCount },
+            };
         }
         const { created, name } = await repo.createIfAbsent(handle, worldName, doc);
         if (!created) {
-            return [`Embedded character_book skipped: world "${name}" already exists — re-import with conflict=overwrite to update it.`];
+            return {
+                warnings: [`Embedded character_book skipped: world "${name}" already exists — re-import with conflict=overwrite to update it.${derivedNote}`],
+                embeddedBook: { worldName: name, fallback, outcome: 'skipped', entries: entryCount },
+            };
         }
-        return [`Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
+        return {
+            warnings: [`Embedded character_book materialized to world "${name}" (${entryCount} entries).${derivedNote}`],
+            embeddedBook: { worldName: name, fallback, outcome: 'materialized', entries: entryCount },
+        };
     } catch (error) {
         console.warn(`utopinn/data: failed to materialize embedded world "${worldName}":`, error);
-        return [`Embedded character_book could not be materialized to world "${worldName}": ${error?.message ?? error}`];
+        return {
+            warnings: [`Embedded character_book could not be materialized to world "${worldName}": ${error?.message ?? error}${derivedNote}`],
+            embeddedBook: { worldName, fallback, outcome: 'failed', entries: entryCount },
+        };
     }
 }
 
@@ -397,6 +435,14 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
         }
     }
 
+    // 内嵌书缺 extensions.world 绑定 → 派生名写回卡面(必须在序列化前)。
+    // 上游 importEmbeddedWorldInfo 同款:物化书的同时把 character_world
+    // 绑上书名(writeExtensionField 持久化 extensions.world)。旧实现把
+    // 这类卡静默 return [],整本内嵌书永远进不了 prompt(issue #10)。
+    // 绑定先于物化写进卡:即便物化撞上既有同名书被跳过或写失败,装配层
+    // 仍按这个名字解析(既有书 / 内存即时转换兜底),不会是死绑定。
+    const embeddedLink = bindEmbeddedWorld(card);
+
     const cardJson = JSON.stringify(card);
     const baseIsPng = prepared.imageBuffer != null && isPng(prepared.imageBuffer);
 
@@ -407,7 +453,8 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
             if (overwrite) {
                 invalidateAvatarThumbnail(directories, stem);
             }
-            return { ok: true, warnings: await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld }) };
+            const materialized = await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld, link: embeddedLink });
+            return { ok: true, warnings: materialized.warnings, embeddedBook: materialized.embeddedBook };
         } catch (error) {
             // 底图畸形 / 默认头像缺失等 → 退回 writeCharacterData 的兜底链
             console.warn('utopinn/data import: direct PNG write failed, falling back to writeCharacterData:', error);
@@ -419,7 +466,8 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
     if (!ok) {
         return { ok: false, error: request?.lastWriteCharacterDataError || 'character write failed' };
     }
-    return { ok: true, warnings: await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld }) };
+    const materialized = await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld, link: embeddedLink });
+    return { ok: true, warnings: materialized.warnings, embeddedBook: materialized.embeddedBook };
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +571,25 @@ export function apply(ctx) {
                     warnings.push(`Card is bound to world "${detected.summary.boundWorld}", which is not in this library.`);
                 }
             }
+            // 内嵌书物化落点预警(issue #10/#7):派生名要显式亮相 —— 名字
+            // 不是卡面写的,撞名既有书时非 overwrite 不会覆盖,都要让用户
+            // 在 commit 前就知道,而不是事后发现书没更新。
+            if (detected.kind === 'char' && detected.summary.embeddedWorldName) {
+                const resolved = await getWorldInfoRepo().resolveName(handle, detected.summary.embeddedWorldName);
+                if (detected.summary.embeddedWorldFallback) {
+                    if (resolved != null) {
+                        warnings.push(`A world named "${resolved}" already exists — the embedded book will NOT overwrite it unless conflict=overwrite; the card will be linked to it.`);
+                    }
+                } else if (resolved != null) {
+                    warnings.push(`Embedded character_book targets existing world "${resolved}" — its entries will NOT overwrite it unless conflict=overwrite.`);
+                }
+            }
+
+            // GH#3:regex 脚本的可执行性提示(卡全灭 ‖ 服务端总闸灭)。
+            const regexHint = detected.kind === 'char'
+                ? await regexDisabledHint(request, detected.summary)
+                : { regexDisabled: false, warning: null };
+            if (regexHint.warning) warnings.push(regexHint.warning);
 
             return response.send({
                 kind: detected.kind,
@@ -531,12 +598,44 @@ export function apply(ctx) {
                 avatarKey: target.avatarKey,
                 summary: detected.summary,
                 warnings,
+                regex_disabled: regexHint.regexDisabled,
                 conflicts: { existingSameName },
             });
         } catch (error) {
             return sendError(response, error, 'utopinn/import preview');
         }
     });
+
+    /**
+     * GH#3:卡内 regex 脚本「装了也不会跑」的判定 + 文案。
+     * 两个独立灭点,任一命中即 regex_disabled:
+     *   1) 卡面逐脚本 disabled 全中(import-pipeline summary.regexDisabled);
+     *   2) 服务端 settings.extension_settings.disabledExtensions 含 'regex'
+     *      (createFloorRegexRunner/createWorldInfoRegexHook 的总闸 ——
+     *      卡作用域 auto-allow 也救不回来)。
+     * 卡面 extensions.disabledExtensions 不计 —— 执行面并不读它,标了是说谎。
+     * @returns {Promise<{regexDisabled:boolean, warning:string|null}>}
+     */
+    async function regexDisabledHint(request, summary) {
+        const count = summary?.regexScripts ?? 0;
+        if (count === 0) return { regexDisabled: false, warning: null };
+        if (summary.regexDisabled) {
+            return {
+                regexDisabled: true,
+                warning: `All ${count} embedded regex script(s) are marked disabled by the card — they will not execute.`,
+            };
+        }
+        const settings = await getSettingsRepo().get(request.user.profile.handle).catch(() => null);
+        const disabled = Array.isArray(settings?.extension_settings?.disabledExtensions)
+            ? settings.extension_settings.disabledExtensions : [];
+        if (disabled.includes('regex')) {
+            return {
+                regexDisabled: true,
+                warning: `extension_settings.disabledExtensions includes 'regex' — the card's ${count} regex script(s) will not execute.`,
+            };
+        }
+        return { regexDisabled: false, warning: null };
+    }
 
     /**
      * preview/commit 共用的初始目标名推导。body.targetName 是显式覆盖;
@@ -627,6 +726,13 @@ export function apply(ctx) {
             }
             const renamed = target.targetName !== initialTargetName
                 || (target.avatarKey != null && target.avatarKey !== initialAvatarKey);
+            // GH#3:commit 面同样报 regex 可执行性 —— 导入完才知道脚本
+            // 不跑,等于诊断缺口照搬到预览之后。
+            const regexHint = detected.kind === 'char'
+                ? await regexDisabledHint(request, detected.summary)
+                : { regexDisabled: false, warning: null };
+            const warnings = [...(result.warnings ?? [])];
+            if (regexHint.warning) warnings.push(regexHint.warning);
             return response.send({
                 ok: true,
                 kind: detected.kind,
@@ -634,7 +740,12 @@ export function apply(ctx) {
                 targetName: target.targetName,
                 avatarKey: target.avatarKey,
                 renamed,
-                warnings: result.warnings ?? [],
+                warnings,
+                regex_disabled: regexHint.regexDisabled,
+                // 内嵌书落点(issue #7/#10):{worldName,fallback,outcome,entries} —
+                // outcome=overwrote 即「世界书已随卡刷新」的机读位;
+                // 无内嵌书时字段缺席。
+                ...(result.embeddedBook ? { embeddedBook: result.embeddedBook } : {}),
             });
         } catch (error) {
             return sendError(response, error, 'utopinn/import commit');

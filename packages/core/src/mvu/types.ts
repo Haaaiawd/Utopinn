@@ -142,6 +142,12 @@ export interface MvuSettleReceipt {
     ops: MvuSettleOp[];
     /** 全部错误(上游只保留首个 toast;回执保留全量)。 */
     errors: MvuSettleError[];
+    /**
+     * 非致命告警(GH#14):正文含 _.cmd( 语法但零指令生效等「看起来像
+     * 命令、却一条没落」的情形 —— 不当 error 拦截 settle,但要让
+     * 调用方/诊断面看得见,不能静默吞。
+     */
+    warnings?: string[];
 }
 
 /** 楼层消息的最小读取面(ST jsonl 消息 + TH `variables` 槽位)。 */

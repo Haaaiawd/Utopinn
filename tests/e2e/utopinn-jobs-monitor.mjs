@@ -97,6 +97,16 @@ log('sources.worldInfo.activated 数组', Array.isArray(src?.worldInfo?.activate
     Array.isArray(src?.worldInfo?.activated) ? `n=${src.worldInfo.activated.length}` : '');
 log('文本回放', typeof job?.text === 'string' && job.text.includes('stars'), JSON.stringify((job?.text ?? '').slice(0, 60)));
 
+// 3b. GH#8 trace 面(= CLI `utopinn trace --json` 消费的路由):
+// sources.worldInfoActivated 必须等于 worldInfo.activated 明细长度 ——
+// 全位置口径(AN/EM/outlet/atDepth 桶数≠条目数,见 generate-context.js:1093)。
+const trace = await req('GET', `/api/utopinn/diag/jobs/${encodeURIComponent(jobId)}/trace`);
+const tsrc = trace.body?.sources;
+log('diag trace 200', trace.status === 200 && !!tsrc, `status=${trace.status}`);
+log('trace worldInfoActivated === worldInfo.activated.length',
+    typeof tsrc?.worldInfoActivated === 'number' && tsrc.worldInfoActivated === (tsrc.worldInfo?.activated ?? []).length,
+    `activated=${tsrc?.worldInfoActivated} entries=${(tsrc?.worldInfo?.activated ?? []).length}`);
+
 // 4. 越权面:不存在的 job 404
 const missing = await req('GET', '/api/utopinn/jobs/no-such-job-id');
 log('不存在 job → 404', missing.status === 404, `status=${missing.status}`);

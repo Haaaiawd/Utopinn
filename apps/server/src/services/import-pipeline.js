@@ -32,6 +32,7 @@ import {
 import { InvalidArgumentError } from '../storage/errors.js';
 import { assertSafeRepoName } from '../storage/name-validation.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
+import { embeddedWorldName } from './embedded-world.js';
 
 export const IMPORT_KINDS = Object.freeze(['char', 'world', 'preset', 'persona']);
 
@@ -97,11 +98,19 @@ function buildCardPreview(card, meta) {
     const bookEntries = Array.isArray(book?.entries) ? book.entries.length
         : (book?.entries && typeof book.entries === 'object' ? Object.keys(book.entries).length : 0);
 
-    const regexScripts = Array.isArray(extensions.regex_scripts) ? extensions.regex_scripts : [];
+    // 两种键名都收:regex_scripts(ST v2 卡面约定)+ regexScripts(camelCase
+    // 变体,部分导出器/手写卡用)——GH#3 要求 preview 如实反映脚本存量。
+    const regexScripts = [
+        ...(Array.isArray(extensions.regex_scripts) ? extensions.regex_scripts : []),
+        ...(Array.isArray(extensions.regexScripts) ? extensions.regexScripts : []),
+    ];
     const regexScriptNames = regexScripts
         .map((script) => script?.scriptName || script?.id || null)
         .filter(Boolean)
         .slice(0, MAX_REGEX_NAMES);
+    // 卡面逐脚本 disabled 标记(TH/ST regex script 形)。全部 disabled 时
+    // regexDisabled=true —— 脚本装了也不会跑,preview 必须明说(GH#3)。
+    const regexScriptsDisabled = regexScripts.filter((s) => s?.disabled === true).length;
 
     const depthPrompt = (extensions.depth_prompt && typeof extensions.depth_prompt === 'object' && !Array.isArray(extensions.depth_prompt))
         ? {
@@ -114,6 +123,16 @@ function buildCardPreview(card, meta) {
     const cardAppFiles = (extensions.card_app?.files && typeof extensions.card_app.files === 'object' && !Array.isArray(extensions.card_app.files))
         ? Object.keys(extensions.card_app.files).length : 0;
 
+    // 内嵌书的物化落点名:显式绑定优先,缺绑但有条目时按上游
+    // importEmbeddedWorldInfo 规则派生(character_book.name ‖ "名's
+    // Lorebook",见 services/embedded-world.js)——与 commit 物化/绑定
+    // 同名,preview 报的就是 commit 会写的名。nameHint 补无名卡的
+    // 文件名干名回退(对齐 commit 的 displayName 推导序)。
+    const boundWorld = getBoundWorldName(card);
+    const derivedWorldName = !boundWorld && bookEntries > 0
+        ? embeddedWorldName(card, { nameHint: meta.nameHint ?? '' })
+        : null;
+
     const summary = {
         name: typeof data.name === 'string' ? data.name : (typeof card?.name === 'string' ? card.name : ''),
         spec: detectSpec(card),
@@ -121,11 +140,19 @@ function buildCardPreview(card, meta) {
         bookEntries,
         regexScripts: regexScripts.length,
         regexScriptNames,
+        // GH#3:卡侧全灭位 —— 逐脚本 disabled 全中时 true;服务端
+        // extension_settings.disabledExtensions 全灭由 endpoint 叠加。
+        regexScriptsDisabled,
+        regexDisabled: regexScripts.length > 0 && regexScriptsDisabled === regexScripts.length,
         depthPrompt,
         firstGreetingLen: typeof data.first_mes === 'string' ? data.first_mes.length : 0,
         alternateGreetings: Array.isArray(data.alternate_greetings) ? data.alternate_greetings.length : 0,
         cardAppFiles,
-        boundWorld: getBoundWorldName(card),
+        boundWorld,
+        // 内嵌书物化落点名:有书才有落点(bound‖derived);无书 → null,
+        // endpoint 的撞名预警也只对内嵌书发言。
+        embeddedWorldName: bookEntries > 0 ? (boundWorld ?? derivedWorldName) : null,
+        embeddedWorldFallback: derivedWorldName != null,
         tags: Array.isArray(data.tags) ? data.tags : [],
         creator: typeof data.creator === 'string' ? data.creator : '',
         avatar: meta.imageBuffer ? 'bundled' : 'none',
@@ -141,6 +168,9 @@ function buildCardPreview(card, meta) {
     }
     if (regexScripts.length > 0) {
         warnings.push(`${regexScripts.length} regex script(s) embedded — listed for review, never executed by import.`);
+        if (regexScriptsDisabled === regexScripts.length) {
+            warnings.push(`All ${regexScripts.length} embedded regex script(s) are marked disabled by the card — they will not execute at generation time.`);
+        }
     }
     if (cardAppFiles > 0) {
         warnings.push(`${cardAppFiles} CardApp file(s) will be extracted to card-apps storage on commit.`);
@@ -150,6 +180,9 @@ function buildCardPreview(card, meta) {
     }
     if (bookEntries > 0) {
         warnings.push(`Embedded character_book with ${bookEntries} entr${bookEntries === 1 ? 'y' : 'ies'} travels with the card.`);
+        if (summary.embeddedWorldFallback) {
+            warnings.push(`Embedded character_book is not linked to a world — it will materialize as "${summary.embeddedWorldName}" and the card will be bound to it on commit.`);
+        }
     }
     if (Array.isArray(meta.auxAssets) && meta.auxAssets.length > 0) {
         const counts = { sprite: 0, background: 0, misc: 0 };
@@ -299,7 +332,7 @@ function sniffJsonDocument(obj, fileName) {
     }
     // 卡:spec 字段 / v1 平铺 / gradio char_name
     if ((typeof obj.spec === 'string' && obj.spec.startsWith('chara_card')) || looksLikeCardV1(obj)) {
-        const { summary, warnings } = buildCardPreview(obj, { imageBuffer: null, format: 'json' });
+        const { summary, warnings } = buildCardPreview(obj, { imageBuffer: null, format: 'json', nameHint: stemOf(fileName) });
         const name = summary.name || stemOf(fileName);
         return {
             kind: 'char', name,
@@ -345,7 +378,7 @@ export function detectImportPayload({ fileName, buffer } = {}) {
 
     if (isPng(u8)) {
         const { format, card, imageBuffer } = detectPngCard(u8);
-        const { summary, warnings } = buildCardPreview(card, { imageBuffer, format });
+        const { summary, warnings } = buildCardPreview(card, { imageBuffer, format, nameHint: stemOf(fileName) });
         const name = summary.name || stemOf(fileName);
         return {
             kind: 'char', name, targetName: name,
@@ -356,7 +389,7 @@ export function detectImportPayload({ fileName, buffer } = {}) {
 
     if (u8[0] === ZIP_MAGIC_0 && u8[1] === ZIP_MAGIC_1) {
         const found = detectZip(u8, ext);
-        const { summary, warnings } = buildCardPreview(found.card, found);
+        const { summary, warnings } = buildCardPreview(found.card, { ...found, nameHint: stemOf(fileName) });
         if (found.format === 'byaf' && found.byaf) {
             const { images, scenarios, chatBackgrounds } = found.byaf;
             if (images > 1) warnings.push(`${images - 1} extra BYAF image(s) not persisted in this slice (first image becomes the avatar).`);

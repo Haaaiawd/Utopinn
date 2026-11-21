@@ -78,7 +78,9 @@ function makeSyntheticResponse() {
  * @param {string} [input.chatName] chat name (no .jsonl) — prompt 上下文源
  * @param {object} input.card loaded card doc (stscript-env 已 load 的可复用)
  * @param {string} input.prompt quietPrompt 正文
- * @param {object} [input.params] /gen named-args {responseLength, trimToSentence, stop, quietToLoud, quietName}
+ * @param {object} [input.params] /gen named-args {responseLength, trimToSentence, stop, quietToLoud, quietName,
+ *   lorebookEntries(GH#9 th.generate 选择性 WI 注入——显式圈定本轮注入条目,
+ *   ref 形见 generate-context.js resolveLorebookEntryRefs;persist_target 仍恒 none)}
  * @param {string} [input.userName] persona name(macro name1)
  * @param {number} [input.timeoutMs] job 等待上限(默认 180s)
  * @returns {Promise<{text:string, jobId:string, status:string, diagId:string}>}
@@ -145,7 +147,13 @@ export async function runQuietGeneration({
             type: 'quiet',
             // 上游 generateQuietPrompt:quiet 任务不进 WI/AN(skipWIAN),
             // quietPrompt 作独立 system 注入(assemble.ts quietPrompt 位)。
-            overrides: { quietPrompt: String(prompt ?? ''), skipWIAN: true },
+            // GH#9 lorebookEntries:显式圈定的条目例外(选择性 WI 注入,
+            // skipWIAN 不抹它;ref 全部未命中 → 抛 lorebook_entries_unresolved)。
+            overrides: {
+                quietPrompt: String(prompt ?? ''),
+                skipWIAN: true,
+                ...(params.lorebookEntries !== undefined ? { lorebookEntries: params.lorebookEntries } : {}),
+            },
             mainApi: 'openai',
         }));
     } catch (assembleError) {
@@ -202,46 +210,62 @@ export async function runQuietGeneration({
     request.utopinnTrace = trace;
     request.utopinnSources = sources;
 
-    const response = makeSyntheticResponse();
-    await runLukerDispatch(request, response, {
-        endpoint: 'utopinn-quiet-generate',
-        select: (b) => selectChatCompletionDispatch(b),
-    });
-    if (response.statusCode !== 200) {
-        throw new Error(`quiet generation dispatch rejected: ${JSON.stringify(response.body ?? response.statusCode)}`);
-    }
+    // GH#9 lorebookEntries 回执:圈定命中/未命中明细 + 实际激活条目。
+    // 成功路径挂返回,失败路径挂 error.lorebook——部分未命中撞上后端
+    // 事故时,未命中名单不该跟着事故一起吞掉(调用方只见 502 就查不
+    // 到「GhostBook 写错了」这层)。
+    const lorebookReceipt = sources?.worldInfo?.selective
+        ? { ...sources.worldInfo.selective, activated: sources.worldInfo.activated ?? [] }
+        : null;
 
-    // 终态等待:poll getTaskByRequestId(同 jobGet REST 面语义)。
-    const deadline = Date.now() + timeoutMs;
-    let job = null;
-    while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 600));
-        try { job = getTaskByRequestId(jobId, handle); } catch { job = null; }
-        if (job && TERMINAL.has(String(job.status))) break;
-    }
-    if (!job) {
-        throw new Error(`quiet generation job lost: ${jobId}`);
-    }
-    if (!TERMINAL.has(String(job.status))) {
-        throw new Error(`quiet generation timeout after ${timeoutMs}ms (status=${job.status})`);
-    }
-    // ack → completed(kind:'none' 无楼层可落,ack 即终态语义)
-    acknowledgeGenerationJobsForRequest(request, [jobId]);
-    const status = String(job.status);
-    if (status === 'failed' || status === 'cancelled') {
-        diagEmit({
-            lvl: 'warn', kind: 'generate', code: 'quiet_terminal',
-            msg: `quiet gen ${charDir}/${chatName ?? '-'} ${status}: ${String(job.error ?? '').slice(0, 200)}`,
-            ctx: { charDir, chatId: chatName, verb: 'quiet', diagId },
+    try {
+        const response = makeSyntheticResponse();
+        await runLukerDispatch(request, response, {
+            endpoint: 'utopinn-quiet-generate',
+            select: (b) => selectChatCompletionDispatch(b),
         });
-        throw new Error(job.error || `quiet generation ${status}`);
+        if (response.statusCode !== 200) {
+            throw new Error(`quiet generation dispatch rejected: ${JSON.stringify(response.body ?? response.statusCode)}`);
+        }
+
+        // 终态等待:poll getTaskByRequestId(同 jobGet REST 面语义)。
+        const deadline = Date.now() + timeoutMs;
+        let job = null;
+        while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, 600));
+            try { job = getTaskByRequestId(jobId, handle); } catch { job = null; }
+            if (job && TERMINAL.has(String(job.status))) break;
+        }
+        if (!job) {
+            throw new Error(`quiet generation job lost: ${jobId}`);
+        }
+        if (!TERMINAL.has(String(job.status))) {
+            throw new Error(`quiet generation timeout after ${timeoutMs}ms (status=${job.status})`);
+        }
+        // ack → completed(kind:'none' 无楼层可落,ack 即终态语义)
+        acknowledgeGenerationJobsForRequest(request, [jobId]);
+        const status = String(job.status);
+        if (status === 'failed' || status === 'cancelled') {
+            diagEmit({
+                lvl: 'warn', kind: 'generate', code: 'quiet_terminal',
+                msg: `quiet gen ${charDir}/${chatName ?? '-'} ${status}: ${String(job.error ?? '').slice(0, 200)}`,
+                ctx: { charDir, chatId: chatName, verb: 'quiet', diagId },
+            });
+            throw new Error(job.error || `quiet generation ${status}`);
+        }
+        const text = trimGenerated(job.text ?? '', params);
+        diagEmit({
+            lvl: 'info', kind: 'generate', code: 'quiet_terminal',
+            msg: `quiet gen ${charDir}/${chatName ?? '-'} ${status} ${text.length}ch`,
+            ctx: { charDir, chatId: chatName, verb: 'quiet', diagId },
+            data: { jobId, chars: text.length },
+        });
+        return {
+            text, jobId, status: 'completed', diagId,
+            ...(lorebookReceipt ? { lorebook: lorebookReceipt } : {}),
+        };
+    } catch (error) {
+        if (lorebookReceipt?.unresolved?.length) error.lorebook = lorebookReceipt;
+        throw error;
     }
-    const text = trimGenerated(job.text ?? '', params);
-    diagEmit({
-        lvl: 'info', kind: 'generate', code: 'quiet_terminal',
-        msg: `quiet gen ${charDir}/${chatName ?? '-'} ${status} ${text.length}ch`,
-        ctx: { charDir, chatId: chatName, verb: 'quiet', diagId },
-        data: { jobId, chars: text.length },
-    });
-    return { text, jobId, status: 'completed', diagId };
 }

@@ -32,6 +32,18 @@ import { PatchTestFailedError, PatchMissingParentError, UnsupportedPatchOpError 
 import { getChatRepo, getWorldInfoRepo } from '../storage/index.js';
 import { createPrivateRepresentation, sendJsonResource, sendPrivateRepresentation, sendResourceReadError } from '../http-resource-cache.js';
 import { buildCharacterProjection, buildCharacterSourceView } from '../character-resource-view.js';
+// char_state 侧车读写面已下沉 services/character-state.js(变量宏 char 域
+// 持久化 GH#2 复用);本文件经 re-export 维持既有调用方签名不变。
+import {
+    CHARACTER_STATE_FILE_PREFIX,
+    CHARACTER_STATE_FILE_SUFFIX,
+    normalizeCharacterStateNamespace,
+    getCharacterStateSidecarPath,
+    readCharacterStateSidecar,
+    getAllCharacterStateSidecarPaths,
+    renameAllCharacterStateSidecars,
+    deleteAllCharacterStateSidecars,
+} from '../services/character-state.js';
 
 // With 100 MB limit it would take roughly 3000 characters to reach this limit
 const memoryCacheCapacity = getConfigValue('performance.memoryCacheCapacity', '100mb');
@@ -41,8 +53,7 @@ const isAndroid = process.platform === 'android';
 // Use shallow character data for the character list
 const useShallowCharacters = isAndroid || !!getConfigValue('performance.lazyLoadCharacters', true, 'boolean');
 const useDiskCache = !!getConfigValue('performance.useDiskCache', true, 'boolean');
-const CHARACTER_STATE_FILE_PREFIX = '.state.';
-const CHARACTER_STATE_FILE_SUFFIX = '.json';
+// CHARACTER_STATE_FILE_PREFIX/_SUFFIX 已移至 services/character-state.js 统一持有。
 
 class DiskCache {
     /**
@@ -2795,40 +2806,6 @@ function getPngName(file, directories, options = {}) {
     return file;
 }
 
-function normalizeCharacterStateNamespace(namespace) {
-    const raw = String(namespace || '').trim().toLowerCase();
-    if (!raw) {
-        return '';
-    }
-    return raw.replace(/[^a-z0-9._-]/g, '_').slice(0, 96);
-}
-
-function getCharacterStateSidecarPath(characterFilePath, namespace) {
-    const safeNamespace = normalizeCharacterStateNamespace(namespace);
-    if (!safeNamespace) {
-        return '';
-    }
-    const parsed = path.parse(characterFilePath);
-    return path.join(parsed.dir, `${parsed.name}${CHARACTER_STATE_FILE_PREFIX}${safeNamespace}${CHARACTER_STATE_FILE_SUFFIX}`);
-}
-
-function readCharacterStateSidecar(characterFilePath, namespace) {
-    const stateFilePath = getCharacterStateSidecarPath(characterFilePath, namespace);
-    if (!stateFilePath || !fs.existsSync(stateFilePath)) {
-        return null;
-    }
-    const raw = tryReadFileSync(stateFilePath);
-    if (!raw) {
-        return null;
-    }
-    const parsed = tryParse(raw);
-    if (!_.isObjectLike(parsed) || Array.isArray(parsed)) {
-        console.warn(`Invalid character state sidecar JSON: ${stateFilePath}`);
-        return null;
-    }
-    return parsed;
-}
-
 function mapCharacterStatePatchError(error, response) {
     if (error instanceof PatchTestFailedError || error instanceof PatchMissingParentError) {
         return response.status(409).send({ error: 'Character state patch conflict.' });
@@ -2849,53 +2826,8 @@ export {
     mapCharacterStatePatchError,
 };
 
-function getAllCharacterStateSidecarPaths(characterFilePath) {
-    const parsed = path.parse(characterFilePath);
-    if (!fs.existsSync(parsed.dir)) {
-        return [];
-    }
-    const prefix = `${parsed.name}${CHARACTER_STATE_FILE_PREFIX}`;
-    const files = fs.readdirSync(parsed.dir, { withFileTypes: true });
-    return files
-        .filter(entry => entry.isFile())
-        .map(entry => entry.name)
-        .filter(fileName => fileName.startsWith(prefix) && fileName.endsWith(CHARACTER_STATE_FILE_SUFFIX))
-        .map(fileName => path.join(parsed.dir, fileName));
-}
-
-function renameAllCharacterStateSidecars(sourceCharacterPath, targetCharacterPath) {
-    const sourceParsed = path.parse(sourceCharacterPath);
-    const targetParsed = path.parse(targetCharacterPath);
-    const sourcePrefix = `${sourceParsed.name}${CHARACTER_STATE_FILE_PREFIX}`;
-    const targetPrefix = `${targetParsed.name}${CHARACTER_STATE_FILE_PREFIX}`;
-    const sourceFiles = getAllCharacterStateSidecarPaths(sourceCharacterPath);
-    if (sourceFiles.length === 0) {
-        return;
-    }
-
-    for (const sourceFilePath of sourceFiles) {
-        const sourceName = path.basename(sourceFilePath);
-        const namespaceWithSuffix = sourceName.slice(sourcePrefix.length);
-        const targetName = `${targetPrefix}${namespaceWithSuffix}`;
-        const targetFilePath = path.join(targetParsed.dir, targetName);
-        if (fs.existsSync(targetFilePath)) {
-            throw new Error(`Character state sidecar rename collision: ${targetFilePath}`);
-        }
-        fs.copyFileSync(sourceFilePath, targetFilePath);
-        fs.unlinkSync(sourceFilePath);
-    }
-}
-
-function deleteAllCharacterStateSidecars(characterFilePath) {
-    const sidecars = getAllCharacterStateSidecarPaths(characterFilePath);
-    for (const sidecarPath of sidecars) {
-        try {
-            fs.unlinkSync(sidecarPath);
-        } catch (error) {
-            console.warn('Failed to delete character state sidecar:', sidecarPath, error);
-        }
-    }
-}
+// getAllCharacterStateSidecarPaths / renameAllCharacterStateSidecars /
+// deleteAllCharacterStateSidecars 已移至 services/character-state.js(上方 import)。
 
 /**
  * Gets the preserved name for the uploaded file if the request is valid.
