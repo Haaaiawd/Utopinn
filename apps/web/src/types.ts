@@ -2,14 +2,14 @@
 // (import type only — protocol ships types + guards, the SPA must not
 // re-declare server contracts).
 
-/** Primary navigation domains — 规范稿四 rail 域(home/chat/studio/plugins)
+/** Primary navigation domains — 规范稿五 rail 域(home/chat/studio/plugins/admin)
  *  + 旧 IA v3 视图(stories/rules/import/extensions/settings/foyer,保留可达)
  *  + 'hub'(移动端资产工坊页)。rail 域 = 左轨 nav.rail 贡献点直接映射。 */
-export const VIEW_IDS = ['home', 'chat', 'studio', 'plugins', 'hub', 'foyer', 'stories', 'rules', 'import', 'extensions', 'settings'] as const;
+export const VIEW_IDS = ['home', 'chat', 'studio', 'plugins', 'admin', 'hub', 'foyer', 'stories', 'rules', 'import', 'extensions', 'settings'] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
 
-/** 左轨四域(规范稿 railTab);非 rail 视图回落 'chat' 侧栏树。 */
-export const RAIL_VIEWS = ['home', 'chat', 'studio', 'plugins'] as const;
+/** 左轨五域(规范稿 railTab);非 rail 视图回落 'chat' 侧栏树。 */
+export const RAIL_VIEWS = ['home', 'chat', 'studio', 'plugins', 'admin'] as const;
 export type RailId = (typeof RAIL_VIEWS)[number];
 
 /** 舞台形态 —— s.stage,聊天之外留给 stage 插件占位(utopinn 市场件 u-stage-*)。 */

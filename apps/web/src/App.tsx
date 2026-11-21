@@ -33,6 +33,7 @@ import { shellFeature } from './features/shell';
 import { chatFeature } from './features/chat';
 import { studioFeature } from './features/studio';
 import { pluginsFeature } from './features/plugins';
+import { adminFeature } from './features/admin';
 import { panelsFeature } from './features/panels';
 import { stagepackFeature } from './features/stagepack';
 
@@ -43,6 +44,7 @@ kernel.applyFeature(shellFeature);
 kernel.applyFeature(chatFeature);
 kernel.applyFeature(studioFeature);
 kernel.applyFeature(pluginsFeature);
+kernel.applyFeature(adminFeature);
 kernel.applyFeature(panelsFeature);
 kernel.applyFeature(stagepackFeature);
 
@@ -97,6 +99,7 @@ function Shell() {
     const [narrow, setNarrow] = useState(() => window.innerWidth <= MOBILE_BP);
     const [studioNav, setStudioNav] = useState('lore');
     const [pluginsNav, setPluginsNav] = useState<'installed' | 'market'>('installed');
+    const [adminNav, setAdminNav] = useState('overview');
     const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
 
     /* ——— SPEC-DATA 目录态(待接:目录全是 mock 种子,消费面已标) ——— */
@@ -399,6 +402,8 @@ function Shell() {
         setStudioNav: (v: string) => { setStudioNav(v); setMobileDrawer(false); },
         pluginsNav,
         setPluginsNav: (v: 'installed' | 'market') => { setPluginsNav(v); setMobileDrawer(false); },
+        adminNav,
+        setAdminNav: (v: string) => { setAdminNav(v); setMobileDrawer(false); },
         selectedPlugin, setSelectedPlugin,
         models: MOCK_MODELS, activeModel, setActiveModel,
         presets: MOCK_PRESETS, activePresetId,
@@ -429,7 +434,7 @@ function Shell() {
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,
         accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
-        sheetSnap, vpMode, isMobile, studioNav, pluginsNav, selectedPlugin,
+        sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
         activePresetId, presetParams, globalLore, worldbook, selectedLoreId,
         notesText, chatSettings, mvu, mvuStep,
         echoMvu, bridgeOp, stageData, openSettings, activeModel,

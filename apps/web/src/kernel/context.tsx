@@ -144,11 +144,14 @@ export interface ShellCtx {
     setVpMode: (m: VpMode) => void;
     isMobile: boolean;
 
-    /* ——— studio/plugins 域内导航 ——— */
+    /* ——— studio/plugins/admin 域内导航 ——— */
     studioNav: string;
     setStudioNav: (v: string) => void;
     pluginsNav: 'installed' | 'market';
     setPluginsNav: (v: 'installed' | 'market') => void;
+    /** 管理域分区索引(overview / users / config)。 */
+    adminNav: string;
+    setAdminNav: (v: string) => void;
     /** 插件详情卡选中件 —— rail 插件页点行落点(顶部详情卡);
      *  'mkt:' 前缀 = mock 市场目录件,无前缀 = 服务端插件 id。null 回总览。 */
     selectedPlugin: string | null;
