@@ -77,3 +77,35 @@ wired:false 三块:`lore`/`chapters`/`channels`(hydratePanelTypes 机制可自�
 1. 三处 patchSettings 接线(连接段+全局栈+预设默认,各几十行,服务端全备)
 2. `GET /api/utopinn/models` 水合进 App(消灭最显眼的「在线播假数据」)
 3. 删 MOCK_MVU 全局袋+五个无效设置项(零风险减负)
+
+---
+
+## 附录:壳层 chrome 演进史与悬案(v3 思考面)
+
+顶栏一天迭代四版后被用户判删,历史与遗留问题记此:
+
+**演进**:假红绿灯点+重复字标 → 活面包屑(面·会话) → 放大 LogoU+字标撑栏
+→ (用户:顶栏 logo 与侧栏 logo 叠两层,「上面干脆别放东西」)→ 左侧清空
+→ (用户:Desktop/Mobile 分段「也没必要」)→ **整条 top-chrome-bar 拆除**
+(36px 回收)。品牌唯一例现在左栏头 `brand-header-row`(LogoU 钮=侧栏开关,
+字标仅在 sidebar open 时淡入)。
+
+**悬案(留给 v3 判断)**:
+
+1. **壳层现在没有全局位**:连接状态/当前会话上下文/全局动作无家可归。
+   面包屑方案已被用户否过一次——若要状态指示,候选面是左栏头、
+   account-dock、或舞台头,别再复活顶条。
+2. **workspace-inset 边界**:`.workspace-inset` 原为嵌在外 chrome 内的
+   圆角卡(2px border + radius 12);顶条消失后它顶到窗口边缘,
+   视觉接缝需实看(可能要把外 chrome 背景与 inset 关系重调)。
+3. **vpMode 只剩 `?vp=` URL 入口**(截图 harness 用),UI 无消费;
+   setVpMode 在 ShellCtx 是半死 API——保留给 harness 或收成内部态。
+4. **brand-header-row 字标仅 open 态可见**:收起时品牌只剩一枚
+   图标钮;若用户再提品牌存在感,方向是让字标在收起态也常驻
+   (或干脆接受极简)。
+5. **左轨图标已 1.3x(46px 钮/26px 图标)**,字阶整体抬档
+   (ui 基准 13px)——后续若嫌密度降,微调用 token 别回写死值。
+
+**用户反馈基调**(供校准):讨厌纯装饰占位(假红点)、讨厌重复元素
+(双层 logo)、偏好「不放就不如删干净」、对小字号零容忍
+(字阶地板 11px 起)。

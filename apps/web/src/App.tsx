@@ -18,7 +18,7 @@ import type { ActivePersona } from './api/personas';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
-import { TopChrome, LeftChrome } from './components/shell/Chrome';
+import { LeftChrome } from './components/shell/Chrome';
 import { Workbench } from './components/shell/Workbench';
 import { bumpPanelFreq } from './components/shell/panelFreq';
 import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
@@ -541,9 +541,6 @@ function Shell() {
     return (
         <ShellProvider value={shell}>
             <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
-                {/* 规范稿:top-chrome-bar 在 root 外。vpMode=mobile 的预览态保留
-                    36px 顶条(回 Desktop 的唯一出口);真窄屏 auto 分支不进此列。 */}
-                {(!isMobile || vpMode === 'mobile') && <TopChrome />}
                 {isMobile ? (
                     <main className="min-h-0 flex-1">
                         <MobileFrame />

@@ -1,39 +1,11 @@
-// 规范稿外框:top-chrome-bar(36px)| left-chrome(rail 56px + tree 228px +
-// account-dock 102/58px)。壳不识域:rail 按钮/树体全走贡献点(nav.rail /
-// sidebar.tree),齿轮→settings,头像→account pop。
+// 规范稿外框:left-chrome(rail 64px + tree 228px + account-dock 102/58px)。
+// 壳不识域:rail 按钮/树体全走贡献点(nav.rail / sidebar.tree),
+// 齿轮→settings,头像→account pop。
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
-
-/** 36px 顶条:左侧留空(品牌唯一例在左栏头);右 Desktop/Mobile 分段。 */
-export function TopChrome() {
-    const shell = useShell();
-    return (
-        <header className="top-chrome-bar">
-            <div />
-            <div className="flex items-center gap-2">
-                {/* 规范稿 Desktop/Mobile 分段控件 */}
-                <div className="inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
-                    {(['desktop', 'mobile'] as const).map((m) => {
-                        const act = (m === 'mobile') === shell.isMobile;
-                        return (
-                            <button
-                                key={m}
-                                className="rounded-[6px] px-2.5 py-0.5 text-[11px] font-medium transition-colors"
-                                style={act ? { background: 'var(--primary-bg)', color: 'var(--primary-fg)' } : { color: 'var(--fg-secondary)' }}
-                                onClick={() => shell.setVpMode(m)}
-                            >
-                                {m === 'mobile' ? 'Mobile' : 'Desktop'}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-        </header>
-    );
-}
 
 /** 56px rail 窄条(规范稿左侧 chrome 的固定列,四域按钮 38×38 / icon 20)。 */
 function Rail() {
