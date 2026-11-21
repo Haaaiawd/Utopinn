@@ -434,11 +434,23 @@ export function notifyJobTextProgress(job) {
 }
 
 function buildGenerationJobRequestMeta(request, persistTarget) {
+    const lukerGeneration = request.body?.luker_generation;
     return {
         verb: String(request.body?.type || ''),
         api: String(request.body?.chat_completion_source || request.body?.api_type || request.body?.api || 'unknown'),
         char_name: String(persistTarget?.char_name || request.body?.char_name || 'Assistant'),
         model: String(request.body?.model || ''),
+        // TASK-044 theater 契约:产出按「结构化 JSON 对象」解读——置真位
+        // 有两个合法载体,等价宽松(luker_generation.theater|structured、
+        // persist_target.theater|structured);不显式置真 = 原文落 mes,
+        // 不猜不捏 extra(json_schema 存在本身不算置真——schema 可以描
+        // 任意业务形状,只有调用方点名剧场契约才提 mes/extra)。
+        theater: Boolean(
+            lukerGeneration?.theater
+            || lukerGeneration?.structured
+            || persistTarget?.theater
+            || persistTarget?.structured
+        ),
         directories: {
             chats: String(request.user?.directories?.chats || ''),
             groupChats: String(request.user?.directories?.groupChats || ''),
@@ -517,6 +529,9 @@ export function createGenerationJob(request, options) {
         persistenceInFlight: false,
         requestMeta: null,
         modelName: '',
+        // TASK-044:结构化产出的解析快照({text,name,extra}|null),
+        // completeGenerationJobFromText 落定,GET /jobs/:id 透出。
+        theater: null,
     };
 
     // A recycled job_id (the client re-POSTs the same job_id when it retries a
@@ -531,6 +546,7 @@ export function createGenerationJob(request, options) {
         job.events = [];
         job.lastSeq = 0;
         job.text = '';
+        job.theater = null; // 回收重跑:上一轮结构化快照一并清,防串戏
     }
 
     clearGenerationJobPersistenceTimer(job);
@@ -713,13 +729,117 @@ export function failGenerationJob(job, errorMessage = 'Unknown error occurred') 
     notifyJobStatus(job);
 }
 
+// ---------------------------------------------------------------------------
+// TASK-044 剧场楼层 extra 契约(v0)
+//
+// 楼层 extra 是宽松透传袋——scene{bg?,bgm?}/choices[{label|text,goto?}]/
+// narrator(true)|type('narrator' 上游惯例,regex 持久车道已认)三类剧场位,
+// 客户端写侧(append/PATCH/messages)由 chats.js 全透传(只剥协议层
+// luker_generation_id);本段补「生成侧兜底 persist」的两条来路:
+//
+//   1. 客户端指定 —— luker_generation.persist_target.extra 浅袋,
+//      persist 时并入楼层 extra。服务端簿记键(api/model/
+//      luker_server_persisted/luker_generation_id/gen_id)是生成真相,
+//      袋内同键被滤掉(客户端不可伪造簿记)。
+//   2. 模型结构化产出 —— requestMeta.theater 置真(置真位见
+//      buildGenerationJobRequestMeta 注释)时,job.text 按 JSON 对象解析:
+//      首个非空正文键(mes|text|line|content|dialogue|reply|response|
+//      narration)提为楼层 mes;speaker|name 提为楼层 name(剧场逐楼
+//      speaker 归因);其余键原样抬进 extra —— 不剥不捏,未识别键也进
+//      extra 而不是丢(scene/choices/narrator/type 全走这条)。
+//      解析失败/非对象 → null,调用方原文落 mes(诚实回退,不捏 extra)。
+//
+// job.theater = 解析快照({text,name,extra}),completeGenerationJobFromText
+// 落定 → GET /api/utopinn/jobs/:id 透出 choices/theater;diag-bus 记
+// theater_extra 摘要(观测面可见提键数,不落正文)。
+// ---------------------------------------------------------------------------
+
+/** 结构化产出 → 楼层正文的候选键(按序取首个非空字符串)。 */
+const THEATER_LIFT_TEXT_KEYS = ['mes', 'text', 'line', 'content', 'dialogue', 'reply', 'response', 'narration'];
+/** 结构化产出 → 楼层 speaker 归因的候选键(name 优先,正典楼层键名)。 */
+const THEATER_LIFT_NAME_KEYS = ['name', 'speaker'];
+/** 服务端簿记键——客户端 persistTarget.extra 袋不可覆盖。 */
+const FLOOR_EXTRA_SERVER_KEYS = new Set(['api', 'model', 'luker_server_persisted', 'luker_generation_id', 'gen_id']);
+
+function isLooseObject(value) {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * persistTarget.extra 浅袋 → 可并入楼层 extra 的键集。
+ * 非对象 → {};簿记键过滤(服务端真相不可被客户端袋盖)。
+ */
+function pickClientFloorExtra(persistTarget) {
+    const bag = persistTarget?.extra;
+    if (!isLooseObject(bag)) {
+        return {};
+    }
+    const out = {};
+    for (const [key, value] of Object.entries(bag)) {
+        if (!FLOOR_EXTRA_SERVER_KEYS.has(key)) {
+            out[key] = value;
+        }
+    }
+    return out;
+}
+
+/**
+ * 结构化产出解析:requestMeta.theater 置真 + text 顶层是 JSON 对象 →
+ * {mes, extra, name};否则 null。
+ * mes 找不到正文键时回退原文(JSON 原文,不丢信息);extra 收一切非
+ * 正文/name 键(宽松透传,剧场字段自由演进)。
+ */
+function computeTheaterLift(job, text) {
+    if (job?.requestMeta?.theater !== true) {
+        return null;
+    }
+    let parsed = null;
+    try {
+        parsed = JSON.parse(String(text ?? ''));
+    } catch {
+        parsed = null;
+    }
+    if (!isLooseObject(parsed)) {
+        return null;
+    }
+    const extra = { ...parsed };
+    let mes = '';
+    for (const key of THEATER_LIFT_TEXT_KEYS) {
+        if (typeof extra[key] === 'string' && extra[key].trim()) {
+            mes = extra[key];
+            delete extra[key];
+            break;
+        }
+    }
+    let name;
+    for (const key of THEATER_LIFT_NAME_KEYS) {
+        if (typeof extra[key] === 'string' && extra[key].trim()) {
+            name = extra[key].trim();
+            delete extra[key];
+            break;
+        }
+    }
+    return { mes: mes || String(text ?? ''), extra, name };
+}
+
+/** job.theater 快照形(供 jobs 详情面;name 缺省 → null)。 */
+function theaterSnapshotOfLift(lift) {
+    if (!lift) {
+        return null;
+    }
+    return { text: lift.mes, name: lift.name ?? null, extra: lift.extra };
+}
+
 async function persistGeneratedReply(job, text, generationId = '', modelName = '') {
     const persistTarget = job?.persistTarget;
     if (!persistTarget || typeof persistTarget !== 'object') {
         return false;
     }
 
-    const finalText = String(text || '');
+    const rawText = String(text || '');
+    // theater 置真时按结构化产出提 mes/name/extra;否则原文 + 空袋。
+    const lift = computeTheaterLift(job, rawText);
+    const finalText = lift?.mes || rawText;
     if (!finalText) {
         return false;
     }
@@ -727,7 +847,7 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
     const now = new Date().toISOString();
     const genStarted = new Date(Number(job?.createdAt) || Date.now()).toISOString();
     const message = {
-        name: String(job?.requestMeta?.char_name || persistTarget.char_name || 'Assistant'),
+        name: String(lift?.name || job?.requestMeta?.char_name || persistTarget.char_name || 'Assistant'),
         is_user: false,
         is_system: false,
         send_date: now,
@@ -735,6 +855,10 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
         gen_finished: now,
         mes: finalText,
         extra: {
+            // 客户端指定袋 → 模型结构化产出(本楼专属,盖袋)→ 服务端簿记
+            // (恒最后写,api/model/luker_server_persisted 是生成真相)。
+            ...pickClientFloorExtra(persistTarget),
+            ...(lift ? lift.extra : {}),
             api: String(job?.requestMeta?.api || 'unknown'),
             model: modelName || job?.modelName || job?.requestMeta?.model || '',
             luker_server_persisted: true,
@@ -932,7 +1056,11 @@ const SWIPE_PERSIST_CAS_ATTEMPTS = 3;
  */
 async function persistGeneratedSwipe(job, text, generationId = '', modelName = '') {
     const persistTarget = job?.persistTarget;
-    const finalText = String(text || '');
+    const rawText = String(text || '');
+    // theater 置真:swipe 槽位同样按结构化产出提 mes/extra(并楼语义
+    // 不变——新槽正文 = 提后正文,新槽 extra = 提后 extra 快照)。
+    const lift = computeTheaterLift(job, rawText);
+    const finalText = lift?.mes || rawText;
     if (!persistTarget || typeof persistTarget !== 'object' || !finalText) {
         return false;
     }
@@ -965,6 +1093,10 @@ async function persistGeneratedSwipe(job, text, generationId = '', modelName = '
     }
 
     const extra = {
+        // 并楼 extra 合并序:旧楼层袋 → 客户端指定袋 → 本次结构化产出 →
+        // 服务端簿记(与 persistGeneratedReply 同序——生成真相恒最后写)。
+        ...pickClientFloorExtra(persistTarget),
+        ...(lift ? lift.extra : {}),
         api: String(job?.requestMeta?.api || 'unknown'),
         model: modelName || job?.modelName || job?.requestMeta?.model || '',
         luker_server_persisted: true,
@@ -995,6 +1127,10 @@ async function persistGeneratedSwipe(job, text, generationId = '', modelName = '
         lastFloor.send_date = sendDate;
         lastFloor.gen_started = genStarted;
         lastFloor.gen_finished = sendDate;
+        // 结构化产出携带 speaker/name → 当前槽 speaker 归因同步楼层名签。
+        if (lift?.name) {
+            lastFloor.name = lift.name;
+        }
         lastFloor.extra = {
             ...(lastFloor.extra && typeof lastFloor.extra === 'object' ? lastFloor.extra : {}),
             ...extra,
@@ -1095,6 +1231,29 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
         clearGenerationJobPersistenceTimer(job);
         notifyJobStatus(job);
         return false;
+    }
+    // TASK-044 theater 快照:结构化产出此时定稿(流式 job.text 全量已到)。
+    // jobs 详情面立即透出 choices/extra;兜底 persist 按同一份 lift 落楼,
+    // 客户端写盘路(persist_target none/自写)拿 job.theater 自行组楼层。
+    const theaterLift = computeTheaterLift(job, job.text);
+    job.theater = theaterSnapshotOfLift(theaterLift);
+    if (theaterLift && Object.keys(theaterLift.extra).length > 0) {
+        diagEmit({
+            lvl: 'info', kind: 'generate', code: 'theater_extra',
+            msg: `theater lift: keys=[${Object.keys(theaterLift.extra).join(',')}]`,
+            ctx: {
+                jobId: job.id,
+                diagId: job.diagId ?? undefined,
+                chatKey: job.chatKey,
+                verb: job.requestMeta?.verb,
+            },
+            data: {
+                keys: Object.keys(theaterLift.extra),
+                choices: Array.isArray(theaterLift.extra.choices) ? theaterLift.extra.choices.length : 0,
+                scene: isLooseObject(theaterLift.extra.scene) ? Object.keys(theaterLift.extra.scene) : [],
+                narrator: theaterLift.extra.narrator === true || theaterLift.extra.type === 'narrator',
+            },
+        });
     }
     job.status = 'awaiting_ack';
     job.updatedAt = Date.now();

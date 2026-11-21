@@ -264,6 +264,11 @@ export function apply(ctx) {
             // 可空 —— legacy 派发与补件前创建的老 job 恒 null,消费方按缺省处理。
             promptMessages: job.promptMessages ?? null,
             timedWorldInfo: job.timedWorldInfo ?? null,
+            // TASK-044 theater 契约:结构化产出(luker_generation.theater|
+            // structured 置真)的解析快照 —— {text,name,extra}|null;
+            // choices 单提一层,剧场选项区「生成返回 choices」的契约位。
+            theater: job.theater ?? null,
+            choices: job.theater?.extra?.choices ?? null,
             created_at: job.createdAt,
             updated_at: job.updatedAt,
         });
