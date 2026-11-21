@@ -111,7 +111,9 @@
         // variables
         getVariables: function (o) { return request('th.getVariables', scopeArgs(o)); },
         replaceVariables: function (variables, o) {
-            return request('th.replaceVariables', Object.assign(scopeArgs(o), { variables: variables }));
+            // force:true 显式确认丢根全量覆盖(GH#4 护栏逃生门)
+            return request('th.replaceVariables', Object.assign(scopeArgs(o),
+                { variables: variables, force: o && o.force === true ? true : undefined }));
         },
         insertOrAssignVariables: function (variables, o) {
             return request('th.insertOrAssignVariables', Object.assign(scopeArgs(o), { variables: variables }));
@@ -231,6 +233,19 @@
         // identity
         getCharacter: function () { return request('th.getCharacter'); },
         getCurrentCharacterName: function () { return request('th.getCurrentCharacterName'); },
+
+        // auxiliary generation (GH#9): independent quiet-chain generate — does NOT
+        // append a chat message. TH 契约返回 text;详细回执走 detail 形。
+        generate: function (config) {
+            return request('th.generate', config || {}).then(function (r) {
+                return (r && typeof r === 'object' && 'text' in r) ? r.text : r;
+            });
+        },
+        generateRaw: function (config) {
+            return request('th.generateRaw', config || {}).then(function (r) {
+                return (r && typeof r === 'object' && 'text' in r) ? r.text : r;
+            });
+        },
     };
 
     // TH exposes both TavernHelper.* and bare globals inside card iframes.

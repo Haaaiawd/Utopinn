@@ -44,6 +44,28 @@ const SETTINGS_GLOBAL_VARS = 'th_global_variables';
 const esc = (seg: string) => seg.replace(/~/g, '~0').replace(/\//g, '~1');
 const pathOf = (segments: string[]) => '/' + segments.map(esc).join('/');
 
+const isObj = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v);
+const BAD_KEY = (k: string) => k === '__proto__' || k === 'constructor' || k === 'prototype';
+/** TH mergeWith:plain-object 深合;数组/标量/异型整体替换(数组非逐位合)。 */
+function mergeDeep(dst: Record<string, unknown>, src: Record<string, unknown>): Record<string, unknown> {
+    for (const [k, v] of Object.entries(src)) {
+        if (BAD_KEY(k)) continue;
+        if (isObj(dst[k]) && isObj(v)) mergeDeep(dst[k]!, v);
+        else dst[k] = v;
+    }
+    return dst;
+}
+/** TH insertVariables:defaultsDeep——只补缺失键,不动既有值。 */
+function defaultsDeep(dst: Record<string, unknown>, src: Record<string, unknown>): Record<string, unknown> {
+    for (const [k, v] of Object.entries(src)) {
+        if (BAD_KEY(k)) continue;
+        if (dst[k] === undefined) dst[k] = v;
+        else if (isObj(dst[k]) && isObj(v)) defaultsDeep(dst[k]!, v);
+    }
+    return dst;
+}
+
 export function createPanelT0Handler(deps: PanelT0Deps) {
     const { client } = deps;
     /** event → listener-ids the card registered (host push filter + clear ops).
@@ -125,8 +147,8 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
         const next = mode === 'replace'
             ? args.variables
             : mode === 'merge'
-                ? { ...current, ...args.variables }
-                : { ...args.variables, ...current }; // insert-missing: existing wins
+                ? mergeDeep(current, args.variables)            // TH mergeWith 深合
+                : defaultsDeep(current, args.variables);        // insert-missing: existing wins(深)
         const ops: JsonPatchOp[] = [{ op: 'replace', path: '', value: next }];
 
         switch (scope) {
@@ -165,9 +187,25 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
             // ── variables ──────────────────────────────────────────────
             case 'th.getVariables':
                 return readScope(args as ThGetVariablesArgs);
-            case 'th.replaceVariables':
-                await writeScope(args as unknown as ThGetVariablesArgs & { variables: Record<string, unknown> }, 'replace');
+            case 'th.replaceVariables': {
+                // GH#4 护栏:TH 语义是全量替换,但静默丢根是真事故——丢根且
+                // 未 force:true → 拒绝(明细含丢根名单);server /th/call 同款。
+                const a = args as ThGetVariablesArgs & { variables?: Record<string, unknown>; force?: boolean };
+                if (!isObj(a.variables)) throw new Error('args.variables must be an object');
+                const current = await readScope(a);
+                const lostRoots = Object.keys(current).filter(k => !(k in a.variables!));
+                let lostStat: string[] = [];
+                const curSd = current.stat_data, nxtSd = a.variables.stat_data;
+                if (isObj(curSd) && isObj(nxtSd)) lostStat = Object.keys(curSd).filter(k => !(k in nxtSd));
+                if ((lostRoots.length || lostStat.length) && a.force !== true) {
+                    throw new Error(
+                        `replaceVariables root_loss: lost_roots=[${lostRoots.join(',')}]`
+                        + ` lost_stat_data_roots=[${lostStat.join(',')}]`
+                        + ' — 全量覆盖是预期行为则传 force:true;否则改用 insertOrAssignVariables/updateVariablesWith');
+                }
+                await writeScope(a as never, 'replace');
                 return null;
+            }
             case 'th.insertOrAssignVariables':
                 await writeScope(args as unknown as ThGetVariablesArgs & { variables: Record<string, unknown> }, 'merge');
                 return null;

@@ -42,12 +42,12 @@ mount(origin 去重,不回流本 mount)。
 
 | TH 法 | 位置 | 状态 |
 |---|---|---|
-| getVariables | server:239 + T0:135 | **实**(chat/global/message 三域;server 另有 lodash path 读;T0 另有 script 域) |
-| replaceVariables | server:243 + T0:137 | **实** |
-| insertOrAssignVariables | server:253 + T0:140 | **实**(server 支持路径合写) |
-| insertVariables | T0:143 | **实**(existing wins) |
-| updateVariablesWith | T0:146(shim 本地求值 ship result) | **实** |
-| deleteVariable | server:262 + T0:152 | **实** |
+| getVariables | server:249 + T0:187 | **实**(chat/global/message 三域;server 另有 lodash path 读;T0 另有 script 域) |
+| replaceVariables | server:253 + T0:190 | **实** + GH#4 护栏(全量替换语义保留;丢根/stat_data 内丢根且无 force → 400 明细不写盘,force:true 放行+warnings;server 与 T0 双端同款) |
+| insertOrAssignVariables | server:284 + T0:209 | **实**(TH mergeWith 深合:嵌套对象递归合、数组整替;带点键=路径合写生态扩展) |
+| insertVariables | server:321 + T0:212 | **实**(defaultsDeep 深补缺,既有不动) |
+| updateVariablesWith | server:340 + T0:216(shim 本地求值 ship result) | **实**(TH 本体=replaceVariables(result) 全量回写) |
+| deleteVariable | server:350 + T0:221 | **实** |
 | getMvuData / replaceMvuData | — | **缺**(T1 列名在 protocol:87-88;语义=变量面薄封,下格随消息写一起做) |
 
 ## 消息家族
@@ -97,11 +97,21 @@ server 尚无。**缺**——走 worldInfo repo + 五层来源模型,下格。
 `tavern_regex.ts`(读/写/执行 regex 脚本)。**缺**——server 侧有
 utopinn-regex.js 管线可锚(TH 面 = regex 脚本 CRUD+run,下格)。
 
-## 生成家族(缺,下格)
+## 生成家族(GH#9 已实最小面)
 
 `function/generate/*`(触发/停止/流式回调)。protocol 已列
-th.generate / th.stopGeneration(T1:83-84);server 有 /api/utopinn/generate
-job 面可锚。**缺**(卡→生成+流式回推;本格只落生命周期事件通道)。
+th.generate / th.generateRaw / th.stopGeneration(T1:89-91)。
+- `generate(config)` | server:375 + shim api.generate | **实**(走 quiet-generation
+  同链:quietPrompt 系统注入 + skipWIAN,persist_target=none 不落楼层;
+  config 面 user_input/prompt、max_tokens|responseLength、stop、trimToSentence、
+  timeout_ms、quiet_name;未映射 TH 键(injects/overrides/custom_api/
+  should_stream/image/tools/json_schema/max_chat_history)→ 回执 warnings 明示;
+  生命周期 generation_requested/started/ended|stopped 经 th.events 信箱扇出,
+  GENERATION_ENDED 负载=最终文本;失败 ok:false+diag th_generate_failed)。
+- `generateRaw(config)` | server:430 + shim | **实**(prompt/user_input 直通同链;
+  ordered_prompts 自定义消息序无 quiet 映射 → 诚实 unsupported)。
+- `stopGeneration` | — | **缺**(job cancel 面,下格)。
+- `should_stream` / 流式回推 | — | **缺**(下格)。
 
 ## 其他
 

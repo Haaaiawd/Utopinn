@@ -380,3 +380,129 @@ test('TH 测试卡 eventOn 收真事件:楼层 diff + 信箱跨 mount 扇出', a
         await sB.dispose().catch(() => { });
     }
 });
+
+// ── C. GH#4 变量写面:replaceVariables 护栏 + insertOrAssign 深合 ──────
+
+test('insertOrAssignVariables:TH 深合(嵌套合、数组整替、带点键路径写)', async () => {
+    // 种子根
+    let r = await call('insertOrAssignVariables', {
+        variables: {
+            stat_data: { '背包': { '金币': 100, '卷轴': ['火把', '绳子'] }, '状态': { hp: 80 } },
+            display_data: { hp: 80 },
+        },
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // 嵌套对象深合:只动金币,兄弟键/其它根不动
+    r = await call('insertOrAssignVariables', { variables: { stat_data: { '背包': { '金币': 150 } } } });
+    assert.equal(r.status, 200);
+    let vars = (await call('getVariables', {})).body.result;
+    assert.equal(vars.stat_data['背包']['金币'], 150);
+    assert.deepEqual(vars.stat_data['背包']['卷轴'], ['火把', '绳子'], '深合不动兄弟键');
+    assert.equal(vars.stat_data['状态'].hp, 80, '深合不动其它根');
+    assert.equal(vars.display_data.hp, 80);
+    // 数组整体替换(TH mergeWith:不逐位合)
+    await call('insertOrAssignVariables', { variables: { stat_data: { '背包': { '卷轴': ['药草'] } } } });
+    vars = (await call('getVariables', {})).body.result;
+    assert.deepEqual(vars.stat_data['背包']['卷轴'], ['药草'], '数组整替');
+    // 带点键 = 路径写(生态扩展,兼容 /setvar 形)
+    await call('insertOrAssignVariables', { variables: { 'stat_data.背包.金币': 300 } });
+    vars = (await call('getVariables', {})).body.result;
+    assert.equal(vars.stat_data['背包']['金币'], 300);
+    // 非法形
+    r = await call('insertOrAssignVariables', { variables: ['x'] });
+    assert.equal(r.status, 400);
+    r = await call('insertOrAssignVariables', { variables: 'x' });
+    assert.equal(r.status, 400);
+});
+
+test('insertVariables 只补缺(defaultsDeep);updateVariablesWith 全量回写(TH)', async () => {
+    // insertVariables:既有键不动,缺失键补
+    let r = await call('insertVariables', {
+        variables: { stat_data: { '背包': { '金币': 999, '新物': 7 } }, extra_root: 1 },
+    });
+    assert.equal(r.status, 200);
+    let vars = (await call('getVariables', {})).body.result;
+    assert.equal(vars.stat_data['背包']['金币'], 300, '既有键不被覆盖');
+    assert.equal(vars.stat_data['背包']['新物'], 7, '缺失键补入');
+    assert.equal(vars.extra_root, 1, '新根补入');
+    // updateVariablesWith:TH 本体 = replaceVariables(result)——shim 卡侧跑
+    // updater(收全量→回全量),server 全量替换写回(非 merge)。
+    const cur = (await call('getVariables', {})).body.result;
+    cur.stat_data['状态'].hp = 55;
+    r = await call('updateVariablesWith', { result: cur });
+    assert.equal(r.status, 200);
+    vars = (await call('getVariables', {})).body.result;
+    assert.equal(vars.stat_data['状态'].hp, 55);
+    assert.equal(vars.stat_data['背包']['金币'], 300, '全文档回写不动兄弟根');
+});
+
+test('replaceVariables:丢根无 force → 400+明细且不写盘;force 照写+warnings(GH#4)', async () => {
+    let vars = (await call('getVariables', {})).body.result;
+    assert.ok(vars.stat_data && vars.display_data, '种子根在');
+    // 残缺对象全替 → 400,丢根名单可见,既有根不毁
+    let r = await call('replaceVariables', { variables: { stat_data: { '背包': { '金币': 1 } } } });
+    assert.equal(r.status, 400, JSON.stringify(r.body));
+    assert.equal(r.body.code, 'root_loss');
+    assert.deepEqual(r.body.lost_roots, ['display_data', 'extra_root']);
+    assert.ok(typeof r.body.hint === 'string');
+    vars = (await call('getVariables', {})).body.result;
+    assert.ok(vars.display_data && vars.extra_root, '拒绝后既有根未毁');
+    assert.equal(vars.stat_data['状态'].hp, 55);
+    // stat_data 内根将丢也被拦
+    r = await call('replaceVariables', {
+        variables: { stat_data: { '背包': {} }, display_data: {}, extra_root: 1 },
+    });
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body.lost_stat_data_roots, ['状态']);
+    vars = (await call('getVariables', {})).body.result;
+    assert.ok(vars.stat_data['状态'], 'stat_data.状态 未被毁');
+    // force:true 显式确认 → 照写 + warnings 留痕
+    r = await call('replaceVariables', {
+        force: true,
+        variables: { stat_data: { '背包': { '金币': 1 } }, display_data: {}, extra_root: 1 },
+    });
+    assert.equal(r.status, 200);
+    assert.ok(Array.isArray(r.body.warnings) && r.body.warnings.length >= 1, '丢根警告回执');
+    vars = (await call('getVariables', {})).body.result;
+    assert.deepEqual(vars, { stat_data: { '背包': { '金币': 1 } }, display_data: {}, extra_root: 1 });
+    // 无丢根的合规全替 → 200 无 warnings
+    r = await call('replaceVariables', {
+        variables: { stat_data: { '背包': { '金币': 2 } }, display_data: {}, extra_root: 1 },
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.warnings, undefined);
+    // 非法形
+    r = await call('replaceVariables', { variables: 42 });
+    assert.equal(r.status, 400);
+    r = await call('replaceVariables', { variables: null });
+    assert.equal(r.status, 400);
+});
+
+// ── D. GH#9 辅助生成面 ────────────────────────────────────────────────
+
+test('th.generate 校验面:无 prompt/target → 400;generateRaw ordered_prompts → unsupported', async () => {
+    let r = await call('generate', {});
+    assert.equal(r.status, 400);
+    r = await call('generate', { user_input: 42 });
+    assert.equal(r.status, 400);
+    r = await call('generate', { user_input: 'hi' }, { charDir: CHAR, chatName: null });
+    assert.equal(r.status, 400, '无 chat 目标 → 诚实 400');
+    r = await call('generateRaw', { ordered_prompts: [{ role: 'user', content: 'x' }] });
+    assert.equal(r.body.unsupported, true, 'ordered_prompts 诚实 unsupported');
+});
+
+test('th.generate 失败可见:ok:false + generation_requested/stopped 信箱 + diag', async () => {
+    const s0 = (await call('getEventLog', {})).body.result.seq;
+    // 无 API 后端 → quiet 链必然失败;断言失败面完整(不回吞、有信箱、有 diag)
+    const r = await call('generate', { user_input: 'summon a forum post', timeout_ms: 2500 });
+    assert.equal(r.body.ok, false, JSON.stringify(r.body));
+    assert.ok(r.body.error && r.body.error.length > 0, '失败原因可见');
+    const log = await call('getEventLog', { since: s0 });
+    const events = log.body.result.entries.map((e) => e.event);
+    assert.ok(events.includes('generation_requested'), `requested 入信箱: ${events}`);
+    assert.ok(events.includes('generation_stopped'), `stopped 终态入信箱: ${events}`);
+    // 生命周期事件 origin 标 server(宿主泵不误判自发)
+    const stopped = log.body.result.entries.find((e) => e.event === 'generation_stopped');
+    assert.equal(stopped.origin, 'server');
+    assert.ok(String(stopped.args[0]).length > 0, 'stopped 携带失败原因');
+});

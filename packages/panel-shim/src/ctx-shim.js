@@ -330,6 +330,15 @@
         },
         regenerate: function () { return request('ctx.regenerate', {}); },
         swipe: function () { return request('ctx.swipe', {}); },
+        /** 辅助生成(GH#9):独立 quiet 链,不落楼层——走 server th.generate。 */
+        generateQuiet: function (prompt, options) {
+            var cfg = jsonClone(options) || {};
+            if (typeof prompt === 'string') cfg.user_input = prompt;
+            else if (prompt && typeof prompt === 'object') cfg = jsonClone(prompt) || {};
+            return request('th.generate', cfg).then(function (r) {
+                return (r && typeof r === 'object' && 'text' in r) ? r.text : r;
+            });
+        },
 
         // ── variables: getVariable sync-reads the seeded cache ──
         getVariable: function (key) { return varCache ? varCache[key] : undefined; },

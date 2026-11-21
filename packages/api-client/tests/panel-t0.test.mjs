@@ -101,6 +101,51 @@ test('deleteVariable removes dot-path from scope store', async () => {
     assert.deepEqual(op.value, { inv: ['sword'] });
 });
 
+test('insertOrAssign 深合嵌套对象;数组整替(TH mergeWith 语义)', async () => {
+    const { handle, calls } = makeDeps({
+        '/api/chats/get': () => ({
+            header: { chat_metadata: { variables: { sd: { a: { x: 1, y: 9 } }, arr: [1, 2, 3] } } },
+            body: [],
+        }),
+        '/api/chats/meta/patch': () => ({}),
+    });
+    await handle('th.insertOrAssignVariables', {
+        type: 'chat',
+        variables: { sd: { a: { x: 2 } }, arr: [9], keep: 'yes' },
+    });
+    const op = calls.find(c => c.path === '/api/chats/meta/patch').body.operations[0];
+    assert.deepEqual(op.value, { sd: { a: { x: 2, y: 9 } }, arr: [9], keep: 'yes' });
+});
+
+test('insertVariables defaultsDeep:深补缺不覆既有(TH)', async () => {
+    const { handle, calls } = makeDeps({
+        '/api/chats/get': () => ({
+            header: { chat_metadata: { variables: { sd: { a: { x: 1, y: 9 } } } } },
+            body: [],
+        }),
+        '/api/chats/meta/patch': () => ({}),
+    });
+    await handle('th.insertVariables', {
+        type: 'chat',
+        variables: { sd: { a: { x: 99, z: 5 }, b: 1 }, top: 'new' },
+    });
+    const op = calls.find(c => c.path === '/api/chats/meta/patch').body.operations[0];
+    assert.deepEqual(op.value, { sd: { a: { x: 1, y: 9, z: 5 }, b: 1 }, top: 'new' });
+});
+
+test('replaceVariables 丢根护栏:root_loss 拒绝不写盘;force:true 放行(GH#4)', async () => {
+    const { handle, calls } = makeDeps({ ...chatRoute, '/api/chats/meta/patch': () => ({}) });
+    // CHAT 种子变量 {hp, inv} —— 替换成 {hp:99} 会丢 inv 根 → 拒绝
+    await assert.rejects(
+        () => handle('th.replaceVariables', { type: 'chat', variables: { hp: 99 } }),
+        /root_loss/);
+    assert.ok(!calls.find(c => c.path === '/api/chats/meta/patch'), '拒绝时未写盘');
+    // force:true 显式确认 → 照写
+    await handle('th.replaceVariables', { type: 'chat', force: true, variables: { hp: 99 } });
+    const op = calls.find(c => c.path === '/api/chats/meta/patch').body.operations[0];
+    assert.deepEqual(op.value, { hp: 99 });
+});
+
 test('getChatMessages: TH view shape + role/hide filters + range', async () => {
     const { handle } = makeDeps(chatRoute);
     const all = await handle('th.getChatMessages', { range: 'all' });

@@ -88,6 +88,17 @@ function setPath(obj, p, v) {
     }
     cur[segs[segs.length - 1]] = v;
 }
+const isPlainObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+/** TH mergeWith 语义:plain-object 深合;数组/标量/异型整体替换(数组非逐位合)。 */
+function mergeDeep(dst, src) {
+    for (const [k, v] of Object.entries(src)) {
+        if (unsafeSegs(k)) continue;
+        if (isPlainObj(dst[k]) && isPlainObj(v)) mergeDeep(dst[k], v);
+        else dst[k] = v;
+    }
+    return dst;
+}
+
 function delPath(obj, p) {
     if (unsafeSegs(p)) return false;
     const segs = pathSegs(p);
@@ -167,6 +178,26 @@ async function readEventDoc(ctx2) {
     });
 }
 const eventName = (a) => String(a?.event ?? a?.event_type ?? '').trim();
+/**
+ * 信箱追加:seq 递增 + 日志截断 + once 影子消费。
+ * eventEmit 与 generate 生命周期共用——宿主泵拉 log 推到订阅卡。
+ */
+function pushMailboxEntry(doc, event, args, origin) {
+    doc.seq += 1;
+    doc.log.push({ seq: doc.seq, at: Date.now(), event, args: Array.isArray(args) ? args : [args], origin });
+    if (doc.log.length > TH_EVENT_LOG_CAP) doc.log.splice(0, doc.log.length - TH_EVENT_LOG_CAP);
+    // once 影子:emit 即消费(卡侧 once 由 shim 自销,影子同步摘)
+    doc.listeners = doc.listeners.filter((l) => !(l.event === event && l.once));
+}
+/** 服务端自身事件(生成生命周期等)进信箱——origin 标 'server' 防宿主误判自发。 */
+async function recordThEvent(ctx2, event, args) {
+    try {
+        await withEventDoc(ctx2, (doc) => {
+            pushMailboxEntry(doc, event, args, 'server');
+            return { ok: true };
+        });
+    } catch { /* 生命周期事件失败不掩主结果 */ }
+}
 /** 监听器定位:listener_id 优先;否则取该 event 最近一条(TH 形参 fn 不可序列化)。 */
 function findListenerIndex(doc, a) {
     const lid = String(a?.listener_id ?? '').trim();
@@ -242,20 +273,77 @@ const METHODS = {
     },
     async replaceVariables(a, scope) {
         const vars = a?.variables;
-        if (typeof vars !== 'object' || vars === null || Array.isArray(vars)) {
+        if (!isPlainObj(vars)) {
             return { ok: false, status: 400, error: 'args.variables must be an object' };
         }
+        // 护栏(GH#4):TH 语义就是全量替换(_.set(variables)),但静默丢根是
+        // 真事故——顶层根或 stat_data 内根将要消失且未显式确认 → 拒绝+明细。
+        // force:true 时照写不误,但把丢根名单回执+warnings 留痕。
+        const lostRoots = Object.keys(scope.store).filter((k) => !(k in vars));
+        let lostStatRoots = [];
+        if (isPlainObj(scope.store.stat_data) && isPlainObj(vars.stat_data)) {
+            lostStatRoots = Object.keys(scope.store.stat_data).filter((k) => !(k in vars.stat_data));
+        }
+        if ((lostRoots.length || lostStatRoots.length) && a?.force !== true) {
+            return {
+                ok: false, status: 400, code: 'root_loss',
+                error: 'replaceVariables 将丢失既有变量根',
+                lost_roots: lostRoots,
+                lost_stat_data_roots: lostStatRoots,
+                hint: '全量覆盖是预期行为则传 args.force:true;否则改用 insertOrAssignVariables(深合)或 updateVariablesWith。',
+            };
+        }
+        const warnings = [];
+        if (lostRoots.length) warnings.push(`lost_roots: ${lostRoots.join('/')}`);
+        if (lostStatRoots.length) warnings.push(`lost stat_data roots: ${lostStatRoots.join('/')}`);
         for (const k of Object.keys(scope.store)) delete scope.store[k];
         Object.assign(scope.store, vars);
         await scope.persist();
-        return { ok: true };
+        return { ok: true, ...(warnings.length ? { warnings } : {}) };
     },
     async insertOrAssignVariables(a, scope) {
         const vars = a?.variables;
-        if (typeof vars !== 'object' || vars === null || Array.isArray(vars)) {
+        if (!isPlainObj(vars)) {
             return { ok: false, status: 400, error: 'args.variables must be an object' };
         }
-        for (const [k, v] of Object.entries(vars)) setPath(scope.store, k, v);
+        // TH mergeWith 语义:嵌套对象深合、数组/标量整体替换;
+        // 带点键名走路径合写(生态扩展,兼容 /setvar 形)。
+        for (const [k, v] of Object.entries(vars)) {
+            if (k.includes('.')) { setPath(scope.store, k, v); continue; }
+            if (unsafeSegs(k)) continue;
+            const cur = scope.store[k];
+            scope.store[k] = (isPlainObj(cur) && isPlainObj(v)) ? mergeDeep(cur, v) : v;
+        }
+        await scope.persist();
+        return { ok: true };
+    },
+    /** TH insertVariables:defaultsDeep——只补缺失键,不动既有值。 */
+    async insertVariables(a, scope) {
+        const vars = a?.variables;
+        if (!isPlainObj(vars)) {
+            return { ok: false, status: 400, error: 'args.variables must be an object' };
+        }
+        const fill = (dst, src) => {
+            for (const [k, v] of Object.entries(src)) {
+                if (unsafeSegs(k)) continue;
+                if (dst[k] === undefined) dst[k] = v;
+                else if (isPlainObj(dst[k]) && isPlainObj(v)) fill(dst[k], v);
+            }
+        };
+        fill(scope.store, vars);
+        await scope.persist();
+        return { ok: true };
+    },
+    /** TH updateVariablesWith:shim 卡侧跑 updater(收全量→返回新全量),
+     *  ship result → 全量替换(TH 本体即 replaceVariables(result))。
+     *  根护栏只管 replaceVariables 原语;updater 拿的是整文档,删根是其选择。 */
+    async updateVariablesWith(a, scope) {
+        const vars = a?.result ?? a?.variables;
+        if (!isPlainObj(vars)) {
+            return { ok: false, status: 400, error: 'args.result must be an object' };
+        }
+        for (const k of Object.keys(scope.store)) delete scope.store[k];
+        Object.assign(scope.store, vars);
         await scope.persist();
         return { ok: true };
     },
@@ -306,6 +394,77 @@ const METHODS = {
             ops: built.env.ops,
             notifications: built.sinks.notifications,
         };
+    },
+    /**
+     * 辅助生成(GH#9):TH generate——走 quiet-generation 同链
+     * (buildGenerationContext → dispatch → job 终态,persist_target=none,
+     * 不落楼层)。TH config 面:user_input(→quietPrompt 系统注入)、
+     * max_tokens/responseLength、stop、trimToSentence、timeout_ms、quiet_name;
+     * 生命周期经信箱推 generation_requested/started/ended|stopped。
+     */
+    async generate(a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) {
+            return { ok: false, status: 400, error: 'target.charDir + target.chatName required' };
+        }
+        const prompt = a?.user_input ?? a?.prompt;
+        if (typeof prompt !== 'string' || !prompt.trim()) {
+            return { ok: false, status: 400, error: 'args.user_input (string) required' };
+        }
+        // 未映射的 TH config 键——收下不装死,回执 warnings 明示被忽略。
+        const ignored = ['injects', 'overrides', 'custom_api', 'should_stream', 'image',
+            'tools', 'json_schema', 'max_chat_history', 'should_silence']
+            .filter((k) => a?.[k] !== undefined);
+        const warnings = ignored.length ? [`th.generate 暂未映射参数: ${ignored.join(',')}`] : [];
+
+        await recordThEvent(ctx2, 'generation_requested', [{ type: 'quiet', via: 'th.generate' }]);
+        try {
+            // 延迟载入:quiet-generation 顶层 import generate-context → 拖 config
+            // 依赖进插件 import 图,单测进程会被拖死(同文件内 loadDispatchLayer 理由)。
+            const { runQuietGeneration } = await import('../services/quiet-generation.js');
+            await recordThEvent(ctx2, 'generation_started', ['quiet']);
+            const r = await runQuietGeneration({
+                handle: ctx2.handle,
+                directories: ctx2.directories,
+                charDir: ctx2.charDir,
+                chatName: ctx2.chatName,
+                prompt,
+                params: {
+                    responseLength: Number(a?.max_tokens ?? a?.responseLength ?? 0) || 0,
+                    stop: a?.stop,
+                    trimToSentence: !!a?.trim_to_sentence || !!a?.trimToSentence,
+                    quietName: a?.quiet_name ? String(a.quiet_name) : undefined,
+                },
+                userName: ctx2.userName ?? 'User',
+                timeoutMs: Number(a?.timeout_ms ?? 0) || 180_000,
+            });
+            // TH GENERATION_ENDED 语义:负载=最终文本。
+            await recordThEvent(ctx2, 'generation_ended', [r.text ?? '']);
+            return {
+                ok: true,
+                result: { text: r.text ?? '', jobId: r.jobId, status: r.status, diagId: r.diagId },
+                ...(warnings.length ? { warnings } : {}),
+            };
+        } catch (error) {
+            const msg = String(error?.message ?? error ?? 'generate failed');
+            await recordThEvent(ctx2, 'generation_stopped', [msg.slice(0, 300)]);
+            thEvent('th_generate_failed', `th generate failed: ${msg.slice(0, 200)}`,
+                { method: 'generate', charDir: ctx2.charDir, chatName: ctx2.chatName, status: 502, error });
+            return { ok: false, status: 502, error: msg, ...(warnings.length ? { warnings } : {}) };
+        }
+    },
+    /**
+     * TH generateRaw:不走当前预设的自定义生成。最小可用面(GH#9):
+     * prompt/user_input → quietPrompt 直通(仍经预设参数+组装,但安静注入);
+     * ordered_prompts(真自定义消息序)在 quiet 链无映射 → 诚实 unsupported。
+     */
+    async generateRaw(a, scope, ctx2) {
+        if (a?.ordered_prompts !== undefined) {
+            return {
+                ok: false, unsupported: true, method: 'generateRaw',
+                error: 'ordered_prompts(自定义消息序)未映射——quiet 链只接安静注入;请用 prompt/user_input',
+            };
+        }
+        return METHODS.generate(a, scope, ctx2);
     },
     /** 身份面:CardApp 面板的 getCharacter/getCurrentCharacterName。 */
     async getCharacter(_a, _scope, ctx2) {
@@ -445,11 +604,7 @@ const METHODS = {
             if (!event) return { ok: false, status: 400, error: 'args.event required' };
             const args = Array.isArray(a?.args) ? a.args : [];
             const delivered = doc.listeners.filter((l) => l.event === event).length;
-            doc.seq += 1;
-            doc.log.push({ seq: doc.seq, at: Date.now(), event, args, origin: a?.origin ? String(a.origin) : undefined });
-            if (doc.log.length > TH_EVENT_LOG_CAP) doc.log.splice(0, doc.log.length - TH_EVENT_LOG_CAP);
-            // once 影子:emit 即消费(卡侧 once 由 shim 自销,影子同步摘)
-            doc.listeners = doc.listeners.filter((l) => !(l.event === event && l.once));
+            pushMailboxEntry(doc, event, args, a?.origin ? String(a.origin) : undefined);
             return { ok: true, result: { seq: doc.seq, delivered } };
         });
     },
@@ -500,7 +655,7 @@ export function apply(ctx) {
                 };
 
                 let scope = null;
-                if (['getVariables', 'replaceVariables', 'insertOrAssignVariables', 'deleteVariable'].includes(method)) {
+                if (['getVariables', 'replaceVariables', 'insertOrAssignVariables', 'insertVariables', 'updateVariablesWith', 'deleteVariable'].includes(method)) {
                     const scopeName = String(body.args?.type ?? body.args?.scope ?? 'chat');
                     if (!SCOPES.has(scopeName)) {
                         return response.status(400).send({ ok: false, error: `scope must be one of ${[...SCOPES].join('|')}` });

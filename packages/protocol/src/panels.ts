@@ -87,6 +87,7 @@ export const PANEL_METHODS_TH = [
     'th.setLorebookEntries',
     'th.triggerSlash',
     'th.generate',
+    'th.generateRaw',
     'th.stopGeneration',
     'th.formatAsDisplayedMessage',
     'th.substituteMacros',
