@@ -271,6 +271,10 @@ async function resolveChar(fuzzy) {
 async function resolveChatForUse(charDir, fuzzy, charChat) {
     const chats = await listChats(charDir);
     const names = chats.map(c => stripExt(c.file_name ?? c.name ?? c, 'jsonl'));
+    // chat-new 懒建坐标:本地已绑、服务端未落盘,列表查无此名——但它确实是
+    // 用户显式建的坐标,同卡下按列表同等规则认它(绑坐标≠建文件,不违铁律12)。
+    const pending = state.chat?.name && state.char?.dir === charDir && !names.includes(state.chat.name)
+        ? state.chat.name : null;
     if (!fuzzy) {
         // char.chat 指针优先(与服务端「当前聊天」一致);其次 sort_time 最新
         // ——服务端按 name 排序返回,names.at(-1) 是字典序不是最新,别用
@@ -279,7 +283,9 @@ async function resolveChatForUse(charDir, fuzzy, charChat) {
             const newest = chats.reduce((a, c) => (Number(c?.sort_time ?? 0) > Number(a?.sort_time ?? 0) ? c : a), chats[0]);
             return stripExt(newest?.file_name ?? newest?.name ?? names[0], 'jsonl');
         }
-        fail('not_found', `no chats for ${charDir}`, { hint: 'utopinn chat-new <name> 建一个' });
+        // 服务端一个聊天都没有、但有 pending 懒建坐标 → 落它,不冤枉报 no chats
+        if (pending) return pending;
+        fail('not_found', `no chats for ${charDir}`, { hint: 'utopinn chat-new <name>(懒建坐标)或 chat-create <name>(立即建文件)' });
         return null;
     }
     const name = stripExt(fuzzy, 'jsonl');
@@ -291,8 +297,12 @@ async function resolveChatForUse(charDir, fuzzy, charChat) {
         fail('ambiguous', `chat "${name}" ambiguous`, { detail: partial.join(' | ') });
         return null;
     }
+    if (pending && (pending === name || pending.includes(name))) return pending;
     // 铁律12:不许隐式建聊天——typo 不该变新文件
-    fail('not_found', `chat not found: "${name}"`, { detail: names.slice(0, 10).join(' | '), hint: '新聊天用 utopinn chat-new <name>' });
+    fail('not_found', `chat not found: "${name}"`, {
+        detail: [...names.slice(0, 10), ...(pending ? [`${pending}(懒建,未落盘)`] : [])].join(' | '),
+        hint: '新聊天:utopinn chat-create <name>(立即建文件)或 chat-new <name>(懒建坐标,首条 send 落盘)',
+    });
     return null;
 }
 
@@ -1024,15 +1034,19 @@ async function cmdStatus() {
             lastSwipe = Array.isArray(last?.swipes) ? { n: (last.swipe_id ?? 0) + 1, total: last.swipes.length } : null;
             saveState({ floors, integrity });
         }
+        // chat-new 懒建坐标:服务端 404 → new_chat。状态栏照实标 pending,
+        // 不然「floors 0」看着像已绑了个空聊天文件(文件根本不存在)。
+        const chatPending = cur?.new_chat === true;
+        if (chatPending) floors = 0;   // 文件未建 = 事实 0 层,别让 null 混进来
         // kernel GET /jobs 客户端过滤替代 legacy jobs/active:
         // chatKey=char:<avatar_url>:<chatName-noext>(与 getPersistChatKey 同构)。
         const chatKey = `char:${c.charDir}.png:${c.chatName}`;
         const { data: active } = await req('GET', '/api/utopinn/jobs', undefined, { allowFail: true });
         const jobs = (Array.isArray(active?.items) ? active.items : []).filter(j => j.chatKey === chatKey || j.chatKey == null);
         const running = jobs.filter(j => ['running', 'queued', 'persisting', 'awaiting_ack'].includes(j.status));
-        const snap = { ...ctxSummary(), floors, integrity, swipe: lastSwipe, activeJobs: running.map(j => ({ id: j.id, status: j.status })) };
+        const snap = { ...ctxSummary(), floors, integrity, swipe: lastSwipe, pending: chatPending || undefined, activeJobs: running.map(j => ({ id: j.id, status: j.status })) };
         if (JSON_MODE) return out(snap, running.length ? [{ cmd: `utopinn attach ${running[0].id}` }] : genNextFor('status', false));
-        console.log(`${c.charName} @ ${c.chatName} · floors ${floors} · integrity ${(integrity ?? '—').slice(0, 10)}`);
+        console.log(`${c.charName} @ ${c.chatName} · floors ${floors} · integrity ${(integrity ?? '—').slice(0, 10)}${chatPending ? ' · pending(懒建坐标,文件未建;首条 send 落盘)' : ''}`);
         if (lastSwipe) console.log(`  last floor swipe ${lastSwipe.n}/${lastSwipe.total}`);
         console.log(running.length ? `  ⚠ active jobs: ${running.map(j => `${j.id.slice(0, 8)}:${j.status}`).join(', ')}` : '  no active jobs');
         footer();
@@ -1284,8 +1298,8 @@ const SCHEMA = {
         { cmd: 'utopinn use <char> [chat]', desc: '选卡+聊天(模糊匹配,chat 缺省=最新)', out: 'ctx' },
         { cmd: 'utopinn groups', desc: '群列表(id/name/members/chat_id/strategy)', out: '[{id,name,members,chat_id}]' },
         { cmd: 'utopinn guse <id|name> [chatId]', desc: '绑群 ctx(send/regen/swipe 等自动走群路由;--member 点名,--gchat 换聊,--no-chain 只发第一人)', out: 'ctx' },
-        { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标(首条 send 建文件)', out: 'chat' },
-        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chat-new 是懒建)', out: '{ok,integrity}' },
+        { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标(懒建:只绑不建文件,首条 send 落盘;use/status 可认,pending 标记)', out: 'chat' },
+        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chats 列表立即可见。要懒建用 chat-new)', out: '{ok,integrity}' },
         { cmd: 'utopinn chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
         { cmd: 'utopinn chat-get [chat]', desc: '[library] utopinn doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
@@ -1436,18 +1450,22 @@ async function cmdUse() {
     const charDir = stripExt(char.avatar, 'png');
     // 新卡无聊天可解析时只绑卡坐标(不隐式建文件——铁律12 防的是
     // typo 变新文件,绑名不建文件);chat-new/chat-create 再补聊天坐标。
+    // 服务端零聊天但本卡有 pending 懒建坐标时,也要进解析让它兜住。
     const chats = await listChats(charDir);
+    const lazyChat = state.chat?.name && state.char?.dir === charDir ? state.chat.name : null;
     let chatName = null;
-    if (positional[2] || chats.length) {
+    if (positional[2] || chats.length || lazyChat) {
         chatName = await resolveChatForUse(charDir, positional[2], char.chat);
         if (!chatName) return;
     }
     saveState({ char: { dir: charDir, name: char.name ?? charDir }, chat: chatName ? { name: chatName } : null, group: null, floors: null, integrity: null });
+    // 绑定的是 chat-new 懒建坐标(服务端未落盘)→ 标 pending,别让状态栏像在撒谎
+    const chatPending = Boolean(chatName) && !chats.some(c => stripExt(c.file_name ?? c.name ?? c, 'jsonl') === chatName);
     const n = chatName
-        ? [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: '发消息' }]
+        ? [{ cmd: 'utopinn history -n 3', why: '看上文' }, { cmd: 'utopinn send "…"', why: chatPending ? '首条消息自动建文件' : '发消息' }]
         : [{ cmd: 'utopinn chat-new <name>', why: '此卡还没有聊天,建一个' }, { cmd: 'utopinn chats', why: '看聊天列表' }];
-    if (JSON_MODE) return out({ charDir, charName: char.name, chatName }, n);
-    console.log(chatName ? `→ ${char.name ?? charDir} @ ${chatName}` : `→ ${char.name ?? charDir}(无聊天)`);
+    if (JSON_MODE) return out({ charDir, charName: char.name, chatName, pending: chatPending || undefined }, n);
+    console.log(chatName ? `→ ${char.name ?? charDir} @ ${chatName}${chatPending ? '(懒建,文件未建;首条 send 落盘)' : ''}` : `→ ${char.name ?? charDir}(无聊天)`);
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
@@ -1489,18 +1507,27 @@ async function cmdGuse() {
 
 async function cmdChatNew() {
     // 只需 char 坐标——新卡绑卡后 chat 尚不存在,needCtx 会误判 no_ctx。
-    const c = { charDir: state.char?.dir ?? (flags.char ? stripExt(flags.char, 'png') : null), charName: state.char?.name ?? null };
-    if (!c?.charDir) { fail('no_ctx', '先选卡', { hint: 'utopinn use <char>' }); return; }
+    // --char 可能是显示名/模糊名:resolveChar 换目录真名顺便验存在
+    // (假 charDir 绑出来的懒建坐标是死的:listChats 404/send 撞 no_ctx)。
     const name = stripExt(positional[1] ?? '', 'jsonl');
     if (!name) return void fail('usage', 'utopinn chat-new <name>', { rc: 2 });
+    let c = { charDir: state.char?.dir ?? null, charName: state.char?.name ?? null };
+    if (flags.char) {
+        const ch = await resolveChar(flags.char);
+        if (!ch) return;
+        c = { charDir: stripExt(ch.avatar, 'png'), charName: ch.name ?? c.charName };
+    }
+    if (!c?.charDir) { fail('no_ctx', '先选卡', { hint: 'utopinn use <char>' }); return; }
     const chats = await listChats(c.charDir);
     const names = chats.map(x => stripExt(x.file_name ?? x.name ?? x, 'jsonl'));
     if (names.includes(name)) {
         return void fail('exists', `chat exists: ${name}`, { detail: names.filter(n => n.includes(name.slice(0, 8))).join(' | '), rc: 3 });
     }
-    saveState({ chat: { name }, floors: 0, integrity: null });
+    // 懒建坐标是 (char,chat) 对——只存 chat 半边,ctx.char 缺/异位时首条
+    // send 就撞 no_ctx(坐标看着绑了其实没法用)。卡坐标一并落 state。
+    saveState({ char: { dir: c.charDir, name: c.charName ?? c.charDir }, chat: { name }, floors: 0, integrity: null });
     const n = [{ cmd: 'utopinn send "…"', why: '首条消息自动建文件' }];
-    if (JSON_MODE) return out({ chatName: name }, n);
+    if (JSON_MODE) return out({ chatName: name, lazy: true, persisted: false }, n);
     console.log(`chat = ${name}(空,首条 send 建文件)`);
     footer();
     nextHints = n;

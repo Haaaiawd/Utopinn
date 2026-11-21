@@ -9,6 +9,24 @@ import fs from 'node:fs';
 const jsonClone = (v) => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 
 /**
+ * @utopinn/* 走 pnpm workspace 链接(apps/cli/node_modules/@utopinn/*)。
+ * reset/clean 或 node_modules 残缺后 `pnpm install` 可能走 up-to-date
+ * 快路径不补链接 → 原生抛 ERR_MODULE_NOT_FOUND,报文看着像「包没装」,
+ * 实际是链接没建。翻成 harness_missing 带可行动 hint(与 cardapp-host
+ * loadDeps 同码,走 dispatch 里现成的分支)。
+ */
+async function importApiClient() {
+    try { return await import('@utopinn/api-client'); }
+    catch (e) {
+        if (e?.code !== 'ERR_MODULE_NOT_FOUND' && !/Cannot find package/.test(String(e?.message ?? ''))) throw e;
+        const err = new Error('找不到 @utopinn/api-client —— workspace 链接缺失(node_modules 残缺,非包未装)');
+        err.code = 'harness_missing';
+        err.detail = { missing: [String(e?.message ?? e)], hint: '仓库根目录 pnpm install;装过仍缺 → pnpm install --force(快路径可能不补链接)' };
+        throw err;
+    }
+}
+
+/**
  * run(io) — io 由 utopinn-cli.mjs 装配(不回头 import 大文件,保模块单向)。
  *   {positional, flags, SERVER, needCtx, out, fail, warn, footer, saveState,
  *    state, readTextArg, stripExt, JSON_MODE}
@@ -236,7 +254,7 @@ export async function run(io) {
                 const charDir = flags.char ? stripExt(flags.char, 'png')
                     : state?.char?.dir ?? needCtx?.()?.charDir;
                 if (!charDir) return void fail('no_ctx', 'status 需要 char 目标', { hint: '--char d 或 utopinn use', rc: 2 });
-                const { UtopinnClient } = await import('@utopinn/api-client');
+                const { UtopinnClient } = await importApiClient();
                 const client = new UtopinnClient({ baseUrl: io.SERVER });
                 let manifest = null;
                 try {

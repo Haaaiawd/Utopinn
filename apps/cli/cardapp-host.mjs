@@ -53,7 +53,7 @@ async function loadDeps() {
             + missing.join(' | '),
         );
         err.code = 'harness_missing';
-        err.detail = { missing, hint: 'pnpm install --filter @utopinn/cli(jsdom 已 pin 进 apps/cli/package.json)' };
+        err.detail = { missing, hint: 'pnpm install --filter @utopinn/cli(jsdom 已 pin 进 apps/cli/package.json);装过仍缺 → 根目录 pnpm install --force(reset/clean 后快路径可能不补 workspace 链接)' };
         throw err;
     }
     // esbuild 只在 module 入口用——缺席不拦 document 卡,mount 时才炸

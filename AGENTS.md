@@ -82,6 +82,7 @@ the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative 
 
 - **WSL 9P 环境病**：/mnt/d 是 9P 挂的 Windows 盘，高并发 I/O 会楔死（进程 D 态 `p9_client_rpc`）。**元凶常是 vite/chokidar 在 /mnt/d 上 watch 几万文件**——CLI 测试前先杀旧 dev 服。稳启配方：`LUKER_SKIP_WEBPACK=1 node server.js --dataRoot /tmp/<快照>`（webpack 整段剥离，`LUKER_PREBUILT_BUNDLES_DIR=<dataRoot>/_webpack/<hash>/output` 亦可）；dataRoot 别放 /mnt/d。
 - better-sqlite3 等原生依赖在 pnpm 10+ 下默认不编译：首次 pnpm install 后需 pnpm approve-builds，或在 pnpm-workspace.yaml 配 onlyBuiltDependencies。
+- `Cannot find package '@utopinn/*'`（CLI 报 `error[ERR_MODULE_NOT_FOUND]`）：node_modules 残缺、workspace 链接没建——`pnpm install` 在 lockfile 未变时走 up-to-date 快路径，pnpm 11 实测可能不补已缺失的链接（pnpm 10 会自愈）。解法：`pnpm install --force` 或删 node_modules 重装。**根 `node_modules/@utopinn` 本来就是空的**：pnpm isolated 只挂各包声明的依赖，根 package.json 没有 workspace 依赖（与 npm 把全部 workspace 包挂根不同），不是缺链症状；判 CLI 链接看 `apps/cli/node_modules/@utopinn`。
 - 兼容语料：tests/corpus/cards/ 进 git（公开卡）；tests/corpus-private/ 已 gitignore（用户私有卡，由用户提供）；ref/cards/GuiXu 为本地参考样本。
 - golden 捕获用 `tests/golden-diff/capture.sh <card.png>`（自动备齐 Playwright 缺的系统库、设 LD_LIBRARY_PATH）。私有卡产物自动落 golden-private/(gitignore)。前置条件：server.js 的 E2E_SCRATCH_ROOT/E2E_READY_TIMEOUT_MS 已由脚本内置；前端不会自动连 API，捕获脚本会显式点 #api_button_openai。
 - pnpm 布局下 `apps/server/node_modules/base64-js` 不存在（依赖提升），js-tiktoken bundle 合成会 500——已从 .pnpm 实体拷贝兜底；升级依赖时注意复査。
