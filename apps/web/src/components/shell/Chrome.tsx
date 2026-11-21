@@ -7,21 +7,22 @@ import { useTheme } from '../../theme';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
 
-/** 36px 顶条:左双灯点 + 「Utopinn ·」字标;右 Desktop/Mobile 分段。 */
+/** 36px 顶条:左活面包屑(当前面 · 会话);右 Desktop/Mobile 分段。 */
 export function TopChrome() {
     const shell = useShell();
+    const { t } = useI18n();
+    const crumbs = [t(`nav.${shell.railTab}`)];
+    if (shell.chat?.title) crumbs.push(shell.chat.title);
     return (
         <header className="top-chrome-bar">
-            <div className="flex items-center">
-                <div className="flex w-[32px] items-center justify-center gap-1.5" aria-hidden="true">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--border-strong)' }} />
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: 'var(--border-subtle)' }} />
-                </div>
-                <span className="heading-tight ml-3 flex items-center gap-1.5 text-[12px] font-medium text-[color:var(--fg-secondary)]">
-                    <span>Utopinn</span>
-                    <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--brand)' }} />
-                </span>
-            </div>
+            <nav className="flex min-w-0 items-center text-[12px]" aria-label="breadcrumb">
+                {crumbs.map((c, i) => (
+                    <span key={i} className="flex min-w-0 items-center">
+                        {i > 0 && <span className="mx-1.5 text-[color:var(--fg-faint)]">/</span>}
+                        <span className={`truncate ${i === crumbs.length - 1 ? 'font-medium text-[color:var(--fg-secondary)]' : 'text-[color:var(--fg-muted)]'}`}>{c}</span>
+                    </span>
+                ))}
+            </nav>
             <div className="flex items-center gap-2">
                 {/* 规范稿 Desktop/Mobile 分段控件 */}
                 <div className="inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
