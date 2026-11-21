@@ -109,13 +109,13 @@
        < ui(基准行)< ui-lg(强调/小标题)< title(模态/面板标题)< title-lg(页头)。
        正文不进 UI 阶:聊天楼层 --chat-font-size(st.fontSize 滑杆,默认 15)、
        剧场小说 --read-size;正文行高 --read-leading。 */
-    --fs-micro: 10px;
-    --fs-caption: 11px;
-    --fs-ui-sm: 12px;
-    --fs-ui: 12.5px;
-    --fs-ui-lg: 13.5px;
-    --fs-title: 15px;
-    --fs-title-lg: 18px;
+    --fs-micro: 11px;
+    --fs-caption: 12px;
+    --fs-ui-sm: 12.5px;
+    --fs-ui: 13px;
+    --fs-ui-lg: 14px;
+    --fs-title: 16px;
+    --fs-title-lg: 19px;
     --lh-ui: 1.5;
     --chat-font-size: 15px;
     --read-size: 16px;

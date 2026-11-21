@@ -7,22 +7,15 @@ import { useTheme } from '../../theme';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
 
-/** 36px 顶条:左活面包屑(当前面 · 会话);右 Desktop/Mobile 分段。 */
+/** 36px 顶条:左 LogoU+Utopinn 放大字标(品牌常驻);右 Desktop/Mobile 分段。 */
 export function TopChrome() {
     const shell = useShell();
-    const { t } = useI18n();
-    const crumbs = [t(`nav.${shell.railTab}`)];
-    if (shell.chat?.title) crumbs.push(shell.chat.title);
     return (
         <header className="top-chrome-bar">
-            <nav className="flex min-w-0 items-center text-[12px]" aria-label="breadcrumb">
-                {crumbs.map((c, i) => (
-                    <span key={i} className="flex min-w-0 items-center">
-                        {i > 0 && <span className="mx-1.5 text-[color:var(--fg-faint)]">/</span>}
-                        <span className={`truncate ${i === crumbs.length - 1 ? 'font-medium text-[color:var(--fg-secondary)]' : 'text-[color:var(--fg-muted)]'}`}>{c}</span>
-                    </span>
-                ))}
-            </nav>
+            <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center"><LogoU size={22} /></span>
+                <span className="chrome-wordmark">Utopinn</span>
+            </div>
             <div className="flex items-center gap-2">
                 {/* 规范稿 Desktop/Mobile 分段控件 */}
                 <div className="inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
@@ -51,13 +44,13 @@ function Rail() {
     const shell = useShell();
     const navs = useContribs('nav.rail');
     return (
-        <nav className="flex w-[56px] shrink-0 flex-col items-center gap-1.5 pt-1">
+        <nav className="flex w-[64px] shrink-0 flex-col items-center gap-1.5 pt-1">
             {navs.map((n) => {
                 const active = shell.railTab === n.view;
                 return (
                     <button
                         key={n.view}
-                        className="rail-btn flex h-[38px] w-[38px] items-center justify-center rounded-[10px] transition-colors"
+                        className="rail-btn flex h-[46px] w-[46px] items-center justify-center rounded-[12px] transition-colors"
                         data-active={active || undefined}
                         style={active ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
                         title={t(`nav.${n.view}`)}
@@ -66,7 +59,7 @@ function Rail() {
                             if (!shell.sidebarOpen) shell.toggleSidebar();
                         }}
                     >
-                        <Icon name={n.icon} size={20} active={active} />
+                        <Icon name={n.icon} size={26} active={active} />
                     </button>
                 );
             })}
@@ -193,7 +186,6 @@ export function LeftChrome() {
                     aria-label="Utopinn"
                 >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={26} /></span>
-                    <span className="brand-wordmark pr-1.5">{t('app.name')}</span>
                 </button>
                 <div className="brand-actions">
                     <button className="ghost-btn h-8 w-8 rounded-[8px]" onClick={() => shell.setCmdkOpen(true)} title={t('chrome.search')}>
