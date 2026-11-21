@@ -62,7 +62,7 @@ export function HomeView() {
     }
     return (
         <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            <h1 className="heading-tight mb-1 text-[18px] text-[color:var(--fg-primary)]">{t('nav.home')}</h1>
+            <h1 className="heading-tight mb-1 text-title-lg text-[color:var(--fg-primary)]">{t('nav.home')}</h1>
             <p className="mb-5 text-[12px] text-[color:var(--fg-muted)]">{t('home.sub')}</p>
             <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
                 {cards.map((c) => {

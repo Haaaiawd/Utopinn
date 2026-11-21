@@ -295,7 +295,7 @@ function NovelBody() {
                             >
                                 <div className="pt-2">
                                     <div className="font-mono-ui text-[11px] tracking-widest text-[color:var(--fg-muted)]">{c.num}</div>
-                                    <h2 className="font-serif-ui heading-tight mt-1 text-xl font-semibold text-[color:var(--fg-primary)]">{c.title}</h2>
+                                    <h2 className="font-serif-ui heading-tight mt-1 text-title-lg font-semibold text-[color:var(--fg-primary)]">{c.title}</h2>
                                 </div>
                                 <div className="space-y-1.5">
                                     {!c.paras.length && (
@@ -904,7 +904,7 @@ function TheaterBody() {
                                             {speaker}
                                             {last?.role === 'user' && <span className="ml-1.5 font-normal text-white/40">· {t('gal.you')}</span>}
                                         </div>
-                                        <div className="whitespace-pre-line text-[14.5px] leading-relaxed text-white/95">
+                                        <div className="whitespace-pre-line text-[15px] leading-relaxed text-white/95">
                                             {line || <span className="italic text-white/40">{t('gal.line.empty')}</span>}
                                             {streaming && <span className="cursor-bar" />}
                                         </div>

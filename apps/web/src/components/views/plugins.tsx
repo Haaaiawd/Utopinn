@@ -424,7 +424,7 @@ export function PluginsView() {
                                 </button>
                             )}
                             <div>
-                                <h1 className="heading-tight text-xl font-semibold text-[color:var(--fg-primary)]">{t('nav.plugins')}</h1>
+                                <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('nav.plugins')}</h1>
                                 <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('plugins.sub')}</p>
                             </div>
                         </div>

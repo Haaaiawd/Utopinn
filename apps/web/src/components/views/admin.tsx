@@ -437,7 +437,7 @@ function OverviewSection() {
         <div className="space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="heading-tight text-xl font-semibold text-[color:var(--fg-primary)]">{t('admin.ov.title')}</h1>
+                    <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('admin.ov.title')}</h1>
                     <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('admin.ov.sub')}</p>
                 </div>
                 <button
@@ -994,7 +994,7 @@ function UsersSection() {
             {/* 页头 */}
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="heading-tight text-xl font-semibold text-[color:var(--fg-primary)]">{t('admin.users.title')}</h1>
+                    <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('admin.users.title')}</h1>
                     <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('admin.users.sub')}</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1535,7 +1535,7 @@ function ConfigSection() {
         <div className="space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
-                    <h1 className="heading-tight text-xl font-semibold text-[color:var(--fg-primary)]">{t('admin.cfg.title')}</h1>
+                    <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('admin.cfg.title')}</h1>
                     <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('admin.cfg.sub')}</p>
                 </div>
                 <div className="flex items-center gap-2">

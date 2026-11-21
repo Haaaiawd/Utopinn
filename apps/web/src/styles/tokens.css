@@ -75,24 +75,51 @@
     --font-sans: var(--font-ui);
     --font-serif: var(--font-reading);
     --font-mono: var(--font-code);
+
+    /* 字阶 utility:text-micro / text-caption / text-ui-sm / text-ui /
+       text-ui-lg / text-title / text-title-lg(原料槽 --fs-* 在 :root)。
+       任意值 text-[..px] 仍可用,新代码请走命名阶。 */
+    --text-micro: var(--fs-micro);
+    --text-caption: var(--fs-caption);
+    --text-ui-sm: var(--fs-ui-sm);
+    --text-ui: var(--fs-ui);
+    --text-ui-lg: var(--fs-ui-lg);
+    --text-title: var(--fs-title);
+    --text-title-lg: var(--fs-title-lg);
 }
 
 :root {
-    /* === 规范字体栈(Inter / Noto Serif SC / JetBrains Mono) === */
-    --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-    --font-reading: 'Noto Serif SC', 'Songti SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'STSong', Georgia, serif;
+    /* === 字体栈:Inter 西文先行,中文按域回落 ===
+       UI:Inter → Noto Sans SC(确定性黑体层次,GF unicode-range 子集)
+          → 系统黑(PingFang/雅黑/思源)→ generic sans。
+       阅读:Noto Serif SC → 系统宋(Songti/STSong/SimSun)
+          → Linux 思源宋包名 → Georgia → generic serif。
+       代码:JetBrains Mono → 系统 mono → CJK 兜底(diag 面板含中文)。 */
+    --font-ui: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont,
+        'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei',
+        'Source Han Sans SC', 'Noto Sans CJK SC', system-ui, sans-serif;
+    --font-reading: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun',
+        'Source Han Serif SC', 'Noto Serif CJK SC', Georgia, serif;
     /* 原料槽叫 --font-code:@theme 生成的 --font-mono 才给 var(--font-mono) 用(避开自引用)。 */
-    --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    --chat-font-size: 14.5px;
+    --font-code: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        'Noto Sans Mono CJK SC', 'Microsoft YaHei', monospace;
 
-    /* 字号阶梯:caption(辅助/计数)< ui-sm(设置/诊断/表格)< ui < ui-lg < title < reading */
-    --fs-caption: 12px;
-    --fs-ui-sm: 13px;
-    --fs-ui: 14px;
-    --fs-ui-lg: 15px;
-    --fs-title: 16px;
-    --read-size: 17.5px;
-    --read-leading: 1.9;
+    /* 字阶(Linear 密度,对齐组件实际用字):
+       micro(角标/计数)< caption(辅助说明)< ui-sm(密集控件/tab)
+       < ui(基准行)< ui-lg(强调/小标题)< title(模态/面板标题)< title-lg(页头)。
+       正文不进 UI 阶:聊天楼层 --chat-font-size(st.fontSize 滑杆,默认 15)、
+       剧场小说 --read-size;正文行高 --read-leading。 */
+    --fs-micro: 10px;
+    --fs-caption: 11px;
+    --fs-ui-sm: 12px;
+    --fs-ui: 12.5px;
+    --fs-ui-lg: 13.5px;
+    --fs-title: 15px;
+    --fs-title-lg: 18px;
+    --lh-ui: 1.5;
+    --chat-font-size: 15px;
+    --read-size: 16px;
+    --read-leading: 1.75;
     --read-width: 760px;
 
     /* 半径阶梯:tag/小控件 → 行/输入 → 卡片 → 大容器(输入区) → 全圆 */

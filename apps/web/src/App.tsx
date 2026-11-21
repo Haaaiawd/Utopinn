@@ -167,7 +167,7 @@ function Shell() {
     });
     const [chatSettings, setChatSettings] = useState<ChatSettings>({
         renderCount: 20, streamFps: 30, autoParseThink: true, autoExpandThink: false,
-        showFloorNum: true, confirmDelete: true, fontSize: 14.5, bgMode: 'none',
+        showFloorNum: true, confirmDelete: true, fontSize: 15, bgMode: 'none',
         customCss: '.msg-bubble { border-radius: 10px; }', apiTab: 'chat',
         endpoint: 'https://gcli.ggchan.dev/',
     });

@@ -6,8 +6,11 @@
     * { box-sizing: border-box; margin: 0; }
     html, body, #root { height: 100%; }
     body {
-        /* 规范稿:font-sans 族 + cv* feature 设置 + 画布色 */
+        /* 规范稿:font-sans 族 + cv* feature 设置 + 画布色;
+           排版基线 = --fs-ui/--lh-ui,未标字号元素落在字阶基准而非浏览器 16px。 */
         font-family: var(--font-sans);
+        font-size: var(--fs-ui);
+        line-height: var(--lh-ui);
         background: var(--bg-chrome);
         color: var(--fg-primary);
         overflow: hidden;
@@ -56,7 +59,7 @@
 
 .card { background: var(--raised); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 14px; }
 /* caps 段标 = 管理/设置页专用;聊天列表区段用 .sb-sect(非 caps)。 */
-.sect-title { font-size: 11px; font-weight: 600; color: var(--ink3); letter-spacing: .08em; margin: 16px 0 8px; text-transform: uppercase; }
+.sect-title { font-size: var(--fs-caption); font-weight: 600; color: var(--ink3); letter-spacing: .08em; margin: 16px 0 8px; text-transform: uppercase; }
 .kv { display: grid; grid-template-columns: 110px 1fr; gap: 10px 14px; align-items: center; font-size: var(--fs-ui-sm); }
 .kv label { color: var(--ink2); font-size: var(--fs-caption); }
 .warn { background: #e8a13c18; border: 1px solid #e8a13c55; color: var(--warn); border-radius: 9px; padding: 9px 12px; font-size: var(--fs-caption); }
