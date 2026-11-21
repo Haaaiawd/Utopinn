@@ -85,9 +85,9 @@ ruleTester.run('no-raw-fs-in-endpoint', rule, {
         {
             code: `import fs from 'fs';
                    async function h(request) {
-                       await fs.promises.writeFile(request.user.directories.backups + '/x', 'data');
+                       await fs.promises.writeFile(request.user.directories.chats + '/x', 'data');
                    }`,
-            filename: endpointPath('src/endpoints/backups.js'),
+            filename: endpointPath('src/endpoints/chats.js'),
         },
         // Allowlisted file uses fsPromises alias with request.user.directories.* — exempt.
         {

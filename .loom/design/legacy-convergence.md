@@ -167,3 +167,54 @@ users-* / sync* / skills / panel-shim / card-runtime / storage-health / renderer
 2. **近端(小)**:web `renameChat` 切 utopinn 路由(gap#11);CLI `checkNoActiveJob` 依赖 gap#3 落地后切 `/jobs`;api-client deprecated 动词按 gap#4/#12 迁移。
 3. **中端**:gap#1 群聊域插件化(web messenger stage 前置)、gap#2 named-doc 读面(QR 条去 legacy)。
 4. **远端(拍板)**:3.A 一层候选连测删;golden 捕获迁 `/preview` 直采后 3.B 逐面退役;`TASK-035 done_when` 的"public/scripts 引擎文件删除"与 3.B 同前提。
+
+## 6. 删减执行记录(TASK-035 P2,2026-11-21)
+
+### 6.1 已删(19 文件 / ~144 路由)+ 摘挂载(2 文件 / 9 路由)
+
+**整文件删除(连带注册摘除)**,server-startup.js 同步摘 import+`app.use`:
+
+| 面 | 文件 | 路由 |
+|---|---|---|
+| 提供商 extras | anthropic(1) openai(17) azure(2) novelai(4) horde(11) minimax(1) volcengine(1) nanogpt(2) openrouter(6) | 45 |
+| 图像生成 | stable-diffusion | 53 |
+| 工具 extras | translate(8) speech(11) caption(1) search(11) | 31 |
+| 用户资产/卫生 | files(4) backups(3) data-maid(4) media-cleanup(2) docs(2) | 15 |
+
+**仅摘挂载、文件保留**(非路由导出被活代码 import):
+- `google.js`:`getVertexAIAuth`/`getProjectIdFromServiceAccount`/`getGoogleApiConfig` 被 `plugins/utopinn-connection.js`(产品面)、`luker-dispatch/providers/chat-completions/makersuite.js`、`src/vectors/{google-vectors,model-list}.js` import → `/api/google`(7 路由)摘挂载,文件降级为 helper 库。
+- `content-manager.js`:`checkForNewContent`/`CONTENT_TYPES`/`getContentOfType`/`getDefaultPreset(s|File)`/`getHostFromUrl`/`isHostWhitelisted` 被 server-main、users-public/private/admin、presets、assets、users.js import → `/api/content`(2 路由)摘挂载,文件保留。
+
+**连带删除的自测(15 文件)**:stable-diffusion.test.js、pollinations.test.js(speech TTS 自测)、search-visit.test.js、search-tools/{provider-registry,search-adapters,search-query-route}.test.js、media-references/data-maid-images.test.js、storage/endpoints/media-cleanup-{candidates,delete}.test.js、e2e/extensions/{93-translate,95-stable-diffusion-slash,96-caption-upload,search-providers}.e2e.js、e2e/search-tools/01-program-driven-agent.e2e.js、e2e/server/51-data-maid-orphan.e2e.js。
+
+**配套清理**:`eslint-rules/no-raw-fs-allowlist.json` 摘掉 backups/data-maid/files/stable-diffusion 四条死项;`tests/lint/no-raw-fs-in-endpoint.test.js` 的"已豁免文件"夹具由 backups.js 换为 chats.js。
+
+### 6.2 删减阻塞清单(本轮查明,逐条注明)
+
+| 文件/面 | 谁依赖 | 解锁条件 |
+|---|---|---|
+| `classify.js`(/api/extra/classify) | `tests/e2e/regression/135-jitless-runtime.e2e.js` 真调 `/api/extra/classify/labels` 断言 500(非自测,是 jitless 回归用例的固定探针) | 135 用例改写或删除该探针断言 |
+| `image-metadata.js`(/api/image-metadata) | ①`backgrounds.js` import 其 5 个导出;②server-main `initializeAllUserMetadata` 启动调用;③135-jitless 真调 `/all`;④split-cache.test.js + sync/image-metadata-cleanup.test.js 自测 | ①②决定文件不可删;路由摘挂载需 135 探针先走 |
+| `thumbnails.js`(/thumbnail) | ①`avatars/backgrounds/characters.js` import `invalidateThumbnail`;②135-jitless + 101-persona e2e 真取缩略图;③**CLI `groupAssistantFloor` 与 `services/group-orchestration.js` 把 `/thumbnail?type=avatar` URL 写进群消息数据**——删端点=存量群消息头像失效 | ①②③任一为真即不可删;实质=基建件,建议永久留 |
+| `vectors.js`(/api/vector) | smart-context 域产品方向未拍板(§3.A 备注已缓) | 拍板是否继承后并入对应层 |
+| §3.B 全层(settings/secrets/presets/worldinfo/characters/chats/groups/backends/*/generation-control/tokenizers/stats/bootstrap + 壳面 themes/moving-ui/quick-replies/backgrounds/avatars/sprites/images/assets/extensions/card-app + backends/kobold、text-completions) | golden/e2e 捕获链:旧 UI 启动→生成全链在跑这些面 | golden 捕获迁 `/api/utopinn/preview` 直采(headless-cardapp-harness 方向) |
+| `public/scripts/*`(openai.js/world-info.js/PromptManager 等浏览器引擎) | `LUKER_SERVE_LEGACY=1` 整目录静态挂载即 harness 本体;jest `moduleNameMapper` 把 `/scripts/*` 映到该目录,大量单测直接 import public 模块 | 同 3.B:golden 捕获改 `/preview` 直采后整目录退役 |
+| `extensions.js` | 旧 UI 启动列第三方扩展,golden 页若启用扩展会触达 | 随 3.B |
+| 残留死项(不阻塞,记录):`users.js` `QUOTA_ENFORCED_PATH_PREFIXES` 里 `/api/files/upload` 死前缀;`sync/in-progress-gate.js` GATED_ROUTES 里 `/api/media/delete` `/api/data-maid/delete` `/api/sd/comfy/*` `/api/content/importURL|importUUID` 死规则(匹配器静态表,死项永不命中,删了反而破 in-progress-gate 断言) | — | 如需清洁癖另行微改 |
+
+### 6.3 验证记录
+
+- **模块图**:`node --check` 过;`setupPrivateEndpoints` 挂裸 express 枚举 `_router.stack` 实证挂载表——21 个挂载已摘除,保留面(`/thumbnail`、`/api/extra/classify`、`/api/image-metadata`、`/api/vector`、§3.B、3.C 全部)逐一对账在位。
+- **实弹启动**:`LUKER_SKIP_WEBPACK=1 LUKER_PREBUILT_BUNDLES_DIR=<e2e-scratch output> node server.js --dataRoot /tmp/task035-data3 --port 18999` 完整起来——11 utopinn 插件 active、content 播种正常、`initializeAllUserMetadata` 正常;HTTP 探针:已删面 GET 全 404、`/api/utopinn/stats/summary` 200、`/api/characters/all` 403(路由在,鉴权挡)。
+- **jest 定向**(9 套件 201 用例):8 套全绿;`sync/in-progress-gate.test.js` 1 用例失败为**预存漂移**——`/api/utopinn/(import/(preview|scan-st)|backup|lan/offer)` 路由带全 28 类目但 `wholesale:false`(commit a586cbe 引入),与本次删减无关。
+- **drift**:`tests/test-cli-routes.cjs` exit 0(该测只数 kernel 路由,不受 legacy 删减影响)。
+- **未跑**:全量 jest(~500+ 文件,9P 环境单跑定向已 141s)、playwright e2e 全套、golden-diff——实弹只验到启动+路由层;golden 链未动(3.B 未删,harness 面完整,预期不受影响但未实证)。
+
+### 6.4 对照 §3.A 的偏差
+
+- `vectors.js`:按 §3.A 备注缓删 → 仍在。
+- `google.js`、`content-manager.js`:盘点表消费方列漏记了非路由导出被 import(google←utopinn-connection/makersuite/vectors;content-manager←users-*/presets/assets/users.js/server-main)→ 摘挂载不删文件。
+- `thumbnails.js`:盘点表只记 U;实测 CLI+server 侧把 `/thumbnail` URL 写进群消息数据 + 两个 e2e 真取 → 移出删减层。
+- `classify.js`、`image-metadata.js`:135-jitless e2e 非自测消费 → 移出删减层。
+
+删减后 legacy 面:519 → ~366 有效挂载路由(153 路由摘除,其中 144 随文件删除、9 仅摘挂载)。

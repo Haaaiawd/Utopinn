@@ -2961,40 +2961,42 @@
         {
           "criterion": "legacy /api/chats、/api/backends/chat-completions 生成/状态端点删除或降为纯转发",
           "verify_by": "全量回归 + 实弹",
-          "evidence": "",
-          "verified": ""
+          "evidence": "部分:P2 已删 extras 层 19 文件/~144 路由 + google/content-manager 摘挂载 9 路由(legacy 519→~366);但 /api/chats、/api/backends/chat-completions 等生成/状态主链端点属 3.B——golden/e2e 捕获链仍依赖,未删未降转发(见 legacy-convergence.md §6.2 阻塞清单)",
+          "verified": "partial"
         },
         {
           "criterion": "public/scripts/openai.js、world-info.js、PromptManager 等浏览器引擎文件删除",
           "verify_by": "全量回归 + 实弹",
-          "evidence": "",
-          "verified": ""
+          "evidence": "未达成(阻塞):public/ 整目录即 LUKER_SERVE_LEGACY harness 本体,golden-diff/e2e 浏览器直接加载 openai.js/world-info.js/PromptManager.js;jest moduleNameMapper 亦映射 /scripts/*→public。删除前提=golden 捕获迁 /api/utopinn/preview 直采(同 3.B)",
+          "verified": "partial"
         },
         {
           "criterion": "全量回归+实弹+golden-diff 绿",
           "verify_by": "全量回归 + 实弹",
-          "evidence": "",
-          "verified": ""
+          "evidence": "部分绿:实弹启动 OK(11 插件 active+播种+image-metadata init)+路由表枚举对账+定向 jest 9 套件 201 用例 8 绿(1 失败=预存 wholesale 漂移 a586cbe)+test-cli-routes exit 0;全量 jest/playwright e2e/golden-diff 因 9P 环境未跑",
+          "verified": "partial"
         }
       ],
       "progress": {
         "completed": [
-          "P1 清点+收口方案落地:.loom/design/legacy-convergence.md(2026-11-21)"
+          "P1 清点+收口方案落地:.loom/design/legacy-convergence.md(2026-11-21)",
+          "P2 安全删减(2026-11-21):19 端点文件删除(提供商 extras+SD+translate/speech/caption/search+files/backups/data-maid/media-cleanup/docs),google/content-manager 仅摘挂载(helper 被活代码 import),15 自测连删,eslint allowlist 清理;3 文件移出删减层(classify/image-metadata/thumbnails,135 e2e+群消息数据引用);全记录见 legacy-convergence.md §6"
         ],
-        "next": "P2 待拍板:3.A 一层删减候选(~166 路由/24 文件)连测删;gap 补缺按 §5 收编序;浏览器引擎文件删除前提=golden 捕获迁 /preview 直采"
+        "next": "P3:golden 捕获迁 /preview 直采后按 §6.2 阻塞清单逐面退役 3.B;gate 表 wholesale 漂移另案修;web renameChat/gap 补缺按 §5 序"
       },
       "evidence": [
         "对照表:.loom/design/legacy-convergence.md(双面总表+补缺 12 项+删减两层候选+标注清单)",
         "实测:utopinn 11 插件 83 HTTP+1WS+1UDP;legacy src/endpoints/ 64 文件~519 有效挂载(+面外~24),非抄旧档 67",
         "标注:47 个 compat 端点文件加一行头注「compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*」,node --check 64 文件全过;groups/quick-replies 有活产品消费+无孪生故不标,列 gap#1/#2",
-        "关键结论:web SPA 仅剩 4 条 legacy 调用(rename/quick-replies list/card-runtime/ws-ticket);CLI 剩 4 条(characters/all+groups/all+group/get+jobs/active);api-client panel-t0 有 7 个 @deprecated legacy 动词待迁;3.A 删减候选为 extras 生态(提供商面/SD/翻译/语音等)零非自测消费方"
+        "关键结论:web SPA 仅剩 4 条 legacy 调用(rename/quick-replies list/card-runtime/ws-ticket);CLI 剩 4 条(characters/all+groups/all+group/get+jobs/active);api-client panel-t0 有 7 个 @deprecated legacy 动词待迁;3.A 删减候选为 extras 生态(提供商面/SD/翻译/语音等)零非自测消费方",
+        "P2 删减:519→~366 有效挂载路由;阻塞清单 8 条(含 thumbnails=CLI/group-orchestration 写 URL 进群消息数据实质基建);server-startup.js 摘 21 import+21 mount"
       ],
       "outcome": "清点 LUKER_SERVE_LEGACY 兼容 harness(golden/e2e)仍依赖的 legacy 端点集合;utopinn REST 已可覆盖的删掉,harness 专用端点标注 compat 面,其余制定退役序。新 SPA 不依赖任何 legacy 端点(已成立)。",
       "boundaries": [
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
       ],
-      "updated_at": "2026-11-21T00:00:00.000Z",
+      "updated_at": "2026-11-21T06:00:00.000Z",
       "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)",
       "touches": [
         ".loom/design/v2-stack-decisions.md",
