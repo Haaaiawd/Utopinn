@@ -11,7 +11,7 @@ import {
     DeviceMobile, DiceFive, DotsThree, DownloadSimple, Eye, EyeClosed, FastForward, Feather, File, Folder, GearSix, GitFork, Globe,
     GridFour, House, Image, Layout, Lightning, Link, List, ListNumbers, MagicWand, MagnifyingGlass, Minus, Monitor,
     Moon, MusicNote, Note, NotePencil, Notebook, Paperclip, PenNib, PencilSimple, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
-    ShieldCheck, SidebarSimple, SignOut, Divide, SlidersHorizontal, Sparkle, Square, Stack, Storefront, Sun,
+    Quotes, ShieldCheck, SidebarSimple, SignOut, Divide, SlidersHorizontal, Sparkle, Square, Stack, Storefront, Sun,
     Terminal, Trash, UploadSimple, User, Warning, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
@@ -111,6 +111,7 @@ const MAP = {
     store: Storefront,
     puzzle: PuzzlePiece,
     penNib: PenNib,
+    quote: Quotes,
 } as const satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof MAP | 'persona' | 'branch' | 'compass' | 'bookmark' | 'flame';

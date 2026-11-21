@@ -59,6 +59,9 @@ export interface FloorOps {
     editing: { id: number; text: string } | null;
     onSwipe: (m: FloorMsg, dir: -1 | 1) => void;
     onCopy: (m: FloorMsg) => void;
+    /** 楼层「引用」:该楼文本作 markdown 引用块塞入 composer 草稿,
+     *  供「改这段」类指令;占位级 —— composer 无插入通道时直写 draft。 */
+    onQuote: (m: FloorMsg) => void;
     onEdit: (m: FloorMsg) => void;
     onEditText: (text: string) => void;
     onSaveEdit: (m: FloorMsg) => void;
@@ -303,6 +306,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const [loadErr, setLoadErr] = useState<string | null>(null);
     const transientRef = useRef(0);
     const accRef = useRef('');
+    const draftTaRef = useRef<HTMLTextAreaElement>(null);
     const abortingRef = useRef('');
     const wsClose = useRef<(() => void) | null>(null);
     /** 服务端中止后 WS 未必回终帧 —— 本地 settle 兜底,busy 不挂。 */
@@ -725,6 +729,16 @@ export function StageFrame({ children }: { children: ReactNode }) {
     }, [swipeTo]);
 
     /* ——— 楼操作 ——— */
+    /* 「引用」:楼层展示文本(markdown `> ` 逐行)置顶进 composer 草稿,
+       已有草稿接在其后 —— 用户补「改这段」类指令即发送。 */
+    const onQuote = useCallback((m: FloorMsg) => {
+        const src = (m.displayContent ?? m.content).trim();
+        if (!src) return;
+        const block = src.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
+        setDraft((prev) => block + prev);
+        draftTaRef.current?.focus();
+    }, []);
+
     const onCopy = useCallback((m: FloorMsg) => {
         void navigator.clipboard?.writeText(m.displayContent ?? m.content).then(() => s.hint(t('stage.op.copied'))).catch(() => s.hint(t('stage.op.copyFailed'), true));
     }, [s, t]);
@@ -858,6 +872,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         onSwipe: (mm, dir) => onSwipe(mm, dir),
         onSwipeTo: (mm, i) => onSwipeTo(mm, i),
         onCopy,
+        onQuote,
         /* 编辑框种子=存储原文(ST:编辑框给原文)—— content 槽是 GH#3 展示
            投影文本,直接用会把投影烤进 mes/swipes[k]。 */
         onEdit: (mm) => setEditing({ id: mm.id, text: floorRawText(mm) }),
@@ -983,6 +998,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     )}
                     <div className="composer-shell mx-auto w-full max-w-[660px] space-y-2.5 rounded-[14px] p-3">
                         <textarea
+                            ref={draftTaRef}
                             value={draft}
                             onChange={(e) => setDraft(e.target.value)}
                             onKeyDown={(e) => {

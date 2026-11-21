@@ -19,7 +19,7 @@ const zh: Record<string, string> = {
     'wb.launcher.search': '搜索面板、预设调参、MVU 或插件…', 'wb.launcher.new': '新键', 'wb.launcher.suggested': '建议',
     'panel.unregistered': '未注册板块',
     'panel.type.preset': '预设 / 模型', 'panel.type.mvu': 'MVU 状态树', 'panel.type.notes': '随手笔记',
-    'panel.type.ledger': '卡面板 · 云栖宗总簿', 'panel.type.lore': '世界书命中', 'panel.type.chapters': '章节与伏笔', 'panel.type.channels': '频道与群成员',
+    'panel.type.ledger': '卡面板', 'panel.type.lore': '世界书命中', 'panel.type.chapters': '章节与伏笔', 'panel.type.channels': '频道与群成员',
     'panel.loadFailed': '加载失败',
     'panel.desc.preset': '预设与生成参数', 'panel.desc.mvu': 'MVU 快照变量', 'panel.desc.notes': '记录人物关系、设定备忘与灵感',
     'panel.desc.ledger': 'CardApp 宿主', 'panel.desc.lore': '作品世界书条目', 'panel.desc.chapters': '小说章节目录', 'panel.desc.channels': '多群聊/私聊切换与 NPC 情绪',
@@ -49,7 +49,6 @@ const zh: Record<string, string> = {
     'ctx.capsule': '上下文', 'ctx.title': '世界书与上下文栈', 'ctx.bound': '绑定形态',
     'ctx.globalLore': '全局常驻 JSON 书', 'ctx.openPreset': '在右侧打开「预设与模型」精细调参',
     'stage.label.chat': '纯文字卡', 'stage.label.novel': '小说形态', 'stage.label.messenger': '群聊频道', 'stage.label.theater': '剧场模式',
-    'novel.polish': '润色此段', 'novel.polish.stub': '段落润色走 composer 指令流 —— 此处先占位',
     'vn.hideHud': '纯赏景', 'vn.showDialog': '显示对话',
     'slash.continue': '继续续写', 'slash.regen': '重新生成上一楼', 'slash.impersonate': '扮演用户代写',
     'composer.placeholder': '输入行动或台词,点 / 呼出斜杠指令…', 'composer.attach': '附件', 'composer.impersonate': '代写', 'composer.send': '发送',
@@ -97,6 +96,10 @@ const zh: Record<string, string> = {
     'panel.desc.diag': 'Jobs · Trace · 报错 · 日志', 'panel.desc.stats': '生成统计与 WI 命中',
     'wb.detach': '拆出为悬浮窗',
     'wb.launcher.cardapp': '卡绑面板(CardApp 宿主)', 'wb.launcher.system': '系统面板', 'wb.launcher.iframe': 'iframe 宿主',
+    'wb.launcher.nocardapp': '该卡无 CardApp',
+    /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
+    'msgframe.dock': '收至右栏', 'msgframe.docked': '卡面板已收至右栏', 'msgframe.expand': '展开',
+    'panel.type.messageframe': '楼层卡面板', 'msgframe.idle': '从楼层卡面板右上角收至此处',
     'diag.sub.errors': '报错',
     'diag.jobs.empty': '暂无生成任务 —— 发起一轮对话后此处出现 Jobs',
     'diag.trace.pick': '先在 Jobs 页选一个任务', 'diag.trace.none': '该任务暂无注入时序',
@@ -141,6 +144,7 @@ const zh: Record<string, string> = {
     'stage.swipe.prev': '上一版', 'stage.swipe.next': '下一版 · 末版后再生成',
     'stage.swipe.needLast': '只有最后一条角色楼可以生成新版本',
     'stage.op.copy': '复制', 'stage.op.edit': '编辑', 'stage.op.del': '删除', 'stage.op.rewind': '回滚',
+    'floor.quote': '引用',
     'stage.op.copied': '已复制', 'stage.op.copyFailed': '复制失败',
     'stage.op.delConfirm': '删除该楼层?',
     'stage.op.rewindConfirm': '回滚到该楼?其后楼层将被删除,MVU 变量将恢复到该楼快照。',
@@ -223,7 +227,17 @@ const zh: Record<string, string> = {
     'mob.hub.global': '全局常驻栈', 'mob.hub.import': '导入角色卡 / 世界书 JSON',
 };
 
-const en: Record<string, string> = Object.fromEntries(Object.keys(zh).map((k) => [k, k]));
+/* en 词面约定:缺省回显键名(占位诚实态);新增键给真英文的在这覆盖。 */
+const en: Record<string, string> = {
+    ...Object.fromEntries(Object.keys(zh).map((k) => [k, k])),
+    'floor.quote': 'Quote',
+    'wb.launcher.nocardapp': 'No CardApp on this card',
+    'msgframe.dock': 'Dock to panel',
+    'msgframe.docked': 'Card panel docked to workbench',
+    'msgframe.expand': 'Expand',
+    'panel.type.messageframe': 'Floor panel',
+    'msgframe.idle': 'Dock a floor card panel here',
+};
 
 export const shellFeature: Feature = {
     name: 'shell',

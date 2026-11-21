@@ -11,6 +11,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
+import { MessageIframe } from '../../cardapp/MessageIframe';
 import { ApiError } from '../../api/client';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
 import { thCall } from '../../api/th';
@@ -572,6 +573,34 @@ export function CardAppPanel() {
     return (
         <div className="h-full min-h-[320px]">
             <CardAppMount />
+        </div>
+    );
+}
+
+/** 楼层卡面板板块 —— displayed_message 嵌帧「收至右栏」的落点
+ *  (category:'hidden',不进 launcher;dock 动作 openPanel 顺带写
+ *  params = {charDir,chatName,html,messageId,blockIndex})。
+ *  params 缺席 → 引导空态(不拿别楼块源假挂载);内容按 params
+ *  原样承载 —— 同块源重铸 mount,桥语义与楼层位同份。 */
+export function MessageFramePanel() {
+    const { t } = useI18n();
+    const s = useShell();
+    const p = s.panelParams['messageframe'] as
+        | { charDir?: string; chatName?: string; html?: string; messageId?: number; blockIndex?: number }
+        | undefined;
+    if (!p?.charDir || typeof p.html !== 'string' || !p.html.trim()) {
+        return <PanelEmpty icon="layout" desc={t('msgframe.idle')}>{t('panel.type.messageframe')}</PanelEmpty>;
+    }
+    return (
+        <div className="h-full p-1.5">
+            <MessageIframe
+                charDir={p.charDir}
+                chatName={p.chatName}
+                html={p.html}
+                messageId={p.messageId}
+                blockIndex={p.blockIndex}
+                chrome="panel"
+            />
         </div>
     );
 }

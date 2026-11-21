@@ -35,10 +35,12 @@ export interface PanelTypeContribution {
     /** launcher 目录元数据:desc/badge 是 i18n 键(t() 回落键名);
      *  category 决定 launcher 分组 —— 规范稿 PANEL_CATALOG 三桶:
      *  'system' 系统面板格 / 'cardapp' 卡提供面板行(iframe 宿主) /
-     *  'suggested' 建议组(缺省按 system 收)。 */
+     *  'suggested' 建议组(缺省按 system 收)。
+     *  'hidden' = 已注册可开 tab、但不进 launcher 任何桶
+     *  (瞬态承载型板块,如 messageframe 嵌帧 dock 落点)。 */
     desc?: string;
     badge?: string;
-    category?: 'system' | 'cardapp' | 'suggested';
+    category?: 'system' | 'cardapp' | 'suggested' | 'hidden';
 }
 
 /** 左树面板贡献:归属 rail 域,壳按当前 railTab 渲染全部匹配贡献

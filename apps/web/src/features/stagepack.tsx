@@ -325,13 +325,6 @@ function NovelBody() {
                                                 {sel && (
                                                     <div className="mt-2.5 flex items-center gap-2 border-t pt-2 font-sans text-xs" style={{ textIndent: 0, borderColor: 'var(--border-subtle)' }}>
                                                         <button
-                                                            className="rounded-lg px-2.5 py-1 font-medium"
-                                                            style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
-                                                            onClick={(e) => { e.stopPropagation(); s.hint(t('novel.polish.stub')); }}
-                                                        >
-                                                            {t('novel.polish')}
-                                                        </button>
-                                                        <button
                                                             className="rounded-lg px-2 py-1 text-[color:var(--fg-muted)]"
                                                             onClick={(e) => { e.stopPropagation(); s.patchStageData({ selParaId: null }); }}
                                                         >

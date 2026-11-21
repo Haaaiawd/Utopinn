@@ -1,11 +1,12 @@
 // 规范稿右工作台:wb-resizer(拖宽/双击 410 复位) + aside(state.workbenchWidth)|
 // h-12 tab 条(openTabs +「+ 新标签页」)+ 板块体 + 受控悬浮窗(detach/dockBack)。
 // 壳不识板块类型 —— 体与目录元数据全走 'panel.type' 贡献点,launcher 由贡献目录自动生成。
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import type { PanelTypeContribution } from '../../kernel/contributions';
+import { cardAppInfo, type CardAppInfo } from '../../api/cardRuntime';
 
 /** 按类型解析板块体(panel.type 贡献点;未注册 → 诚实占位)。 */
 export function PanelBody({ type }: { type: string }) {
@@ -27,17 +28,34 @@ function panelTitle(t: (k: string) => string, c?: PanelTypeContribution, fallbac
     return c.title ? t(c.title) : t(`panel.type.${c.type}`);
 }
 
+/** 当前会话卡的 CardApp 申报 —— manifest dry-run(不 mint mount);
+ *  charDir 空 → has:false;回包未到 → null(加载位)。 */
+function useCardApp(charDir: string | null): CardAppInfo | null {
+    const [info, setInfo] = useState<CardAppInfo | null>(null);
+    useEffect(() => {
+        if (!charDir) { setInfo({ has: false }); return; }
+        let dead = false;
+        setInfo(null);
+        void cardAppInfo(charDir).then((i) => { if (!dead) setInfo(i); });
+        return () => { dead = true; };
+    }, [charDir]);
+    return info;
+}
+
 /** 新键 launcher(规范稿 renderNewTabLauncher:px-5 py-8 垂直居中 + 440px 栏 —
  *  圆角搜索条 → cardapp 卡提供面板行(1.5px 粗边 + 「iframe 宿主」尾注)→
- *  system 系统面板两列格;suggested 是三方贡献逃生位,稿内未画,沿用 inset 行式)。 */
+ *  system 系统面板两列格;suggested 是三方贡献逃生位,稿内未画,沿用 inset 行式)。
+ *  cardapp 区按当前会话卡的 manifest 过滤:卡没声明 card_app → 温和空态
+ *  「该卡无 CardApp」,不再把别卡应用挂进来;有条目时名取 manifest 面板名。 */
 function Launcher({ isMobile = false }: { isMobile?: boolean }) {
     const { t } = useI18n();
     const shell = useShell();
     const contribs = useContribs('panel.type');
+    const appInfo = useCardApp(shell.chat?.charDir ?? null);
     const q = shell.launcherSearch.trim().toLowerCase();
     const match = (c: PanelTypeContribution) =>
         !q || panelTitle(t, c).toLowerCase().includes(q) || c.type.includes(q) || (c.desc ? t(c.desc).toLowerCase().includes(q) : false);
-    const cardItems = contribs.filter((c) => c.category === 'cardapp' && match(c));
+    const cardItems = appInfo?.has ? contribs.filter((c) => c.category === 'cardapp' && match(c)) : [];
     const sysItems = contribs.filter((c) => (c.category ?? 'system') === 'system' && match(c));
     const suggested = contribs.filter((c) => c.category === 'suggested' && match(c));
     const sect = 'px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]';
@@ -59,23 +77,34 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
                         className="w-full bg-transparent text-[13px] text-[color:var(--fg-primary)] outline-none"
                     />
                 </div>
-                {cardItems.length > 0 && (
+                {appInfo?.has ? (
+                    cardItems.length > 0 && (
+                        <div className="space-y-2">
+                            <div className={sect}>{t('wb.launcher.cardapp')}</div>
+                            {cardItems.map((c) => (
+                                <button
+                                    key={c.type}
+                                    className="flex w-full items-center justify-between gap-3 rounded-[10px] p-3.5 text-left transition-colors hover:bg-[color:var(--bg-surface-hover)]"
+                                    style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-bold)', boxShadow: 'var(--shadow-card)' }}
+                                    onClick={() => shell.openPanel(c.type)}
+                                >
+                                    <span className="flex min-w-0 items-center gap-3">
+                                        <span className="text-[color:var(--fg-primary)]"><Icon name={c.icon} size={18} /></span>
+                                        <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{appInfo.name ?? panelTitle(t, c)}</span>
+                                    </span>
+                                    <span className="shrink-0 font-mono-ui text-[10.5px] text-[color:var(--brand)]">{t('wb.launcher.iframe')}</span>
+                                </button>
+                            ))}
+                        </div>
+                    )
+                ) : (
+                    /* 当前卡无 card_app 声明(或取数失败):不列条目不露 iframe
+                       badge,一条温和空态 —— 别卡应用不许挂进来。 */
                     <div className="space-y-2">
                         <div className={sect}>{t('wb.launcher.cardapp')}</div>
-                        {cardItems.map((c) => (
-                            <button
-                                key={c.type}
-                                className="flex w-full items-center justify-between gap-3 rounded-[10px] p-3.5 text-left transition-colors hover:bg-[color:var(--bg-surface-hover)]"
-                                style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-bold)', boxShadow: 'var(--shadow-card)' }}
-                                onClick={() => shell.openPanel(c.type)}
-                            >
-                                <span className="flex min-w-0 items-center gap-3">
-                                    <span className="text-[color:var(--fg-primary)]"><Icon name={c.icon} size={18} /></span>
-                                    <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
-                                </span>
-                                <span className="shrink-0 font-mono-ui text-[10.5px] text-[color:var(--brand)]">{t('wb.launcher.iframe')}</span>
-                            </button>
-                        ))}
+                        <div className="px-0.5 text-[11.5px] leading-relaxed text-[color:var(--fg-faint)]">
+                            {appInfo === null ? '…' : t('wb.launcher.nocardapp')}
+                        </div>
                     </div>
                 )}
                 {sysItems.length > 0 && (

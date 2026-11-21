@@ -11,7 +11,7 @@
 import type { Feature } from '../kernel/kernel';
 import type { PanelTypeContribution } from '../kernel/contributions';
 import {
-    CardAppPanel, ChannelsPanel, ChaptersPanel, LedgerPanel, LorePanel, MvuPanel, NotesPanel, PresetPanel,
+    CardAppPanel, ChannelsPanel, ChaptersPanel, LedgerPanel, LorePanel, MessageFramePanel, MvuPanel, NotesPanel, PresetPanel,
 } from '../components/panels/SpecPanels';
 import { DiagPanel } from '../components/panels/DiagPanel';
 import { StatsPanel } from '../components/panels/StatsPanel';
@@ -37,6 +37,9 @@ export const panelsFeature: Feature = {
         add({ type: 'notes', icon: 'note', wired: true, Body: NotesPanel, desc: 'panel.desc.notes', category: 'system' });
         /* preset 为规范稿目录外的真实有线面板,殿后不扰动前 7 格序。 */
         add({ type: 'preset', icon: 'sliders', wired: true, Body: PresetPanel, desc: 'panel.desc.preset', category: 'system' });
+        /* messageframe —— 楼层嵌帧「收至右栏」的承载板块:可开 tab 可拆窗,
+           但不进 launcher 任何桶(瞬态承载,dock 动作直开,非目录条目)。 */
+        add({ type: 'messageframe', icon: 'layout', wired: true, Body: MessageFramePanel, title: 'panel.type.messageframe', category: 'hidden' });
         /* 服务端清单水合:声明面元数据(wired 真值/缺省补齐/占位注册)由
          * /api/utopinn/ui/contrib 对账;失败静默 —— 静态旗标即离线真值。 */
         hydratePanelTypes(ctx, reg);

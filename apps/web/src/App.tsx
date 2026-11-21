@@ -57,6 +57,38 @@ function ViewOutlet() {
 
 const MOBILE_BP = 680;
 
+/* ——— 右工作台布局按会话持久化 ———
+ * key = 会话坐标(charDir/chatName),值 = {openTabs,activeTab,floatingType}。
+ * 切会话:旧布局先 flush 到旧 key,再按新 key 水合(无存档 → 会话
+ * defaultTabs → launcher 兜底);无会话/跨卡互不染。floatingType 同在档里
+ * —— 卡 A 飘着的窗切到卡 B 不跟着飘。panelParams 仍全局(板块现场)。 */
+interface WbLayout {
+    openTabs: PanelType[];
+    activeTab: string;
+    floatingType: PanelType | null;
+}
+
+const wbStorageKey = (chatKey: string) => `utopinn.wb.${chatKey}`;
+
+function loadWbLayout(chatKey: string): WbLayout | null {
+    try {
+        const raw = localStorage.getItem(wbStorageKey(chatKey));
+        if (!raw) return null;
+        const j = JSON.parse(raw) as Partial<WbLayout>;
+        const openTabs = Array.isArray(j.openTabs) ? j.openTabs.filter((x): x is string => typeof x === 'string') : null;
+        if (!openTabs) return null;
+        return {
+            openTabs,
+            activeTab: typeof j.activeTab === 'string' ? j.activeTab : (openTabs[0] ?? 'newtab'),
+            floatingType: typeof j.floatingType === 'string' ? j.floatingType : null,
+        };
+    } catch { return null; }
+}
+
+function saveWbLayout(chatKey: string, layout: WbLayout): void {
+    try { localStorage.setItem(wbStorageKey(chatKey), JSON.stringify(layout)); } catch { /* storage 不可用就静默 */ }
+}
+
 function Shell() {
     const { t } = useI18n();
     // 规范稿默认落点:掌门线聊天会话 + 总簿 tab;view=chat,rail 第一域。
@@ -138,6 +170,48 @@ function Shell() {
 
     const railTab = (RAIL_VIEWS as readonly string[]).includes(view) ? view : 'chat';
     const chat = useMemo(() => chats.find((c) => c.id === activeChat) ?? null, [chats, activeChat]);
+
+    /* ——— 工作台布局按会话坐标存档/水合 ———
+     * wbKeyRef = 当前 openTabs/activeTab/floatingType 所属的存档 key;
+     * layoutRef 每渲同步最新三态,供切会话瞬间 flush 旧档(effect 里
+     * 拿到的 setter 态仍是旧值 —— React 提交顺序兜底)。 */
+    const wbKey = chat?.charDir && chat?.chatName ? `${chat.charDir}/${chat.chatName}` : null;
+    const wbKeyRef = useRef(wbKey);
+    const wbFirstRef = useRef(true);
+    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatingType });
+    wbLayoutRef.current = { openTabs, activeTab, floatingType };
+    const chatRef = useRef(chat);
+    chatRef.current = chat;
+
+    /* 水合:wbKey 变 → 旧布局 flush 到旧 key,新 key 存档恢复;
+       无存档 → defaultTabs(规范稿默认板块)→ launcher 兜底。
+       首跑(冷启动当前会话)同参 —— 有档即按档恢复。 */
+    useEffect(() => {
+        const prevKey = wbKeyRef.current;
+        const first = wbFirstRef.current;
+        wbFirstRef.current = false;
+        if (prevKey === wbKey && !first) return;
+        if (prevKey !== wbKey) {
+            if (prevKey) saveWbLayout(prevKey, wbLayoutRef.current);
+            wbKeyRef.current = wbKey;
+        }
+        const stored = wbKey ? loadWbLayout(wbKey) : null;
+        const next: WbLayout = stored ?? (() => {
+            const tabs = [...(chatRef.current?.defaultTabs ?? [])];
+            return { openTabs: tabs, activeTab: tabs[0] ?? 'newtab', floatingType: null };
+        })();
+        setOpenTabs(next.openTabs);
+        setActiveTab(next.activeTab);
+        setFloatingType(next.floatingType);
+        if (next.openTabs.length || next.floatingType) setWorkbenchOpen(true);
+    }, [wbKey]);
+
+    /* 持久化:三态任一变化 → 写当前存档。deps 不含 wbKey —— 切会话那
+       次提交三态未变本 effect 不跑,水合后的重渲写回同份(幂等),
+       不会拿旧布局盖新档。无会话 key=null 不落盘。 */
+    useEffect(() => {
+        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatingType });
+    }, [openTabs, activeTab, floatingType]);
 
     const showHint = useCallback((msg: string, err?: boolean) => {
         setHint({ msg, err });
@@ -329,14 +403,10 @@ function Shell() {
             if (window.innerWidth <= 920) setSidebarOpen(false);
             /* 规范稿 select-session:mobileDrawerOpen=false。 */
             setMobileDrawer(false);
-            /* 规范稿 select-session:openTabs 整包替换为会话 defaultTabs
-             * (空 → newtab launcher 页),并重置 novel 段选 —— 不合入旧 tab。 */
-            const sc = chats.find((c) => c.id === id);
-            const tabs = [...(sc?.defaultTabs ?? [])];
-            setOpenTabs(tabs);
-            setActiveTab(tabs[0] ?? 'newtab');
+            /* 工作台布局改由 wbKey 水合段统一接管:有档按档恢复,无档
+             * defaultTabs → launcher(见上方 persist 段);旧布局同时
+             * flush 进旧会话 key —— 这里不再手动开 tab。 */
             setStageData((prev) => ({ ...prev, selParaId: null }));
-            if (tabs.length) setWorkbenchOpen(true);
         },
         newChat: onNewChat,
         renameChat: onRenameChat,

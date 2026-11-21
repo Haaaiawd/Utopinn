@@ -67,7 +67,7 @@ function FloorBody({ m, streaming }: { m: FloorMsg; streaming?: boolean }) {
                 </div>
             )}
             {!streaming && charDir && split.blocks.map((b, i) => (
-                <MessageIframe key={`${m.id}-${i}`} charDir={charDir} chatName={chatName} html={b.html} messageId={m.id} />
+                <MessageIframe key={`${m.id}-${i}`} charDir={charDir} chatName={chatName} html={b.html} messageId={m.id} blockIndex={i} />
             ))}
         </>
     );
@@ -110,6 +110,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                 </div>
                 {/* 触屏无 hover —— 移动端 ops 常显(opacity-90),桌面保留 hover 显现 */}
                 <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast || s.isMobile ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                    <button className="ghost-btn h-7 w-7" title={t('floor.quote')} onClick={() => ops.onQuote(m)}><Icon name="quote" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
@@ -210,6 +211,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                                     <button className="ghost-btn h-6 w-6 text-[12px]" title={t('stage.swipe.next')} onClick={() => ops.onSwipe(m, 1)}>›</button>
                                 </span>
                             )}
+                            <button className="ghost-btn h-7 w-7" title={t('floor.quote')} onClick={() => ops.onQuote(m)}><Icon name="quote" size={14} /></button>
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>

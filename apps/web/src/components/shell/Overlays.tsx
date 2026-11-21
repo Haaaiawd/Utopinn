@@ -604,8 +604,10 @@ export function Cmdk() {
     /* 规范稿 cmdk 两组:角色卡与会话(头像+card·title+形态)/ 右栏面板(截 4) */
     const sHits = s.chats.filter((c) =>
         !qq || c.title.toLowerCase().includes(qq) || (s.cards.get(c.charDir)?.name ?? c.charDir).toLowerCase().includes(qq));
+    /* category:'hidden' = 瞬态承载板块(messageframe 等)—— 可开 tab,
+       不进 cmdk 目录(与 launcher 同口径:非目录条目)。 */
     const pHits = panels.filter((p) =>
-        !qq || t(`panel.type.${p.type}`).toLowerCase().includes(qq) || p.type.includes(qq));
+        p.category !== 'hidden' && (!qq || t(`panel.type.${p.type}`).toLowerCase().includes(qq) || p.type.includes(qq)));
     return (
         <div className="fixed inset-0 z-[85] flex items-start justify-center px-4 pt-20" style={{ background: 'rgba(0,0,0,0.52)', backdropFilter: 'blur(2px)' }} onClick={() => s.setCmdkOpen(false)}>
             <div className="w-full max-w-[480px] overflow-hidden rounded-2xl" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
