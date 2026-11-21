@@ -7,15 +7,12 @@ import { useTheme } from '../../theme';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
 
-/** 36px 顶条:左 LogoU+Utopinn 放大字标(品牌常驻);右 Desktop/Mobile 分段。 */
+/** 36px 顶条:左侧留空(品牌唯一例在左栏头);右 Desktop/Mobile 分段。 */
 export function TopChrome() {
     const shell = useShell();
     return (
         <header className="top-chrome-bar">
-            <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center"><LogoU size={22} /></span>
-                <span className="chrome-wordmark">Utopinn</span>
-            </div>
+            <div />
             <div className="flex items-center gap-2">
                 {/* 规范稿 Desktop/Mobile 分段控件 */}
                 <div className="inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
@@ -186,6 +183,7 @@ export function LeftChrome() {
                     aria-label="Utopinn"
                 >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={26} /></span>
+                    <span className="brand-wordmark pr-1.5">{t('app.name')}</span>
                 </button>
                 <div className="brand-actions">
                     <button className="ghost-btn h-8 w-8 rounded-[8px]" onClick={() => shell.setCmdkOpen(true)} title={t('chrome.search')}>

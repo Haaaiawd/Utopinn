@@ -22,10 +22,7 @@
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 10px;
 }
-.chrome-wordmark {
-    font-size: var(--fs-title-lg); font-weight: 600; letter-spacing: -0.03em;
-    color: var(--fg-primary); line-height: 1;
-}
+
 
 .workspace-inset {
     flex: 1; min-width: 0; height: 100%;
@@ -59,12 +56,19 @@
     overflow: hidden; min-width: 38px;
 }
 .brand-pill-btn:hover { background: var(--bg-active); }
+.brand-wordmark {
+    font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.03em;
+    color: var(--fg-primary); white-space: nowrap;
+    opacity: 0; transform: translateX(-6px); pointer-events: none;
+    transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 .brand-actions {
     display: inline-flex; align-items: center; gap: 2px;
     padding: 2px; border-radius: 9px;
     opacity: 0; transform: translateX(-6px); pointer-events: none;
     transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
+.left-chrome[data-open="true"] .brand-wordmark,
 .left-chrome[data-open="true"] .brand-actions {
     opacity: 1; transform: translateX(0); pointer-events: auto;
     transition: opacity 210ms ease 70ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1) 55ms;
