@@ -50,8 +50,16 @@ export function expandApiGrants(api: string[] | undefined): ApiGrants {
         if (grant === 'th') {
             thFace = true;
             for (const m of PANEL_METHODS_TH_T0) allowed.add(m);
-        } else if (grant === 'ctx' || grant.startsWith('ctx.')) {
+        } else if (grant === 'ctx') {
             ctxFace = true;
+            // ctx 面整体目前降级为徽标;surface 两法是例外 —— 面板页本身就是
+            // 卡的可视表面,open/close 可由 host 如实应答(ctx.surfaceOpen/
+            // surfaceClose 在 dispatch 拦截,不必到 server)。
+            allowed.add('ctx.surfaceOpen');
+            allowed.add('ctx.surfaceClose');
+        } else if (grant.startsWith('ctx.')) {
+            ctxFace = true;
+            allowed.add(grant);   // 单法授权(如 ctx.surfaceOpen)过闸,语义同 web
         } else if (grant.startsWith('th.')) {
             thFace = true;
             allowed.add(grant);

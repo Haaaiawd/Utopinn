@@ -25,6 +25,16 @@ export interface CtxHostOpts {
     push: (event: 'host.event' | 'th.event' | 'chat.updated', payload: Record<string, unknown>) => void;
     /** 信箱事件宿主旁路(不过卡订阅面)——MessageIframe 用 refresh_message 自刷。 */
     onThEvent?: (name: string, args: unknown[]) => void;
+    /** 卡「表面可见性」语义(wire ctx.surfaceOpen/surfaceClose ← ctx.openOverlay/closeOverlay):
+     *  open → 展开承载本帧的工作台板块(panelType 随挂载形态:'cardapp'/'messageframe'),
+     *  close → 收叠面板组。接线方=挂载组件 { panelType, openPanel:s.openPanel,
+     *  collapsePanels:s.collapsePanels }(collapsePanels 由 web 格 kernel context 实现,
+     *  名字已锁定)。未接 → 如实 no_shell_surface 降级,不假装成了。 */
+    surface?: {
+        panelType?: string;
+        openPanel?: (type?: string, params?: unknown) => void;
+        collapsePanels?: () => void;
+    };
     /** 诊断/日志行(默认 console)。 */
     log?: (msg: string) => void;
     /** 轮询/生成等待预算(ms)。 */
@@ -60,6 +70,7 @@ export class CardAppHost {
     private readonly chatFileName?: string;
     private readonly pushEvent: CtxHostOpts['push'];
     private readonly onThEvent?: CtxHostOpts['onThEvent'];
+    private readonly surface?: CtxHostOpts['surface'];
     private readonly log: (msg: string) => void;
     private readonly generationWaitMs: number;
     private readonly userName: string;
@@ -82,6 +93,7 @@ export class CardAppHost {
         this.chatFileName = opts.chatName ? `${opts.chatName}.jsonl` : undefined;
         this.pushEvent = opts.push;
         this.onThEvent = opts.onThEvent;
+        this.surface = opts.surface;
         this.log = opts.log ?? ((m) => console.warn('[cardapp-host]', m));
         this.generationWaitMs = opts.generationWaitMs ?? 120_000;
         this.userName = opts.userName ?? 'User';
@@ -490,6 +502,29 @@ export class CardAppHost {
             case 'off': { this.ctxSubscribed.delete(String(args?.event)); return null; }
             case 'setTimer': return null;
             case 'dispose': return null; // 真 dispose 由 CardAppFrame unmount 触发
+
+            // ── 卡「表面可见性」面(openOverlay→openPanel(panelType),
+            //    closeOverlay→collapsePanels)——接线方为挂载组件经 opts.surface;
+            //    未接壳 → 如实降级,不假装成了 ────────────────────────────────
+            case 'surfaceOpen': {
+                const s = this.surface;
+                if (typeof s?.openPanel !== 'function') {
+                    this.log('ctx.surfaceOpen: 宿主未接 openPanel(surface 面缺席)→ degraded');
+                    return { ok: false, reason: 'no_shell_surface', surface: 'open' };
+                }
+                const panelType = s.panelType ?? 'cardapp';
+                s.openPanel(panelType);
+                return { ok: true, panel: panelType };
+            }
+            case 'surfaceClose': {
+                const s = this.surface;
+                if (typeof s?.collapsePanels !== 'function') {
+                    this.log('ctx.surfaceClose: 宿主未接 collapsePanels(surface 面缺席)→ degraded');
+                    return { ok: false, reason: 'no_shell_surface', surface: 'close' };
+                }
+                s.collapsePanels();
+                return { ok: true };
+            }
             default: throw new Error(`unsupported_method: ctx.${sub}`);
         }
     }

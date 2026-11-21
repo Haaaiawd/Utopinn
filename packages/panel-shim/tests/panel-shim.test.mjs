@@ -9,6 +9,8 @@ import vm from 'node:vm';
 
 const RUNTIME = readFileSync(
     join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'runtime.js'), 'utf8');
+const CTX_SHIM = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'ctx-shim.js'), 'utf8');
 
 function makeEnv(bootstrap = {}) {
     const sent = [];
@@ -167,6 +169,53 @@ test('eventClearEvent / eventClearListener / eventClearAll 本地清+上报', as
     respond(req.requestId, {});
     win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'e2', args: [] } });
     assert.deepEqual(hits, []);
+});
+
+/** ctx-shim env:IIFE 同步建 __CARDAPP_CTX__(face:'ctx',POST 走 __utopinnPanelPost)。 */
+function makeCtxEnv(bootstrap = {}) {
+    const sent = [];
+    const win = {
+        __UTOPINN_PANEL_NONCE__: 'nonce-1',
+        __UTOPINN_PANEL_BOOTSTRAP__: { face: 'ctx', chatName: 'chat1', charId: 'CharA', ...bootstrap },
+        __utopinnPanelPost: (msg) => sent.push(msg),
+        addEventListener: () => { },
+        removeEventListener: () => { },
+        console, setTimeout, clearTimeout, setInterval, clearInterval,
+        Date, JSON, Promise, Object, Array, Error, Math, String, Number, Boolean,
+    };
+    win.window = win;
+    vm.createContext(win);
+    vm.runInContext(CTX_SHIM, win);
+    const lastRequest = () => sent[sent.length - 1];
+    const respond = (requestId, result, ok = true) => {
+        win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'response', nonce: 'nonce-1', requestId, ok, result });
+    };
+    return { win, sent, lastRequest, respond };
+}
+
+test('ctx-shim openOverlay/closeOverlay → wire ctx.surfaceOpen/surfaceClose', async () => {
+    const { win, lastRequest, respond } = makeCtxEnv();
+    const ctx = win.__CARDAPP_CTX__;
+    assert.equal(typeof ctx.openOverlay, 'function');
+    // open → ctx.surfaceOpen(零参);应答值原样还给卡
+    let p = ctx.openOverlay();
+    let req = lastRequest();
+    assert.equal(req.method, 'ctx.surfaceOpen');
+    assert.deepEqual(JSON.parse(JSON.stringify(req.args)), {});
+    respond(req.requestId, { ok: true, panel: 'cardapp' });
+    assert.deepEqual(JSON.parse(JSON.stringify(await p)), { ok: true, panel: 'cardapp' });
+    // close → ctx.surfaceClose
+    p = ctx.closeOverlay();
+    req = lastRequest();
+    assert.equal(req.method, 'ctx.surfaceClose');
+    respond(req.requestId, { ok: true });
+    await p;
+    // 别包死:卡自覆写照常生效(掌门卡 index.js 自产 openOverlay)
+    let cardHit = 0;
+    ctx.openOverlay = () => { cardHit++; };
+    ctx.openOverlay();
+    assert.equal(cardHit, 1);
+    assert.equal(lastRequest().method, 'ctx.surfaceClose', '自覆写不再发 wire 请求');
 });
 
 test('eventEmit dispatches locally AND notifies host', async () => {

@@ -160,6 +160,7 @@ th.generate / th.generateRaw / th.stopGeneration(T1:89-91)。
 | audio | **降**(TH 音效面,宿主 chrome 生态,不追) |
 | presets / personas / import_raw / render_character | **降**(宿主管理面,卡 API 语境不成立) |
 | third_party_message/script.html、predefine.js、_eventOnButton | **实**(以 doc-mount 形态承载同能力——楼层前端块→sandbox iframe+TH 面注入+按钮事件走 eventOn 桥;TH 文件名面未逐字仿) |
+| ctx.openOverlay/closeOverlay(ctx 面,非 TH API) | **实**(wire ctx.surfaceOpen/surfaceClose panels.ts:49-50;shim ctx-shim.js:428-429 真转发——普通赋值,卡自覆写仍生效;web ctxHost ctxDispatch :509-527 → opts.surface{panelType,openPanel,collapsePanels} → 挂载组件接 s.openPanel/s.collapsePanels(web 格 kernel context 名字锁定);CLI cardapp-host :1030-1051 同契约+headless_no_shell 如实降级;mobile PanelWebView:141-156 open=panel_page 即达意/close→onSurfaceClose 或 no_shell_nav) |
 
 ## 汇总
 

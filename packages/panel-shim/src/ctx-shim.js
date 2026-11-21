@@ -423,7 +423,10 @@
         getCharacter: function () { return request('ctx.getCharacter', {}); },
 
         // ── host chrome / misc ──
-        openOverlay: function () { }, closeOverlay: function () { },
+        // 卡「表面可见性」:open → 展开承载本帧的工作台板块,close → 收叠面板组。
+        // 普通属性赋值 —— 卡自覆写(掌门卡 index.js 自产 openOverlay)照样生效。
+        openOverlay: function () { return request('ctx.surfaceOpen', {}); },
+        closeOverlay: function () { return request('ctx.surfaceClose', {}); },
         registerRenderer: function (obj) { ctx.__renderer = obj; },
         getRenderer: function () { return ctx.__renderer || null; },
         addEventListener: function (target, event, handler, options) {

@@ -862,6 +862,73 @@ test('Mvu.getMvuData/replaceMvuData:MVU 形校验 + 楼 data 全量写', async (
     assert.equal(r.status, 200);
 });
 
+// ── K. ctx surface 面(openOverlay/closeOverlay → ctx.surface*)───────────
+// wire:protocol PANEL_METHODS ctx.surfaceOpen/surfaceClose;shim:ctx-shim
+// openOverlay/closeOverlay 真转发(panel-shim.test.mjs 钉 wire 一跳);
+// host:web ctxHost + 本文件 cardapp-host 同契约 opts.surface =
+// {panelType, openPanel, collapsePanels}(web 挂载组件接 s.openPanel/
+// s.collapsePanels;web 格在 kernel context 实现 collapsePanels,名字锁定)。
+
+test('ctx surface:headless 无壳如实降级;opts.surface 注壳两跳 openPanel/collapsePanels', async (t) => {
+    let mountCardApp;
+    try {
+        ({ mountCardApp } = await import('../../cli/cardapp-host.mjs'));
+        await import('jsdom');
+    } catch (e) {
+        t.skip(`headless harness 不可用: ${e?.message ?? e}`);
+        return;
+    }
+    const cardPath = path.join(ROOT, 'surface-card.json');
+    fs.writeFileSync(cardPath, JSON.stringify({
+        name: CHAR,
+        data: {
+            name: CHAR,
+            extensions: {
+                card_app: {
+                    enabled: true,
+                    entry: 'index.html',
+                    files: { 'index.html': TEST_CARD_HTML },
+                },
+            },
+        },
+    }));
+    // ① headless 无 opts.surface → 如实降级(不假装成了)+ console 留痕
+    const plain = await mountCardApp({ server: BASE, charDir: CHAR, chatName: CHAT, card: cardPath, settleMs: 400 });
+    try {
+        let r = await plain.callDispatch('ctx.surfaceOpen', {});
+        assert.equal(r.ok, false);
+        assert.equal(r.reason, 'headless_no_shell');
+        assert.equal(r.surface, 'open');
+        r = await plain.callDispatch('ctx.surfaceClose', {});
+        assert.equal(r.reason, 'headless_no_shell');
+        assert.equal(r.surface, 'close');
+        assert.ok(plain.consoleLog.some((e) => /surface(Open|Close)|无壳可收/.test(String(e.msg))),
+            `console 留痕: ${JSON.stringify(plain.consoleLog.slice(-4))}`);
+    } finally {
+        await plain.dispose();
+    }
+    // ② opts.surface 注壳 → host case 两跳:open→openPanel(panelType)、close→collapsePanels
+    const calls = [];
+    const shelled = await mountCardApp({
+        server: BASE, charDir: CHAR, chatName: CHAT, card: cardPath, settleMs: 400,
+        surface: {
+            panelType: 'cardapp',
+            openPanel: (pt) => calls.push(['openPanel', pt]),
+            collapsePanels: () => calls.push(['collapsePanels']),
+        },
+    });
+    try {
+        const r1 = await shelled.callDispatch('ctx.surfaceOpen', {});
+        assert.deepEqual(r1, { ok: true, panel: 'cardapp' });
+        const r2 = await shelled.callDispatch('ctx.surfaceClose', {});
+        assert.equal(r2.ok, true);
+        assert.deepEqual(calls, [['openPanel', 'cardapp'], ['collapsePanels']],
+            `shell 两跳: ${JSON.stringify(calls)}`);
+    } finally {
+        await shelled.dispose();
+    }
+});
+
 // ── J. message doc mount(前端界面 iframe 承载面)────────────────────────
 
 test('card-runtime message doc mount:铸帧→出壳→shim 拼接→CSP', async () => {

@@ -371,7 +371,10 @@ async function loadLocalCardSource(file, { formats, serverManifestMod }) {
 // ─── mount 主流程 ──────────────────────────────────────────────────────────
 /**
  * mountCardApp({ server, charDir, chatName, card?, user?, timeoutMs?,
- *               mountTtlMs?, settleMs?, withParentDoc? })
+ *               mountTtlMs?, settleMs?, withParentDoc?, surface? })
+ *   surface = { panelType?, openPanel?, collapsePanels? } —— 卡「表面可见性」
+ *   (ctx.surfaceOpen/surfaceClose)的壳接线,与 web ctxHost.ts 同一契约;
+ *   缺席 → headless 如实 headless_no_shell 降级。
  * → session handle { window, document, mount, face, grants, ctx, bridge,
  *                    eventSource, consoleLog, pushThEvent, pushCtxEvent,
  *                    evalInCard, callDispatch, subscribedEvents, syncChat,
@@ -1027,6 +1030,28 @@ export async function mountCardApp(opts) {
             case 'off': { ctxSubscribed.delete(String(args?.event)); return null; }
             case 'setTimer': return null;
             case 'dispose': return dispose();
+            // ── 卡「表面可见性」面(ctx.openOverlay/closeOverlay → wire
+            //    ctx.surfaceOpen/surfaceClose):headless 无工作台——可经
+            //    opts.surface 注壳(测试/宿主复用 ctxHost 同契约),缺席 → 如实降级 ──
+            case 'surfaceOpen': {
+                const s = opts.surface;
+                if (typeof s?.openPanel === 'function') {
+                    const panelType = s.panelType ?? 'cardapp';
+                    s.openPanel(panelType);
+                    return { ok: true, panel: panelType };
+                }
+                pushConsole('log', 'ctx.surfaceOpen: 无壳可收(headless)→ degraded');
+                return { ok: false, reason: 'headless_no_shell', surface: 'open' };
+            }
+            case 'surfaceClose': {
+                const s = opts.surface;
+                if (typeof s?.collapsePanels === 'function') {
+                    s.collapsePanels();
+                    return { ok: true };
+                }
+                pushConsole('log', 'ctx.surfaceClose: 无壳可收(headless)→ degraded');
+                return { ok: false, reason: 'headless_no_shell', surface: 'close' };
+            }
             default: throw new Error(`unsupported_method: ctx.${sub}`);
         }
     };

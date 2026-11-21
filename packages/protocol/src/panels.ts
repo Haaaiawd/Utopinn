@@ -14,6 +14,11 @@
  *   ctx.generate         {type?, quietPrompt?}   → POST /api/utopinn/generate (aux/quiet path included)
  *   ctx.getWorldBooks    {withSource?}           → composite book list (chat/character/aux/global/persona)
  *   ctx.eventEmit        {name, args?}           → card → host event fan-out (worldinfo_force_activate 等)
+ *   ctx.surfaceOpen      {}                      → card「表面可见性」— host expands the workbench
+ *                                                  panel hosting this frame (web: s.openPanel(panelType))
+ *   ctx.surfaceClose     {}                      → collapse the panel group (web: s.collapsePanels())
+ *                                                  (card-side face: ctx.openOverlay/closeOverlay —
+ *                                                  Luker chrome verbs, not TH API; cards may self-assign)
  */
 export const PANEL_METHODS = [
     'ctx.sendMessage',
@@ -40,6 +45,9 @@ export const PANEL_METHODS = [
     'ctx.getWorldBooks',
     'ctx.eventEmit',
     'ctx.deleteChatState',
+    // ── TASK-049 surface 面:卡「表面可见性」语义(ctx.openOverlay/closeOverlay 桥接) ──
+    'ctx.surfaceOpen',
+    'ctx.surfaceClose',
 ] as const;
 export type PanelMethod = (typeof PANEL_METHODS)[number];
 

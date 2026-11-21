@@ -78,7 +78,11 @@ interface PanelWebViewElementProps {
 }
 const WView = WebView as unknown as FC<PanelWebViewElementProps>;
 
-export function PanelWebView({ charDir, chatName }: PanelContext) {
+export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext & {
+    /** 卡「表面可见性」close 语义的壳回调(屏幕侧接 navigation.goBack 等;
+     *  未接 → surfaceClose 如实 no_shell_nav 降级)。 */
+    onSurfaceClose?: () => void;
+}) {
     const conn = useSession();
     const [mount, setMount] = useState<MountBundle | null>(null);
     const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
@@ -134,14 +138,29 @@ export function PanelWebView({ charDir, chatName }: PanelContext) {
             nonce: mount.bridgeNonce ?? '',
             allowed: grants.allowed,
             send: (msg) => webRef.current?.injectJavaScript(receiveJs(msg)),
-            dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }),
+            dispatch: async (method, args) => {
+                // 卡「表面可见性」(ctx.openOverlay/closeOverlay → wire
+                // ctx.surfaceOpen/surfaceClose):面板页本身就是卡的可视表面 ——
+                // open 即达意(无需再导航);close → 壳回调回上一页,未接如实降级。
+                if (method === 'ctx.surfaceOpen') {
+                    return { ok: true, delivered: 'panel_page' };
+                }
+                if (method === 'ctx.surfaceClose') {
+                    if (onSurfaceClose) {
+                        onSurfaceClose();
+                        return { ok: true };
+                    }
+                    return { ok: false, reason: 'no_shell_nav' };
+                }
+                return dispatchPanelCall(method, args, { charDir, chatName });
+            },
         });
         bridgeRef.current = bridge;
         return () => {
             bridgeRef.current = null;
             bridge.dispose();
         };
-    }, [mount, grants, charDir, chatName]);
+    }, [mount, grants, charDir, chatName, onSurfaceClose]);
 
     const onMessage = (e: WebViewMessageEvent) => {
         bridgeRef.current?.onMessage(e.nativeEvent.data);
