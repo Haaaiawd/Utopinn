@@ -60,6 +60,10 @@ export class CardAppHost {
     private readonly log: (msg: string) => void;
     private readonly generationWaitMs: number;
     private readonly userName: string;
+    /** mailbox origin 标:本 mount 写出的条目,自己的泵跳过防回流双发。 */
+    private readonly hostId = `h-${Math.random().toString(36).slice(2, 10)}`;
+    private lastEventSeq = 0;
+    private eventLogUnsupported = false;
 
     private client: UtopinnClient;
     private chatDoc: ChatDoc | null = null;
@@ -83,7 +87,10 @@ export class CardAppHost {
             avatarUrl: this.avatarUrl,
             chatFileName: this.chatFileName ?? '',
             mountMessageId: 0,
-            emitToPanels: (ev: string, args: unknown[]) => { this.pushEvent('th.event', { name: ev, args: jsonClone(args) ?? [] }); },
+            // 卡 eventEmit → server 信箱(跨 mount 扇出;本卡 shim 已 dispatchLocal,
+            // 回推自己 bridge 会双发 —— 旧实现的 bug,信箱化后顺带修了)。
+            emitToPanels: async (ev: string, args: unknown[]) => { await this.recordThEvent(ev, args); },
+            debug: (rec) => this.log(`shadow ${JSON.stringify(rec)}`),
             getCharacterCard: async () => {
                 const res = loose(await this.client.th.call('getCharacter', { target: { charDir: this.charDir } }));
                 return res?.result as Record<string, unknown>;
@@ -111,11 +118,19 @@ export class CardAppHost {
         }
     }
 
-    /** 事件泵:楼层数 diff → 命中的楼层事件推给卡(仅订阅项)。 */
+    /**
+     * 事件泵:楼层 diff → 命中的楼层事件推给卡(仅订阅项)。
+     *   追加      → rendered + message_sent/message_received
+     *   缩短      → message_deleted
+     *   同长字段差 → mes/活动 swipe 变 → message_edited+message_updated;
+     *               swipe_id 变 → message_swiped
+     *   任何差    → chat_changed(tavern_events.CHAT_CHANGED,楼层 diff 的兜底信号)
+     */
     private diffAndEmitChat(prev: ChatDoc | null, next: ChatDoc | null): void {
         if (!next) return;
         const pa = Array.isArray(prev?.messages) ? prev!.messages! : [];
         const na = Array.isArray(next?.messages) ? next!.messages! : [];
+        let dirty = false;
         if (na.length > pa.length) {
             for (let i = pa.length; i < na.length; i++) {
                 const m = na[i] as { is_user?: boolean };
@@ -124,10 +139,35 @@ export class CardAppHost {
                 this.emitTh(rendered, [i]);
                 this.emitTh(m?.is_user ? 'message_sent' : 'message_received', [i]);
             }
-            this.pushEvent('chat.updated', {});
+            dirty = true;
         } else if (na.length < pa.length) {
             this.emitCtx('message_deleted', []);
             this.emitTh('message_deleted', []);
+            dirty = true;
+        } else {
+            for (let i = 0; i < na.length; i++) {
+                const pm = pa[i] as { mes?: unknown; swipe_id?: number; swipes?: unknown[] } | undefined;
+                const nm = na[i] as { mes?: unknown; swipe_id?: number; swipes?: unknown[] } | undefined;
+                if (!pm || !nm) continue;
+                if (nm.swipe_id !== pm.swipe_id) {
+                    this.emitTh('message_swiped', [i]);
+                    this.emitCtx('message_swiped', [i]);
+                    dirty = true;
+                }
+                const swipeContentChanged = Array.isArray(nm.swipes) && Number.isInteger(nm.swipe_id)
+                    && nm.swipes[nm.swipe_id as number] !== (Array.isArray(pm.swipes) ? (pm.swipes as unknown[])[nm.swipe_id as number] : undefined);
+                if (nm.mes !== pm.mes || swipeContentChanged) {
+                    this.emitTh('message_edited', [i]);
+                    this.emitTh('message_updated', [i]);
+                    this.emitCtx('message_edited', [i]);
+                    dirty = true;
+                }
+            }
+        }
+        if (dirty) {
+            const chatId = this.chatFileName ?? this.chatName ?? null;
+            this.emitTh('chat_changed', [chatId]);
+            this.emitCtx('chat_changed', [chatId]);
             this.pushEvent('chat.updated', {});
         }
     }
@@ -143,11 +183,42 @@ export class CardAppHost {
         this.pushEvent('th.event', { name, args: jsonClone(args) ?? [] });
     }
 
-    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated。 */
+    /** 信箱写:本 mount 发起、且 chat doc diff 不可推导的事件(生成生命周期、
+     *  卡 eventEmit)——同聊其它 mount 的泵读到后推给它们的订阅卡。 */
+    private recordThEvent(name: string, args: unknown[] = []): Promise<void> {
+        return this.client.th.call('eventEmit', {
+            target: { charDir: this.charDir, chatName: this.chatName },
+            args: { event: name, args: jsonClone(args) ?? [], origin: this.hostId },
+        }).then(() => undefined).catch(() => { });
+    }
+
+    /** 信箱泵:拉 seq>lastEventSeq 的新条目,跳过本 mount 产出的(origin 去重)。 */
+    private async pollEventLog(): Promise<void> {
+        if (this.dead || this.eventLogUnsupported) return;
+        try {
+            const res = loose(await this.client.th.call('getEventLog', {
+                target: { charDir: this.charDir, chatName: this.chatName },
+                args: { since: this.lastEventSeq },
+            }));
+            if (res?.unsupported) { this.eventLogUnsupported = true; return; }
+            const result = res?.result as
+                | { seq?: number; entries?: { seq?: number; event?: string; args?: unknown[]; origin?: string }[] }
+                | undefined;
+            if (!result) return;
+            if (typeof result.seq === 'number') this.lastEventSeq = Math.max(this.lastEventSeq, result.seq);
+            for (const e of result.entries ?? []) {
+                if (e?.origin && e.origin === this.hostId) continue;
+                if (typeof e?.event === 'string' && e.event) this.emitTh(e.event, Array.isArray(e.args) ? e.args : []);
+            }
+        } catch { /* 信箱面缺席/抖动不致命 — 下轮泵再试 */ }
+    }
+
+    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated + 信箱。 */
     async pollChat(): Promise<void> {
         if (this.dead) return;
         const r = await this.syncChat();
         if (r) this.diffAndEmitChat(r.prev, r.next);
+        await this.pollEventLog();
     }
 
     /** 初次快照——bridge 就位后调一次,让 ctx.getChat/varCache 有真值。 */
@@ -160,6 +231,7 @@ export class CardAppHost {
         const type = params.type ?? 'normal';
         this.emitCtx('generation_started', [type]);
         this.emitTh('generation_started', [type]);
+        this.recordThEvent('generation_started', [type]);
         const jobId = globalThis.crypto?.randomUUID?.() ?? `job-${Date.now()}`;
         const body: Record<string, unknown> = {
             charDir: this.charDir,
@@ -180,6 +252,7 @@ export class CardAppHost {
         } catch (e) {
             this.emitCtx('generation_ended', []);
             this.emitTh('generation_ended', []);
+            this.recordThEvent('generation_ended');
             throw e;
         }
         const deadline = Date.now() + this.generationWaitMs;
@@ -195,6 +268,7 @@ export class CardAppHost {
         const ok = status?.status === 'completed' || status?.status === 'awaiting_ack' || status?.persisted;
         this.emitCtx(ok ? 'generation_ended' : 'generation_stopped', []);
         this.emitTh(ok ? 'generation_ended' : 'generation_stopped', []);
+        this.recordThEvent(ok ? 'generation_ended' : 'generation_stopped');
         return { jobId, status };
     }
 

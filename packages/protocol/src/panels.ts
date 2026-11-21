@@ -63,6 +63,11 @@ export const PANEL_METHODS_TH = [
     'th.eventEmitAndWait',
     'th.eventOnce',
     'th.eventRemoveListener',
+    'th.eventMakeLast',
+    'th.eventMakeFirst',
+    'th.eventClearEvent',
+    'th.eventClearListener',
+    'th.eventClearAll',
     'th.getChatMessages',
     'th.getLastMessageId',
     'th.getCurrentMessageId',
@@ -87,6 +92,8 @@ export const PANEL_METHODS_TH = [
     'th.substituteMacros',
     'th.getMvuData',
     'th.replaceMvuData',
+    // host pump protocol (not a TH API — the server-side event mailbox read)
+    'th.getEventLog',
 ] as const;
 export type PanelMethodTH = (typeof PANEL_METHODS_TH)[number];
 
@@ -103,6 +110,11 @@ export const PANEL_METHODS_TH_T0 = [
     'th.eventEmitAndWait',
     'th.eventOnce',
     'th.eventRemoveListener',
+    'th.eventMakeLast',
+    'th.eventMakeFirst',
+    'th.eventClearEvent',
+    'th.eventClearListener',
+    'th.eventClearAll',
     'th.getChatMessages',
     'th.getLastMessageId',
     'th.getCurrentMessageId',
@@ -187,6 +199,28 @@ export interface ThEventOnArgs {
 export interface ThEventEmitArgs {
     event: string;
     args?: unknown[];
+    /** mailbox dedup: host/mount id that originated the emit — pumps skip own entries. */
+    origin?: string;
+}
+
+/** eventClearListener args — one or more shim-issued listener ids. */
+export interface ThEventClearListenerArgs {
+    listener_id?: string;
+    listener_ids?: string[];
+}
+
+/** getEventLog args — `since` is a mailbox seq; response carries newer entries. */
+export interface ThGetEventLogArgs {
+    since?: number;
+}
+
+/** Server-side event mailbox entry (chat_state `th.events.log` — see utopinn-th.js). */
+export interface ThEventLogEntry {
+    seq: number;
+    at: number;           // Date.now() when the server accepted the emit
+    event: string;
+    args: unknown[];
+    origin?: string;      // host/mount id, or 'card'/'server' — pumps skip their own
 }
 
 export interface ThGlobalReadyArgs {

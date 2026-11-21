@@ -96,6 +96,79 @@ test('eventOnce fires once then unregisters', () => {
     assert.equal(count, 1);
 });
 
+test('eventOn 上报 listener_id(realm 唯一形);makeFirst/makeLast 本地重排+上报', async () => {
+    const { win, sent, respond } = makeEnv();
+    const order = [];
+    const f1 = () => order.push('f1');
+    const f2 = () => order.push('f2');
+    win.eventOn('e', f1);
+    win.eventOn('e', f2);
+    const reqs = sent.filter((m) => m.method === 'th.eventOn');
+    assert.equal(reqs.length, 2);
+    // realm 段 lid('l<seq>.<tag>')带上报,影子按 lid upsert 不撞
+    assert.match(reqs[0].args.listener_id, /^l\d+\.[a-z0-9]+$/);
+    assert.notEqual(reqs[0].args.listener_id, reqs[1].args.listener_id);
+    respond(reqs[0].requestId, {}); respond(reqs[1].requestId, {});
+    respond(sent[sent.length - 1].requestId, {});
+
+    // makeFirst:f2 提到队首 → 下一个 push 先跑 f2
+    win.eventMakeFirst('e', f2);
+    const mf = sent[sent.length - 1];
+    assert.equal(mf.method, 'th.eventMakeFirst');
+    assert.equal(mf.args.listener_id, reqs[1].args.listener_id);
+    respond(mf.requestId, {});
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'e', args: [] } });
+    assert.deepEqual(order, ['f2', 'f1']);
+
+    // makeLast:f2 回队尾
+    win.eventMakeLast('e', f2);
+    respond(sent[sent.length - 1].requestId, {});
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'e', args: [] } });
+    assert.deepEqual(order, ['f2', 'f1', 'f1', 'f2']);
+});
+
+test('eventClearEvent / eventClearListener / eventClearAll 本地清+上报', async () => {
+    const { win, sent, respond } = makeEnv();
+    const hits = [];
+    const fa = () => hits.push('a');
+    const fb = () => hits.push('b');
+    win.eventOn('e1', fa); win.eventOn('e2', fb); win.eventOn('e1', fb);
+    sent.splice(0).forEach((m) => respond(m.requestId, {}));
+
+    // clearEvent('e1') → e1 全清,e2 保留
+    win.eventClearEvent('e1');
+    let req = sent[sent.length - 1];
+    assert.equal(req.method, 'th.eventClearEvent');
+    assert.equal(req.args.event, 'e1');
+    respond(req.requestId, {});
+    for (const ev of ['e1', 'e2']) {
+        win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: ev, args: [] } });
+    }
+    assert.deepEqual(hits, ['b']);
+
+    // clearListener(fn) → 从所有事件摘 fn(跨事件 lid 集上报)
+    hits.length = 0;
+    win.eventOn('x1', fa); win.eventOn('x2', fa);
+    sent.splice(0).forEach((m) => respond(m.requestId, {}));
+    win.eventClearListener(fa);
+    req = sent[sent.length - 1];
+    assert.equal(req.method, 'th.eventClearListener');
+    assert.equal(req.args.listener_ids.length, 2);
+    respond(req.requestId, {});
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'x1', args: [] } });
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'e2', args: [] } });
+    assert.deepEqual(hits, ['b'], 'fa 全摘,fb 的 e2 仍在');
+
+    // clearAll → 全清
+    hits.length = 0;
+    win.eventClearAll();
+    req = sent[sent.length - 1];
+    assert.equal(req.method, 'th.eventClearAll');
+    respond(req.requestId, {});
+    win.__utopinnPanelReceive({ channel: 'utopinn-panel', direction: 'push', nonce: 'n', event: 'th.event', payload: { name: 'e2', args: [] } });
+    assert.deepEqual(hits, []);
+});
+
 test('eventEmit dispatches locally AND notifies host', async () => {
     const { win, lastRequest, respond } = makeEnv();
     let local = null;

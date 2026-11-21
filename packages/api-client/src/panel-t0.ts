@@ -33,6 +33,8 @@ export interface PanelT0Deps {
     emitToPanels?: (event: string, args: unknown[]) => void | Promise<void>;
     /** character card data for th.getCharacter (host supplies; lazy). */
     getCharacterCard?: () => Promise<Record<string, unknown>>;
+    /** diagnostics sink: shadow-write results (fire-and-forget 也能看见错)。 */
+    debug?: (rec: unknown) => void;
 }
 
 const NS_INJECT = 'th.inject';
@@ -44,7 +46,36 @@ const pathOf = (segments: string[]) => '/' + segments.map(esc).join('/');
 
 export function createPanelT0Handler(deps: PanelT0Deps) {
     const { client } = deps;
-    const subscribed = new Set<string>();
+    /** event → listener-ids the card registered (host push filter + clear ops).
+     * '*' = legacy name-level subscription (shim didn't send a listener_id). */
+    const subscribed = new Map<string, Set<string>>();
+    let lidSeq = 0;
+
+    const subscribe = (event: string, lid?: string) => {
+        let set = subscribed.get(event);
+        if (!set) { set = new Set(); subscribed.set(event, set); }
+        set.add(lid ?? '*');
+        return lid ?? `h-${++lidSeq}`;
+    };
+    const unsubscribeLid = (lid: string): number => {
+        let removed = 0;
+        for (const [ev, set] of subscribed) {
+            if (set.delete(lid)) removed++;
+            if (!set.size) subscribed.delete(ev);
+        }
+        return removed;
+    };
+
+    /** Fire-and-forget shadow write: the server keeps the th.events registry /
+     * mailbox in chat_state — host filter is the delivery truth, the shadow is
+     * for introspection + cross-mount semantics. Never gates the card call. */
+    const shadow = (method: string, args: Record<string, unknown>): void => {
+        const charDir = deps.avatarUrl.replace(/\.png$/i, '');
+        const chatName = deps.chatFileName.replace(/\.jsonl$/i, '') || undefined;
+        Promise.resolve(client.th.call(method, { target: { charDir, chatName }, args }))
+            .then((res) => deps.debug?.({ shadow: method, ok: res?.ok !== false }))
+            .catch((e) => deps.debug?.({ shadow: method, error: String(e?.message ?? e) }));
+    };
 
     async function chatBody(): Promise<Record<string, unknown>[]> {
         const res = await client.getChat(deps.avatarUrl, deps.chatFileName);
@@ -197,17 +228,52 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
                 return { remaining: keep.map(p => p.id) };
             }
 
-            // ── events (registry lives in the shim; host tracks subscriptions for push filtering) ──
+            // ── events (registry lives in the shim; host tracks subscriptions for
+            //    push filtering + forwards the shadow write to the server) ──
             case 'th.eventOn':
             case 'th.eventOnce': {
-                const a = args as { event?: string };
-                if (a.event) subscribed.add(a.event);
-                return { subscribed: a.event ?? null };
+                const a = args as { event?: string; listener_id?: string };
+                if (!a.event) return { subscribed: null };
+                const lid = subscribe(a.event, a.listener_id);
+                shadow(method.slice(3), { event: a.event, listener_id: lid });
+                return { subscribed: a.event, listener_id: lid };
+            }
+            case 'th.eventMakeLast':
+            case 'th.eventMakeFirst': {
+                const a = args as { event?: string; listener_id?: string };
+                // 顺序不影响 push 过滤(事件名级)——只转影子重排。
+                if (a.event || a.listener_id) shadow(method.slice(3), { event: a.event, listener_id: a.listener_id });
+                return { moved: null };
             }
             case 'th.eventRemoveListener': {
+                const a = args as { event?: string; listener_id?: string };
+                let removed = 0;
+                if (a.listener_id) removed = unsubscribeLid(a.listener_id);
+                else if (a.event && subscribed.delete(a.event)) removed = 1;
+                shadow('eventRemoveListener', { event: a.event, listener_id: a.listener_id });
+                return { removed };
+            }
+            case 'th.eventClearEvent': {
                 const a = args as { event?: string };
+                // 只清本 mount 的影子条目 —— 带上已知 lids,别动其它 mount 的注册。
+                const lids = a.event ? [...(subscribed.get(a.event) ?? [])] : [];
                 if (a.event) subscribed.delete(a.event);
-                return { removed: a.event ?? null };
+                shadow('eventClearEvent', { event: a.event, listener_ids: lids });
+                return { cleared: a.event ?? null };
+            }
+            case 'th.eventClearListener': {
+                const a = args as { listener_id?: string; listener_ids?: string[] };
+                const ids = Array.isArray(a.listener_ids) ? a.listener_ids : (a.listener_id ? [a.listener_id] : []);
+                let removed = 0;
+                for (const id of ids) removed += unsubscribeLid(String(id));
+                shadow('eventClearListener', { listener_ids: ids });
+                return { removed };
+            }
+            case 'th.eventClearAll': {
+                const lids = [...subscribed.values()].flatMap((s) => [...s]);
+                subscribed.clear();
+                shadow('eventClearAll', { listener_ids: lids });
+                return { removed: lids.length };
             }
             case 'th.eventEmit':
             case 'th.eventEmitAndWait': {
@@ -233,7 +299,7 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
     }
 
     /** events this mount wants forwarded (host calls this to filter pushes). */
-    handle.subscribedEvents = () => [...subscribed];
+    handle.subscribedEvents = () => [...subscribed.keys()];
     return handle;
 }
 

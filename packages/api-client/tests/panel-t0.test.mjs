@@ -138,6 +138,64 @@ test('events: eventOn records subscription; eventEmit fans out via emitToPanels'
     assert.deepEqual(emitted, [['ping', [1]]]);
 });
 
+test('events: shadow forward writes server th/call; clear ops keep filter truthful', async () => {
+    const thCalls = [];
+    const { handle, calls } = makeDeps({
+        ...chatRoute,
+        '/api/utopinn/th/call': (b) => { thCalls.push(b); return { ok: true, result: {} }; },
+    });
+    // eventOn(带 lid)→ 订阅 + 影子转发
+    await handle('th.eventOn', { event: 'e1', listener_id: 'l1.x' });
+    await handle('th.eventOn', { event: 'e1', listener_id: 'l2.x' });
+    await handle('th.eventOn', { event: 'e2', listener_id: 'l1.y' });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(thCalls.filter((c) => c.method === 'eventOn').length, 3);
+    assert.equal(thCalls[0].args.listener_id, 'l1.x');
+    assert.deepEqual(handle.subscribedEvents().sort(), ['e1', 'e2']);
+
+    // eventClearListener(lids)→ e1 余 l2.x 仍订阅;e2 摘掉
+    await handle('th.eventClearListener', { listener_ids: ['l1.x', 'l1.y'] });
+    assert.deepEqual(handle.subscribedEvents(), ['e1']);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(thCalls.at(-1).method, 'eventClearListener');
+    assert.deepEqual(thCalls.at(-1).args.listener_ids, ['l1.x', 'l1.y']);
+
+    // eventClearEvent → 带本 mount lids 的影子写,不殃及其它 mount
+    await handle('th.eventClearEvent', { event: 'e1' });
+    assert.deepEqual(handle.subscribedEvents(), []);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.deepEqual(thCalls.at(-1).args.listener_ids, ['l2.x']);
+
+    // eventClearAll → 全清(带全量 lids)
+    await handle('th.eventOn', { event: 'z', listener_id: 'lz' });
+    await handle('th.eventClearAll', {});
+    assert.deepEqual(handle.subscribedEvents(), []);
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(thCalls.at(-1).method, 'eventClearAll');
+    assert.deepEqual(thCalls.at(-1).args.listener_ids, ['lz']);
+
+    // eventRemoveListener by lid
+    await handle('th.eventOn', { event: 'w', listener_id: 'lw' });
+    await handle('th.eventRemoveListener', { event: 'w', listener_id: 'lw' });
+    assert.deepEqual(handle.subscribedEvents(), []);
+    void calls;
+});
+
+test('events: eventMakeFirst/eventMakeLast 转发影子(过滤面不变)', async () => {
+    const thCalls = [];
+    const { handle } = makeDeps({
+        ...chatRoute,
+        '/api/utopinn/th/call': (b) => { thCalls.push(b); return { ok: true }; },
+    });
+    await handle('th.eventOn', { event: 'e', listener_id: 'la' });
+    await handle('th.eventMakeFirst', { event: 'e', listener_id: 'la' });
+    await handle('th.eventMakeLast', { event: 'e', listener_id: 'la' });
+    await new Promise((r) => setTimeout(r, 0));
+    assert.equal(thCalls[1].method, 'eventMakeFirst');
+    assert.equal(thCalls[2].method, 'eventMakeLast');
+    assert.deepEqual(handle.subscribedEvents(), ['e']);
+});
+
 test('waitGlobalInitialized consults initializedGlobals; character name strips .png', async () => {
     const { handle } = makeDeps(chatRoute);
     assert.equal(await handle('th.waitGlobalInitialized', { name: 'Mvu' }), true);

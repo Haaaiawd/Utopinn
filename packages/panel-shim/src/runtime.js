@@ -18,7 +18,10 @@
 
     var pending = {};
     var seq = 0;
-    var listeners = {}; // event -> [{fn, once}]
+    var listeners = {}; // event -> [{fn, once, lid}]
+    var lidSeq = 0;
+    // realm 随机段:不同 mount 的 lid 天然不撞(影子注册表按 lid upsert)
+    var realmTag = Math.random().toString(36).slice(2, 8);
     var localGlobals = {}; // initializeGlobal'd names
 
     // ── transport ─────────────────────────────────────────────────────────
@@ -81,12 +84,21 @@
     }
 
     function addListener(name, fn, once) {
-        (listeners[name] = listeners[name] || []).push({ fn: fn, once: !!once });
+        var lid = 'l' + (++lidSeq) + '.' + realmTag;
+        (listeners[name] = listeners[name] || []).push({ fn: fn, once: !!once, lid: lid });
+        return lid;
     }
 
     function removeListener(name, fn) {
         var list = listeners[name] || [];
         for (var i = list.length - 1; i >= 0; i--) if (list[i].fn === fn) list.splice(i, 1);
+    }
+
+    /** 找该 event 下 fn 的(最后一个)注册项 —— 用于 lid 定位与 make* 重排。 */
+    function findEntry(name, fn) {
+        var list = listeners[name] || [];
+        for (var i = list.length - 1; i >= 0; i--) if (list[i].fn === fn) return { list: list, index: i, entry: list[i] };
+        return null;
     }
 
     // ── API surface ───────────────────────────────────────────────────────
@@ -118,20 +130,48 @@
             return request('th.deleteVariable', Object.assign(scopeArgs(o), { path: path }));
         },
 
-        // events — callbacks live here; the host only tracks which events to forward
+        // events — callbacks live here; the host tracks which events to forward
+        // (push filter) and mirrors the ops into the server th.events shadow.
         eventOn: function (event, fn) {
-            addListener(event, fn, false);
-            request('th.eventOn', { event: event });
+            var lid = addListener(event, fn, false);
+            request('th.eventOn', { event: event, listener_id: lid });
             return function stop() { api.eventRemoveListener(event, fn); };
         },
         eventOnce: function (event, fn) {
-            addListener(event, fn, true);
-            request('th.eventOnce', { event: event });
-            return function stop() { removeListener(event, fn); };
+            var lid = addListener(event, fn, true);
+            request('th.eventOnce', { event: event, listener_id: lid });
+            return function stop() { api.eventRemoveListener(event, fn); };
+        },
+        eventMakeLast: function (event, fn) {
+            var f = findEntry(event, fn);
+            if (f) { f.list.splice(f.index, 1); f.list.push(f.entry); }
+            return request('th.eventMakeLast', { event: event, listener_id: f && f.entry.lid });
+        },
+        eventMakeFirst: function (event, fn) {
+            var f = findEntry(event, fn);
+            if (f) { f.list.splice(f.index, 1); f.list.unshift(f.entry); }
+            return request('th.eventMakeFirst', { event: event, listener_id: f && f.entry.lid });
         },
         eventRemoveListener: function (event, fn) {
+            var f = findEntry(event, fn);
             removeListener(event, fn);
-            return request('th.eventRemoveListener', { event: event });
+            return request('th.eventRemoveListener', { event: event, listener_id: f && f.entry.lid });
+        },
+        eventClearEvent: function (event) {
+            delete listeners[event];
+            return request('th.eventClearEvent', { event: event });
+        },
+        eventClearListener: function (fn) {
+            var lids = [];
+            for (var ev in listeners) {
+                var f = findEntry(ev, fn);
+                if (f) { lids.push(f.entry.lid); removeListener(ev, fn); }
+            }
+            return request('th.eventClearListener', { listener_ids: lids });
+        },
+        eventClearAll: function () {
+            listeners = {};
+            return request('th.eventClearAll', {});
         },
         eventEmit: function (event) {
             var args = Array.prototype.slice.call(arguments, 1);
@@ -140,8 +180,9 @@
         },
         eventEmitAndWait: function (event) {
             var args = Array.prototype.slice.call(arguments, 1);
-            dispatchLocal(event, args);
-            return request('th.eventEmitAndWait', { event: event, args: args });
+            var results = dispatchLocal(event, args);
+            return request('th.eventEmitAndWait', { event: event, args: args })
+                .then(function () { return Promise.all(results.map(function (r) { return Promise.resolve(r); })); });
         },
 
         // messages

@@ -3679,33 +3679,41 @@
         "apps/cli/cardapp-host.mjs"
       ],
       "touches": [
-        "apps/server/src/plugins/utopinn-th.js"
+        "apps/server/src/plugins/utopinn-th.js",
+        "packages/protocol/src/panels.ts",
+        "packages/api-client/src/panel-t0.ts",
+        "packages/panel-shim/src/runtime.js",
+        "packages/panel-shim/src/ctx-shim.js",
+        "apps/web/src/cardapp/ctxHost.ts",
+        "apps/cli/cardapp-host.mjs",
+        "apps/server/tests/utopinn-th-events.test.mjs",
+        ".loom/capabilities/sandboxed-card-apps/research/th-gap-table.md"
       ],
       "acceptance": [
         {
           "criterion": "TH 方法面对照表:研究档 API 面清单 × 现状 METHODS,逐法标注已实现/缺/不适用",
           "verify_by": "对照表入档",
-          "evidence": ""
+          "evidence": "已入档 .loom/capabilities/sandboxed-card-apps/research/th-gap-table.md(~50 法面逐法标注:实/影/缺/降,含源码行号与下格归组)。2026-11-21 实测"
         },
         {
           "criterion": "事件系统:eventOn/eventOnce/eventMakeLast/Remove/Clear 面 + 宿主→卡事件通道(MESSAGE_RECEIVED/GENERATION_ENDED/CHAT_CHANGED 等核心事件真实触发)",
           "verify_by": "TH 测试卡在宿主里 eventOn 收到真事件",
-          "evidence": ""
+          "evidence": "已落地三段:①server utopinn-th.js event 家族 10 法 + getEventLog(chat_state th.events 影子注册表 priority/once/lid + seq 信箱,无 chat 落会话 Map,RMW 事务);②panel-t0 订阅记账(event→lids)+影子转发,clear 带本 mount lids 不误伤;③宿主双泵——diffAndEmitChat 楼层 diff(append→sent/received,edit→edited/updated,swipe→swiped,dirty→chat_changed)+ getEventLog 信箱泵(origin 去重),生成生命周期 generation_started/ended/stopped 也走信箱。shim:runtime.js(TH 面)+ ctx-shim.js(ctx 面同族,th.* 未授权回落 ctx.on)。实测:apps/server/tests/utopinn-th-events.test.mjs 7/7 过——server 注册/once/make 序/clear 面/信箱分页全过;headless 真 mount 双卡:eventOn 真收 message_received/message_edited/chat_changed,卡 eventEmit 跨 mount 扇出+origin 不回流,eventClearEvent 后停推且 B mount 影子不误伤。panel-shim 11/11、panel-t0 13/13、web tsc 干净。2026-11-21"
         },
         {
           "criterion": "消息写面:setChatMessages/createChatMessages/setChatMessage/deleteChatMessages 落库且楼层一致",
           "verify_by": "curl/CLI 验",
-          "evidence": ""
+          "evidence": "下格(连同 rotateChatMessages/setChatMessage/refreshOneMessage;对照表已标注)"
         },
         {
           "criterion": "世界书+正则 TH 面:getLorebooks/entries CRUD + updateTavernRegexes 走 server repo",
           "verify_by": "curl 验",
-          "evidence": ""
+          "evidence": "下格(对照表已标注:protocol T1 已列 th.getLorebook/setLorebookEntries 等,server 待落)"
         },
         {
           "criterion": "displayed_message/iframe 渲染本体:卡声明的 HTML 渲染进聊天消息位(宿主面之二,非悬浮窗)",
           "verify_by": "浏览器实测",
-          "evidence": ""
+          "evidence": "下格(对照表已标注:含 formatAsDisplayedMessage/retrieveDisplayedMessage/third_party_*.html/predefine.js/_eventOnButton 基建)"
         }
       ],
       "depends_on": [
@@ -3724,7 +3732,8 @@
         "宿主→卡事件通道需与 TASK-046 桥协议一致,在其落地后开工"
       ],
       "implementation_notes": [
-        "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议"
+        "2026-11-20 立案:北极星=先做到酒馆能做到的;TH 事件驱动(eventOn+宿主→卡 emit)与 displayed_message 渲染本体是两个结构性缺口;depends TASK-046 桥协议",
+        "2026-11-21 事件格落地:①对照表 th-gap-table.md;②server event 家族(chat_state th.events 影子+信箱日志);③protocol PANEL_METHODS_TH/T0 补 6 法+th.getEventLog;④panel-t0 订阅记账(event→lid 集,clear 上报本 mount lids)+debug 钩子;⑤shim 双面:runtime.js 事件族补全(makeFirst/Last/clearEvent/clearListener/clearAll+lid),ctx-shim.js ctx.eventOn 家族(th.* 回落 ctx.on);⑥宿主:ctxHost/cardapp-host 双端 diff 泵全事件名+信箱泵(origin 去重)+生成生命周期事件。运维:9P 环境下 jsdom 需 UTOPINN_CARDAPP_DEPS_DIR 指 /tmp 闭包拷贝(/tmp/copy-pnpm-closure.cjs 脚本化);测试 app 需 /csrf-token 否则 UtopinnClient.autoSession 全链 404。事件名双命名空间不规一(tavern_events.* 小写/iframe_events.* 大写,按字面存)"
       ]
     },
     {

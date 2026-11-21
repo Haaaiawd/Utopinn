@@ -15,12 +15,24 @@
  *
  * 桥接定位:CardApp iframe 的 postMessage 桥调本面(TH 卡的
  * TavernHelper.getVariables 等调用经桥打到这里)。
+ *
+ * 事件面(TASK-049):真 listener 在卡 realm(shim 本地注册池),宿主
+ * panelT0 记 event→lid 订阅做 push 过滤;本面持有的是 **影子注册表 +
+ * 信箱日志**,存 chat_state ns `th.events`:
+ *   {listeners:[{id,event,priority,once,at}], seq:N,
+ *    log:[{seq,at,event,args,origin}]}  (log ring, cap 128)
+ *   - 注册面(eventOn 家族):卡侧经 T0 转发到此,供跨端内省/CLI 直查;
+ *   - 信箱(eventEmit→log):同聊其它 mount 的宿主泵 getEventLog(since)
+ *     拉新条目推给订阅卡;origin=发起宿主 id,泵跳过自己的条目防回流。
+ *   - event 名按字面存:tavern_events 值小写蛇形、iframe_events 值大写
+ *     蛇形,两族同名不同义,不做归一。
+ *   - 无 chat 目标 → 进程会话态 Map(handle 键)——订阅短命不落盘。
  */
 import {
     executeSlashCommandsWithOptions,
     registerBuiltinCommands,
 } from '@utopinn/core';
-import { getChatRepo, getSettingsRepo } from '../storage/index.js';
+import { getChatRepo, getSettingsRepo, getStorageEngine } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
@@ -93,6 +105,79 @@ function delPath(obj, p) {
 }
 
 const SCOPES = new Set(['chat', 'global', 'message']);
+
+// ── TH 事件面:影子注册表 + 信箱(chat_state ns 'th.events' / 会话 Map)──
+const TH_EVENTS_NS = 'th.events';
+const TH_EVENT_LOG_CAP = 128;
+const sessionEventDocs = new Map(); // handle -> doc(无 chat 目标的会话态)
+let thLidSeq = 0;
+
+function emptyEventDoc() {
+    return { listeners: [], seq: 0, log: [] };
+}
+function normalizeEventDoc(raw) {
+    const doc = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : emptyEventDoc();
+    if (!Array.isArray(doc.listeners)) doc.listeners = [];
+    if (!Array.isArray(doc.log)) doc.log = [];
+    if (typeof doc.seq !== 'number' || !Number.isFinite(doc.seq)) doc.seq = 0;
+    return doc;
+}
+/** priority:'first'→首;'last'→尾;'normal'→插到 last 组之前(保序:first→normal→last)。 */
+function insertListener(doc, entry) {
+    if (entry.priority === 'first') { doc.listeners.unshift(entry); return; }
+    if (entry.priority === 'last') { doc.listeners.push(entry); return; }
+    const i = doc.listeners.findIndex((l) => l.priority === 'last');
+    if (i === -1) doc.listeners.push(entry); else doc.listeners.splice(i, 0, entry);
+}
+/**
+ * RMW:event doc(chat_state / 会话态)读-改-写。
+ * chat 目标在 → engine 事务(原子);缺席 → handle 键会话 Map。
+ * mutate(doc) → {ok:true,...}|{ok:false,status,error};chat 缺席 → 404。
+ */
+async function withEventDoc(ctx2, mutate) {
+    if (!ctx2.charDir || !ctx2.chatName) {
+        const doc = normalizeEventDoc(sessionEventDocs.get(ctx2.handle));
+        const out = await mutate(doc);
+        sessionEventDocs.set(ctx2.handle, doc);
+        return out;
+    }
+    const engine = getStorageEngine();
+    const key = { kind: 'chat', handle: ctx2.handle, charDir: ctx2.charDir, name: ctx2.chatName, isGroup: false };
+    return engine.withTransaction(ctx2.handle, async (tx) => {
+        if (!(await tx.hasChatResource(key))) {
+            return { ok: false, status: 404, error: `chat not found: ${ctx2.charDir}/${ctx2.chatName}` };
+        }
+        const doc = normalizeEventDoc(await tx.getChatState(key, TH_EVENTS_NS));
+        const out = await mutate(doc);
+        await tx.putChatState(key, TH_EVENTS_NS, doc);
+        return out;
+    });
+}
+/** 只读面:getEventLog 不为缺席 chat 立档。 */
+async function readEventDoc(ctx2) {
+    if (!ctx2.charDir || !ctx2.chatName) {
+        const d = sessionEventDocs.get(ctx2.handle);
+        return d ? normalizeEventDoc(d) : null;
+    }
+    const engine = getStorageEngine();
+    const key = { kind: 'chat', handle: ctx2.handle, charDir: ctx2.charDir, name: ctx2.chatName, isGroup: false };
+    return engine.withTransaction(ctx2.handle, async (tx) => {
+        if (!(await tx.hasChatResource(key))) return null;
+        return normalizeEventDoc(await tx.getChatState(key, TH_EVENTS_NS));
+    });
+}
+const eventName = (a) => String(a?.event ?? a?.event_type ?? '').trim();
+/** 监听器定位:listener_id 优先;否则取该 event 最近一条(TH 形参 fn 不可序列化)。 */
+function findListenerIndex(doc, a) {
+    const lid = String(a?.listener_id ?? '').trim();
+    if (lid) return doc.listeners.findIndex((l) => l.id === lid);
+    const ev = eventName(a);
+    if (!ev) return -1;
+    for (let i = doc.listeners.length - 1; i >= 0; i--) {
+        if (doc.listeners[i].event === ev) return i;
+    }
+    return -1;
+}
 
 /**
  * 变量域解析:scope → {store, persist}。
@@ -259,6 +344,128 @@ const METHODS = {
                 : { name: s?.name ?? `script-${i}`, script: s?.script ?? s?.content ?? '' })
             .filter(s => s.script);
         return { ok: true, result: list };
+    },
+
+    // ── 事件家族(TASK-049):影子注册表 + 信箱;真 listener 在卡 realm ──
+    async eventOn(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const event = eventName(a);
+            if (!event) return { ok: false, status: 400, error: 'args.event required' };
+            const id = String(a?.listener_id ?? '').trim() || `srv-${++thLidSeq}`;
+            doc.listeners = doc.listeners.filter((l) => l.id !== id);
+            const priority = a?.priority === 'first' || a?.priority === 'last' ? a.priority : 'normal';
+            insertListener(doc, { id, event, priority, once: false, at: Date.now() });
+            return { ok: true, result: { listener_id: id, event, count: doc.listeners.length } };
+        });
+    },
+    async eventOnce(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const event = eventName(a);
+            if (!event) return { ok: false, status: 400, error: 'args.event required' };
+            const id = String(a?.listener_id ?? '').trim() || `srv-${++thLidSeq}`;
+            doc.listeners = doc.listeners.filter((l) => l.id !== id);
+            const priority = a?.priority === 'first' || a?.priority === 'last' ? a.priority : 'normal';
+            insertListener(doc, { id, event, priority, once: true, at: Date.now() });
+            return { ok: true, result: { listener_id: id, event, count: doc.listeners.length } };
+        });
+    },
+    async eventMakeLast(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const i = findListenerIndex(doc, a);
+            if (i === -1) return { ok: true, result: { moved: false } };
+            const [entry] = doc.listeners.splice(i, 1);
+            entry.priority = 'last';
+            doc.listeners.push(entry);
+            return { ok: true, result: { moved: true, listener_id: entry.id } };
+        });
+    },
+    async eventMakeFirst(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const i = findListenerIndex(doc, a);
+            if (i === -1) return { ok: true, result: { moved: false } };
+            const [entry] = doc.listeners.splice(i, 1);
+            entry.priority = 'first';
+            doc.listeners.unshift(entry);
+            return { ok: true, result: { moved: true, listener_id: entry.id } };
+        });
+    },
+    async eventRemoveListener(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const lid = String(a?.listener_id ?? '').trim();
+            if (lid) {
+                const before = doc.listeners.length;
+                doc.listeners = doc.listeners.filter((l) => l.id !== lid);
+                return { ok: true, result: { removed: before - doc.listeners.length } };
+            }
+            const ev = eventName(a);
+            if (!ev) return { ok: true, result: { removed: 0 } };
+            // 无 lid 兜底:摘该 event 最近一条(对齐 findListenerIndex 定位语义)
+            const i = findListenerIndex(doc, a);
+            if (i === -1) return { ok: true, result: { removed: 0 } };
+            doc.listeners.splice(i, 1);
+            return { ok: true, result: { removed: 1 } };
+        });
+    },
+    async eventClearEvent(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const ev = eventName(a);
+            if (!ev) return { ok: false, status: 400, error: 'args.event required' };
+            // listener_ids 在场 → 只清该 mount 的条目;缺席 → API 语义清全部该 event
+            const ids = Array.isArray(a?.listener_ids)
+                ? new Set(a.listener_ids.map((x) => String(x ?? '')).filter(Boolean)) : null;
+            const before = doc.listeners.length;
+            doc.listeners = doc.listeners.filter((l) => l.event !== ev || (ids && !ids.has(l.id)));
+            return { ok: true, result: { removed: before - doc.listeners.length } };
+        });
+    },
+    async eventClearListener(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const ids = new Set(
+                (Array.isArray(a?.listener_ids) ? a.listener_ids : [a?.listener_id])
+                    .map((x) => String(x ?? '').trim()).filter(Boolean));
+            if (!ids.size) return { ok: false, status: 400, error: 'args.listener_id(s) required' };
+            const before = doc.listeners.length;
+            doc.listeners = doc.listeners.filter((l) => !ids.has(l.id));
+            return { ok: true, result: { removed: before - doc.listeners.length } };
+        });
+    },
+    async eventClearAll(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            // listener_ids 在场 → 只清该 mount 的条目;缺席 → 清全部
+            const ids = Array.isArray(a?.listener_ids)
+                ? new Set(a.listener_ids.map((x) => String(x ?? '')).filter(Boolean)) : null;
+            const before = doc.listeners.length;
+            doc.listeners = ids ? doc.listeners.filter((l) => !ids.has(l.id)) : [];
+            return { ok: true, result: { removed: before - doc.listeners.length } };
+        });
+    },
+    async eventEmit(a, _scope, ctx2) {
+        return withEventDoc(ctx2, (doc) => {
+            const event = eventName(a);
+            if (!event) return { ok: false, status: 400, error: 'args.event required' };
+            const args = Array.isArray(a?.args) ? a.args : [];
+            const delivered = doc.listeners.filter((l) => l.event === event).length;
+            doc.seq += 1;
+            doc.log.push({ seq: doc.seq, at: Date.now(), event, args, origin: a?.origin ? String(a.origin) : undefined });
+            if (doc.log.length > TH_EVENT_LOG_CAP) doc.log.splice(0, doc.log.length - TH_EVENT_LOG_CAP);
+            // once 影子:emit 即消费(卡侧 once 由 shim 自销,影子同步摘)
+            doc.listeners = doc.listeners.filter((l) => !(l.event === event && l.once));
+            return { ok: true, result: { seq: doc.seq, delivered } };
+        });
+    },
+    /** server 无法真等卡 listener 返回——语义=emit 后回执(seq+delivered 计数)。 */
+    async eventEmitAndWait(a, scope, ctx2) {
+        return METHODS.eventEmit(a, scope, ctx2);
+    },
+    /** 信箱读面:宿主泵 since 分页拉新(origin 去重在宿主侧)。非 TH API。 */
+    async getEventLog(a, _scope, ctx2) {
+        const doc = await readEventDoc(ctx2);
+        if (!doc) return { ok: true, result: { seq: 0, entries: [] } };
+        const since = Number(a?.since ?? 0) || 0;
+        return {
+            ok: true,
+            result: { seq: doc.seq, entries: doc.log.filter((e) => e.seq > since) },
+        };
     },
 };
 

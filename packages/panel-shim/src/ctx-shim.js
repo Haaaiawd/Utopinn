@@ -30,8 +30,11 @@
 
     var pending = {};
     var seq = 0;
-    var listeners = {};        // TH-style event -> [{fn, once}]
+    var listeners = {};        // TH-style event -> [{fn, once, lid}]
     var ctxListeners = {};     // ctx.eventSource event -> [{fn, once}]
+    var thLidSeq = 0;
+    // realm 随机段:不同 mount 的 lid 天然不撞(影子注册表按 lid upsert)
+    var realmTag = Math.random().toString(36).slice(2, 8);
     var varCache = {};         // chat_metadata.variables snapshot (getVariable reads this)
     var chatCache = [];        // latest raw message array (getHistory/lukerContext.chat)
     var chatHeader = null;     // latest chat header
@@ -193,6 +196,26 @@
 
     function getMessages() { return chatCache; }
 
+    // ── TH-style event helpers(runtime.js 同语义;与 eventSource 共享 dispatchLocal)──
+    function thAdd(name, fn, once) {
+        var lid = 'l' + (++thLidSeq) + '.' + realmTag;
+        (listeners[name] = listeners[name] || []).push({ fn: fn, once: !!once, lid: lid });
+        return lid;
+    }
+    function thFind(name, fn) {
+        var list = listeners[name] || [];
+        for (var i = list.length - 1; i >= 0; i--) if (list[i].fn === fn) return { list: list, index: i, entry: list[i] };
+        return null;
+    }
+    function thRemove(name, fn) {
+        var list = listeners[name] || [];
+        for (var i = list.length - 1; i >= 0; i--) if (list[i].fn === fn) list.splice(i, 1);
+    }
+    /** th.* 未授权(ctx 面卡)时回落 ctx.on/off —— host.event 名级过滤集。 */
+    function thOrCtx(thCall, fallback) {
+        return thCall.catch(function () { return fallback ? fallback() : null; });
+    }
+
     // ── ctx object (Luker buildContext subset — semantics mirror the
     //    headless host ctxDispatch in apps/cli/cardapp-host.mjs) ────────────
     var ctx = {
@@ -201,6 +224,75 @@
             try { return new URL('.', window.location.href).href; } catch (_) { return './'; }
         })()),
         eventSource: eventSource,
+
+        // ── TH-style events(共享 listeners 池;th.* 未授权时回落 ctx.on/off)──
+        eventOn: function (event, fn) {
+            var ev = String(event);
+            var lid = thAdd(ev, fn, false);
+            thOrCtx(request('th.eventOn', { event: ev, listener_id: lid }),
+                function () { return request('ctx.on', { event: ev }).catch(function () { }); });
+            return function stop() { ctx.eventRemoveListener(ev, fn); };
+        },
+        eventOnce: function (event, fn) {
+            var ev = String(event);
+            var lid = thAdd(ev, fn, true);
+            thOrCtx(request('th.eventOnce', { event: ev, listener_id: lid }),
+                function () { return request('ctx.on', { event: ev }).catch(function () { }); });
+            return function stop() { ctx.eventRemoveListener(ev, fn); };
+        },
+        eventMakeLast: function (event, fn) {
+            var f = thFind(String(event), fn);
+            if (f) { f.list.splice(f.index, 1); f.list.push(f.entry); }
+            return request('th.eventMakeLast', { event: String(event), listener_id: f && f.entry.lid })
+                .catch(function () { return null; });
+        },
+        eventMakeFirst: function (event, fn) {
+            var f = thFind(String(event), fn);
+            if (f) { f.list.splice(f.index, 1); f.list.unshift(f.entry); }
+            return request('th.eventMakeFirst', { event: String(event), listener_id: f && f.entry.lid })
+                .catch(function () { return null; });
+        },
+        eventRemoveListener: function (event, fn) {
+            var ev = String(event);
+            var f = thFind(ev, fn);
+            thRemove(ev, fn);
+            var remaining = (listeners[ev] || []).length;
+            return thOrCtx(request('th.eventRemoveListener', { event: ev, listener_id: f && f.entry.lid }),
+                remaining ? null : function () { return request('ctx.off', { event: ev }).catch(function () { }); });
+        },
+        eventClearEvent: function (event) {
+            var ev = String(event);
+            delete listeners[ev];
+            return thOrCtx(request('th.eventClearEvent', { event: ev }),
+                function () { return request('ctx.off', { event: ev }).catch(function () { }); });
+        },
+        eventClearListener: function (fn) {
+            var lids = [];
+            for (var ev in listeners) {
+                var f = thFind(ev, fn);
+                if (f) { lids.push(f.entry.lid); thRemove(ev, fn); }
+            }
+            return request('th.eventClearListener', { listener_ids: lids }).catch(function () { return null; });
+        },
+        eventClearAll: function () {
+            listeners = {};
+            return request('th.eventClearAll', {}).catch(function () { return null; });
+        },
+        eventEmit: function (event) {
+            var ev = String(event);
+            var args = Array.prototype.slice.call(arguments, 1);
+            dispatchLocal(ev, args);
+            return thOrCtx(request('th.eventEmit', { event: ev, args: args }),
+                function () { return request('ctx.eventEmit', { name: ev, args: jsonClone(args) || [] }).catch(function () { }); });
+        },
+        eventEmitAndWait: function (event) {
+            var ev = String(event);
+            var args = Array.prototype.slice.call(arguments, 1);
+            var results = dispatchLocal(ev, args);
+            return request('th.eventEmitAndWait', { event: ev, args: args })
+                .catch(function () { return null; })
+                .then(function () { return Promise.all(results.map(function (r) { return Promise.resolve(r); })); });
+        },
 
         get container() {
             return document.getElementById('card-app-container') || document.body || null;

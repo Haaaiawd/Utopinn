@@ -397,6 +397,17 @@ export async function mountCardApp(opts) {
     }
 
     const client = new UtopinnClient({ baseUrl: server, timeoutMs: opts.timeoutMs ?? 30_000 });
+    // 事件通道(TASK-049 对齐 ctxHost.ts):本 mount 写出的信箱条目 origin=hostId,
+    // 自己的 pollMailbox 跳过防回流;doc 可推导事件(楼层增删/编辑/swipe/切聊)由
+    // diffAndEmitChat 各端独立检测,doc 不可推导的(生成生命周期、卡 eventEmit)走信箱。
+    const hostId = `h-${crypto.randomBytes(5).toString('hex')}`;
+    let lastEventSeq = 0;
+    let eventLogUnsupported = false;
+    const recordThEvent = (name, args = []) =>
+        client.th.call('eventEmit', {
+            target: { charDir, chatName },
+            args: { event: name, args: jsonClone(args) ?? [], origin: hostId },
+        }).catch(() => { });
     const consoleLog = [];   // VirtualConsole 捕获:[{lvl,msg}]
     const pushConsole = (lvl, msg) => {
         consoleLog.push({ lvl, msg: String(msg).slice(0, 2000), at: Date.now() });
@@ -564,6 +575,7 @@ export async function mountCardApp(opts) {
             const prev = chatDoc;
             chatDoc = doc;
             varCache = doc?.header?.chat_metadata?.variables ?? {};
+            await pollMailbox();   // 刷新顺带补信箱(ctxHost.pollChat 同拍)
             return { prev, next: doc };
         } catch (e) {
             pushConsole('warn', `syncChat failed: ${e?.message ?? e}`);
@@ -571,6 +583,25 @@ export async function mountCardApp(opts) {
         }
     };
     const getMessages = () => (Array.isArray(chatDoc?.messages) ? chatDoc.messages : []);
+
+    /** 信箱泵(ctxHost.pollEventLog 同语义):拉新条目推订阅卡,跳过本 mount。 */
+    const pollMailbox = async () => {
+        if (eventLogUnsupported || !chatName) return;
+        try {
+            const res = await client.th.call('getEventLog', {
+                target: { charDir, chatName },
+                args: { since: lastEventSeq },
+            });
+            if (res?.unsupported) { eventLogUnsupported = true; return; }
+            const result = res?.result;
+            if (!result || typeof result !== 'object') return;
+            if (typeof result.seq === 'number') lastEventSeq = Math.max(lastEventSeq, result.seq);
+            for (const e of result.entries ?? []) {
+                if (e?.origin && e.origin === hostId) continue;
+                if (typeof e?.event === 'string' && e.event) pushThEvent(e.event, Array.isArray(e.args) ? e.args : []);
+            }
+        } catch { /* 信箱面缺席/抖动不致命 */ }
+    };
 
     const disposeCallbacks = [];
     const trackedTimers = { intervals: new Set(), timeouts: new Set(), listeners: [] };
@@ -643,6 +674,7 @@ export async function mountCardApp(opts) {
         pushCtxEvent('generation_started', [pumpType ?? type]);
         pushThEvent('generation_started', [pumpType ?? type]);
         pushCtxEvent('GENERATION_STARTED', [pumpType ?? type]);
+        recordThEvent('generation_started', [pumpType ?? type]);
         const jobId = crypto.randomUUID();
         const body = {
             charDir, chatName, type, stream: false,
@@ -664,6 +696,7 @@ export async function mountCardApp(opts) {
         } catch (e) {
             pushCtxEvent('generation_ended', []);
             pushThEvent('generation_ended', []);
+            recordThEvent('generation_ended');
             throw e;
         }
         // 终态轮询(WS resume 是 CLI 交互面的东西;headless 泵只要头尾事件)
@@ -681,13 +714,18 @@ export async function mountCardApp(opts) {
         pushCtxEvent(okEnd ? 'generation_ended' : 'generation_stopped', []);
         pushThEvent(okEnd ? 'generation_ended' : 'generation_stopped', []);
         pushCtxEvent('GENERATION_ENDED', []);
+        recordThEvent(okEnd ? 'generation_ended' : 'generation_stopped');
         return { jobId, accepted, status };
     };
 
+    /** 楼层 diff → 事件(ctxHost.diffAndEmitChat 同语义):
+     *  追加→rendered+sent/received;缩短→deleted;同长字段差→edited+updated/
+     *  swipe_id→swiped;任何差→chat_changed 兜底。 */
     const diffAndEmitChat = (prev, next) => {
         if (!next) return;
         const pa = Array.isArray(prev?.messages) ? prev.messages : [];
         const na = Array.isArray(next?.messages) ? next.messages : [];
+        let dirty = false;
         if (na.length > pa.length) {
             for (let i = pa.length; i < na.length; i++) {
                 const m = na[i];
@@ -696,9 +734,33 @@ export async function mountCardApp(opts) {
                 pushThEvent(ev, [i]);
                 pushThEvent(m?.is_user ? 'message_sent' : 'message_received', [i]);
             }
+            dirty = true;
         } else if (na.length < pa.length) {
             pushCtxEvent('message_deleted', []);
             pushThEvent('message_deleted', []);
+            dirty = true;
+        } else {
+            for (let i = 0; i < na.length; i++) {
+                const pm = pa[i], nm = na[i];
+                if (!pm || !nm) continue;
+                if (nm.swipe_id !== pm.swipe_id) {
+                    pushThEvent('message_swiped', [i]);
+                    pushCtxEvent('message_swiped', [i]);
+                    dirty = true;
+                }
+                const swipeContentChanged = Array.isArray(nm.swipes) && Number.isInteger(nm.swipe_id)
+                    && nm.swipes[nm.swipe_id] !== (Array.isArray(pm.swipes) ? pm.swipes[nm.swipe_id] : undefined);
+                if (nm.mes !== pm.mes || swipeContentChanged) {
+                    pushThEvent('message_edited', [i]);
+                    pushThEvent('message_updated', [i]);
+                    pushCtxEvent('message_edited', [i]);
+                    dirty = true;
+                }
+            }
+        }
+        if (dirty) {
+            pushThEvent('chat_changed', [chatFileName]);
+            pushCtxEvent('chat_changed', [chatFileName]);
         }
     };
 
@@ -1026,7 +1088,10 @@ export async function mountCardApp(opts) {
         chatFileName,
         mountMessageId: Math.max(0, getMessages().length - 1),
         initializedGlobals: new Set(),
-        emitToPanels: async (ev, a) => { bridge.push('th.event', { name: ev, args: jsonClone(a) ?? [] }); },
+        // 卡 eventEmit → server 信箱(跨 mount 扇出;本卡 shim 已 dispatchLocal,
+        // 回推自己 bridge 会双发 —— ctxHost.ts:90 同修复)。
+        emitToPanels: async (ev, a) => { await recordThEvent(ev, a); },
+        debug: (rec) => pushConsole('shadow', JSON.stringify(rec)),
         getCharacterCard: async () => {
             const res = await client.th.call('getCharacter', { target: { charDir } });
             return res?.result;
@@ -1171,6 +1236,7 @@ export async function mountCardApp(opts) {
         evalInCard, callDispatch, pushThEvent, pushCtxEvent,
         subscribedEvents: () => panelT0?.subscribedEvents?.() ?? [],
         syncChat, diffAndEmitChat, runCardGeneration, dispose,
+        pollMailbox, recordThEvent, hostId,
         varSnapshot: () => jsonClone(varCache),
         initCalled,
         moduleExports,
