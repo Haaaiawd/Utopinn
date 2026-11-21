@@ -110,10 +110,11 @@
 
 ## Work map
 
-见 `.skeinn/tasks.json`:共 56 个任务(46 done, 2 blocked, 8 open;含 `TASK-049` 与 `TASK-053` 已结清)。
-- **停泊阻塞(2)**:`TASK-026`(旧桌面 RP 形态 P0)、`TASK-028`(移动端 IReader 地基)——均因 2026-11-10 方向收缩停泊,需方向重开/用户明示解锁。
-- **既有活跃前沿(4)**:`TASK-035`(legacy 端点收敛)、`TASK-037`(textgen/kobold/novel 派发接入,原 C9 群聊已退役)、`TASK-044`(novel 章目录 sidecar/聚合/range regen + theater assets/sidecar 余量)、`TASK-050`(剧场模式旗舰打磨 + V2.1 单立绘配套卡)。
-- **GitHub issue 生态收口(4,本轮入列)**:`TASK-054`(P0 MVU 无分号 `_.set`/catgodml 解析 + 变量宏/正则实弹闭环,GH#14/#2/#3)、`TASK-055`(P0/P1 CardApp 无头点击等待 + TH 辅助生成过滤与 schema 校验,GH#13/#9/#4)、`TASK-056`(P0/P1 内嵌世界书无 `extensions.world` 兜底与 overwrite 联动,GH#10/#7)、`TASK-057`(P1/P2 CLI 坐标透明/workspace 链接自检/诊断口径收口,GH#11/#5/#6/#8)。
+见 `.skeinn/tasks.json`:共 57 个任务(46 done, 3 blocked, 8 open;含 `TASK-049` 与 `TASK-053` 已结清)。
+- **停泊阻塞(3)**:`TASK-026`(旧桌面 RP 形态 P0)、`TASK-028`(移动端 IReader 地基)——方向收缩停泊;`TASK-035`(legacy 端点收敛)——harness 耦合段,等 golden oracle 替代方案拍板(`/preview` 自证不可行),可执行小块已拆 TASK-058。
+- **既有活跃前沿(3)**:`TASK-037`(textgen/kobold/novel 派发接入,C9 群聊已砍)、`TASK-044`(novel 章目录 sidecar/聚合/range regen + theater assets/sidecar 余量)、`TASK-050`(剧场模式旗舰打磨 + V2.1 单立绘配套卡)。
+- **GitHub issue 生态收口(4)**:`TASK-054`(P0 GH#15 settle `_.set` 自动建路径+`stat_data.` 前缀剥除、GH#14 复核、GH#2/#3 变量宏/regex 余量)、`TASK-055`(P0/P1 CardApp 无头点击等待+事件面+TH 辅助生成过滤/schema 校验,GH#13/#9/#4/GH#15b)、`TASK-056`(P0/P1 内嵌世界书兜底+overwrite 联动,GH#10/#7)、`TASK-057`(P1/P2 CLI 坐标透明/workspace 自检/诊断口径,GH#11/#5/#6/#8)。
+- **收口小件(1)**:`TASK-058`(named-doc 读面 + jobs active 过滤 + SPA/CLI 摘 legacy 调用,TASK-035 拆出)。
 
 ## Decision history
 

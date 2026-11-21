@@ -4,15 +4,15 @@
     {
       "id": "TASK-054",
       "title": "[P0] MVU 自定义语法解析与变量宏/正则实弹闭环(GH#14, GH#15, GH#2, GH#3)",
-      "outcome": "补齐 GH#14 中无分号换行的 _.set/insert/assign/remove/unset/delete/add 与 <catgodml|...> 容器块解析及零匹配诊断告警;补齐 GH#2 剩余的 char 域变量宏向 character_state sidecar 持久化(主链 format/get/set_message_variable 已落 c677eb4/add2381);补齐 GH#3 禁用态导入/诊断提示(卡内 regex 自动放行与 AI_OUTPUT 车道已落 d03267a/add2381),在真实 MVU/掌门卡端到端验通。",
+      "outcome": "领衔 GH#15:settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入(含 stat_data. 前缀剥除防 stat_data.stat_data 嵌套);GH#14 已被 owner 合并关闭入 GH#15——复核其无分号/catgodml 解析诉求是否被 GH#15 修法覆盖;GH#2 char 域变量宏回写 character_state;GH#3 禁用态导入/诊断提示;真实卡端到端验通。",
       "acceptance": [
         {
-          "criterion": "GH#14: packages/core MVU 解析器支持行尾无分号的 _.set/insert/assign/remove/unset/delete/add 指令及 <catgodml|registerPart:extra: ...> 容器块内指令,掌门卡样例 35 条 _.set 全部正确写入 stat_data;正文含 _.set( 但零指令生效时产出明确 warning/回执",
+          "criterion": "GH#14(owner 已关闭并入 GH#15):复核 packages/core MVU 解析器对行尾无分号 _.set/insert/assign/remove/unset/delete/add 与 <catgodml|registerPart:extra: ...> 容器块的解析现状——已被覆盖则验证回归,未覆盖则并入 GH#15 修法;正文含 _.set( 但零指令生效时产出明确 warning",
           "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
           "evidence": ""
         },
         {
-          "criterion": "GH#15: settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入 stat_data(或显式降级并给 warning,不得静默丢弃);掌门卡样例自动路径写入实弹验证",
+          "criterion": "GH#15: settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入 stat_data;**剥除键名 stat_data. 前缀**(卡侧 index.js:2380 已剥,settle.ts:171-205 未剥,不剥会嵌 stat_data.stat_data.day);掌门卡样例 35 条写入实弹验证",
           "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
           "evidence": ""
         },
@@ -82,7 +82,7 @@
     {
       "id": "TASK-055",
       "title": "[P0/P1] CardApp 无头点击异步等待与 TH 辅助生成/变量校验补齐(GH#13, GH#9, GH#4)",
-      "outcome": "修复 GH#13 中 utopinn cardapp op click 固定 60ms 即 dispose 切断异步生成的问题;补齐 GH#9 辅助生成余量(lorebookEntries 条目过滤 + stscript-env /gen 触发绑定,基础 th.generate/generateRaw 已落 1334f56);补齐 GH#4 replaceVariables 写 stat_data 时的 MVU schema 校验与 CLI --force/覆盖警示(root_loss 护栏已落 1334f56)。",
+      "outcome": "修复 GH#13 cardapp op click 60ms dispose 切断异步;补齐 GH#9 辅助生成余量(th.generate/generateRaw lorebookEntries 过滤+quiet-generation 选择性 WI;/gen 已走 generateQuiet 真链路,/trigger 未绑定时显式报错);补齐 GH#4 replaceVariables MVU schema 校验(packages/core/src/mvu/schema.ts 新建非破坏校验器)与 CLI --force 警示;GH#15 附带发现 cardapp op push subscribed:[] 补上 ctxSubscribed。",
       "acceptance": [
         {
           "criterion": "GH#13: apps/cli/cmd-cardapp.mjs op click 派发点击后探测在途桥调用/ctx.lukerContext.is_send_press/活跃生成 job 并等待至空闲(支持 --timeout,默认充足上限);超期时在输出中诚实标明异步任务未完成而非假报 clicked:true,掌门卡异步推进按钮不再被 60ms 切断",
@@ -97,6 +97,11 @@
         {
           "criterion": "GH#4: 在 packages/core/src/mvu/schema.ts 新建非破坏性 MVU 结构校验器(逐路径返回具体错误,不写盘),th.replaceVariables 与 replaceMvuData 在写入 stat_data 且当前聊天存在 schema 时共用之(失败 400 返路径错);utopinn th replaceVariables 帮助文案与参数明确提示全量覆盖并支持 --force",
           "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs && node --test packages/api-client/tests/panel-t0.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#15 附带:cardapp op push 输出 subscribed:[] 是 cardapp-host.mjs:1262 subscribedEvents() 漏报 ctxSubscribed 集合——修复后 push 应真实回显 ctx.on 订阅面",
+          "verify_by": "CLI cardapp op push 桩测试断言 ctx 订阅出现在 subscribed",
           "evidence": ""
         }
       ],
@@ -3409,7 +3414,16 @@
       "guardrails": [
         "旧端点删减前 legacy harness(LUKER_SERVE_LEGACY=1)+ golden-diff 必须全绿",
         "REST 补齐只吃 packages/protocol 契约,不新造线协议"
-      ]
+      ],
+      "block": {
+        "reason": "剩余 done_when(删 /api/chats、/api/backends/chat-completions 与 public/scripts/*)harness 耦合:golden-diff/e2e 与 jest moduleNameMapper 直接加载这些面;/api/utopinn/preview 迁移方案不可行(preview=core,core-vs-core 无 oracle 意义,compat-golden-diff.md:10,21-24)",
+        "recovery_conditions": [
+          "golden oracle 替代方案拍板:冻结快照对拍或 ST 浏览器引擎语料保留",
+          "TASK-058 收口后 SPA/CLI legacy 活调用归零",
+          "golden-diff+全量回归绿"
+        ],
+        "at": "2026-11-21T12:01:05.328Z"
+      }
     },
     {
       "id": "TASK-036",
@@ -3502,7 +3516,7 @@
         "TASK-032"
       ],
       "done_when": [
-        "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;group 编排已由后续任务承接)",
+        "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)",
         "对应 CLI 动词实弹验证"
       ],
       "reads": [
@@ -3876,7 +3890,7 @@
     {
       "id": "TASK-044",
       "title": "形态×插件面:novel 章目录 + theater 三件套(余量)",
-      "outcome": "形态×插件面余量:novel 章目录 sidecar+range regen,theater assets 清单+scene sidecar ns 约定,ui.contrib manifest(末位)。utopinn-stats 聚合面与 theater 楼层字段面已交付(见 acceptance 证据)。",
+      "outcome": "形态×插件面余量:novel 章目录 sidecar+range regen,theater assets 清单+scene sidecar ns 约定。utopinn-stats 聚合面、theater 楼层字段面、ui.contrib manifest 均已交付(见 acceptance 证据与 DECISIONS.md:272)。",
       "acceptance": [
         {
           "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
@@ -3904,7 +3918,7 @@
       "done_when": [],
       "boundaries": [
         "ui.contrib manifest 不塞组件,只塞面板类型+数据路由+图标声明",
-        "形态未定稿前不动 theater",
+        "theater 资产清单与 scene sidecar 走 chat_state 约定,不另起存储",
         "统计面只读不另起存储"
       ],
       "depends_on": [
@@ -4725,15 +4739,17 @@
         "apps/server/src/endpoints/named-doc-routes.js",
         "apps/server/src/plugins/utopinn-library.js",
         "apps/web/src/components/stage/StageFrame.tsx",
-        "apps/cli/utopinn-cli.mjs"
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/plugins/utopinn-generate.js"
       ],
       "touches": [
         "apps/server/src/plugins/utopinn-library.js",
         "packages/protocol/src/api.ts",
         "apps/web/src/components/stage/StageFrame.tsx",
-        "apps/cli/utopinn-cli.mjs"
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/plugins/utopinn-generate.js"
       ],
-      "implements": ".skeinn/design/legacy-convergence.md#2. utopinn REST 补缺清单",
+      "implements": ".skeinn/design/legacy-convergence.md#2. utopinn REST 补缺清单(legacy 有·utopinn 无·产品面需要)",
       "design_exemption": "",
       "capability_hooks": [],
       "capability_exemption": "",
