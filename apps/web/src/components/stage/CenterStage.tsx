@@ -23,6 +23,8 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { charImageUrl } from '../../api/characters';
 import type { FloorMsg } from '../../api/chats';
+import { extractFrontendBlocks } from '../../cardapp/messageFrame';
+import { MessageIframe } from '../../cardapp/MessageIframe';
 import { StageFrame, useStageEngine, charImgFallback, type FloorOps } from './StageFrame';
 
 /** 贡献点出口:chat.stage → stage.form 组件;无匹配回落 ChatStage。 */
@@ -44,6 +46,30 @@ function StageAvatar({ name }: { name: string }) {
         <span className="char-avatar-ring mt-0.5 h-9 w-9 shrink-0">
             <img src={src} alt={name} className="h-full w-full object-cover" onError={charImgFallback} />
         </span>
+    );
+}
+
+/** 楼层展示正文:TH「前端界面」检测 —— 文本里 pre>code 含 <body/<head/html>
+ *  (卡惯用 ```html 栅栏块或整楼文档)→ 摘出挂 doc-mount iframe,余文正常渲。
+ *  streaming 中不挂帧(内容未稳);编辑中走 textarea 不进本面。 */
+function FloorBody({ m, streaming }: { m: FloorMsg; streaming?: boolean }) {
+    const s = useShell();
+    const text = m.displayContent ?? m.content;
+    const split = extractFrontendBlocks(text);
+    const charDir = s.chat?.charDir;
+    const chatName = s.chat?.chatName;
+    return (
+        <>
+            {(split.text || streaming || !split.blocks.length) && (
+                <div className="chat-body-text whitespace-pre-line" style={{ fontSize: s.chatSettings.fontSize }}>
+                    {split.text || text}
+                    {streaming && <span className="cursor-bar" />}
+                </div>
+            )}
+            {!streaming && charDir && split.blocks.map((b, i) => (
+                <MessageIframe key={`${m.id}-${i}`} charDir={charDir} chatName={chatName} html={b.html} messageId={m.id} />
+            ))}
+        </>
     );
 }
 
@@ -79,7 +105,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                             </div>
                         </div>
                     ) : (
-                        <div className="whitespace-pre-line">{m.displayContent ?? m.content}</div>
+                        <FloorBody m={m} streaming={m.streaming} />
                     )}
                 </div>
                 {/* 触屏无 hover —— 移动端 ops 常显(opacity-90),桌面保留 hover 显现 */}
@@ -163,10 +189,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                     </div>
                 ) : (
                     <>
-                        <div className="chat-body-text whitespace-pre-line" style={{ fontSize: s.chatSettings.fontSize }}>
-                            {m.displayContent ?? m.content}
-                            {m.streaming && <span className="cursor-bar" />}
-                        </div>
+                        <FloorBody m={m} streaming={m.streaming} />
                         {m.aborted && !m.streaming && (
                             /* 规范稿已中止楼层 L1189 */
                             <span className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-[11.5px] text-[color:var(--fg-muted)]">

@@ -34,11 +34,14 @@ import {
     getRegexedString,
     regex_placement,
     substituteParams,
+    extractFrontendBlocks,
+    isMvuData,
 } from '@utopinn/core';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
+import { createFloorRegexRunner, chatFloorRegexPlacement } from '../services/extension-prompts.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 
 export const inject = ['webServer'];
@@ -575,6 +578,46 @@ async function buildSubstCtx(ctx2, settings = null) {
         currentChatId: ctx2.chatName ?? '',
     };
 }
+
+// ── displayed_message 助手(TH displayed_message.ts 对齐) ──────────────
+/** TH message_id 解析:'last'|'latest'|'last_user'|'last_char'|number(负从尾)。
+ *  命中 → 下标;未命中 → null(TH 抛错面由调用方落成 ok:false)。 */
+function resolveFloorId(mid, body) {
+    if (mid === undefined || mid === null || mid === 'last' || mid === 'latest') {
+        return body.length ? body.length - 1 : null;
+    }
+    if (mid === 'last_user') {
+        for (let i = body.length - 1; i >= 0; i--) {
+            if (body[i]?.is_user && !body[i]?.is_system) return i;
+        }
+        return null;
+    }
+    if (mid === 'last_char') {
+        for (let i = body.length - 1; i >= 0; i--) {
+            if (body[i] && !body[i].is_user && !body[i].is_system) return i;
+        }
+        return null;
+    }
+    const n = normMessageId(mid, body.length);
+    return (n !== null && n >= 0 && n < body.length) ? n : null;
+}
+/** 展示车道 runner:settings+substCtx+卡作用域脚本(collectRegexScripts
+ *  卡域恒放行口径,与 chats 读面 mes_display 同链)。 */
+async function displayFloorRunner(ctx2) {
+    const settings = (await getSettingsRepo().get(ctx2.handle)) ?? {};
+    const substCtx = await buildSubstCtx(ctx2, settings);
+    let card = null;
+    if (ctx2.charDir) {
+        try { card = await loadCard(ctx2.directories, ctx2.charDir); } catch { card = null; }
+    }
+    return { runner: createFloorRegexRunner(settings, substCtx, { card, charDir: ctx2.charDir }), substCtx };
+}
+/** 楼层展示深度:非系统楼从尾数(与 projectChatFloorsForDisplay 同口径)。 */
+function floorDisplayDepth(body, idx) {
+    if (body[idx]?.is_system) return undefined;
+    const tail = body.slice(idx).filter((m) => m && !m.is_system).length;
+    return tail - 1;
+}
 /** regex 三域写:global=settings repo.update(原子 RMW);character=卡文件;preset=repo patch。 */
 async function writeRegexScope(ctx2, a, scripts) {
     const type = a?.type ?? 'global';
@@ -670,7 +713,8 @@ async function resolveScope({ handle, scope, charDir, chatName, messageId }) {
     // 即 data.stat_data/mvu_data);ST /setvar 的 message 变量走
     // message.variables。读:data 优先、variables 兜底合并;写:进 data。
     const body = Array.isArray(doc.body) ? doc.body : [];
-    const mid = Number.isInteger(messageId) ? messageId : body.length - 1;
+    // TH normalizeMessageId:负数从尾数;'latest'/非整数 → 末楼
+    const mid = normMessageId(messageId, body.length) ?? body.length - 1;
     const msg = body[mid];
     if (!msg) return { error: `message ${mid} not found`, status: 404 };
     if (typeof msg.data !== 'object' || msg.data === null) msg.data = {};
@@ -1263,6 +1307,81 @@ const METHODS = {
         return { ok: true, result: substituteParams(String(a?.text ?? ''), substCtx) };
     },
 
+    /** TH formatAsDisplayedMessage(text, {message_id}) → 该楼展示车道投影文本。
+     *  TH 本体 = messageFormatting(text,name,is_system,is_user,mid)(display
+     *  regex 道+宏+hljs);本面 = 同投影文本(持久→展示串接 = mes_display 同链,
+     *  末段 substituteParams;hljs 高亮属 DOM 域不仿)。
+     *  message_id:'last'|'last_user'|'last_char'|number(负从尾,TH 同形)。 */
+    async formatAsDisplayedMessage(a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) return { ok: false, status: 400, error: 'target.charDir + target.chatName required' };
+        const doc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+        if (!doc) return { ok: false, status: 404, error: 'chat not found' };
+        const body = Array.isArray(doc.body) ? doc.body : [];
+        if (!body.length) return { ok: false, status: 400, error: '未找到任何消息楼层' };
+        const mid = resolveFloorId(a?.message_id, body);
+        if (mid === null) return { ok: false, status: 400, error: `提供的 message_id 无效/越界: ${a?.message_id}` };
+        const floor = body[mid];
+        const { runner, substCtx } = await displayFloorRunner(ctx2);
+        const placement = chatFloorRegexPlacement(floor);
+        const depth = floorDisplayDepth(body, mid);
+        const projected = runner.displayText(String(a?.text ?? ''), placement, { depth, characterOverride: floor?.name });
+        return { ok: true, result: substituteParams(projected, substCtx) };
+    },
+    /** TH retrieveDisplayedMessage(message_id) → 楼层「当前展示内容」结构化
+     *  读回。TH 回 .mes_text jQuery DOM;本面 = 展示投影文本(display_text
+     *  覆盖 > 激活 swipe)+ 前端界面块清单(pre>code 含 <body/<head/html>
+     *  → 宿主渲成 iframe;extractFrontendBlocks 权威规格在 core)。 */
+    async retrieveDisplayedMessage(a, _scope, ctx2) {
+        if (!ctx2.charDir || !ctx2.chatName) return { ok: false, status: 400, error: 'target.charDir + target.chatName required' };
+        const doc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+        if (!doc) return { ok: false, status: 404, error: 'chat not found' };
+        const body = Array.isArray(doc.body) ? doc.body : [];
+        const mid = resolveFloorId(a?.message_id, body);
+        if (mid === null) return { ok: false, status: 400, error: `提供的 message_id 无效/越界: ${a?.message_id}` };
+        const floor = body[mid];
+        const { runner } = await displayFloorRunner(ctx2);
+        const placement = chatFloorRegexPlacement(floor);
+        const depth = floorDisplayDepth(body, mid);
+        const override = typeof floor?.extra?.display_text === 'string' ? floor.extra.display_text : null;
+        const swipe = Array.isArray(floor?.swipes) ? floor.swipes[Number(floor.swipe_id ?? 0)] ?? floor.swipes[0] : undefined;
+        const swipeText = typeof swipe === 'string' ? swipe : swipe?.mes;
+        const raw = override ?? swipeText ?? floor?.mes ?? '';
+        const projected = typeof raw === 'string'
+            ? (override !== null
+                ? runner.markdown(raw, placement, { depth, characterOverride: floor?.name })
+                : runner.displayText(raw, placement, { depth, characterOverride: floor?.name }))
+            : '';
+        const split = extractFrontendBlocks(projected);
+        return {
+            ok: true,
+            result: {
+                message_id: mid,
+                display_text: projected,
+                frontend_blocks: split.blocks.map((b) => b.html),
+                has_frontend: split.blocks.length > 0,
+            },
+        };
+    },
+    /** TH Mvu.getMvuData({type,message_id}) —— 变量面 MVU 薄封:同
+     *  getVariables 读域;非 MVU 形(stat_data+schema 缺一)→ 400(TH 抛错面)。 */
+    async getMvuData(a, scope) {
+        const v = a?.path ? getPath(scope.store, a.path) : scope.store;
+        if (!isMvuData(v)) {
+            return { ok: false, status: 400, error: 'variables are not MVU data (stat_data + schema required)', mvu: false };
+        }
+        return { ok: true, result: v };
+    },
+    /** TH Mvu.replaceMvuData(data,{type,message_id}) —— 同 replaceVariables
+     *  (GH#4 丢根护栏同享);入参非 MVU 形 → 400(TH 校验面)。 */
+    async replaceMvuData(a, scope) {
+        const vars = a?.data ?? a?.variables;
+        if (!isPlainObj(vars)) return { ok: false, status: 400, error: 'args.data must be an object' };
+        if (!isMvuData(vars)) {
+            return { ok: false, status: 400, error: 'args.data is not MVU data (stat_data + schema required)' };
+        }
+        return METHODS.replaceVariables({ ...a, variables: vars }, scope);
+    },
+
     /** TH stopGeneration:generation_id → 定点停;缺省 → 停本 chat 活跃 job。 */
     async stopGeneration(a, _scope, ctx2) {
         const jobs = await import('../endpoints/backends/luker-generation.js');
@@ -1438,7 +1557,7 @@ export function apply(ctx) {
                 };
 
                 let scope = null;
-                if (['getVariables', 'replaceVariables', 'insertOrAssignVariables', 'insertVariables', 'updateVariablesWith', 'deleteVariable'].includes(method)) {
+                if (['getVariables', 'replaceVariables', 'insertOrAssignVariables', 'insertVariables', 'updateVariablesWith', 'deleteVariable', 'getMvuData', 'replaceMvuData'].includes(method)) {
                     const scopeName = String(body.args?.type ?? body.args?.scope ?? 'chat');
                     if (!SCOPES.has(scopeName)) {
                         return response.status(400).send({ ok: false, error: `scope must be one of ${[...SCOPES].join('|')}` });

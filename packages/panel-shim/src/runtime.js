@@ -131,6 +131,11 @@
         deleteVariable: function (path, o) {
             return request('th.deleteVariable', Object.assign(scopeArgs(o), { path: path }));
         },
+        // Mvu 薄封(TH Mvu.getMvuData/replaceMvuData;TavernHelper.getMvuData 同名)
+        getMvuData: function (o) { return request('th.getMvuData', scopeArgs(o)); },
+        replaceMvuData: function (data, o) {
+            return request('th.replaceMvuData', Object.assign(scopeArgs(o), { data: data }));
+        },
 
         // events — callbacks live here; the host tracks which events to forward
         // (push filter) and mirrors the ops into the server th.events shadow.
@@ -285,6 +290,14 @@
             return request('th.substituteMacros', { text: text });
         },
 
+        // displayed_message(TH 签名 (text, {message_id}) / (message_id))
+        formatAsDisplayedMessage: function (text, o) {
+            return request('th.formatAsDisplayedMessage', Object.assign({ text: text }, o || {}));
+        },
+        retrieveDisplayedMessage: function (messageId) {
+            return request('th.retrieveDisplayedMessage', { message_id: messageId });
+        },
+
         stopGeneration: function () { return request('th.stopGeneration', {}); },
         stopGenerationById: function (generationId) {
             return request('th.stopGeneration', { generation_id: generationId });
@@ -345,6 +358,13 @@
         var n = bareNames[i];
         if (typeof window[n] === 'undefined') window[n] = api[n];
     }
+
+    // TH Mvu 命名空间(Mvu.getMvuData/Mvu.replaceMvuData + 事件常量面)。
+    window.Mvu = window.Mvu || {
+        getMvuData: api.getMvuData,
+        replaceMvuData: api.replaceMvuData,
+        events: { VARIABLE_UPDATE_ENDED: 'mvu_variable_update_ended' },
+    };
 
     // event-name constants (subset matching protocol TH_TAVERN_EVENTS_T0)
     window.tavern_events = window.tavern_events || {

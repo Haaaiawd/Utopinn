@@ -24,6 +24,7 @@ export * from './instruct/engine.js';
 export * from './regex/types.js';
 export * from './regex/engine.js';
 export * from './regex/redos.js';
+export * from './message-frame.js';
 export * from './mvu/types.js';
 export * from './mvu/parse.js';
 export * from './mvu/schema.js';

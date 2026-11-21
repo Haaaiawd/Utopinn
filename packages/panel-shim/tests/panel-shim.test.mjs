@@ -185,10 +185,17 @@ test('eventEmit dispatches locally AND notifies host', async () => {
 
 test('waitGlobalInitialized resolves when global appears in-window', async () => {
     const { win } = makeEnv();
-    const p = win.waitGlobalInitialized('Mvu');
-    win.Mvu = { marker: true };
+    const p = win.waitGlobalInitialized('LateCardLib');
+    win.LateCardLib = { marker: true };
     const g = await p;
     assert.equal(g.marker, true);
+});
+
+test('window.Mvu namespace ships getMvuData/replaceMvuData + event constant', async () => {
+    const { win } = makeEnv();
+    assert.equal(typeof win.Mvu?.getMvuData, 'function');
+    assert.equal(typeof win.Mvu?.replaceMvuData, 'function');
+    assert.equal(win.Mvu?.events?.VARIABLE_UPDATE_ENDED, 'mvu_variable_update_ended');
 });
 
 test('getCurrentMessageId uses bootstrap messageId without a round-trip', async () => {

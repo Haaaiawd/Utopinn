@@ -88,6 +88,7 @@ test.before(async () => {
     fs.mkdirSync(dirs.characters, { recursive: true });
     fs.mkdirSync(dirs.chats, { recursive: true });
     fs.mkdirSync(dirs.worlds, { recursive: true });
+    fs.mkdirSync(dirs.cardApps, { recursive: true });
     await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
 
     // 种子:角色 JSON + 会话(2 楼)
@@ -102,6 +103,7 @@ test.before(async () => {
 
     const { apply: applyTh } = await import('../src/plugins/utopinn-th.js');
     const { apply: applyLibrary } = await import('../src/plugins/utopinn-library.js');
+    const { cardRuntimeApiRouter, cardRuntimePublicRouter } = await import('../src/card-runtime/index.js');
     const router = express.Router();
     const ws = {
         register: (spec) => {
@@ -121,6 +123,8 @@ test.before(async () => {
     // UtopinnClient.autoSession:每个请求前 GET /csrf-token(否则全链 HTTP 404)
     app.get('/csrf-token', (_req, res) => res.send({ token: 'test-csrf' }));
     app.use(router);
+    app.use('/api/card-runtime', cardRuntimeApiRouter);
+    app.use('/card-runtime', cardRuntimePublicRouter);
     await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
     BASE = `http://127.0.0.1:${server.address().port}`;
 });
@@ -764,4 +768,136 @@ test('stopGeneration:generation_id 未命中 → 404;无活跃 → cancelled:0 �
     assert.equal(r.status, 200);
     assert.equal(r.body.result.cancelled, 0);
     assert.ok(r.body.result.covered, '覆盖口径如实标注');
+});
+
+// ── I. displayed_message + Mvu + 前端界面块 ────────────────────────────
+
+test('formatAsDisplayedMessage:楼层别名解析 + 展示车道投影 + 宏尾段', async () => {
+    // display 车道全局脚本:仅 AI_OUTPUT 源命中(user 楼 placement 不吃 →
+    // 证明走 chatFloorRegexPlacement 真楼层定位,不是全量瞎投)
+    const script = {
+        id: 'd1', script_name: 'disp-x', enabled: true,
+        find_regex: '/x+/g', trim_strings: [], replace_string: '{{char}}',
+        source: { ai_output: true, user_input: false, slash_command: false, world_info: false, reasoning: false },
+        destination: { display: true, prompt: false },
+        run_on_edit: false, min_depth: null, max_depth: null,
+    };
+    let r = await call('replaceTavernRegexes', { type: 'global', regexes: [script] });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    // 'last'/缺省 → 末楼(char):display 车道 + 宏尾段 {{char}} → CHAR
+    r = await call('formatAsDisplayedMessage', { text: 'xxhixx', message_id: 'last' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.result, `${CHAR}hi${CHAR}`);
+    r = await call('formatAsDisplayedMessage', { text: 'xxhixx' });
+    assert.equal(r.body.result, `${CHAR}hi${CHAR}`);
+    // 'last_char' + 负数(负从尾)同指末楼
+    r = await call('formatAsDisplayedMessage', { text: 'xx', message_id: -1 });
+    assert.equal(r.body.result, CHAR);
+    r = await call('formatAsDisplayedMessage', { text: 'xx', message_id: 'last_char' });
+    assert.equal(r.body.result, CHAR);
+    // 'last_user' → user 楼:AI_OUTPUT 脚本不命中 → 原文
+    r = await call('formatAsDisplayedMessage', { text: 'xxhixx', message_id: 'last_user' });
+    assert.equal(r.body.result, 'xxhixx');
+    // 越界/无效 → 400(TH 抛错面)
+    r = await call('formatAsDisplayedMessage', { text: 'xx', message_id: 9999 });
+    assert.equal(r.status, 400);
+    // 无 chat 目标 → 400
+    r = await call('formatAsDisplayedMessage', { text: 'xx' }, { charDir: CHAR });
+    assert.equal(r.status, 400);
+});
+
+test('retrieveDisplayedMessage:展示投影 + 前端界面块提取 + 别名', async () => {
+    const widget = '<body><div class="widget">panel-dom</div></body>';
+    // 铺一个带 ```html 前端界面块的 assistant 楼(文本无 'x',不吃 d1 脚本)
+    let r = await call('createChatMessages', {
+        chat_messages: [{ role: 'assistant', message: `看下面板\n\n\`\`\`html\n${widget}\n\`\`\`\n` }],
+    });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const mid = r.body.result.message_ids[0];
+    r = await call('retrieveDisplayedMessage', { message_id: mid });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const v = r.body.result;
+    assert.equal(v.message_id, mid);
+    assert.equal(v.has_frontend, true);
+    assert.equal(v.frontend_blocks.length, 1);
+    assert.ok(v.frontend_blocks[0].includes('panel-dom'), `块内容: ${v.frontend_blocks[0]}`);
+    assert.ok(v.display_text.includes(widget), 'display_text = 投影全文(宿主再切)');
+    // 'last' 别名 = 刚追加的楼
+    r = await call('retrieveDisplayedMessage', { message_id: 'last' });
+    assert.equal(r.body.result.message_id, mid);
+    // 越界 → 400
+    r = await call('retrieveDisplayedMessage', { message_id: 9999 });
+    assert.equal(r.status, 400);
+    // 回收:删除铺的楼
+    r = await call('deleteChatMessages', { message_ids: [mid] });
+    assert.equal(r.status, 200);
+});
+
+test('Mvu.getMvuData/replaceMvuData:MVU 形校验 + 楼 data 全量写', async () => {
+    // 干净楼层(空 data → 根守卫无丢根)
+    let r = await call('createChatMessages', {
+        chat_messages: [{ role: 'assistant', message: 'mvu-floor' }],
+    });
+    assert.equal(r.status, 200);
+    const mid = r.body.result.message_ids[0];
+    // 非 MVU 形(缺 stat_data/schema)→ 400(TH 校验面)
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: { foo: 1 } });
+    assert.equal(r.status, 400);
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: 'str' });
+    assert.equal(r.status, 400);
+    // MVU 形全量写 → getMvuData 同楼读回
+    const mvu = { stat_data: { hp: 10, inv: ['sword'] }, schema: { properties: { hp: { type: 'number' } } } };
+    r = await call('replaceMvuData', { type: 'message', message_id: mid, data: mvu });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    r = await call('getMvuData', { type: 'message', message_id: mid });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.result.stat_data.hp, 10);
+    assert.deepEqual(r.body.result.schema, mvu.schema);
+    // 非 MVU 域 → 400 + mvu:false 如实标记
+    r = await call('getMvuData', { type: 'chat' });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.mvu, false);
+    // 回收
+    r = await call('deleteChatMessages', { message_ids: [mid] });
+    assert.equal(r.status, 200);
+});
+
+// ── J. message doc mount(前端界面 iframe 承载面)────────────────────────
+
+test('card-runtime message doc mount:铸帧→出壳→shim 拼接→CSP', async () => {
+    // 铸 doc mount(TH 楼层 iframe:payload=楼层前端块 HTML)
+    let res = await fetch(`${BASE}/api/card-runtime/mounts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'message', charId: CHAR, chatName: CHAT, html: '<body><div id="w">hi-dom</div></body>' }),
+    });
+    assert.equal(res.status, 201, JSON.stringify(await res.clone().json().catch(() => null)));
+    const bundle = await res.json();
+    assert.ok(bundle.mountId?.match(/^[a-f0-9]{32}$/), `mountId: ${bundle.mountId}`);
+    assert.ok(bundle.bridgeNonce);
+    assert.ok(bundle.entryUrl.replace(/\/$/, '').endsWith(`/m/${bundle.mountId}`), `entryUrl: ${bundle.entryUrl}`);
+    assert.equal(bundle.manifest?.entryKind, 'document');
+    // 出壳:?shim=t0 → TH shim 拼接 + nonce bootstrap + 壳内容 + 自动量高
+    res = await fetch(`${BASE}${bundle.entryUrl}?shim=t0`);
+    assert.equal(res.status, 200);
+    const doc = await res.text();
+    assert.ok(doc.includes('data-card-runtime-shim'), 'shim tag 拼入');
+    assert.ok(doc.includes(bundle.bridgeNonce), 'bridgeNonce bootstrap 拼入');
+    assert.ok(doc.includes('hi-dom'), '楼层块内容在壳内');
+    assert.ok(doc.includes('utopinn-msgframe-height'), '自动量高脚本在壳内');
+    const csp = res.headers.get('content-security-policy') ?? '';
+    assert.ok(csp.includes('sandbox allow-scripts'), `CSP 沙箱: ${csp}`);
+    // 坏输入面:无 html → 400;幽灵卡 → 404;文档超限 → 413
+    res = await fetch(`${BASE}/api/card-runtime/mounts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'message', charId: CHAR, html: '' }),
+    });
+    assert.equal(res.status, 400);
+    res = await fetch(`${BASE}/api/card-runtime/mounts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'message', charId: 'ghost-char', html: '<body>x</body>' }),
+    });
+    assert.equal(res.status, 404);
+    res = await fetch(`${BASE}/card-runtime/m/deadbeefdeadbeefdeadbeefdeadbeef`);
+    assert.equal(res.status, 404);
 });

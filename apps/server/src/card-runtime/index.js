@@ -29,11 +29,11 @@
  */
 
 import express from 'express';
-import { resolveMount, createMount, revokeMount, listMounts, publicMount, loadCardData, CardRuntimeError } from './mounts.js';
+import { resolveMount, createMount, createDocMount, revokeMount, listMounts, publicMount, loadCardData, CardRuntimeError } from './mounts.js';
 import { getRawCardApp, parseCardAppManifest } from './manifest.js';
 import { buildCardRuntimeCsp } from './csp.js';
 import { cdnProxyHandler } from './cdn-proxy.js';
-import { entryHandler, assetHandler, shimHandler } from './assets.js';
+import { entryHandler, assetHandler, shimHandler, buildMessageDoc } from './assets.js';
 import sanitize from 'sanitize-filename';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -85,6 +85,29 @@ function selfOrigin(request) {
 cardRuntimeApiRouter.post('/mounts', async (request, response) => {
     try {
         const charId = String(request.body?.charId ?? request.body?.charDir ?? '').trim();
+        // TH displayed_message 楼层 iframe:kind='message' → doc mount
+        // (载荷=卡写进楼层的前端块 HTML,服务端包壳+shim 拼接)。
+        if (request.body?.kind === 'message') {
+            // 载荷本体先验:空 html 包壳后非空,放进 createDocMount 验会漏。
+            const html = request.body?.html;
+            if (typeof html !== 'string' || !html.trim()) {
+                return response.status(400).json({ error: 'bad_html', detail: 'html (frontend block content) is required' });
+            }
+            const record = createDocMount({
+                handle: request.user?.profile?.handle || '',
+                directories: request.user.directories,
+                charId,
+                chatName: request.body?.chatName,
+                doc: buildMessageDoc(request.body?.html),
+                ttlMs: request.body?.ttlMs,
+            });
+            const bundle = publicMount(record);
+            bundle.csp = buildCardRuntimeCsp({
+                selfOrigin: selfOrigin(request),
+                permissions: record.manifest.permissions,
+            });
+            return response.status(201).json(bundle);
+        }
         const record = await createMount({
             handle: request.user?.profile?.handle || '',
             directories: request.user.directories,

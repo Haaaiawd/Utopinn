@@ -147,6 +147,59 @@ function escapeHtml(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/**
+ * TH「前端界面」楼层文档壳 —— JSR createSrcContent(panel/render/iframe.ts)
+ * 的最小等价物:重置样式 + 基座 + 内容本体 + 自动高度上报。
+ * TH 注入 jQuery/Vue/tailwind CDN 与 predefine(TH 全局)——我们的 TH 面由
+ * ?shim=t0 拼接(bridge nonce + TH API 桥),CDN 依赖交卡自理(走 /cdn 代理)。
+ *
+ * 高度:卡内脚本 post {type:'utopinn-msgframe-height', height} →
+ * 宿主 MessageIframe 调 iframe 高(TH adjust_iframe_height 同语义)。
+ */
+const MSGFRAME_AUTOHEIGHT = `<script data-card-runtime-autoheight>
+(function () {
+  var last = -1;
+  function post() {
+    try {
+      var h = Math.max(
+        document.body ? document.body.scrollHeight : 0,
+        document.documentElement ? document.documentElement.scrollHeight : 0);
+      if (h !== last) { last = h; parent.postMessage({ type: 'utopinn-msgframe-height', height: h }, '*'); }
+    } catch (e) { /* opaque 父页无法读 DOM 时只能由我们推 */ }
+  }
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(post).observe(document.documentElement);
+  }
+  window.addEventListener('load', post);
+  document.addEventListener('DOMContentLoaded', post);
+  setTimeout(post, 50); setTimeout(post, 300); setTimeout(post, 1200);
+})();
+</script>`;
+
+/**
+ * 楼层前端块 → 完整文档。TH 恒把块内容注进 <body>(整块是完整 HTML
+ * 文档的卡也同待遇 —— 浏览器容错解析,与 JSR createSrcContent 同行为)。
+ */
+export function buildMessageDoc(content) {
+    return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<base target="_blank">
+<style>
+*,*::before,*::after{box-sizing:border-box;}
+html,body{margin:0!important;padding:0!important;max-width:100%!important;}
+</style>
+</head>
+<body>
+${String(content ?? '')}
+${MSGFRAME_AUTOHEIGHT}
+</body>
+</html>`;
+}
+
 function sendDocument(request, response, mount, body) {
     setSecurityHeaders(request, response, mount);
     const etag = `W/"${crypto.createHash('sha256').update(body).digest('hex').slice(0, 24)}"`;
@@ -167,6 +220,11 @@ function sendDocument(request, response, mount, body) {
  */
 export function entryHandler(request, response) {
     const mount = request.cardRuntimeMount;
+    // TH「前端界面」楼层文档:mount 自带 doc,默认拼 t0(TH 面)。
+    if (mount.kind === 'message') {
+        const shimSpec = SHIM_URLS.get(String(request.query.shim || 't0')) || SHIM_URLS.get('t0');
+        return sendDocument(request, response, mount, injectShimTag(mount.doc, shimSpec, mount));
+    }
     const shimSpec = SHIM_URLS.get(String(request.query.shim || '')) || null;
     if (mount.manifest.entryKind === 'document') {
         const target = `./${mount.manifest.entry}${shimSpec ? '?shim=' + encodeURIComponent(String(request.query.shim)) : ''}`;

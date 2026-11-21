@@ -223,6 +223,64 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
     return record;
 }
 
+/**
+ * Mint a mount for a TH「前端界面」楼层 iframe (displayed_message 面, TASK-049)。
+ * 与 createMount 同能力模型(128-bit id = 授权本身),但载荷不是卡资产而是
+ * 宿主随 mount 注册的整份 HTML 文档(TH 卡写进楼层正文的前端块)——
+ * 楼层 iframe 的文档在 mount 里而非卡目录里。
+ * @param {object} opts
+ * @param {string} opts.handle user handle
+ * @param {object} opts.directories user directory snapshot
+ * @param {string} opts.charId character id (mount 属主,决定桥 target)
+ * @param {string} [opts.chatName] bound chat (TH 桥 target.chatName)
+ * @param {string} opts.doc fully assembled HTML document (shell-wrapped by caller)
+ * @param {number} [opts.ttlMs]
+ */
+export function createDocMount({ handle, directories, charId, chatName, doc, ttlMs }) {
+    const cleanId = sanitize(String(charId ?? '').trim());
+    if (!cleanId) throw new CardRuntimeError(400, 'bad_char_id', 'charId is required');
+    if (typeof doc !== 'string' || !doc.trim()) {
+        throw new CardRuntimeError(400, 'bad_doc', 'doc (assembled HTML) is required');
+    }
+    if (doc.length > 1024 * 1024) {
+        throw new CardRuntimeError(413, 'doc_too_large', 'doc exceeds 1MiB');
+    }
+    const avatarPath = path.join(directories.characters, `${cleanId}.png`);
+    const jsonPath = path.join(directories.characters, `${cleanId}.json`);
+    if (path.dirname(avatarPath) !== directories.characters) {
+        throw new CardRuntimeError(400, 'bad_char_id', 'charId must be a character filename');
+    }
+    if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+        throw new CardRuntimeError(404, 'character_not_found', `Character not found: ${cleanId}`);
+    }
+
+    const record = {
+        id: crypto.randomBytes(16).toString('hex'),
+        handle: String(handle || ''),
+        directories,
+        charId: cleanId,
+        chatName: typeof chatName === 'string' && chatName.trim() ? chatName.trim() : null,
+        kind: 'message',
+        doc,
+        // 合成 manifest:TH 楼层 iframe = 全 TH 面(TH 给嵌入代码完整
+        // TavernHelper);sameOrigin 恒 false(楼层文档从不提权)。
+        manifest: {
+            entry: '__message__',
+            entryKind: 'document',
+            permissions: { api: ['th'], sameOrigin: false, stateNamespaces: [] },
+        },
+        bridgeNonce: crypto.randomBytes(16).toString('hex'),
+        warnings: [],
+        manifestHash: crypto.createHash('sha256').update(doc).digest('hex').slice(0, 32),
+        createdAt: Date.now(),
+        expiresAt: 0,
+        ttlMs: Math.min(MAX_TTL_MS, Math.max(MIN_TTL_MS, Number(ttlMs) || DEFAULT_TTL_MS)),
+    };
+    record.expiresAt = record.createdAt + record.ttlMs;
+    mounts.set(record.id, record);
+    return record;
+}
+
 const MOUNT_ID_RE = /^[a-f0-9]{32}$/;
 
 /**
@@ -275,9 +333,12 @@ export function listMounts(handle) {
  */
 export function publicMount(record) {
     const base = `/card-runtime/m/${record.id}/`;
-    const entryUrl = record.manifest.entryKind === 'document'
-        ? `${base}${record.manifest.entry}`
-        : base;
+    // message mount 的文档由 entryHandler 直接出 mount.doc,entryUrl = 根路径。
+    const entryUrl = record.kind === 'message'
+        ? base
+        : record.manifest.entryKind === 'document'
+            ? `${base}${record.manifest.entry}`
+            : base;
     return {
         mountId: record.id,
         charId: record.charId,

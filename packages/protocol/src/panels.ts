@@ -108,6 +108,7 @@ export const PANEL_METHODS_TH = [
     'th.generateRaw',
     'th.stopGeneration',
     'th.formatAsDisplayedMessage',
+    'th.retrieveDisplayedMessage',
     'th.substituteMacros',
     'th.getMvuData',
     'th.replaceMvuData',

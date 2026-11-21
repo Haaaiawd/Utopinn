@@ -23,6 +23,8 @@ export interface CtxHostOpts {
     chatName?: string;
     /** 宿主 → iframe push 投递(CardAppFrame 接 PanelBridge.push)。 */
     push: (event: 'host.event' | 'th.event' | 'chat.updated', payload: Record<string, unknown>) => void;
+    /** 信箱事件宿主旁路(不过卡订阅面)——MessageIframe 用 refresh_message 自刷。 */
+    onThEvent?: (name: string, args: unknown[]) => void;
     /** 诊断/日志行(默认 console)。 */
     log?: (msg: string) => void;
     /** 轮询/生成等待预算(ms)。 */
@@ -57,6 +59,7 @@ export class CardAppHost {
     private readonly avatarUrl: string;
     private readonly chatFileName?: string;
     private readonly pushEvent: CtxHostOpts['push'];
+    private readonly onThEvent?: CtxHostOpts['onThEvent'];
     private readonly log: (msg: string) => void;
     private readonly generationWaitMs: number;
     private readonly userName: string;
@@ -78,6 +81,7 @@ export class CardAppHost {
         this.avatarUrl = `${opts.charDir}.png`;
         this.chatFileName = opts.chatName ? `${opts.chatName}.jsonl` : undefined;
         this.pushEvent = opts.push;
+        this.onThEvent = opts.onThEvent;
         this.log = opts.log ?? ((m) => console.warn('[cardapp-host]', m));
         this.generationWaitMs = opts.generationWaitMs ?? 120_000;
         this.userName = opts.userName ?? 'User';
@@ -208,7 +212,10 @@ export class CardAppHost {
             if (typeof result.seq === 'number') this.lastEventSeq = Math.max(this.lastEventSeq, result.seq);
             for (const e of result.entries ?? []) {
                 if (e?.origin && e.origin === this.hostId) continue;
-                if (typeof e?.event === 'string' && e.event) this.emitTh(e.event, Array.isArray(e.args) ? e.args : []);
+                if (typeof e?.event === 'string' && e.event) {
+                    this.onThEvent?.(e.event, Array.isArray(e.args) ? e.args : []);
+                    this.emitTh(e.event, Array.isArray(e.args) ? e.args : []);
+                }
             }
         } catch { /* 信箱面缺席/抖动不致命 — 下轮泵再试 */ }
     }
