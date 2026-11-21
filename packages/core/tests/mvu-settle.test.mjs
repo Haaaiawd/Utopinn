@@ -154,12 +154,44 @@ test('set:基本写入 + display/delta 记录 + 回执', () => {
     assert.equal(v.delta_data.状态.体力, '50->62 (受伤)');
 });
 
-test('set:路径不存在 → error op,不修改', () => {
+// ---------- GH#15:lodash 自动建路径 + stat_data. 前缀剥除 ----------
+
+test('set(GH#15):路径不存在 → 自动创建,oldValue=undefined 留痕', () => {
     const v = mvuData({ a: 1 });
     const r = settleMvuVariables(`_.set('不存在.路径', 1);`, v);
-    assert.equal(r.modified, false);
-    assert.equal(r.receipt.ops[0].status, 'error');
-    assert.equal(r.receipt.errors.length, 1);
+    assert.equal(r.modified, true);
+    assert.equal(v.stat_data.不存在.路径, 1);
+    assert.equal(r.receipt.ops[0].status, 'applied');
+    assert.equal(r.receipt.ops[0].oldValue, undefined);
+    assert.equal(r.receipt.errors.length, 0);
+});
+
+test('set(GH#15):stat_data. 前缀剥除——不嵌套 stat_data.stat_data', () => {
+    const v = mvuData({ 日务: [{}, {}] });
+    const r = settleMvuVariables(
+        "_.set('stat_data.day', 2);\n_.set('stat_data.日务.1', {名:'晨课'});",
+        v,
+    );
+    assert.equal(r.modified, true);
+    assert.equal(v.stat_data.day, 2);
+    assert.deepEqual(v.stat_data.日务[1], { 名: '晨课' });
+    assert.equal(v.stat_data.stat_data, undefined);
+    assert.deepEqual(r.receipt.ops.map(o => o.status), ['applied', 'applied']);
+});
+
+test('set(GH#15):_.set(\'stat_data\', obj) → 整体替换', () => {
+    const v = mvuData({ a: 1 });
+    const r = settleMvuVariables(`_.set('stat_data', {"b":2});`, v);
+    assert.equal(r.modified, true);
+    assert.deepEqual(v.stat_data, { b: 2 });
+    assert.equal(r.receipt.ops[0].status, 'applied');
+});
+
+test('set(GH#15):variables.stat_data. 全前缀同样剥除', () => {
+    const v = mvuData({});
+    settleMvuVariables(`_.set('variables.stat_data.灵石', 310);`, v);
+    assert.equal(v.stat_data.灵石, 310);
+    assert.equal(v.stat_data.variables, undefined);
 });
 
 test('set:number 旧值 + 字符串新值 → Number() 强转', () => {

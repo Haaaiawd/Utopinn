@@ -76,6 +76,19 @@ function pathFixPass(commands: MvuCommand[]): void {
         // JSON Patch 路径已按 JSON Pointer 段编码,过 pathFix 会破坏字面点/括号。
         if (command.reason === 'json_patch') continue;
         command.args[0] = pathFix(trimQuotesAndBackslashes(command.args[0]) as string);
+        // 模型常按卡 prompt 习惯带 stat_data. 前缀写相对路径(卡侧 applySetLine 同款剥除);
+        // settle 作用域即 variables.stat_data,不剥会嵌套成 stat_data.stat_data.*(GH#15)。
+        if (typeof command.args[0] === 'string') {
+            for (const prefix of ['variables.stat_data.', 'stat_data.']) {
+                if (command.args[0].startsWith(prefix)) {
+                    command.args[0] = command.args[0].slice(prefix.length);
+                    break;
+                }
+            }
+            if (command.args[0] === 'stat_data' || command.args[0] === 'variables.stat_data') {
+                command.args[0] = '';
+            }
+        }
     }
 }
 
@@ -168,10 +181,8 @@ export function settleMvuVariables(
 
         switch (command.type) {
             case 'set': {
-                if (path !== '' && !has(variables.stat_data, path)) {
-                    fail(`Cannot set '${path}' ${reasonStr}: path does not exist`);
-                    continue;
-                }
+                // 卡侧/TH 生态的 _.set 即 lodash 语义:路径不存在自动创建(GH#15)。
+                // 不再要求 has() 预存在——创建路径由 receipt oldValue=undefined 如实留痕。
                 let oldValue =
                     path === '' ? deepClone(variables.stat_data) : get(variables.stat_data, path);
                 let newValue = parseCommandValue(command.args.at(-1)!);
