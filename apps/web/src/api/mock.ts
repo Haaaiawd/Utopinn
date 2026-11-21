@@ -101,11 +101,13 @@ export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
 }
 
 /* =========================================================================
-   规范稿目录数据 —— SPEC-DATA: 待接。
-   下方目录在服务端没有对应端点(模型列表/预设库/全局世界书/作品世界书/
-   插件市场/舞台形态会话/MVU 快照/工作台板块目录),一律落在这里;接入时
-   整体换成 /api/utopinn/* 响应。形状逐字段对齐规范稿 MODELS / PRESETS /
-   GLOBAL_LORE / WORLDBOOK / BUILTIN_PLUGINS / MARKET_PLUGINS / PROJECTS。
+   离线演示与未接线残余种子 —— SPEC-DATA。
+   注意:模型列表(/api/utopinn/models)、预设库(/api/utopinn/presets)、全局世界书
+   (settings.world_info_settings.world_info.globalSelect)与作品世界书
+   (/api/utopinn/worlds)均已具备服务端端点并在在线态真实水合,以下对应的
+   MOCK_* 仅作离线演示回退(经 live 门控与 demoData 标记隔离)。
+   目前仍无服务端面的仅为插件市场目录(MOCK_MARKET_PLUGINS)、舞台预演轨
+   (MOCK_STAGE_SESSIONS `st-*`)及离线演示种子(MOCK_NOVEL_CHAPTERS/IM/VN)。
    ========================================================================= */
 
 /** 生成模型目录项(规范稿 MODELS)。 */

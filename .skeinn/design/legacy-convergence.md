@@ -110,7 +110,7 @@ verdict 列:**compat**=已加头注,收口候选;**keep**=产品面/基建不动
 
 | # | 缺口 | legacy 源 | 现消费方 | 难度 | 建议形态 |
 |---|---|---|---|---|---|
-| 1 | **群聊域**:groups CRUD + group chat 读写(`/api/groups/*` 4 + `/api/chats/group/*` 12) | groups.js、chats.js L2900+ | C(`/groups/all`、`/chats/group/get`);web messenger stage 设计稿需要 | **大**(群存储/成员编排语义与 solo 分叉;/generate 已备 groupId/member,读写面要插件化 ~16 路由) | 新插件 `utopinn-groups`:`/groups` CRUD + `/groups/:id/chat*` |
+| 1 | ~~**群聊域**:groups CRUD + group chat 读写~~(**已退役**:C9 群聊按 DECISIONS.md:274 砍掉,无承接任务;遗留端点归 compat 面,不做插件化) | groups.js、chats.js L2900+ | C(`/groups/all`、`/chats/group/get` 存量兼容调用) | — | 不补;CLI 侧存量调用标注 compat |
 | 2 | **named-doc 读面**(quick-replies/themes/moving-ui `GET /list|/get`) | named-doc-routes.js ×3 宿主 | W StageFrame `/api/quick-replies/list`(活) | **小** | `utopinn-library` 加 `GET /named-docs/:bucket` 一条通用面(bucket=quick-replies/themes/moving-ui) |
 | 3 | **active-job 查询**:`jobs/active` 按 persist_target 过滤 | chat-completions.js `/jobs/active` | C checkNoActiveJob(护栏,写盘/生成前必查) | **小** | `GET /api/utopinn/jobs` 加 `?target=<charDir>/<chatName>&status=active` 过滤参 |
 | 4 | **settings 写面放宽**:legacy `/api/settings/patch` 全量 JSON-patch vs utopinn PATCH 仅 `power_user`/`extension_settings` 浅合并 | settings.js `/patch` | A panel-t0 `settingsPatch`(CardApp ctx.setSettings 桥,deprecated) | **中**(语义拍板:放白名单 or panel-t0 限缩到受限语义) | 倾向后者——CardApp 实际需要写的本就落在 extension_settings |
@@ -143,7 +143,7 @@ verdict 列:**compat**=已加头注,收口候选;**keep**=产品面/基建不动
 
 ### 3.B 二层候选(harness 迁移后才能动 —— golden 链路核 + 壳面)
 
-harness(golden-diff/e2e 浏览器)仍在跑旧 UI,以下面被启动→生成链路触达;**删除前提是 golden 捕获改走 `/api/utopinn/preview` 直采**(headless-cardapp-harness 方向已立此意),或保留一份只读快照:
+harness(golden-diff/e2e 浏览器)仍在跑旧 UI,以下面被启动→生成链路触达;**删除前提是 golden oracle 替代方案拍板**。注意:`/api/utopinn/preview` 直采**不可行**——preview 即 `@utopinn/core` 自身,core-vs-core 不构成兼容 oracle(compat-golden-diff.md:10,21-24)。可行方向:冻结快照对拍(语料固定后 golden 不再依赖活 harness)或保留 ST 浏览器引擎只读语料。
 
 `settings.js` `secrets.js` `presets.js` `worldinfo.js` `characters.js` `chats.js` `groups.js` `backends/*` `generation-control.js` `tokenizers.js` `stats.js` `bootstrap.js` `themes.js` `moving-ui.js` `quick-replies.js` `backgrounds.js` `avatars.js` `sprites.js` `images.js` `assets.js` `extensions.js` `card-app.js` `vectors.js`(若判定不继承)`backends/kobold.js` `text-completions.js`(TASK-037 textgen 面归宿待拍板后并入对应层)。
 
@@ -165,8 +165,8 @@ users-* / sync* / skills / panel-shim / card-runtime / storage-health / renderer
 
 1. **本轮(已做)**:对照表 + 头注 + 两清单 —— 协议边界成文,新代码禁止再绑 legacy 面。
 2. **近端(小)**:web `renameChat` 切 utopinn 路由(gap#11);CLI `checkNoActiveJob` 依赖 gap#3 落地后切 `/jobs`;api-client deprecated 动词按 gap#4/#12 迁移。
-3. **中端**:gap#1 群聊域插件化(web messenger stage 前置)、gap#2 named-doc 读面(QR 条去 legacy)。
-4. **远端(拍板)**:3.A 一层候选连测删;golden 捕获迁 `/preview` 直采后 3.B 逐面退役;`TASK-035 done_when` 的"public/scripts 引擎文件删除"与 3.B 同前提。
+3. **中端**:gap#1 已退役(C9 砍掉,群聊端点归 compat);gap#2 named-doc 读面 + gap#3 jobs 过滤(TASK-058 承接,QR 条去 legacy)。
+4. **远端(拍板)**:3.A 一层候选连测删;golden oracle 替代方案(冻结快照对拍/ST 引擎语料,**非** `/preview` 自证)拍板后 3.B 逐面退役;`TASK-035 done_when` 的"public/scripts 引擎文件删除"与 3.B 同前提(TASK-035 已 block 等此拍板)。
 
 ## 6. 删减执行记录(TASK-035 P2,2026-11-21)
 
@@ -197,8 +197,8 @@ users-* / sync* / skills / panel-shim / card-runtime / storage-health / renderer
 | `image-metadata.js`(/api/image-metadata) | ①`backgrounds.js` import 其 5 个导出;②server-main `initializeAllUserMetadata` 启动调用;③135-jitless 真调 `/all`;④split-cache.test.js + sync/image-metadata-cleanup.test.js 自测 | ①②决定文件不可删;路由摘挂载需 135 探针先走 |
 | `thumbnails.js`(/thumbnail) | ①`avatars/backgrounds/characters.js` import `invalidateThumbnail`;②135-jitless + 101-persona e2e 真取缩略图;③**CLI `groupAssistantFloor` 与 `services/group-orchestration.js` 把 `/thumbnail?type=avatar` URL 写进群消息数据**——删端点=存量群消息头像失效 | ①②③任一为真即不可删;实质=基建件,建议永久留 |
 | `vectors.js`(/api/vector) | smart-context 域产品方向未拍板(§3.A 备注已缓) | 拍板是否继承后并入对应层 |
-| §3.B 全层(settings/secrets/presets/worldinfo/characters/chats/groups/backends/*/generation-control/tokenizers/stats/bootstrap + 壳面 themes/moving-ui/quick-replies/backgrounds/avatars/sprites/images/assets/extensions/card-app + backends/kobold、text-completions) | golden/e2e 捕获链:旧 UI 启动→生成全链在跑这些面 | golden 捕获迁 `/api/utopinn/preview` 直采(headless-cardapp-harness 方向) |
-| `public/scripts/*`(openai.js/world-info.js/PromptManager 等浏览器引擎) | `LUKER_SERVE_LEGACY=1` 整目录静态挂载即 harness 本体;jest `moduleNameMapper` 把 `/scripts/*` 映到该目录,大量单测直接 import public 模块 | 同 3.B:golden 捕获改 `/preview` 直采后整目录退役 |
+| §3.B 全层(settings/secrets/presets/worldinfo/characters/chats/groups/backends/*/generation-control/tokenizers/stats/bootstrap + 壳面 themes/moving-ui/quick-replies/backgrounds/avatars/sprites/images/assets/extensions/card-app + backends/kobold、text-completions) | golden/e2e 捕获链:旧 UI 启动→生成全链在跑这些面 | golden oracle 替代方案拍板(冻结快照对拍或 ST 引擎语料保留;`/api/utopinn/preview` 即 core 自身,**不可**作 oracle) |
+| `public/scripts/*`(openai.js/world-info.js/PromptManager 等浏览器引擎) | `LUKER_SERVE_LEGACY=1` 整目录静态挂载即 harness 本体;jest `moduleNameMapper` 把 `/scripts/*` 映到该目录,大量单测直接 import public 模块 | 同 3.B:oracle 替代方案拍板后整目录退役 |
 | `extensions.js` | 旧 UI 启动列第三方扩展,golden 页若启用扩展会触达 | 随 3.B |
 | 残留死项(不阻塞,记录):`users.js` `QUOTA_ENFORCED_PATH_PREFIXES` 里 `/api/files/upload` 死前缀;`sync/in-progress-gate.js` GATED_ROUTES 里 `/api/media/delete` `/api/data-maid/delete` `/api/sd/comfy/*` `/api/content/importURL|importUUID` 死规则(匹配器静态表,死项永不命中,删了反而破 in-progress-gate 断言) | — | 如需清洁癖另行微改 |
 

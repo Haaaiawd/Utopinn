@@ -1,8 +1,11 @@
 {
-  "status": "researching",
+  "status": "provisional",
   "title": "存储引擎事务语义(fs/sqlite/mysql/postgres 差异决策树)",
-  "field": "",
-  "scenario": "",
+  "field": "多引擎存储事务语义 (fs/sqlite/mysql/postgres)",
+  "scenario": "fs/sqlite 双引擎语义分层已落地并默认 fs 兼容、sqlite 部署推荐",
   "confirmed_at": "",
-  "created_at": "2026-11-20T11:12:08.824Z"
+  "created_at": "2026-11-20T11:12:08.824Z",
+  "updated_at": "2026-11-21T09:14:25.388Z",
+  "source": "agent",
+  "selected_at": "2026-11-21T09:14:25.387Z"
 }

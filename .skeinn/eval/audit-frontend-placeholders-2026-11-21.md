@@ -38,7 +38,7 @@
 6. **正则管理面**(studio RegexPage):服务端 `/api/utopinn/regex` 4 端点全备,新建 api/regex.ts + 启停/编辑。**中**
 7. **上下文弹层+LorePanel 换真**(StageFrame:127, SpecPanels:614):全球栈 ← settings.globalSelect,命中条目 ← stats/inject。**中**
 8. **messenger 频道**(stagepack:361+SpecPanels:692):chat_state 侧车承载,或砍形态。**中-大**
-9. **剧场选项协议**(stagepack:618):`message.extra.choices` wire 协议 + 服务端产出 + 写回通道。**大**
+9. **剧场选项协议**(stagepack:426-634):wire+持久化+点击发送**已完成**——服务端 opt-in `luker_generation.theater|structured` → `floor.extra.{scene,choices,narrator}` 透传/落盘/swipe 快照与 `GET /api/utopinn/generate/jobs/:id` 透出(`apps/server/tests/theater-extra.test.mjs`、`theater-extra-http.test.mjs`),前端 `stagepack.tsx:426-634` 将 `extra.choices` 映为 `VnOptions` 且点击走既有 send 通道(不新造协议);**剩余**=诱导结构化产出的 prompt/卡 schema、`chars/:id/assets` 清单、theater sidecar ns 约定、旗舰配套卡(TASK-044/TASK-050)。
 10. **账户身份接真**(Chrome.tsx:107+Overlays:841):`getMe()`。**小**
 11. **persona 选择器**(App.tsx:112):`s.persona` 永远 null → body.user 只有兜底名;listPersonas 全真。**中**
 12. **preview 面**:api/preview.ts 整文件零消费——做 prompt 预览面板或删。**中**
@@ -120,7 +120,7 @@ wired:false 三块:`lore`/`chapters`/`channels`(hydratePanelTypes 机制可自�
 
 | 原条目 | 兑现 |
 |---|---|
-| 1 连接段接线 | Settings 连接段走 `patchSettings({oai_settings})` + `probeUpstreamConnection`;「不在白名单」失实文案已删 |
+| 1 连接段接线 | Settings 连接段走 `patchSettings({oai_settings})` + `testConnection`;「不在白名单」失实文案已删 |
 | 2 全局栈开关 | Studio/ContextPop/LorePanel 三处统一 `toggleGlobalLore` → PATCH globalSelect,**保留 charLore**(新增服务端单测断言) |
 | 3 预设设为默认 | `patchSettings({preset_settings_openai})` + pickPreset 同步 |
 | 4 模型清单水合 | `api/connection.ts` → `GET /api/utopinn/models`;modelsError/空态诚实,MockModels 不再进在线态 |
@@ -145,7 +145,7 @@ wired:false 三块:`lore`/`chapters`/`channels`(hydratePanelTypes 机制可自�
 
 ### 仍开(登记债务,不造假)
 
-- **剧场 choices 协议**:wire 协议+服务端产出=「大」量级,独立任务,用户深度参与设计
+- **剧场 choices 与配套卡余量**:服务端 opt-in wire(`luker_generation.theater|structured` → `floor.extra.{scene,choices,narrator}`,`theater-extra.test.mjs` 8/8 + `theater-extra-http.test.mjs` 4/4)+ 前端 `stagepack.tsx:426-634` `VnOptions` 点击走既有 send 通道均已落地;剩余=诱导结构化输出的 prompt/卡 schema、`chars/:id/assets` 清单、theater sidecar ns 约定与旗舰配套卡(归 TASK-044/TASK-050)
 - **messenger 频道后端**:chat_state 侧车方案待立,形态维持预演态
 - **plugins 市场**:目录真结构,安装面待服务端 C12 后
 - **`st-*`/MOCK_STAGE_SESSIONS 预演轨**:刻意保留,与真会话视觉/行为区分已落实

@@ -1,16 +1,16 @@
 # Web SPA v3: 前端真接线收口与剧场/壳层演进边界
 
 - Kind: experience
-- Status: shaping
+- Status: frozen
 
 ## Experience intent
 
-把「能玩的 SPA」推进成「诚实的 SPA」:前端每一个可见控件要么连着真 `/api/utopinn/*` 路由,要么被删除,要么被诚实标注为预览态;消灭「在线播假数据 + 文案谎称协议未备」这一整类失实占位。同时给 v3 壳层的遗留悬案(全局状态位、workspace-inset 接缝、剧场 choices 协议)立下判断基线,让下一轮形态深化有据可依,而不是继续在装饰层堆补丁。
+把「能玩的 SPA」推进成「诚实的 SPA」:前端每一个可见控件要么连着真 `/api/utopinn/*` 路由,要么被删除,要么被诚实标注为预览态;消灭「在线播假数据 + 文案谎称协议未备」这一整类失实占位。同时给 v3 壳层的遗留悬案(全局状态位、workspace-inset 接缝、剧场配套卡与资产面余量)立下判断基线,让下一轮形态深化有据可依,而不是继续在装饰层堆补丁。
 
 ## Users and contexts
 
 - 单人重度 RP 玩家(主要使用者=项目所有者):在桌面浏览器上进行「选卡→聊天→调预设/世界书/人设」的完整循环,对假数据、死控件、小字号零容忍。
-- 剧场模式玩家(旗舰方向):读剧情、做选择;选项卡由用户高度参与设计,前端必须能诚实表达「choices 协议未备」而不造假按钮。
+- 剧场模式玩家(旗舰方向):读剧情、做选择。服务端 opt-in `luker_generation.theater|structured` → `floor.extra.{scene,choices,narrator}` 透传/落盘/swipe 快照与 `GET /api/utopinn/generate/jobs/:id` 透出(`apps/server/tests/theater-extra.test.mjs`、`theater-extra-http.test.mjs`)及前端 `stagepack.tsx:426-634` 将 `extra.choices` 映为 `VnOptions` 并经既有 send 通道发送均已落地;剩余缺口为诱导模型结构化产出的 prompt/卡 schema、`chars/:id/assets` 清单、theater sidecar ns 约定与旗舰配套卡(TASK-044/TASK-050),无真数据时前端仅消费真楼层或诚实标注预演轨而不造假按钮。
 - 离线/服务端未连场景:允许 demo 会话与预演轨道存在,但必须在视觉与文案上与真实数据可区分,不允许在线态混入 mock。
 
 ## Applied capabilities
@@ -23,7 +23,7 @@
 
 1. **「先接真后打磨」单线推进(选定)**:按审计性价比排序,先把三处 patchSettings、models 水合、死态清理落掉,再顺势把同族写面(预设调参、正则 CRUD、卡编辑、上下文弹层)一次收完。优点是每一步都能用 tsc/服务端单测立即证伪,不留半真半假的中间态;代价是视觉打磨滞后到接真完成之后才做。
 2. **「壳层大改版优先」**:先重做全局 chrome(复活顶条或新建状态栏)再放真数据。被否:用户已两次否决顶条方案(双层 logo、Desktop/Mobile 分段),全局位悬案的候选面是左栏头/account-dock/舞台头——在没有真数据可显示之前重排 chrome 是拿装饰当结构。
-3. **「剧场 choices 协议插队」**:先做 `message.extra.choices` 服务端 wire 再回头收前端占位。被否:剧场卡由用户高度参与设计,choices 属于「大」量级协议工作,与本轮去占位的「消灭失实」目标不同层;插队会让两个半成口同时存在。
+3. **「剧场配套卡与资产面插队」**:服务端 opt-in `luker_generation.theater|structured` → `floor.extra.{scene,choices,narrator}` wire/落盘/jobs 透出(`theater-extra.test.mjs`)与前端 `stagepack.tsx:426-634` 渲染 `VnOptions` 并走既有 send 通道已落地;剩余的 prompt/卡结构化产出 schema、`chars/:id/assets` 清单、theater sidecar ns 约定与旗舰配套卡(TASK-044/TASK-050)若插队进本轮前端去占位收口,与「消灭失实」目标不同层且会让两个半成口同时存在,故留给 TASK-044/TASK-050 独立推进。
 4. **非常规角度——「删掉 Studio 整个域,只用面板」**:把设置/世界书/正则管理全部塞进右侧 workbench 浮窗。被否:Studio 的整页密度对批量管理(几十条世界书条目、正则清单)是必要的,工作台浮窗适合边聊边调,不适合盘点;两者是互补不是冗余。
 
 ## Journey and information architecture
@@ -38,7 +38,7 @@
 
 ## Interaction states and transitions
 
-- 水合序:`getSettings` → `listPresets` → `getMe`+`listPersonas` → `getModels`(失败进 `modelsError` 态,PresetPop 显「未获取到模型+前往配置 API」而非假清单)。
+- 水合序:`getSettings` → `listPresets` → `getMe`+`listPersonas` → `listModels`(失败进 `modelsError` 态,PresetPop 显「未获取到模型+前往配置 API」而非假清单)。
 - 写回语义:globalSelect/preset 默认/settings 走 PATCH 后刷新壳水合;预设调参滑杆防抖 PUT 整档;卡编辑保存后刷新卡列表与连接态。
 - MVU 联动:生成/swipe/删除/编辑/回滚/结算后通过 `setPanelParams('mvu',{rev})` 发信号,MvuPanel 以 rev 为 remote key 重拉快照——替代原「写而无人读的 s.mvu 全局袋」。
 - 离线态:所有面板保留 demo/mock fallback 但经 `s.live` 门控,预演数据不伪装成服务端数据。

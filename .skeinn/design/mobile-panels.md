@@ -68,3 +68,9 @@
 - generation-api(事件推送通道)
 - ref/Luker docs/features/{cardapp,state-system}.md(既有规范)
 - ref/cards/GuiXu(参考卡)
+
+## Alternatives considered
+
+- **面板内联进聊天流(每楼 iframe)**——原版 ST 做法,移动端内存/RSS 不可行(perf-budget P1),否。
+- **面板专属页(所选)**——底导航独立页承载,状态存服务端,客户端零真相。
+- **V2 注**:mobile 整体 parked(D-020 方向收缩),本档为 reference;若重开,专属页结构仍成立,需重审 WebView 沙箱基线。

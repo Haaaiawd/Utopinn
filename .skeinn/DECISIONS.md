@@ -280,3 +280,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Changed: .skeinn/PROJECT.md, .skeinn/tasks.json
 - Affected tasks: TASK-029, TASK-033, TASK-034, TASK-035, TASK-040, TASK-044, TASK-045, TASK-046, TASK-047, TASK-048
 - At: 2026-11-20T10:45:23.894Z
+
+
+## Errata: 历史决策编号复用说明(2026-11-21)
+
+本文件历史记录中因人工补录与 CLI 编号并行,存在 `D-013`..`D-021` 编号复用(为保留既有设计稿与任务中的交叉引用不重编号,按日期与主题区分):
+- `D-013`..`D-016`:2026-11-03 批次(D-015 IA v3 / D-016 借用三层策略) vs 2026-11-04 批次(D-013 导航单骨架 / D-014 动态 bundle / D-015 微内核 inject+effect+locale / D-016 服务端路由+WS 贡献点)。
+- `D-017`..`D-019`:2026-11-03 批次(D-017 自建薄内核不站 DSH / D-018 dsh-tavern 借用边界 / D-019 Pi 式极简 agent) vs 2026-11-10/16 批次(D-017 V1 收缩旧 UI 皮 / D-018/D-019 掌门卡独立 UI 重塑)。
+- `D-020`..`D-021`:2026-11-04 批次(D-020 移动端改判 fork IReader / D-021 产品形态持续研究线) vs 2026-11-19 批次(D-020 Cordis 迁移四步路线 / D-021 CLI 参考客户端以骨长肉)。
+后续新增决策一律使用 `skeinn decision` 生成不冲突的新编号或日期前缀 ID。

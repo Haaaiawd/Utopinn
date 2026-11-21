@@ -5,12 +5,12 @@
     "grep 核销: MOCK_PERSONAS|MOCK_BUILTIN_PLUGINS|MOCK_MVU|MOCK_NOTES_TEXT|MOCK_REPLY_CONTINUE|MOCK_REPLY_REGEN|s.mvu|setMvu|contextOpen|composerMenuOpen|presetPopOpen|notesText|selectedLoreId|streamFps|apiTab|gcli.ggchan|panel.preset.readonly|ov.char.badge|st.conn.unwired|studio.global.unwired|common.mockData|listRecentChats|renderMvuPanel|RecentChatItem → zero hits in apps/web/src",
     "Red Team 对抗审计(subagent):16/16 claims verified; 8 honesty findings all remediated (mobile drawer identity, stale stub/offline copy, stale file-header comments, residual 'haa' in mock paths, offline MOCK_MODELS unmarked → demoData gate, sidebar demo-row visual marker, dead exports deleted, worldInfoBaseRef race documented as low-risk server-side merge covered)",
     "Skeinn: design/web-v3-frontier.md 填满(experience kind);capabilities/distribution-forms.md 从空模板补齐;audit-frontend-placeholders-2026-11-21.md 收摊回执+Red Team 复审已追加;PROJECT.md 登记;skeinn check → healthy: true, errors: 0;skeinn project ready → ready_for_keeper: true",
-    "Known gap (registered, not faked): 浏览器实机走查未做 —— Studio toggle/PresetPop/头像切换手感留给人验收;chapters/channels 面板维持 wired:false + UnwiredNote(待 chat_state 侧车协议);剧场 choices wire 协议=独立大任务"
+    "Known gap (registered, not faked): 浏览器实机走查未做 —— Studio toggle/PresetPop/头像切换手感留给人验收;chapters/channels 面板维持 wired:false + UnwiredNote(待 chat_state 侧车协议);剧场 choices 服务端 opt-in wire(luker_generation.theater|structured → floor.extra.{scene,choices,narrator}, theater-extra.test.mjs)+前端 VnOptions 点击走既有 send 通道(stagepack.tsx:426-634)均已落地,剩余=诱导结构化产出的 prompt/卡 schema、chars/:id/assets 清单、theater sidecar ns 约定与旗舰配套卡(TASK-044/TASK-050)"
   ],
   "acceptance_results": [
     {
       "criterion": "连接与模型水合:Settings 连接段 source/BaseURL/测试连接走 PATCH /settings + POST /connection/test;在线态模型清单与预设清单从 /models 与 /presets 水合,不再播 MOCK_MODELS/MOCK_PRESETS",
-      "evidence": "api/connection.ts(getModels→/api/utopinn/models + probeUpstreamConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
+      "evidence": "api/connection.ts(listModels→/api/utopinn/models + testConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
     },
     {
       "criterion": "工坊与弹层写面:全局世界书栈开关(保留 charLore)、预设设为默认、PresetPanel/PresetPop 调参写回、ContextPop/LorePanel 真上下文读写、RegexPage 启停/删除、CharEditorModal 字段与绑定书写回、renameChat 原生路由全通",

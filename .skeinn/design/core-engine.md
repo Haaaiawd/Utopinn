@@ -9,6 +9,12 @@
 
 把当前活在 `apps/server/public/scripts/`(jQuery/DOM 耦合,~30k+ 行)里的生成大脑——prompt 组装、世界书引擎、正则管线、宏/STscript、instruct 格式化、reasoning、变量系统——移植为 `packages/core` 的纯 TypeScript 库。服务端是唯一运行者;web/mobile 客户端只拿结果。这是整个重构里工作量最大、兼容风险最高的单点。
 
+## Alternatives considered
+
+1. **从 Luker 前端剥离 + 特征化渐进移植到纯 TS `packages/core`(选定)**:以 `generate-task.js`/`lukerContext.js` 的 ctx 收口为 seam,逐模块将 `apps/server/public/scripts/*` 去 jQuery/DOM 化迁入纯函数库(零 DOM/fs/网络),以真实语料卡的 golden-diff(`compat-golden-diff.md`)作为行为裁判。代价是初期必须承接原版隐式约定与边界怪癖;收益是复杂社区卡(WI 八位置/次关键字四逻辑门/递归与装饰器/宏求值序/正则三车道/MVU)可验证兼容,且纯库天然支持快速单测与服务端唯一事实源。
+2. **抛开原版源码按理解全量重写新引擎**:设计更干净的全新 prompt/lorebook/macro 抽象。被否:SillyTavern 引擎 ~30k+ 行不存在正式规格书,WI 触发顺序、token 预算截断、宏嵌套与正则车道语义均靠历史实现定义;全量重写必然在社区卡上制造系统性隐蔽行为漂移,事后逐卡排查成本远高于特征化移植(见 `capabilities/st-engine-compat` C1)。
+3. **纯协议复刻 / 服务端无头跑原版前端引擎(如 dsh-tavern 嵌 ST 前端 frame 或 headless Chromium 执行原版 JS)**:保留原版前端引擎不移植,仅在外围包 REST/WS 协议。被否:引入重浏览器运行态或强耦合 ST DOM 全局,直接破坏性能预算与单进程 Node 服务端架构,无法做确定性毫秒级组装、多端轻量化或 Cordis 插件级管线钩子(见 `DECISIONS.md` D-017/D-018)。
+
 ## Inputs, outputs, and boundaries
 
 - 输入:chat(messages + metadata)、角色卡、预设、用户设置、世界书集(角色主/辅/聊天绑定/全局)、正则脚本集、生成模式(normal/continue/regenerate/swipe/impersonate)

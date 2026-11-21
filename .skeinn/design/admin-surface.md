@@ -259,6 +259,7 @@ PROJECT.md 边界;移动端管理需求=连上就行,不做)。
 - admin settings(配额默认/注册开关/OAuth)走 `/settings/get|save`,
   OAuth 字段收进折叠组(个人云大概率用不到,别糊脸)。
 - 数据:`/config/get|save`、`/settings/get|save`。
+- **公网暴露与认证硬边界(`distribution-forms` 编译)**:公网监听(`listen: true`)必须以 TLS + 强认证闸门(`enableUserAccounts` 或 `basicAuthMode`/`perUserBasicAuth`)为硬前置,禁止引导默认无认证实例暴露公网;未授权请求拦截范围必须覆盖 `/characters/*` 等静态用户资产路由。
 
 ### 5.4 存储 Storage
 

@@ -2,6 +2,280 @@
   "schema_version": 2,
   "tasks": [
     {
+      "id": "TASK-054",
+      "title": "[P0] MVU 自定义语法解析与变量宏/正则实弹闭环(GH#14, GH#15, GH#2, GH#3)",
+      "outcome": "补齐 GH#14 中无分号换行的 _.set/insert/assign/remove/unset/delete/add 与 <catgodml|...> 容器块解析及零匹配诊断告警;补齐 GH#2 剩余的 char 域变量宏向 character_state sidecar 持久化(主链 format/get/set_message_variable 已落 c677eb4/add2381);补齐 GH#3 禁用态导入/诊断提示(卡内 regex 自动放行与 AI_OUTPUT 车道已落 d03267a/add2381),在真实 MVU/掌门卡端到端验通。",
+      "acceptance": [
+        {
+          "criterion": "GH#14: packages/core MVU 解析器支持行尾无分号的 _.set/insert/assign/remove/unset/delete/add 指令及 <catgodml|registerPart:extra: ...> 容器块内指令,掌门卡样例 35 条 _.set 全部正确写入 stat_data;正文含 _.set( 但零指令生效时产出明确 warning/回执",
+          "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#15: settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入 stat_data(或显式降级并给 warning,不得静默丢弃);掌门卡样例自动路径写入实弹验证",
+          "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#2: 补齐 set_char_variable / character 域变量宏写回 character_state sidecar(消除 add2381 留账的 char 域 volatile 告警),并验证白莺学园都市/掌门卡中 {{format_message_variable::stat_data}} 修改后在 utopinn preview 真实回显",
+          "verify_by": "node --test packages/core/tests/macros.test.mjs && node --test apps/server/tests/utopinn-generate-context.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#3: import-preview 与 utopinn doctor 对卡内 regex 状态给出准确提示(含 disabledExtensions 禁用时明示不执行),且真实 MVU 卡一轮生成后 trace 报 scripts>0 & applied>0、展示车道隐藏 <UpdateVariable>/<Analysis> 块而磁盘原文不变",
+          "verify_by": "node --test apps/server/tests/utopinn-chat-regex.test.mjs && node --test apps/server/tests/utopinn-import.test.mjs",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不改变 MVU 投影模型(每楼层 variables[swipe_id] 快照 + chat_metadata.variables 镜像)",
+        "不修改已落盘 chat JSONL 原文(regex 保持读取/组装投影语义,保障 MVU 回放)",
+        "不引入任意 JS eval 执行模型输出"
+      ],
+      "guardrails": [
+        "MVU 指令值解析严禁使用 eval/new Function,一律走 JSON5/jsonrepair 安全解析(packages/core/src/mvu/parse.ts)",
+        "packages/core 严守零 DOM/fs/网络纯库边界,所有持久化写入由 apps/server 经 Repo 层完成(core-engine.md)",
+        "正则/宏行为变更必须通过 golden-diff 与现有字符化单测,不破 ST 三车道与作用域语义(st-engine-compat)"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/design/core-engine.md",
+        ".skeinn/capabilities/st-engine-compat/capability.md",
+        "packages/core/src/mvu/parse.ts",
+        "packages/core/src/mvu/settle.ts",
+        "packages/core/src/macros/evaluate.ts",
+        "apps/server/src/services/mvu-settle.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/services/extension-prompts.js",
+        "apps/cli/utopinn-cli.mjs"
+      ],
+      "touches": [
+        "packages/core/src/mvu/parse.ts",
+        "packages/core/src/mvu/settle.ts",
+        "apps/server/src/services/mvu-settle.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/services/import-pipeline.js",
+        "packages/core/tests/mvu-settle.test.mjs",
+        "apps/server/tests/mvu-settle.test.mjs",
+        "apps/server/tests/utopinn-generate-context.test.mjs",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/utopinn-chat-regex.test.mjs",
+        "apps/server/tests/utopinn-import.test.mjs"
+      ],
+      "implements": ".skeinn/design/core-engine.md#Components and control flow",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-21T09:12:32.164Z",
+      "updated_at": "2026-11-21T09:12:32.166Z"
+    },
+    {
+      "id": "TASK-055",
+      "title": "[P0/P1] CardApp 无头点击异步等待与 TH 辅助生成/变量校验补齐(GH#13, GH#9, GH#4)",
+      "outcome": "修复 GH#13 中 utopinn cardapp op click 固定 60ms 即 dispose 切断异步生成的问题;补齐 GH#9 辅助生成余量(lorebookEntries 条目过滤 + stscript-env /gen 触发绑定,基础 th.generate/generateRaw 已落 1334f56);补齐 GH#4 replaceVariables 写 stat_data 时的 MVU schema 校验与 CLI --force/覆盖警示(root_loss 护栏已落 1334f56)。",
+      "acceptance": [
+        {
+          "criterion": "GH#13: apps/cli/cmd-cardapp.mjs op click 派发点击后探测在途桥调用/ctx.lukerContext.is_send_press/活跃生成 job 并等待至空闲(支持 --timeout,默认充足上限);超期时在输出中诚实标明异步任务未完成而非假报 clicked:true,掌门卡异步推进按钮不再被 60ms 切断",
+          "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs + CLI cardapp op click 异步按钮回归测试",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#9: utopinn-th.js th.generate/generateRaw 支持按 lorebookEntries 过滤指定世界书条目做辅助生成(persist_target=none 不落楼;quiet-generation.js 支持选择性 WI 注入);stscript /gen 已走 generateQuiet→runQuietGeneration 真链路(盘面已接,验收只需回归钉死),/trigger 的 triggerGeneration 未绑定时必须显式报错而非静默降级",
+          "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs && node --test apps/server/tests/quiet-generation.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#4: 在 packages/core/src/mvu/schema.ts 新建非破坏性 MVU 结构校验器(逐路径返回具体错误,不写盘),th.replaceVariables 与 replaceMvuData 在写入 stat_data 且当前聊天存在 schema 时共用之(失败 400 返路径错);utopinn th replaceVariables 帮助文案与参数明确提示全量覆盖并支持 --force",
+          "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs && node --test packages/api-client/tests/panel-t0.test.mjs",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不引入长驻 daemon 重写 cardapp 一次性进程模型(如评估多步 session 另立专项)",
+        "不并入 TavernHelper(PolyForm NC) 源码",
+        "辅助生成不写入主聊天历史(persist_target=none)"
+      ],
+      "guardrails": [
+        "CardApp/TH 桥必须沿用既有 nonce + 方法白名单 + postMessage 契约,严禁向沙箱暴露凭据或绕过权限闸门(sandboxed-card-apps C2)",
+        "禁止抄入 TavernHelper(PolyForm NC) 代码,所有辅助生成与变量校验均按 API 契约独立实现(sandboxed-card-apps C4)",
+        "修改 packages/protocol 后必须同步重新 tsc 构建 dist/,确保 CLI host/bridge 运行期白名单一致"
+      ],
+      "depends_on": [
+        "TASK-049"
+      ],
+      "reads": [
+        ".skeinn/design/headless-cardapp-harness.md",
+        ".skeinn/design/cardapp-web-host.md",
+        ".skeinn/capabilities/sandboxed-card-apps/capability.md",
+        "apps/cli/cmd-cardapp.mjs",
+        "apps/cli/cardapp-host.mjs",
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/src/services/stscript-env.js",
+        "apps/server/src/services/quiet-generation.js",
+        "packages/core/src/mvu/schema.ts"
+      ],
+      "touches": [
+        "apps/cli/cmd-cardapp.mjs",
+        "apps/cli/cardapp-host.mjs",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/src/services/stscript-env.js",
+        "apps/server/src/services/quiet-generation.js",
+        "apps/server/tests/utopinn-th-events.test.mjs",
+        "packages/core/src/mvu/schema.ts"
+      ],
+      "implements": ".skeinn/design/headless-cardapp-harness.md#0. 结论速览",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-21T09:12:32.166Z",
+      "updated_at": "2026-11-21T09:12:32.166Z"
+    },
+    {
+      "id": "TASK-056",
+      "title": "[P0/P1] 内嵌世界书无 extensions.world 兜底与 overwrite 联动(GH#10, GH#7)",
+      "outcome": "修复 GH#10 中角色卡带 character_book 但缺 extensions.world 时 252 条世界书被静默丢弃(零 warning)的问题:建立 extensions.world → character_book.name → 卡显示名 回退与运行期兜底,并在 import-preview/commit 显式告警;同时与 GH#7 已落地的 conflict=overwrite 刷新(038f1ec)联调闭环。",
+      "acceptance": [
+        {
+          "criterion": "GH#10: 导入含 character_book.entries 但无 extensions.world 的卡时,materializeEmbeddedWorld 按 character_book.name → 卡显示名回退并写回卡绑定(或明确未绑定告警),不再静默 return [];import-preview 明确标出内嵌书条目数与解析后的目标绑定名/未绑定风险",
+          "verify_by": "node --test apps/server/tests/utopinn-import.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#10 运行期兜底: 对已入库但缺 extensions.world 的存量带内嵌书卡,generate-context.js 与 mvu-settle.js 能按同一回退规则加载 character_book,保证 trace worldinfo scanned>0 而非静默 0",
+          "verify_by": "node --test apps/server/tests/utopinn-generate-context.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#7 联动回归: --conflict overwrite 在显式 extensions.world 与无 extensions.world 回退两种卡上均同步刷新物化世界书并在 warnings 中如实回报 overwrote/materialized/skipped,且非 overwrite 模式不静默覆盖同名独立世界书",
+          "verify_by": "node --test apps/server/tests/utopinn-import.test.mjs",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "保持世界书 {entries:{}} 磁盘格式与五层来源模型不变",
+        "非 overwrite 导入遇到同名既有独立世界书时不得覆盖,只给明确 warning"
+      ],
+      "guardrails": [
+        "世界书读写一律经 WorldInfoRepo(save/createIfAbsent/resolveName),禁止直写 fs,且不将 mysql/pg 的 created:true 当排他凭证(storage-engine-semantics C3/C6)",
+        "内嵌 character_book 转换必须经 @utopinn/core convertCharacterBook,保证 uid/keys 还原不塌陷(st-engine-compat + core-engine)",
+        "内嵌世界书被物化、回退命名、跳过或覆盖均必须输出可读 warnings,杜绝静默丢弃"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/design/core-engine.md",
+        ".skeinn/capabilities/storage-engine-semantics/capability.md",
+        "apps/server/src/plugins/utopinn-data.js",
+        "apps/server/src/services/import-pipeline.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/services/mvu-settle.js"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-data.js",
+        "apps/server/src/services/import-pipeline.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/services/mvu-settle.js",
+        "apps/server/tests/utopinn-import.test.mjs",
+        "apps/server/tests/utopinn-generate-context.test.mjs"
+      ],
+      "implements": ".skeinn/design/core-engine.md#Data and state",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-21T09:12:32.166Z",
+      "updated_at": "2026-11-21T09:12:32.166Z"
+    },
+    {
+      "id": "TASK-057",
+      "title": "[P1/P2] CLI 坐标透明、workspace 链接自检与诊断口径收口(GH#11, GH#5, GH#6, GH#8)",
+      "outcome": "修复 GH#11 中 utopinn use/chars/status 在 --as 目录名与卡内 data.name 不同时吞掉目录名造成困惑的问题;补齐 GH#5 在 utopinn doctor 中的 @utopinn/* workspace 链接与 protocol/dist 可解析自检(报错 hint 已落 5bfcfe7);收口 GH#6 chat-new/chat-create 文档与 MVU 初始化一致性(懒建坐标已落 5bfcfe7)及 GH#8 trace worldInfoActivated 全位置口径回归断言(已落 add2381)。",
+      "acceptance": [
+        {
+          "criterion": "GH#11: utopinn use <dir> [chat] 在 charDir !== char.name 时同时回显目录名与卡显示名并给差异提示;utopinn status 与 utopinn chars 清晰呈现 dir 与 name,多张同名卡可一眼区分当前绑定目标",
+          "verify_by": "CLI 桩测试验证 use/status/chars human 与 --json 输出含 charDir 与 charName",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#5: utopinn doctor 增加本地 workspace 链接与 packages/protocol/dist 自检项,当 apps/cli/node_modules/@utopinn 缺链或 dist 缺失时明确报 ✗ 并给出 pnpm install --force / build 修复 hint",
+          "verify_by": "CLI doctor 单元/桩测试覆盖正常态与缺链告警态",
+          "evidence": ""
+        },
+        {
+          "criterion": "GH#6 & GH#8 收口验证:utopinn schema/help 明确区分 chat-new(懒建,首条 send 落盘)与 chat-create(立即落盘)及对 MVU autoInit 的影响;GH#8 跨位置口径回归已在 utopinn-generate-context.test.mjs:170-194 落地,本项 = 跑通确认后关闭 GH#8 并在 trace --json 断言面补 sources.worldInfoActivated === activated.length(若缺)",
+          "verify_by": "node --test apps/server/tests/utopinn-generate-context.test.mjs + CLI schema/chat-new 桩测试",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不改变 CLI JSON envelope 既有字段兼容性(仅增量补齐)",
+        "use 仍严格遵守铁律 12 不隐式创建新聊天文件"
+      ],
+      "guardrails": [
+        "CLI 核心动词保持零第三方依赖启动(jsdom/esbuild/@utopinn/* 仅在 cardapp 动词懒加载),且状态文件永不落盘 CSRF/cookie/密钥(cli-client)",
+        "use 禁止隐式建聊天文件,chat-new 懒建态必须在 status/use/JSON 中显式标 pending",
+        "观测计数字段(sources.worldInfoActivated)必须与明细数组同源,禁止分桶手加"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/capabilities/cli-client/capability.md",
+        ".skeinn/design/cordis-next.md",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/cli/cmd-cardapp.mjs",
+        "apps/server/src/services/generate-context.js"
+      ],
+      "touches": [
+        "apps/cli/utopinn-cli.mjs",
+        "apps/cli/cmd-cardapp.mjs",
+        "apps/server/tests/utopinn-generate-context.test.mjs"
+      ],
+      "implements": ".skeinn/design/client-contract.md",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-21T09:12:32.166Z",
+      "updated_at": "2026-11-21T09:12:32.166Z"
+    },
+    {
       "id": "TASK-001",
       "title": "apps/server 基线跑通:pnpm 安装 + 启动 + 登录页/旧UI可用",
       "outcome": "pnpm install 后 node server.js 启动,浏览器打开登录页并进入旧版主界面;存储引擎 fs 模式可读写。",
@@ -2450,24 +2724,38 @@
           "verified": ""
         }
       ],
-      "progress": "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
+      "progress": {
+        "completed": [
+          "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。"
+        ],
+        "current": "blocked",
+        "next": "方向重开/用户明示后解锁"
+      },
       "evidence": [
         "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
         "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
-        "curl /api/utopinn/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)"
+        "curl /api/utopinn/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)",
+        "DECISIONS.md D-017/D-2026-11-10-g076 + PROJECT.md 搁置清单; TASK-026 标题已标注 [停泊·2026-11-10方向收缩]"
       ],
       "outcome": "桌面壳 RP 化:角色=一等对象。卡墙→角色页→会话三级路径;聊天页舞台头带 persona 快切与绑定资产;门厅首页;prose 渲染器吃 RP 文本惯例。",
-      "status": "open",
+      "status": "blocked",
       "boundaries": [
         "不动 rail+路由骨架与右面板宿主结构",
         "不改协议/renderer seam 契约",
         "移动端阅读器归 TASK-027 不在此",
         "stageScheme/per-chat 背景/立绘列 P1 不进本任务"
       ],
-      "updated_at": "2026-11-04T08:48:47.754Z",
+      "updated_at": "2026-11-21T09:13:42.884Z",
       "touches": [
         ".skeinn/design/web-rp-form.md"
-      ]
+      ],
+      "block": {
+        "reason": "2026-11-10 方向收缩停泊(D-017/D-2026-11-10-g076); V2 当前聚焦 Web SPA 核心游玩与生态缺陷收口,本任务暂不启动。",
+        "recovery_conditions": [
+          "方向重开/用户明示"
+        ],
+        "at": "2026-11-21T09:13:42.882Z"
+      }
     },
     {
       "id": "TASK-027",
@@ -2546,10 +2834,18 @@
           "verified": ""
         }
       ],
-      "progress": "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
-      "evidence": [],
+      "progress": {
+        "completed": [
+          "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。"
+        ],
+        "current": "blocked",
+        "next": "方向重开/用户明示后解锁"
+      },
+      "evidence": [
+        "DECISIONS.md D-017/D-020/D-2026-11-10-g076 + PROJECT.md 搁置清单; TASK-028 标题已标注 [停泊·2026-11-10方向收缩]"
+      ],
       "outcome": "移动端真阅读器质感:以 IReader(Apache-2.0,KMP 三端)为地基,书源层换 utopinn 服务端源,补 RP 专属四件",
-      "status": "open",
+      "status": "blocked",
       "boundaries": [
         "服务端协议零改动",
         "不引入书源爬虫能力",
@@ -2566,7 +2862,15 @@
         ".skeinn/design/mobile-fork-ireader.md",
         ".skeinn/design/mobile-reader-form.md",
         ".skeinn/design/mobile-panels.md"
-      ]
+      ],
+      "updated_at": "2026-11-21T09:13:43.243Z",
+      "block": {
+        "reason": "2026-11-10 方向收缩停泊(D-017/D-020/D-2026-11-10-g076); 移动端整体 parked,Expo 骨架冻结,暂不启动。",
+        "recovery_conditions": [
+          "方向重开/用户明示"
+        ],
+        "at": "2026-11-21T09:13:43.241Z"
+      }
     },
     {
       "id": "TASK-029",
@@ -3046,11 +3350,12 @@
       ],
       "reads": [
         ".skeinn/design/v2-stack-decisions.md",
+        ".skeinn/design/legacy-convergence.md",
         "apps/server/src/endpoints/chats.js",
         "apps/server/public/scripts/openai.js"
       ],
-      "implements": "core-engine",
-      "status": "open",
+      "implements": ".skeinn/design/v2-stack-decisions.md#后端",
+      "status": "blocked",
       "acceptance": [
         {
           "criterion": "legacy /api/chats、/api/backends/chat-completions 生成/状态端点删除或降为纯转发",
@@ -3061,7 +3366,7 @@
         {
           "criterion": "public/scripts/openai.js、world-info.js、PromptManager 等浏览器引擎文件删除",
           "verify_by": "全量回归 + 实弹",
-          "evidence": "未达成(阻塞):public/ 整目录即 LUKER_SERVE_LEGACY harness 本体,golden-diff/e2e 浏览器直接加载 openai.js/world-info.js/PromptManager.js;jest moduleNameMapper 亦映射 /scripts/*→public。删除前提=golden 捕获迁 /api/utopinn/preview 直采(同 3.B)",
+          "evidence": "未达成(阻塞):public/ 整目录即 LUKER_SERVE_LEGACY harness 本体,golden-diff/e2e 浏览器直接加载 openai.js/world-info.js/PromptManager.js;jest moduleNameMapper 亦映射 /scripts/*→public。删除前提=golden oracle 替代方案拍板(冻结快照对拍或 ST 浏览器引擎语料保留;/api/utopinn/preview 即 core 自身,不可作 oracle,见 compat-golden-diff.md)",
           "verified": "partial"
         },
         {
@@ -3076,7 +3381,7 @@
           "P1 清点+收口方案落地:.skeinn/design/legacy-convergence.md(2026-11-21)",
           "P2 安全删减(2026-11-21):19 端点文件删除(提供商 extras+SD+translate/speech/caption/search+files/backups/data-maid/media-cleanup/docs),google/content-manager 仅摘挂载(helper 被活代码 import),15 自测连删,eslint allowlist 清理;3 文件移出删减层(classify/image-metadata/thumbnails,135 e2e+群消息数据引用);全记录见 legacy-convergence.md §6"
         ],
-        "next": "P3:golden 捕获迁 /preview 直采后按 §6.2 阻塞清单逐面退役 3.B;gate 表 wholesale 漂移另案修;web renameChat/gap 补缺按 §5 序"
+        "next": "阻塞:3.B 端点与 public/scripts 删除等 golden oracle 替代方案拍板;可执行小块(named-doc/jobs active/SPA 切换)已拆至 TASK-058"
       },
       "evidence": [
         "对照表:.skeinn/design/legacy-convergence.md(双面总表+补缺 12 项+删减两层候选+标注清单)",
@@ -3085,19 +3390,25 @@
         "关键结论:web SPA 仅剩 4 条 legacy 调用(rename/quick-replies list/card-runtime/ws-ticket);CLI 剩 4 条(characters/all+groups/all+group/get+jobs/active);api-client panel-t0 有 7 个 @deprecated legacy 动词待迁;3.A 删减候选为 extras 生态(提供商面/SD/翻译/语音等)零非自测消费方",
         "P2 删减:519→~366 有效挂载路由;阻塞清单 8 条(含 thumbnails=CLI/group-orchestration 写 URL 进群消息数据实质基建);server-startup.js 摘 21 import+21 mount"
       ],
-      "outcome": "清点 LUKER_SERVE_LEGACY 兼容 harness(golden/e2e)仍依赖的 legacy 端点集合;utopinn REST 已可覆盖的删掉,harness 专用端点标注 compat 面,其余制定退役序。新 SPA 不依赖任何 legacy 端点(已成立)。",
+      "outcome": "清点 LUKER_SERVE_LEGACY 兼容 harness(golden/e2e)仍依赖的 legacy 端点集合;utopinn REST 已可覆盖的删掉,harness 专用端点标注 compat 面,其余制定退役序。SPA 侧仍有两条活 legacy 调用(/api/quick-replies list/get,StageFrame QR 条),由 TASK-058 收口。",
       "boundaries": [
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
       ],
-      "updated_at": "2026-11-21T06:00:00.000Z",
-      "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)",
+      "updated_at": "2026-11-21T09:00:00.000Z",
+      "note": "status: open→blocked(harness 耦合段;oracle 迁移方案按 compat-golden-diff.md 修正,/preview 直采不可行)",
       "touches": [
         ".skeinn/design/v2-stack-decisions.md",
         ".skeinn/design/legacy-convergence.md",
+        "apps/server/src/server-startup.js",
         "apps/server/src/endpoints/chats.js",
-        "apps/server/src/endpoints/*.js(47 文件 compat 头注)",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/public/scripts/openai.js"
+      ],
+      "guardrails": [
+        "旧端点删减前 legacy harness(LUKER_SERVE_LEGACY=1)+ golden-diff 必须全绿",
+        "REST 补齐只吃 packages/protocol 契约,不新造线协议"
       ]
     },
     {
@@ -3186,34 +3497,32 @@
     },
     {
       "id": "TASK-037",
-      "title": "旁路接入:textgen/kobold/novel 源进 utopinn 管道(group 最小可用后封存)",
+      "title": "旁路接入:textgen/kobold/novel 源进 utopinn 管道(C9 群聊已砍)",
       "depends_on": [
         "TASK-032"
       ],
       "done_when": [
-        "group chat 生成走服务端组装(deps.group 接入)",
-        "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎)",
+        "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;group 编排已由后续任务承接)",
         "对应 CLI 动词实弹验证"
       ],
       "reads": [
-        "apps/server/src/plugins/utopinn-generate.js"
+        ".skeinn/design/core-engine.md",
+        ".skeinn/design/textgen-instruct.md",
+        ".skeinn/design/task037-group-textgen-surface.md",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/src/services/textgen-body.js"
       ],
       "touches": [
         "apps/server/src/plugins/utopinn-generate.js",
-        "apps/server/public/script.js"
+        "apps/server/src/services/textgen-body.js",
+        "apps/cli/utopinn-cli.mjs"
       ],
-      "implements": "core-engine",
+      "implements": ".skeinn/design/core-engine.md#Components and control flow",
       "status": "open",
       "acceptance": [
         {
-          "criterion": "group chat 生成走服务端组装(deps.group 接入)",
-          "verify_by": "CLI 实弹",
-          "evidence": "",
-          "verified": ""
-        },
-        {
-          "criterion": "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎)",
-          "verify_by": "CLI 实弹",
+          "criterion": "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)",
+          "verify_by": "CLI 实弹 + 派发单测",
           "evidence": "",
           "verified": ""
         },
@@ -3225,16 +3534,22 @@
         }
       ],
       "progress": {
-        "completed": [],
-        "next": "group 生成:037b 格落地「发言成员正确+能生成能落盘」即提交封存(用户拍板 group 低频不深挖,自然轮次边缘语义标 TODO);textgen body 塑形已完(4750223);kobold/novelai 分流为下一刀"
+        "completed": [
+          "textgen body 塑形已完(4750223)"
+        ],
+        "next": "kobold/novelai 分流派发接入与 CLI 实弹验证(C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)"
       },
       "evidence": [],
-      "outcome": "非 openai-chat 源与 group 也走服务端大脑,无旁路遗留。",
+      "outcome": "非 openai-chat 源(textgen/kobold/novel)接入服务端大脑与统一派发管线,无旁路遗留;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务,本任务不涉及群聊。",
       "boundaries": [
-        "group UI 交互不重写",
+        "C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务,本任务不涉及群聊",
         "非 openai 源只接派发不重写 provider"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z"
+      "updated_at": "2026-11-21T09:00:00.000Z",
+      "guardrails": [
+        "instruct 引擎复用 TASK-020 落地(textgen-instruct.md),不重写格式化逻辑",
+        "非 openai 源只接派发不重写 provider"
+      ]
     },
     {
       "id": "TASK-038",
@@ -3561,17 +3876,19 @@
     {
       "id": "TASK-044",
       "title": "形态×插件面:novel 章目录 + theater 三件套(余量)",
-      "outcome": "四种舞台形态与统计面所需的服务端/插件面按 plugin-surface-forms.md 规划落地:utopinn-stats 聚合视图(job perf/trace+diag inject 事件),novel 章目录 sidecar+range regen,theater choices 字段+assets 面+scene sidecar,ui.contrib manifest(末位)。",
+      "outcome": "形态×插件面余量:novel 章目录 sidecar+range regen,theater assets 清单+scene sidecar ns 约定,ui.contrib manifest(末位)。utopinn-stats 聚合面与 theater 楼层字段面已交付(见 acceptance 证据)。",
       "acceptance": [
         {
           "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
           "verify_by": "curl + utopinn stats 动词",
-          "evidence": ""
+          "evidence": "已交付:utopinn-diag.js:520-669 GET /api/utopinn/stats/summary(jobs 聚合,range 窗口×char|model|day 分组);CLI utopinn stats 动词接(utopinn-cli.mjs);web apps/web/src/api/stats.ts + SpecPanels/Studio 消费。plugin-surface-forms.md:52,65 记录。",
+          "verified": "yes"
         },
         {
           "criterion": "stats/inject 给出各注入源命中率+token 占比(制卡调试面)",
           "verify_by": "掌门卡一轮生成后查 WI 条目命中",
-          "evidence": ""
+          "evidence": "已交付:utopinn-diag.js:609+ GET /api/utopinn/stats/inject(diag inject 事件按源聚合);CLI utopinn-cli.mjs:1771,1821;制卡调试面就位。",
+          "verified": "yes"
         },
         {
           "criterion": "novel: sidecar chapters ns + GET chapters 聚合视图 + regen --range 语义",
@@ -3595,7 +3912,9 @@
       ],
       "reads": [
         ".skeinn/design/plugin-surface-forms.md",
-        ".skeinn/design/frontend-binding-matrix.md"
+        ".skeinn/design/client-contract.md",
+        ".skeinn/design/web-v3-frontier.md",
+        ".skeinn/design/web-rp-form.md"
       ],
       "touches": [
         "apps/server/src/plugins/utopinn-generate.js",
@@ -3607,17 +3926,15 @@
         "apps/web/src/components/stage/StageFrame.tsx",
         ".skeinn/design/plugin-surface-forms.md"
       ],
-      "implements": "",
-      "design_exemption": "修复型/余量任务,无独立设计面(依据已散见 v2-stack-decisions/plugin-domain-map)",
+      "implements": ".skeinn/design/v2-stack-decisions.md#前端",
       "capability_hooks": [],
-      "capability_exemption": "不依赖特定 capability 决策树",
       "integrity_version": 1,
       "covers": [],
       "status": "open",
       "progress": {
         "completed": [
           "前端形态骨架:novel 章目录(楼→章推导+点章定位)+ theater 三件套(对话框/立绘位/选项区)",
-          "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 左右立绘位/通栏对话条",
+          "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 单立绘位(V2.1 裁定)/通栏对话条",
           "服务端 theater 楼层字段面:extra(scene/choices/narrator)三来路透传+opt-in 结构化产出提升+persist_target.extra 客户端袋+job.theater/choices 透出+diag 事件(见 acceptance 第 4 条 evidence)"
         ],
         "current": "前端骨架+theater 沉浸壳+服务端 theater 楼层字段面已交,双轨数据(楼层轨优先,种子轨兜底标注)",
@@ -3625,7 +3942,12 @@
       },
       "evidence": [],
       "created_at": "2026-11-19T13:46:57.022Z",
-      "updated_at": "2026-11-21T04:48:00.000Z"
+      "updated_at": "2026-11-21T09:00:00.000Z",
+      "guardrails": [
+        "theater 结构化提升必须 opt-in(luker_generation.theater|structured 置真),不置真不猜 JSON 形状",
+        "ui.contrib manifest 只声明面板类型+数据路由+图标,不塞组件",
+        "theater sidecar ns 与 chapters 聚合视图走 chat_state 约定,不另起存储"
+      ]
     },
     {
       "id": "TASK-045",
@@ -3905,7 +4227,7 @@
     {
       "id": "TASK-049",
       "title": "P0: TavernHelper API 面对齐 —— 事件驱动模型+消息写+世界书/正则+displayed_message",
-      "status": "open",
+      "status": "done",
       "created": "2026-11-20",
       "reads": [
         ".skeinn/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md",
@@ -3982,42 +4304,83 @@
         "2026-11-21 事件格落地:①对照表 th-gap-table.md;②server event 家族(chat_state th.events 影子+信箱日志);③protocol PANEL_METHODS_TH/T0 补 6 法+th.getEventLog;④panel-t0 订阅记账(event→lid 集,clear 上报本 mount lids)+debug 钩子;⑤shim 双面:runtime.js 事件族补全(makeFirst/Last/clearEvent/clearListener/clearAll+lid),ctx-shim.js ctx.eventOn 家族(th.* 回落 ctx.on);⑥宿主:ctxHost/cardapp-host 双端 diff 泵全事件名+信箱泵(origin 去重)+生成生命周期事件。运维:9P 环境下 jsdom 需 UTOPINN_CARDAPP_DEPS_DIR 指 /tmp 闭包拷贝(/tmp/copy-pnpm-closure.cjs 脚本化);测试 app 需 /csrf-token 否则 UtopinnClient.autoSession 全链 404。事件名双命名空间不规一(tavern_events.* 小写/iframe_events.* 大写,按字面存)",
         "2026-11-21 二波(GH#4+GH#9):①GH#4 取「保留 TH 全量替换语义+护栏」——JSR 源码确认 replaceVariables=_.set 全替;server 与 panel-t0 双端丢根检测(顶层根+stat_data 内根),无 force:true → 400/reject 明细(lost_roots/lost_stat_data_roots/hint)不写盘,force 放行+warnings 留痕;insertOrAssignVariables 修正为 TH mergeWith 深合(原 T0 仅根级浅合,嵌套会被整根覆盖),数组整替;insertVariables defaultsDeep;updateVariablesWith 按 TH 本体=全量回写(非 merge);shim replaceVariables 透传 o.force。②GH#9 辅助生成:server th.generate/th.generateRaw → runQuietGeneration 同链(prompt→quietPrompt+skipWIAN,persist_target=none 不落楼),懒加载 import 防 config 依赖拖死单测;生命周期 generation_requested/started/ended|stopped 走 th.events 信箱(origin:'server',ENDED 负载=最终文本);ordered_prompts/未映射 TH 键诚实 unsupported/warnings;shim api.generate/generateRaw 解析 result.text(TH 契约 string);ctx-shim ctx.generateQuiet 给 ctx 面同链;protocol T1 补 th.generateRaw。保护文件 quiet-generation.js/generate-context.js 未动。实测:utopinn-th-events.test.mjs 12/12(+变量写面5条+生成面2条),panel-t0 16/16(+3条),panel-shim 11/11,protocol+api-client tsc 干净。剩余:消息写/世界书/正则/displayed_message/stopGeneration/流式 下格",
         "2026-11-21 三波(displayed_message+MVU 收格):①server 补 4 法——formatAsDisplayedMessage/retrieveDisplayedMessage(TH displayed_message.ts 对齐:message_id 别名+display 车道 chatFloorRegexPlacement 真楼层定位+深度计算+宏尾段,hljs/DOM 高亮属 DOM 域不仿)/getMvuData/replaceMvuData(MVU 形 stat_data+schema 校验,写=楼 data 全量替换同享 GH#4 护栏;resolveScope message 域 mid 修 normMessageId 负 id/latest);substituteMacros 独立法(buildSubstCtx:chat+chatMetadata+globalVariables+name1/name2,修 getChatIdHash 崩)。②前端界面块:core/src/message-frame.ts extractFrontendBlocks 权威(pre>code 含 <body/<head/html→前端界面)+web 复刻;card-runtime kind:message doc mount——createDocMount(1MiB)+buildMessageDoc(壳+自动量高 utopinn-msgframe-height)+index.js POST /mounts 空 html 先验;assets entryHandler message 分支默认 t0 shim。③web 宿主:CenterStage FloorBody 消息位切嵌(streaming 中不挂),MessageIframe 铸帧→sandbox iframe+TH 桥(PANEL_METHODS_TH)+CardAppHost 泵+onThEvent 信箱 refresh_message 自重铸+量高自适应。④protocol PANEL_METHODS_TH 补 th.retrieveDisplayedMessage。⑤shim runtime.js 补 formatAsDisplayedMessage/retrieveDisplayedMessage/substituteMacros/getMvuData/replaceMvuData+window.Mvu(VARIABLE_UPDATE_ENDED)。实测:utopinn-th-events.test.mjs 22/22(+displayed 2+MVU 1+doc mount 1),panel-shim 12/12(waitGlobalInitialized 换未到场面+Mvu 命名空间钉),panel-t0 16/16,web tsc 干净。剩余下格:should_stream/角色写面/ordered_prompts/preset in_use/hljs。",
-        "2026-11-21 四波(ctx surface 协议):调研 floating-window-research.md 查明 ctx.openOverlay/closeOverlay 是卡自产「表面可见性」语义(掌门卡自赋值+sendMsg 前 closeOverlay),原 shim 空桩→「收层看戏」死在 iframe 矩形里。落地三段:①wire——panels.ts PANEL_METHODS 拆两法 ctx.surfaceOpen/ctx.surfaceClose(零参对,沿 ctx.regenerate/swipe 惯例);②shim——ctx-shim.js:428-429 openOverlay/closeOverlay 真转发为普通属性(不包死,卡自覆写仍生效);runtime.js TH 面无对应 API(TH 无 openOverlay,如实 N/A);③host——web ctxHost CtxHostOpts.surface={panelType,openPanel,collapsePanels}(ctxDispatch :509-527),open→openPanel(本帧 panelType:CardAppFrame=cardapp/MessageIframe=messageframe)、close→collapsePanels(web 格 kernel context 在飞,名字锁定,接线方=挂载组件,本格禁区不改其文件故留 opts 接点);CLI cardapp-host.mjs :1030-1051 同契约 opts.surface,headless 无壳→{ok:false,reason:headless_no_shell}+console 留痕;mobile PanelWebView onSurfaceClose prop+dispatch 拦截(open=panel_page 即达意,close→onSurfaceClose 或 no_shell_nav)+bridge.ts ctx 授权放 surface 两法。实测:panel-shim 13/13(+ctx-shim surface wire 钉+自覆写生效钉),utopinn-th-events surface 子测试 headless 降级+注壳两跳断言过,web/mobile tsc 干净。待办:web 挂载组件接线(CardAppFrame/MessageIframe 传 opts.surface,等 collapsePanels 落地)。"
+        "2026-11-21 四波(ctx surface 协议):调研 floating-window-research.md 查明 ctx.openOverlay/closeOverlay 是卡自产「表面可见性」语义(掌门卡自赋值+sendMsg 前 closeOverlay),原 shim 空桩→「收层看戏」死在 iframe 矩形里。落地三段:①wire——panels.ts PANEL_METHODS 拆两法 ctx.surfaceOpen/ctx.surfaceClose(零参对,沿 ctx.regenerate/swipe 惯例);②shim——ctx-shim.js:428-429 openOverlay/closeOverlay 真转发为普通属性(不包死,卡自覆写仍生效);runtime.js TH 面无对应 API(TH 无 openOverlay,如实 N/A);③host——web ctxHost CtxHostOpts.surface={panelType,openPanel,collapsePanels}(ctxDispatch :509-527),open→openPanel(本帧 panelType:CardAppFrame=cardapp/MessageIframe=messageframe)、close→collapsePanels(web 格 kernel context 在飞,名字锁定,接线方=挂载组件,本格禁区不改其文件故留 opts 接点);CLI cardapp-host.mjs :1030-1051 同契约 opts.surface,headless 无壳→{ok:false,reason:headless_no_shell}+console 留痕;mobile PanelWebView onSurfaceClose prop+dispatch 拦截(open=panel_page 即达意,close→onSurfaceClose 或 no_shell_nav)+bridge.ts ctx 授权放 surface 两法。实测:panel-shim 13/13(+ctx-shim surface wire 钉+自覆写生效钉),utopinn-th-events surface 子测试 headless 降级+注壳两跳断言过,web/mobile tsc 干净。待办:web 挂载组件接线(CardAppFrame/MessageIframe 传 opts.surface,等 collapsePanels 落地)。",
+        "2026-11-21 收口复核:web 挂载组件 CardAppFrame.tsx:130 与 MessageIframe.tsx:108 已完成 opts.surface 接线,五项验收证据齐全,可结清 TASK-049。"
       ],
-      "evidence": []
+      "evidence": [
+        "全部 5 项验收证据已于四波落地中验证并通过: th-gap-table.md 对照表、utopinn-th-events.test.mjs 22/22 + surface 子测试、panel-shim 13/13、panel-t0 16/16、web/mobile tsc 干净。",
+        "Web 挂载组件 opts.surface 接线已于 CardAppFrame.tsx:130-134 与 MessageIframe.tsx:108-112 实装完成,消除最后一处挂账。",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "TH 方法面对照表:研究档 API 面清单 × 现状 METHODS,逐法标注已实现/缺/不适用",
+              "evidence": "已入档 .skeinn/capabilities/sandboxed-card-apps/research/th-gap-table.md(~50 法面逐法标注:实/影/缺/降,含源码行号与下格归组)。2026-11-21 实测"
+            },
+            {
+              "criterion": "事件系统:eventOn/eventOnce/eventMakeLast/Remove/Clear 面 + 宿主→卡事件通道(MESSAGE_RECEIVED/GENERATION_ENDED/CHAT_CHANGED 等核心事件真实触发)",
+              "evidence": "已落地三段:①server utopinn-th.js event 家族 10 法 + getEventLog(chat_state th.events 影子注册表 priority/once/lid + seq 信箱,无 chat 落会话 Map,RMW 事务);②panel-t0 订阅记账(event→lids)+影子转发,clear 带本 mount lids 不误伤;③宿主双泵——diffAndEmitChat 楼层 diff(append→sent/received,edit→edited/updated,swipe→swiped,dirty→chat_changed)+ getEventLog 信箱泵(origin 去重),生成生命周期 generation_started/ended/stopped 也走信箱。shim:runtime.js(TH 面)+ ctx-shim.js(ctx 面同族,th.* 未授权回落 ctx.on)。实测:apps/server/tests/utopinn-th-events.test.mjs 7/7 过——server 注册/once/make 序/clear 面/信箱分页全过;headless 真 mount 双卡:eventOn 真收 message_received/message_edited/chat_changed,卡 eventEmit 跨 mount 扇出+origin 不回流,eventClearEvent 后停推且 B mount 影子不误伤。panel-shim 11/11、panel-t0 13/13、web tsc 干净。2026-11-21"
+            },
+            {
+              "criterion": "消息写面:setChatMessages/createChatMessages/setChatMessage/deleteChatMessages 落库且楼层一致",
+              "evidence": "已落地 server utopinn-th.js :975-1095 六法(setChatMessages 克隆体 mutate+doc.integrity CAS 409、setChatMessage 单楼薄封 mes⇄swipes[swipe_id] 同步、createChatMessages role→is_user/narrator+data→variables[0]+insert_before、deleteChatMessages 负 id 归一、rotateChatMessages 三段旋转、refreshOneMessage 信箱信号),message_edited/received/sent/deleted/chat_changed 走 th.events 信箱。实测 utopinn-th-events.test.mjs 22/22:尾插/头插/swipe 面写/越界 no-op/rotate 保长/删楼一致+信箱事件全钉。2026-11-21"
+            },
+            {
+              "criterion": "世界书+正则 TH 面:getLorebooks/entries CRUD + updateTavernRegexes 走 server repo",
+              "evidence": "已落地:①世界书 13 法(:1096-1222)worldInfo repo 承载,TH 平铺视图⇄ST 条目双向往返,set merge-by-uid/replace 全量/updateWith result 全量=TH,chat_metadata.world_info 绑定+getCharLorebooks primary;②正则 5 法+substituteMacros(:1223-1303)global=settings repo.update 原子 RMW/character=卡 atomic 写(.json/.png;.webp 拒)/preset=repo patch('in_use' 未实),formatAsTavernRegexedString 用上游 allowedOnly 口径(global 恒入+character 放行才入)+末段 substituteParams=TH;③stopGeneration(:1386)generation_id 定点停/缺省停 chat 活跃 job,covered 口径如实。实测 22/22:lorebook CRUD/TH 视图往返/绑定解绑、regex 三域读写/formatAs 车道语义/放行判定全钉。2026-11-21"
+            },
+            {
+              "criterion": "displayed_message/iframe 渲染本体:卡声明的 HTML 渲染进聊天消息位(宿主面之二,非悬浮窗)",
+              "evidence": "已落地全链(本波):①server :1315 formatAsDisplayedMessage(message_id 别名 last/last_user/last_char/负 id;display 车道投影+宏尾段)+ :1334 retrieveDisplayedMessage(display_text 覆盖>swipe>mes→投影+extractFrontendBlocks→frontend_blocks/has_frontend);②core message-frame.ts extractFrontendBlocks 权威(pre>code 含<body/<head/html→前端界面块;fenced html 块与整楼文档均吃)+web messageFrame.ts 复刻;③card-runtime kind:'message' doc mount——createDocMount(卡校验+1MiB 上限+nonce/TTL)+buildMessageDoc 壳(viewport/no-referrer/reset)+?shim=t0 拼 TH 面+CSP sandbox allow-scripts+壳内自动量高 postMessage utopinn-msgframe-height;④web 宿主——CenterStage FloorBody 在消息位 extractFrontendBlocks 切块,块→MessageIframe(POST /api/card-runtime/mounts 铸帧→sandbox iframe 消息位嵌入,全 PANEL_METHODS_TH 面+CardAppHost 双泵挂事件),ctxHost onThEvent 信箱 refresh_message 自收→重铸帧,iframe 高度随 postMessage 自适应;⑤shim runtime.js formatAsDisplayedMessage/retrieveDisplayedMessage+window.Mvu。非浮窗,消息位真 iframe。实测:doc mount 铸帧→出壳→shim 拼接→CSP→404/400 面全钉(utopinn-th-events.test.mjs);web tsc 干净。浏览器人工点验尚未跑(代码面已全通)。2026-11-21"
+            }
+          ],
+          "at": "2026-11-21T09:12:31.832Z"
+        }
+      ],
+      "implements": ".skeinn/design/cardapp-web-host.md#分层",
+      "guardrails": [
+        "TH 兼容面复用既有 nonce + 方法白名单桥协议,不向沙箱暴露凭据(sandboxed-card-apps C2)",
+        "不并入 TavernHelper(PolyForm NC) 代码,仅按公开 API 契约独立实现(sandboxed-card-apps C4)"
+      ],
+      "updated_at": "2026-11-21T09:12:31.836Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T09:12:31.836Z"
     },
     {
       "id": "TASK-050",
-      "title": "剧场模式旗舰打磨 + 首张配套卡(scene/立绘/choices 数据契约)",
+      "title": "剧场模式旗舰打磨 + 首张配套卡(V2.1 单立绘/scene/choices/narrator 数据契约)",
       "status": "open",
-      "outcome": "剧场模式成为差异化主打:形态精细打磨 + 一张为它设计的旗舰卡——卡携带 scene.bg/立绘/choices/节拍信号,形态钩位全部吃到真数据,成为演示门面。",
+      "outcome": "剧场模式成为差异化主打:按 web-rp-form V2.1 剧场小说与单立绘裁定精细打磨形态 + 交付首张旗舰配套卡(含诱导模型产出 extra.scene/choices/narrator 的 prompt schema 与单立绘/头像素材),在已落地的服务端 theater wire 与前端 stagepack VnOptions 基础上吃满真数据,成为演示门面。",
       "acceptance": [
         {
-          "criterion": "配套卡数据契约定稿:scene.bg/立绘槽/extra.choices/节拍标记的字段形状+卡内位置(extensions 或 card_app)",
-          "verify_by": "契约入设计档",
+          "criterion": "配套卡数据契约与 prompt schema 定稿:明确 extra.scene.bg/extra.choices/extra.narrator/节拍标记与 V2.1 单立绘(头像框+名签)字段形状及卡内位置,与 theater-extra.test.mjs 已落地服务端契约一致",
+          "verify_by": "契约入设计档并与 apps/server/tests/theater-extra.test.mjs 对账",
           "evidence": ""
         },
         {
-          "criterion": "首张配套卡制作完成并入库(可跑通剧场模式全流程:背景/立绘/对话推进/选项)",
-          "verify_by": "卡落 tests/corpus 或数据根+实测",
+          "criterion": "首张配套卡制作完成并入库(可跑通剧场模式全流程:背景/V2.1 单立绘与旁白/对话推进/选项走既有 send 通道)",
+          "verify_by": "卡落 tests/corpus/cards/ 或数据根 + 实测",
           "evidence": ""
         },
         {
-          "criterion": "剧场模式精细打磨:演出节奏/立绘转场/对话条排版/沉浸壳细节逐项过",
-          "verify_by": "浏览器实测+截图",
+          "criterion": "剧场模式精细打磨:演出节奏/V2.1 单立绘与旁白条转场/对话条排版/沉浸壳与 hotbar 细节逐项过",
+          "verify_by": "浏览器实测 + 截图",
           "evidence": ""
         },
         {
-          "criterion": "服务端 choices/scene 字段落位(generate 输出或卡数据→floor.extra 通路)",
-          "verify_by": "curl 验字段到楼层",
+          "criterion": "端到端联调:配套卡通过 prompt schema 配合已落地服务端 opt-in luker_generation.theater|structured 产出 floor.extra.{scene,choices,narrator},前端 stagepack VnOptions 消费并经既有 send 通道推进",
+          "verify_by": "curl/实弹测试验 floor.extra 落楼 + 浏览器选项点击实测",
           "evidence": ""
         }
       ],
       "done_when": [
-        "配套卡数据契约定稿",
-        "首张配套卡入库可跑通",
-        "剧场模式精细打磨过",
-        "choices/scene 服务端通路"
+        "配套卡数据契约与 prompt schema 定稿:明确 extra.scene.bg/extra.choices/extra.narrator/节拍标记与 V2.1 单立绘(头像框+名签)字段形状及卡内位置,与 theater-extra.test.mjs 已落地服务端契约一致",
+        "首张配套卡制作完成并入库(可跑通剧场模式全流程:背景/V2.1 单立绘与旁白/对话推进/选项走既有 send 通道)",
+        "剧场模式精细打磨:演出节奏/V2.1 单立绘与旁白条转场/对话条排版/沉浸壳与 hotbar 细节逐项过",
+        "端到端联调:配套卡通过 prompt schema 配合已落地服务端 opt-in luker_generation.theater|structured 产出 floor.extra.{scene,choices,narrator},前端 stagepack VnOptions 消费并经既有 send 通道推进"
       ],
       "boundaries": [
         "不承诺完整 VN 引擎(分支树/存档系统后置)",
@@ -4027,18 +4390,30 @@
         "TASK-044"
       ],
       "reads": [
+        ".skeinn/design/web-v3-frontier.md",
+        ".skeinn/design/web-rp-form.md",
+        "apps/server/tests/theater-extra.test.mjs",
         "apps/web/src/features/stagepack.tsx",
-        "apps/web/src/components/stage/StageFrame.tsx",
-        "assets/u_ui_codex_linear_shadcn_ui.html"
+        "apps/web/src/components/stage/StageFrame.tsx"
       ],
       "touches": [
-        "apps/web/src/features/stagepack.tsx"
+        "apps/web/src/features/stagepack.tsx",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        ".skeinn/design/web-rp-form.md",
+        "tests/corpus/cards/"
       ],
       "implementation_notes": [
         "2026-11-20 立案:用户拍板剧场模式为主打方向之一;现为 P2 精修项,骨架+沉浸壳已于 TASK-044 落地"
       ],
       "created": "2026-11-20",
-      "evidence": []
+      "evidence": [],
+      "implements": ".skeinn/design/web-v3-frontier.md#Experience intent",
+      "guardrails": [
+        "choices 点击走既有 send 通道,不新造协议(TASK-044 裁定)",
+        "配套卡 extra.scene/choices/narrator 形状与 theater-extra.test.mjs 已落地契约一致",
+        "立绘按 V2.1 单立绘裁定,不复辟双立绘布局"
+      ],
+      "updated_at": "2026-11-21T09:00:00.000Z"
     },
     {
       "id": "TASK-051",
@@ -4205,7 +4580,7 @@
         {
           "criterion": "连接与模型水合:Settings 连接段 source/BaseURL/测试连接走 PATCH /settings + POST /connection/test;在线态模型清单与预设清单从 /models 与 /presets 水合,不再播 MOCK_MODELS/MOCK_PRESETS",
           "verify_by": "tsc + vite build + 服务端测试",
-          "evidence": "api/connection.ts(getModels→/api/utopinn/models + probeUpstreamConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
+          "evidence": "api/connection.ts(listModels→/api/utopinn/models + testConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
         },
         {
           "criterion": "工坊与弹层写面:全局世界书栈开关(保留 charLore)、预设设为默认、PresetPanel/PresetPop 调参写回、ContextPop/LorePanel 真上下文读写、RegexPage 启停/删除、CharEditorModal 字段与绑定书写回、renameChat 原生路由全通",
@@ -4285,13 +4660,13 @@
         "grep 核销: MOCK_PERSONAS|MOCK_BUILTIN_PLUGINS|MOCK_MVU|MOCK_NOTES_TEXT|MOCK_REPLY_CONTINUE|MOCK_REPLY_REGEN|s.mvu|setMvu|contextOpen|composerMenuOpen|presetPopOpen|notesText|selectedLoreId|streamFps|apiTab|gcli.ggchan|panel.preset.readonly|ov.char.badge|st.conn.unwired|studio.global.unwired|common.mockData|listRecentChats|renderMvuPanel|RecentChatItem → zero hits in apps/web/src",
         "Red Team 对抗审计(subagent):16/16 claims verified; 8 honesty findings all remediated (mobile drawer identity, stale stub/offline copy, stale file-header comments, residual 'haa' in mock paths, offline MOCK_MODELS unmarked → demoData gate, sidebar demo-row visual marker, dead exports deleted, worldInfoBaseRef race documented as low-risk server-side merge covered)",
         "Skeinn: design/web-v3-frontier.md 填满(experience kind);capabilities/distribution-forms.md 从空模板补齐;audit-frontend-placeholders-2026-11-21.md 收摊回执+Red Team 复审已追加;PROJECT.md 登记;skeinn check → healthy: true, errors: 0;skeinn project ready → ready_for_keeper: true",
-        "Known gap (registered, not faked): 浏览器实机走查未做 —— Studio toggle/PresetPop/头像切换手感留给人验收;chapters/channels 面板维持 wired:false + UnwiredNote(待 chat_state 侧车协议);剧场 choices wire 协议=独立大任务",
+        "Known gap (registered, not faked): 浏览器实机走查未做 —— Studio toggle/PresetPop/头像切换手感留给人验收;chapters/channels 面板维持 wired:false + UnwiredNote(待 chat_state 侧车协议);剧场 choices 服务端 opt-in wire(luker_generation.theater|structured → floor.extra.{scene,choices,narrator}, theater-extra.test.mjs)+前端 VnOptions 点击走既有 send 通道(stagepack.tsx:426-634)均已落地,剩余=诱导结构化产出的 prompt/卡 schema、chars/:id/assets 清单、theater sidecar ns 约定与旗舰配套卡(TASK-044/TASK-050)",
         {
           "type": "acceptance_results",
           "results": [
             {
               "criterion": "连接与模型水合:Settings 连接段 source/BaseURL/测试连接走 PATCH /settings + POST /connection/test;在线态模型清单与预设清单从 /models 与 /presets 水合,不再播 MOCK_MODELS/MOCK_PRESETS",
-              "evidence": "api/connection.ts(getModels→/api/utopinn/models + probeUpstreamConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
+              "evidence": "api/connection.ts(listModels→/api/utopinn/models + testConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
             },
             {
               "criterion": "工坊与弹层写面:全局世界书栈开关(保留 charLore)、预设设为默认、PresetPanel/PresetPop 调参写回、ContextPop/LorePanel 真上下文读写、RegexPage 启停/删除、CharEditorModal 字段与绑定书写回、renameChat 原生路由全通",
@@ -4311,6 +4686,68 @@
         "next": ""
       },
       "completed_at": "2026-11-21T08:21:24.701Z"
+    },
+    {
+      "id": "TASK-058",
+      "title": "[P1] legacy 产品面摘净:named-doc 读面 + jobs active 过滤 + SPA/CLI 切换(TASK-035 拆出)",
+      "outcome": "utopinn REST 补齐两条被活产品消费的 legacy 面,并把 SPA/CLI 切过去:① GET /api/utopinn/named-docs/:bucket(bucket=quick-replies/themes/moving-ui)覆盖 StageFrame QR 条;② GET /api/utopinn/jobs 支持 ?target=<charDir>/<chatName>&status=active 过滤覆盖 CLI checkNoActiveJob。完成后 SPA 与 CLI 的 legacy 调用清单只剩 harness/兼容面。",
+      "acceptance": [
+        {
+          "criterion": "GET /api/utopinn/named-docs/:bucket 返回命名文档清单+单档内容(quick-replies 先),StageFrame.tsx:459,462 切换后 QR 条实弹渲染不变",
+          "verify_by": "curl 实弹 + SPA QR 条人工/截图验证",
+          "evidence": ""
+        },
+        {
+          "criterion": "GET /api/utopinn/jobs?target=&status=active 过滤上线,CLI checkNoActiveJob 从 legacy /jobs/active 切换",
+          "verify_by": "CLI 实弹 + jobs 过滤单测",
+          "evidence": ""
+        },
+        {
+          "criterion": "SPA+CLI legacy 调用复扫:除 harness/兼容标注面外零活调用(对照 legacy-convergence.md §2 表核销)",
+          "verify_by": "rg 全扫 apps/web apps/cli 对 /api/(quick-replies|chats|backends|groups) 调用点",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不动 3.B harness 耦合面(那在 TASK-035 blocked 域)",
+        "named-doc 读面只读不写,写面另案"
+      ],
+      "guardrails": [
+        "REST 补齐只吃 packages/protocol 契约,不新造线协议",
+        "QR 条切前端先确认 utopinn 面就位,不许先切后补",
+        "jobs 过滤语义与 checkNoActiveJob 既有护栏语义一致(persist_target 维度)"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/design/legacy-convergence.md",
+        ".skeinn/design/client-contract.md",
+        "apps/server/src/endpoints/named-doc-routes.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/cli/utopinn-cli.mjs"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-library.js",
+        "packages/protocol/src/api.ts",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/cli/utopinn-cli.mjs"
+      ],
+      "implements": ".skeinn/design/legacy-convergence.md#2. utopinn REST 补缺清单",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-21T10:57:29.601Z",
+      "updated_at": "2026-11-21T10:57:29.602Z"
     }
   ],
   "milestones": [

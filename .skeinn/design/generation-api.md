@@ -60,3 +60,9 @@ client → POST /api/generate → generationJob(Luker generationJobs Map,已持�
 ## Related documents and capabilities
 
 - core-engine、mobile-panels、compat-golden-diff
+
+## Alternatives considered
+
+- **沿用 legacy `/api/backends/*/generate`(前端自组装)**——V1 过渡期并存方案;V2 已判死(大脑必须唯一),保留仅作 harness 兼容面。
+- **纯 SSE 而非 WS job 句柄**——考虑过;RN 里 SSE 不稳+断线续接要靠 job 重放,故选 job+WS(events/ticket)。
+- **所选**:服务端唯一组装 `/api/utopinn/generate` + job 句柄 + WS 投递,客户端零组装(V2 拍板)。

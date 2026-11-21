@@ -63,3 +63,9 @@
 - design/mobile-panels.md(挂载面分层)
 - design/core-engine.md(服务端管线)
 - capabilities/sandboxed-card-apps/research/card-runtime-ecosystem.md(机制图谱)
+
+## Alternatives considered
+
+- **逐点优化旧 ST 前端(虚拟化/节流补丁)**——治标:P1-P5 均为机制级病灶(iframe 每楼/客户端 WI/主线程组装),补丁打不掉,否。
+- **所选**:结构性对策——服务端大脑卸载组装、CardApp 单宿主沙箱复用、面板专属页;预算以 RSS/首帧/交互延迟可测口径落地。
+- **V2 注**:partially-stale——病因分析仍有效,移动端指标在 parked 期不强制执行。

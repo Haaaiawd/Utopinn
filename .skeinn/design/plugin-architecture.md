@@ -228,3 +228,9 @@ DSH 把 agent-loop、session log、model adapter 全做成插件——**没有�
 - hello 插件:inject 声明缺失→启动失败;ctx.effect 清理在 exit 时执行
 - seam 替换测试:注册第二个 `promptBuilder` provider 可被消费者使用
 - profile 装载:有序 plugins[] 按序 apply,失败插件标 degraded 不静默
+
+## Alternatives considered
+
+- **自研插件内核(非 Cordis)**——考虑过;DSH/Cordis 贡献点模型已被验证,自研等于重发明且偏离「骨架可以很直接地仿照 DSH」拍板。
+- **兼容 ST 第三方扩展**——已判死(§C),不兼容是接受的边界;TH/CardApp 生态走 ctx 桥。
+- **所选**:Cordis 语义微内核(profile.yaml 声明装载、贡献点 nav.rail/view/panel.type/...),语义服从 ST。

@@ -66,3 +66,16 @@
 
 TASK-047(卡图显,vite 代理行级)→ TASK-045(MVU autoInit,判断一处)→
 TASK-048(连接端到端门票)→ TASK-046(CardApp 宿主,新面,最重)。
+
+## 分发形态红线(distribution-forms 编译)
+
+来源:`.skeinn/capabilities/distribution-forms.md`。桌面/移动分发工程当前挂起,主线集中 Web SPA 与生态闭环;后续任何打包或远端连接工作必须遵守以下三条硬红线与验证探针:
+
+1. **移动端 = 纯空客户端(Termux 兜底)**:禁止引入 `nodejs-mobile` 将 `apps/server` 塞进 Android/iOS 进程(`better-sqlite3` 双端交叉编译 + 后台保活与天然在线 LLM 场景投入产出倒挂)。本地极客自托管由 Android Termux 跑标准服务端兜底;移动端空客户端消费 `@utopinn/protocol` + `@utopinn/api-client`,具备多服务端连接档案与 LAN 扫码配对(复用 offer/import 一次性短链/二维码),禁止硬编码 `localhost:8000` 或为迎合商店审核阉割本地卡面/世界书自由导入。
+2. **桌面端 = Supervisor + 独立 dataRoot**:禁止将 `better-sqlite3` 等 N-API `.node` 原生二进制与可变 `data/` 目录打进只读单文件虚拟文件系统(Node SEA/pkg 或 Electron 伪单包)。未来桌面体验包采用 Koishi Desktop 式极薄 Launcher/Supervisor 管理独立 Node 运行时目录(只读可升级)、端口探活与外部持久 `dataRoot`,UI 仍连接本地回环端口。
+3. **公网空客户端 = TLS + 认证闸门硬前置**:禁止在未启用 TLS 与强认证闸门(`enableUserAccounts` 或 `basicAuthMode`/`perUserBasicAuth`)时引导用户将默认配置的 `apps/server` 直接暴露公网。公网模式下认证中间件必须 100% 拦截未授权请求(**含 `/characters/*` 等静态用户资产路由**),与 `admin-surface.md` §5.3 访问配置安全闸互为防线。
+
+**验证探针**:
+- 打包产物升级覆盖程序目录时,独立 `dataRoot` 零丢失;
+- 空客户端跨网连接远端服务端时,CSRF 握手与 `luker-ws-ticket` WebSocket 升级一次通过;
+- 公网模式下未授权请求 100% 被认证中间件拦截(含静态 `/characters/*` 资源)。
