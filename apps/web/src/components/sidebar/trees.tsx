@@ -44,19 +44,44 @@ export function relTime(iso?: string): string {
 }
 
 function SessionRow({ s }: { s: ChatSummary }) {
+    const { t } = useI18n();
     const shell = useShell();
     const active = shell.activeChat === s.id && shell.railTab === 'chat';
     const rel = relTime(s.updatedAt);
+    const isDemo = s.id.startsWith('st-') || s.id === 'c1' || s.id === 'c2';
     return (
-        <button
-            className="flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors"
+        <div
+            className="group/srow flex w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface)]"
             style={active ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
-            onClick={() => shell.selectChat(s.id)}
         >
-            <span className="min-w-0 flex-1 truncate">{s.title}</span>
+            <button type="button" className={`min-w-0 flex-1 truncate text-left ${isDemo ? 'opacity-55' : ''}`} onClick={() => shell.selectChat(s.id)}>
+                {s.title}
+            </button>
+            {isDemo && <span className="shrink-0 font-mono-ui text-[10px] uppercase text-[color:var(--fg-faint)]">{t('chat.demo')}</span>}
             {s.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'var(--brand)' }} />}
-            {rel && <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{rel}</span>}
-        </button>
+            {!isDemo && shell.live && (
+                <span className="hidden shrink-0 items-center gap-0.5 group-hover/srow:inline-flex">
+                    <button
+                        type="button"
+                        className="ghost-btn h-5 w-5"
+                        title={t('chat.rename')}
+                        onClick={(e) => { e.stopPropagation(); shell.renameChat(s); }}
+                    >
+                        <Icon name="pencil" size={11} />
+                    </button>
+                    <button
+                        type="button"
+                        className="ghost-btn h-5 w-5"
+                        title={t('stage.op.del')}
+                        style={{ color: 'var(--status-danger)' }}
+                        onClick={(e) => { e.stopPropagation(); shell.deleteChat(s); }}
+                    >
+                        <Icon name="trash" size={11} />
+                    </button>
+                </span>
+            )}
+            {rel && <span className={`shrink-0 font-mono-ui text-[11px] text-[color:var(--fg-faint)] ${!isDemo && shell.live ? 'group-hover/srow:hidden' : ''}`}>{rel}</span>}
+        </div>
     );
 }
 
@@ -126,27 +151,40 @@ export function ChatTree() {
     );
 }
 
-/** 卡组:头像环 + 卡名 + 折角;展开 → hairline 竖线挂纯文本子会话。 */
+/** 卡组:头像环 + 卡名 + 新建会话(+) + 折角;展开 → hairline 竖线挂子会话。 */
 function ChatGroup({ dir, list }: { dir: string; list: ChatSummary[] }) {
+    const { t } = useI18n();
     const shell = useShell();
     const card = shell.cards.get(dir);
     const [open, setOpen] = useState(true);
     return (
         <div>
-            <button
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
-                style={{ color: 'var(--fg-primary)' }}
-                onClick={() => setOpen(!open)}
-            >
-                <CardRing charDir={dir} />
-                <span className="min-w-0 flex-1 truncate">{card?.name || dir}</span>
-                <span
-                    className="shrink-0 transition-transform"
-                    style={{ color: 'var(--fg-faint)', transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }}
+            <div className="group/cgroup flex w-full items-center gap-1 rounded-lg px-2 py-1.5 text-[12.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]" style={{ color: 'var(--fg-primary)' }}>
+                <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left" onClick={() => setOpen(!open)}>
+                    <CardRing charDir={dir} />
+                    <span className="min-w-0 flex-1 truncate">{card?.name || dir}</span>
+                </button>
+                {shell.live && (
+                    <button
+                        type="button"
+                        className="ghost-btn hidden h-5 w-5 shrink-0 group-hover/cgroup:inline-flex"
+                        title={t('sidebar.newChat')}
+                        onClick={() => shell.newChat(dir)}
+                    >
+                        <Icon name="plus" size={12} />
+                    </button>
+                )}
+                <button
+                    type="button"
+                    className="ghost-btn h-5 w-5 shrink-0"
+                    onClick={() => setOpen(!open)}
+                    style={{ color: 'var(--fg-faint)' }}
                 >
-                    <Icon name="chevronDown" size={14} />
-                </span>
-            </button>
+                    <span style={{ transform: open ? 'none' : 'rotate(-90deg)', display: 'inline-flex' }} className="transition-transform">
+                        <Icon name="chevronDown" size={14} />
+                    </span>
+                </button>
+            </div>
             {open && (
                 <div className="ml-2.5 mt-0.5 space-y-0.5 border-l pl-4" style={{ borderColor: 'var(--border-hairline)' }}>
                     {list.map((s) => <SessionRow key={s.id} s={s} />)}

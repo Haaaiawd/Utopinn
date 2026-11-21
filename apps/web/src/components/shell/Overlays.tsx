@@ -1,7 +1,7 @@
 // 规范稿弹层与移动壳:MobileFrame(view-aware —— hub/studio 走 view 贡献点)|
 // ImportModal(两页:文件导入 preview→commit / ST 迁移 scan-st)|
-// CharEditorModal(真 GET 卡文档,只读 · C3)| Cmdk | SettingsModal(兼弹层宿主:
-// 真 secrets 连接段 + 本地设置;source/BaseURL/连接测试 = C1/C2 disabled)。
+// CharEditorModal(真 GET/PATCH 卡文档)| Cmdk | SettingsModal(兼弹层宿主:
+// 真 secrets 连接段 + 本地设置;source/BaseURL/连接测试走 PATCH /settings + /connection/test)。
 // z 层与规范稿一致(sheet 45 / drawer 55 / popover 30 / float 70 / modal 85)。
 // 模态开合态走 overlayBus external store —— 壳 ShellCtx 不增键,任何表面可开。
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -14,9 +14,13 @@ import { AccountPopCard } from './Chrome';
 import { CenterStage } from '../stage/CenterStage';
 import { charImgFallback } from '../stage/StageFrame';
 import { useRemote, PanelEmpty } from '../panels/panelShared';
-import { cardData, charImageUrl, getCharacter } from '../../api/characters';
-import { getSettings } from '../../api/settings';
+import { changeUserName } from '../../api/account';
+import { cardData, charImageUrl, getCharacter, patchCharacter } from '../../api/characters';
+import { testConnection, type ConnectionTestResponse } from '../../api/connection';
+import { getSettings, patchSettings } from '../../api/settings';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry } from '../../api/secrets';
+import { personaAvatarSrc } from '../../api/personas';
+import { listWorlds } from '../../api/worlds';
 import {
     commitImport, fileToDraft, previewImportWithFallback, scanStImport,
     MAX_IMPORT_BYTES,
@@ -24,7 +28,6 @@ import {
     type StScanKind, type StScanResult,
 } from '../../api/import';
 import { closeCharEditor, closeImportModal, openImportModal, useOverlay } from './overlayBus';
-import { WiredBadge } from '../views/studio';
 import { PluginsSections, useServerPlugins } from '../views/plugins';
 
 const mono = 'font-mono-ui';
@@ -134,12 +137,16 @@ export function MobileFrame() {
                                     title={t('acct.menu')}
                                 >
                                     <span className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full border" style={{ background: 'var(--bg-active)', borderColor: 'var(--border-strong)' }}>
-                                        <img src="/assets/avatars/user-redpanda.png" alt="" className="h-full w-full rounded-full object-cover" />
-                                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: 'var(--status-ok)', borderColor: 'var(--bg-sidebar)' }} />
+                                        <img
+                                            src={personaAvatarSrc(s.persona?.avatar, s.persona?.avatar ? s.personas.find((p) => p.avatar === s.persona!.avatar)?.hasImage : undefined)}
+                                            alt="" className="h-full w-full rounded-full object-cover"
+                                            onError={(e) => { e.currentTarget.src = '/assets/avatars/user-redpanda.png'; }}
+                                        />
+                                        <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: s.live ? 'var(--status-ok)' : 'var(--status-warn)', borderColor: 'var(--bg-sidebar)' }} />
                                     </span>
                                     <span className="min-w-0">
-                                        <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{t('acct.name')}</span>
-                                        <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
+                                        <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{s.currentUser?.name || s.currentUser?.handle || t('acct.name')}</span>
+                                        <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{s.live ? (s.currentUser?.handle ? `@${s.currentUser.handle}` : t('acct.plan')) : t('diag.job.offline')}</span>
                                     </span>
                                 </button>
                                 {/* 插件入口:移动端导航收敛 chat+hub,plugins 域无真视图 ——
@@ -504,8 +511,7 @@ function ImportPreviewCard({ draft, row, onConflict, onCommit, onRemove }: {
 }
 
 /* ------------------------------------------------------------------ */
-/* CharEditorModal —— 端稿 charEditor:GET /characters/:charDir 真读,       */
-/* 全控件只读(写面 C3 未备):name/description/first_mes/绑定书/ext JSON。    */
+/* CharEditorModal —— GET + PATCH /api/utopinn/characters/:charDir 真读写 */
 /* ------------------------------------------------------------------ */
 
 function CharEditorModal({ mobile }: { mobile?: boolean }) {
@@ -514,28 +520,55 @@ function CharEditorModal({ mobile }: { mobile?: boolean }) {
     const ov = useOverlay();
     const dir = ov.charEditor;
     const docR = useRemote(dir ? `char:${dir}` : null, () => (dir ? getCharacter(dir) : Promise.reject(new Error('no dir'))));
-    if (!dir) return null;
-    const card = s.cards.get(dir);
+    const worldsR = useRemote(dir ? 'char-edit:worlds' : null, listWorlds);
     const data = docR.data ? cardData(docR.data) : null;
     const ext = data?.extensions ?? {};
-    const boundWorld = typeof ext.world === 'string' && ext.world ? ext.world : null;
+    const boundWorld = typeof ext.world === 'string' && ext.world ? ext.world : '';
     const book = data?.character_book as { entries?: unknown } | undefined;
     const bookEntries = Array.isArray(book?.entries) ? book.entries.length
         : book?.entries && typeof book.entries === 'object' ? Object.keys(book.entries).length : 0;
 
-    const ro = (label: string, value: string, rows?: number) => (
-        <div>
-            <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{label}</div>
-            {rows ? (
-                <textarea readOnly value={value} rows={rows} className={`w-full resize-none rounded-lg p-2.5 text-[12px] leading-relaxed outline-none ${mono}`}
-                    style={{ background: 'var(--bg-surface)', color: 'var(--fg-secondary)', border: '1px solid var(--border-hairline)' }} />
-            ) : (
-                <input readOnly value={value} className={`${inputCls} h-8`} style={{ background: 'var(--bg-surface)', color: 'var(--fg-secondary)', border: '1px solid var(--border-hairline)' }} />
-            )}
-        </div>
+    const [nameDraft, setNameDraft] = useState('');
+    const [descDraft, setDescDraft] = useState('');
+    const [firstDraft, setFirstDraft] = useState('');
+    const [worldDraft, setWorldDraft] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    useEffect(() => {
+        if (!data) return;
+        setNameDraft(data.name ?? '');
+        setDescDraft(data.description ?? '');
+        setFirstDraft(data.first_mes ?? '');
+        setWorldDraft(typeof data.extensions?.world === 'string' ? data.extensions.world : '');
+    }, [dir, docR.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (!dir) return null;
+    const card = s.cards.get(dir);
+    const worldNames = worldsR.data?.items.map((w) => w.name) ?? [];
+    const dirty = !!data && (
+        nameDraft.trim() !== (data.name ?? '').trim()
+        || descDraft !== (data.description ?? '')
+        || firstDraft !== (data.first_mes ?? '')
+        || worldDraft !== boundWorld
     );
 
-    /* 规范稿 charEditor:移动端 absolute inset-0 全页壳,桌面固定弹层。 */
+    const onSave = () => {
+        if (!dir || !data || saving || !nameDraft.trim()) return;
+        setSaving(true);
+        void patchCharacter(dir, {
+            name: nameDraft.trim(),
+            description: descDraft,
+            first_mes: firstDraft,
+            extensions: { world: worldDraft },
+        })
+            .then(() => Promise.all([docR.reload(), s.refreshCards(), s.refreshConnection()]))
+            .then(() => s.hint(t('ov.char.saved')))
+            .catch((e) => s.hint(`${t('ov.char.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setSaving(false));
+    };
+
+    const fieldStyle = { background: 'var(--bg-surface)', color: 'var(--fg-primary)', border: '1px solid var(--border-hairline)' };
+
     return (
         <div
             className={`${mobile ? 'absolute' : 'fixed'} inset-0 z-[82] flex items-center justify-center bg-black/50 ${mobile ? '' : 'p-4'}`}
@@ -553,28 +586,59 @@ function CharEditorModal({ mobile }: { mobile?: boolean }) {
                     <div className="flex min-w-0 items-center gap-2.5">
                         {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" onError={charImgFallback} /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
                         <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{data?.name || card?.name || dir}</span>
-                        <WiredBadge warn>{t('ov.char.badge')}</WiredBadge>
                     </div>
-                    <button className="ghost-btn h-7 w-7 shrink-0" onClick={closeCharEditor}><Icon name="x" size={14} /></button>
+                    <div className="flex shrink-0 items-center gap-2">
+                        {data && (
+                            <button
+                                className="h-7 rounded-lg px-3 text-[11.5px] font-medium"
+                                style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: !dirty || saving || !nameDraft.trim() ? 0.45 : 1 }}
+                                disabled={!dirty || saving || !nameDraft.trim()}
+                                onClick={onSave}
+                            >
+                                {saving ? t('panel.notes.saving') : t('stage.edit.save')}
+                            </button>
+                        )}
+                        <button className="ghost-btn h-7 w-7 shrink-0" onClick={closeCharEditor}><Icon name="x" size={14} /></button>
+                    </div>
                 </div>
                 <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-4">
                     {docR.loading && <p className={`py-6 text-center text-[11.5px] text-[color:var(--fg-faint)] ${mono}`}>{t('ov.char.loading')}</p>}
                     {docR.error && <p className={`rounded-lg p-3 text-[11px] ${mono}`} style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>{docR.error}</p>}
                     {data && (
                         <>
-                            {ro(t('ov.char.name'), data.name ?? '')}
-                            {ro(t('ov.char.desc'), data.description ?? '', 6)}
-                            {ro(t('ov.char.first'), data.first_mes ?? '', 4)}
                             <div>
-                                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{t('ov.char.world')}</div>
-                                <div className="inset-group">
-                                    <div className="inset-row">
-                                        <span className="text-[color:var(--fg-faint)]"><Icon name="bookOpen" size={13} /></span>
-                                        <span className="min-w-0 truncate text-[12.5px] text-[color:var(--fg-secondary)]">
-                                            {boundWorld ?? (bookEntries ? `${t('ov.char.bookEmbedded')} · ${bookEntries}` : t('ov.char.worldNone'))}
-                                        </span>
-                                    </div>
+                                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{t('ov.char.name')}</div>
+                                <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} className={`${inputCls} h-8`} style={fieldStyle} />
+                            </div>
+                            <div>
+                                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{t('ov.char.desc')}</div>
+                                <textarea value={descDraft} onChange={(e) => setDescDraft(e.target.value)} rows={6} className={`w-full resize-y rounded-lg p-2.5 text-[12px] leading-relaxed outline-none ${mono}`} style={fieldStyle} />
+                            </div>
+                            <div>
+                                <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{t('ov.char.first')}</div>
+                                <textarea value={firstDraft} onChange={(e) => setFirstDraft(e.target.value)} rows={4} className={`w-full resize-y rounded-lg p-2.5 text-[12px] leading-relaxed outline-none ${mono}`} style={fieldStyle} />
+                            </div>
+                            <div>
+                                <div className="mb-1 flex items-center justify-between text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">
+                                    <span>{t('ov.char.world')}</span>
+                                    {bookEntries > 0 && <span className={mono}>{t('ov.char.bookEmbedded')} · {bookEntries}</span>}
                                 </div>
+                                <select
+                                    value={worldDraft}
+                                    onChange={(e) => setWorldDraft(e.target.value)}
+                                    className={`h-8 w-full rounded-lg px-2.5 text-[12px] outline-none ${mono}`}
+                                    style={fieldStyle}
+                                >
+                                    <option value="">{t('ov.char.worldNone')}</option>
+                                    {boundWorld && !worldNames.includes(boundWorld) && (
+                                        <option value={boundWorld}>{boundWorld}</option>
+                                    )}
+                                    {(worldsR.data?.items ?? []).map((w) => (
+                                        <option key={w.name} value={w.name}>
+                                            {w.displayName && w.displayName !== w.name ? `${w.displayName} (${w.name})` : w.name}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                             <div>
                                 <div className="mb-1 text-[10.5px] font-medium uppercase tracking-[0.06em] text-[color:var(--fg-faint)]">{t('ov.char.ext')}</div>
@@ -656,8 +720,15 @@ export function Cmdk() {
 
 /* ------------------------------------------------------------------ */
 /* SettingsModal —— 兼弹层宿主(App 层挂点唯一,弹层在此汇合)。               */
-/* api 页:连接段(source/BaseURL/测试 = C1/C2 disabled)+ 真 secrets 脱敏管理。 */
+/* api 页:连接段(PATCH /settings + POST /connection/test + /secrets 全真)。 */
 /* ------------------------------------------------------------------ */
+
+const PILL_SRCS: [string, string][] = [
+    ['openai', 'OpenAI'],
+    ['deepseek', 'DeepSeek'],
+    ['claude', 'Anthropic'],
+    ['custom', 'Custom'],
+];
 
 function ConnectionSection() {
     const { t } = useI18n();
@@ -667,86 +738,187 @@ function ConnectionSection() {
     const secrets = useRemote(open ? 'st:secrets' : null, listSecrets);
     const oai = (settings.data?.settings?.oai_settings ?? {}) as Record<string, unknown>;
     const str = (v: unknown) => (typeof v === 'string' ? v : '');
-    const source = str(oai.chat_completion_source);
-    const baseUrl = str(oai.reverse_proxy) || str(oai.custom_url);
+    const source = str(oai.chat_completion_source) || 'openai';
+    const serverBaseUrl = source === 'custom'
+        ? str(oai.custom_url)
+        : (str(oai.reverse_proxy) || str(oai.base_url));
+
+    const [urlDraft, setUrlDraft] = useState('');
     const [addVal, setAddVal] = useState('');
     const [busy, setBusy] = useState(false);
-    const act = (fn: () => Promise<unknown>, done?: () => void) => {
+    const [probing, setProbing] = useState(false);
+    const [probeRes, setProbeRes] = useState<ConnectionTestResponse | null>(null);
+
+    useEffect(() => {
+        setUrlDraft(serverBaseUrl);
+    }, [source, serverBaseUrl]);
+
+    const runSettingsPatch = (oaiPatch: Record<string, unknown>) => {
         if (busy) return;
         setBusy(true);
-        void fn().then(() => { secrets.reload(); done?.(); })
+        setProbeRes(null);
+        void patchSettings({ oai_settings: oaiPatch })
+            .then(() => Promise.all([settings.reload(), s.refreshConnection({ freshModels: true })]))
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
+    const saveBaseUrl = () => {
+        const trimmed = urlDraft.trim();
+        if (trimmed === serverBaseUrl) return;
+        runSettingsPatch(source === 'custom' ? { custom_url: trimmed } : { reverse_proxy: trimmed });
+    };
+
+    const actSecret = (fn: () => Promise<unknown>, done?: () => void) => {
+        if (busy) return;
+        setBusy(true);
+        setProbeRes(null);
+        void fn()
+            .then(() => { secrets.reload(); void s.refreshConnection({ freshModels: true }); done?.(); })
             .catch((e) => s.hint(`${t('st.secrets.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setBusy(false));
     };
+
+    const runProbe = () => {
+        if (probing) return;
+        setProbing(true);
+        void testConnection()
+            .then((r) => {
+                setProbeRes(r);
+                if (r.ok) void s.refreshConnection({ freshModels: true });
+            })
+            .catch((e) => s.hint(`${t('st.conn.probeFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setProbing(false));
+    };
+
     const secretKeys = Object.keys(secrets.data?.secrets ?? {});
     const groups = secretKeys.filter((k) => secrets.data!.secrets[k]?.length);
-    /* 规范稿单密钥模型:当前 source 对应 key 的激活条 → mask;无 → 未配置 */
-    const curKey = `api_key_${source || 'openai'}`;
+    /* 服务端密钥键约定:CHAT_COMPLETION_SOURCES(openai/deepseek/claude/custom)→ api_key_<source> */
+    const curKey = `api_key_${source}`;
     const curEntry = (secrets.data?.secrets?.[curKey] ?? []).find((en) => en.active) ?? secrets.data?.secrets?.[curKey]?.[0];
     const hasSecret = !!curEntry;
-    /* 规范稿四源 pills(openai/deepseek/anthropic/custom) */
-    const PILL_SRCS = [['openai', 'OpenAI'], ['deepseek', 'DeepSeek'], ['anthropic', 'Anthropic'], ['custom', 'Custom']];
+    const urlDirty = urlDraft.trim() !== serverBaseUrl;
+
     return (
         <div className="space-y-4">
-            {/* 规范稿 source 分段 pills(真源点亮,余禁用 + C1 标) */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="inline-flex rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-0.5">
-                    {PILL_SRCS.map(([k, lbl]) => (
-                        <button key={k} disabled title={t('st.conn.unwired')} className="rounded-md px-2.5 py-1 text-[11.5px] font-medium disabled:cursor-not-allowed" style={source === k ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-muted)', opacity: source ? 0.55 : 1 }}>
-                            {lbl}
-                        </button>
-                    ))}
+                    {PILL_SRCS.map(([k, lbl]) => {
+                        const active = source === k;
+                        return (
+                            <button
+                                key={k}
+                                disabled={busy}
+                                onClick={() => { if (!active) runSettingsPatch({ chat_completion_source: k }); }}
+                                className="rounded-md px-2.5 py-1 text-[11.5px] font-medium transition-colors"
+                                style={active
+                                    ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' }
+                                    : { color: 'var(--fg-muted)' }}
+                            >
+                                {lbl}
+                            </button>
+                        );
+                    })}
                 </div>
-                <WiredBadge warn>C1</WiredBadge>
+                {!PILL_SRCS.some(([k]) => k === source) && (
+                    <span className={`rounded px-1.5 py-0.5 text-[10.5px] ${mono}`} style={{ background: 'var(--bg-active)', color: 'var(--fg-secondary)' }}>
+                        {source}
+                    </span>
+                )}
             </div>
             <div className="inset-group">
-                {/* 规范稿上游 Base URL 行(列式 + 全宽 mono 输入) */}
+                {/* 上游 Base URL 行(custom→custom_url,其余→reverse_proxy) */}
                 <div className="inset-row flex-col !items-stretch gap-1.5">
                     <div className="flex items-center justify-between">
-                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.baseLabel')}</label>
-                        <WiredBadge warn>C2</WiredBadge>
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">
+                            {source === 'custom' ? t('st.conn.customUrlLabel') : t('st.conn.baseLabel')}
+                        </label>
+                        <span className={`text-[10px] text-[color:var(--fg-faint)] ${mono}`}>
+                            {source === 'custom' ? 'oai_settings.custom_url' : 'oai_settings.reverse_proxy'}
+                        </span>
                     </div>
-                    <input disabled value={baseUrl} placeholder={t('st.conn.basePh')} className={`h-8 w-full rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs opacity-60 outline-none ${mono}`} />
+                    <div className="flex items-center gap-1.5">
+                        <input
+                            value={urlDraft}
+                            onChange={(e) => setUrlDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveBaseUrl(); }}
+                            onBlur={saveBaseUrl}
+                            disabled={busy}
+                            placeholder={source === 'custom' ? 'https://api.example.com/v1' : t('st.conn.basePh')}
+                            className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
+                        />
+                        {urlDirty && (
+                            <button
+                                className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
+                                style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy ? 0.5 : 1 }}
+                                disabled={busy}
+                                onClick={saveBaseUrl}
+                            >
+                                {t('st.secrets.save')}
+                            </button>
+                        )}
+                    </div>
                 </div>
-                {/* 规范稿 API 密钥行(mask 状态 + 覆盖写入 + 保存/清除) */}
+                {/* API 密钥行(mask 状态 + 覆盖写入 + 保存/清除) */}
                 <div className="inset-row flex-col !items-stretch gap-1.5">
                     <div className="flex items-center justify-between">
-                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')}</label>
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')} · <span className={mono}>{curKey}</span></label>
                         <span className={`text-[10.5px] ${mono}`} style={{ color: hasSecret ? 'var(--status-ok)' : 'var(--status-warn)' }}>
                             {hasSecret ? `${t('st.secrets.managed')} · ${curEntry!.value}` : t('st.secrets.none2')}
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                        <input value={addVal} onChange={(e) => setAddVal(e.target.value)} type="password" placeholder={t('st.conn.secretPh')} className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs outline-none ${mono}`} />
+                        <input
+                            value={addVal}
+                            onChange={(e) => setAddVal(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' && addVal.trim()) actSecret(() => putSecret(curKey, addVal.trim()), () => setAddVal('')); }}
+                            type="password"
+                            placeholder={t('st.conn.secretPh')}
+                            className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
+                        />
                         <button
                             className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
                             style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy || !addVal.trim() ? 0.5 : 1 }}
                             disabled={busy || !addVal.trim()}
-                            onClick={() => act(() => putSecret(curKey, addVal.trim()), () => setAddVal(''))}
+                            onClick={() => actSecret(() => putSecret(curKey, addVal.trim()), () => setAddVal(''))}
                         >
                             {t('st.secrets.save')}
                         </button>
                         {hasSecret && (
                             <button className="h-8 shrink-0 rounded-lg px-2.5 text-[11.5px]" style={{ background: 'var(--bg-active)', color: 'var(--status-danger)' }} disabled={busy}
-                                onClick={() => act(() => deleteSecret(curKey, curEntry!.id))}>
+                                onClick={() => actSecret(() => deleteSecret(curKey, curEntry!.id))}>
                                 {t('st.secrets.clear')}
                             </button>
                         )}
                     </div>
                 </div>
-                {/* 规范稿连通性探测行 */}
+                {/* 连通性探测行 */}
                 <div className="inset-row">
                     <div className="min-w-0">
                         <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('st.conn.probe')}</div>
-                        <div className={`mt-0.5 text-[11px] ${mono} text-[color:var(--fg-muted)]`}>{t('st.conn.probeHint')}</div>
+                        <div className={`mt-0.5 truncate text-[11px] ${mono}`} style={{
+                            color: probeRes
+                                ? (probeRes.ok ? 'var(--status-ok)' : 'var(--status-danger)')
+                                : 'var(--fg-muted)',
+                        }}>
+                            {probeRes
+                                ? (probeRes.ok
+                                    ? `✓ ${probeRes.source} · ${probeRes.latencyMs}ms · ${probeRes.modelCount ?? 0} models`
+                                    : `✗ ${probeRes.error ?? 'error'}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`)
+                                : t('st.conn.probeHint')}
+                        </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                        <button disabled title={t('st.conn.unwired')} className="h-8 rounded-lg px-3 text-[11.5px] font-medium opacity-50" style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}>{t('st.conn.test')}</button>
-                        <WiredBadge warn>C2</WiredBadge>
-                    </div>
+                    <button
+                        disabled={probing || busy}
+                        onClick={runProbe}
+                        className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium transition-opacity"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: probing || busy ? 0.55 : 1 }}
+                    >
+                        {probing ? t('st.conn.testing') : t('st.conn.test')}
+                    </button>
                 </div>
             </div>
-            {/* 真 secrets 脱敏面(规范稿未画,保留为附加 inset-group) */}
+            {/* 真 secrets 脱敏面 */}
             {(groups.length > 0 || secrets.error) && (
                 <div className="inset-group">
                     {groups.map((key) => (secrets.data!.secrets[key] ?? []).map((en: SecretEntry) => (
@@ -755,7 +927,7 @@ function ConnectionSection() {
                                 <div className={`truncate text-[11.5px] font-medium text-[color:var(--fg-primary)] ${mono}`}>{key}{en.label ? <span className="ml-1.5 text-[10px] font-normal text-[color:var(--fg-muted)]">{en.label}</span> : null}</div>
                                 <div className={`truncate text-[10px] text-[color:var(--fg-faint)] ${mono}`}>{en.value}{en.active ? ` · ${t('st.secrets.active')}` : ''}</div>
                             </div>
-                            <button className="ghost-btn h-6 w-6 shrink-0" disabled={busy} title={t('st.secrets.delete')} onClick={() => act(() => deleteSecret(key, en.id))} style={{ color: 'var(--status-danger)' }}>
+                            <button className="ghost-btn h-6 w-6 shrink-0" disabled={busy} title={t('st.secrets.delete')} onClick={() => actSecret(() => deleteSecret(key, en.id))} style={{ color: 'var(--status-danger)' }}>
                                 <Icon name="trash" size={11} />
                             </button>
                         </div>
@@ -763,6 +935,73 @@ function ConnectionSection() {
                     {secrets.error && <div className="inset-row"><span className={`break-all text-[10.5px] ${mono}`} style={{ color: 'var(--status-danger)' }}>{secrets.error}</span></div>}
                 </div>
             )}
+        </div>
+    );
+}
+
+function AccountSection() {
+    const { t } = useI18n();
+    const s = useShell();
+    const me = s.currentUser;
+    const [nameVal, setNameVal] = useState(me?.name ?? '');
+    const [busy, setBusy] = useState(false);
+
+    useEffect(() => {
+        setNameVal(me?.name ?? '');
+    }, [me?.name, me?.handle]);
+
+    const saveName = () => {
+        if (!me || busy || !nameVal.trim() || nameVal.trim() === me.name) return;
+        setBusy(true);
+        void changeUserName(me.handle, nameVal.trim())
+            .then(() => s.refreshCurrentUser())
+            .then(() => s.hint(t('acct.saved')))
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
+    const rowLbl = 'text-[12px] text-[color:var(--fg-secondary)]';
+    return (
+        <div className="inset-group">
+            <div className="inset-row">
+                <span className={rowLbl}>Handle</span>
+                <span className={`text-[11.5px] text-[color:var(--fg-primary)] ${mono}`}>
+                    {me?.handle ?? (s.live ? 'default-user' : t('diag.job.offline'))}
+                    {me?.admin ? <span className="ml-1.5 rounded px-1.5 py-0.5 text-[10px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>admin</span> : null}
+                </span>
+            </div>
+            <div className="inset-row gap-2">
+                <span className={rowLbl}>{t('studio.persona.namePh')}</span>
+                {me ? (
+                    <div className="flex items-center gap-1.5">
+                        <input
+                            value={nameVal}
+                            onChange={(e) => setNameVal(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveName(); }}
+                            disabled={busy}
+                            className="h-7 w-[160px] rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2 text-xs text-[color:var(--fg-primary)] outline-none"
+                        />
+                        {nameVal.trim() !== me.name && nameVal.trim() && (
+                            <button
+                                className="h-7 rounded-lg px-2.5 text-[11px] font-medium"
+                                style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}
+                                disabled={busy}
+                                onClick={saveName}
+                            >
+                                {t('stage.edit.save')}
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <span className={`text-[11px] text-[color:var(--fg-muted)] ${mono}`}>{t('acct.name')}</span>
+                )}
+            </div>
+            <div className="inset-row">
+                <span className={rowLbl}>{t('app.name')}</span>
+                <span className={`text-[11px] ${mono}`} style={{ color: s.live ? 'var(--status-ok)' : 'var(--status-warn)' }}>
+                    {s.live ? t('acct.plan') : t('diag.job.offline')}
+                </span>
+            </div>
         </div>
     );
 }
@@ -792,9 +1031,8 @@ function SettingsTabContent() {
             {s.settingsTab === 'api' && <div className="inset-group"><ConnectionSection /></div>}
                         {s.settingsTab === 'chat' && (
                             <div className="inset-group">
-                                <div className="inset-row"><span className={rowLbl}>{t('st.renderCount')}</span><input type="range" min={5} max={100} value={cs.renderCount} onChange={(e) => s.setChatSetting('renderCount', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.renderCount}</span></div>
-                                <div className="inset-row"><span className={rowLbl}>{t('st.streamFps')}</span><input type="range" min={10} max={60} step={5} value={cs.streamFps} onChange={(e) => s.setChatSetting('streamFps', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.streamFps}</span></div>
-                                <div className="inset-row"><span className={rowLbl}>{t('st.fontSize')}</span><input type="range" min={12} max={18} step={0.5} value={cs.fontSize} onChange={(e) => s.setChatSetting('fontSize', Number(e.target.value))} className="w-[140px]" /><span className="w-8 text-right font-mono-ui text-[10.5px]">{cs.fontSize}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.renderCount')}</span><input type="range" min={5} max={200} step={5} value={cs.renderCount} onChange={(e) => s.setChatSetting('renderCount', Number(e.target.value))} className="w-[140px]" /><span className="w-9 text-right font-mono-ui text-[10.5px]">{cs.renderCount}</span></div>
+                                <div className="inset-row"><span className={rowLbl}>{t('st.fontSize')}</span><input type="range" min={12} max={18} step={0.5} value={cs.fontSize} onChange={(e) => s.setChatSetting('fontSize', Number(e.target.value))} className="w-[140px]" /><span className="w-9 text-right font-mono-ui text-[10.5px]">{cs.fontSize}</span></div>
                                 <div className="inset-row"><span className={rowLbl}>{t('st.showFloorNum')}</span>{sw(cs.showFloorNum, () => s.setChatSetting('showFloorNum', !cs.showFloorNum))}</div>
                                 <div className="inset-row"><span className={rowLbl}>{t('st.autoParseThink')}</span>{sw(cs.autoParseThink, () => s.setChatSetting('autoParseThink', !cs.autoParseThink))}</div>
                                 <div className="inset-row"><span className={rowLbl}>{t('st.autoExpandThink')}</span>{sw(cs.autoExpandThink, () => s.setChatSetting('autoExpandThink', !cs.autoExpandThink))}</div>
@@ -838,12 +1076,7 @@ function SettingsTabContent() {
                                 </button>
                             </div>
                         )}
-            {s.settingsTab === 'account' && (
-                <div className="inset-group">
-                    <div className="inset-row"><span className={rowLbl}>{t('acct.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.mail')}</span></div>
-                    <div className="inset-row"><span className={rowLbl}>{t('app.name')}</span><span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{t('acct.plan')}</span></div>
-                </div>
-            )}
+            {s.settingsTab === 'account' && <AccountSection />}
         </>
     );
 }

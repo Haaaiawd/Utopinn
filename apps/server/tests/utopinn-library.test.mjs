@@ -381,6 +381,19 @@ test('PATCH /settings — allowlist shallow-merge only', async () => {
     assert.equal(oai.status, 200);
     assert.equal(oai.body.settings.oai_settings.chat_completion_source, 'claude');
 
+    // world_info_settings.world_info 二层保留同级键(写 globalSelect 不冲掉 charLore)
+    await api('/api/utopinn/settings', {
+        method: 'PATCH',
+        body: { world_info_settings: { world_info: { charLore: [{ name: 'Alice', extraBooks: ['GlobalBook'] }] } } },
+    });
+    const wiGlobal = await api('/api/utopinn/settings', {
+        method: 'PATCH',
+        body: { world_info_settings: { world_info: { globalSelect: ['GlobalBook'] } } },
+    });
+    assert.equal(wiGlobal.status, 200);
+    assert.deepEqual(wiGlobal.body.settings.world_info_settings.world_info.globalSelect, ['GlobalBook']);
+    assert.deepEqual(wiGlobal.body.settings.world_info_settings.world_info.charLore, [{ name: 'Alice', extraBooks: ['GlobalBook'] }]);
+
     const rejected = await api('/api/utopinn/settings', {
         method: 'PATCH', body: { world_info: { charLore: [] } },
     });

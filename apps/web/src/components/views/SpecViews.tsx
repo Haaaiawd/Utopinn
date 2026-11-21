@@ -7,7 +7,7 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { charImageUrl } from '../../api/characters';
 import { charImgFallback } from '../stage/StageFrame';
-import { openImportModal } from '../shell/overlayBus';
+import { openCharEditor, openImportModal } from '../shell/overlayBus';
 
 /** home:卡画廊 —— 点击卡面选中该卡最新会话(规范稿画廊网格)。
  *  移动端按规范稿 renderHomeGallery(true):h-12 头(menu + 标题 + 导入钮)
@@ -61,30 +61,91 @@ export function HomeView() {
         );
     }
     return (
-        <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            <h1 className="heading-tight mb-1 text-title-lg text-[color:var(--fg-primary)]">{t('nav.home')}</h1>
-            <p className="mb-5 text-[12px] text-[color:var(--fg-muted)]">{t('home.sub')}</p>
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3">
-                {cards.map((c) => {
-                    const chat = s.chats.find((x) => x.charDir === c.charDir);
-                    return (
+        <div className="min-h-0 flex-1 overflow-y-auto px-8 py-7">
+            <div className="mx-auto max-w-5xl">
+                <div className="mb-6 flex items-center justify-between gap-4">
+                    <div>
+                        <h1 className="heading-tight text-[20px] font-semibold text-[color:var(--fg-primary)]">{t('nav.home')}</h1>
+                        <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">
+                            {cards.length} {t('mob.hub.cardsN')} · {t('home.hero')}
+                        </p>
+                    </div>
+                    <button
+                        className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3.5 text-[12.5px] font-medium transition-opacity hover:opacity-90"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                        onClick={openImportModal}
+                    >
+                        <Icon name="import" size={15} />
+                        <span>{t('ov.import.short')}</span>
+                    </button>
+                </div>
+                {cards.length === 0 ? (
+                    <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-[color:var(--border-strong)] p-8 text-center">
+                        <div className="text-[13.5px] font-medium text-[color:var(--fg-secondary)]">{t('studio.cards.empty')}</div>
                         <button
-                            key={c.charDir}
-                            className="inset-group inset-row-btn overflow-hidden text-left"
-                            onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
+                            className="mt-4 h-8 rounded-lg px-4 text-[12.5px] font-medium"
+                            style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                            onClick={openImportModal}
                         >
-                            <div className="flex h-[150px] items-center justify-center bg-[color:var(--bg-active)] text-[28px]" style={{ color: 'var(--brand)' }}>
-                                {c.avatar ? <img src={charImageUrl(c.avatar)} alt="" className="h-full w-full object-cover" onError={charImgFallback} /> : (c.name?.[0] ?? c.charDir[0])}
-                            </div>
-                            <div className="p-2.5">
-                                <div className="truncate text-[12px] font-medium text-[color:var(--fg-primary)]">{c.name || c.charDir}</div>
-                                <div className="mt-0.5 truncate text-[10px] text-[color:var(--fg-faint)]">{chat?.title ?? c.charDir}</div>
-                            </div>
+                            + {t('ov.import.short')}
                         </button>
-                    );
-                })}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(188px,1fr))] gap-4">
+                        {cards.map((c) => {
+                            const chat = s.chats.find((x) => x.charDir === c.charDir && !x.id.startsWith('st-'));
+                            const chatCount = s.chats.filter((x) => x.charDir === c.charDir && !x.id.startsWith('st-')).length;
+                            return (
+                                <div
+                                    key={c.charDir}
+                                    className="group relative aspect-[3/4] overflow-hidden rounded-[14px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] text-left transition-all hover:border-[color:var(--border-strong)]"
+                                    style={{ boxShadow: 'var(--shadow-card)' }}
+                                >
+                                    <button
+                                        type="button"
+                                        className="absolute inset-0 h-full w-full text-left"
+                                        onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
+                                    >
+                                        {c.avatar ? (
+                                            <img
+                                                src={charImageUrl(c.avatar)}
+                                                alt={c.name || c.charDir}
+                                                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+                                                onError={charImgFallback}
+                                            />
+                                        ) : (
+                                            <img
+                                                src="/assets/avatars/default-char.png"
+                                                alt=""
+                                                className="h-full w-full object-cover opacity-80"
+                                            />
+                                        )}
+                                        <span
+                                            className="absolute inset-0"
+                                            style={{ background: 'linear-gradient(180deg, rgba(8,9,10,0.02) 0%, rgba(8,9,10,0.18) 52%, rgba(8,9,10,0.92) 100%)' }}
+                                        />
+                                        <span className="absolute bottom-3.5 left-3.5 right-3.5">
+                                            <span className="heading-tight block truncate text-[14.5px] font-semibold text-white">{c.name || c.charDir}</span>
+                                            <span className="mt-0.5 block truncate text-[11.5px] text-white/70">
+                                                {chat ? `${chat.title}${chatCount > 1 ? ` · ${chatCount} ${t('studio.cards.chats')}` : ''}` : `+ ${t('sidebar.newChat')}`}
+                                            </span>
+                                        </span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        title={t('studio.cards.detail')}
+                                        onClick={(e) => { e.stopPropagation(); openCharEditor(c.charDir); }}
+                                        className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-lg opacity-0 transition-opacity group-hover:opacity-100"
+                                        style={{ background: 'rgba(14,15,18,0.68)', color: '#fff', backdropFilter: 'blur(6px)' }}
+                                    >
+                                        <Icon name="pencil" size={13} />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
             </div>
-            {s.cardsMock && <p className="mt-4 text-[10.5px] text-[color:var(--fg-faint)]">{t('common.mockData')}</p>}
         </div>
     );
 }

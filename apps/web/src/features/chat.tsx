@@ -16,14 +16,8 @@ export const chatFeature: Feature = {
         ctx.add('stage.form', { kind: 'chat', order: 0, Component: ChatStage });
         ctx.add('sidebar.tree', { rail: 'chat', order: 10, Component: ChatTree });
         ctx.locale('chat', {
-            'zh-CN': {
-                'home.sub': '角色卡画廊 —— 点卡进会话',
-                'common.mockData': '模拟数据 — 服务器未连接',
-            },
-            en: {
-                'home.sub': 'Card gallery — tap a card to chat',
-                'common.mockData': 'Mock data — server not connected',
-            },
+            'zh-CN': { 'home.sub': '角色卡画廊 —— 点卡进会话' },
+            en: { 'home.sub': 'Card gallery — tap a card to chat' },
         });
     },
 };

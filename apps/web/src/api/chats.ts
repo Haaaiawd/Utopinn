@@ -333,22 +333,15 @@ export async function appendAssistantMessage(
 }
 
 /**
- * Rename a chat file. Uses the legacy /api/chats/rename route — body fields
- * are `original_file`/`renamed_file` WITH the .jsonl suffix; `avatar_url`
- * carries the charDir + .png, matching append/patch above. Resolves to the
- * server's sanitized new base name so the caller can rebuild the ChatSummary
- * id even when sanitize() rewrote input.
- * 注:utopinn 原生面已存在 —— POST /api/utopinn/characters/:dir/chats/:name/
- * rename(body {newName} → {name,fileName},utopinn-library.js,且顺带维护
- * recent 索引);本函数暂留 legacy 契约,迁原生面时返回值口径同为新基名。
+ * Rename a chat file via native POST /api/utopinn/characters/:dir/chats/:name/rename
+ * (utopinn-library.js: updates ChatRepo + recent-chat index atomically).
  */
 export async function renameChat(charDir: string, oldName: string, newName: string): Promise<string> {
-    const res = await apiPost<{ ok: boolean; sanitizedFileName?: string }>('/api/chats/rename', {
-        avatar_url: `${charDir}.png`,
-        original_file: `${oldName}.jsonl`,
-        renamed_file: `${newName}.jsonl`,
-    });
-    return res.sanitizedFileName ?? newName;
+    const res = await apiPost<{ ok: boolean; name?: string }>(
+        `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(oldName)}/rename`,
+        { newName, avatar_url: `${charDir}.png` },
+    );
+    return res.name ?? newName;
 }
 
 /** Delete a chat file via the utopinn library route (204; 404 bubbles as ApiError). */
@@ -360,27 +353,3 @@ export async function deleteChat(charDir: string, chatName: string): Promise<voi
     await assertOk(res);
 }
 
-/**
- * POST /api/utopinn/chats/recent —— 最近会话(utopinn-library.js L1151,
- * 与 legacy POST /api/chats/recent 同一索引与排序源)。
- * body:{pinned?:[{file_name,avatar?,group?}], max?} → 数组回包:
- * pinned 命中(file_name + avatar|group 同字段判定)置顶 → sort_time desc。
- * home「继续你的故事」与侧栏置顶序的数据源 —— 不用 listAllChats 全量扫。
- */
-export interface RecentChatItem {
-    file_name: string;
-    avatar?: string;
-    group?: string;
-    sort_time?: number;
-    [k: string]: unknown;
-}
-
-export async function listRecentChats(opts?: {
-    pinned?: Pick<RecentChatItem, 'file_name' | 'avatar' | 'group'>[];
-    max?: number;
-}): Promise<RecentChatItem[]> {
-    return apiPost('/api/utopinn/chats/recent', {
-        pinned: opts?.pinned ?? [],
-        ...(opts?.max !== undefined ? { max: opts.max } : {}),
-    });
-}

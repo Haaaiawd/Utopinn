@@ -8,7 +8,6 @@
 // (别名 char_dir/chat_name/group_id 服务端也认,这里统一主名)。
 import { apiGet, apiPost } from './client';
 import type {
-    MvuPanelRenderResponse,
     MvuResettleResponse,
     MvuSettleResponse,
     MvuStateResponse,
@@ -52,28 +51,4 @@ export async function resettleMvu(
     opts?: { update_chat_variables?: boolean },
 ): Promise<MvuResettleResponse> {
     return apiPost('/api/utopinn/mvu/resettle', { ...mvuTargetFields(target), ...opts });
-}
-
-/**
- * POST /api/utopinn/mvu/panel/render —— 模板 × 变量 → {ok,html}。
- * scope 缺省时服务端从 target 聊天的 chatVariables 取(此时 target 必给);
- * escape_html 缺省 true;fallback = 变量缺失时的占位文本。
- */
-export async function renderMvuPanel(
-    template: string,
-    opts?: {
-        scope?: Record<string, unknown>;
-        target?: MvuTarget;
-        fallback?: string;
-        escape_html?: boolean;
-    },
-): Promise<MvuPanelRenderResponse> {
-    const { scope, target, fallback, escape_html } = opts ?? {};
-    return apiPost('/api/utopinn/mvu/panel/render', {
-        template,
-        ...(scope !== undefined ? { scope } : {}),
-        ...(target ? mvuTargetFields(target) : {}),
-        ...(fallback !== undefined ? { fallback } : {}),
-        ...(escape_html !== undefined ? { escape_html } : {}),
-    });
 }

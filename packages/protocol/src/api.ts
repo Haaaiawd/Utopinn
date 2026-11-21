@@ -241,11 +241,125 @@ export interface SettingsResponse {
     settings: Record<string, unknown>;
 }
 /**
- * PATCH /settings —— 受限浅合并,顶层键白名单:
- * 'power_user' | 'extension_settings';每段值必须是对象。
- * 其余顶层段(oai_settings 等)不经此端点写。
+ * PATCH /settings —— 受限浅合并:
+ * 对象段白名单 'power_user' | 'extension_settings' | 'oai_settings' | 'world_info_settings'
+ * (world_info_settings.world_info 二层保留同级键);
+ * 标量白名单 'preset_settings_openai'(string | null,双向镜像 oai_settings)。
  */
-export type SettingsPatchRequest = Record<'power_user' | 'extension_settings' | (string & {}), Record<string, unknown> | undefined>;
+export interface SettingsPatchRequest {
+    power_user?: Record<string, unknown>;
+    extension_settings?: Record<string, unknown>;
+    oai_settings?: Record<string, unknown>;
+    world_info_settings?: Record<string, unknown>;
+    preset_settings_openai?: string | null;
+}
+
+/** PATCH /characters/:charDir —— 字段级 Merge Patch(C-3)。 */
+export interface CharacterPatchExtensions {
+    world?: string | null;
+    alternate_greetings?: string[] | null;
+    regex_scripts?: Record<string, unknown>[] | null;
+}
+export interface CharacterPatchRequest {
+    name?: string;
+    description?: string | null;
+    personality?: string | null;
+    scenario?: string | null;
+    first_mes?: string | null;
+    mes_example?: string | null;
+    creator_notes?: string | null;
+    system_prompt?: string | null;
+    post_history_instructions?: string | null;
+    creator?: string | null;
+    character_version?: string | null;
+    tags?: string[] | null;
+    extensions?: CharacterPatchExtensions;
+}
+
+// =========================================================================
+// connection / models / regex
+// =========================================================================
+
+export type ConnectionProbeErrorCode =
+    | 'not_configured'
+    | 'unreachable'
+    | 'timeout'
+    | 'auth_failed'
+    | 'http_error'
+    | 'unsupported';
+
+/** POST /api/utopinn/connection/test */
+export interface ConnectionTestResponse {
+    ok: boolean;
+    source: string;
+    latencyMs: number;
+    modelCount?: number;
+    upstreamStatus: number | null;
+    error?: ConnectionProbeErrorCode | (string & {});
+    detail?: string;
+}
+
+export interface UpstreamModelItem {
+    id: string;
+    owned_by?: string;
+}
+
+/** GET /api/utopinn/models(?fresh=1) */
+export interface ModelsResponse {
+    source: string;
+    items: UpstreamModelItem[];
+    stale?: boolean;
+    error?: ConnectionProbeErrorCode | (string & {});
+    upstreamStatus?: number | null;
+    detail?: string;
+}
+
+/** RegexScriptData(utopinn-regex.js)。 */
+export interface RegexScriptData {
+    id?: string;
+    scriptName?: string;
+    findRegex?: string;
+    replaceString?: string;
+    trimStrings?: string[];
+    placement?: number[];
+    disabled?: boolean;
+    markdownOnly?: boolean;
+    promptOnly?: boolean;
+    runOnEdit?: boolean;
+    substituteRegex?: number;
+    minDepth?: number | null;
+    maxDepth?: number | null;
+    [k: string]: unknown;
+}
+
+export interface RegexCharGroup {
+    charDir: string;
+    avatar: string;
+    name: string;
+    allowed: boolean;
+    autoAllowed?: boolean;
+    active?: boolean;
+    scripts: RegexScriptData[];
+}
+
+export interface RegexPresetGroup {
+    apiId: string;
+    name: string;
+    allowed: boolean;
+    scripts: RegexScriptData[];
+}
+
+/** GET /api/utopinn/regex(全量视图)。 */
+export interface RegexFullViewResponse {
+    global: RegexScriptData[];
+    allowed: {
+        characters: string[];
+        presets: Record<string, string[]>;
+    };
+    disabled: boolean;
+    chars: RegexCharGroup[];
+    presets: RegexPresetGroup[];
+}
 
 export interface SecretEntry {
     id: string;

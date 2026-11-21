@@ -14,13 +14,14 @@ import { Icon, type IconName } from '../Icon';
 import { postGenerate, streamJob } from '../../api/generate';
 import { abortJob, getJob, listJobs } from '../../api/jobs';
 import { getPreset } from '../../api/presets';
-import { getMvuState, settleMvu, type MvuTarget } from '../../api/mvu';
+import { settleMvu, type MvuTarget } from '../../api/mvu';
 import {
     appendAssistantMessage, appendUserMessage, floorRawText, getChat, mkAssistantFloor, patchChat, patchSwipe,
     type ChatPatchOp, type FloorMsg, type GenerateBody, type GenerateVerb,
 } from '../../api/chats';
 import { ApiError, apiGet, apiPost } from '../../api/client';
 import { charImageUrl } from '../../api/characters';
+import { personaAvatarSrc } from '../../api/personas';
 import {
     MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
     MOCK_REPLY_NOVEL, MOCK_REPLY_VN,
@@ -29,8 +30,8 @@ import { diagTraceParams } from '../panels/DiagPanel';
 import type { ChatSummary, StageKind } from '../../types';
 
 let mockMid = 100;
-const mkMock = (role: 'user' | 'assistant', content: string, streaming = false): FloorMsg => ({
-    id: ++mockMid, role, name: role === 'user' ? 'haa' : '云栖宗 · 陈修线', content, streaming, timestamp: Date.now(),
+const mkMock = (role: 'user' | 'assistant', content: string, streaming = false, userName = 'User'): FloorMsg => ({
+    id: ++mockMid, role, name: role === 'user' ? userName : '云栖宗 · 陈修线', content, streaming, timestamp: Date.now(),
 });
 
 /** 卡头像兜底:服务端 404/离线 → default-char 占位(诚实降级,不装作有图)。 */
@@ -99,7 +100,7 @@ export function useStageEngine(): StageEngine {
 
 /* ——— 规范稿 ctbar 三弹层 ——— */
 
-/** 规范稿 renderContextPopover:暗幕 + top-12 左上锚卡(全局书 sh-switch 组
+/** 规范稿 renderContextPopover:暗幕 + top-12 左上锚卡(人设快切 + 全局书 sh-switch 组
  *  + 「管理」→ studio global + 「右侧打开预设与模型」→ preset panel)。 */
 function ContextPop({ onClose }: { onClose: () => void }) {
     const { t } = useI18n();
@@ -118,24 +119,61 @@ function ContextPop({ onClose }: { onClose: () => void }) {
                     </div>
                     <button className="ghost-btn h-7 w-7" onClick={onClose}><Icon name="x" size={15} /></button>
                 </div>
+                {s.personas.length > 0 && (
+                    <div className="space-y-1.5">
+                        <div className="flex items-center justify-between px-0.5 text-[11px] text-[color:var(--fg-muted)]">
+                            <span>{t('ctx.persona')}</span>
+                            <button className="transition-colors hover:text-[color:var(--fg-primary)]" onClick={() => { onClose(); s.setView('studio'); s.setStudioNav('persona'); }}>{t('tree.manage')}</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {s.personas.map((p) => {
+                                const act = s.persona?.avatar === p.avatar;
+                                return (
+                                    <button
+                                        key={p.avatar}
+                                        type="button"
+                                        onClick={() => s.setPersona({ avatar: p.avatar, name: p.name, description: p.description })}
+                                        className="flex items-center gap-1.5 rounded-full py-1 pl-1 pr-2.5 text-[11.5px] transition-colors"
+                                        style={{
+                                            background: act ? 'var(--bg-active)' : 'var(--bg-surface)',
+                                            border: act ? '1.5px solid var(--brand)' : '1px solid var(--border-hairline)',
+                                            color: act ? 'var(--fg-primary)' : 'var(--fg-secondary)',
+                                        }}
+                                    >
+                                        <img src={personaAvatarSrc(p.avatar, p.hasImage)} alt="" className="h-5 w-5 rounded-full object-cover" onError={(e) => { e.currentTarget.src = '/assets/avatars/user-redpanda.png'; }} />
+                                        <span className="max-w-[110px] truncate">{p.name || p.avatar}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
                 <div className="space-y-1.5">
                     <div className="flex items-center justify-between px-0.5 text-[11px] text-[color:var(--fg-muted)]">
-                        <span>{t('ctx.globalLore')}</span>
+                        <span>{t('ctx.globalLore')}{!s.live && <span className="ml-1.5 font-mono-ui text-[10px] uppercase">{t('chat.demo')}</span>}</span>
                         <button className="transition-colors hover:text-[color:var(--fg-primary)]" onClick={() => { onClose(); s.setView('studio'); s.setStudioNav('global'); }}>{t('tree.manage')}</button>
                     </div>
-                    <div className="inset-group">
-                        {s.globalLore.map((g) => (
-                            <div key={g.id} className="inset-row">
-                                <div className="min-w-0">
-                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{g.name}</div>
-                                    <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{g.desc}</div>
+                    {s.globalLore.length > 0 ? (
+                        <div className="inset-group max-h-48 overflow-y-auto">
+                            {s.globalLore.map((g) => (
+                                <div key={g.id} className="inset-row">
+                                    <div className="min-w-0">
+                                        <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{g.name}</div>
+                                        {g.desc && g.desc !== g.name && (
+                                            <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{g.desc}</div>
+                                        )}
+                                    </div>
+                                    <button className="sh-switch" data-checked={g.enabled || undefined} disabled={!s.live} style={!s.live ? { opacity: 0.45 } : undefined} onClick={() => s.toggleGlobalLore(g.id)}>
+                                        <span className="sh-switch-thumb" />
+                                    </button>
                                 </div>
-                                <button className="sh-switch" data-checked={g.enabled} onClick={() => s.toggleGlobalLore(g.id)}>
-                                    <span className="sh-switch-thumb" />
-                                </button>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3 py-2.5 text-[11.5px] text-[color:var(--fg-muted)]">
+                            {t('studio.global.empty')}
+                        </div>
+                    )}
                 </div>
                 <button
                     className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-[12px] transition-colors hover:bg-[color:var(--bg-surface-hover)]"
@@ -221,37 +259,65 @@ function PresetPop({ onClose }: { onClose: () => void }) {
             >
                 <div className="flex h-11 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
                     <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('composer.presetModel')}</span>
-                    <button type="button" className="ghost-btn h-7 w-7" onClick={onClose}><Icon name="x" size={15} /></button>
+                    <div className="flex items-center gap-1">
+                        {s.live && (
+                            <button type="button" className="ghost-btn h-7 w-7" title={t('panel.retry')} onClick={() => void s.refreshConnection({ freshModels: true })}>
+                                <Icon name="refresh" size={13} />
+                            </button>
+                        )}
+                        <button type="button" className="ghost-btn h-7 w-7" onClick={onClose}><Icon name="x" size={15} /></button>
+                    </div>
                 </div>
                 <div className="space-y-3.5 overflow-y-auto p-4">
                     <div className="grid grid-cols-2 gap-2">
                         <div className="relative min-w-0">
                             <button type="button" className="sh-select-trigger" title={t('panel.preset.model')} onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')}>
-                                <span className="truncate font-mono-ui text-[11.5px]">{s.models.find((m) => m.id === s.activeModel)?.short ?? '—'}</span>
+                                <span className="truncate font-mono-ui text-[11.5px]">
+                                    {s.live ? (s.models.find((m) => m.id === s.activeModel)?.short || s.activeModel || t('st.conn.noModels')) : t('stage.demoData')}
+                                </span>
                                 <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                             </button>
                             {s.openDropdown === 'model' && (
-                                <div className="sh-select-menu">
-                                    {s.models.map((m) => (
+                                <div className="sh-select-menu max-h-60 overflow-y-auto">
+                                    {s.live && s.models.length > 0 ? s.models.map((m) => (
                                         <button key={m.id} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
-                                            <span><span className="block font-mono-ui text-[12px]">{m.id}</span><span className="block text-[10px] text-[color:var(--fg-muted)]">{m.provider} · {m.ctx}</span></span>
-                                            {m.id === s.activeModel && <Icon name="check" size={13} className="text-[color:var(--brand)]" />}
+                                            <span className="min-w-0 pr-2">
+                                                <span className="block truncate font-mono-ui text-[12px]">{m.id}</span>
+                                                <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{m.ctx ? `${m.provider} · ${m.ctx}` : m.provider}</span>
+                                            </span>
+                                            {m.id === s.activeModel && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
                                         </button>
-                                    ))}
+                                    )) : (
+                                        <div className="space-y-2 p-2.5 text-[11px] text-[color:var(--fg-muted)]">
+                                            <div className="break-all font-mono-ui text-[10.5px]">{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
+                                            <button
+                                                type="button"
+                                                className="w-full rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium"
+                                                style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                                                onClick={() => { s.setOpenDropdown(null); onClose(); s.openSettings('api'); }}
+                                            >
+                                                {t('st.conn.configApi')}
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
                         <div className="relative min-w-0">
                             <button type="button" className="sh-select-trigger" title={t('panel.preset.preset')} onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
-                                <span className="truncate font-mono-ui text-[11.5px]">{s.activePresetId.replace(/\.json$/i, '')}</span>
+                                <span className="truncate font-mono-ui text-[11.5px]">{s.live ? (s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : '—') : t('stage.demoData')}</span>
                                 <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                             </button>
                             {s.openDropdown === 'preset' && (
-                                <div className="sh-select-menu">
+                                <div className="sh-select-menu max-h-60 overflow-y-auto">
+                                    {!s.live && <div className="px-2.5 py-1.5 text-[10.5px] text-[color:var(--fg-faint)]">{t('stage.demoData')}</div>}
                                     {s.presets.map((p) => (
                                         <button key={p.id} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.pickPreset(p.id); s.setOpenDropdown(null); }}>
-                                            <span><span className="block font-mono-ui text-[12px]">{p.id}</span><span className="block font-mono-ui text-[10px] text-[color:var(--fg-muted)]">T {p.temp} · TopP {p.topP} · {p.maxReply} tok</span></span>
-                                            {p.id === s.activePresetId && <Icon name="check" size={13} className="text-[color:var(--brand)]" />}
+                                            <span className="min-w-0 pr-2">
+                                                <span className="block truncate font-mono-ui text-[12px]">{p.id.replace(/\.json$/i, '')}</span>
+                                                <span className="block truncate font-mono-ui text-[10px] text-[color:var(--fg-muted)]">T {p.temp} · TopP {p.topP} · {p.maxReply} tok</span>
+                                            </span>
+                                            {p.id === s.activePresetId && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
                                         </button>
                                     ))}
                                 </div>
@@ -441,25 +507,11 @@ export function StageFrame({ children }: { children: ReactNode }) {
 
     useEffect(() => { void refreshTokens(); }, [s.live, chatKey, refreshTokens]);
 
-    /* ——— MVU 快照同步进 ctx(胶囊/回滚后的真数据位) ——— */
-    const refreshMvu = useCallback(async () => {
-        const target = mvuTarget(s.chat);
-        if (!s.live || !target) return;
-        try {
-            const v = await getMvuState(target);
-            const stat = v.statData;
-            if (stat && typeof stat === 'object' && !Array.isArray(stat)) {
-                const flat: Record<string, string | number> = {};
-                for (const [k, val] of Object.entries(stat as Record<string, unknown>).slice(0, 8)) {
-                    const leaf = Array.isArray(val) ? val[0] : val;
-                    if (typeof leaf === 'number' || typeof leaf === 'string') flat[k] = leaf;
-                }
-                if (Object.keys(flat).length) s.setMvu(flat);
-            }
-        } catch { /* 未初始化 → 保留现值 */ }
+    /* ——— MVU 联动刷新信号:生成/切版/回滚/结算后通知右侧 MvuPanel 重拉快照 ——— */
+    const refreshMvu = useCallback(() => {
+        if (!s.live) return;
+        s.setPanelParams('mvu', { rev: Date.now() });
     }, [s]);
-
-    useEffect(() => { if (s.live && chatKey) void refreshMvu(); }, [s.live, chatKey, refreshMvu]);
 
     const pushReply = (content: string) => setMsgs((prev) => [...prev, mkMock('assistant', content)]);
     const pushErrorFloor = (error: FloorMsg['error']) =>
@@ -472,13 +524,13 @@ export function StageFrame({ children }: { children: ReactNode }) {
         if (kind === 'messenger') {
             s.patchStageData({
                 channels: s.stageData.channels.map((c) => c.id === s.stageData.activeChannel
-                    ? { ...c, msgs: [...c.msgs, { sender: 'haa', self: true, time: '刚刚', text }] }
+                    ? { ...c, msgs: [...c.msgs, { sender: s.persona?.name ?? s.currentUser?.name ?? 'User', self: true, time: '刚刚', text }] }
                     : c),
             });
             return;
         }
         /* novel 的 user 楼渲成段间「指挥」注记,theater 渲成玩家台词楼。 */
-        setMsgs((prev) => [...prev, mkMock('user', text)]);
+        setMsgs((prev) => [...prev, mkMock('user', text, false, s.persona?.name ?? s.currentUser?.name ?? 'User')]);
     }, [s]);
 
     const mockStageReply = useCallback((kind: StageKind, reply: string) => {
@@ -580,9 +632,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setBusy(true);
         accRef.current = '';
         try {
+            const fallbackUser = s.currentUser?.name || s.currentUser?.handle || 'User';
+            const presetClean = s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : undefined;
             const body: GenerateBody = {
-                charDir: chat.charDir, chatName: chat.chatName, type,
-                user: s.persona ? { name: s.persona.name, description: s.persona.description } : { name: 'haa' },
+                charDir: chat.charDir,
+                chatName: chat.chatName,
+                type,
+                ...(presetClean ? { presetName: presetClean } : {}),
+                user: s.persona ? { name: s.persona.name, description: s.persona.description } : { name: fallbackUser },
             };
             const { jobId } = await postGenerate(body);
             setJob({ id: jobId, type, floorId });
@@ -663,12 +720,13 @@ export function StageFrame({ children }: { children: ReactNode }) {
             return;
         }
         const chat = s.chat;
+        const senderName = s.persona?.name || s.currentUser?.name || s.currentUser?.handle || 'User';
         const uid = transientRef.current - 1;
         transientRef.current = uid;
-        setMsgs((prev) => [...prev, { id: uid, role: 'user', name: s.persona?.name ?? 'haa', content: v, timestamp: Date.now() }]);
+        setMsgs((prev) => [...prev, { id: uid, role: 'user', name: senderName, content: v, timestamp: Date.now() }]);
         setBusy(true);
         try {
-            await appendUserMessage(chat.charDir, chat.chatName, s.persona?.name ?? 'haa', v);
+            await appendUserMessage(chat.charDir, chat.chatName, senderName, v);
             setBusy(false);
             void runGenerate('normal');
         } catch (e) {

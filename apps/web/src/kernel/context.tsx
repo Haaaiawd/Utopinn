@@ -1,13 +1,12 @@
 // Shell context — 壳持有的领域状态 + registry,经 Provider 下发;
 // 领域组件(视图/板块/舞台形态)无 props,一律 useShell() 取数。
 // props 消失是刻意的:接线归注册表,数据归上下文,App 不再做逐件对接。
-// 字段语义逐条对齐规范稿(u_ui_codex)单文件 state:openTabs/activeTab/
-// workbenchOpen/floatingPanelId/selectedLoreId/notesText/stageData。
 import { createContext, useContext, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import type { CurrentUser } from '../api/account';
 import type { CardItem } from '../api/characters';
 import type { ImportDraft } from '../api/import';
-import type { ActivePersona } from '../api/personas';
+import type { ActivePersona, PersonaItem } from '../api/personas';
 import type {
     GlobalLoreItem, ImChannel, ModelItem,
     NovelChapter, PresetItem, VnData, WorldbookItem,
@@ -19,7 +18,7 @@ import { Registry } from './registry';
 export type SheetSnap = 'closed' | 'half' | 'full';
 export type VpMode = 'auto' | 'desktop' | 'mobile';
 
-/** 预设/生成参数(规范稿 state.presetParams;SPEC-DATA: 服务端无持久端点)。 */
+/** 预设/生成参数(由当前选中预设 doc 水合,调参防抖写回 PUT /presets/:name)。 */
 export interface PresetParams {
     temp: number;
     topP: number;
@@ -28,10 +27,9 @@ export interface PresetParams {
     blocks: { id: string; name: string; enabled: boolean }[];
 }
 
-/** 聊天与消息设置(规范稿 stSettings;SPEC-DATA: 本地态)。 */
+/** 聊天与外观设置(本地持久化 utopinn.chatSettings)。 */
 export interface ChatSettings {
     renderCount: number;
-    streamFps: number;
     autoParseThink: boolean;
     autoExpandThink: boolean;
     showFloorNum: boolean;
@@ -39,8 +37,6 @@ export interface ChatSettings {
     fontSize: number;
     bgMode: string;
     customCss: string;
-    apiTab: string;
-    endpoint: string;
 }
 
 /** 舞台形态会话的展示数据(规范稿 s.chapters/s.channels/s.vn 落地位)。
@@ -78,7 +74,13 @@ export interface ShellCtx {
     queueImport: (drafts: ImportDraft[]) => void;
     dismissImportDraft: (id: string) => void;
 
-    /** 当前会话生效的 persona(生成时携带进 body.user)。 */
+    /** 当前 handle 账户画像(GET /api/users/me;离线时为 null)。 */
+    currentUser: CurrentUser | null;
+    refreshCurrentUser: () => Promise<void>;
+
+    /** 服务端人设目录 + 当前会话生效的 persona(生成时携带进 body.user)。 */
+    personas: PersonaItem[];
+    refreshPersonas: () => Promise<void>;
     persona: ActivePersona | null;
     setPersona: (p: ActivePersona | null) => void;
 
@@ -128,14 +130,8 @@ export interface ShellCtx {
     launcherSearch: string;
     setLauncherSearch: (s: string) => void;
 
-    /* ——— 弹层与全局 chrome 状态(规范稿 overlay flags) ——— */
-    contextOpen: boolean;
-    setContextOpen: (v: boolean) => void;
-    composerMenuOpen: boolean;
-    setComposerMenuOpen: (v: boolean) => void;
-    presetPopOpen: boolean;
-    setPresetPopOpen: (v: boolean) => void;
-    /** 预设 popover/panel 共享的下拉态(规范稿 openDropdown:'model'|'preset')。 */
+    /* ——— 弹层与全局 chrome 状态 ——— */
+    /** 预设 popover/panel 共享的下拉态('model'|'preset')。 */
     openDropdown: string | null;
     setOpenDropdown: (v: string | null) => void;
     accountPopOpen: boolean;
@@ -170,13 +166,15 @@ export interface ShellCtx {
     selectedPlugin: string | null;
     setSelectedPlugin: (id: string | null) => void;
 
-    /* ——— 生成参数目录(SPEC-DATA: 目录数据是 mock,目录见 api/mock) ——— */
+    /* ——— 生成连接/模型/预设/全局世界书(在线水合自 /settings /models /presets /worlds) ——— */
+    connSource: string;
     models: ModelItem[];
+    modelsError: string | null;
     activeModel: string;
     setActiveModel: (id: string) => void;
     presets: PresetItem[];
     activePresetId: string;
-    /** 规范稿 pick-preset:装载即把 temp/topP/ctxLen/maxReply 倒进 presetParams。 */
+    /** 切换激活预设:写回 settings.preset_settings_openai 并装载采样/条目参数。 */
     pickPreset: (id: string) => void;
     presetParams: PresetParams;
     setPresetParam: (k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => void;
@@ -184,22 +182,11 @@ export interface ShellCtx {
     globalLore: GlobalLoreItem[];
     toggleGlobalLore: (id: string) => void;
     worldbook: WorldbookItem[];
-    selectedLoreId: string;
-    setSelectedLoreId: (id: string) => void;
-    notesText: string;
-    setNotesText: (s: string) => void;
+    refreshConnection: (opts?: { freshModels?: boolean }) => Promise<void>;
     chatSettings: ChatSettings;
     setChatSetting: <K extends keyof ChatSettings>(k: K, v: ChatSettings[K]) => void;
 
-    /* ——— MVU 快照(规范稿 s.mvu 全局化;SPEC-DATA: 服务端 MVU 端点未出) ——— */
-    mvu: Record<string, string | number>;
-    setMvu: (m: Record<string, string | number>) => void;
-    mvuStep: (key: string, d: number) => void;
-    echoMvu: boolean;
-    /** 规范稿 bridgeOp:总簿拨款/月俸/征收三动作。 */
-    bridgeOp: (op: string) => void;
-
-    /* ——— 舞台形态会话数据(SPEC-DATA:mock 种子,面板与舞台共享) ——— */
+    /* ——— 舞台形态会话数据(SPEC-DATA:预演种子,面板与舞台共享) ——— */
     stageData: StageData;
     patchStageData: (p: Partial<StageData>) => void;
 

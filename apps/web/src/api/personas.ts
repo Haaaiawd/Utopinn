@@ -55,6 +55,41 @@ export interface PersonaSaved {
     isDefault: boolean;
 }
 
+/** Utopinn 内置用户默认头像库(public/assets/avatars/)—— 取代 ST 空白字牌。 */
+export const BUILTIN_PERSONA_AVATARS = [
+    { id: 'user-redpanda.png', prefix: 'user-redpanda', src: '/assets/avatars/user-redpanda.png', labelKey: 'studio.persona.av.redpanda' },
+    { id: 'user-fox.png', prefix: 'user-fox', src: '/assets/avatars/user-fox.png', labelKey: 'studio.persona.av.fox' },
+    { id: 'user-owl.png', prefix: 'user-owl', src: '/assets/avatars/user-owl.png', labelKey: 'studio.persona.av.owl' },
+] as const;
+
+export type BuiltinPersonaAvatarId = (typeof BUILTIN_PERSONA_AVATARS)[number]['id'];
+
+/** 从任意存储键推断其绑定的内置动物头像(无匹配时按文件名稳定散列落三选一)。 */
+export function resolveBuiltinPersonaAvatar(avatar: string | null | undefined): (typeof BUILTIN_PERSONA_AVATARS)[number] {
+    const raw = (avatar ?? '').trim().toLowerCase();
+    for (const b of BUILTIN_PERSONA_AVATARS) {
+        if (raw === b.id || raw.startsWith(`${b.prefix}-`) || raw.startsWith(`${b.prefix}_`)) return b;
+    }
+    if (!raw) return BUILTIN_PERSONA_AVATARS[0];
+    let h = 0;
+    for (let i = 0; i < raw.length; i++) h = ((h * 31) + raw.charCodeAt(i)) >>> 0;
+    return BUILTIN_PERSONA_AVATARS[h % BUILTIN_PERSONA_AVATARS.length]!;
+}
+
+/** 人设头像 URL:服务端 User Avatars 真图优先,否则落 Utopinn 内置动物头像库。 */
+export function personaAvatarSrc(avatar: string | null | undefined, hasImage?: boolean): string {
+    if (hasImage && avatar) return `/User%20Avatars/${encodeURIComponent(avatar)}`;
+    return resolveBuiltinPersonaAvatar(avatar).src;
+}
+
+/** 为新建或换内置头像的人设铸造不冲突的 avatar 主键(保留内置前缀以便前端还原头像)。 */
+export function mintPersonaAvatarKey(baseId: BuiltinPersonaAvatarId, existingKeys: Iterable<string>): string {
+    const taken = new Set(existingKeys);
+    if (!taken.has(baseId)) return baseId;
+    const stem = baseId.replace(/\.png$/i, '');
+    return `${stem}-${Date.now()}.png`;
+}
+
 export async function listPersonas(): Promise<PersonaList> {
     return apiGet<PersonaList>('/api/utopinn/personas');
 }

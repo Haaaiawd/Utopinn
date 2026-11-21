@@ -619,7 +619,7 @@ function TheaterBody() {
        分支 +1 位 = 「再生成一支」(swipe 生成,仅末楼有意义)。 */
     let choices: VnOption[];
     if (!fromFloors) {
-        choices = vn.choices.map((c) => ({ key: c.op, text: c.text, onPick: () => s.bridgeOp(c.op) }));
+        choices = vn.choices.map((c) => ({ key: c.op, text: c.text, onPick: () => eng.send(c.text) }));
     } else {
         const extra = extraChoices(last, eng.send);
         const swipes = last?.role === 'assistant' ? last.swipes ?? [] : [];

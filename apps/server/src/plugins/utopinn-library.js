@@ -709,7 +709,13 @@ export function apply(ctx) {
                 for (const key of keys) {
                     if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) continue; // 标量键在段合并后统一落,保证同 patch 内顶键优先
                     const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
-                    next[key] = { ...section, ...sanitizeSettingsDoc(patch[key]) };
+                    const sanitized = sanitizeSettingsDoc(patch[key]);
+                    if (key === 'world_info_settings'
+                        && section.world_info && typeof section.world_info === 'object' && !Array.isArray(section.world_info)
+                        && sanitized.world_info && typeof sanitized.world_info === 'object' && !Array.isArray(sanitized.world_info)) {
+                        sanitized.world_info = { ...section.world_info, ...sanitized.world_info };
+                    }
+                    next[key] = { ...section, ...sanitized };
                 }
 
                 // preset 选择指针双向镜像:写 oai_settings.preset_settings_openai

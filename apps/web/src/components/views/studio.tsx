@@ -3,17 +3,11 @@
 // 旧实现 lore/chars/prompts/regex/files 词表作废(spec-v2-check D5 裁定稿侧为准)。
 //
 // 诚实面约定(wired 映射):
-//   worldbook 列表/条目启停 = GET/PUT /worlds 全真;命中率徽标 = stats/inject
-//     (api/stats.ts 在场则吃真数据,取不到/无会话 → 无徽标,不装数)。
-//   global    全局栈读面真(settings.world_info_settings.world_info.globalSelect);
-//     写面服务端已放行(PATCH 白名单含 world_info_settings),UI 未接 →
-//     开关渲染但 disabled + 说明。
-//   presets   列表/参数/调参写全真;「设为默认」指针 preset_settings_openai
-//     已在 PATCH 白名单(标量直写),UI 未接 → disabled 徽标。
-//   persona   GET/PUT/DELETE 全真。
-//   regex     服务端已有 /api/utopinn/regex 面(GET/PUT + PATCH/DELETE :id,
-//     utopinn-regex.js);本页暂仍从卡 extensions.regex_scripts 真读条目名,
-//     启停/编辑写面未接 → 只读列表 + 排期徽标。
+//   worldbook 列表/条目启停 = GET/PUT /worlds 全真;命中率徽标 = stats/inject。
+//   global    全局栈读写全真(PATCH /settings → world_info_settings.world_info.globalSelect,保留 charLore)。
+//   presets   列表/参数/调参写 + 「设为默认」(preset_settings_openai)全真。
+//   persona   GET/PUT/DELETE 全真 + Utopinn 内置动物头像库(user-redpanda/fox/owl)。
+//   regex     GET/PUT/PATCH/DELETE /api/utopinn/regex 三域(global/char/preset)全真。
 import { useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
@@ -22,9 +16,17 @@ import { Icon, type IconName } from '../Icon';
 import { PanelEmpty, PanelError, chatKey, useRemote } from '../panels/panelShared';
 import { cardData, getCharacter, charImageUrl, type CardDoc, type CardItem } from '../../api/characters';
 import { listWorlds, getWorld, saveWorld, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
-import { getSettings } from '../../api/settings';
+import { getSettings, patchSettings } from '../../api/settings';
 import { listPresets, getPreset, savePreset, type PresetDocument } from '../../api/presets';
-import { listPersonas, savePersona, deletePersona, type PersonaItem } from '../../api/personas';
+import {
+    BUILTIN_PERSONA_AVATARS, deletePersona, listPersonas, mintPersonaAvatarKey,
+    personaAvatarSrc, resolveBuiltinPersonaAvatar, savePersona,
+    type BuiltinPersonaAvatarId, type PersonaItem,
+} from '../../api/personas';
+import {
+    deleteRegexScript, getRegexFullView, patchRegexScript, putRegexScope,
+    type RegexScopeTarget, type RegexScriptData,
+} from '../../api/regex';
 import { statsInject } from '../../api/stats';
 import { openImportModal, openCharEditor } from '../shell/overlayBus';
 
@@ -216,24 +218,29 @@ function useWiHits(chatLabel: string | null) {
 }
 
 /** 侧栏计数(端稿 cats.count):cards=卡数;global=选中/总数;worldbook=条目总数;
- *  presets/persona=总数;regex 管理面服务端已备(/api/utopinn/regex)但
- *  本页未接 → 仍 'C7' 章。 */
+ *  presets/persona=总数;regex=三域脚本总数。 */
 export function useStudioCounts(): Record<StudioNav, string> {
     const s = useShell();
     const worlds = useRemote('studio-cnt:worlds', listWorlds);
     const presets = useRemote('studio-cnt:presets', () => listPresets('openai'));
     const personas = useRemote('studio-cnt:personas', listPersonas);
+    const regex = useRemote('studio-cnt:regex', getRegexFullView);
     const { slices } = useSettingsSlices();
     const items = worlds.data?.items ?? [];
     const counts = useWorldCounts(items);
     const entrySum = counts.data ? Object.values(counts.data).reduce((a: number, b) => a + (b ?? 0), 0) : null;
+    const regexTotal = regex.data
+        ? regex.data.global.length
+            + regex.data.chars.reduce((acc, c) => acc + c.scripts.length, 0)
+            + regex.data.presets.reduce((acc, p) => acc + p.scripts.length, 0)
+        : null;
     return {
         cards: String(s.cards.size),
         global: `${slices.globalSelect.length}/${items.length}`,
         worldbook: entrySum !== null ? String(entrySum) : (worlds.data ? String(items.length) : '…'),
         presets: presets.data ? String(presets.data.total) : '…',
         persona: personas.data ? String(personas.data.total) : '…',
-        regex: 'C7',
+        regex: regexTotal !== null ? String(regexTotal) : '…',
     };
 }
 
@@ -351,42 +358,59 @@ function CardGridTile({ card, chatCount }: { card: CardItem; chatCount: number }
 
 function GlobalPage() {
     const { t } = useI18n();
+    const s = useShell();
     const worlds = useRemote('worlds', listWorlds);
     const { slices, error: sErr, reload: sReload } = useSettingsSlices();
+    const [busy, setBusy] = useState<string | null>(null);
     const items = worlds.data?.items ?? [];
     const counts = useWorldCounts(items);
     const sel = new Set(slices.globalSelect);
+
+    const toggleBook = (w: WorldListItem) => {
+        if (busy) return;
+        const currentlyOn = sel.has(w.name) || sel.has(w.displayName);
+        const nextList = currentlyOn
+            ? slices.globalSelect.filter((x) => x !== w.name && x !== w.displayName)
+            : [...slices.globalSelect, w.name];
+        const wiOuter = (slices.raw?.world_info_settings && typeof slices.raw.world_info_settings === 'object' && !Array.isArray(slices.raw.world_info_settings))
+            ? (slices.raw.world_info_settings as Record<string, unknown>)
+            : {};
+        const prevWi = (wiOuter.world_info && typeof wiOuter.world_info === 'object' && !Array.isArray(wiOuter.world_info))
+            ? (wiOuter.world_info as Record<string, unknown>)
+            : {};
+        setBusy(w.name);
+        void patchSettings({ world_info_settings: { world_info: { ...prevWi, globalSelect: nextList } } })
+            .then(() => Promise.all([sReload(), s.refreshConnection()]))
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(null));
+    };
+
     if (worlds.error) return <PanelError error={worlds.error} onRetry={worlds.reload} />;
     if (sErr) return <PanelError error={sErr} onRetry={sReload} />;
     if (worlds.data && !items.length) return <PanelEmpty icon="layers">{t('studio.global.empty')}</PanelEmpty>;
     return (
-        <>
-            <div className="inset-group">
-                {items.map((w) => {
-                    const on = sel.has(w.name) || sel.has(w.displayName);
-                    const n = counts.data?.[w.name];
-                    return (
-                        <div key={w.name} className="inset-row">
-                            <div className="min-w-0">
-                                <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">
-                                    {w.displayName || w.name}
-                                    <span className="ml-1.5 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">
-                                        {w.name}{n != null ? ` · ${n}${t('studio.world.entriesUnit')}` : ''}
-                                    </span>
-                                </div>
-                                <div className="mt-0.5 text-[12px] text-[color:var(--fg-secondary)]">
-                                    {on ? t('studio.global.inStack') : t('studio.global.notInStack')}
-                                </div>
+        <div className="inset-group">
+            {items.map((w) => {
+                const on = sel.has(w.name) || sel.has(w.displayName);
+                const n = counts.data?.[w.name];
+                return (
+                    <div key={w.name} className="inset-row">
+                        <div className="min-w-0">
+                            <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">
+                                {w.displayName || w.name}
+                                <span className="ml-1.5 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">
+                                    {w.name}{n != null ? ` · ${n}${t('studio.world.entriesUnit')}` : ''}
+                                </span>
                             </div>
-                            <Switch on={on} disabled title={t('studio.global.unwired')} />
+                            <div className="mt-0.5 text-[12px] text-[color:var(--fg-secondary)]">
+                                {on ? t('studio.global.inStack') : t('studio.global.notInStack')}
+                            </div>
                         </div>
-                    );
-                })}
-            </div>
-            <p className="px-1 text-[10.5px] leading-relaxed text-[color:var(--fg-faint)]">
-                {t('studio.global.unwired')} · world_info_settings.world_info.globalSelect
-            </p>
-        </>
+                        <Switch on={on} disabled={busy === w.name} onToggle={() => toggleBook(w)} />
+                    </div>
+                );
+            })}
+        </div>
     );
 }
 
@@ -601,7 +625,7 @@ function PresetsPage() {
     const { t } = useI18n();
     const s = useShell();
     const list = useRemote(PRESET_API_ID, () => listPresets(PRESET_API_ID));
-    const { slices } = useSettingsSlices();
+    const { slices, reload: sReload } = useSettingsSlices();
     const names = list.data?.items.map((x) => x.name) ?? [];
     /* 每预设档取真 doc(缓存)—— 列表只给 name,参数在 doc 里。 */
     const docs = useRemote(names.join('|') ? `preset-docs:${PRESET_API_ID}:${names.length}:${names.join('|').length}` : null, async () => {
@@ -615,6 +639,17 @@ function PresetsPage() {
     const [tuneDrafts, setTuneDrafts] = useState<Record<string, PresetTune>>({});
     const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const [saving, setSaving] = useState<Record<string, boolean>>({});
+    const [switching, setSwitching] = useState<string | null>(null);
+
+    const activatePreset = (name: string) => {
+        if (switching) return;
+        const clean = name.replace(/\.json$/i, '');
+        setSwitching(name);
+        void patchSettings({ preset_settings_openai: clean })
+            .then(() => { s.pickPreset(clean); return sReload(); })
+            .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setSwitching(null));
+    };
 
     const setTune = (name: string, k: keyof PresetTune, v: number) => {
         const base = tuneDrafts[name] ?? tuneOf(docs.data?.[name] ?? undefined);
@@ -667,10 +702,10 @@ function PresetsPage() {
                                     <span className="rounded-lg px-3 py-1 text-[12px] font-medium" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.presets.active')}</span>
                                 ) : (
                                     <button
-                                        className="rounded-lg px-3 py-1 text-[12px] font-medium"
-                                        style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: 0.5, cursor: 'not-allowed' }}
-                                        disabled
-                                        title={t('studio.presets.defaultUnwired')}
+                                        className="rounded-lg px-3 py-1 text-[12px] font-medium transition-opacity"
+                                        style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: switching === n ? 0.5 : 1 }}
+                                        disabled={switching !== null}
+                                        onClick={() => activatePreset(n)}
                                     >
                                         {t('studio.presets.setDefault')}
                                     </button>
@@ -710,10 +745,14 @@ function PresetsPage() {
 }
 
 /* ------------------------------------------------------------------ */
-/* 5. persona —— 全真 CRUD(端稿 L1923)                                  */
+/* 5. persona —— 全真 CRUD + Utopinn 内置动物头像库(redpanda/fox/owl)       */
 /* ------------------------------------------------------------------ */
 
-const personaAvatarUrl = (avatar: string) => `/User%20Avatars/${encodeURIComponent(avatar)}`;
+interface PersonaDraft {
+    name: string;
+    description: string;
+    builtinAvatar: BuiltinPersonaAvatarId;
+}
 
 function PersonaPage() {
     const { t } = useI18n();
@@ -721,16 +760,63 @@ function PersonaPage() {
     const list = useRemote('personas', listPersonas);
     const items = list.data?.items ?? [];
     const [editing, setEditing] = useState<string | null>(null);
-    const [draft, setDraft] = useState<{ name: string; description: string }>({ name: '', description: '' });
+    const [draft, setDraft] = useState<PersonaDraft>({
+        name: '',
+        description: '',
+        builtinAvatar: BUILTIN_PERSONA_AVATARS[0].id,
+    });
     const [busy, setBusy] = useState(false);
 
     const act = (fn: () => Promise<unknown>) => {
         if (busy) return;
         setBusy(true);
         void fn()
-            .then(() => list.reload())
+            .then(() => Promise.all([list.reload(), s.refreshPersonas()]))
             .catch((e) => s.hint(`${t('studio.persona.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setBusy(false));
+    };
+
+    const onSaveRow = (p: PersonaItem) => {
+        const curBuiltin = resolveBuiltinPersonaAvatar(p.avatar).id;
+        const avatarChanged = !p.hasImage && draft.builtinAvatar !== curBuiltin;
+        act(async () => {
+            if (avatarChanged) {
+                const nextKey = mintPersonaAvatarKey(draft.builtinAvatar, items.map((x) => x.avatar));
+                await savePersona(nextKey, {
+                    name: draft.name.trim(),
+                    description: draft.description,
+                    position: p.position,
+                    title: p.title,
+                    ...(p.isDefault ? { is_default: true } : {}),
+                });
+                await deletePersona(p.avatar);
+                if (s.persona?.avatar === p.avatar) {
+                    s.setPersona({ avatar: nextKey, name: draft.name.trim(), description: draft.description });
+                }
+            } else {
+                await savePersona(p.avatar, { name: draft.name.trim(), description: draft.description });
+                if (s.persona?.avatar === p.avatar) {
+                    s.setPersona({ avatar: p.avatar, name: draft.name.trim(), description: draft.description });
+                }
+            }
+            setEditing(null);
+        });
+    };
+
+    const onCreateNew = () => {
+        const used = new Set(items.map((x) => x.avatar));
+        const freeBase = BUILTIN_PERSONA_AVATARS.find((b) => !used.has(b.id))?.id
+            ?? BUILTIN_PERSONA_AVATARS[items.length % BUILTIN_PERSONA_AVATARS.length]!.id;
+        const avatar = mintPersonaAvatarKey(freeBase, used);
+        act(async () => {
+            await savePersona(avatar, {
+                name: t('studio.persona.newName'),
+                description: '',
+                ...(items.length === 0 ? { is_default: true } : {}),
+            });
+            setEditing(avatar);
+            setDraft({ name: t('studio.persona.newName'), description: '', builtinAvatar: freeBase });
+        });
     };
 
     if (list.error) return <PanelError error={list.error} onRetry={list.reload} />;
@@ -739,14 +825,28 @@ function PersonaPage() {
             <div className="inset-group">
                 {items.map((p) => (
                     <PersonaRow
-                        key={p.avatar} p={p} busy={busy}
+                        key={p.avatar}
+                        p={p}
+                        busy={busy}
+                        inSession={s.persona?.avatar === p.avatar}
                         editing={editing === p.avatar}
                         draft={draft}
-                        onEdit={() => { setEditing(p.avatar); setDraft({ name: p.name, description: p.description }); }}
+                        onUse={() => s.setPersona({ avatar: p.avatar, name: p.name, description: p.description })}
+                        onEdit={() => {
+                            setEditing(p.avatar);
+                            setDraft({
+                                name: p.name,
+                                description: p.description,
+                                builtinAvatar: resolveBuiltinPersonaAvatar(p.avatar).id,
+                            });
+                        }}
                         onCancel={() => setEditing(null)}
                         onChange={setDraft}
-                        onSave={() => act(() => savePersona(p.avatar, { name: draft.name, description: draft.description }).then(() => setEditing(null)))}
-                        onDefault={() => act(() => savePersona(p.avatar, { is_default: true }))}
+                        onSave={() => onSaveRow(p)}
+                        onDefault={() => act(async () => {
+                            await savePersona(p.avatar, { is_default: true });
+                            s.setPersona({ avatar: p.avatar, name: p.name, description: p.description });
+                        })}
                         onDelete={() => {
                             if (!window.confirm(`${t('studio.persona.delConfirm')}\n${p.name || p.avatar}`)) return;
                             act(() => deletePersona(p.avatar));
@@ -759,10 +859,7 @@ function PersonaPage() {
                 className="inset-row-btn flex w-full items-center justify-center gap-2 rounded-[10px] py-2.5 text-[12.5px] font-medium"
                 style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border-strong)', color: 'var(--fg-secondary)' }}
                 disabled={busy}
-                onClick={() => {
-                    const avatar = `user-${Date.now()}.png`;
-                    act(() => savePersona(avatar, { name: t('studio.persona.newName'), description: '' }));
-                }}
+                onClick={onCreateNew}
             >
                 <Icon name="plus" size={13} /> {t('studio.persona.new')}
             </button>
@@ -770,35 +867,47 @@ function PersonaPage() {
     );
 }
 
-function PersonaRow({ p, busy, editing, draft, onEdit, onCancel, onChange, onSave, onDefault, onDelete }: {
-    p: PersonaItem; busy: boolean; editing: boolean;
-    draft: { name: string; description: string };
+function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCancel, onChange, onSave, onDefault, onDelete }: {
+    p: PersonaItem; busy: boolean; inSession: boolean; editing: boolean;
+    draft: PersonaDraft;
+    onUse: () => void;
     onEdit: () => void; onCancel: () => void;
-    onChange: (d: { name: string; description: string }) => void;
+    onChange: (d: PersonaDraft) => void;
     onSave: () => void; onDefault: () => void; onDelete: () => void;
 }) {
     const { t } = useI18n();
-    const [imgErr, setImgErr] = useState(false);
+    const fallbackSrc = resolveBuiltinPersonaAvatar(p.avatar).src;
+    const [imgSrc, setImgSrc] = useState(() => personaAvatarSrc(p.avatar, p.hasImage));
     return (
         <div className="inset-row flex-col !items-stretch">
             <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3.5">
-                    {p.hasImage && !imgErr ? (
-                        <img src={personaAvatarUrl(p.avatar)} alt="" className="h-10 w-10 rounded-full object-cover" style={{ border: '2px solid var(--border-bold)' }} onError={() => setImgErr(true)} />
-                    ) : (
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold" style={{ background: 'var(--bg-active)', color: 'var(--fg-primary)', border: '1px solid var(--border-strong)' }}>
-                            {(p.name || p.avatar)[0]?.toUpperCase()}
-                        </span>
-                    )}
+                    <img
+                        src={editing && !p.hasImage
+                            ? (BUILTIN_PERSONA_AVATARS.find((b) => b.id === draft.builtinAvatar)?.src ?? fallbackSrc)
+                            : imgSrc}
+                        alt=""
+                        className="h-10 w-10 shrink-0 rounded-full object-cover"
+                        style={{ border: inSession ? '2px solid var(--brand)' : '2px solid var(--border-bold)' }}
+                        onError={() => { if (imgSrc !== fallbackSrc) setImgSrc(fallbackSrc); }}
+                    />
                     <div className="min-w-0">
-                        <div className="text-[13.5px] font-semibold text-[color:var(--fg-primary)]">
-                            {p.name || p.avatar}
-                            {p.isDefault && <span className="ml-1 text-[11px] font-normal text-[color:var(--fg-muted)]">{t('studio.persona.default')}</span>}
+                        <div className="flex items-center gap-1.5 text-[13.5px] font-semibold text-[color:var(--fg-primary)]">
+                            <span className="truncate">{p.name || p.avatar}</span>
+                            {p.isDefault && <span className="shrink-0 text-[11px] font-normal text-[color:var(--fg-muted)]">{t('studio.persona.default')}</span>}
+                            {inSession && (
+                                <span className="shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[10px] font-normal" style={{ background: 'var(--bg-active)', color: 'var(--brand)' }}>
+                                    {t('studio.persona.inUse')}
+                                </span>
+                            )}
                         </div>
                         <div className="mt-0.5 truncate text-[12px] text-[color:var(--fg-secondary)]">{p.description || <span className="text-[color:var(--fg-faint)]">{t('studio.persona.noDesc')}</span>}</div>
                     </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                    {!inSession && (
+                        <button className="ghost-btn h-7 rounded-md px-2 text-[11px]" disabled={busy} onClick={onUse}>{t('studio.persona.useNow')}</button>
+                    )}
                     {!p.isDefault && (
                         <button className="ghost-btn h-7 rounded-md px-2 text-[11px]" disabled={busy} onClick={onDefault}>{t('studio.persona.setDefault')}</button>
                     )}
@@ -807,7 +916,34 @@ function PersonaRow({ p, busy, editing, draft, onEdit, onCancel, onChange, onSav
                 </div>
             </div>
             {editing && (
-                <div className="mt-2.5 space-y-2 border-t border-[color:var(--border-hairline)] pt-3">
+                <div className="mt-2.5 space-y-2.5 border-t border-[color:var(--border-hairline)] pt-3">
+                    {!p.hasImage && (
+                        <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-[color:var(--fg-muted)]">{t('studio.persona.avatarPick')}</span>
+                            <div className="flex items-center gap-2">
+                                {BUILTIN_PERSONA_AVATARS.map((av) => {
+                                    const picked = draft.builtinAvatar === av.id;
+                                    return (
+                                        <button
+                                            key={av.id}
+                                            type="button"
+                                            title={t(av.labelKey)}
+                                            onClick={() => onChange({ ...draft, builtinAvatar: av.id })}
+                                            className="flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 text-[11px] transition-colors"
+                                            style={{
+                                                background: picked ? 'var(--bg-active)' : 'var(--bg-surface)',
+                                                border: picked ? '1.5px solid var(--brand)' : '1px solid var(--border-hairline)',
+                                                color: picked ? 'var(--fg-primary)' : 'var(--fg-muted)',
+                                            }}
+                                        >
+                                            <img src={av.src} alt="" className="h-6 w-6 rounded-full object-cover" />
+                                            <span>{t(av.labelKey)}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                     <input
                         value={draft.name}
                         onChange={(e) => onChange({ ...draft, name: e.target.value })}
@@ -836,65 +972,203 @@ function PersonaRow({ p, busy, editing, draft, onEdit, onCancel, onChange, onSav
 }
 
 /* ------------------------------------------------------------------ */
-/* 6. regex —— 服务端面已备(/api/utopinn/regex GET/PUT/PATCH/DELETE),      */
-/*    本页未接:卡内 regex_scripts 真读只列名,无启停面                     */
+/* 6. regex —— /api/utopinn/regex 全量三域读写(global / char / preset)    */
 /* ------------------------------------------------------------------ */
 
-interface RegexRow { name: string; scope: string; disabled: boolean }
+interface FlatRegexItem {
+    key: string;
+    target: RegexScopeTarget;
+    idOrIdx: string | number;
+    scopeLabel: string;
+    script: RegexScriptData;
+}
 
 function RegexPage() {
     const { t } = useI18n();
     const s = useShell();
-    const cards = useMemo(() => [...s.cards.values()], [s.cards]);
-    /* 卡 extensions.regex_scripts 真读 —— 条目名是真的;启停写面服务端
-       已备(/api/utopinn/regex PUT/PATCH),本页未接。 */
-    const rows = useRemote(cards.length ? `regex-rows:${cards.map((c) => c.charDir).join('|').length}:${cards.length}` : null, async () => {
-        const out: RegexRow[] = [];
-        await Promise.all(cards.map(async (c) => {
-            try {
-                const doc = await loadCardDoc(c.charDir);
-                const scripts = (cardData(doc).extensions as { regex_scripts?: unknown } | undefined)?.regex_scripts;
-                if (Array.isArray(scripts)) {
-                    for (const sc of scripts) {
-                        const o = sc as { scriptName?: unknown; disabled?: unknown };
-                        out.push({
-                            name: typeof o.scriptName === 'string' && o.scriptName ? o.scriptName : t('studio.regex.unnamed'),
-                            scope: c.name || c.charDir,
-                            disabled: o.disabled === true,
-                        });
-                    }
-                }
-            } catch { /* 读不出的卡跳过 */ }
-        }));
+    const full = useRemote('regex:full', getRegexFullView);
+    const [busyKey, setBusyKey] = useState<string | null>(null);
+    const [adding, setAdding] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [newFind, setNewFind] = useState('');
+    const [newReplace, setNewReplace] = useState('');
+
+    const rows = useMemo<FlatRegexItem[]>(() => {
+        if (!full.data) return [];
+        const out: FlatRegexItem[] = [];
+        full.data.global.forEach((sc, idx) => {
+            const idOrIdx = typeof sc.id === 'string' && sc.id ? sc.id : idx;
+            out.push({
+                key: `global:${idOrIdx}:${idx}`,
+                target: { scope: 'global' },
+                idOrIdx,
+                scopeLabel: t('studio.regex.scopeGlobal'),
+                script: sc,
+            });
+        });
+        for (const c of full.data.chars) {
+            c.scripts.forEach((sc, idx) => {
+                const idOrIdx = typeof sc.id === 'string' && sc.id ? sc.id : idx;
+                out.push({
+                    key: `char:${c.charDir}:${idOrIdx}:${idx}`,
+                    target: { scope: 'char', charDir: c.charDir },
+                    idOrIdx,
+                    scopeLabel: `${t('studio.regex.scope')} · ${c.name || c.charDir}`,
+                    script: sc,
+                });
+            });
+        }
+        for (const p of full.data.presets) {
+            p.scripts.forEach((sc, idx) => {
+                const idOrIdx = typeof sc.id === 'string' && sc.id ? sc.id : idx;
+                out.push({
+                    key: `preset:${p.apiId}:${p.name}:${idOrIdx}:${idx}`,
+                    target: { scope: 'preset', apiId: p.apiId, preset: p.name },
+                    idOrIdx,
+                    scopeLabel: `${t('panel.preset.preset')} · ${p.name}`,
+                    script: sc,
+                });
+            });
+        }
         return out;
-    });
+    }, [full.data, t]);
+
+    const toggleRow = (r: FlatRegexItem) => {
+        if (busyKey) return;
+        setBusyKey(r.key);
+        void patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+            .then(() => full.reload())
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyKey(null));
+    };
+
+    const removeRow = (r: FlatRegexItem) => {
+        if (busyKey) return;
+        const label = r.script.scriptName || String(r.idOrIdx);
+        if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
+        setBusyKey(r.key);
+        void deleteRegexScript(r.target, r.idOrIdx)
+            .then(() => full.reload())
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyKey(null));
+    };
+
+    const createGlobal = () => {
+        if (busyKey || !newName.trim() || !newFind.trim() || !full.data) return;
+        setBusyKey('create');
+        const nextScripts: RegexScriptData[] = [
+            ...full.data.global,
+            {
+                id: `rx-${Date.now()}`,
+                scriptName: newName.trim(),
+                findRegex: newFind,
+                replaceString: newReplace,
+                placement: [2],
+                disabled: false,
+                markdownOnly: true,
+                promptOnly: false,
+                runOnEdit: true,
+            },
+        ];
+        void putRegexScope({ scope: 'global' }, { scripts: nextScripts })
+            .then(() => {
+                setAdding(false);
+                setNewName('');
+                setNewFind('');
+                setNewReplace('');
+                return full.reload();
+            })
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyKey(null));
+    };
+
+    if (full.error) return <PanelError error={full.error} onRetry={full.reload} />;
+
     return (
-        <>
-            <div className="flex items-center gap-2 px-0.5">
-                <WiredBadge warn>{t('studio.regex.badge')}</WiredBadge>
-                <span className="text-[10.5px] text-[color:var(--fg-faint)]">{t('studio.regex.note')}</span>
-            </div>
+        <div className="space-y-4">
             <div className="inset-group">
-                {(rows.data ?? []).map((r, i) => (
-                    <div key={i} className="inset-row">
-                        <div className="min-w-0">
-                            <div className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{r.name}</div>
-                            <div className="mt-0.5 truncate text-[11.5px] text-[color:var(--fg-muted)]">{t('studio.regex.scope')} · {r.scope}</div>
+                {rows.map((r) => {
+                    const name = typeof r.script.scriptName === 'string' && r.script.scriptName
+                        ? r.script.scriptName
+                        : t('studio.regex.unnamed');
+                    const on = r.script.disabled !== true;
+                    return (
+                        <div key={r.key} className="inset-row gap-3">
+                            <div className="min-w-0 flex-1">
+                                <div className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{name}</div>
+                                <div className="mt-0.5 flex items-center gap-2 truncate text-[11.5px] text-[color:var(--fg-muted)]">
+                                    <span>{r.scopeLabel}</span>
+                                    {r.script.findRegex && (
+                                        <span className="truncate font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{r.script.findRegex}</span>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex shrink-0 items-center gap-2">
+                                <Switch on={on} disabled={busyKey === r.key} onToggle={() => toggleRow(r)} />
+                                <button
+                                    className="ghost-btn h-7 w-7"
+                                    disabled={busyKey !== null}
+                                    title={t('studio.persona.delete')}
+                                    style={{ color: 'var(--status-danger)' }}
+                                    onClick={() => removeRow(r)}
+                                >
+                                    <Icon name="trash" size={13} />
+                                </button>
+                            </div>
                         </div>
-                        <span className="shrink-0 font-mono-ui text-[11px]" style={{ color: r.disabled ? 'var(--fg-muted)' : 'var(--status-ok)' }}>
-                            {r.disabled ? 'Off' : 'Active'}
-                        </span>
-                    </div>
-                ))}
-                {(rows.data ? !rows.data.length : !cards.length) && (
-                    <PanelEmpty icon="code">{t('studio.regex.empty')}</PanelEmpty>
-                )}
-                {!rows.data && !rows.error && cards.length > 0 && <PanelEmpty icon="code">…</PanelEmpty>}
-                {rows.error && (
-                    <PanelEmpty icon="code">{t('studio.regex.loadFailed')} · {rows.error}</PanelEmpty>
-                )}
+                    );
+                })}
+                {full.data && !rows.length && <PanelEmpty icon="code">{t('studio.regex.empty')}</PanelEmpty>}
+                {!full.data && <PanelEmpty icon="code">…</PanelEmpty>}
             </div>
-        </>
+
+            {adding ? (
+                <div className="inset-group space-y-2.5 p-3.5">
+                    <input
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        placeholder={t('studio.regex.namePh')}
+                        className="h-8 w-full rounded-lg px-2.5 text-xs outline-none"
+                        style={{ background: 'var(--bg-canvas)', color: 'var(--fg-primary)', border: '1px solid var(--border-hairline)' }}
+                    />
+                    <input
+                        value={newFind}
+                        onChange={(e) => setNewFind(e.target.value)}
+                        placeholder="/pattern/g"
+                        className="h-8 w-full rounded-lg px-2.5 font-mono-ui text-xs outline-none"
+                        style={{ background: 'var(--bg-canvas)', color: 'var(--fg-primary)', border: '1px solid var(--border-hairline)' }}
+                    />
+                    <textarea
+                        value={newReplace}
+                        onChange={(e) => setNewReplace(e.target.value)}
+                        placeholder={t('studio.regex.replacePh')}
+                        rows={2}
+                        className="w-full resize-none rounded-lg p-2.5 font-mono-ui text-xs outline-none"
+                        style={{ background: 'var(--bg-canvas)', color: 'var(--fg-primary)', border: '1px solid var(--border-hairline)' }}
+                    />
+                    <div className="flex justify-end gap-2">
+                        <button className="ghost-btn h-7 rounded-md px-2.5 text-[11.5px]" onClick={() => setAdding(false)}>{t('studio.persona.cancel')}</button>
+                        <button
+                            className="h-7 rounded-lg px-3 text-[11.5px] font-medium"
+                            style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busyKey || !newName.trim() || !newFind.trim() ? 0.5 : 1 }}
+                            disabled={busyKey !== null || !newName.trim() || !newFind.trim()}
+                            onClick={createGlobal}
+                        >
+                            {t('studio.persona.save')}
+                        </button>
+                    </div>
+                </div>
+            ) : (
+                <button
+                    className="inset-row-btn flex w-full items-center justify-center gap-2 rounded-[10px] py-2.5 text-[12.5px] font-medium"
+                    style={{ background: 'var(--bg-surface)', border: '1px dashed var(--border-strong)', color: 'var(--fg-secondary)' }}
+                    disabled={!full.data}
+                    onClick={() => setAdding(true)}
+                >
+                    <Icon name="plus" size={13} /> {t('studio.regex.newGlobal')}
+                </button>
+            )}
+        </div>
     );
 }
 
@@ -926,6 +1200,7 @@ export function MobileHubView() {
     const counts = useWorldCounts(items);
     const presets = useRemote(PRESET_API_ID, () => listPresets(PRESET_API_ID));
     const personas = useRemote('personas', listPersonas);
+    const studioCnts = useStudioCounts();
     const { slices } = useSettingsSlices();
     const goStudio = (nav: StudioNav) => { s.setStudioNav(nav); s.setView('studio'); };
     const glActive = slices.globalSelect.length;
@@ -1050,7 +1325,7 @@ export function MobileHubView() {
                             <span className="truncate text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('studio.nav.regex')}</span>
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
-                            <WiredBadge warn>C7</WiredBadge>
+                            <span className="font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">{studioCnts.regex}</span>
                             <span className="text-[color:var(--fg-faint)]"><Icon name="arrowRight" size={14} /></span>
                         </div>
                     </button>

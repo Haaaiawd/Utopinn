@@ -1,7 +1,10 @@
-// Character cards via /api/utopinn/characters(TASK-026)。
+// Character cards via /api/utopinn/characters(TASK-026 + C-3 写面)。
 // 列表行只带展示元;完整 CCv2 卡(data.* 持字段)是单独 GET ——
 // 角色页要 first_mes / extensions.world(绑定书)/ character_book(内嵌书)。
-import { apiGet } from './client';
+import { apiFetch, apiGet, assertOk } from './client';
+import type { CharacterPatchRequest } from '@utopinn/protocol';
+
+export type { CharacterPatchRequest } from '@utopinn/protocol';
 
 /** /api/utopinn/characters 行 —— 卡格、侧栏组头、舞台头共用的展示面。 */
 export interface CardItem {
@@ -61,4 +64,15 @@ export async function listCharacters(): Promise<{ items: CardItem[]; total: numb
 /** 单卡完整文档;404/解析失败时 apiGet 抛 ApiError,调用方给空态。 */
 export async function getCharacter(charDir: string): Promise<CardDoc> {
     return apiGet(`/api/utopinn/characters/${encodeURIComponent(charDir)}`);
+}
+
+/** PATCH /api/utopinn/characters/:charDir —— 字段级 Merge Patch(写回 PNG/JSON 原卡)。 */
+export async function patchCharacter(charDir: string, patch: CharacterPatchRequest): Promise<CardDoc> {
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+    });
+    await assertOk(res);
+    return (await res.json()) as CardDoc;
 }

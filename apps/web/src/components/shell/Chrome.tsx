@@ -4,6 +4,7 @@
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
+import { personaAvatarSrc } from '../../api/personas';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
 
@@ -40,6 +41,13 @@ function Rail() {
 function AccountDock() {
     const { t } = useI18n();
     const shell = useShell();
+    const dispName = shell.currentUser?.name || shell.currentUser?.handle || t('acct.name');
+    const subLabel = shell.live
+        ? (shell.currentUser?.handle ? `@${shell.currentUser.handle}` : t('acct.plan'))
+        : t('diag.job.offline');
+    const dotColor = shell.live ? 'var(--status-ok)' : 'var(--status-warn)';
+    const activePersonaItem = shell.persona?.avatar ? shell.personas.find((p) => p.avatar === shell.persona!.avatar) : undefined;
+    const avatarSrc = personaAvatarSrc(shell.persona?.avatar, activePersonaItem?.hasImage);
     return (
         <div className="account-dock">
             <button
@@ -51,12 +59,12 @@ function AccountDock() {
                     className="dock-avatar-circle border"
                     style={{ background: 'var(--bg-active)', borderColor: shell.accountPopOpen ? 'var(--brand)' : 'var(--border-strong)' }}
                 >
-                    <img src="/assets/avatars/user-redpanda.png" alt="" className="h-full w-full rounded-full object-cover" />
-                    <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: 'var(--status-ok)', borderColor: 'var(--bg-chrome)' }} />
+                    <img src={avatarSrc} alt="" className="h-full w-full rounded-full object-cover" onError={(e) => { e.currentTarget.src = '/assets/avatars/user-redpanda.png'; }} />
+                    <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full border" style={{ background: dotColor, borderColor: 'var(--bg-chrome)' }} />
                 </span>
                 <span className="dock-meta-text">
-                    <span className="truncate text-[12.5px] font-medium leading-none text-[color:var(--fg-primary)]">{t('acct.name')}</span>
-                    <span className="mt-0.5 truncate text-[10.5px] leading-none text-[color:var(--fg-muted)]">{t('acct.plan')}</span>
+                    <span className="truncate text-[12.5px] font-medium leading-none text-[color:var(--fg-primary)]">{dispName}</span>
+                    <span className="mt-0.5 truncate text-[10.5px] leading-none text-[color:var(--fg-muted)]">{subLabel}</span>
                 </span>
             </button>
             <button
@@ -78,15 +86,19 @@ export function AccountPopCard() {
     const shell = useShell();
     const { theme, toggle } = useTheme();
     const fs = shell.chatSettings.fontSize;
+    const dispName = shell.currentUser?.name || shell.currentUser?.handle || t('acct.name');
+    const subLabel = shell.live
+        ? (shell.currentUser?.handle ? `@${shell.currentUser.handle}` : t('acct.plan'))
+        : t('diag.job.offline');
     const rowCls = 'flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-[12.5px] transition-colors hover:bg-[color:var(--bg-active)]';
     return (
         <div className="space-y-0.5 rounded-2xl p-1.5" style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}>
             <div className="mb-1 flex items-center justify-between border-b border-[color:var(--border-hairline)] px-2.5 py-2">
                 <div className="min-w-0">
-                    <div className="truncate text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('acct.name')}</div>
-                    <div className="truncate text-[11.5px] text-[color:var(--fg-muted)]">{t('acct.plan')}</div>
+                    <div className="truncate text-[13px] font-semibold text-[color:var(--fg-primary)]">{dispName}</div>
+                    <div className="truncate text-[11.5px] text-[color:var(--fg-muted)]">{subLabel}</div>
                 </div>
-                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: 'var(--status-ok)' }} />
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: shell.live ? 'var(--status-ok)' : 'var(--status-warn)' }} />
             </div>
             {/* 规范稿字号行:A- / 值 / A+ */}
             <div className="flex items-center justify-between rounded-xl px-2.5 py-1.5">

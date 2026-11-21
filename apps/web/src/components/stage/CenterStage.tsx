@@ -78,8 +78,9 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
     const s = useShell();
     const [thinkOpen, setThinkOpen] = useState(false);
     const isUser = m.role === 'user';
+    const fallbackUser = s.persona?.name || s.currentUser?.name || s.currentUser?.handle || 'User';
     /* 规范稿 sender = 卡名 · 线名合成;m.name 有值(真 char 名)优先 */
-    const name = m.name || (isUser ? 'haa' : (s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : 'Seraphina'));
+    const name = m.name || (isUser ? fallbackUser : (s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : 'Seraphina'));
     const time = typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? new Date(m.timestamp).toTimeString().slice(0, 5) : '';
     if (isUser) {
         return (
@@ -241,7 +242,21 @@ function ChatFloors() {
     const s = useShell();
     const eng = useStageEngine();
     const scrollRef = useRef<HTMLDivElement>(null);
+    const [showAll, setShowAll] = useState(false);
+
+    useEffect(() => {
+        setShowAll(false);
+    }, [s.chat?.id]);
+
     useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [eng.msgs]);
+
+    const renderable = eng.msgs
+        .map((m, origIdx) => ({ m, origIdx }))
+        .filter(({ m }) => m.role !== 'system' || m.content);
+    const limit = Math.max(5, s.chatSettings.renderCount || 30);
+    const hiddenCount = !showAll && renderable.length > limit ? renderable.length - limit : 0;
+    const visible = hiddenCount > 0 ? renderable.slice(-limit) : renderable;
+
     return (
         /* spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask + bgMode 底图 */
         <div ref={scrollRef} className="scroll-fade-mask relative min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-8">
@@ -250,8 +265,6 @@ function ChatFloors() {
             )}
             <div className="relative z-10 mx-auto max-w-[660px] space-y-7 pb-6">
                 {eng.loadErr && (() => {
-                    /* 规范稿空态模型(同 CardApp 错误域):图标砖 + 标题 + code/detail 分层,
-                       detail 只取 error.message —— 不裸渲整串 JSON 响应体。 */
                     let code = '', detail = eng.loadErr;
                     try {
                         const j = JSON.parse(eng.loadErr) as Record<string, unknown>;
@@ -274,7 +287,6 @@ function ChatFloors() {
                         </div>
                     );
                 })()}
-                {/* live 无会话(指针空/会话全失踪)→ 规范稿选会话空态,不播 mock 楼层 */}
                 {s.live && !s.chat && !eng.loadErr && (
                     <div className="flex min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
                         <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] text-[color:var(--fg-muted)]">
@@ -292,7 +304,18 @@ function ChatFloors() {
                         )}
                     </div>
                 )}
-                {eng.msgs.filter((m) => m.role !== 'system' || m.content).map((m, i) => <Msg key={m.id} m={m} idx={i} ops={eng.opsOf(m, i)} />)}
+                {hiddenCount > 0 && (
+                    <div className="flex justify-center">
+                        <button
+                            type="button"
+                            onClick={() => setShowAll(true)}
+                            className="rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3.5 py-1 text-[11.5px] text-[color:var(--fg-muted)] transition-colors hover:bg-[color:var(--bg-active)] hover:text-[color:var(--fg-primary)]"
+                        >
+                            {t('stage.olderFloors')} ({hiddenCount})
+                        </button>
+                    </div>
+                )}
+                {visible.map(({ m, origIdx }) => <Msg key={m.id} m={m} idx={origIdx} ops={eng.opsOf(m, origIdx)} />)}
             </div>
         </div>
     );

@@ -4195,6 +4195,122 @@
         "next": ""
       },
       "completed_at": "2026-11-21T04:25:43.335Z"
+    },
+    {
+      "id": "TASK-053",
+      "title": "P0: SPA 前端真接线与去占位刀 —— 设置连接/全局栈/预设默认/模型与身份水合/正则与卡编辑写面/死态清理",
+      "status": "done",
+      "outcome": "消灭前端占位全量审计(2026-11-21)识别的核心失实占位与死态:连接段(source/BaseURL/探测)、全局栈开关、预设默认切换、模型与预设与账户与默认人设水合、预设面板与快捷弹层调参写回、正则管理面、角色卡编辑写面、原生会话重命名全部走真 /api/utopinn/* 路由;死 mock 导出与零消费 ShellCtx 状态清零,ChatSettings 落地持久化与生效。",
+      "acceptance": [
+        {
+          "criterion": "连接与模型水合:Settings 连接段 source/BaseURL/测试连接走 PATCH /settings + POST /connection/test;在线态模型清单与预设清单从 /models 与 /presets 水合,不再播 MOCK_MODELS/MOCK_PRESETS",
+          "verify_by": "tsc + vite build + 服务端测试",
+          "evidence": "api/connection.ts(getModels→/api/utopinn/models + probeUpstreamConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
+        },
+        {
+          "criterion": "工坊与弹层写面:全局世界书栈开关(保留 charLore)、预设设为默认、PresetPanel/PresetPop 调参写回、ContextPop/LorePanel 真上下文读写、RegexPage 启停/删除、CharEditorModal 字段与绑定书写回、renameChat 原生路由全通",
+          "verify_by": "tsc + vite build + utopinn-library/regex/generate 单测",
+          "evidence": "toggleGlobalLore→patchSettings({world_info_settings:{world_info:{...base,globalSelect}}})(App.tsx:546-559 + studio.tsx 同款 prevWi spread),服务端二层合并 utopinn-library.js:713-716,新增单测断言 globalSelect+charLore 共存(library.test.mjs:384-395);activatePreset→patchSettings({preset_settings_openai})(studio.tsx:648);PresetPanel/Pop 滑杆防抖 PUT /presets/:name;ContextPop 人设快切+全球栈(StageFrame.tsx:129-171),LorePanel 卡绑书+statsInject(panels.tsx:32 wired:true);api/regex.ts 四端点+RegexPage CRUD(studio.tsx:989-1073);CharEditorModal patchCharacter name/desc/first_mes/extensions.world(Overlays.tsx:550-563);renameChat→POST /chats rename 原生路由(api/chats.ts:340→App.tsx:625→trees.tsx:67 live-only)。"
+        },
+        {
+          "criterion": "身份水合与死态净身:getMe() 账户显示名与 listPersonas() 默认人设水合进壳与生成请求;死 MOCK_* 导出与 ShellCtx 写而无人读状态删除;ChatSettings 本地持久化且 customCss/renderCount 真实生效",
+          "verify_by": "grep 零残留 + tsc + vite build",
+          "evidence": "getMe→currentUser 水合 AccountDock+移动抽屉+send/runGenerate user(StageFrame.tsx:634-641/722);listPersonas→personas+persona 水合 ContextPop 快切+内置头像库 redpanda/fox/owl(personas.ts BUILTIN_PERSONA_AVATARS);死导出全删(grep 零命中:MOCK_PERSONAS/BUILTIN_PLUGINS/MVU/NOTES_TEXT/REPLY_CONTINUE/REGEN/listRecentChats/renderMvuPanel/s.mvu/setMvu/contextOpen/composerMenuOpen/presetPopOpen/notesText/selectedLoreId/streamFps/apiTab);s.mvu 全局袋改 setPanelParams('mvu',{rev}) 信号→MvuPanel remote key 消费(SpecPanels.tsx:228-229);ChatSettings localStorage 持久,renderCount 窗口化+「展开更早楼层」(CenterStage.tsx:245-317),customCss 真实生效。"
+        }
+      ],
+      "done_when": [
+        "连接段+模型/预设/人设/账户真水合",
+        "工坊全局栈/预设默认/正则管理/卡编辑/重命名真接线",
+        "死 mock 导出与无效状态净身+ChatSettings 真生效"
+      ],
+      "boundaries": [
+        "不虚构未建的服务端市场安装面或群聊后端(§C C8/C9 维持既定裁定)",
+        "离线态保留诚实 fallback,在线态绝不播假模型/假预设"
+      ],
+      "guardrails": [
+        "PATCH /settings 更新 world_info_settings.world_info.globalSelect 时必须保留同级 charLore",
+        "utopinn-generate 模型解析优先读非空 oai_settings.{source}_model,缺省回退 presetDoc.{source}_model,不破坏既有单测",
+        "新增/修改词条中英双语齐全(locale-owned 纪律)"
+      ],
+      "depends_on": [
+        "TASK-048"
+      ],
+      "reads": [
+        ".skeinn/eval/audit-frontend-placeholders-2026-11-21.md",
+        ".skeinn/design/v2-stack-decisions.md",
+        "apps/server/src/plugins/utopinn-connection.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/plugins/utopinn-regex.js",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/web/src/App.tsx",
+        "apps/web/src/components/shell/Overlays.tsx",
+        "apps/web/src/components/views/studio.tsx"
+      ],
+      "touches": [
+        "packages/protocol/src/api.ts",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/tests/utopinn-library.test.mjs",
+        "apps/web/src/api/connection.ts",
+        "apps/web/src/api/regex.ts",
+        "apps/web/src/api/characters.ts",
+        "apps/web/src/api/chats.ts",
+        "apps/web/src/api/settings.ts",
+        "apps/web/src/api/mock.ts",
+        "apps/web/src/types.ts",
+        "apps/web/src/kernel/context.tsx",
+        "apps/web/src/App.tsx",
+        "apps/web/src/features/shell.ts",
+        "apps/web/src/features/stagepack.tsx",
+        "apps/web/src/components/shell/Chrome.tsx",
+        "apps/web/src/components/shell/Overlays.tsx",
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/components/panels/SpecPanels.tsx",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/web/src/components/stage/CenterStage.tsx",
+        ".skeinn/eval/audit-frontend-placeholders-2026-11-21.md"
+      ],
+      "implements": ".skeinn/design/v2-stack-decisions.md#前端",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "协议已备的薄客户端接线与死态清理,沿用既有 web-spa-stack 基线",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "created": "2026-11-21",
+      "evidence": [
+        "apps/web: pnpm exec tsc -p tsconfig.json --noEmit → 0 errors (post-Red-Team re-run TSC_OK); pnpm exec vite build → success, 4683 modules, dist/assets/index-D7xaQ753.js (967.48 kB)",
+        "apps/server: node --test tests/utopinn-library.test.mjs → 11/11 pass (incl. new world_info_settings.world_info globalSelect-preserves-charLore assertion); tests/utopinn-generate-context.test.mjs + tests/utopinn-chat-regex.test.mjs → all green; tests/utopinn-generate-e2e.test.mjs → 6/6 pass with E2E_READY_TIMEOUT_MS=300000 + E2E_SCRATCH_ROOT=/tmp/uto-e2e (first 60s timeout was /mnt/d 9P boot slowness, not a regression)",
+        "grep 核销: MOCK_PERSONAS|MOCK_BUILTIN_PLUGINS|MOCK_MVU|MOCK_NOTES_TEXT|MOCK_REPLY_CONTINUE|MOCK_REPLY_REGEN|s.mvu|setMvu|contextOpen|composerMenuOpen|presetPopOpen|notesText|selectedLoreId|streamFps|apiTab|gcli.ggchan|panel.preset.readonly|ov.char.badge|st.conn.unwired|studio.global.unwired|common.mockData|listRecentChats|renderMvuPanel|RecentChatItem → zero hits in apps/web/src",
+        "Red Team 对抗审计(subagent):16/16 claims verified; 8 honesty findings all remediated (mobile drawer identity, stale stub/offline copy, stale file-header comments, residual 'haa' in mock paths, offline MOCK_MODELS unmarked → demoData gate, sidebar demo-row visual marker, dead exports deleted, worldInfoBaseRef race documented as low-risk server-side merge covered)",
+        "Skeinn: design/web-v3-frontier.md 填满(experience kind);capabilities/distribution-forms.md 从空模板补齐;audit-frontend-placeholders-2026-11-21.md 收摊回执+Red Team 复审已追加;PROJECT.md 登记;skeinn check → healthy: true, errors: 0;skeinn project ready → ready_for_keeper: true",
+        "Known gap (registered, not faked): 浏览器实机走查未做 —— Studio toggle/PresetPop/头像切换手感留给人验收;chapters/channels 面板维持 wired:false + UnwiredNote(待 chat_state 侧车协议);剧场 choices wire 协议=独立大任务",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "连接与模型水合:Settings 连接段 source/BaseURL/测试连接走 PATCH /settings + POST /connection/test;在线态模型清单与预设清单从 /models 与 /presets 水合,不再播 MOCK_MODELS/MOCK_PRESETS",
+              "evidence": "api/connection.ts(getModels→/api/utopinn/models + probeUpstreamConnection→/connection/test)新建;App.tsx 水合 models+modelsError;Studio PresetsPage/Settings 连接段 patchSettings({oai_settings|preset_settings_openai});离线态下拉显示 stage.demoData 而非 MOCK_MODELS(StageFrame.tsx:276/282, SpecPanels.tsx:108/113)。tsc 0 错 + vite build 成功 + utopinn-library 11/11。"
+            },
+            {
+              "criterion": "工坊与弹层写面:全局世界书栈开关(保留 charLore)、预设设为默认、PresetPanel/PresetPop 调参写回、ContextPop/LorePanel 真上下文读写、RegexPage 启停/删除、CharEditorModal 字段与绑定书写回、renameChat 原生路由全通",
+              "evidence": "toggleGlobalLore→patchSettings({world_info_settings:{world_info:{...base,globalSelect}}})(App.tsx:546-559 + studio.tsx 同款 prevWi spread),服务端二层合并 utopinn-library.js:713-716,新增单测断言 globalSelect+charLore 共存(library.test.mjs:384-395);activatePreset→patchSettings({preset_settings_openai})(studio.tsx:648);PresetPanel/Pop 滑杆防抖 PUT /presets/:name;ContextPop 人设快切+全球栈(StageFrame.tsx:129-171),LorePanel 卡绑书+statsInject(panels.tsx:32 wired:true);api/regex.ts 四端点+RegexPage CRUD(studio.tsx:989-1073);CharEditorModal patchCharacter name/desc/first_mes/extensions.world(Overlays.tsx:550-563);renameChat→POST /chats rename 原生路由(api/chats.ts:340→App.tsx:625→trees.tsx:67 live-only)。"
+            },
+            {
+              "criterion": "身份水合与死态净身:getMe() 账户显示名与 listPersonas() 默认人设水合进壳与生成请求;死 MOCK_* 导出与 ShellCtx 写而无人读状态删除;ChatSettings 本地持久化且 customCss/renderCount 真实生效",
+              "evidence": "getMe→currentUser 水合 AccountDock+移动抽屉+send/runGenerate user(StageFrame.tsx:634-641/722);listPersonas→personas+persona 水合 ContextPop 快切+内置头像库 redpanda/fox/owl(personas.ts BUILTIN_PERSONA_AVATARS);死导出全删(grep 零命中:MOCK_PERSONAS/BUILTIN_PLUGINS/MVU/NOTES_TEXT/REPLY_CONTINUE/REGEN/listRecentChats/renderMvuPanel/s.mvu/setMvu/contextOpen/composerMenuOpen/presetPopOpen/notesText/selectedLoreId/streamFps/apiTab);s.mvu 全局袋改 setPanelParams('mvu',{rev}) 信号→MvuPanel remote key 消费(SpecPanels.tsx:228-229);ChatSettings localStorage 持久,renderCount 窗口化+「展开更早楼层」(CenterStage.tsx:245-317),customCss 真实生效。"
+            }
+          ],
+          "at": "2026-11-21T08:21:24.700Z"
+        }
+      ],
+      "updated_at": "2026-11-21T08:21:24.701Z",
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "completed_at": "2026-11-21T08:21:24.701Z"
     }
   ],
   "milestones": [

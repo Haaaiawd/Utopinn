@@ -24,11 +24,6 @@ export const MOCK_CARDS: CardItem[] = [
     { charDir: 'corrupted-stub', name: 'corrupted-stub', avatar: null, fileName: 'corrupted-stub.json', fileSize: 12_000, tags: [], readable: false },
 ];
 
-/** /api/utopinn/personas 的 mock 形状(设置页人设块用)。 */
-export const MOCK_PERSONAS: import('./personas').PersonaItem[] = [
-    { avatar: 'user-default.png', name: '旅人', description: '路过的旅人,斗篷上全是盐粒。', position: 0, title: '', hasImage: false, isDefault: true },
-];
-
 const CHAR_NAME = '归墟';
 const USER_NAME = '旅人';
 
@@ -186,25 +181,7 @@ export const MOCK_WORLDBOOK: WorldbookItem[] = [
     { id: 'wb-5', title: '关键词 | 云栖宗总簿 | 账目与大殿修缮', type: '关键词', enabled: true, priority: 122, tokens: 245, content: '大殿耐久低于 60% 时雨夜漏雨;每次修缮消耗 10 灵石可恢复 15% 耐久。' },
 ];
 
-/** 内置核心插件(规范稿 BUILTIN_PLUGINS)。 */
-export interface BuiltinPluginItem {
-    id: string;
-    name: string;
-    icon: string;
-    desc: string;
-    color: string;
-    bg: string;
-    enabled: boolean;
-}
-
-export const MOCK_BUILTIN_PLUGINS: BuiltinPluginItem[] = [
-    { id: 'cordis-mvu', name: 'MVU 状态引擎', icon: 'database', desc: '服务端原子化计算楼层变量补丁与快照回滚树。', color: '#34d399', bg: 'rgba(52,211,153,0.12)', enabled: true },
-    { id: 'cordis-compat', name: '酒馆助手沙箱桥', icon: 'shield', desc: '隔离旧版前端卡 DOM 注入,收编为右栏或受控悬浮窗。', color: '#60a5fa', bg: 'rgba(96,165,250,0.12)', enabled: true },
-    { id: 'cordis-lore-v2', name: '世界书检索 v2', icon: 'bookOpen', desc: '支持 250+ 条目毫秒级扫描与全局 JSON 栈热挂载。', color: '#c084fc', bg: 'rgba(192,132,252,0.12)', enabled: true },
-    { id: 'cordis-resume', name: 'SSE 断线续传', icon: 'radio', desc: '手机切后台自动缓冲生成流,重连后无缝补齐楼层。', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)', enabled: true },
-];
-
-/** 插件市场行(规范稿 MARKET_PLUGINS)。 */
+/** 插件市场行(规范稿 MARKET_PLUGINS;安装面待备,暂保留预览目录)。 */
 export interface MarketPluginItem {
     id: string;
     name: string;
@@ -225,21 +202,12 @@ export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
     { id: 'u-tool-vector', name: '长篇记忆向量库', icon: 'brain', category: '实验性', desc: '针对 200+ 楼长存档自动摘要并按语义召回。', installed: false, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
 ];
 
-/** 舞台形态会话行(规范稿 PROJECTS 里 stage!=chat 的会话)。 */
+/** 舞台形态会话行(规范稿 PROJECTS 里 stage!=chat 的预演会话)。 */
 export const MOCK_STAGE_SESSIONS: ChatSummary[] = [
     { id: 'st-novel', title: '小说连载稿', charDir: 'default_Seraphina', chatName: 'ember-city', group: 'ungrouped', updatedAt: '3h', stage: 'novel', defaultTabs: ['chapters'] },
     { id: 'st-msg', title: '微信多群聊', charDir: 'default_Seraphina', chatName: 'watch-group', group: 'ungrouped', updatedAt: '1d', stage: 'messenger', defaultTabs: ['channels'] },
     { id: 'st-gal', title: '正殿夜话 (Gal)', charDir: 'default_Seraphina', chatName: 'hyacinth-route', group: 'ungrouped', updatedAt: '2d', stage: 'theater', defaultTabs: [] },
 ];
-
-/** MVU 变量面板种子(规范稿 s.mvu · 掌门线)。 */
-export const MOCK_MVU: Record<string, string | number> = {
-    '灵石': 42,
-    '宗门声望': 18,
-    '大殿耐久': 65,
-    '弟子': 3,
-    '时辰': '辰时三刻',
-};
 
 /* ——— 舞台形态会话内容种子(规范稿 s.chapters / s.channels / s.vn) ——— */
 
@@ -277,7 +245,7 @@ export const MOCK_IM_CHANNELS: ImChannel[] = [
         msgs: [
             { sender: '林砚(大师兄)', self: false, time: '08:12', text: '@掌门 刚清点完米缸,灵米只够撑五天了……' },
             { sender: '周阿牛(二师弟)', self: false, time: '08:13', text: '东头屋瓦的破木盆昨晚接了半盆雨水,我刚倒掉。' },
-            { sender: 'haa', self: true, time: '08:15', text: '都别急,我先看一眼总簿,今天上午把屋瓦和米缸的事定下来。' },
+            { sender: '旅人', self: true, time: '08:15', text: '都别急,我先看一眼总簿,今天上午把屋瓦和米缸的事定下来。' },
         ],
     },
     {
@@ -317,11 +285,7 @@ export const MOCK_VN: VnData = {
     ],
 };
 
-export const MOCK_NOTES_TEXT = '1. 初一卯时百草堂赵执事上山催收 20 灵石月息。\n2. 林砚私聊提到床板下有半张残缺阵图。\n3. 优先保住大殿耐久不低于 60%。';
-
-/** 规范稿 slash 指令 mock 回文(cmd-continue / cmd-regen)。 */
-export const MOCK_REPLY_CONTINUE = '( /continue 续写)檐角滴落的露水砸在石阶上,啪嗒作响。林砚又翻过一页账册,指尖停在“护山残阵月耗”那一栏,眉头皱得更紧了。';
-export const MOCK_REPLY_REGEN = '( /regen 重新生成)青铜印信落在缺角的案几上,发出沉闷的一声响。林砚缩回手,赔着笑把总簿推到你面前:“掌门明鉴,账房这四十二块灵石,确实是把地缝都刮干净才凑出来的。”';
+/** 离线兜底 mock 回文(StageFrame 离线演示用)。 */
 export const MOCK_REPLY_NOVEL = '山风沿着青石阶卷上来,远处竹林沙沙作响。陈修合上《云栖宗总簿》,袖口磨白的粗布在晨光里划出一道利落的弧线。“既如此,便按新定下的章程办。”话音未落,山门外忽然传来一阵急促的铜铃声。';
 export const MOCK_REPLY_IM = '收到掌门!我这就带二师弟把东头屋瓦补上,账目明细同步更新到总簿里。';
 export const MOCK_REPLY_VN = '“原来掌门心里早有盘算!”林砚松了口气,把青铜印信擦净放回案头,“那我这就去办。”';

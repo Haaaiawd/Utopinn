@@ -108,7 +108,8 @@
       "kind": "feature",
       "notes": "",
       "covered_by": [
-        "TASK-010"
+        "TASK-010",
+        "TASK-053"
       ],
       "created_at": "2026-11-02T08:49:56.420Z"
     }

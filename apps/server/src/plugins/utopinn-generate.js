@@ -525,8 +525,12 @@ export function apply(ctx) {
             };
             // 上游 getChatCompletionModel(source→{source}_model)+
             // openai_max_tokens→max_tokens:provider 只认 canonical 键;
-            // generation_overrides 仍可显式盖掉。
-            dispatchBody.model ??= dispatchBody[`${chatSource}_model`] ?? null;
+            // 连接层 oai_settings.{source}_model 非空时优先于预设内嵌模型,
+            // 缺省回退 presetDoc.{source}_model;generation_overrides 仍可显式盖掉。
+            const connModel = oaiSettings?.[`${chatSource}_model`];
+            dispatchBody.model ??= (typeof connModel === 'string' && connModel.trim() ? connModel.trim() : null)
+                ?? dispatchBody[`${chatSource}_model`]
+                ?? null;
             dispatchBody.max_tokens ??= dispatchBody.openai_max_tokens ?? null;
             if (body.generation_overrides) Object.assign(dispatchBody, body.generation_overrides);
 

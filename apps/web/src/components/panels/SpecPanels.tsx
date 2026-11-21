@@ -5,7 +5,8 @@
 //   mvu     → getMvuState + settle/resettle + insertOrAssignVariables(经 th)
 //   notes   → chat_state get/patch(ns='notes',test-op CAS,409 提示重试)
 //   ledger/cardapp → CardAppFrame 真宿主
-//   lore/chapters/channels → 服务端面未备,保持 mock + 诚实标注(wired:false)。
+//   lore    → 卡绑书(getCharacter→extensions.world→getWorld)+ statsInject 命中,真接线;
+//   chapters/channels → 服务端面未备,保持 mock + 诚实标注(wired:false)。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
@@ -13,17 +14,20 @@ import { Icon } from '../Icon';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
 import { MessageIframe } from '../../cardapp/MessageIframe';
 import { ApiError } from '../../api/client';
+import { cardData, getCharacter } from '../../api/characters';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
 import { thCall } from '../../api/th';
 import { getChatState, patchChatState, type JsonPatchOp } from '../../api/state';
-import { getPreset, listPresets } from '../../api/presets';
+import { getPreset } from '../../api/presets';
+import { statsInject } from '../../api/stats';
+import { getWorld } from '../../api/worlds';
 import {
     PanelEmpty, PanelError, chatKey, chatStateTarget, flattenStatData, thCallTarget, useRemote, type MvuVarRow,
 } from './panelShared';
 
-const lbl = 'mb-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
+const lbl = 'mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
 const group = 'inset-group mb-3';
-const row = 'inset-row text-[12px]';
+const row = 'inset-row text-[12.5px]';
 
 function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
     return (
@@ -33,112 +37,55 @@ function Switch({ on, onToggle }: { on: boolean; onToggle: () => void }) {
     );
 }
 
-/** 未接服务端面的板块的诚实标注行(launcher badge 同步显示「待服务端面」)。 */
+/** 未接服务端面的板块的诚实标注行 —— launcher 的系统类网格不渲 badge,由此行独自承担标注。 */
 function UnwiredNote() {
     const { t } = useI18n();
-    return <p className="mb-2 px-1 text-[9.5px] leading-relaxed text-[color:var(--fg-faint)]">{t('panel.unwired.note')}</p>;
+    return <p className="mb-2 px-1 text-[11px] leading-relaxed text-[color:var(--fg-faint)]">{t('panel.unwired.note')}</p>;
 }
 
 /* ----------------------------------------------------------------------- */
-/* preset —— /api/utopinn/presets 只读面                                     */
+/* preset —— /api/utopinn/presets + /models 实时调参写回                     */
 /* ----------------------------------------------------------------------- */
 
-/** 生成预设家族 —— 服务端 PRESET_FOLDER_BY_API_ID 白名单之一;家族切换留后续。 */
 const PRESET_API_ID = 'openai';
 
-const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null);
-const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
-
-/** 预设档 → 模型名:`<chat_completion_source>_model` 优先,兜 *_model 首值。 */
-function pickPresetModel(doc: Record<string, unknown> | undefined): { source: string | null; model: string | null } {
-    if (!doc) return { source: null, model: null };
-    const source = str(doc.chat_completion_source);
-    if (source) {
-        const m = str(doc[`${source}_model`]);
-        if (m) return { source, model: m };
-    }
-    for (const [k, v] of Object.entries(doc)) {
-        if (k.endsWith('_model') && str(v)) return { source, model: str(v) };
-    }
-    return { source, model: null };
-}
-
-interface PresetPromptRow {
-    key: string;
-    name: string;
-    role: string | null;
-    enabled: boolean | null;
-}
-
-/** doc.prompts[] + doc.prompt_order[].order[].enabled 合成提示词条目行(只读)。 */
-function presetPromptRows(doc: Record<string, unknown> | undefined): PresetPromptRow[] {
-    if (!doc || !Array.isArray(doc.prompts)) return [];
-    const enabled = new Map<string, boolean>();
-    if (Array.isArray(doc.prompt_order)) {
-        for (const po of doc.prompt_order) {
-            const order = (po as { order?: unknown })?.order;
-            if (!Array.isArray(order)) continue;
-            for (const o of order) {
-                const id = (o as { identifier?: unknown })?.identifier;
-                if (typeof id === 'string') enabled.set(id, (o as { enabled?: unknown }).enabled !== false);
-            }
-        }
-    }
-    return doc.prompts.map((p, i) => {
-        const o = p as { name?: unknown; identifier?: unknown; role?: unknown };
-        const identifier = str(o.identifier) ?? str(o.name) ?? `prompt-${i}`;
-        return {
-            key: `${identifier}-${i}`,
-            name: str(o.name) ?? identifier,
-            role: str(o.role),
-            enabled: enabled.has(identifier) ? enabled.get(identifier)! : null,
-        };
-    });
-}
-
-/** 规范稿 L1429 滑杆行:标签左 + 值右 + 原生 range(accent-color 走 tokens)。
- *  服务端预设写面未备 → pointer-events:none 只读(不禁用,保住 accent 着色),
- *  值被 React 钉死,拖不动也不假装可写。 */
-function ParamSlider({ label, value, min, max, step, fmt }: {
-    label: string; value: number | null; min: number; max: number; step: number;
+function ParamSlider({ label, value, min, max, step, fmt, onChange }: {
+    label: string; value: number; min: number; max: number; step: number;
     fmt: (v: number) => string;
+    onChange: (v: number) => void;
 }) {
     return (
         <div className="inset-row flex-col items-stretch gap-1.5">
             <div className="flex w-full justify-between text-[12px]">
                 <span className="text-[color:var(--fg-secondary)]">{label}</span>
-                <span className="font-mono-ui">{value === null ? '—' : fmt(value)}</span>
+                <span className="font-mono-ui text-[11.5px]">{fmt(value)}</span>
             </div>
             <input
-                type="range" className="h-1.5 w-full"
-                min={min} max={max} step={step}
-                value={value === null ? min : Math.min(max, Math.max(min, value))}
-                readOnly tabIndex={-1} aria-readonly="true"
-                style={{ pointerEvents: 'none' }}
-                onChange={() => { }}
+                type="range"
+                className="h-1.5 w-full"
+                min={min}
+                max={max}
+                step={step}
+                value={Math.min(max, Math.max(min, value))}
+                onChange={(e) => onChange(Number(e.target.value))}
             />
         </div>
     );
 }
 
-/** 预设 / 模型板块 —— /api/utopinn/presets 只读列表 + 选中档详情。
- *  布局对规范稿 L1381 preset 分支:标题块 → 模型下拉 → 预设下拉 →
- *  采样/上下文滑杆组 → 提示词条目开关组;数据全真,写面未接处禁用。 */
+/** 预设 / 模型板块 —— 与壳共享实时连接/模型/预设源,滑杆与条目开关防抖写回服务端。 */
 export function PresetPanel() {
     const { t } = useI18n();
     const s = useShell();
-    const list = useRemote(PRESET_API_ID, () => listPresets(PRESET_API_ID));
-    const [picked, setPicked] = useState<string | null>(null);
     const [jsonView, setJsonView] = useState(false);
-    const names = list.data?.items.map((x) => x.name) ?? [];
-    const active = picked && names.includes(picked) ? picked : (names[0] ?? null);
-    const detail = useRemote(active ? `${PRESET_API_ID}/${active}` : null, () => getPreset(active!, PRESET_API_ID));
-    const doc = detail.data?.doc as Record<string, unknown> | undefined;
-    const { source, model } = pickPresetModel(doc);
-    const prompts = presetPromptRows(doc);
+    const activeClean = s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : '';
+    const detail = useRemote(
+        s.live && jsonView && activeClean ? `panel-preset:${PRESET_API_ID}/${activeClean}` : null,
+        () => getPreset(activeClean, PRESET_API_ID),
+    );
+    const pp = s.presetParams;
 
-    if (list.error) return <PanelError error={list.error} onRetry={list.reload} />;
-    if (list.data && names.length === 0) {
+    if (s.live && s.presets.length === 0) {
         return <PanelEmpty icon="sliders">{t('panel.preset.empty')} · {PRESET_API_ID}</PanelEmpty>;
     }
     return (
@@ -148,44 +95,59 @@ export function PresetPanel() {
                     <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
                     <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
                 </div>
-                <button className="ghost-btn h-6 shrink-0 px-2 text-[10px]" onClick={() => setJsonView(!jsonView)} disabled={!doc}>
-                    {jsonView ? t('panel.mvu.table') : 'JSON'}
-                </button>
+                {s.live && activeClean && (
+                    <button className="ghost-btn h-7 shrink-0 px-2.5 text-[11px]" onClick={() => setJsonView(!jsonView)}>
+                        {jsonView ? t('panel.mvu.table') : 'JSON'}
+                    </button>
+                )}
             </div>
             <div className="mb-5 space-y-3">
                 <div className="relative">
                     <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('panel.preset.modelSel')}</label>
-                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')} disabled={!model}>
-                        <span className="truncate font-mono-ui">{detail.loading ? '…' : (model ?? '—')}</span>
+                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'panel-model' ? null : 'panel-model')}>
+                        <span className="truncate font-mono-ui">{s.live ? (s.models.find((m) => m.id === s.activeModel)?.short || s.activeModel || t('st.conn.noModels')) : t('stage.demoData')}</span>
                         <span className="text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                     </button>
-                    {s.openDropdown === 'model' && model && (
-                        <div className="sh-select-menu pop-in">
-                            <div className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left">
-                                <div>
-                                    <div className="font-mono-ui text-[12px]">{model}</div>
-                                    <div className="text-[10px] text-[color:var(--fg-muted)]">{source ?? ''} · {t('panel.preset.readonly')}</div>
+                    {s.openDropdown === 'panel-model' && (
+                        <div className="sh-select-menu pop-in max-h-60 overflow-y-auto">
+                            {s.live && s.models.length > 0 ? s.models.map((m) => (
+                                <button key={m.id} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
+                                    <div className="min-w-0 pr-2">
+                                        <div className="truncate font-mono-ui text-[12px]">{m.id}</div>
+                                        <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{m.provider}</div>
+                                    </div>
+                                    {m.id === s.activeModel && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
+                                </button>
+                            )) : (
+                                <div className="space-y-2 p-2.5 text-[11.5px] text-[color:var(--fg-muted)]">
+                                    <div>{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
+                                    <button
+                                        className="w-full rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium"
+                                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                                        onClick={() => { s.setOpenDropdown(null); s.openSettings('api'); }}
+                                    >
+                                        {t('st.conn.configApi')}
+                                    </button>
                                 </div>
-                                <Icon name="check" size={12} className="text-[color:var(--brand)]" />
-                            </div>
+                            )}
                         </div>
                     )}
                 </div>
                 <div className="relative">
                     <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('panel.preset.presetSel')}</label>
-                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'preset' ? null : 'preset')}>
-                        <span className="truncate font-mono-ui">{list.data ? (active ?? '—') : '…'}</span>
+                    <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'panel-preset' ? null : 'panel-preset')}>
+                        <span className="truncate font-mono-ui">{activeClean || '—'}</span>
                         <span className="text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                     </button>
-                    {s.openDropdown === 'preset' && (
-                        <div className="sh-select-menu pop-in">
-                            {names.map((x) => (
-                                <button key={x} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { setPicked(x); s.setOpenDropdown(null); }}>
-                                    <div>
-                                        <div className="font-mono-ui text-[12px]">{x}</div>
-                                        <div className="font-mono-ui text-[10px] text-[color:var(--fg-muted)]">{PRESET_API_ID}</div>
+                    {s.openDropdown === 'panel-preset' && (
+                        <div className="sh-select-menu pop-in max-h-60 overflow-y-auto">
+                            {s.presets.map((p) => (
+                                <button key={p.id} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { s.pickPreset(p.id); s.setOpenDropdown(null); }}>
+                                    <div className="min-w-0 pr-2">
+                                        <div className="truncate font-mono-ui text-[12px]">{p.id.replace(/\.json$/i, '')}</div>
+                                        <div className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">T {p.temp} · TopP {p.topP}</div>
                                     </div>
-                                    {x === active && <Icon name="check" size={12} className="text-[color:var(--brand)]" />}
+                                    {p.id === s.activePresetId && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
                                 </button>
                             ))}
                         </div>
@@ -193,42 +155,34 @@ export function PresetPanel() {
                 </div>
             </div>
             {detail.error && <PanelError error={detail.error} onRetry={detail.reload} />}
-            {jsonView && doc ? (
-                <pre className="inset-group mb-3 overflow-x-auto p-3 font-mono-ui text-[10.5px] leading-relaxed text-[color:var(--fg-secondary)]">
-                    {JSON.stringify(doc, null, 2)}
+            {jsonView && detail.data?.doc ? (
+                <pre className="inset-group mb-3 overflow-x-auto p-3 font-mono-ui text-[11px] leading-relaxed text-[color:var(--fg-secondary)]">
+                    {JSON.stringify(detail.data.doc, null, 2)}
                 </pre>
             ) : (
                 <>
                     <div className="mb-5 space-y-1.5">
-                        <div className="px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.sampling')}</div>
+                        <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.sampling')}</div>
                         <div className="inset-group">
-                            <ParamSlider label={t('param.temp')} value={num(doc?.temperature)} min={0} max={1.5} step={0.05} fmt={(v) => v.toFixed(2)} />
-                            <ParamSlider label={t('param.topP')} value={num(doc?.top_p)} min={0.1} max={1} step={0.02} fmt={(v) => v.toFixed(2)} />
-                            <ParamSlider label={t('param.ctxLenTokens')} value={num(doc?.openai_max_context)} min={16000} max={200000} step={8000} fmt={(v) => v.toLocaleString()} />
-                            <ParamSlider label={t('param.maxReply')} value={num(doc?.openai_max_tokens)} min={1024} max={16384} step={1024} fmt={(v) => String(v)} />
+                            <ParamSlider label={t('param.temp')} value={pp.temp} min={0} max={2} step={0.05} fmt={(v) => v.toFixed(2)} onChange={(v) => s.setPresetParam('temp', v)} />
+                            <ParamSlider label={t('param.topP')} value={pp.topP} min={0.05} max={1} step={0.01} fmt={(v) => v.toFixed(2)} onChange={(v) => s.setPresetParam('topP', v)} />
+                            <ParamSlider label={t('param.ctxLenTokens')} value={pp.ctxLen} min={4096} max={200000} step={4096} fmt={(v) => v.toLocaleString()} onChange={(v) => s.setPresetParam('ctxLen', v)} />
+                            <ParamSlider label={t('param.maxReply')} value={pp.maxReply} min={128} max={16384} step={128} fmt={(v) => String(v)} onChange={(v) => s.setPresetParam('maxReply', v)} />
                         </div>
                     </div>
-                    {prompts.length > 0 && (
-                        <div className="mb-5 space-y-1.5">
-                            <div className="px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.blocksLabel')}</div>
+                    {pp.blocks.length > 0 && (
+                        <div className="mb-4 space-y-1.5">
+                            <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('panel.preset.blocksLabel')}</div>
                             <div className="inset-group">
-                                {prompts.map((p) => (
-                                    <div key={p.key} className={row}>
-                                        <span className="min-w-0">
-                                            <span className="block truncate text-[12.5px] text-[color:var(--fg-secondary)]">{p.name}</span>
-                                            {p.role && <span className="block font-mono-ui text-[9px] text-[color:var(--fg-faint)]">{p.role}</span>}
-                                        </span>
-                                        {p.enabled !== null && (
-                                            <span style={{ pointerEvents: 'none', opacity: 0.7 }}>
-                                                <Switch on={p.enabled} onToggle={() => { }} />
-                                            </span>
-                                        )}
+                                {pp.blocks.map((b) => (
+                                    <div key={b.id} className={row}>
+                                        <span className="min-w-0 truncate text-[12.5px] text-[color:var(--fg-secondary)]">{b.name}</span>
+                                        <Switch on={b.enabled} onToggle={() => s.togglePresetBlock(b.id)} />
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
-                    <p className="px-1 text-[9.5px] leading-relaxed text-[color:var(--fg-faint)]">{t('panel.preset.readonly')}</p>
                 </>
             )}
         </div>
@@ -271,7 +225,9 @@ export function MvuPanel() {
     const s = useShell();
     const target = chatStateTarget(s.chat);
     const thTarget = thCallTarget(s.chat);
-    const remote = useRemote(chatKey(s.chat), () => getMvuState(target as MvuTarget));
+    const cKey = chatKey(s.chat);
+    const mvuRev = (s.panelParams['mvu'] as { rev?: number } | undefined)?.rev ?? 0;
+    const remote = useRemote(cKey ? `${cKey}:${mvuRev}` : null, () => getMvuState(target as MvuTarget));
     const [jsonView, setJsonView] = useState(false);
     const [busy, setBusy] = useState(false);
 
@@ -606,67 +562,138 @@ export function MessageFramePanel() {
 }
 
 /* ----------------------------------------------------------------------- */
-/* lore / chapters / channels —— 服务端面未备,保持 mock(wired:false)         */
+/* lore —— 全局栈 + 当前卡绑定主书 + stats/inject 真实命中                   */
 /* ----------------------------------------------------------------------- */
 
-/** 世界书板块 —— mock 保持:面板要的是卡绑定条目栈(主/辅/聊天/全局四层
- *  来源),/api/utopinn/worlds 只有整档 CRUD,绑定面未出。 */
 export function LorePanel() {
-    /* 规范稿 L1684「世界书命中」:只读展示 enabled 条目 ——
-       [全局] name·tokens t 行 + title·P{priority} 行;开关交互在 ctx 弹层。 */
     const { t } = useI18n();
     const s = useShell();
-    return (
-        <div className="space-y-3 p-4">
-            <UnwiredNote />
-            <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.lore.title')}</div>
-            <div className={group}>
-                {s.globalLore.filter((g) => g.enabled).map((g) => (
-                    <div key={g.id} className={row}>
-                        <span className="truncate text-[12.5px]">[全局] {g.name}</span>
-                        <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">{g.tokens}t</span>
-                    </div>
-                ))}
-                {s.worldbook.filter((w) => w.enabled).map((w) => (
-                    <div key={w.id} className={row}>
-                        <span className="truncate text-[12.5px] text-[color:var(--fg-secondary)]">{w.title}</span>
-                        <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">P{w.priority}</span>
-                    </div>
-                ))}
+    const cKey = chatKey(s.chat);
+    const cardLore = useRemote(s.live && s.chat?.charDir ? `lore-panel:${s.chat.charDir}` : null, async () => {
+        const doc = await getCharacter(s.chat!.charDir);
+        const worldName = cardData(doc).extensions?.world;
+        if (typeof worldName !== 'string' || !worldName.trim()) return { worldName: null, entries: [] as { uid: string; title: string; constant: boolean; order: number }[] };
+        const w = await getWorld(worldName.trim());
+        const entries = Object.entries(w.doc.entries ?? {})
+            .filter(([, e]) => e && e.disable !== true)
+            .map(([uid, e]) => ({
+                uid,
+                title: (typeof e.comment === 'string' && e.comment.trim())
+                    || (Array.isArray(e.key) && typeof e.key[0] === 'string' && e.key[0])
+                    || `#${uid}`,
+                constant: e.constant === true,
+                order: typeof e.order === 'number' ? e.order : 100,
+            }))
+            .sort((a, b) => b.order - a.order);
+        return { worldName: w.name, entries };
+    });
+    const hits = useRemote(s.live ? `lore-hits:${cKey ?? 'all'}` : null, async () => {
+        const r = await statsInject(cKey ?? undefined);
+        const wi = r.sources.find((x) => x.source === 'worldinfo');
+        const map = new Map<string, number>();
+        for (const e of wi?.entries ?? []) {
+            const k = `${String(e.world ?? '')}:${String(e.uid ?? '')}`;
+            map.set(k, (map.get(k) ?? 0) + e.hits);
+        }
+        return map;
+    });
+
+    if (!s.live) {
+        return (
+            <div className="space-y-3 p-4">
+                <UnwiredNote />
+                <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.lore.title')}</div>
+                <div className={group}>
+                    {s.globalLore.filter((g) => g.enabled).map((g) => (
+                        <div key={g.id} className={row}>
+                            <span className="truncate text-[12.5px]">[全局] {g.name}</span>
+                            <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">{g.tokens}t</span>
+                        </div>
+                    ))}
+                    {s.worldbook.filter((w) => w.enabled).map((w) => (
+                        <div key={w.id} className={row}>
+                            <span className="truncate text-[12.5px] text-[color:var(--fg-secondary)]">{w.title}</span>
+                            <span className="font-mono-ui shrink-0 text-[11px] text-[color:var(--fg-muted)]">P{w.priority}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
+        );
+    }
+
+    const activeGlobals = s.globalLore.filter((g) => g.enabled);
+    const bound = cardLore.data;
+    const hitMap = hits.data;
+    const isEmpty = activeGlobals.length === 0 && (!bound || bound.entries.length === 0);
+
+    return (
+        <div className="space-y-3.5 p-4">
+            <div className="flex items-center justify-between">
+                <div className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('panel.lore.title')}</div>
+                <button
+                    className="text-[11.5px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
+                    onClick={() => { s.setView('studio'); s.setStudioNav(bound?.worldName ? 'worldbook' : 'global'); }}
+                >
+                    {t('tree.manage')}
+                </button>
+            </div>
+            {isEmpty ? (
+                <PanelEmpty icon="bookOpen">{t('stats.wi.none')}</PanelEmpty>
+            ) : (
+                <>
+                    {activeGlobals.length > 0 && (
+                        <div className={group}>
+                            {activeGlobals.map((g) => (
+                                <div key={g.id} className={row}>
+                                    <span className="truncate text-[12.5px] text-[color:var(--fg-primary)]">[全局] {g.name}</span>
+                                    <Switch on={g.enabled} onToggle={() => s.toggleGlobalLore(g.id)} />
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    {bound?.worldName && bound.entries.length > 0 && (
+                        <div className="space-y-1.5">
+                            <div className="px-0.5 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">
+                                {bound.worldName} · {bound.entries.length} {t('studio.world.entriesUnit')}
+                            </div>
+                            <div className={group}>
+                                {bound.entries.slice(0, 40).map((e) => {
+                                    const h = hitMap?.get(`${bound.worldName}:${e.uid}`) ?? 0;
+                                    return (
+                                        <div key={e.uid} className={row}>
+                                            <span className="min-w-0 truncate text-[12.5px] text-[color:var(--fg-secondary)]">{e.title}</span>
+                                            <span className="shrink-0 font-mono-ui text-[11px]" style={{ color: h > 0 ? 'var(--brand)' : 'var(--fg-muted)' }}>
+                                                {h > 0 ? `${h}${t('stats.wi.hits')}` : `P${e.order}`}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
         </div>
     );
 }
 
-/** 章节板块(规范稿 L1685):章节目录头 + 「+ 新章」+ inset-group 章行
+/* ----------------------------------------------------------------------- */
+/* chapters / channels —— 服务端面未备,保持 mock(wired:false)                */
+/* ----------------------------------------------------------------------- */
+
+/** 章节板块(规范稿 L1685):章节目录头 + inset-group 章行
  *  (num mono / title)。目录服务端 schema 未出 → mock + unwired 标注;
- *  行点选联动 novel 阅读位是真行为,保留;新章写 mock stageData,诚实。 */
+ *  行点选联动 novel 阅读位是真行为,保留;「+新章」原为内存假持久(硬编码
+ *  标题写 mock stageData),已按审计建议删除——持久化待 chat_state 侧车。 */
 export function ChaptersPanel() {
     const { t } = useI18n();
     const s = useShell();
     const chs = s.stageData.chapters;
-    const addChapter = () => {
-        const n = chs.length + 1;
-        s.patchStageData({
-            chapters: [...chs, {
-                id: `ch-${Date.now()}`, num: `第${n}章`, title: '初一卯时的山门风波',
-                paras: [{ id: `p-${Date.now()}`, text: '新章节已建立，在下方输入导演指令即可续写。' }],
-            }],
-        });
-        s.hint(t('panel.chapters.added'));
-    };
     return (
         <div className="p-4">
             <UnwiredNote />
             <div className="mb-3 flex items-center justify-between">
                 <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.chapters.title')}</div>
-                <button
-                    className="rounded-lg px-2.5 py-1 text-[11.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface-hover)]"
-                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--fg-primary)' }}
-                    onClick={addChapter}
-                >
-                    {t('panel.chapters.new')}
-                </button>
             </div>
             <div className={group}>
                 {chs.map((c) => (

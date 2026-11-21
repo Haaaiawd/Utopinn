@@ -45,6 +45,7 @@
 - `design/web-slots-architecture.md`(system)— 客户端贡献式架构:槽注册表/manifest 水合/DSH 全形态目标
 - `design/cardapp-web-host.md`(design)— CardApp web 宿主:iframe 沙箱+postMessage 桥(TASK-022)
 - `design/headless-cardapp-harness.md`(architecture)— CLI/Node CardApp 宿主:nonce 白名单桥协议参照实现(TASK-042 已验收)
+- `design/web-v3-frontier.md`(experience)— 前端真接线收口:占位三桶核销边界/v3 壳层悬案判断基线/剧场 choices 排序裁定(TASK-053)
 
 ### partially-stale
 

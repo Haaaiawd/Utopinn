@@ -29,7 +29,7 @@ export const panelsFeature: Feature = {
         add({ type: 'ledger', icon: 'notebook', wired: true, Body: LedgerPanel, desc: 'panel.desc.ledger', badge: 'panel.badge.cardapp', category: 'cardapp' });
         add({ type: 'cardapp', icon: 'layout', wired: true, Body: CardAppPanel, desc: 'panel.desc.cardapp', badge: 'panel.badge.cardapp', category: 'cardapp' });
         add({ type: 'mvu', icon: 'database', wired: true, Body: MvuPanel, desc: 'panel.desc.mvu', category: 'system' });
-        add({ type: 'lore', icon: 'bookOpen', wired: false, Body: LorePanel, desc: 'panel.desc.lore', badge: 'panel.badge.unwired', category: 'system' });
+        add({ type: 'lore', icon: 'bookOpen', wired: true, Body: LorePanel, desc: 'panel.desc.lore', category: 'system' });
         add({ type: 'diag', icon: 'code', wired: true, Body: DiagPanel, desc: 'panel.desc.diag', badge: 'diag', category: 'system' });
         add({ type: 'stats', icon: 'compass', wired: true, Body: StatsPanel, desc: 'panel.desc.stats', badge: 'stats', category: 'system' });
         add({ type: 'chapters', icon: 'listNumbers', wired: false, Body: ChaptersPanel, desc: 'panel.desc.chapters', badge: 'panel.badge.unwired', category: 'system' });

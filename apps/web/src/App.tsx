@@ -1,20 +1,23 @@
 // App shell — 薄壳:状态与服务经 ShellProvider 下发,表面全部走贡献点
 // (nav.rail / view / sidebar.tree / stage.form / panel.type / ctbar.chat /
 // renderer)。壳不认识任何具体域:加域/加板块/换舞台形态 = 一次 feature 注册。
-// 规范稿(u_ui_codex)壳层:top-chrome | left-chrome(rail+tree+dock) |
-// workspace-inset(view 出口 + workbench)| floating-win | cmdk | settings |
-// mobile-frame(hub + drawer + vaul-sheet,≤680px 或 vpMode=mobile)。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import {
     MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
-    MOCK_IM_CHANNELS, MOCK_MODELS, MOCK_MVU,
-    MOCK_NOTES_TEXT, MOCK_NOVEL_CHAPTERS, MOCK_PRESET_BLOCKS, MOCK_PRESETS,
+    MOCK_IM_CHANNELS, MOCK_MODELS,
+    MOCK_NOVEL_CHAPTERS, MOCK_PRESET_BLOCKS, MOCK_PRESETS,
     MOCK_STAGE_SESSIONS, MOCK_VN, MOCK_WORLDBOOK,
+    type GlobalLoreItem, type ModelItem, type PresetItem,
 } from './api/mock';
+import { getMe, type CurrentUser } from './api/account';
 import { listCharacters, type CardItem } from './api/characters';
+import { listModels } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
-import type { ActivePersona } from './api/personas';
+import { listPersonas, type ActivePersona, type PersonaItem } from './api/personas';
+import { getPreset, listPresets, savePreset, type PresetDocument } from './api/presets';
+import { getSettings, patchSettings } from './api/settings';
+import { listWorlds } from './api/worlds';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
@@ -57,12 +60,92 @@ function ViewOutlet() {
 }
 
 const MOBILE_BP = 680;
+const CHAT_SETTINGS_KEY = 'utopinn.chatSettings';
 
-/* ——— 右工作台布局按会话持久化 ———
- * key = 会话坐标(charDir/chatName),值 = {openTabs,activeTab,floatingType,
- * floatingRect}。切会话:旧布局先 flush 到旧 key,再按新 key 水合(无存档 →
- * 会话 defaultTabs → launcher 兜底);无会话/跨卡互不染。floatingType 同在
- * 档里 —— 卡 A 飘着的窗切到卡 B 不跟着飘。panelParams 仍全局(板块现场)。 */
+const DEFAULT_CHAT_SETTINGS: ChatSettings = {
+    renderCount: 30,
+    autoParseThink: true,
+    autoExpandThink: false,
+    showFloorNum: true,
+    confirmDelete: true,
+    fontSize: 15,
+    bgMode: 'none',
+    customCss: '',
+};
+
+function loadChatSettings(): ChatSettings {
+    try {
+        const raw = localStorage.getItem(CHAT_SETTINGS_KEY);
+        if (!raw) return DEFAULT_CHAT_SETTINGS;
+        const j = JSON.parse(raw) as Partial<ChatSettings>;
+        const num = (v: unknown, def: number, min: number, max: number) =>
+            typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def;
+        const bool = (v: unknown, def: boolean) => (typeof v === 'boolean' ? v : def);
+        return {
+            renderCount: num(j.renderCount, DEFAULT_CHAT_SETTINGS.renderCount, 5, 200),
+            autoParseThink: bool(j.autoParseThink, DEFAULT_CHAT_SETTINGS.autoParseThink),
+            autoExpandThink: bool(j.autoExpandThink, DEFAULT_CHAT_SETTINGS.autoExpandThink),
+            showFloorNum: bool(j.showFloorNum, DEFAULT_CHAT_SETTINGS.showFloorNum),
+            confirmDelete: bool(j.confirmDelete, DEFAULT_CHAT_SETTINGS.confirmDelete),
+            fontSize: num(j.fontSize, DEFAULT_CHAT_SETTINGS.fontSize, 12, 18),
+            bgMode: typeof j.bgMode === 'string' && j.bgMode ? j.bgMode : DEFAULT_CHAT_SETTINGS.bgMode,
+            customCss: typeof j.customCss === 'string' ? j.customCss : DEFAULT_CHAT_SETTINGS.customCss,
+        };
+    } catch {
+        return DEFAULT_CHAT_SETTINGS;
+    }
+}
+
+function shortModelId(id: string): string {
+    const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
+    return tail.length > 28 ? `${tail.slice(0, 26)}…` : tail;
+}
+
+const numOr = (v: unknown, fallback: number): number =>
+    typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+
+function extractPresetParams(doc: PresetDocument | null | undefined): PresetParams {
+    const d = (doc ?? {}) as Record<string, unknown>;
+    const enabledMap = new Map<string, boolean>();
+    if (Array.isArray(d.prompt_order)) {
+        for (const po of d.prompt_order) {
+            const order = (po as { order?: unknown })?.order;
+            if (!Array.isArray(order)) continue;
+            for (const o of order) {
+                const id = (o as { identifier?: unknown })?.identifier;
+                if (typeof id === 'string' && id) {
+                    enabledMap.set(id, (o as { enabled?: unknown }).enabled !== false);
+                }
+            }
+        }
+    }
+    const blocks: { id: string; name: string; enabled: boolean }[] = [];
+    if (Array.isArray(d.prompts)) {
+        for (const p of d.prompts) {
+            const o = p as { identifier?: unknown; name?: unknown; marker?: unknown };
+            const id = typeof o.identifier === 'string' && o.identifier ? o.identifier : '';
+            if (!id || o.marker === true || !enabledMap.has(id)) continue;
+            const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : id;
+            blocks.push({ id, name, enabled: enabledMap.get(id)! });
+        }
+    }
+    return {
+        temp: numOr(d.temperature, 0.85),
+        topP: numOr(d.top_p, 0.92),
+        ctxLen: numOr(d.openai_max_context, 128000),
+        maxReply: numOr(d.openai_max_tokens, 4096),
+        blocks,
+    };
+}
+
+const PARAM_DOC_KEY: Record<'temp' | 'topP' | 'ctxLen' | 'maxReply', string> = {
+    temp: 'temperature',
+    topP: 'top_p',
+    ctxLen: 'openai_max_context',
+    maxReply: 'openai_max_tokens',
+};
+
+/* ——— 右工作台布局按会话持久化 ——— */
 interface WbLayout {
     openTabs: PanelType[];
     activeTab: string;
@@ -71,8 +154,6 @@ interface WbLayout {
 }
 
 const wbStorageKey = (chatKey: string) => `utopinn.wb.${chatKey}`;
-
-/** 浮窗默认矩形 —— 存档缺 rect 时落点。 */
 const DEFAULT_FLOAT_RECT = { x: 96, y: 96, w: 420, h: 480 };
 
 function loadWbLayout(chatKey: string): WbLayout | null {
@@ -101,7 +182,6 @@ function saveWbLayout(chatKey: string, layout: WbLayout): void {
 
 function Shell() {
     const { t } = useI18n();
-    // 规范稿默认落点:掌门线聊天会话 + 总簿 tab;view=chat,rail 第一域。
     const [view, setView] = useState<ViewId>('chat');
     const [chats, setChats] = useState<ChatSummary[]>([...MOCK_CHATS, ...MOCK_STAGE_SESSIONS]);
     const [activeChat, setActiveChat] = useState('c1');
@@ -109,6 +189,8 @@ function Shell() {
     const [cardsMock, setCardsMock] = useState(false);
     const [importDrafts, setImportDrafts] = useState<ImportDraft[]>([]);
     const [dropVeil, setDropVeil] = useState(false);
+    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+    const [personas, setPersonas] = useState<PersonaItem[]>([]);
     const [persona, setPersona] = useState<ActivePersona | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 920);
     const [workbenchOpen, setWorkbenchOpen] = useState(() => window.innerWidth > 1180);
@@ -123,10 +205,7 @@ function Shell() {
     const [hintState, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
     const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    /* ——— 规范稿弹层/chrome 状态 ——— */
-    const [contextOpen, setContextOpen] = useState(false);
-    const [composerMenuOpen, setComposerMenuOpen] = useState(false);
-    const [presetPopOpen, setPresetPopOpen] = useState(false);
+    /* ——— 弹层与全局 chrome 状态 ——— */
     const [openDropdown, setOpenDropdown] = useState<string | null>(null);
     const [accountPopOpen, setAccountPopOpen] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -134,7 +213,6 @@ function Shell() {
     const [cmdkOpen, setCmdkOpen] = useState(false);
     const [mobileDrawer, setMobileDrawer] = useState(false);
     const [sheetSnap, setSheetSnap] = useState<SheetSnap>('closed');
-    /* ?vp=mobile|desktop 直进预览态(截图 harness 与顶条分段同一入口)。 */
     const [vpMode, setVpMode] = useState<VpMode>(() => {
         const v = new URLSearchParams(window.location.search).get('vp');
         return v === 'mobile' || v === 'desktop' ? v : 'auto';
@@ -145,19 +223,19 @@ function Shell() {
     const [adminNav, setAdminNav] = useState('overview');
     const [selectedPlugin, setSelectedPlugin] = useState<string | null>(null);
 
-    /* ——— SPEC-DATA 目录态(待接:目录全是 mock 种子,消费面已标) ——— */
-    const [activeModel, setActiveModel] = useState(MOCK_MODELS[0]!.id);
+    /* ——— 连接/模型/预设/全局世界书(离线=MOCK 兜底;online 水合真数据) ——— */
+    const [connSource, setConnSource] = useState('openai');
+    const [models, setModels] = useState<ModelItem[]>(MOCK_MODELS);
+    const [modelsError, setModelsError] = useState<string | null>(null);
+    const [activeModel, setActiveModelState] = useState(MOCK_MODELS[0]!.id);
+    const [presets, setPresets] = useState<PresetItem[]>(MOCK_PRESETS);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
     const [presetParams, setPresetParams] = useState<PresetParams>({
         temp: 0.85, topP: 0.92, ctxLen: 200000, maxReply: 8192,
         blocks: MOCK_PRESET_BLOCKS.map((b) => ({ ...b })),
     });
-    const [globalLore, setGlobalLore] = useState(MOCK_GLOBAL_LORE);
-    const [worldbook, setWorldbook] = useState(MOCK_WORLDBOOK);
-    const [selectedLoreId, setSelectedLoreId] = useState(MOCK_WORLDBOOK[0]!.id);
-    const [notesText, setNotesText] = useState(MOCK_NOTES_TEXT);
-    const [mvu, setMvu] = useState<Record<string, string | number>>(MOCK_MVU);
-    const [echoMvu, setEchoMvu] = useState(false);
+    const [globalLore, setGlobalLore] = useState<GlobalLoreItem[]>(MOCK_GLOBAL_LORE);
+    const [worldbook] = useState(MOCK_WORLDBOOK);
     const [stageData, setStageData] = useState<StageData>({
         chapters: MOCK_NOVEL_CHAPTERS,
         selParaId: null,
@@ -165,12 +243,15 @@ function Shell() {
         activeChannel: MOCK_IM_CHANNELS[0]!.id,
         vn: MOCK_VN,
     });
-    const [chatSettings, setChatSettings] = useState<ChatSettings>({
-        renderCount: 20, streamFps: 30, autoParseThink: true, autoExpandThink: false,
-        showFloorNum: true, confirmDelete: true, fontSize: 15, bgMode: 'none',
-        customCss: '.msg-bubble { border-radius: 10px; }', apiTab: 'chat',
-        endpoint: 'https://gcli.ggchan.dev/',
-    });
+    const [chatSettings, setChatSettings] = useState<ChatSettings>(loadChatSettings);
+
+    const activePresetDocRef = useRef<{ name: string; doc: PresetDocument } | null>(null);
+    const presetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const worldInfoBaseRef = useRef<Record<string, unknown>>({});
+
+    useEffect(() => {
+        try { localStorage.setItem(CHAT_SETTINGS_KEY, JSON.stringify(chatSettings)); } catch { /* ignore */ }
+    }, [chatSettings]);
 
     useEffect(() => {
         const onResize = () => setNarrow(window.innerWidth <= MOBILE_BP);
@@ -178,14 +259,11 @@ function Shell() {
         return () => window.removeEventListener('resize', onResize);
     }, []);
     const isMobile = vpMode === 'mobile' || (vpMode === 'auto' && narrow);
+    const live = serverStatus === 'online';
 
     const railTab = (RAIL_VIEWS as readonly string[]).includes(view) ? view : 'chat';
     const chat = useMemo(() => chats.find((c) => c.id === activeChat) ?? null, [chats, activeChat]);
 
-    /* ——— 工作台布局按会话坐标存档/水合 ———
-     * wbKeyRef = 当前 openTabs/activeTab/floatingType 所属的存档 key;
-     * layoutRef 每渲同步最新三态,供切会话瞬间 flush 旧档(effect 里
-     * 拿到的 setter 态仍是旧值 —— React 提交顺序兜底)。 */
     const wbKey = chat?.charDir && chat?.chatName ? `${chat.charDir}/${chat.chatName}` : null;
     const wbKeyRef = useRef(wbKey);
     const wbFirstRef = useRef(true);
@@ -194,9 +272,6 @@ function Shell() {
     const chatRef = useRef(chat);
     chatRef.current = chat;
 
-    /* 水合:wbKey 变 → 旧布局 flush 到旧 key,新 key 存档恢复;
-       无存档 → defaultTabs(规范稿默认板块)→ launcher 兜底。
-       首跑(冷启动当前会话)同参 —— 有档即按档恢复。 */
     useEffect(() => {
         const prevKey = wbKeyRef.current;
         const first = wbFirstRef.current;
@@ -219,9 +294,6 @@ function Shell() {
         if (next.openTabs.length || next.floatingType) setWorkbenchOpen(true);
     }, [wbKey]);
 
-    /* 持久化:四态任一变化 → 写当前存档。deps 不含 wbKey —— 切会话那
-       次提交三态未变本 effect 不跑,水合后的重渲写回同份(幂等),
-       不会拿旧布局盖新档。无会话 key=null 不落盘。 */
     useEffect(() => {
         if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatingType, floatingRect });
     }, [openTabs, activeTab, floatingType, floatingRect]);
@@ -237,7 +309,8 @@ function Shell() {
             const real = await listAllChats();
             setChats((prev) => {
                 const liveIds = new Set(real.map((c) => c.id));
-                return [...real, ...prev.filter((c) => !liveIds.has(c.id))];
+                const stageDemos = prev.filter((c) => c.id.startsWith('st-') && !liveIds.has(c.id));
+                return [...real, ...stageDemos];
             });
             return true;
         } catch { return false; }
@@ -248,16 +321,127 @@ function Shell() {
             const r = await listCharacters();
             setCards(new Map(r.items.map((c) => [c.charDir, c])));
             setCardsMock(false);
+            if (serverStatus === 'offline') setServerStatus('online');
         } catch {
             setCards(new Map(MOCK_CARDS.map((c) => [c.charDir, c])));
             setCardsMock(true);
         }
+    }, [serverStatus]);
+
+    const refreshCurrentUser = useCallback(async () => {
+        try {
+            const me = await getMe();
+            setCurrentUser(me);
+        } catch { /* accounts endpoint unreachable → null */ }
+    }, []);
+
+    const refreshPersonas = useCallback(async () => {
+        try {
+            const r = await listPersonas();
+            setPersonas(r.items);
+            setPersona((prev) => {
+                if (prev?.avatar) {
+                    const hit = r.items.find((x) => x.avatar === prev.avatar);
+                    if (hit) return { avatar: hit.avatar, name: hit.name, description: hit.description };
+                }
+                const def = r.items.find((x) => x.isDefault) ?? r.items[0];
+                return def ? { avatar: def.avatar, name: def.name, description: def.description } : null;
+            });
+        } catch { /* ignore */ }
+    }, []);
+
+    const refreshConnection = useCallback(async (opts?: { freshModels?: boolean }) => {
+        const [stRes, mdRes, prRes, wlRes] = await Promise.allSettled([
+            getSettings(),
+            listModels({ fresh: opts?.freshModels }),
+            listPresets('openai'),
+            listWorlds(),
+        ]);
+
+        const st = stRes.status === 'fulfilled' ? stRes.value.settings : null;
+        const oai = (st?.oai_settings && typeof st.oai_settings === 'object' && !Array.isArray(st.oai_settings))
+            ? (st.oai_settings as Record<string, unknown>)
+            : {};
+        const wiOuter = (st?.world_info_settings && typeof st.world_info_settings === 'object' && !Array.isArray(st.world_info_settings))
+            ? (st.world_info_settings as Record<string, unknown>)
+            : {};
+        const wiObj = (wiOuter.world_info && typeof wiOuter.world_info === 'object' && !Array.isArray(wiOuter.world_info))
+            ? (wiObjCopy(wiOuter.world_info as Record<string, unknown>))
+            : {};
+        worldInfoBaseRef.current = wiObj;
+
+        const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+        const src = str(oai.chat_completion_source) || 'openai';
+        setConnSource(src);
+
+        const cfgModel = str(oai[`${src}_model`]) || str(oai.openai_model);
+        if (mdRes.status === 'fulfilled') {
+            const mr = mdRes.value;
+            const list: ModelItem[] = mr.items.map((m) => ({
+                id: m.id,
+                short: shortModelId(m.id),
+                provider: m.owned_by || mr.source || src,
+                ctx: '',
+            }));
+            if (cfgModel && !list.some((m) => m.id === cfgModel)) {
+                list.unshift({ id: cfgModel, short: shortModelId(cfgModel), provider: src, ctx: '' });
+            }
+            setModels(list);
+            setModelsError(mr.error ? (mr.detail || mr.error) : null);
+            setActiveModelState(cfgModel || list[0]?.id || '');
+        } else {
+            setModels(cfgModel ? [{ id: cfgModel, short: shortModelId(cfgModel), provider: src, ctx: '' }] : []);
+            setModelsError(mdRes.reason instanceof Error ? mdRes.reason.message : 'models_error');
+            setActiveModelState(cfgModel);
+        }
+
+        if (prRes.status === 'fulfilled') {
+            const names = prRes.value.items.map((x) => x.name);
+            const cfgPresetRaw = str(st?.preset_settings_openai) || str(oai.preset_settings_openai);
+            const cfgPreset = cfgPresetRaw.replace(/\.json$/i, '');
+            const chosen = (cfgPreset && names.includes(cfgPreset) ? cfgPreset : names[0]) ?? '';
+            const docs = await Promise.all(names.slice(0, 24).map(async (n) => {
+                try { return { name: n, doc: (await getPreset(n, 'openai')).doc }; }
+                catch { return { name: n, doc: null }; }
+            }));
+            const builtPresets: PresetItem[] = docs.map(({ name, doc }) => {
+                const d = (doc ?? {}) as Record<string, unknown>;
+                return {
+                    id: name,
+                    temp: numOr(d.temperature, 1),
+                    topP: numOr(d.top_p, 1),
+                    ctxLen: numOr(d.openai_max_context, 128000),
+                    maxReply: numOr(d.openai_max_tokens, 4096),
+                };
+            });
+            setPresets(builtPresets);
+            setActivePreset(chosen);
+            const chosenDoc = docs.find((x) => x.name === chosen)?.doc
+                ?? (chosen ? await getPreset(chosen, 'openai').then((r) => r.doc).catch(() => null) : null);
+            if (chosenDoc) {
+                activePresetDocRef.current = { name: chosen, doc: chosenDoc };
+                setPresetParams(extractPresetParams(chosenDoc));
+            }
+        }
+
+        if (wlRes.status === 'fulfilled') {
+            const globalSel = new Set(
+                Array.isArray(wiObj.globalSelect)
+                    ? wiObj.globalSelect.filter((x): x is string => typeof x === 'string')
+                    : [],
+            );
+            setGlobalLore(wlRes.value.items.map((w) => ({
+                id: w.name,
+                name: w.displayName || w.name,
+                file: `${w.name}.json`,
+                enabled: globalSel.has(w.name) || globalSel.has(w.displayName),
+                tokens: 0,
+                desc: w.name,
+            })));
+        }
     }, []);
 
     useEffect(() => { void refreshCards(); }, [refreshCards]);
-    /* serverStatus 探针:c07f8eb 重写丢的线 —— 挂回。listAllChats 握手判定
-       online/offline;online 后由下方 effect 拉真 chats/cards(live=true
-       解锁 QR 条/真楼层/离线 banner 等 live-only 面)。 */
     useEffect(() => {
         if (serverStatus !== 'checking') return;
         let dead = false;
@@ -268,8 +452,111 @@ function Shell() {
         if (serverStatus === 'online') {
             void refreshChats();
             void refreshCards();
+            void refreshCurrentUser();
+            void refreshPersonas();
+            void refreshConnection();
         }
-    }, [serverStatus, refreshChats, refreshCards]);
+    }, [serverStatus, refreshChats, refreshCards, refreshCurrentUser, refreshPersonas, refreshConnection]);
+
+    /* 在线首次拉到真会话且当前指针指向不存在的 mock c1 → 自动切首个真会话 */
+    useEffect(() => {
+        if (!live) return;
+        const real = chats.filter((c) => !c.id.startsWith('st-') && c.id !== 'c1' && c.id !== 'c2');
+        if (real.length > 0 && (activeChat === 'c1' || activeChat === 'c2') && !chats.some((c) => c.id === activeChat && c.charDir !== 'demo-card')) {
+            const hasC1Real = real.some((c) => `${c.charDir}/${c.chatName}` === 'default_Seraphina/demo-chat');
+            if (!hasC1Real) setActiveChat(real[0]!.id);
+        }
+    }, [live, chats, activeChat]);
+
+    const schedulePresetSave = useCallback((mutator: (doc: PresetDocument) => PresetDocument) => {
+        if (!live || !activePresetDocRef.current) return;
+        const { name, doc } = activePresetDocRef.current;
+        const nextDoc = mutator(doc);
+        activePresetDocRef.current = { name, doc: nextDoc };
+        if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
+        presetSaveTimer.current = setTimeout(() => {
+            void savePreset(name, nextDoc, 'openai').catch((e) => {
+                showHint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+            });
+        }, 450);
+    }, [live, showHint, t]);
+
+    const setActiveModel = useCallback((id: string) => {
+        setActiveModelState(id);
+        if (!live || !id) return;
+        const src = connSource || 'openai';
+        void patchSettings({ oai_settings: { [`${src}_model`]: id } }).catch((e) => {
+            showHint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+        });
+    }, [live, connSource, showHint, t]);
+
+    const pickPreset = useCallback((id: string) => {
+        const clean = id.replace(/\.json$/i, '');
+        setActivePreset(live ? clean : id);
+        if (!live) {
+            const p = presets.find((x) => x.id === id);
+            if (p) setPresetParams((prev) => ({ ...prev, temp: p.temp, topP: p.topP, ctxLen: p.ctxLen, maxReply: p.maxReply }));
+            return;
+        }
+        void Promise.all([
+            patchSettings({ preset_settings_openai: clean }),
+            getPreset(clean, 'openai'),
+        ]).then(([, res]) => {
+            activePresetDocRef.current = { name: clean, doc: res.doc };
+            setPresetParams(extractPresetParams(res.doc));
+        }).catch((e) => {
+            showHint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+        });
+    }, [live, presets, showHint, t]);
+
+    const setPresetParam = useCallback((k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => {
+        setPresetParams((prev) => ({ ...prev, [k]: v }));
+        setPresets((prev) => prev.map((p) => (p.id === activePresetId ? { ...p, [k]: v } : p)));
+        schedulePresetSave((doc) => ({ ...doc, [PARAM_DOC_KEY[k]]: v }));
+    }, [activePresetId, schedulePresetSave]);
+
+    const togglePresetBlock = useCallback((id: string) => {
+        let nextEnabled = true;
+        setPresetParams((prev) => ({
+            ...prev,
+            blocks: prev.blocks.map((b) => {
+                if (b.id !== id) return b;
+                nextEnabled = !b.enabled;
+                return { ...b, enabled: nextEnabled };
+            }),
+        }));
+        schedulePresetSave((doc) => {
+            const d = doc as Record<string, unknown>;
+            if (!Array.isArray(d.prompt_order)) return doc;
+            const nextOrder = d.prompt_order.map((po) => {
+                const entry = po as Record<string, unknown>;
+                if (!Array.isArray(entry.order)) return po;
+                return {
+                    ...entry,
+                    order: entry.order.map((o) => {
+                        const item = o as Record<string, unknown>;
+                        return item.identifier === id ? { ...item, enabled: nextEnabled } : o;
+                    }),
+                };
+            });
+            return { ...doc, prompt_order: nextOrder };
+        });
+    }, [schedulePresetSave]);
+
+    const toggleGlobalLore = useCallback((id: string) => {
+        setGlobalLore((prev) => {
+            const next = prev.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g));
+            if (live) {
+                const nextSel = next.filter((g) => g.enabled).map((g) => g.id);
+                const nextWi = { ...worldInfoBaseRef.current, globalSelect: nextSel };
+                worldInfoBaseRef.current = nextWi;
+                void patchSettings({ world_info_settings: { world_info: nextWi } }).catch((e) => {
+                    showHint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+                });
+            }
+            return next;
+        });
+    }, [live, showHint, t]);
 
     const queueImport = useCallback((drafts: ImportDraft[]) => {
         if (!drafts.length) return;
@@ -356,8 +643,6 @@ function Shell() {
             .catch((e) => showHint(t('chat.delete.failed') + ': ' + (e instanceof Error ? e.message : e)));
     }, [serverStatus, chats, activeChat, refreshChats, showHint, t]);
 
-    /** 规范稿 open-panel:补 push + 激活 + 展开工作台(移动端拉起半屏 sheet)。
-     *  params 随行 → panelParams[type](板块体自取;不传保留上次现场)。 */
     const openPanel = useCallback((type: PanelType, params?: unknown) => {
         if (params !== undefined) {
             setPanelParamsMap((prev) => ({ ...prev, [type]: params }));
@@ -365,7 +650,6 @@ function Shell() {
         if (type === 'newtab') {
             setActiveTab('newtab');
         } else {
-            /* launcher 系统区频度打点 —— 'utopinn.wb.freq' {count,lastAt}。 */
             bumpPanelFreq(type);
             setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
             setActiveTab(type);
@@ -375,20 +659,6 @@ function Shell() {
         setLauncherSearch('');
     }, [isMobile]);
 
-    const mvuStep = useCallback((key: string, d: number) => {
-        setMvu((prev) => ({ ...prev, [key]: typeof prev[key] === 'number' ? (prev[key] as number) + d : prev[key]! }));
-        setEchoMvu(true);
-        setTimeout(() => setEchoMvu(false), 500);
-    }, []);
-
-    /** 规范稿 bridgeOp:总簿三动作 —— 写 MVU 快照 + echo pulse。 */
-    const bridgeOp = useCallback((op: string) => {
-        if (op === 'repair') mvuStep('大殿耐久', 15);
-        else if (op === 'stipend') mvuStep('宗门声望', 2);
-        else if (op === 'levy') mvuStep('灵石', 5);
-    }, [mvuStep]);
-
-    /** 规范稿 open-settings:settingsModalOpen=true + mobileDrawerOpen=false。 */
     const openSettings = useCallback((tab?: string) => {
         if (tab) setSettingsTab(tab);
         setSettingsOpen(true);
@@ -397,9 +667,6 @@ function Shell() {
 
     const shell = useMemo<ShellCtx>(() => ({
         registry,
-        /* 规范稿 rail 动作:mobileDrawerOpen=false(抽屉内导航一律收屉)。
-           移动态导航收敛 —— 真视图只有 chat + hub:plugins 落设置页签
-           (不换 view),studio/home 折回 hub/chat;桌面原样直换。 */
         view,
         setView: (v: ViewId) => {
             if (isMobile) {
@@ -416,11 +683,7 @@ function Shell() {
             setActiveChat(id);
             setView('chat');
             if (window.innerWidth <= 920) setSidebarOpen(false);
-            /* 规范稿 select-session:mobileDrawerOpen=false。 */
             setMobileDrawer(false);
-            /* 工作台布局改由 wbKey 水合段统一接管:有档按档恢复,无档
-             * defaultTabs → launcher(见上方 persist 段);旧布局同时
-             * flush 进旧会话 key —— 这里不再手动开 tab。 */
             setStageData((prev) => ({ ...prev, selParaId: null }));
         },
         newChat: onNewChat,
@@ -428,6 +691,8 @@ function Shell() {
         deleteChat: onDeleteChat,
         cards, cardsMock, refreshCards,
         importDrafts, queueImport, dismissImportDraft,
+        currentUser, refreshCurrentUser,
+        personas, refreshPersonas,
         persona, setPersona,
         sidebarOpen,
         toggleSidebar: () => setSidebarOpen((v) => !v),
@@ -441,8 +706,6 @@ function Shell() {
             setOpenTabs((prev) => {
                 const next = prev.filter((x) => x !== id);
                 setActiveTab((a) => (a === id ? (next[next.length - 1] ?? '') : a));
-                /* floatingType 是工作台展示态旗标 —— 关掉发起 tab 不回 dock:
-                   浮窗壳继续挂剩余 tabs(全关 → 浮窗落 launcher,不悬空)。 */
                 return next;
             });
         },
@@ -456,9 +719,6 @@ function Shell() {
             }
             return { ...prev, [type]: params };
         }),
-        /* 浮窗 v2(detach 不杀卡):floatingType 只是「aside 渲成浮窗壳」的
-           展示态 —— openTabs 不摘、PanelBody 同树不切容器,detach/dockBack
-           全程 iframe 零 remount。浮窗即工作台本体,激活发起板块。 */
         detachPanel: (type) => {
             setFloatingType(type);
             setActiveTab(type);
@@ -466,26 +726,19 @@ function Shell() {
         },
         dockBack: () => { setFloatingType(null); },
         closeFloat: () => {
-            /* 沿用旧语义「面板丢弃」:移除发起 tab 并还原 dock。 */
-            const t = floatingType;
-            if (!t) return;
+            const tp = floatingType;
+            if (!tp) return;
             setFloatingType(null);
             setOpenTabs((prev) => {
-                const next = prev.filter((x) => x !== t);
-                setActiveTab((a) => (a === t ? (next[next.length - 1] ?? 'newtab') : a));
+                const next = prev.filter((x) => x !== tp);
+                setActiveTab((a) => (a === tp ? (next[next.length - 1] ?? 'newtab') : a));
                 return next;
             });
         },
         floatingType, floatingRect, setFloatingRect,
         cardappFs, setCardappFs,
-        /* 跨格契约(卡「收表面」):工作台折叠 + 移动 sheet 归 closed;
-           openTabs 不清 —— 「收」是显隐不是销毁。顺手收 cardappFs 残标
-           (fs 遮罩下本就点不到折叠,程序路径可能绕过 → 防 fs 幽灵)。 */
         collapsePanels: () => { setCardappFs(false); setWorkbenchOpen(false); setSheetSnap('closed'); },
         launcherSearch, setLauncherSearch,
-        contextOpen, setContextOpen,
-        composerMenuOpen, setComposerMenuOpen,
-        presetPopOpen, setPresetPopOpen,
         openDropdown, setOpenDropdown,
         accountPopOpen, setAccountPopOpen,
         settingsOpen, settingsTab,
@@ -503,69 +756,58 @@ function Shell() {
         adminNav,
         setAdminNav: (v: string) => { setAdminNav(v); setMobileDrawer(false); },
         selectedPlugin, setSelectedPlugin,
-        models: MOCK_MODELS, activeModel, setActiveModel,
-        presets: MOCK_PRESETS, activePresetId,
-        pickPreset: (id) => {
-            setActivePreset(id);
-            const p = MOCK_PRESETS.find((x) => x.id === id);
-            if (p) setPresetParams((prev) => ({ ...prev, temp: p.temp, topP: p.topP, ctxLen: p.ctxLen, maxReply: p.maxReply }));
-        },
+        connSource,
+        models, modelsError, activeModel, setActiveModel,
+        presets, activePresetId, pickPreset,
         presetParams,
-        setPresetParam: (k, v) => setPresetParams((prev) => ({ ...prev, [k]: v })),
-        togglePresetBlock: (id) => setPresetParams((prev) => ({
-            ...prev, blocks: prev.blocks.map((b) => (b.id === id ? { ...b, enabled: !b.enabled } : b)),
-        })),
-        globalLore, toggleGlobalLore: (id) => setGlobalLore((prev) => prev.map((g) => (g.id === id ? { ...g, enabled: !g.enabled } : g))),
-        worldbook, selectedLoreId, setSelectedLoreId,
-        notesText, setNotesText,
+        setPresetParam,
+        togglePresetBlock,
+        globalLore, toggleGlobalLore,
+        worldbook,
+        refreshConnection,
         chatSettings,
         setChatSetting: (k, v) => setChatSettings((prev) => ({ ...prev, [k]: v })),
-        mvu, setMvu, mvuStep, echoMvu, bridgeOp,
         stageData, patchStageData: (p) => setStageData((prev) => ({ ...prev, ...p })),
         hint: showHint,
-        live: serverStatus === 'online',
+        live,
         serverStatus,
     }), [
         view, railTab, chats, chat, activeChat, sidebarOpen, workbenchOpen,
         openTabs, activeTab, floatingType, floatingRect, cardappFs, launcherSearch, panelParams,
-        showHint, serverStatus, onNewChat, onRenameChat, onDeleteChat, openPanel,
+        showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
-        persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,
-        accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
+        currentUser, refreshCurrentUser, personas, refreshPersonas, persona,
+        openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
-        activePresetId, presetParams, globalLore, worldbook, selectedLoreId,
-        notesText, chatSettings, mvu, mvuStep,
-        echoMvu, bridgeOp, stageData, openSettings, activeModel,
+        connSource, models, modelsError, activeModel, setActiveModel,
+        presets, activePresetId, pickPreset, presetParams, setPresetParam, togglePresetBlock,
+        globalLore, toggleGlobalLore, worldbook, refreshConnection,
+        chatSettings, stageData, openSettings,
     ]);
 
     return (
         <ShellProvider value={shell}>
+            {chatSettings.customCss.trim() && (
+                <style id="utopinn-custom-css">{chatSettings.customCss}</style>
+            )}
             <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
                 {isMobile ? (
                     <main className="min-h-0 flex-1">
                         <MobileFrame />
                     </main>
                 ) : (
-                    <>
-                        <div className="flex min-h-0 flex-1">
-                            <LeftChrome />
-                            {/* 规范稿:inset 画布外裹 pr-[10px] pb-[10px] 呼吸容器 */}
-                            <div className="flex min-w-0 flex-1 overflow-hidden pr-[10px] pb-[10px] pl-0 pt-0">
-                                <div className="workspace-inset">
-                                    <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
-                                    {/* 浮窗 v2:floatingType 时 aside 自身渲成浮窗壳
-                                        (Workbench 内同一 DOM 节点换 chrome)—— 不再有
-                                        独立 FloatingWin 挂点,detach 全程零 remount。 */}
-                                    <Workbench />
-                                </div>
+                    <div className="flex min-h-0 flex-1">
+                        <LeftChrome />
+                        <div className="flex min-w-0 flex-1 overflow-hidden py-[8px] pr-[8px] pl-0">
+                            <div className="workspace-inset">
+                                <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
+                                <Workbench />
                             </div>
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
             <Cmdk />
-            {/* 移动端模态(settings/import/charEditor/accountPop)锚在 mobile-shell
-                内部(规范稿 absolute inset-0),由 MobileFrame 自挂 —— 桌面板才走全局。 */}
             {!isMobile && <SettingsModal />}
             {hintState && <div className={`hint-pill spec-toast${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
             {dropVeil && (
@@ -576,6 +818,10 @@ function Shell() {
             )}
         </ShellProvider>
     );
+}
+
+function wiObjCopy(raw: Record<string, unknown>): Record<string, unknown> {
+    return { ...raw };
 }
 
 export default function App() {
