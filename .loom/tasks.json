@@ -2978,20 +2978,29 @@
         }
       ],
       "progress": {
-        "completed": [],
-        "next": "挂起:legacy 端点仍是浏览器/CLI fallback,TASK-038 验收矩阵全绿后再谈物理删除(2026-11-19 拍板)"
+        "completed": [
+          "P1 清点+收口方案落地:.loom/design/legacy-convergence.md(2026-11-21)"
+        ],
+        "next": "P2 待拍板:3.A 一层删减候选(~166 路由/24 文件)连测删;gap 补缺按 §5 收编序;浏览器引擎文件删除前提=golden 捕获迁 /preview 直采"
       },
-      "evidence": [],
+      "evidence": [
+        "对照表:.loom/design/legacy-convergence.md(双面总表+补缺 12 项+删减两层候选+标注清单)",
+        "实测:utopinn 11 插件 83 HTTP+1WS+1UDP;legacy src/endpoints/ 64 文件~519 有效挂载(+面外~24),非抄旧档 67",
+        "标注:47 个 compat 端点文件加一行头注「compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*」,node --check 64 文件全过;groups/quick-replies 有活产品消费+无孪生故不标,列 gap#1/#2",
+        "关键结论:web SPA 仅剩 4 条 legacy 调用(rename/quick-replies list/card-runtime/ws-ticket);CLI 剩 4 条(characters/all+groups/all+group/get+jobs/active);api-client panel-t0 有 7 个 @deprecated legacy 动词待迁;3.A 删减候选为 extras 生态(提供商面/SD/翻译/语音等)零非自测消费方"
+      ],
       "outcome": "清点 LUKER_SERVE_LEGACY 兼容 harness(golden/e2e)仍依赖的 legacy 端点集合;utopinn REST 已可覆盖的删掉,harness 专用端点标注 compat 面,其余制定退役序。新 SPA 不依赖任何 legacy 端点(已成立)。",
       "boundaries": [
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z",
+      "updated_at": "2026-11-21T00:00:00.000Z",
       "note": "status: parked→open(枚举外值修正,parked 语义保留在边界)",
       "touches": [
         ".loom/design/v2-stack-decisions.md",
+        ".loom/design/legacy-convergence.md",
         "apps/server/src/endpoints/chats.js",
+        "apps/server/src/endpoints/*.js(47 文件 compat 头注)",
         "apps/server/public/scripts/openai.js"
       ]
     },

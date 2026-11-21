@@ -1,3 +1,4 @@
+// compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*(收敛方案 .loom/design/legacy-convergence.md,TASK-035)。
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';

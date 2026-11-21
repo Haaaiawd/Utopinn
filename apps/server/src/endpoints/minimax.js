@@ -1,3 +1,4 @@
+// compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*(收敛方案 .loom/design/legacy-convergence.md,TASK-035)。
 import express from 'express';
 import fetch from 'node-fetch';
 import { readSecret, SECRET_KEYS } from './secrets.js';

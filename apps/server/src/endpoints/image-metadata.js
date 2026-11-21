@@ -1,3 +1,4 @@
+// compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*(收敛方案 .loom/design/legacy-convergence.md,TASK-035)。
 /**
  * Generic image metadata service.
  * Provides on-demand metadata generation with file mtime-based caching.

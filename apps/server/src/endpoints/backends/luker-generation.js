@@ -5,9 +5,10 @@ import path from 'node:path';
 import sanitize from 'sanitize-filename';
 
 import { CHAT_COMPLETION_SOURCES } from '../../constants.js';
-import { appendMessagesToChatFile } from '../chats.js';
+import { appendMessagesToChatFile, readLastChatGenerationId, writeLastChatGenerationId } from '../chats.js';
 import { getConfigValue } from '../../util.js';
 import { stripJsonlExt } from '../../storage/name-validation.js';
+import { getChatRepo } from '../../storage/index.js';
 import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
 import { emit as diagEmit } from '../../services/diag-bus.js';
 
@@ -723,11 +724,15 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
         return false;
     }
 
+    const now = new Date().toISOString();
+    const genStarted = new Date(Number(job?.createdAt) || Date.now()).toISOString();
     const message = {
         name: String(job?.requestMeta?.char_name || persistTarget.char_name || 'Assistant'),
         is_user: false,
         is_system: false,
-        send_date: new Date().toISOString(),
+        send_date: now,
+        gen_started: genStarted,
+        gen_finished: now,
         mes: finalText,
         extra: {
             api: String(job?.requestMeta?.api || 'unknown'),
@@ -736,6 +741,22 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             ...(generationId ? { luker_generation_id: generationId } : {}),
         },
     };
+    // ST 楼层惯例(上游 saveReply 尾段):AI 楼恒带 swipe_id/swipes/swipe_info
+    // 三元组——swipe 是「同一楼的多版本」而非新楼。缺这套结构的楼层在旧
+    // 客户端里没有 swipe 面,也让 type:'swipe' 的并楼分支找不到槽位。
+    // swipe_info[i].extra 是 floor.extra 的快照;luker_generation_id 是
+    // 协议层一次性 ack 令牌,appendMessagesToChatFile 落盘前会剥掉顶层
+    // (stripLukerGenerationIdFromMessage)——快照同步不嵌,保持盘上同形。
+    const swipeInfoExtra = structuredClone(message.extra);
+    delete swipeInfoExtra.luker_generation_id;
+    message.swipe_id = 0;
+    message.swipes = [finalText];
+    message.swipe_info = [{
+        send_date: now,
+        gen_started: genStarted,
+        gen_finished: now,
+        extra: swipeInfoExtra,
+    }];
 
     const directories = job?.requestMeta?.directories;
     const chatsDirectory = String(directories?.chats || '');
@@ -848,6 +869,190 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
     }
 
     return false;
+}
+
+/**
+ * ST 楼层 swipe 结构补全(上游 ensureSwipes 同语义):
+ * AI 楼缺 swipe 字段时以当前 mes/extra 回填槽位 0。
+ * @returns {boolean} 楼层可 swipe(非用户楼/非小系统楼)且结构已就位;
+ *   不可 swipe → false(调用方退回新楼追加,同上游 saveReply 'normal' 回退)。
+ */
+function ensureFloorSwipeStructures(floor) {
+    if (!floor || typeof floor !== 'object') {
+        return false;
+    }
+    // 上游门槛:saveReply 对 swipe_id===undefined||is_user 的末楼退回
+    // 'normal';ensureSwipes 再排除 extra.isSmallSys(小系统条)。两条件
+    // 合起来 = 只有常规 AI 楼有资格承载 swipes[]。
+    if (floor.is_user || floor?.extra?.isSmallSys) {
+        return false;
+    }
+    if (!Array.isArray(floor.swipes)) {
+        floor.swipes = [String(floor.mes ?? '')];
+    }
+    if (typeof floor.swipe_id !== 'number') {
+        floor.swipe_id = 0;
+    }
+    if (!Array.isArray(floor.swipe_info)) {
+        floor.swipe_info = floor.swipes.map(() => ({
+            send_date: floor.send_date,
+            gen_started: floor.gen_started,
+            gen_finished: floor.gen_finished,
+            extra: {},
+        }));
+    }
+    while (floor.swipe_info.length < floor.swipes.length) {
+        floor.swipe_info.push({
+            send_date: floor.send_date,
+            gen_started: floor.gen_started,
+            gen_finished: floor.gen_finished,
+            extra: {},
+        });
+    }
+    return true;
+}
+
+const SWIPE_PERSIST_CAS_ATTEMPTS = 3;
+
+/**
+ * type:'swipe' 的服务端持久化:新文本并入「前一楼」的 swipes[] 槽位
+ * (swipe_id 指到新槽、mes/send_date/gen_finished/extra 刷新),不追加新楼。
+ * 对齐上游 saveReply({type:'swipe'}) 落盘形:swipe 是同一楼的多版本。
+ *
+ * 契约(swipe 不可并楼 → 返回 false,调用方退回 persistGeneratedReply
+ * 新楼追加,与上游 type 回退 'normal' 一致):
+ *   - 聊天不存在(空聊);
+ *   - 末楼是用户楼/小系统楼(is_user/extra.isSmallSys);
+ *   - persistTarget 字段不足以寻址。
+ * 真写失败(NotFound/非完整性错)走 throw,由上层标 failed。
+ *
+ * CAS 与 dedup:读-改-写经 repo.save(expectedIntegrity);并发推进冲突时
+ * 重读重试(≤3 次),与 persistWorldInfoTimedEffects 同语义。gen-id 侧车
+ * 命中 = 本次生成已并楼,直接返回 true(重入幂等)。
+ */
+async function persistGeneratedSwipe(job, text, generationId = '', modelName = '') {
+    const persistTarget = job?.persistTarget;
+    const finalText = String(text || '');
+    if (!persistTarget || typeof persistTarget !== 'object' || !finalText) {
+        return false;
+    }
+    if (persistTarget.kind !== 'character' && persistTarget.kind !== 'group') {
+        return false;
+    }
+
+    const directories = job?.requestMeta?.directories;
+    const isGroup = persistTarget.kind === 'group';
+    const avatar = isGroup ? '' : normalizePersistAvatarDirectory(persistTarget.avatar_url);
+    const fileName = isGroup ? '' : normalizePersistJsonlFileName(persistTarget.file_name);
+    const name = isGroup
+        ? String(persistTarget.id || '')
+        : fileName.replace(/\.jsonl$/i, '');
+    const chatsDirectory = isGroup
+        ? String(directories?.groupChats || '')
+        : String(directories?.chats || '');
+    if (!name || !chatsDirectory || (!isGroup && (!avatar || !fileName))) {
+        return false;
+    }
+    const repoOpts = isGroup ? { isGroup: true, groupId: String(persistTarget.id || '') } : {};
+    const chatFilePath = isGroup
+        ? path.join(chatsDirectory, sanitize(`${name}.jsonl`))
+        : path.join(chatsDirectory, avatar, fileName);
+
+    // gen-id 侧车:本次生成已并楼(兜底重入/retry),不再叠第二份 swipe。
+    const incomingId = String(generationId || '').trim();
+    if (incomingId && chatFilePath && readLastChatGenerationId(chatFilePath) === incomingId) {
+        return true;
+    }
+
+    const extra = {
+        api: String(job?.requestMeta?.api || 'unknown'),
+        model: modelName || job?.modelName || job?.requestMeta?.model || '',
+        luker_server_persisted: true,
+        // 群楼层同 persistGeneratedReply:gen_id = 群批次 id(对账键)。
+        ...(isGroup && persistTarget.gen_id !== undefined && persistTarget.gen_id !== null
+            ? { gen_id: persistTarget.gen_id }
+            : {}),
+    };
+    const sendDate = new Date().toISOString();
+    const genStarted = new Date(Number(job?.createdAt) || Date.now()).toISOString();
+
+    const repo = getChatRepo();
+    for (let attempt = 0; attempt < SWIPE_PERSIST_CAS_ATTEMPTS; attempt++) {
+        const doc = await repo.get(job.handle, avatar, name, repoOpts);
+        const body = Array.isArray(doc?.body) ? doc.body.slice() : null;
+        const lastFloor = body?.length ? structuredClone(body[body.length - 1]) : null;
+        if (!doc || !lastFloor || !ensureFloorSwipeStructures(lastFloor)) {
+            return false;
+        }
+        body[body.length - 1] = lastFloor;
+
+        // 并楼:新 swipe 追加在数组尾并选中。上游「overswipe→生成」
+        // 的净效果;不向数组中间插洞(saveReply 的 swipes.length++
+        // 稀疏槽行为不复制——服务端 swipe 恒为「再出一版」)。
+        lastFloor.swipes.push(finalText);
+        lastFloor.swipe_id = lastFloor.swipes.length - 1;
+        lastFloor.mes = finalText;
+        lastFloor.send_date = sendDate;
+        lastFloor.gen_started = genStarted;
+        lastFloor.gen_finished = sendDate;
+        lastFloor.extra = {
+            ...(lastFloor.extra && typeof lastFloor.extra === 'object' ? lastFloor.extra : {}),
+            ...extra,
+        };
+        lastFloor.swipe_info[lastFloor.swipe_id] = {
+            send_date: sendDate,
+            gen_started: genStarted,
+            gen_finished: sendDate,
+            extra: structuredClone(lastFloor.extra),
+        };
+
+        try {
+            await repo.save(job.handle, avatar, name, doc.header, body, doc.integrity, repoOpts);
+        } catch (error) {
+            // 生成期间会话被并发推进(WI timed effects/客户端写)——
+            // 重读最新 body 再并楼;超次数/非冲突错往外抛。
+            if (error?.code !== 'integrity_mismatch' || attempt === SWIPE_PERSIST_CAS_ATTEMPTS - 1) {
+                throw error;
+            }
+            continue;
+        }
+        if (incomingId && chatFilePath) {
+            writeLastChatGenerationId(chatFilePath, incomingId);
+        }
+        // TASK-013 settle seam:与新楼 persist 同款,串行 post-persist
+        // 结算——并楼改了末楼内容/ swipe_id,MVU 投影需对新槽位重算。
+        try {
+            await settlePersistedMvuMessage({
+                handle: job?.handle,
+                charDir: avatar,
+                name,
+                isGroup,
+                groupId: isGroup ? String(persistTarget.id || '') : undefined,
+                autoInit: true,
+                directories,
+            });
+        } catch (error) {
+            console.error('[mvu] post-persist settle failed (swipe):', error);
+        }
+        return true;
+    }
+    return false;
+}
+
+/**
+ * 兜底持久化调度:verb 'swipe' → 并前楼 swipes[];不可并楼/其余动词 →
+ * 追加新楼(对齐上游 saveReply 的 type 回退 'normal' 语义)。
+ * kind:'none' 在前置守卫已被拦,到这里恒 character/group。
+ */
+export async function persistJobReplyText(job, text, generationId = '', modelName = '') {
+    if (String(job?.requestMeta?.verb || '') === 'swipe') {
+        const merged = await persistGeneratedSwipe(job, text, generationId, modelName);
+        if (merged) {
+            return true;
+        }
+        // 前楼不可 swipe(空聊/用户楼/小系统楼)——上游 type='normal' 回退。
+    }
+    return persistGeneratedReply(job, text, generationId, modelName);
 }
 
 export async function completeGenerationJobFromText(request, job, text, modelName = '') {
@@ -1031,7 +1236,7 @@ async function persistGenerationJobIfUnacked(job) {
     notifyJobStatus(job);
 
     try {
-        const persisted = await persistGeneratedReply(job, job.text, job.id, job.modelName);
+        const persisted = await persistJobReplyText(job, job.text, job.id, job.modelName);
         job.persisted = Boolean(persisted);
         // persist 跨 await:期间用户 abort 会把 status 翻 cancelled——
         // 不许被这里的终态赋值盖回 completed/failed。
