@@ -429,7 +429,7 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 `utopinn cardapp <mount|eval|call|op|status|unmount>` —— 不依赖浏览器
 真跑卡面 HTML/JS 的参照宿主,两个文件:`cmd-cardapp.mjs`(动词层)+
 `cardapp-host.mjs`(harness 本体,~1100 行,jsdom/esbuild 懒加载,
-design: `.loom/design/headless-cardapp-harness.md`)。
+design: `.skeinn/design/headless-cardapp-harness.md`)。
 
 - **一次性进程语义**:每动词 = mount → settle → act → dispose → exit。
   卡真相在服务端(chat_metadata.variables/chat_state/chat body),

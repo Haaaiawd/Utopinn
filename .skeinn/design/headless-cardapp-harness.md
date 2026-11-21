@@ -439,7 +439,7 @@ TH `getChatMessages`×43 频度压测 → dispatch 耗时分布,顺便给 T1
 - 卡实证:`work/掌门卡/02_card_工作区/cardapp/index.js`+
   `preview.html:160-190`(作者手写 ctx 桩,ctx 面契约实物)、
   `ref/cards/GuiXu/`(TH 面重型卡)、`tests/corpus/cards/cardapp*-probe.json`
-- 既有设计:`.loom/design/cardapp-web-host.md`、`mobile-panels.md`、
+- 既有设计:`.skeinn/design/cardapp-web-host.md`、`mobile-panels.md`、
   `capabilities/sandboxed-card-apps/research/{webview-bridge-security,
   card-runtime-ecosystem}.md`
 

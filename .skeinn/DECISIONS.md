@@ -35,7 +35,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 逐字节相等不可达(含随机与时间);轨迹等价已能抓住一切真实行为分叉;白名单外出现系统差异时阈值升级而非放宽。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/compat-golden-diff.md, .loom/capabilities/st-engine-compat/capability.md
+- Affects: .skeinn/design/compat-golden-diff.md, .skeinn/capabilities/st-engine-compat/capability.md
 - Recorded: 2026-11-02T08:57:13.114Z
 
 ## D-005: 保留 Luker 服务端插件与 skills/orchestrator 功能
@@ -53,7 +53,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 最大化'绝大多数卡'覆盖率:CardApp 卡走原生面,面向酒馆助手写的卡(占社区大头)走兼容面,均不满足降级静态 HTML
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/mobile-panels.md, .loom/capabilities/sandboxed-card-apps/capability.md, packages/protocol/src/panels.ts
+- Affects: .skeinn/design/mobile-panels.md, .skeinn/capabilities/sandboxed-card-apps/capability.md, packages/protocol/src/panels.ts
 - Recorded: 2026-11-02T09:18:53.743Z
 
 ## D-007: D-009 插件核心架构(DSH 形态)
@@ -62,7 +62,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 用户拍板:像 DSH 一样以插件为核心且插件体验要好;插件生态强于我们本身——服务注册表+管线钩子让社区能替换/扩展引擎而不分叉产品
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/plugin-architecture.md, .loom/design/core-engine.md, .loom/design/generation-api.md
+- Affects: .skeinn/design/plugin-architecture.md, .skeinn/design/core-engine.md, .skeinn/design/generation-api.md
 - Recorded: 2026-11-03T05:46:58.777Z
 
 ## D-008: D-010 骨架直接仿 DSH/Cordis(修订 D-009 实现语义)
@@ -71,7 +71,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 用户拍板'骨架可以很直接地仿照 DSH,酒馆生态第一要位';DSH 源码实证契约(acp:inject 数组+apply(ctx,config)+ctx.effect disposer;DshManifest:bundles 有序 profile;能力接缝必须三角齐备)
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/plugin-architecture.md
+- Affects: .skeinn/design/plugin-architecture.md
 - Recorded: 2026-11-03T05:59:40.659Z
 
 ## D-009: 内核引入真 cordis,V1=聊天+完整管理端,预设=数据无损+生成等价
@@ -161,7 +161,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 抽屉与 rail 租户是两套宿主语义；生态无导航骨架切换先例；Marinara/DSH 已分别验证混合可行。聊天即舞台是视图状态不是导航范式。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/web-ia.md, .loom/design/web-visual-system.md
+- Affects: .skeinn/design/web-ia.md, .skeinn/design/web-visual-system.md
 - Recorded: 2026-11-04T04:23:05.141Z
 
 ## D-014: 客户端对齐 DSH 全形态：动态 bundle + 平台模块表
@@ -170,7 +170,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 用户拍板对 DSH 走彻底；服务端插件带客户端表面时，无 bundle 装载则插件加 UI 必须发版。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/web-slots-architecture.md
+- Affects: .skeinn/design/web-slots-architecture.md
 - Recorded: 2026-11-04T04:23:05.144Z
 
 ## D-015: 内核三件全补：inject + effect + locale
@@ -179,7 +179,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 对齐 cordis 语义并为动态装载铺路；locale 拆分本就列在契约表。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/design/web-slots-architecture.md, apps/web/src/kernel/
+- Affects: .skeinn/design/web-slots-architecture.md, apps/web/src/kernel/
 - Recorded: 2026-11-04T04:23:05.148Z
 
 ## D-016: 服务端路由与 WS 同为贡献点，小面先行
@@ -188,7 +188,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: webServer.register→disposer 是 DSH 已验证形状；streamJob 是 WS，只收 HTTP 会把最大流量留在 Express。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md, apps/server, packages/kernel
+- Affects: .skeinn/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md, apps/server, packages/kernel
 - Recorded: 2026-11-04T04:23:05.151Z
 
 ## D-020: 移动端地基改为 fork IReader(KMP),Expo 实现退位为参照
@@ -206,7 +206,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 用户观察"无论网页端还是移动端,产品形态都还有待研究"属实——形态稿建立在调研代理二手资料上,缺少真产品长期使用的一手判断;IReader fork 本身就会带来其成熟形态的一手细节(书架信息密度/阅读器菜单组织/主题系统),应当反哺而非固化。
 - Source: conversation(用户明示)
 - Supersedes: none(限定既有形态稿的"已拍板"语义:基线可用,不封顶)
-- Affects: .loom/design/web-rp-form.md, .loom/design/mobile-reader-form.md, 后续形态类任务
+- Affects: .skeinn/design/web-rp-form.md, .skeinn/design/mobile-reader-form.md, 后续形态类任务
 - Recorded: 2026-11-04T12:10:00.000Z
 
 ## D-017: V1 收缩:旧UI皮 + 服务端脑,一次性全切
@@ -215,12 +215,12 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 此前宏大方案(新SPA+RN+CardApp面板)被负责人判定过大;循序渐进=把已验证的服务端大脑接上仍在用的旧UI,立刻兑现真分离+客户端变轻,同时保留向后演化空间(死路径可比对、文档可复用)。
 - Source: conversation
 - Supersedes: none
-- Affects: .loom/PROJECT.md, .loom/design/web-ia.md, .loom/design/web-form-v2.md, .loom/design/web-rp-form.md, .loom/design/web-visual-system.md, .loom/design/web-slots-architecture.md, .loom/design/mobile-fork-ireader.md, .loom/design/mobile-form-v2.md, .loom/design/mobile-reader-form.md, .loom/design/mobile-ui-foundation.md, .loom/design/mobile-panels.md, .loom/tasks.json
+- Affects: .skeinn/PROJECT.md, .skeinn/design/web-ia.md, .skeinn/design/web-form-v2.md, .skeinn/design/web-rp-form.md, .skeinn/design/web-visual-system.md, .skeinn/design/web-slots-architecture.md, .skeinn/design/mobile-fork-ireader.md, .skeinn/design/mobile-form-v2.md, .skeinn/design/mobile-reader-form.md, .skeinn/design/mobile-ui-foundation.md, .skeinn/design/mobile-panels.md, .skeinn/tasks.json
 - Recorded: 2026-11-10T02:22:28.009Z
 
 ## D-2026-11-10-g076: 方向收缩(2026-11-10):V1 = 旧 Luker/酒馆 UI + 服务端大脑一次性全切。所有生成入口改道 /api/utopinn/generate;客户端组装引擎留码停用;apps/web 新SPA、apps/mobile、CardApp 面板、RP/阅读器形态全部 parked(代码保留,文档转 reference)。性能目标=分离本身,不动旧 UI 渲染层。TASK-026/028 停泊,新增 TASK-030 旧UI接线。
 
-- Changed: .loom/PROJECT.md, .loom/tasks.json
+- Changed: .skeinn/PROJECT.md, .skeinn/tasks.json
 - Affected tasks: TASK-026, TASK-028, TASK-030
 - At: 2026-11-10T02:23:32.616Z
 
@@ -248,7 +248,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 当前最大风险是双写盘面并存——ack/integrity 机制长在 legacy chats.js 里而新 utopinn chat 路由不触发它;任何经新面的写都会绕过结算/去重。必须先统写盘才能谈删旧。TASK-026/028 与 cordis 迁移无关,继续停泊。
 - Source: conversation + subagent 审查(34 条,5527db1 已修阻塞项)
 - Supersedes: none
-- Affects: .loom/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/utopinn-cli.mjs
+- Affects: .skeinn/tasks.json(TASK-032~038 新建), apps/server/src/endpoints/chats.js, apps/server/src/plugins/, apps/cli/utopinn-cli.mjs
 - Recorded: 2026-11-19T06:00:00.000Z
 
 ## D-021: CLI = 协议参考客户端(以骨长肉)——服务端能力必须先有 CLI 动词,新前端绑同一协议面
@@ -257,7 +257,7 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Rationale: 用户明示"CLI需要覆盖所有的东西,并以Cordis组织;到时候新前端UI需要绑定,或许以CLI同步前端的方式,直接以骨长肉"。浏览器旧 UI 是过渡形态,协议面才是产品本体;CLI 覆盖即契约覆盖,CLI 全绿的面上任何薄客户端(浏览器/移动/新 SPA)都只剩渲染职责。
 - Source: conversation
 - Supersedes: none
-- Affects: apps/cli/utopinn-cli.mjs, apps/server/src/plugins/, .loom/tasks.json(TASK-038 升级)
+- Affects: apps/cli/utopinn-cli.mjs, apps/server/src/plugins/, .skeinn/tasks.json(TASK-038 升级)
 - Recorded: 2026-11-19T09:30:00.000Z
 
 ## D-022 CardApp/酒馆助手兼容形态 = 悬浮窗 + 右侧栏(整体优先,兼容后置)(拍板)
@@ -277,6 +277,6 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 
 ## D-2026-11-20-rwvq: 方向再拍板(2026-11-20):V1 旧UI皮方案到期,V2 = apps/web 新SPA 即正式前端。实际工作早已沿此推进(cordis 11 插件+SPA 微内核+CLI 词表派生),本次为账簿追认:PROJECT.md 方向改写;TASK-040/033/034 按已达成或作废收账,TASK-035 重划为 legacy 收敛面,TASK-044 收窄到 novel+galgame 余量;新开 TASK-045(MVU 存量聊天 autoInit,P0-2 实测 bug)、TASK-046(CardApp 应用内浮窗宿主,BBS 类卡面应用)、TASK-047(卡图显链路+导入验收)、TASK-048(连接链路端到端)。
 
-- Changed: .loom/PROJECT.md, .loom/tasks.json
+- Changed: .skeinn/PROJECT.md, .skeinn/tasks.json
 - Affected tasks: TASK-029, TASK-033, TASK-034, TASK-035, TASK-040, TASK-044, TASK-045, TASK-046, TASK-047, TASK-048
 - At: 2026-11-20T10:45:23.894Z

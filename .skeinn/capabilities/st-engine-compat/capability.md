@@ -41,7 +41,7 @@
   - A: 求值分纯/副作用两级——副作用命令产出意图描述由管线层执行 → leads_to: C4
   - B: core 内直接执行副作用(发消息/写变量/调 API)→ leads_to: core 纯度被破坏
 - decide_by: core 硬边界(零 fs/网络)是否守住——必须
-- source: research/characterization-methodology.md + .loom/design/core-engine.md
+- source: research/characterization-methodology.md + .skeinn/design/core-engine.md
 - counterexample: 若验收发现原版行为依赖求值与副作用交错时序,退回局部重构,不改边界
 - output: 求值器返回 {text, effects[]};effects 由 generation-api 管线执行并记录
 

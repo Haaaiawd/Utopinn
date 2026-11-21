@@ -7,8 +7,8 @@
   `apps/server/src/plugins/utopinn-*.js` 全部 `webServer.register` 注册点 ·
   `packages/api-client` / `packages/protocol` · `apps/mobile/src/api` ·
   `packages/kernel/src/webserver.ts` + `apps/server/src/kernel-boot.js` ·
-  `.loom/design/plugin-domain-map.md`(路由口径)与
-  `.loom/design/frontend-binding-matrix.md`(早期绑定态)交叉对账。
+  `.skeinn/design/plugin-domain-map.md`(路由口径)与
+  `.skeinn/design/frontend-binding-matrix.md`(早期绑定态)交叉对账。
 
 > vs-V2: partially-stale
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * utopinn — Utopinn 服务端大脑的命令行薄客户端(agent-first 设计)。
- * 规格:.loom/capabilities/cli-client/capability.md(唯一契约,先读它)。
+ * 规格:.skeinn/capabilities/cli-client/capability.md(唯一契约,先读它)。
  * 零依赖:Node ≥22 原生 fetch + WebSocket。
  */
 import { readFileSync, writeFileSync, renameSync, existsSync, statSync } from 'node:fs';
@@ -3265,7 +3265,7 @@ try {
         case 'state': await cmdState(); break;
         case 'raw': await cmdRaw(); break;
         case 'help': case '--help': case '-h':
-            console.log('utopinn — agent-first CLI。裸跑看状态,`utopinn schema` 看自描述目录,`utopinn doctor` 体检。文档:.loom/capabilities/cli-client/capability.md');
+            console.log('utopinn — agent-first CLI。裸跑看状态,`utopinn schema` 看自描述目录,`utopinn doctor` 体检。文档:.skeinn/capabilities/cli-client/capability.md');
             break;
         default:
             fail('usage', `unknown command: ${CMD}`, { hint: 'utopinn schema 看命令面', rc: 2 });

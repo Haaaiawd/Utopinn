@@ -12,7 +12,7 @@
   CORE_PLUGINS 漏列 utopinn-plugins 至 11-20 才修)。
 - 上游语义:cordis 4.0.0-rc.12(Registry `Plugin.Base` = name/Config/inject/
   provide/intercept,fiber 生命周期)+ DSH manifest/contribution 模式
-  (`.loom/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md`)。
+  (`.skeinn/capabilities/plugin-kernel/research/dsh-fullstack-architecture.md`)。
 - 判据对接:`design/plugin-domain-map.md` §3(管理面独立装载可停用、
   管线引擎不进 fiber)落为内核可检契约。
 
@@ -438,15 +438,15 @@ library 拆单:45 条按域图 §5.2 若先行拆出 `utopinn-state`(18 条 side
 
 ## Related documents and capabilities
 
-- `.loom/design/plugin-domain-map.md` — 域解剖/合并判据/四问+红线;本文的
+- `.skeinn/design/plugin-domain-map.md` — 域解剖/合并判据/四问+红线;本文的
   domain/face 词表与 R1-R6 判据直接来源。
-- `.loom/design/plugin-architecture.md` — cordis 语义骨架/服务四分/事件五模式;
+- `.skeinn/design/plugin-architecture.md` — cordis 语义骨架/服务四分/事件五模式;
   manifest 是 `Plugin.Base` 的 Utopinn 扩展位(§1)。
-- `.loom/capabilities/plugin-kernel/` — cordis 选型/DSH manifest 模式/
+- `.skeinn/capabilities/plugin-kernel/` — cordis 选型/DSH manifest 模式/
   借用边界;DeepWiki 侧 cordis 上游文档佐证 Plugin.Base 字段语义。
-- `.loom/design/client-contract.md`(在写)— 客户端消费面;本文只承诺服务端
+- `.skeinn/design/client-contract.md`(在写)— 客户端消费面;本文只承诺服务端
   manifest 端面与词表,消费节奏归它。
-- `.loom/design/deferred-surgery.md`(若在写)— legacy 面收尾若与本设计
+- `.skeinn/design/deferred-surgery.md`(若在写)— legacy 面收尾若与本设计
   三期重叠(legacy GATED 段/adapter shim),以该档排期为准。
-- `.loom/eval/task038-cli-coverage-audit.md` — 五表漂移的最近一次实证审计。
-- `.loom/DECISIONS.md` D-021 — CLI=协议参考客户端,cli 声明的政策依据。
+- `.skeinn/eval/task038-cli-coverage-audit.md` — 五表漂移的最近一次实证审计。
+- `.skeinn/DECISIONS.md` D-021 — CLI=协议参考客户端,cli 声明的政策依据。

@@ -51,7 +51,7 @@ const EXEMPT = new Map(Object.entries({
         '出站探测上游 API;只读 settings/secrets 取凭据,不写盘。',
     // 注:chats/recent 与 state/*/get|get-batch 读的是用户数据(sidecar/
     // chat 索引),持 dirty:false 读者槽防 sync writer 撕读 —— 已进闸表,
-    // 非豁免。见 .loom/design/deferred-surgery.md 闸表节。
+    // 非豁免。见 .skeinn/design/deferred-surgery.md 闸表节。
 }));
 
 const failures = [];

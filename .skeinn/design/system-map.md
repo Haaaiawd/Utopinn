@@ -1,7 +1,7 @@
 # Utopinn 系统地图——端口 / CLI / 数据流 全索引
 
 > 2026-11-19 TASK-030/031 实弹期整理。唯一事实源是代码;本文当导航。
-> 端口面以 `apps/server` 实跑为准;CLI 契约以 `.loom/capabilities/cli-client/capability.md` 为准。
+> 端口面以 `apps/server` 实跑为准;CLI 契约以 `.skeinn/capabilities/cli-client/capability.md` 为准。
 > vs-V2: partially-stale
 
 ## 0. 一张图

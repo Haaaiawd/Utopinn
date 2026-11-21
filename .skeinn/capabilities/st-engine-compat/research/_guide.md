@@ -1,7 +1,7 @@
 # Research guide for this capability
 
 > This file guides what to write in the research/ directory. Delete it when you have added your own
-> research materials. `loom capability synthesize` reads all .md files in this directory (except this
+> research materials. `skeinn capability synthesize` reads all .md files in this directory (except this
 > guide) and expects them to contain expert narratives, case studies, or methodology sources that
 > inform the decision tree.
 
@@ -36,7 +36,7 @@ Source: <book, article, interview, observation, or personal experience>
 
 ## How this feeds synthesize
 
-`loom capability synthesize` checks that:
+`skeinn capability synthesize` checks that:
 1. At least one .md file exists in research/ (besides this guide)
 2. Every decision tree node (### C1, C2, ...) in capability.md has a `source:` field
 3. Every node has a `counterexample:` field

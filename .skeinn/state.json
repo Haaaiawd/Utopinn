@@ -479,7 +479,7 @@
         "review": {
           "mode": "independent",
           "reviewer_id": "keeper-crux-vela-01",
-          "evidence": "Fresh agent with no shaping-conversation access; reviewed only on-disk .loom artifacts across 3 verification passes (initial review + 2 closure checks)."
+          "evidence": "Fresh agent with no shaping-conversation access; reviewed only on-disk .skeinn artifacts across 3 verification passes (initial review + 2 closure checks)."
         },
         "can_auto_pass": false,
         "at": "2026-11-02T09:02:49.625Z",

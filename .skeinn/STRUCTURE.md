@@ -20,7 +20,7 @@
 ## Documents
 
 - `AGENTS.md` — 架构决定与移植清单(人读)
-- `.loom/` — Loom 状态:PROJECT/STRUCTURE/DECISIONS、design/、capabilities/、tasks
+- `.skeinn/` — Skeinn 状态:PROJECT/STRUCTURE/DECISIONS、design/、capabilities/、tasks
 
 ## Configuration and build
 

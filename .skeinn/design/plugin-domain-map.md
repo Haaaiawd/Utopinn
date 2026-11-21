@@ -6,7 +6,7 @@
 - 材料:`apps/server/src/plugins/utopinn-*.js` 全读 + `src/profile.yaml` +
   `src/kernel-boot.js` + 前端 `apps/web/src/kernel/contributions.ts` /
   `features/panels.tsx` + CLI `apps/cli/utopinn-cli.mjs` 具名路由表 +
-  `.loom/capabilities/plugin-kernel/` 既有研究。
+  `.skeinn/capabilities/plugin-kernel/` 既有研究。
 
 > vs-V2: current
 <!-- V2 校准:标题"13 个"现为 11(import→data、stats→diag 已合);§5.1 已落地、§2.7 半落地(_shared/http-utils.js)、§6.1 CORE_PLUGINS 已补 plugins -->

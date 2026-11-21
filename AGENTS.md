@@ -57,17 +57,17 @@ pnpm typecheck
 
 注意:`apps/server` 自带 package-lock(npm 习惯);workspace 安装用 pnpm 即可,原生依赖 better-sqlite3 需编译环境。
 
-<!-- loom:v2 -->
-## LOOM
+<!-- skeinn:v2 -->
+## SKEINN
 
-This project uses LOOM as Agent-only continuity infrastructure. Run `loom context` when entering the
+This project uses SKEINN as Agent-only continuity infrastructure. Run `skeinn context` when entering the
 project, after a context reset, before substantial work, and when the human gives feedback or a direction
 change. When a Task is active, the command restores its execution protocol, exact state, and declared
 context; rerun it before editing after any interruption. Keep project truth, design documents, professional
-capability dossiers, and Tasks current through the CLI, and never ask the human to operate LOOM. Do not
-rerun LOOM before every tool call: persist and restore at meaningful work boundaries. The installed
-`loom` command is the stable project-local invocation. If it is not on PATH in a source checkout, use
-the absolute path to that checkout's `cli/bin/loom.js`; do not guess a relative path from this project.
+capability dossiers, and Tasks current through the CLI, and never ask the human to operate SKEINN. Do not
+rerun SKEINN before every tool call: persist and restore at meaningful work boundaries. The installed
+`skeinn` command is the stable project-local invocation. If it is not on PATH in a source checkout, use
+the absolute path to that checkout's `cli/bin/skeinn.js`; do not guess a relative path from this project.
 
 ## 提交署名约定(硬性)
 

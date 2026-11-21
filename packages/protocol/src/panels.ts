@@ -1,6 +1,6 @@
 // CardApp / panel bridge protocol — postMessage contract between the host
 // (RN WebView / web iframe) and sandboxed card code. Nonce + allowlist +
-// request-id correlation per mount. See .loom/design/mobile-panels.md.
+// request-id correlation per mount. See .skeinn/design/mobile-panels.md.
 
 /** Methods a mounted CardApp may invoke through the bridge (Luker CardApp ctx face).
  * The second block (TASK-046) is the surface the web/RN ctx shim actually
@@ -55,7 +55,7 @@ export type PanelMethod = (typeof PANEL_METHODS)[number];
  * TavernHelper-compatible face (JS-Slash-Runner API surface, re-implemented —
  * its PolyForm NC license forbids vendoring code). Cards without a `card_app`
  * declaration get these globals; they route over the same nonce bridge.
- * See .loom/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md
+ * See .skeinn/capabilities/sandboxed-card-apps/research/tavern-helper-api-surface.md
  * and card-runtime-ecosystem.md §3 for the T0/T1/T2 tiering.
  */
 export const PANEL_METHODS_TH = [

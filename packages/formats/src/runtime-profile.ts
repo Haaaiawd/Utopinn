@@ -8,7 +8,7 @@
  * markers the ecosystem runtimes read (card_app declaration, tavern_helper
  * scripts, the isFrontend `<pre>`-full-HTML contract, body-takeover patterns).
  *
- * See .loom/capabilities/sandboxed-card-apps/research/card-runtime-ecosystem.md
+ * See .skeinn/capabilities/sandboxed-card-apps/research/card-runtime-ecosystem.md
  */
 
 export type RuntimeMount =

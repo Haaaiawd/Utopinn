@@ -1,5 +1,5 @@
 /**
- * cardapp-host — headless CardApp 宿主(.loom/design/headless-cardapp-harness.md)。
+ * cardapp-host — headless CardApp 宿主(.skeinn/design/headless-cardapp-harness.md)。
  *
  * 同一份 wire 契约做参照实现:nonce + 方法白名单 + requestId 台账,
  * 传输层退化为进程内函数调用(shim 自带 __utopinnPanelPost/Receive 钩子)。

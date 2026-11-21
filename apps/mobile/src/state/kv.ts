@@ -1,6 +1,6 @@
 // Tiny key/value persistence adapter for reader settings & progress.
 // Backed by react-native-mmkv (already a declared dep — the research note
-// in .loom/capabilities/mobile-app-stack calls it the right tool for
+// in .skeinn/capabilities/mobile-app-stack calls it the right tool for
 // high-frequency small objects). When the native module isn't in the
 // running binary (Expo Go / web preview), we degrade to an in-memory map:
 // the reader still works, settings just don't survive a reload.

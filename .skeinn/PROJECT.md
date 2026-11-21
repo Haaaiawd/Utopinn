@@ -97,15 +97,15 @@
 
 ## Project structure
 
-见 `.loom/STRUCTURE.md`:pnpm monorepo,apps/{server,mobile,web} + packages/{core,protocol,formats,api-client} + tests/{corpus,golden-diff};ref/ 为本地参考(gitignore)。
+见 `.skeinn/STRUCTURE.md`:pnpm monorepo,apps/{server,mobile,web} + packages/{core,protocol,formats,api-client} + tests/{corpus,golden-diff};ref/ 为本地参考(gitignore)。
 
 ## Work map
 
-见 `.loom/tasks.json`:17 个任务。主序:005(完)→ 011内核+006管线+015渲染器契约 并行 → 007生成API → 008首个dogfood+013MVU+014card-runtime → 009面板 → 010 web全量(含016导入导出面/017诊断域)。V1=聊天+完整管理端+MVU+TH T0/T1。
+见 `.skeinn/tasks.json`:17 个任务。主序:005(完)→ 011内核+006管线+015渲染器契约 并行 → 007生成API → 008首个dogfood+013MVU+014card-runtime → 009面板 → 010 web全量(含016导入导出面/017诊断域)。V1=聊天+完整管理端+MVU+TH T0/T1。
 
 ## Decision history
 
-`.loom/DECISIONS.md` + `loom decision`;已录:全云化架构、Luker 基底、面板页沙箱、golden-diff 阈值、保留 Luker 服务端功能。
+`.skeinn/DECISIONS.md` + `skeinn decision`;已录:全云化架构、Luker 基底、面板页沙箱、golden-diff 阈值、保留 Luker 服务端功能。
 
 ## Completion and failure
 
@@ -117,8 +117,8 @@
 - TASK-001 后展示:服务端跑通,浏览器开旧 UI
 - TASK-008 后展示:手机上第一轮流式对话(录屏)
 - TASK-009 后展示:面板页跑真实 CardApp 卡
-- 每批任务后 `loom check` + 项目测试双绿才算完
+- 每批任务后 `skeinn check` + 项目测试双绿才算完
 
 ## Keeper handoff
 
-`loom project ready` 冻结后由新鲜 Agent 走 keeper 校验。
+`skeinn project ready` 冻结后由新鲜 Agent 走 keeper 校验。

@@ -2,7 +2,7 @@
 // conversation presentation. Renderers draw; they never interpret message
 // semantics, never read chat files, never write state. The host supplies
 // normalized message views, append-only stream deltas, receipts and action
-// callbacks. See .loom/design/conversation-renderers.md (R1–R5 evidence).
+// callbacks. See .skeinn/design/conversation-renderers.md (R1–R5 evidence).
 
 // ---------- Renderer manifest ----------
 

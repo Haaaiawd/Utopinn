@@ -1,7 +1,7 @@
 // /api/utopinn/* REST wire contracts — endpoint shapes not covered by
 // generation.ts (generation + WS) or panels.ts (panel bridge).
 // Every shape mirrors the actual server wire in apps/server/src/plugins/utopinn-*.js;
-// line references in .loom/eval/task038-cli-coverage-audit.md are the audit anchor.
+// line references in .skeinn/eval/task038-cli-coverage-audit.md are the audit anchor.
 
 import type { JsonPatchOp } from './common.js';
 import type { CharacterCardData, PresetDocument, WorldBook } from './resources.js';

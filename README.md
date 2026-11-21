@@ -57,7 +57,7 @@ apps/web       新前端壳(Vite+React19+Tailwind4+Radix),Cordis 贡献点组织
 packages/core  大脑:世界书/宏/instruct/MVU 纯 TS 引擎
 packages/protocol   线协议:API 类型+WS 帧+面板契约,三端唯一事实源
 packages/api-client typed REST/WS 客户端
-.loom/         决策/设计/任务账本(DECISIONS·design/·tasks.json)
+.skeinn/         决策/设计/任务账本(DECISIONS·design/·tasks.json)
 tests/         兼容语料+golden-diff+utopinn-acceptance 验收矩阵(74 断言)
 ```
 

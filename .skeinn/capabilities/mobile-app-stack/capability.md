@@ -6,7 +6,7 @@
 > 协议面调研资产,以下决策树不再指导新代码。另注:即便在参照实现内,
 > 选型也已与本文分叉——实际是 heroui-native+uniwind(非 NativeWind+
 > gluestack),streamdown 不在 deps(Markdown 流式选型未落地)。
-> 新地基见 .loom/design/mobile-fork-ireader.md。
+> 新地基见 .skeinn/design/mobile-fork-ireader.md。
 
 ## Field identity and boundary
 

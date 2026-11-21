@@ -153,7 +153,7 @@ users-* / sync* / skills / panel-shim / card-runtime / storage-health / renderer
 
 ## 4. 头注标注(已落地)
 
-以下 47 个文件顶部加一行 `// compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*(收敛:.loom/design/legacy-convergence.md TASK-035)`:
+以下 47 个文件顶部加一行 `// compat 面:harness/legacy UI 专用,产品调用走 /api/utopinn/*(收敛:.skeinn/design/legacy-convergence.md TASK-035)`:
 
 - 黄金链路:characters.js、chats.js、settings.js、secrets.js、presets.js、worldinfo.js、backends/chat-completions.js、backends/text-completions.js、backends/kobold.js、generation-control.js、tokenizers.js、stats.js、bootstrap.js
 - 壳面:themes.js、moving-ui.js、backgrounds.js、avatars.js、sprites.js、images.js、files.js、assets.js、thumbnails.js、extensions.js、content-manager.js、docs.js、card-app.js

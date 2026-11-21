@@ -112,7 +112,7 @@
 - **integrity 命名**:写请求统一 `body.integrity`(非 `expectedIntegrity`),与 append(`851`)/patch(`952`)/document(`1054`)一致;写响应 integrity 经 `applyIntegrityFromWritePayloadToTarget` 回写 `chat_metadata`+快照。
 - **group 域零误改**:rename(`19676-19686` 仅 character 半支走 utopinn)、append(`14375`)、patch(`14577`)、meta-patch(`14826`)、group get/save、`/api/chats/search`(`17043`,character+group 混合面)全部保留 legacy——utopinn 无 group 面,正确。
 - **generation**:`/api/utopinn/generate`(`openai.js:4388`)为独立改动,非本批;top-10 之外;textgen/kobold/custom(`custom-request.js:470`、`openai.js:4448`)保留 `/api/backends/*`——非回归点。
-- **state sidecars**:20/20 调用点已迁,共享 handler(见 `.loom/eval/task033b-state-sidecar-reroute.md`)。
+- **state sidecars**:20/20 调用点已迁,共享 handler(见 `.skeinn/eval/task033b-state-sidecar-reroute.md`)。
 - **改名残留**:`/api/uberge` 字面量在 `apps/server/public` 下 0 命中。
 - **secrets**:`/api/secrets/*` 全部保留 legacy(`secrets.js:300-528`);`/api/utopinn/secrets` 面仅供薄客户端,无浏览器误接。
 - **404 兜底**:chat GET 404→`{new_chat:true}`、chat list 非 2xx→`[]`、`renamePastChats` 单会话失败 `continue`——与 legacy 调用方期望等价。

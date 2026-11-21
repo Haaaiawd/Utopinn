@@ -1,6 +1,6 @@
 /**
  * W1 实测:PATCH /api/utopinn/settings 弃 CAS 走 SettingsRepo.update() 临界区
- * (设计:.loom/design/deferred-surgery.md §W1 方案 A)。
+ * (设计:.skeinn/design/deferred-surgery.md §W1 方案 A)。
  *
  * 隔离服:真 FsEngine / SqliteEngine + tmp dataRoot + 真 express 挂随机端口,
  * fetch 打真 HTTP —— 与生产同一条 request→repo→engine 路径。
