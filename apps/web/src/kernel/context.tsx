@@ -105,13 +105,26 @@ export interface ShellCtx {
     panelParams: Record<string, unknown>;
     /** 整包替换某类型的载荷;板块体内部导航也走它(现场跨 tab 切换保持)。 */
     setPanelParams: (type: PanelType, params: unknown) => void;
-    /** 拆出为受控悬浮窗(规范稿 detach-panel)。 */
+    /** 拆出为悬浮窗(规范稿 detach-panel)—— v2:整个工作台 aside 提升为
+     *  浮窗壳,openTabs 不摘、PanelBody 同一 React 子树,detach/dockBack
+     *  全程 iframe 零 remount(嵌卡不重启)。type = 发起板块,记档用。 */
     detachPanel: (type: PanelType) => void;
+    /** 浮窗还原为右栏 aside(同树回挂,零 remount)。 */
     dockBack: () => void;
+    /** 关浮窗 = 移除发起板块并还原 dock(沿用旧语义「面板丢弃」)。 */
     closeFloat: () => void;
+    /** 浮窗态旗标:非 null = 工作台 aside 正以浮窗渲染;值=发起板块类型。 */
     floatingType: PanelType | null;
-    floatingPos: { x: number; y: number };
-    setFloatingPos: (p: { x: number; y: number }) => void;
+    /** 浮窗矩形(位置+尺寸);随 WbLayout 按会话存档。 */
+    floatingRect: { x: number; y: number; w: number; h: number };
+    setFloatingRect: (r: { x: number; y: number; w: number; h: number }) => void;
+    /** CardApp 全屏提升:cardapp 类板块激活时 tab 条给「全屏」钮;
+     *  .cardapp-host 切 fixed inset-0(同树不 remount),ESC/关闭钮还原。 */
+    cardappFs: boolean;
+    setCardappFs: (v: boolean) => void;
+    /** 跨格契约(卡「收表面」):收起面板区 —— 工作台折叠 + 移动 sheet 归
+     *  closed。复用现有「收起工作台」语义,openTabs 不清。 */
+    collapsePanels: () => void;
     launcherSearch: string;
     setLauncherSearch: (s: string) => void;
 

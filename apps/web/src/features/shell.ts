@@ -94,7 +94,7 @@ const zh: Record<string, string> = {
     // top-job-slot / launcher 三桶 / 拆出钮)。append-only 块,勿并入上文。
     'panel.type.diag': '诊断与观测', 'panel.type.stats': '统计与命中率',
     'panel.desc.diag': 'Jobs · Trace · 报错 · 日志', 'panel.desc.stats': '生成统计与 WI 命中',
-    'wb.detach': '拆出为悬浮窗',
+    'wb.detach': '拆出为悬浮窗', 'wb.fs': '全屏', 'wb.fsExit': '退出全屏 (ESC)',
     'wb.launcher.cardapp': '卡绑面板(CardApp 宿主)', 'wb.launcher.system': '系统面板', 'wb.launcher.iframe': 'iframe 宿主',
     'wb.launcher.nocardapp': '该卡无 CardApp',
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
@@ -232,6 +232,8 @@ const en: Record<string, string> = {
     ...Object.fromEntries(Object.keys(zh).map((k) => [k, k])),
     'floor.quote': 'Quote',
     'wb.launcher.nocardapp': 'No CardApp on this card',
+    'wb.fs': 'Fullscreen',
+    'wb.fsExit': 'Exit fullscreen (ESC)',
     'msgframe.dock': 'Dock to panel',
     'msgframe.docked': 'Card panel docked to workbench',
     'msgframe.expand': 'Expand',

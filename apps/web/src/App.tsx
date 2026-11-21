@@ -19,7 +19,8 @@ import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
 import { TopChrome, LeftChrome } from './components/shell/Chrome';
-import { Workbench, FloatingWin } from './components/shell/Workbench';
+import { Workbench } from './components/shell/Workbench';
+import { bumpPanelFreq } from './components/shell/panelFreq';
 import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
@@ -58,17 +59,21 @@ function ViewOutlet() {
 const MOBILE_BP = 680;
 
 /* ——— 右工作台布局按会话持久化 ———
- * key = 会话坐标(charDir/chatName),值 = {openTabs,activeTab,floatingType}。
- * 切会话:旧布局先 flush 到旧 key,再按新 key 水合(无存档 → 会话
- * defaultTabs → launcher 兜底);无会话/跨卡互不染。floatingType 同在档里
- * —— 卡 A 飘着的窗切到卡 B 不跟着飘。panelParams 仍全局(板块现场)。 */
+ * key = 会话坐标(charDir/chatName),值 = {openTabs,activeTab,floatingType,
+ * floatingRect}。切会话:旧布局先 flush 到旧 key,再按新 key 水合(无存档 →
+ * 会话 defaultTabs → launcher 兜底);无会话/跨卡互不染。floatingType 同在
+ * 档里 —— 卡 A 飘着的窗切到卡 B 不跟着飘。panelParams 仍全局(板块现场)。 */
 interface WbLayout {
     openTabs: PanelType[];
     activeTab: string;
     floatingType: PanelType | null;
+    floatingRect?: { x: number; y: number; w: number; h: number };
 }
 
 const wbStorageKey = (chatKey: string) => `utopinn.wb.${chatKey}`;
+
+/** 浮窗默认矩形 —— 存档缺 rect 时落点。 */
+const DEFAULT_FLOAT_RECT = { x: 96, y: 96, w: 420, h: 480 };
 
 function loadWbLayout(chatKey: string): WbLayout | null {
     try {
@@ -77,10 +82,15 @@ function loadWbLayout(chatKey: string): WbLayout | null {
         const j = JSON.parse(raw) as Partial<WbLayout>;
         const openTabs = Array.isArray(j.openTabs) ? j.openTabs.filter((x): x is string => typeof x === 'string') : null;
         if (!openTabs) return null;
+        const r = j.floatingRect;
+        const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
         return {
             openTabs,
             activeTab: typeof j.activeTab === 'string' ? j.activeTab : (openTabs[0] ?? 'newtab'),
             floatingType: typeof j.floatingType === 'string' ? j.floatingType : null,
+            floatingRect: r && num(r.x) && num(r.y) && num(r.w) && num(r.h)
+                ? { x: r.x, y: r.y, w: r.w, h: r.h }
+                : undefined,
         };
     } catch { return null; }
 }
@@ -106,7 +116,8 @@ function Shell() {
     const [activeTab, setActiveTab] = useState<string>('ledger');
     const [panelParams, setPanelParamsMap] = useState<Record<string, unknown>>({});
     const [floatingType, setFloatingType] = useState<PanelType | null>(null);
-    const [floatingPos, setFloatingPos] = useState({ x: 96, y: 96 });
+    const [floatingRect, setFloatingRect] = useState(DEFAULT_FLOAT_RECT);
+    const [cardappFs, setCardappFs] = useState(false);
     const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
     const [hintState, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
@@ -178,8 +189,8 @@ function Shell() {
     const wbKey = chat?.charDir && chat?.chatName ? `${chat.charDir}/${chat.chatName}` : null;
     const wbKeyRef = useRef(wbKey);
     const wbFirstRef = useRef(true);
-    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatingType });
-    wbLayoutRef.current = { openTabs, activeTab, floatingType };
+    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatingType, floatingRect });
+    wbLayoutRef.current = { openTabs, activeTab, floatingType, floatingRect };
     const chatRef = useRef(chat);
     chatRef.current = chat;
 
@@ -203,15 +214,17 @@ function Shell() {
         setOpenTabs(next.openTabs);
         setActiveTab(next.activeTab);
         setFloatingType(next.floatingType);
+        setFloatingRect(next.floatingRect ?? DEFAULT_FLOAT_RECT);
+        setCardappFs(false);
         if (next.openTabs.length || next.floatingType) setWorkbenchOpen(true);
     }, [wbKey]);
 
-    /* 持久化:三态任一变化 → 写当前存档。deps 不含 wbKey —— 切会话那
+    /* 持久化:四态任一变化 → 写当前存档。deps 不含 wbKey —— 切会话那
        次提交三态未变本 effect 不跑,水合后的重渲写回同份(幂等),
        不会拿旧布局盖新档。无会话 key=null 不落盘。 */
     useEffect(() => {
-        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatingType });
-    }, [openTabs, activeTab, floatingType]);
+        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatingType, floatingRect });
+    }, [openTabs, activeTab, floatingType, floatingRect]);
 
     const showHint = useCallback((msg: string, err?: boolean) => {
         setHint({ msg, err });
@@ -352,6 +365,8 @@ function Shell() {
         if (type === 'newtab') {
             setActiveTab('newtab');
         } else {
+            /* launcher 系统区频度打点 —— 'utopinn.wb.freq' {count,lastAt}。 */
+            bumpPanelFreq(type);
             setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
             setActiveTab(type);
         }
@@ -426,7 +441,8 @@ function Shell() {
             setOpenTabs((prev) => {
                 const next = prev.filter((x) => x !== id);
                 setActiveTab((a) => (a === id ? (next[next.length - 1] ?? '') : a));
-                if (floatingType === id) setFloatingType(null);
+                /* floatingType 是工作台展示态旗标 —— 关掉发起 tab 不回 dock:
+                   浮窗壳继续挂剩余 tabs(全关 → 浮窗落 launcher,不悬空)。 */
                 return next;
             });
         },
@@ -440,20 +456,32 @@ function Shell() {
             }
             return { ...prev, [type]: params };
         }),
+        /* 浮窗 v2(detach 不杀卡):floatingType 只是「aside 渲成浮窗壳」的
+           展示态 —— openTabs 不摘、PanelBody 同树不切容器,detach/dockBack
+           全程 iframe 零 remount。浮窗即工作台本体,激活发起板块。 */
         detachPanel: (type) => {
             setFloatingType(type);
-            setOpenTabs((prev) => prev.filter((x) => x !== type));
-            setActiveTab((a) => (a === type ? '' : a));
-        },
-        dockBack: () => {
-            if (!floatingType) return;
-            setOpenTabs((prev) => [...prev, floatingType]);
-            setActiveTab(floatingType);
-            setFloatingType(null);
+            setActiveTab(type);
             setWorkbenchOpen(true);
         },
-        closeFloat: () => setFloatingType(null),
-        floatingType, floatingPos, setFloatingPos,
+        dockBack: () => { setFloatingType(null); },
+        closeFloat: () => {
+            /* 沿用旧语义「面板丢弃」:移除发起 tab 并还原 dock。 */
+            const t = floatingType;
+            if (!t) return;
+            setFloatingType(null);
+            setOpenTabs((prev) => {
+                const next = prev.filter((x) => x !== t);
+                setActiveTab((a) => (a === t ? (next[next.length - 1] ?? 'newtab') : a));
+                return next;
+            });
+        },
+        floatingType, floatingRect, setFloatingRect,
+        cardappFs, setCardappFs,
+        /* 跨格契约(卡「收表面」):工作台折叠 + 移动 sheet 归 closed;
+           openTabs 不清 —— 「收」是显隐不是销毁。顺手收 cardappFs 残标
+           (fs 遮罩下本就点不到折叠,程序路径可能绕过 → 防 fs 幽灵)。 */
+        collapsePanels: () => { setCardappFs(false); setWorkbenchOpen(false); setSheetSnap('closed'); },
         launcherSearch, setLauncherSearch,
         contextOpen, setContextOpen,
         composerMenuOpen, setComposerMenuOpen,
@@ -499,7 +527,7 @@ function Shell() {
         serverStatus,
     }), [
         view, railTab, chats, chat, activeChat, sidebarOpen, workbenchOpen,
-        openTabs, activeTab, floatingType, floatingPos, launcherSearch, panelParams,
+        openTabs, activeTab, floatingType, floatingRect, cardappFs, launcherSearch, panelParams,
         showHint, serverStatus, onNewChat, onRenameChat, onDeleteChat, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         persona, contextOpen, composerMenuOpen, presetPopOpen, openDropdown,
@@ -528,11 +556,13 @@ function Shell() {
                             <div className="flex min-w-0 flex-1 overflow-hidden pr-[10px] pb-[10px] pl-0 pt-0">
                                 <div className="workspace-inset">
                                     <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
+                                    {/* 浮窗 v2:floatingType 时 aside 自身渲成浮窗壳
+                                        (Workbench 内同一 DOM 节点换 chrome)—— 不再有
+                                        独立 FloatingWin 挂点,detach 全程零 remount。 */}
                                     <Workbench />
                                 </div>
                             </div>
                         </div>
-                        <FloatingWin />
                     </>
                 )}
             </div>

@@ -27,6 +27,7 @@ import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { expandApiGrants, PanelBridge } from './bridge';
 import { CardAppHost } from './ctxHost';
 import { useI18n } from '../i18n';
+import { useShell } from '../kernel/context';
 import { Icon } from '../components/Icon';
 
 /** Mount bundle from POST /api/card-runtime/mounts (mounts.js publicMount). */
@@ -61,11 +62,29 @@ const POLL_MS = 8_000;
 
 export function CardAppFrame({ charDir, chatName }: PanelContext) {
     const { t } = useI18n();
+    const s = useShell();
     const [mount, setMount] = useState<MountBundle | null>(null);
     const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
     const [attempt, setAttempt] = useState(0);
     const frameRef = useRef<HTMLIFrameElement>(null);
     const bridgeRef = useRef<PanelBridge | null>(null);
+
+    /* 全屏提升(§6.4):fs = ctx 旗标(wb tab 条「全屏」钮置位)。
+       .cardapp-host 切 cardapp-host-fs class → fixed inset-0 z-78;
+       同一 DOM 节点同枚 iframe,零 remount(真 portal 搬 DOM 会重载
+       iframe —— 禁用,class 提升是 theater 形态的正确实现)。
+       ESC / 右上退出钮还原;卡内 requestFullscreen 由 allowfullscreen 放行。 */
+    const fs = s.cardappFs;
+    useEffect(() => {
+        if (!fs) return;
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') s.setCardappFs(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [fs, s]);
+    /* surface 面(TH 格契约)经 ref 转发 —— host/bridge 在 mount effect
+       里构造且 deps 不含 s,闭包若直捕 s 会陈化(ctx memo 每渲重算)。 */
+    const sRef = useRef(s);
+    sRef.current = s;
 
     useEffect(() => {
         let dead = false;
@@ -105,6 +124,14 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
             charDir,
             chatName: chatName ?? mount.chatName ?? undefined,
             push: (event, payload) => bridge.push(event, payload),
+            /* 表面面(TH 格契约):卡 surfaceOpen/surfaceClose → 壳
+               openPanel/collapsePanels;panelType='cardapp'(板块挂载形态)。
+               经 sRef 转发 —— 本 effect deps 不含 s,直捕会陈化。 */
+            surface: {
+                panelType: 'cardapp',
+                openPanel: (type, params) => sRef.current.openPanel(type ?? 'cardapp', params),
+                collapsePanels: () => sRef.current.collapsePanels(),
+            },
         });
         bridgeRef.current = bridge;
         // 种子快照先于卡 init 竞速(ctx.__ready 也在自己拉 getChat,
@@ -168,7 +195,7 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
         ? 'allow-scripts allow-same-origin'
         : 'allow-scripts';
     return (
-        <div className="cardapp-host">
+        <div className={`cardapp-host${fs ? ' cardapp-host-fs' : ''}`}>
             {phase.kind === 'degraded' && (
                 <div className="cardapp-degraded">
                     <span className="rounded-md px-2 py-0.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--status-warn)' }}>{t('panel.cardapp.ctxDegraded')}</span>
@@ -181,7 +208,14 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                 src={src}
                 sandbox={sandbox}
                 referrerPolicy="no-referrer"
+                allowFullScreen
+                allow="fullscreen"
             />
+            {fs && (
+                <button className="cardapp-fs-exit" title={t('wb.fsExit')} onClick={() => s.setCardappFs(false)}>
+                    <Icon name="dockBack" size={13} />
+                </button>
+            )}
         </div>
     );
 }

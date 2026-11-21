@@ -7,6 +7,7 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import type { PanelTypeContribution } from '../../kernel/contributions';
 import { cardAppInfo, type CardAppInfo } from '../../api/cardRuntime';
+import { readPanelFreq, panelFreqScore } from './panelFreq';
 
 /** 按类型解析板块体(panel.type 贡献点;未注册 → 诚实占位)。 */
 export function PanelBody({ type }: { type: string }) {
@@ -56,7 +57,14 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
     const match = (c: PanelTypeContribution) =>
         !q || panelTitle(t, c).toLowerCase().includes(q) || c.type.includes(q) || (c.desc ? t(c.desc).toLowerCase().includes(q) : false);
     const cardItems = appInfo?.has ? contribs.filter((c) => c.category === 'cardapp' && match(c)) : [];
-    const sysItems = contribs.filter((c) => (c.category ?? 'system') === 'system' && match(c));
+    /* 活跃 launcher:系统区按使用频度重排 —— score = count + 近因加成
+       (openPanel 打点 'utopinn.wb.freq');无记录 -1 殿后保注册序。 */
+    const freqMap = readPanelFreq();
+    const sysItems = contribs
+        .filter((c) => (c.category ?? 'system') === 'system' && match(c))
+        .map((c, i) => ({ c, i, s: panelFreqScore(freqMap[c.type]) }))
+        .sort((a, b) => (b.s - a.s) || (a.i - b.i))
+        .map((x) => x.c);
     const suggested = contribs.filter((c) => c.category === 'suggested' && match(c));
     const sect = 'px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]';
     return (
@@ -147,8 +155,14 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
     );
 }
 
-/** wb 体:h-12 px-4 tab 条 + 激活板块体;isMobile 时隐 detach/收起。 */
-export function WorkbenchBody({ isMobile = false }: { isMobile?: boolean }) {
+/** wb 体:h-12 px-4 tab 条 + 激活板块体;isMobile 时隐 detach/收起。
+ *  floating = aside 正以浮窗壳渲染(浮窗 v2:同树不切容器,零 remount)——
+ *  tab 条空白区兼作拖柄(onFloatDrag),detach 钮换 dockBack。 */
+export function WorkbenchBody({ isMobile = false, floating = false, onFloatDrag }: {
+    isMobile?: boolean;
+    floating?: boolean;
+    onFloatDrag?: (e: React.PointerEvent<HTMLDivElement>) => void;
+}) {
     const { t } = useI18n();
     const shell = useShell();
     const contribs = useContribs('panel.type');
@@ -157,9 +171,19 @@ export function WorkbenchBody({ isMobile = false }: { isMobile?: boolean }) {
         return { id: type, label: panelTitle(t, c, type) };
     });
     const launcherActive = shell.activeTab === 'newtab' || (!shell.activeTab && tabs.length === 0);
+    const activeContrib = contribs.find((x) => x.type === shell.activeTab);
+    const cardappTab = !launcherActive && activeContrib?.category === 'cardapp';
+    /* 自愈:激活板块离开 cardapp 桶 → 收回 fs 旗标(切 tab/关 tab 不背
+       全屏残念;fs 本体在 CardAppFrame 里挂 .cardapp-host 上)。 */
+    useEffect(() => {
+        if (!cardappTab && shell.cardappFs) shell.setCardappFs(false);
+    }, [cardappTab, shell]);
     return (
         <div className="flex h-full min-h-0 flex-col" style={{ background: 'var(--bg-workbench)' }}>
-            <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4">
+            <div
+                className={`flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4${floating ? ' cursor-grab active:cursor-grabbing' : ''}`}
+                onPointerDown={floating ? onFloatDrag : undefined}
+            >
                 <div className="no-scrollbar flex flex-1 items-center gap-1 overflow-x-auto">
                     {tabs.map((tb) => {
                         const active = !launcherActive && shell.activeTab === tb.id;
@@ -193,11 +217,25 @@ export function WorkbenchBody({ isMobile = false }: { isMobile?: boolean }) {
                     </button>
                 </div>
                 <div className="flex shrink-0 items-center gap-0.5">
-                    {/* 规范稿 detach-panel:激活板块拆出为受控悬浮窗(launcher 页无对象不画)。 */}
-                    {!isMobile && !launcherActive && shell.activeTab && (
-                        <button className="ghost-btn h-7 w-7" onClick={() => shell.detachPanel(shell.activeTab)} title={t('wb.detach')}>
-                            <Icon name="detach" size={15} />
+                    {/* CardApp 全屏提升(§6.4):cardapp 桶板块激活时给「全屏」;
+                        本体是 .cardapp-host 切 fixed inset-0,同树不 remount。 */}
+                    {!isMobile && cardappTab && (
+                        <button className="ghost-btn h-7 w-7" onClick={() => shell.setCardappFs(true)} title={t('wb.fs')}>
+                            <Icon name="focus" size={15} />
                         </button>
+                    )}
+                    {/* 规范稿 detach-panel —— v2:浮窗是工作台自身的展示态;
+                        floating 时此位换「收回工作台」(launcher 页无对象不画)。 */}
+                    {!isMobile && !launcherActive && shell.activeTab && (
+                        floating ? (
+                            <button className="ghost-btn h-7 w-7" onClick={shell.dockBack} title={t('wb.dock')}>
+                                <Icon name="dockBack" size={15} />
+                            </button>
+                        ) : (
+                            <button className="ghost-btn h-7 w-7" onClick={() => shell.detachPanel(shell.activeTab)} title={t('wb.detach')}>
+                                <Icon name="detach" size={15} />
+                            </button>
+                        )
                     )}
                     {!isMobile && (
                         <button className="ghost-btn h-7 w-7" onClick={shell.toggleWorkbench} title={t('wb.collapse')}>
@@ -213,15 +251,26 @@ export function WorkbenchBody({ isMobile = false }: { isMobile?: boolean }) {
     );
 }
 
-/** 右工作台:wb-resizer(宽 290–min(680,56vw),双击复位 410)+ 变宽 aside。 */
+/** 右工作台:wb-resizer(宽 290–min(680,56vw),双击复位 410)+ 变宽 aside。
+ *  浮窗 v2(detach 不杀卡,§6.2):floatingType 非 null → 同一个 <aside>
+ *  DOM 节点换 floating-win chrome(fixed + rect),openTabs/PanelBody 子树
+ *  原地不动 —— 嵌卡 iframe 零 remount。tab 条空白区拖拽移动,右下角柄
+ *  resize(min 320×240,上限视口),矩形随 WbLayout 按会话存档。 */
 export function Workbench() {
     const shell = useShell();
     const [width, setWidth] = useState(410);
     const widthRef = useRef(width);
     widthRef.current = width;
+    const floating = !!shell.floatingType;
+    /* rect 本地跟手(拖/resize 每帧只重渲本组件),pointerup 才写回 ctx
+       —— 写回经 WbLayout 持久化段落盘。水合/外部改档 → effect 同步。 */
+    const [rect, setRect] = useState(shell.floatingRect);
+    const rectRef = useRef(rect);
+    rectRef.current = rect;
+    useEffect(() => { setRect(shell.floatingRect); }, [shell.floatingRect]);
     if (!shell.workbenchOpen) return null;
 
-    const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const onResizerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         e.preventDefault();
         const handle = e.currentTarget;
         handle.classList.add('dragging');
@@ -243,70 +292,76 @@ export function Workbench() {
         window.addEventListener('pointerup', onUp);
     };
 
+    /* 浮窗拖拽:tab 条空白区为柄(交互控件上方不启动);钳位保证 ≥120px
+       宽、64px 高始终留在视口内。 */
+    const onFloatDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+        if ((e.target as HTMLElement).closest('.wb-tab, button, input, a')) return;
+        e.preventDefault();
+        const dx = e.clientX - rectRef.current.x;
+        const dy = e.clientY - rectRef.current.y;
+        const onMove = (ev: PointerEvent) => {
+            setRect((r) => ({
+                ...r,
+                x: Math.max(8 - r.w + 120, Math.min(window.innerWidth - 120, ev.clientX - dx)),
+                y: Math.max(8, Math.min(window.innerHeight - 64, ev.clientY - dy)),
+            }));
+        };
+        const onUp = () => {
+            shell.setFloatingRect(rectRef.current);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    };
+
+    /* 浮窗 resize:右下拖柄,min 320×240,上限不越视口右边/底边。 */
+    const onGripDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sx = e.clientX;
+        const sy = e.clientY;
+        const sw = rectRef.current.w;
+        const sh = rectRef.current.h;
+        const onMove = (ev: PointerEvent) => {
+            setRect((r) => ({
+                ...r,
+                w: Math.round(Math.max(320, Math.min(window.innerWidth - r.x - 8, sw + (ev.clientX - sx)))),
+                h: Math.round(Math.max(240, Math.min(window.innerHeight - r.y - 8, sh + (ev.clientY - sy)))),
+            }));
+        };
+        const onUp = () => {
+            shell.setFloatingRect(rectRef.current);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    };
+
     return (
         <>
-            <div
-                className="wb-resizer"
-                title="左右拖动调节右栏宽度 · 双击重置"
-                onPointerDown={onPointerDown}
-                onDoubleClick={() => setWidth(410)}
+            {/* 浮窗态侧栏不在流内,左缘拖宽条无对象 —— 同级条件渲染只动
+                resizer 自己,aside 位置/类型不变,子树 DOM 零搬动。 */}
+            {!floating && (
+                <div
+                    className="wb-resizer"
+                    title="左右拖动调节右栏宽度 · 双击重置"
+                    onPointerDown={onResizerDown}
+                    onDoubleClick={() => setWidth(410)}
+                >
+                    <span className="wb-width-badge font-mono-ui">{width}px</span>
+                </div>
+            )}
+            <aside
+                className={floating ? 'floating-win pop-in' : 'h-full shrink-0'}
+                style={floating
+                    ? { left: rect.x, top: rect.y, width: rect.w, height: rect.h, maxWidth: 'none', maxHeight: 'none' }
+                    : { width }}
             >
-                <span className="wb-width-badge font-mono-ui">{width}px</span>
-            </div>
-            <aside className="h-full shrink-0" style={{ width }}>
-                <WorkbenchBody />
+                <WorkbenchBody floating={floating} onFloatDrag={onFloatDrag} />
+                {floating && <div className="wb-float-grip" title="拖拽调整大小" onPointerDown={onGripDown} />}
             </aside>
         </>
-    );
-}
-
-/** 受控悬浮窗:拖标题栏移动,dockBack 回工作台,closeFloat 关闭。 */
-export function FloatingWin() {
-    const { t } = useI18n();
-    const shell = useShell();
-    const contribs = useContribs('panel.type');
-    const drag = useRef<{ dx: number; dy: number } | null>(null);
-    const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
-    if (!shell.floatingType) return null;
-    const c = contribs.find((x) => x.type === shell.floatingType);
-    const p = pos ?? shell.floatingPos;
-    const onDown = (e: React.PointerEvent) => {
-        drag.current = { dx: e.clientX - p.x, dy: e.clientY - p.y };
-        const move = (ev: PointerEvent) => {
-            if (!drag.current) return;
-            const np = {
-                x: Math.max(8, Math.min(window.innerWidth - 200, ev.clientX - drag.current.dx)),
-                y: Math.max(40, Math.min(window.innerHeight - 80, ev.clientY - drag.current.dy)),
-            };
-            setPos(np);
-        };
-        const up = () => {
-            drag.current = null;
-            if (pos) shell.setFloatingPos(pos);
-            window.removeEventListener('pointermove', move);
-            window.removeEventListener('pointerup', up);
-        };
-        window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up);
-    };
-    return (
-        <div className="floating-win pop-in" style={{ left: p.x, top: p.y }}>
-            <div
-                className="flex h-9 shrink-0 cursor-grab select-none items-center gap-2 border-b border-[color:var(--border-hairline)] px-3 active:cursor-grabbing"
-                onPointerDown={onDown}
-            >
-                {c?.icon && <Icon name={c.icon} size={13} className="text-[color:var(--fg-secondary)]" />}
-                <span className="flex-1 truncate text-[12px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
-                <button className="ghost-btn h-6 w-6" onClick={shell.dockBack} title={t('wb.dock')}>
-                    <Icon name="panelRight" size={12} />
-                </button>
-                <button className="ghost-btn h-6 w-6" onClick={shell.closeFloat} title={t('wb.close')}>
-                    <Icon name="x" size={12} />
-                </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                <PanelBody type={shell.floatingType} />
-            </div>
-        </div>
     );
 }

@@ -49,6 +49,8 @@ const readDocked = (k: string): boolean => {
  */
 export function MessageIframe({ charDir, chatName, html, messageId, blockIndex = 0, chrome = 'floor' }: PanelContext & { html: string; messageId?: number; blockIndex?: number; chrome?: 'floor' | 'panel' }) {
     const s = useShell();
+    const sRef = useRef(s);
+    sRef.current = s;
     const { t } = useI18n();
     const [mount, setMount] = useState<DocMountBundle | null>(null);
     const [dead, setDead] = useState<string | null>(null);
@@ -100,6 +102,13 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
                 if (name === 'refresh_message' && (messageId === undefined || Number(args?.[0]) === messageId)) {
                     setAttempt((a) => a + 1);
                 }
+            },
+            /* 表面面(TH 格契约):message 挂载形态 → panelType='messageframe'
+               (无 params 开 → 引导空态,诚实不假装);经 sRef 转发防陈化。 */
+            surface: {
+                panelType: 'messageframe',
+                openPanel: (type, params) => sRef.current.openPanel(type ?? 'messageframe', params),
+                collapsePanels: () => sRef.current.collapsePanels(),
             },
         });
         void host.seed();

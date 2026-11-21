@@ -290,6 +290,35 @@
     border: 0; display: block; background: transparent;
 }
 
+/* CardApp 全屏提升(theater 同参 fixed inset-0 z-78;§6.4)——
+   class 切挂不搬 DOM,iframe 零 remount;退出钮浮层在卡内容之上。 */
+.cardapp-host-fs {
+    position: fixed; inset: 0; z-index: 78;
+    background: var(--bg-elevated);
+}
+.cardapp-host-fs .cardapp-degraded { right: 48px; }
+.cardapp-fs-exit {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 999px;
+    color: rgba(255,255,255,0.85); background: rgba(18,18,20,0.55);
+    border: 1px solid rgba(255,255,255,0.14); backdrop-filter: blur(6px);
+    cursor: pointer; transition: background 0.14s ease, color 0.14s ease;
+}
+.cardapp-fs-exit:hover { background: rgba(18,18,20,0.78); color: #fff; }
+
+/* 浮窗 v2 resize 拖柄(右下;min 320×240/上限视口 —— 钳位在壳侧)。 */
+.wb-float-grip {
+    position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
+    cursor: nwse-resize; z-index: 2;
+}
+.wb-float-grip::after {
+    content: ""; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
+    border-right: 2px solid var(--fg-faint); border-bottom: 2px solid var(--fg-faint);
+    border-radius: 1px;
+}
+.wb-float-grip:hover::after { border-color: var(--brand); }
+
 /* =========================================================================
    MOBILE SHELL(hub + drawer + vaul sheet)
    ========================================================================= */
