@@ -359,6 +359,12 @@ if (!cliArgs.disableCsrf) {
 }
 
 // Static files
+// 新 SPA 产物:apps/web/dist 存在即由服务端直接供应(默认产品面),
+// frame-ancestors/资产全部同源,不经 dev 代理。legacy 壳仅 LUKER_SERVE_LEGACY=1。
+const WEB_DIST = path.join(serverDirectory, '..', 'web', 'dist');
+const WEB_INDEX = path.join(WEB_DIST, 'index.html');
+const serveWebSpa = process.env.LUKER_SERVE_LEGACY !== '1' && fs.existsSync(WEB_INDEX);
+
 // Host index page
 app.get('/', cacheBuster.middleware, (request, response) => {
     if (shouldRedirectToLogin(request)) {
@@ -367,6 +373,9 @@ app.get('/', cacheBuster.middleware, (request, response) => {
         return response.redirect(redirectUrl);
     }
 
+    if (serveWebSpa) {
+        return response.sendFile(WEB_INDEX);
+    }
     return response.sendFile('index.html', { root: path.join(serverDirectory, 'public') });
 });
 
@@ -394,18 +403,28 @@ app.use(userCssMiddleware);
 if (process.env.LUKER_SERVE_LEGACY === '1') {
     app.use(express.static(path.join(serverDirectory, 'public'), {}));
 } else {
-    app.get('/', (_req, res) => {
-        res.type('html').send(`<!doctype html><meta charset="utf-8"><title>Utopinn kernel</title>
+    const kernelStatusPage = `<!doctype html><meta charset="utf-8"><title>Utopinn kernel</title>
 <body style="font:13px/1.6 system-ui,sans-serif;max-width:560px;margin:64px auto;color:#ddd;background:#141414">
 <h1 style="font-size:20px">Utopinn kernel</h1>
-<p>服务端内核在运行,但本进程未挂载旧版前端 UI。</p>
+<p>服务端内核在运行,但未找到 Web SPA 产物(apps/web/dist)。</p>
 <ul>
-<li>Web SPA:<code>pnpm --filter @utopinn/web dev</code></li>
+<li>构建 SPA:<code>pnpm --filter @utopinn/web build</code> 后重启即自动挂载</li>
+<li>开发模式:<code>pnpm --filter @utopinn/web dev</code></li>
 <li>CLI:<code>node apps/cli/utopinn-cli.mjs doctor --server http://&lt;host&gt;:${process.env.SERVER_PORT || ''}</code></li>
 <li>诊断:<code>GET /api/utopinn/diag/stats</code></li>
 <li>旧 UI(仅参考):以 <code>LUKER_SERVE_LEGACY=1</code> 重启</li>
-</ul></body>`);
-    });
+</ul></body>`;
+    app.get('/_kernel', (_req, res) => res.type('html').send(kernelStatusPage));
+    if (serveWebSpa) {
+        app.use(express.static(WEB_DIST, { index: false }));
+        // SPA history fallback:非 API/静态根的 GET → index.html。
+        // 静态根已在上方挂载,落到这里的就是壳路由(chat/hub/studio…)。
+        app.get(/^\/(?!api(\/|-extension)|card-runtime\/|characters\/|csrf-token|login|callback|lib\/|tokenizers|thumbnail|backgrounds\/|user\/|User%20Avatars|_kernel|assets\/|version|favicon).*$/, (_req, res) => {
+            res.sendFile(WEB_INDEX);
+        });
+    } else {
+        app.get('/', (_req, res) => res.type('html').send(kernelStatusPage));
+    }
 }
 
 // Tokenizer libs and data — let the browser run tokenization directly instead
