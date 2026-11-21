@@ -71,13 +71,15 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "GH#15+GH#14+GH#2+GH#3 全落:自动建路径+前缀剥除+无分号/catgodml+char 宏到 character_state+regex_disabled;core 79/79 server 102/102;commit 0e324e9+c2f0dff"
+        ],
+        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
+        "next": "掌门卡 35 条实弹+真卡 e2e(下一轮)"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.164Z",
-      "updated_at": "2026-11-21T09:12:32.166Z"
+      "updated_at": "2026-11-21T13:21:58.164Z"
     },
     {
       "id": "TASK-055",
@@ -148,13 +150,15 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "GH#13 idle-wait+GH#15b ctxSubscribed+GH#9 lorebookEntries+/trigger 显式错+GH#4 schema 校验器 400 不写盘+--force CLI;28/28+4/4;commit c2f0dff"
+        ],
+        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
+        "next": "掌门卡异步按钮实弹"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T09:12:32.166Z"
+      "updated_at": "2026-11-21T13:22:25.590Z"
     },
     {
       "id": "TASK-056",
@@ -212,13 +216,15 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "GH#10 兜底命名物化+警告+GH#7 overwrite 联动;32/32+28/28;commit c2f0dff"
+        ],
+        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
+        "next": "legacy /api/characters/import 物化(上游同行为,缓)"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T09:12:32.166Z"
+      "updated_at": "2026-11-21T13:22:25.832Z"
     },
     {
       "id": "TASK-057",
@@ -272,13 +278,15 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "GH#11 charLabel+GH#5 doctor 自检+GH#6 schema 区分+GH#8 wire 断言;cli-routes 85/85;commit c2f0dff"
+        ],
+        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
+        "next": "-"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T09:12:32.166Z"
+      "updated_at": "2026-11-21T13:22:26.046Z"
     },
     {
       "id": "TASK-001",
@@ -4757,13 +4765,15 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "named-docs 读面+jobs 过滤+StageFrame/CLI 摘 legacy+--force;13/13+6/6+28/28;commit c2f0dff"
+        ],
+        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
+        "next": "CLI groups 面仍 legacy(无 utopinn 孪生,另案)"
       },
       "evidence": [],
       "created_at": "2026-11-21T10:57:29.601Z",
-      "updated_at": "2026-11-21T10:57:29.602Z"
+      "updated_at": "2026-11-21T13:22:26.257Z"
     }
   ],
   "milestones": [
