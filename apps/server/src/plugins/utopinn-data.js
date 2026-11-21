@@ -312,12 +312,20 @@ function directWriteCard(directories, stem, baseImage, cardJson) {
  * book into a single entry.
  * The exists-check + write is one atomic WorldInfoRepo.createIfAbsent, so
  * concurrent imports of cards bound to the same world cannot overwrite each
- * other; an existing same-named standalone book is never overwritten. An
- * empty extensions.world does not get a name invented for it; a failed
- * write only warns, it does not sink the import.
+ * other; an existing same-named standalone book is never overwritten — the
+ * single exception is `overwrite` (import/commit conflict=overwrite), which
+ * follows the upstream re-import semantics: replacing the card refreshes
+ * the linked world too (upstream importEmbeddedWorldInfo overwrites the
+ * same-named book on re-import). An empty extensions.world does not get a
+ * name invented for it; a failed write only warns, it does not sink the
+ * import. Every outcome — materialized / skipped / overwrote — leaves a
+ * warnings entry so the caller can see what happened to the book.
+ * @param {{overwrite?: boolean}} options `overwrite` is the caller's declared
+ *   conflict policy (conflict=overwrite), applied to the world-name collision
+ *   too — it does NOT hinge on the card file itself being replaced.
  * @returns {Promise<string[]>} entries appended to the commit response warnings
  */
-async function materializeEmbeddedWorld(request, card) {
+async function materializeEmbeddedWorld(request, card, { overwrite = false } = {}) {
     const bookEntries = card?.data?.character_book?.entries;
     const worldName = String(card?.data?.extensions?.world ?? card?.extensions?.world ?? '').trim();
     if (!Array.isArray(bookEntries) || bookEntries.length === 0 || !worldName) {
@@ -326,10 +334,22 @@ async function materializeEmbeddedWorld(request, card) {
     const repo = getWorldInfoRepo();
     const handle = request.user.profile.handle;
     try {
-        const { created, name } = await repo.createIfAbsent(
-            handle, worldName, convertCharacterBook(card.data.character_book));
+        const doc = convertCharacterBook(card.data.character_book);
+        if (overwrite) {
+            // 卡面被覆盖 ⇒ 绑定的世界书跟着刷新。resolve→save 是两步,但
+            // overwrite 语义本身就是"卡的版本赢",不存在需要防的丢失写;
+            // save 内部 put 仍按 canonical 名解析落点(resolveName 仅用于
+            // 准确报告 overwrote vs materialized)。
+            const existing = await repo.resolveName(handle, worldName);
+            await repo.save(handle, worldName, doc);
+            const name = (await repo.resolveName(handle, worldName)) ?? worldName;
+            return [existing != null
+                ? `Embedded character_book overwrote world "${name}" (${bookEntries.length} entries).`
+                : `Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
+        }
+        const { created, name } = await repo.createIfAbsent(handle, worldName, doc);
         if (!created) {
-            return [];
+            return [`Embedded character_book skipped: world "${name}" already exists — re-import with conflict=overwrite to update it.`];
         }
         return [`Embedded character_book materialized to world "${name}" (${bookEntries.length} entries).`];
     } catch (error) {
@@ -338,7 +358,7 @@ async function materializeEmbeddedWorld(request, card) {
     }
 }
 
-async function commitCharacter(request, prepared, stem, { preserveChat = false, overwrite = false } = {}) {
+async function commitCharacter(request, prepared, stem, { preserveChat = false, overwrite = false, overwriteEmbeddedWorld = false } = {}) {
     const directories = request.user.directories;
 
     const preservedChat = preserveChat ? await readPreservedChat(directories, stem) : null;
@@ -387,7 +407,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
             if (overwrite) {
                 invalidateAvatarThumbnail(directories, stem);
             }
-            return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
+            return { ok: true, warnings: await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld }) };
         } catch (error) {
             // 底图畸形 / 默认头像缺失等 → 退回 writeCharacterData 的兜底链
             console.warn('utopinn/data import: direct PNG write failed, falling back to writeCharacterData:', error);
@@ -399,7 +419,7 @@ async function commitCharacter(request, prepared, stem, { preserveChat = false, 
     if (!ok) {
         return { ok: false, error: request?.lastWriteCharacterDataError || 'character write failed' };
     }
-    return { ok: true, warnings: await materializeEmbeddedWorld(request, card) };
+    return { ok: true, warnings: await materializeEmbeddedWorld(request, card, { overwrite: overwriteEmbeddedWorld }) };
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +590,7 @@ export function apply(ctx) {
             const initialAvatarKey = target.avatarKey;
 
             const existing = await targetExists(request, target);
+            let overwritePolicy = false;
             if (existing) {
                 const policy = String(body.conflict ?? '').trim();
                 if (!CONFLICT_POLICIES.has(policy)) {
@@ -587,12 +608,19 @@ export function apply(ctx) {
                 if (policy === 'rename') {
                     target = await uniqueTarget(request, target);
                 }
-                // 'overwrite' → 沿用 targetName 直接写
+                // 'overwrite' → 沿用 targetName 直接写;rename 落的是新 stem,
+                // preserveChat/overwrite(char 文件面的替换语义)只属于真覆盖。
+                overwritePolicy = policy === 'overwrite';
             }
 
+            // 世界书物化面的冲突裁决跟着用户声明的策略走,不挂卡面冲突:
+            // 卡被删但物化书残留时再导,overwrite 同样要把书刷新(issue #7
+            // 同款陷阱)——conflict 语义是"本导入撞上同名数据就让载荷赢"。
+            const wantsOverwrite = String(body.conflict ?? '').trim() === 'overwrite';
             const result = await commitDetected(request, detected, target, {
-                preserveChat: detected.kind === 'char' && existing,
-                overwrite: detected.kind === 'char' && existing,
+                preserveChat: detected.kind === 'char' && overwritePolicy,
+                overwrite: detected.kind === 'char' && overwritePolicy,
+                overwriteEmbeddedWorld: detected.kind === 'char' && wantsOverwrite,
             });
             if (!result.ok) {
                 return response.status(500).send({ error: result.error || 'import commit failed' });
@@ -613,11 +641,11 @@ export function apply(ctx) {
         }
     });
 
-    async function commitDetected(request, detected, target, { preserveChat = false, overwrite = false } = {}) {
+    async function commitDetected(request, detected, target, { preserveChat = false, overwrite = false, overwriteEmbeddedWorld = false } = {}) {
         const handle = request.user.profile.handle;
         switch (detected.kind) {
             case 'char':
-                return commitCharacter(request, detected.prepared, target.targetName, { preserveChat, overwrite });
+                return commitCharacter(request, detected.prepared, target.targetName, { preserveChat, overwrite, overwriteEmbeddedWorld });
             case 'world':
                 await getWorldInfoRepo().save(handle, target.targetName, detected.prepared.doc);
                 return { ok: true };
