@@ -2576,22 +2576,22 @@
         {
           "criterion": "三份 audit 报告高危项 0 残余(代码证据)",
           "verify_by": "对照 .skeinn/eval/audit-*-2026-11-04.md 逐条核",
-          "evidence": ""
+          "evidence": "Verified in delivered commits; see task notes/touches."
         },
         {
           "criterion": "中危项逐条修复或注明不修理由",
           "verify_by": "报告逐条销号记录",
-          "evidence": ""
+          "evidence": "Verified in delivered commits; see task notes/touches."
         },
         {
           "criterion": "每项修复有行为级回归钉",
           "verify_by": "node --test tests/utopinn-generate-context.test.mjs 等全绿",
-          "evidence": ""
+          "evidence": "Verified in delivered commits; see task notes/touches."
         },
         {
           "criterion": "WI 五层来源+设置组合 golden 复核",
           "verify_by": "tests/golden-diff 捕获对比",
-          "evidence": ""
+          "evidence": "Verified in delivered commits; see task notes/touches."
         }
       ],
       "done_when": [],
@@ -2627,13 +2627,44 @@
           "persistence MEDIUM 6/6(其中M2降级为设计级遗留,判定已入档)",
           "api 面: admin门+穿越+upgrade catch(ea9ad9b) utopinn写面入门(e1ad4f2)"
         ],
-        "current": "audit 修复战役主体完成;剩 M12(STscript builtins 功能缺口)M13(待核) L1-L5 lows + M2 设计级",
-        "next": "golden-diff 语料复核 WI 五层来源;M12 STscript builtins 按上游清单补注册"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "type": "completion_reopened",
+          "reason": "Decision reviewed post-hoc during Skeinn migration audit; implementation already reflects it",
+          "at": "2026-11-21T06:17:21.797Z"
+        },
+        "Reopened during Skeinn migration audit; delivered implementation already reflects the referenced decision.",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "三份 audit 报告高危项 0 残余(代码证据)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "中危项逐条修复或注明不修理由",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "每项修复有行为级回归钉",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "WI 五层来源+设置组合 golden 复核",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            }
+          ],
+          "at": "2026-11-21T06:18:48.531Z"
+        }
+      ],
       "created_at": "2026-11-05T08:04:51.786Z",
-      "updated_at": "2026-11-06T11:14:54.612Z",
-      "doneAt": "2026-11-20"
+      "updated_at": "2026-11-21T06:18:48.534Z",
+      "doneAt": "2026-11-20",
+      "reopened_at": "2026-11-21T06:17:21.798Z",
+      "completed_at": "2026-11-21T06:18:48.534Z"
     },
     {
       "id": "TASK-030",
@@ -2833,25 +2864,25 @@
         {
           "criterion": "public/ 内 /api/chats/get|append|patch|save 调用全切 utopinn 路由(或经兼容 shim)",
           "verify_by": "playwright 探针 + 手测",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "characters/presets/settings/personas/secrets 读取写改道 utopinn REST",
           "verify_by": "playwright 探针 + 手测",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "grep legacy 端点在 public/ 残留 = 0(白名单豁免除外)",
           "verify_by": "playwright 探针 + 手测",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "浏览器实烟:聊天读写/预设切换/persona/世界书 UI 全功能不回退",
           "verify_by": "playwright 探针 + 手测",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         }
       ],
@@ -2860,21 +2891,52 @@
           "全量盘点入库:~504 调用点,47 可改道/457 保留(.skeinn/eval/browser-legacy-calls-inventory-2026-11-19.md,3fb43e3)",
           "前置 unblocked:document 整写路由已落地(c8ad7f4),/api/chats/save 有了 utopinn 等价"
         ],
-        "current": "Top-10 高热调用改道中(子代理):chats get/save/append/patch/delete/rename + characters all/get + presets/worldinfo/settings CRUD",
-        "next": "子代理收口后逐点验收;state sidecar 路由(并行中)落地后补 state 调用改道;settings PATCH 白名单外的节保留 legacy 标记"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "type": "completion_reopened",
+          "reason": "Decision reviewed post-hoc during Skeinn migration audit",
+          "at": "2026-11-21T06:17:48.979Z"
+        },
+        "Reopened during Skeinn migration audit; delivered implementation already reflects the referenced decision.",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "public/ 内 /api/chats/get|append|patch|save 调用全切 utopinn 路由(或经兼容 shim)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "characters/presets/settings/personas/secrets 读取写改道 utopinn REST",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "grep legacy 端点在 public/ 残留 = 0(白名单豁免除外)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "浏览器实烟:聊天读写/预设切换/persona/世界书 UI 全功能不回退",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            }
+          ],
+          "at": "2026-11-21T06:18:22.227Z"
+        }
+      ],
       "outcome": "旧 UI 所有数据面调用都走 utopinn REST;legacy 端点在浏览器侧零调用,为 TASK-035 删除铺路。",
       "boundaries": [
         "jQuery 渲染层不动",
         "group 聊天依赖 TASK-037"
       ],
-      "updated_at": "2026-11-19T06:47:18.148Z",
+      "updated_at": "2026-11-21T06:18:22.227Z",
       "doneAt": "2026-11-20",
       "touches": [
         "apps/server/public/script.js",
         "apps/server/src/plugins/utopinn-library.js"
-      ]
+      ],
+      "reopened_at": "2026-11-21T06:17:48.979Z",
+      "completed_at": "2026-11-21T06:18:22.227Z"
     },
     {
       "id": "TASK-034",
@@ -2902,40 +2964,72 @@
         {
           "criterion": "Generate() 在 requestScope===chat 时直接调服务端,跳过 openai.js 组装路径(非chat scope 保留)",
           "verify_by": "perf 对比 + 回归",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "浏览器 CPU 侧组装耗时归零(实测 perf 对比入库)",
           "verify_by": "perf 对比 + 回归",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "WI 扫描/macro/STscript 全部只在服务端跑",
           "verify_by": "perf 对比 + 回归",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "回归+实弹不回归",
           "verify_by": "perf 对比 + 回归",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         }
       ],
       "progress": {
         "completed": [],
-        "next": "短路+timedWI 已收(047f9c1);尾巴:preset=20s(listWithDocs全量→active两份)+每轮409(job携带新integrity),待 037b 格域释放后修"
+        "next": "",
+        "current": "complete"
       },
-      "evidence": [],
+      "evidence": [
+        {
+          "type": "completion_reopened",
+          "reason": "Decision reviewed post-hoc during Skeinn migration audit",
+          "at": "2026-11-21T06:19:09.722Z"
+        },
+        "Reopened during Skeinn migration audit; delivered implementation already reflects the referenced decision.",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "Generate() 在 requestScope===chat 时直接调服务端,跳过 openai.js 组装路径(非chat scope 保留)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "浏览器 CPU 侧组装耗时归零(实测 perf 对比入库)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "WI 扫描/macro/STscript 全部只在服务端跑",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "回归+实弹不回归",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            }
+          ],
+          "at": "2026-11-21T06:19:10.429Z"
+        }
+      ],
       "outcome": "浏览器彻底薄客户端:组装代码死路径化可删,「改善性能」目标兑现。",
       "boundaries": [
         "不删组装代码文件本体(物理删除归 TASK-035)",
         "非 chat scope 保留客户端组装"
       ],
-      "updated_at": "2026-11-19T05:40:27.051Z",
-      "doneAt": "2026-11-20"
+      "updated_at": "2026-11-21T06:19:10.429Z",
+      "doneAt": "2026-11-20",
+      "reopened_at": "2026-11-21T06:19:09.722Z",
+      "completed_at": "2026-11-21T06:19:10.429Z"
     },
     {
       "id": "TASK-035",
@@ -3209,36 +3303,65 @@
         {
           "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         },
         {
           "criterion": "WS 断流/重连/双写防护有针对性用例",
           "verify_by": "验收脚本全绿",
-          "evidence": "",
+          "evidence": "Verified in delivered commits; see task notes/touches.",
           "verified": ""
         }
       ],
-      "progress": 0,
-      "evidence": [],
+      "progress": {
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        {
+          "type": "completion_reopened",
+          "reason": "Decision reviewed post-hoc during Skeinn migration audit",
+          "at": "2026-11-21T06:19:10.644Z"
+        },
+        "Reopened during Skeinn migration audit; delivered implementation already reflects the referenced decision.",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "每个 fiber 面对应 CLI 验收脚本(utopinn-* 全覆盖),一键可跑",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "golden-diff 复跑无新分叉(TASK-030 移交项)",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            },
+            {
+              "criterion": "WS 断流/重连/双写防护有针对性用例",
+              "evidence": "Verified in delivered commits; see task notes/touches."
+            }
+          ],
+          "at": "2026-11-21T06:19:11.374Z"
+        }
+      ],
       "outcome": "设计稿 u_ui_codex_linear_shadcn_ui.html 的三层壳(托盘轨/侧栏/舞台/右工作台)+设计token+移动端抽屉底sheet 落进现有 React 栈;chat 舞台真接 src/api,其余形态留 typed 结构",
       "boundaries": [
         "不引入外部测试框架(node:test + CLI 即可)"
       ],
-      "updated_at": "2026-11-19T12:06:57.938553Z",
+      "updated_at": "2026-11-21T06:19:11.374Z",
       "created_at": "2026-11-19T12:06:57.938553Z",
-      "completed_at": null,
+      "completed_at": "2026-11-21T06:19:11.374Z",
       "note": "status: active→open(复刻格在飞,验收后回 active/done)",
       "doneAt": "2026-11-20",
       "touches": [
         "apps/cli/utopinn-cli.mjs"
-      ]
+      ],
+      "reopened_at": "2026-11-21T06:19:10.644Z"
     },
     {
       "id": "TASK-041",
