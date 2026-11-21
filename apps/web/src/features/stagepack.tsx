@@ -959,7 +959,24 @@ const zh: Record<string, string> = {
     'gal.fs.enter': '真全屏', 'gal.fs.exit': '退出全屏',
     'gal.rotate.hint': '旋转设备体验更佳', 'gal.advance': '推进',
 };
-const en: Record<string, string> = Object.fromEntries(Object.keys(zh).map((k) => [k, k]));
+const en: Record<string, string> = {
+    ...Object.fromEntries(Object.keys(zh).map((k) => [k, k])),
+    'novel.toc': 'Chapter index', 'novel.toc.empty': 'No chapters — the index appears once floors form the book',
+    'novel.floorsUnit': ' floors', 'novel.prologue': 'Prologue', 'novel.body': 'Main text',
+    'novel.chapter.empty': '(no text in this chapter yet)', 'novel.empty': 'No book-bound floors yet',
+    'novel.empty.desc': 'Send a director instruction (e.g. "write the next chapter") to begin; floors are filed into the left index by chapter markers or even-length segments',
+    'novel.strategy.markers': 'Chapter markers', 'novel.strategy.chapters': 'chapters',
+    'novel.strategy.segmented': 'Auto-segmented', 'novel.strategy.perChapter': 'fl/ch',
+    'novel.strategy.single': 'Single chapter · no markers', 'novel.strategy.seed': 'Preview seed · not session floors',
+    'novel.strategy.empty': 'No chapters yet',
+    'gal.seed': 'Preview', 'gal.you': 'you', 'gal.line.empty': '…no lines yet',
+    'gal.choices.empty': 'No branch choices — advance with the line box below',
+    'gal.choice.blank': '(empty branch)', 'gal.choice.regen': 'Generate another',
+    'gal.immersive.enter': 'Go immersive', 'gal.immersive.exit': 'Exit immersive',
+    'gal.narrator': 'NARRATOR', 'gal.bag.open': 'Open bag panel',
+    'gal.fs.enter': 'Fullscreen', 'gal.fs.exit': 'Exit fullscreen',
+    'gal.rotate.hint': 'Rotate device for a better experience', 'gal.advance': 'Advance',
+};
 
 export const stagepackFeature: Feature = {
     name: 'stagepack',

@@ -27,7 +27,22 @@ export const pluginsFeature: Feature = {
                 'plugins.detail.noContribs': '无 UI 贡献', 'plugins.detail.gone': '该插件不在当前清单中 —— 可能刚被移除或改名',
                 'plugins.detail.planned': '计划中 · 安装面未备(C12 只读 manifest)',
             },
-            en: {},
+            en: {
+                'plugins.remove': 'Remove', 'plugins.installed': 'Installed', 'plugins.install': 'Install',
+                'plugins.sub': 'Install, enable and configure Cordis backend services, stage forms and workbench panel plugins',
+                'plugins.refresh': 'Refresh', 'plugins.refreshed': 'Plugin list refreshed',
+                'plugins.core': 'Kernel plugins (locked, cannot be disabled)', 'plugins.locked': 'Core locked',
+                'plugins.lockedHint': 'Kernel plugins cannot be toggled — enablement lives in profile.patch.yaml',
+                'plugins.sys': 'Optional system plugins', 'plugins.reload': 'Hot-reload plugin',
+                'plugins.reloadDone': 'Plugin hot-reloaded', 'plugins.actFailed': 'Plugin action failed',
+                'plugins.none': 'No plugins in this group', 'plugins.market': 'Stage forms & extension market',
+                'plugins.marketHint': 'Planned · C12 ui.contrib',
+                'plugins.bundled': 'Bundled', 'plugins.planned': 'Planned',
+                /* 详情卡(rail 页详情面) */
+                'plugins.detail.back': 'Back to overview', 'plugins.detail.contribs': 'UI contributions',
+                'plugins.detail.noContribs': 'No UI contributions', 'plugins.detail.gone': 'This plugin is not in the current list — it may have just been removed or renamed',
+                'plugins.detail.planned': 'Planned · install surface not ready (C12 read-only manifest)',
+            },
         });
     },
 };

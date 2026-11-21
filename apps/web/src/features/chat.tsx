@@ -20,7 +20,10 @@ export const chatFeature: Feature = {
                 'home.sub': '角色卡画廊 —— 点卡进会话',
                 'common.mockData': '模拟数据 — 服务器未连接',
             },
-            en: {},
+            en: {
+                'home.sub': 'Card gallery — tap a card to chat',
+                'common.mockData': 'Mock data — server not connected',
+            },
         });
     },
 };
