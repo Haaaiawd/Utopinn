@@ -3456,7 +3456,7 @@
         {
           "criterion": "theater: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+theater sidecar ns 约定",
           "verify_by": "协议类型+实弹",
-          "evidence": "前端侧:theater 三件套骨架+extra.choices 钩位已备(详见任务级 evidence);choices 字段/assets 清单/scene sidecar 服务端面未动"
+          "evidence": "服务端楼层字段面已交(2026-11-21):①楼层 extra 宽松透传钉死——append(legacy chats.js + 原生 utopinn-library POST messages)/PATCH(ops sanitize 仅剥 luker_generation_id 路径与值)/生成兜底 persist 三来路,scene{bg,bgm}/choices[{label|text,goto?}]/narrator(true 与上游惯例 type=narrator 两形)逐键原样,仅协议层 extra.luker_generation_id 落盘前剥;②结构化产出显式 opt-in 提升:luker_generation.theater|structured(或 persistTarget 同键)置真 → persistGeneratedReply/Swipe 把产出按 JSON 对象解析,mes|text|line|content|dialogue|reply|response|narration 首个非空键提为 mes,speaker|name 提为楼层名签,其余键原样抬进 extra;不置真 → JSON 原文落 mes 不猜形状;解析失败/非对象 → 原文兜底;③persist_target.extra 客户端袋浅并入,簿记键(api/model/luker_server_persisted/luker_generation_id/gen_id)不可被袋覆盖;④job.theater 快照({text,name,extra}),GET /api/utopinn/generate/jobs/:id 透出 theater+choices(=theater.extra.choices);diag 事件 theater_extra 记 keys/choices 数/scene 键/旁白位;⑤swipe 并楼保留旧楼层袋+并入新结构化袋,swipe_info 快照同步。测试:node --test tests/theater-extra.test.mjs 8/8、tests/theater-extra-http.test.mjs 4/4(实弹 fetch 全链路);回归 luker-generation-swipe.test.mjs 9/9、utopinn-library.test.mjs 11/11 绿。未动:chars/:id/assets 清单、theater sidecar ns、choice 点击无新协议(走既有 send 通道,前端侧)。"
         }
       ],
       "done_when": [],
@@ -3475,6 +3475,9 @@
       "touches": [
         "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/tests/theater-extra.test.mjs",
+        "apps/server/tests/theater-extra-http.test.mjs",
         "apps/web/src/features/stagepack.tsx",
         "apps/web/src/components/stage/StageFrame.tsx",
         ".loom/design/plugin-surface-forms.md"
@@ -3489,14 +3492,15 @@
       "progress": {
         "completed": [
           "前端形态骨架:novel 章目录(楼→章推导+点章定位)+ theater 三件套(对话框/立绘位/选项区)",
-          "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 左右立绘位/通栏对话条"
+          "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 左右立绘位/通栏对话条",
+          "服务端 theater 楼层字段面:extra(scene/choices/narrator)三来路透传+opt-in 结构化产出提升+persist_target.extra 客户端袋+job.theater/choices 透出+diag 事件(见 acceptance 第 4 条 evidence)"
         ],
-        "current": "前端骨架+theater 沉浸壳已交,双轨数据(楼层轨优先,种子轨兜底标注)",
-        "next": "服务端面:chapters sidecar ns+GET 聚合+regen --range;generate choices 字段+assets 清单+theater sidecar(scene.bg 钩位已备)(另一格)"
+        "current": "前端骨架+theater 沉浸壳+服务端 theater 楼层字段面已交,双轨数据(楼层轨优先,种子轨兜底标注)",
+        "next": "服务端面余量:novel chapters sidecar ns+GET 聚合+regen --range;chars/:id/assets 清单+theater sidecar ns(另一格)"
       },
       "evidence": [],
       "created_at": "2026-11-19T13:46:57.022Z",
-      "updated_at": "2026-11-20T03:10:00.000Z"
+      "updated_at": "2026-11-21T04:48:00.000Z"
     },
     {
       "id": "TASK-045",
@@ -3811,12 +3815,12 @@
         {
           "criterion": "消息写面:setChatMessages/createChatMessages/setChatMessage/deleteChatMessages 落库且楼层一致",
           "verify_by": "curl/CLI 验",
-          "evidence": "下格(连同 rotateChatMessages/setChatMessage/refreshOneMessage;对照表已标注)"
+          "evidence": "已落地 server utopinn-th.js :931-1051 六法(setChatMessages 克隆体 mutate+doc.integrity CAS 409、setChatMessage 单楼薄封 mes⇄swipes[swipe_id] 同步、createChatMessages role→is_user/narrator+data→variables[0]+insert_before、deleteChatMessages 负 id 归一、rotateChatMessages 三段旋转、refreshOneMessage 信箱信号),message_edited/received/sent/deleted/chat_changed 走 th.events 信箱。实测 utopinn-th-events.test.mjs 18/18:尾插/头插/swipe 面写/越界 no-op/rotate 保长/删楼一致+信箱事件全钉。2026-11-21"
         },
         {
           "criterion": "世界书+正则 TH 面:getLorebooks/entries CRUD + updateTavernRegexes 走 server repo",
           "verify_by": "curl 验",
-          "evidence": "下格(对照表已标注:protocol T1 已列 th.getLorebook/setLorebookEntries 等,server 待落)"
+          "evidence": "已落地:①世界书 13 法(:1052-1178)worldInfo repo 承载,TH 平铺视图⇄ST 条目双向往返,set merge-by-uid/replace 全量/updateWith result 全量=TH,chat_metadata.world_info 绑定+getCharLorebooks primary;②正则 5 法+substituteMacros(:1179-1266)global=settings repo.update 原子 RMW/character=卡 atomic 写(.json/.png;.webp 拒)/preset=repo patch('in_use' 未实),formatAsTavernRegexedString 用上游 allowedOnly 口径(global 恒入+character 放行才入)+末段 substituteParams=TH;③stopGeneration(:1267)generation_id 定点停/缺省停 chat 活跃 job,covered 口径如实。实测 18/18:lorebook CRUD/TH 视图往返/绑定解绑、regex 三域读写/formatAs 车道语义/放行判定全钉。2026-11-21"
         },
         {
           "criterion": "displayed_message/iframe 渲染本体:卡声明的 HTML 渲染进聊天消息位(宿主面之二,非悬浮窗)",
