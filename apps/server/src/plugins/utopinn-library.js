@@ -67,6 +67,8 @@ import {
     // recent-chats 读面:/chats/recent 与 legacy /api/chats/recent 同一索引与排序源。
     ensureRecentChatIndex,
     getRecentChatSortTime,
+    // issue #3 展示投影:楼层透出 regex 应用后展示文本(存储字段原样)。
+    projectChatFloorsForDisplayResponse,
 } from '../endpoints/chats.js';
 import {
     getQueryCharacterAvatar,
@@ -473,11 +475,12 @@ export function apply(ctx) {
                 }
                 return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
             }
+            const messages = await projectChatFloorsForDisplayResponse(request, charDir, chat, chatName);
             return response.send({
                 name: chatName,
                 fileName: `${chatName}.jsonl`,
                 header: chat.header ?? {},
-                messages: Array.isArray(chat.body) ? chat.body : [],
+                messages,
                 integrity: chat.integrity,
                 updatedAt: chat.updatedAt,
                 createdAt: chat.createdAt,

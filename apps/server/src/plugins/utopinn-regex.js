@@ -7,8 +7,9 @@
  *   scope   持久层                                          运行时放行
  *   ──────  ─────────────────────────────────────────────   ─────────────────────────────────────
  *   global  settings.json → extension_settings.regex        恒活(disabledExtensions 含 'regex' 时全灭)
- *   char    characters/<dir>.png tEXt / .json 卡            extension_settings.character_allowed_regex
- *           → card.data.extensions.regex_scripts            含 avatar 文件名(如 "X.png")
+ *   char    characters/<dir>.png tEXt / .json 卡            卡作用域恒放行(issue #3:
+ *           → card.data.extensions.regex_scripts            本卡脚本=作者意图;character_allowed_regex
+ *                                                         仅作留档回报,不再当本卡闸门)
  *   preset  <apiId Settings>/<name>.json                    extension_settings.preset_allowed_regex
  *           → doc.extensions.regex_scripts                  [apiId] 含预设名
  *
@@ -512,7 +513,11 @@ async function fullView(request, index) {
         const avatar = avatarForCandidates(charDir, candidates);
         const allowed = g.allowedChars.includes(avatar);
         if (!allowed && resolved.scripts.length === 0) continue;
-        chars.push({ charDir, avatar, name: resolved.name, allowed, count: resolved.scripts.length, scripts: resolved.scripts });
+        chars.push({
+            charDir, avatar, name: resolved.name, allowed,
+            autoAllowed: true, active: resolved.scripts.length > 0 && !g.disabled.includes('regex'),
+            count: resolved.scripts.length, scripts: resolved.scripts,
+        });
     }
     index.sweep(dir, alivePaths);
     diagEmit({
@@ -576,7 +581,13 @@ export function apply(ctx) {
                 }
                 return response.send({
                     scope: 'char', charDir: scope.charDir, avatar: view.avatar, name: view.name,
-                    allowed: g.allowedChars.includes(view.avatar), scripts: view.scripts,
+                    allowed: g.allowedChars.includes(view.avatar),
+                    // issue #3:本卡脚本恒进收集(卡作用域自动放行)——
+                    // active 如实告知脚本对展示/出参/WI 车道生效;
+                    // allowed 仅是旧 allowlist 成员关系留档。
+                    autoAllowed: true,
+                    active: view.scripts.length > 0 && !g.disabled.includes('regex'),
+                    scripts: view.scripts,
                 });
             }
             const [g, doc] = await Promise.all([

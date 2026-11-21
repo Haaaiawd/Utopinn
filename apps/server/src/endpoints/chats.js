@@ -26,11 +26,13 @@ import {
     isPathUnderParent,
 } from '../util.js';
 import { applyPatch as applyJsonPatch } from '../../public/scripts/util/fast-json-patch.js';
-import { getChatRepo, getGroupRepo, getStorageEngine } from '../storage/index.js';
+import { getChatRepo, getGroupRepo, getPresetRepo, getSettingsRepo, getStorageEngine } from '../storage/index.js';
 import { ConflictError, InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { resolveMvuChatTarget, settlePersistedMvuMessage, resettleChatMvu } from '../services/mvu-settle.js';
+import { read as readCharacterCard } from '../character-card-parser.js';
+import { createFloorRegexRunner, projectChatFloorsForDisplay } from '../services/extension-prompts.js';
 
 const isBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
 const maxTotalChatBackups = Number(getConfigValue('backups.chat.maxTotalBackups', -1, 'number'));
@@ -2809,6 +2811,87 @@ export function getChatData(chatFilePath) {
     return attachCurrentIntegrityToChatData(chatData, chatFilePath);
 }
 
+// ---------------------------------------------------------------------------
+// 楼层展示投影(issue #3):读取面透出 regex 应用后的展示文本
+// (mes_display/swipes_display/reasoning_display),存储字段原样。
+// ---------------------------------------------------------------------------
+
+/** 卡文件探测读:png/webp 走 tEXt 解析,json 直读;不存在/不可解析 → null。 */
+async function loadChatDisplayCard(directories, charDir) {
+    const dir = directories.characters;
+    for (const ext of ['.png', '.webp']) {
+        try {
+            const raw = await fs.promises.readFile(path.join(dir, `${charDir}${ext}`));
+            return JSON.parse(readCharacterCard(raw));
+        } catch { /* 无此文件或不含卡数据 → 下一个 */ }
+    }
+    try {
+        return JSON.parse(await fs.promises.readFile(path.join(dir, `${charDir}.json`), 'utf8'));
+    } catch {
+        return null;
+    }
+}
+
+/** 展示投影 substCtx:name1 = 默认人设名(无前顺位账号名),同 stscript-env 口径。 */
+function chatDisplaySubstCtx({ request, settingsDoc, card, header, body, chatName }) {
+    const powerUser = settingsDoc?.power_user ?? {};
+    const personas = (powerUser.personas && typeof powerUser.personas === 'object' && !Array.isArray(powerUser.personas))
+        ? powerUser.personas : {};
+    const defaultPersona = typeof powerUser.default_persona === 'string' ? powerUser.default_persona : '';
+    const name1 = (defaultPersona && personas[defaultPersona])
+        ?? Object.values(personas)[0]
+        ?? request.user?.profile?.name
+        ?? 'User';
+    return {
+        name1,
+        name2: card?.data?.name ?? card?.name ?? 'Assistant',
+        chat: Array.isArray(body) ? body : [],
+        chatMetadata: header?.chat_metadata ?? {},
+        // chat_id_hash({{pick}}/{{roll}} 种子)靠它兜出(chatMetadata
+        // .main_chat 为空时);宏求值对 chatMetadata 是必需键。
+        currentChatId: chatName ?? '',
+        globalVariables: settingsDoc?.extension_settings?.variables?.global ?? {},
+    };
+}
+
+/**
+ * 楼层展示投影(issue #3 执行点):对 ChatRepo.get 产物应用输出正则 —
+ * mes/swipes/swipe_info/extra 存储字段原样返回,另透出
+ * mes_display/swipes_display/reasoning_display。
+ * 无脚本(未收集/disabledExtensions 全灭)或任何加载异常 → 原 body 返回,
+ * 读面永不因投影失败 500。
+ * @param {object} request express request(取 handle + directories)
+ * @param {string} charDir 楼层所属角色目录名
+ * @param {{header?:object, body?:object[]}} fetched ChatRepo.get 产物
+ * @param {string} [chatName] 会话文件名(substCtx.currentChatId)
+ * @returns {Promise<object[]>}
+ */
+export async function projectChatFloorsForDisplayResponse(request, charDir, fetched, chatName) {
+    const body = Array.isArray(fetched?.body) ? fetched.body : [];
+    if (!body.length) return body;
+    try {
+        const handle = request.user.profile.handle;
+        const settingsDoc = await getSettingsRepo().get(handle).catch(() => null);
+        const presetName = settingsDoc?.preset_settings_openai;
+        const [card, presetDoc] = await Promise.all([
+            loadChatDisplayCard(request.user.directories, charDir).catch(() => null),
+            presetName ? getPresetRepo().get(handle, 'openai', presetName).catch(() => null) : Promise.resolve(null),
+        ]);
+        const substCtx = chatDisplaySubstCtx({
+            request, settingsDoc, card,
+            header: fetched?.header, body, chatName,
+        });
+        const runner = createFloorRegexRunner(settingsDoc ?? {}, substCtx, {
+            card, charDir, presetDoc, presetName,
+        });
+        if (!runner.scriptCount) return body;
+        return projectChatFloorsForDisplay(body, runner).floors;
+    } catch (error) {
+        console.warn(`chat display regex projection skipped for ${charDir}:`, error?.message ?? error);
+        return body;
+    }
+}
+
 router.post('/get', validateAvatarUrlMiddleware, async function (request, response) {
     try {
         const dirName = String(request.body.avatar_url).replace('.png', '');
@@ -2839,7 +2922,8 @@ router.post('/get', validateAvatarUrlMiddleware, async function (request, respon
                 integrity: fetched.integrity,
             },
         };
-        return response.send([headerWithIntegrity, ...fetched.body]);
+        const body = await projectChatFloorsForDisplayResponse(request, dirName, fetched, fileNameKey);
+        return response.send([headerWithIntegrity, ...body]);
     } catch (error) {
         console.error(error);
         return response.status(500).send({ corrupted: true });

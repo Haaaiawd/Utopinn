@@ -13,7 +13,12 @@
  * position 编号 = ST extension_prompt_types 原值(NONE=-1/IN_PROMPT=0/IN_CHAT=1/BEFORE_PROMPT=2,
  * ref/Luker/public/script.js:1456-1470),与 core assemble.ts EXT_* 常量同号,规整时透传不重排。
  */
-import { substituteParams, applyWorldInfoRegex as applyWorldInfoRegexCore } from '@utopinn/core';
+import {
+    substituteParams,
+    applyWorldInfoRegex as applyWorldInfoRegexCore,
+    getRegexedString,
+    regex_placement,
+} from '@utopinn/core';
 
 /** ST 枚举(ref/Luker/public/script.js:1456-1470;core assemble.ts EXT_* 同号) */
 export const extension_prompt_types = { NONE: -1, IN_PROMPT: 0, IN_CHAT: 1, BEFORE_PROMPT: 2 };
@@ -114,11 +119,28 @@ function collectRegexScripts(settingsDoc, { card, charDir, presetDoc, presetName
         scripts.push(...(Array.isArray(presetDoc?.extensions?.regex_scripts) ? presetDoc.extensions.regex_scripts : []));
     }
 
-    // character_allowed_regex 存的是 avatar 文件名(带 .png);charDir 是目录名,两者都试。
-    const allowedChars = ext.character_allowed_regex;
-    if (charDir && Array.isArray(allowedChars)
-        && (allowedChars.includes(charDir) || allowedChars.includes(`${charDir}.png`))) {
-        scripts.push(...(Array.isArray(card?.data?.extensions?.regex_scripts) ? card.data.extensions.regex_scripts : []));
+    // SCOPED(卡自带)收集 —— issue #3 决策:当前卡作用域脚本恒放行。
+    //
+    // 上游 engine.js:598 口径是 opt-in:character_allowed_regex 含 avatar
+    // 文件名才收,默认空表 → 卡内 regex 静默全灭(ST 用户要去设置里手动
+    // 勾选「允许此卡正则」,社区卡的 MVU/状态栏脚本因此普遍"装了不生效")。
+    //
+    // 这里改成卡作用域自动放行,理由:
+    //   1) regex 是卡作者自带的内容变换,与 first_mes/system_prompt 同信任级
+    //      ——卡说什么就执行什么,是「真玩通卡」的产品预期;
+    //   2) 放行写进 settings(extension_settings.character_allowed_regex)是
+    //      隐式副作用:换卡残留、多 handle 串味、import 得跟着维护。按卡作用域
+    //      在收集面放行是读取期判断,零持久化、可逆;
+    //   3) 真要关卡脚本仍有闸:单脚本 PATCH disabled / extension_settings
+    //      .disabledExtensions 全灭 'regex'。慢脚本由 core ReDoS 检测自动暂停。
+    //
+    // character_allowed_regex 表不再充当本卡闸门(REST 面仍如实回报成员
+    // 关系);它的剩余语义 = 「显式放行他卡脚本」的跨卡场景留档。
+    const scopedScripts = Array.isArray(card?.data?.extensions?.regex_scripts)
+        ? card.data.extensions.regex_scripts
+        : (Array.isArray(card?.extensions?.regex_scripts) ? card.extensions.regex_scripts : []);
+    if (charDir && scopedScripts.length) {
+        scripts.push(...scopedScripts);
     }
     return scripts;
 }
@@ -145,6 +167,211 @@ export function createWorldInfoRegexHook(settingsDoc, substCtx, opts = {}) {
     // 观测面只读属性:收集到的脚本数(全局+preset+scoped 三层放行后)。
     applyWorldInfoRegex.scriptCount = scripts.length;
     return applyWorldInfoRegex;
+}
+
+// —— 楼层 regex 三车道(issue #3:AI_OUTPUT/USER_INPUT/SLASH_COMMAND/REASONING)——
+// 上游语义(ref/Luker,引擎门控逐行对账 packages/core/src/regex/engine.ts):
+//   持久车道   flagless getRegexedString —— plain 脚本(无 markdownOnly/
+//              promptOnly/pluginLanes)在落盘前改写正文(cleanUpMessage
+//              script.js:10942、sendMessageAsUser :10244、getFirstMessage
+//              :15273;depth 不传 → 不做深度门控)。
+//   展示车道   {isMarkdown:true, depth, characterOverride} ——
+//              message-formatter.js:4252,markdownOnly 系脚本的展示半边。
+//   组装车道   {isPrompt:true, depth} —— Generate() coreChat 映射
+//              (script.js:8014-8022),promptOnly 系脚本的出参半边。
+//
+// 服务端模型 = 落盘保原文、读取/组装时投影:文本先过持久车道再进目标
+// 车道,等价上游「已落盘文」再过对应车道(MVU settle/回滚靠原文里的
+// <UpdateVariable> 块,写面永不见投影文 —— 这是选读取投影不选落盘
+// 前应用的决定性理由)。
+
+/**
+ * 楼层 → 展示侧 regex placement(上游 message-formatter getRegexPlacement):
+ * user→USER_INPUT;narrator(extra.type==='narrator')→SLASH_COMMAND;
+ * 其余→AI_OUTPUT。reasoning 文本走 REASONING,不在此函数职责内。
+ */
+export function chatFloorRegexPlacement(message) {
+    if (message?.is_user) return regex_placement.USER_INPUT;
+    if (message?.extra?.type === 'narrator') return regex_placement.SLASH_COMMAND;
+    return regex_placement.AI_OUTPUT;
+}
+
+/** 单趟封装:非字符串原样返回;空脚本组/空串短路。 */
+function runLane(scripts, perfDetection, substCtx, text, placement, params) {
+    if (typeof text !== 'string' || !text || !scripts.length) return text;
+    return getRegexedString(text, placement, { scripts, perfDetection, ...params }, substCtx);
+}
+
+/**
+ * 楼层 regex 执行器:收集三层脚本(卡作用域恒放行,见 collectRegexScripts)
+ * 一次,三车道复用;disabledExtensions 含 'regex' 时全灭(scriptCount=0,
+ * 调用方据此跳过整条投影)。scriptCount 供 trace 报真数。
+ * @param {object} settingsDoc 整份 settings 文档
+ * @param {object} substCtx substituteParams 上下文
+ * @param {object} [opts] {card, charDir, presetDoc, presetName, apiId}
+ */
+export function createFloorRegexRunner(settingsDoc, substCtx, opts = {}) {
+    const ext = settingsDoc?.extension_settings ?? {};
+    const killed = Array.isArray(ext.disabledExtensions) && ext.disabledExtensions.includes('regex');
+    const scripts = killed ? [] : collectRegexScripts(settingsDoc, opts);
+    const perfDetection = ext.regex_perf_detection !== false;
+
+    /** 持久车道(上游落盘前 flagless):无 depth/override(上游 cleanUpMessage 不传)。 */
+    const persisted = (text, placement) => runLane(scripts, perfDetection, substCtx, text, placement, {});
+    /** 展示车道(上游 message-formatter):isMarkdown + depth + characterOverride。 */
+    const markdown = (text, placement, { depth, characterOverride } = {}) =>
+        runLane(scripts, perfDetection, substCtx, text, placement, { isMarkdown: true, depth, characterOverride });
+    /** 组装车道(上游 coreChat 映射):isPrompt + depth。 */
+    const prompt = (text, placement, { depth } = {}) =>
+        runLane(scripts, perfDetection, substCtx, text, placement, { isPrompt: true, depth });
+    /** 楼层展示正文 = 持久 → 展示(上游 落盘regex → messageFormatting 串接)。 */
+    const displayText = (text, placement, displayOpts) =>
+        markdown(persisted(text, placement), placement, displayOpts);
+    /** 楼层出参正文 = 持久 → 组装(上游 coreChat 拿到的是已落盘文)。 */
+    const promptText = (text, placement, promptOpts) =>
+        prompt(persisted(text, placement), placement, promptOpts);
+
+    return { scripts, scriptCount: scripts.length, persisted, markdown, prompt, displayText, promptText };
+}
+
+/** swipe 元素 → 文本:持久层允许 string 与 {mes} 两种形。 */
+const swipeTextOf = (s) => (typeof s === 'string' ? s : (s && typeof s === 'object' ? s.mes : undefined));
+
+/**
+ * chats 读面展示投影(issue #3 执行点之一)。
+ *
+ * 每楼层透出 regex 应用后的展示文本;存储字段(mes/swipes/swipe_info/
+ * extra)一律原样 —— 写回/编辑/MVU settle 路径继续看存储真值。
+ *   mes_display            激活视图正文的展示文本(等价上游渲染出的消息文本)
+ *   swipes_display         string[],与 swipes 平行的各版本展示文本
+ *   reasoning_display      extra.reasoning 的展示文本(REASONING placement)
+ *   swipe_info[i].extra.reasoning_display  各 swipe 版本推理的展示文本
+ *
+ * 门控与上游 message-formatter 对齐:
+ *   - is_system && name==='Luker System' 才跳过(comment/hidden 楼被强制
+ *     isSystem=false → 照常过 regex);
+ *   - depth 只在非系统楼层内从尾数(usableMessages 口径,末层 = 0);
+ *     系统楼 indexOf=-1 → undefined(不做深度门控);
+ *   - extra.display_text 在场时整楼文本被它覆盖(上游 display_text ?? mes),
+ *     该字段后置写入、未经持久车道 → 只跑 markdown 车道。
+ *
+ * @param {object[]} messages 楼层数组(repo body 形)
+ * @param {object} runner createFloorRegexRunner 产物
+ * @returns {{floors:object[], applied:number}} applied = 至少一处展示文本
+ *   被改写的楼层数(diag/测试断言用);floors 是浅拷贝数组。
+ */
+export function projectChatFloorsForDisplay(messages, runner) {
+    const list = Array.isArray(messages) ? messages : [];
+    const nonSystem = [];
+    for (let i = 0; i < list.length; i++) {
+        if (list[i] && !list[i].is_system) nonSystem.push(i);
+    }
+    const depthOf = new Map();
+    nonSystem.forEach((idx, pos) => depthOf.set(idx, nonSystem.length - pos - 1));
+
+    let applied = 0;
+    const floors = list.map((m, i) => {
+        if (!m || typeof m !== 'object' || (m.is_system && m.name === 'Luker System')) return m;
+        const placement = chatFloorRegexPlacement(m);
+        const depth = depthOf.get(i);
+        const displayTextOverride = typeof m.extra?.display_text === 'string' ? m.extra.display_text : null;
+        // display_text 未走持久车道 → markdown-only;常态正文 = 持久 → 展示串接。
+        const show = (raw) => typeof raw === 'string'
+            ? (displayTextOverride !== null
+                ? runner.markdown(raw, placement, { depth, characterOverride: m.name })
+                : runner.displayText(raw, placement, { depth, characterOverride: m.name }))
+            : raw;
+        // reasoning 同链:上游 ParsedReasoning 落盘前过 flagless REASONING
+        // (reasoning.js:514),展示再跑 isMarkdown(message-formatter 4252)。
+        const showReasoning = (raw) => typeof raw === 'string' && raw
+            ? runner.displayText(raw, regex_placement.REASONING, { depth, characterOverride: m.name })
+            : undefined;
+
+        let changed = false;
+        const out = { ...m };
+
+        // 正文:display_text 覆盖 > 原样 mes(上游 active 视图渲染的就是 mes)。
+        const mesBase = displayTextOverride ?? m.mes;
+        out.mes_display = show(mesBase);
+        if (out.mes_display !== mesBase) changed = true;
+
+        // 各 swipe 版本(display_text 在场时上游对任何 swipe 都渲它)。
+        if (Array.isArray(m.swipes) && m.swipes.length) {
+            out.swipes_display = m.swipes.map((s) => {
+                const raw = displayTextOverride ?? swipeTextOf(s);
+                const projected = show(raw);
+                if (projected !== raw) changed = true;
+                return projected;
+            });
+        }
+
+        // 推理文本(独立 REASONING 车道;只跑 markdown,与上游一致——
+        // cleanUpMessage 不动 reasoning)。
+        const rd = showReasoning(m.extra?.reasoning);
+        if (rd !== undefined) {
+            out.reasoning_display = rd;
+            if (rd !== m.extra.reasoning) changed = true;
+        }
+
+        // 各 swipe 版本推理:克隆 swipe_info 条目塞 reasoning_display,
+        // 原 extra 对象不被写。
+        if (Array.isArray(m.swipe_info) && m.swipe_info.length) {
+            out.swipe_info = m.swipe_info.map((si) => {
+                const r = si?.extra?.reasoning;
+                if (typeof r !== 'string' || !r) return si;
+                const srd = showReasoning(r);
+                if (srd === r) return si;
+                changed = true;
+                return { ...si, extra: { ...si.extra, reasoning_display: srd } };
+            });
+        }
+
+        if (changed) applied++;
+        return out;
+    });
+    return { floors, applied };
+}
+
+/**
+ * 楼层出参 regex(上游 Generate() coreChat 映射,script.js:8014-8022)。
+ * 历史楼层进 prompt 前的 persisted → isPrompt 串接;reasoning 走
+ * REASONING placement(上游 :8137,只跑 prompt 车道)。
+ * depth = list.length - index - (isContinue?2:1)(上游同式,continue 末层=-1)。
+ * 调用方传入的数组应是「上游 coreChat 等价物」——is_system 过滤与
+ * swipe-pop 已由调用方完成,这里不再判系统楼。
+ *
+ * @param {object[]} messages ChatMessageInput[]
+ * @param {object} runner createFloorRegexRunner 产物
+ * @returns {{floors:object[], applied:number}} applied = 正文/推理被改写的楼层数
+ */
+export function applyChatFloorsPromptRegex(messages, runner, { isContinue = false } = {}) {
+    const list = Array.isArray(messages) ? messages : [];
+    let applied = 0;
+    const floors = list.map((m, index) => {
+        if (!m || typeof m !== 'object') return m;
+        // 上游 prompt 车道不按 narrator 分:is_user→USER_INPUT,其余→AI_OUTPUT;
+        // 持久车道按其落盘时的消息种类(narrator 是 SLASH_COMMAND)。
+        const persistedPlacement = chatFloorRegexPlacement(m);
+        const promptPlacement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
+        const depth = list.length - index - (isContinue ? 2 : 1);
+        const mes = typeof m.mes === 'string'
+            ? runner.prompt(runner.persisted(m.mes, persistedPlacement), promptPlacement, { depth })
+            : m.mes;
+        // 上游 reasoning 落盘前已过 flagless REASONING(reasoning.js:514)
+        // → 出参再跑 persisted→prompt 串接,与正文同链。
+        const rawReasoning = m.extra?.reasoning;
+        const reasoning = typeof rawReasoning === 'string' && rawReasoning
+            ? runner.promptText(rawReasoning, regex_placement.REASONING, { depth })
+            : rawReasoning;
+        if (mes === m.mes && reasoning === rawReasoning) return m;
+        applied++;
+        return {
+            ...m,
+            mes,
+            ...(reasoning !== rawReasoning ? { extra: { ...(m.extra ?? {}), reasoning } } : {}),
+        };
+    });
+    return { floors, applied };
 }
 
 // —— Author's Note / 卡 depth_prompt / persona 注入通道(audit H4/H5/M1/M2)——
