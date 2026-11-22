@@ -35,7 +35,7 @@ export function CardTile({ card, sub, onOpen, onEdit }: {
                     <img
                         src={charImageUrl(card.avatar)}
                         alt={card.name || card.charDir}
-                        className="block h-auto w-full max-h-[420px] object-cover object-top transition-transform duration-500 group-hover:scale-[1.02]"
+                        className="block h-auto w-full transition-transform duration-500 group-hover:scale-[1.02]"
                         onError={() => setImgErr(true)}
                         loading="lazy"
                     />
@@ -73,21 +73,27 @@ export function CardTile({ card, sub, onOpen, onEdit }: {
     );
 }
 
-/** 占位阴影卡 —— 虚线框 + 导入入口;aspect 轮换撑瀑布流节奏。 */
-export function GhostCardTile({ aspect, labeled }: { aspect: string; labeled?: boolean }) {
+/** 占位阴影卡 —— 空相框质感(渐变纸面+细边),点击直达导入;aspect 轮换撑瀑布流节奏。 */
+export function GhostCardTile({ aspect, labeled, tone = 0 }: { aspect: string; labeled?: boolean; tone?: number }) {
     const { t } = useI18n();
+    const tones = ['var(--bg-surface)', 'var(--bg-canvas)', 'var(--bg-active)'];
     return (
         <button
             type="button"
             onClick={openImportModal}
-            className="mb-3.5 flex w-full break-inside-avoid flex-col items-center justify-center gap-2 rounded-[14px] border-2 border-dashed transition-colors hover:border-[color:var(--brand)] hover:text-[color:var(--fg-muted)]"
-            style={{ aspectRatio: aspect, borderColor: 'var(--border-strong)', color: 'var(--fg-faint)' }}
+            className="mb-3.5 flex w-full break-inside-avoid flex-col items-center justify-center gap-2 rounded-[14px] border transition-colors hover:border-[color:var(--brand)] hover:text-[color:var(--fg-muted)]"
+            style={{
+                aspectRatio: aspect,
+                borderColor: 'var(--border-hairline)',
+                color: 'var(--fg-faint)',
+                background: `linear-gradient(160deg, ${tones[tone % tones.length]} 0%, var(--bg-canvas) 100%)`,
+            }}
         >
-            <Icon name="import" size={18} />
+            <Icon name="import" size={labeled ? 18 : 14} />
             {labeled && <span className="px-3 text-[11.5px]">{t('lib.card.import')}</span>}
         </button>
     );
 }
 
 /** 占位节奏池 —— 不同高宽比轮换,瀑布流列高自然错开。 */
-export const GHOST_ASPECTS = ['3/4', '4/3', '9/16', '4/3'] as const;
+export const GHOST_ASPECTS = ['3/4', '4/3', '9/16', '1/1', '16/10', '4/5'] as const;
