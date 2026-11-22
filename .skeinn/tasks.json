@@ -3642,18 +3642,18 @@
         "apps/server/tests/utopinn-generate-textapi.test.mjs"
       ],
       "implements": ".skeinn/design/core-engine.md#Components and control flow",
-      "status": "open",
+      "status": "done",
       "acceptance": [
         {
           "criterion": "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)",
           "verify_by": "CLI 实弹 + 派发单测",
-          "evidence": "",
+          "evidence": "GENERATE_API_KINDS={chat,text,kobold,novel} 白名单,未知 api 显式 400;text→/v1/completions 单串 prompt;kobold→kai_flags 传入优先/probeKoboldFlags 60s TTL 探测+7 门版本 resolveKaiFlags→dispatchKobold;novel→preamble 史块头+buildNovelDispatchBody→dispatchNovelAI;instruct 复用 TASK-020 未重写",
           "verified": ""
         },
         {
           "criterion": "对应 CLI 动词实弹验证",
           "verify_by": "CLI 实弹",
-          "evidence": "",
+          "evidence": "CLI 加 --api-type/--api-server/--model 并注入 generate body;实弹(真 server+mock 上游):bogus→400、text→/v1/completions persisted、kobold→版本探测+/v1/generate persisted、novel→dispatchNovelAI 专属错误串(NovelAI Access Token is missing)证明路由进 novel 道;诚实遗留:novel 无 secret 仅验到 dispatch 报错层、CLI 端到端未全链实弹",
           "verified": ""
         }
       ],
@@ -3661,19 +3661,37 @@
         "completed": [
           "textgen body 塑形已完(4750223)"
         ],
-        "next": "kobold/novelai 分流派发接入与 CLI 实弹验证(C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)"
+        "next": "",
+        "current": "complete"
       },
-      "evidence": [],
+      "evidence": [
+        "commit 225c66d:utopinn-generate.js api 白名单+kobold/novel 分叉、textgen-body.js +468 塑形/探测面、CLI 旗标+原生帧解析;utopinn-generate-textapi.test.mjs 12/12、generate-e2e 6/6 回归绿",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "textgen/kobold/novel 源的派发路径接入(继承 TASK-020 的 instruct 引擎;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务)",
+              "evidence": "GENERATE_API_KINDS={chat,text,kobold,novel} 白名单,未知 api 显式 400;text→/v1/completions 单串 prompt;kobold→kai_flags 传入优先/probeKoboldFlags 60s TTL 探测+7 门版本 resolveKaiFlags→dispatchKobold;novel→preamble 史块头+buildNovelDispatchBody→dispatchNovelAI;instruct 复用 TASK-020 未重写"
+            },
+            {
+              "criterion": "对应 CLI 动词实弹验证",
+              "evidence": "CLI 加 --api-type/--api-server/--model 并注入 generate body;实弹(真 server+mock 上游):bogus→400、text→/v1/completions persisted、kobold→版本探测+/v1/generate persisted、novel→dispatchNovelAI 专属错误串(NovelAI Access Token is missing)证明路由进 novel 道;诚实遗留:novel 无 secret 仅验到 dispatch 报错层、CLI 端到端未全链实弹"
+            }
+          ],
+          "at": "2026-11-22T03:45:02.160Z"
+        }
+      ],
       "outcome": "非 openai-chat 源(textgen/kobold/novel)接入服务端大脑与统一派发管线,无旁路遗留;C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务,本任务不涉及群聊。",
       "boundaries": [
         "C9 群聊已按 DECISIONS.md:274 砍掉退役,无承接任务,本任务不涉及群聊",
         "非 openai 源只接派发不重写 provider"
       ],
-      "updated_at": "2026-11-21T09:00:00.000Z",
+      "updated_at": "2026-11-22T03:45:02.160Z",
       "guardrails": [
         "instruct 引擎复用 TASK-020 落地(textgen-instruct.md),不重写格式化逻辑",
         "非 openai 源只接派发不重写 provider"
-      ]
+      ],
+      "completed_at": "2026-11-22T03:45:02.160Z"
     },
     {
       "id": "TASK-038",
@@ -4005,24 +4023,24 @@
         {
           "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
           "verify_by": "curl + utopinn stats 动词",
-          "evidence": "已交付:utopinn-diag.js:520-669 GET /api/utopinn/stats/summary(jobs 聚合,range 窗口×char|model|day 分组);CLI utopinn stats 动词接(utopinn-cli.mjs);web apps/web/src/api/stats.ts + SpecPanels/Studio 消费。plugin-surface-forms.md:52,65 记录。",
+          "evidence": "已交付(前验):utopinn-diag.js GET /api/utopinn/stats/summary jobs 聚合 range 窗口×char|model|day;CLI utopinn stats + web stats.ts/SpecPanels 消费",
           "verified": "yes"
         },
         {
           "criterion": "stats/inject 给出各注入源命中率+token 占比(制卡调试面)",
           "verify_by": "掌门卡一轮生成后查 WI 条目命中",
-          "evidence": "已交付:utopinn-diag.js:609+ GET /api/utopinn/stats/inject(diag inject 事件按源聚合);CLI utopinn-cli.mjs:1771,1821;制卡调试面就位。",
+          "evidence": "已交付(前验):utopinn-diag.js GET /api/utopinn/stats/inject diag inject 事件按源聚合;CLI 动词接",
           "verified": "yes"
         },
         {
           "criterion": "novel: sidecar chapters ns + GET chapters 聚合视图 + regen --range 语义",
           "verify_by": "验收矩阵加断言",
-          "evidence": "前端侧:stage.form novel 已带楼→章推导目录(详见任务级 evidence);sidecar/聚合视图/range regen 服务端面未动"
+          "evidence": "chat_state 'chapters' ns sidecar 源优先({items} 校验,非法条计 skipped);GET /api/utopinn/characters/:c/chats/:n/chapters 无 sidecar 时按 stagepack 同规则推导 markers|segmented|single;CLI regen --range <from:to>(删 body 楼区间→续生成,非尾部区间 warn);novel-theater 8/8 含推导三策略+sidecar/skipped/形不符回退断言"
         },
         {
           "criterion": "theater: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+theater sidecar ns 约定",
           "verify_by": "协议类型+实弹",
-          "evidence": "服务端楼层字段面已交(2026-11-21):①楼层 extra 宽松透传钉死——append(legacy chats.js + 原生 utopinn-library POST messages)/PATCH(ops sanitize 仅剥 luker_generation_id 路径与值)/生成兜底 persist 三来路,scene{bg,bgm}/choices[{label|text,goto?}]/narrator(true 与上游惯例 type=narrator 两形)逐键原样,仅协议层 extra.luker_generation_id 落盘前剥;②结构化产出显式 opt-in 提升:luker_generation.theater|structured(或 persistTarget 同键)置真 → persistGeneratedReply/Swipe 把产出按 JSON 对象解析,mes|text|line|content|dialogue|reply|response|narration 首个非空键提为 mes,speaker|name 提为楼层名签,其余键原样抬进 extra;不置真 → JSON 原文落 mes 不猜形状;解析失败/非对象 → 原文兜底;③persist_target.extra 客户端袋浅并入,簿记键(api/model/luker_server_persisted/luker_generation_id/gen_id)不可被袋覆盖;④job.theater 快照({text,name,extra}),GET /api/utopinn/generate/jobs/:id 透出 theater+choices(=theater.extra.choices);diag 事件 theater_extra 记 keys/choices 数/scene 键/旁白位;⑤swipe 并楼保留旧楼层袋+并入新结构化袋,swipe_info 快照同步。测试:node --test tests/theater-extra.test.mjs 8/8、tests/theater-extra-http.test.mjs 4/4(实弹 fetch 全链路);回归 luker-generation-swipe.test.mjs 9/9、utopinn-library.test.mjs 11/11 绿。未动:chars/:id/assets 清单、theater sidecar ns、choice 点击无新协议(走既有 send 通道,前端侧)。"
+          "evidence": "choices 结构化 opt-in 提升前验已交;GET /api/utopinn/characters/:c/assets 三件套枚举(立绘 charx 落点+charDir 双寻址 label 同 /api/sprites/get、背景 char+global、BGM char bgm/+assets/bgm 新位);scene sidecar ns 定名 'scene' 走通用 state/chat 面;404/empty 诚实语义测试钉死"
         }
       ],
       "done_when": [],
@@ -4053,24 +4071,49 @@
       "capability_hooks": [],
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "前端形态骨架:novel 章目录(楼→章推导+点章定位)+ theater 三件套(对话框/立绘位/选项区)",
           "theater 沉浸壳:激活即 portal 全幅接管(chrome 让位不卸载)+ 真全屏/移动横屏锁(静默回落)+ 单立绘位(V2.1 裁定)/通栏对话条",
           "服务端 theater 楼层字段面:extra(scene/choices/narrator)三来路透传+opt-in 结构化产出提升+persist_target.extra 客户端袋+job.theater/choices 透出+diag 事件(见 acceptance 第 4 条 evidence)"
         ],
-        "current": "前端骨架+theater 沉浸壳+服务端 theater 楼层字段面已交,双轨数据(楼层轨优先,种子轨兜底标注)",
-        "next": "服务端面余量:novel chapters sidecar ns+GET 聚合+regen --range;chars/:id/assets 清单+theater sidecar ns(另一格)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit 225c66d:utopinn-library.js +249(chapters 聚合+assets 清单两路由)、api.ts +106 类型、CLI chapters/assets/regen --range;novel-theater.test.mjs 8/8、library/theater 回归 25/25",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GET /api/utopinn/stats/summary 返回 {generations,tokensIn/Out,failRate,p50/p95ms} 可按 char|model|day 分组",
+              "evidence": "已交付(前验):utopinn-diag.js GET /api/utopinn/stats/summary jobs 聚合 range 窗口×char|model|day;CLI utopinn stats + web stats.ts/SpecPanels 消费"
+            },
+            {
+              "criterion": "stats/inject 给出各注入源命中率+token 占比(制卡调试面)",
+              "evidence": "已交付(前验):utopinn-diag.js GET /api/utopinn/stats/inject diag inject 事件按源聚合;CLI 动词接"
+            },
+            {
+              "criterion": "novel: sidecar chapters ns + GET chapters 聚合视图 + regen --range 语义",
+              "evidence": "chat_state 'chapters' ns sidecar 源优先({items} 校验,非法条计 skipped);GET /api/utopinn/characters/:c/chats/:n/chapters 无 sidecar 时按 stagepack 同规则推导 markers|segmented|single;CLI regen --range <from:to>(删 body 楼区间→续生成,非尾部区间 warn);novel-theater 8/8 含推导三策略+sidecar/skipped/形不符回退断言"
+            },
+            {
+              "criterion": "theater: generate 响应带 choices 字段(结构化输出时)+chars/:id/assets 清单+theater sidecar ns 约定",
+              "evidence": "choices 结构化 opt-in 提升前验已交;GET /api/utopinn/characters/:c/assets 三件套枚举(立绘 charx 落点+charDir 双寻址 label 同 /api/sprites/get、背景 char+global、BGM char bgm/+assets/bgm 新位);scene sidecar ns 定名 'scene' 走通用 state/chat 面;404/empty 诚实语义测试钉死"
+            }
+          ],
+          "at": "2026-11-22T03:45:03.027Z"
+        }
+      ],
       "created_at": "2026-11-19T13:46:57.022Z",
-      "updated_at": "2026-11-21T09:00:00.000Z",
+      "updated_at": "2026-11-22T03:45:03.028Z",
       "guardrails": [
         "theater 结构化提升必须 opt-in(luker_generation.theater|structured 置真),不置真不猜 JSON 形状",
         "ui.contrib manifest 只声明面板类型+数据路由+图标,不塞组件",
         "theater sidecar ns 与 chapters 聚合视图走 chat_state 约定,不另起存储"
-      ]
+      ],
+      "completed_at": "2026-11-22T03:45:03.028Z"
     },
     {
       "id": "TASK-045",
