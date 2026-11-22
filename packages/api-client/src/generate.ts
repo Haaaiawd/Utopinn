@@ -8,9 +8,8 @@
  *     未完成才流;回执后 waitForJob 收权威 text(REST 优先于流文本)。
  *   - waitForJob():轮询到 persisted|终态|超时(同 CLI pollStatus,
  *     走 kernel /api/utopinn/jobs 字段超集)。
- *   - abort():走 legacy POST /api/generation/:id/abort(CLI 同款);
- *     原生孪生 POST /api/utopinn/jobs/:id/abort 已存在(守卫同构),
- *     新调用方应优先用原生面。
+ *   - abort():POST /api/utopinn/jobs/:id/abort(CLI 同款;非 2xx 走 ApiError:
+ *     403/404/409 not_running)。legacy POST /api/generation/:id/abort 不再走。
  *   - generateWithStream():generate→attachJob 一条龙。
  */
 
@@ -122,13 +121,12 @@ export class GenerationApi {
     }
 
     /**
-     * ⚠ legacy 控制路由:POST /api/generation/:request_id/abort。
-     * 原生面已存在:POST /api/utopinn/jobs/:id/abort(utopinn-generate.js
-     * 孪生,守卫同构);此实现仍走 legacy 与 CLI `abort` 对齐,调用方
-     * 可择优换原生路由(应答 {aborted:true};404 not_found / 409 not_running)。
+     * POST /api/utopinn/jobs/:id/abort —— 中止 running/queued 任务。
+     * 应答 {aborted:true};非 2xx 走 ApiError:403 forbidden / 404 not_found /
+     * 409 {aborted:false,error:'not_running'}。与 CLI `abort` 同路由。
      */
-    abort(id: string): Promise<{ ok: true } | Record<string, unknown>> {
-        return this.client.request(`/api/generation/${encodeURIComponent(id)}/abort`, { method: 'POST' });
+    abort(id: string): Promise<{ aborted: true }> {
+        return this.client.request(`${P}/jobs/${encodeURIComponent(id)}/abort`, { method: 'POST' });
     }
 
     /** POST /api/ws-ticket → {ticket}(一次性 30s TTL;WS 子协议 verify 即消耗)。 */

@@ -2212,13 +2212,12 @@ async function cmdPreset() {
     console.log(`preset = ${name}`);
 }
 async function cmdPresetsQuiet() {
-    // kernel GET /presets 优先(同 PresetRepo 数据);缺 items 回退 legacy list
+    // kernel GET /presets(同 PresetRepo 数据);不可达即 null,不再回退 legacy list
     const { data, status } = await req('GET', `/api/utopinn/presets?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
     if (status < 400 && Array.isArray(data?.items)) {
         return data.items.map(i => i?.name).filter(n => typeof n === 'string' && n.length > 0);
     }
-    const { data: legacy } = await req('GET', `/api/presets/list?apiId=${encodeURIComponent(flags.api ?? 'openai')}`, undefined, { allowFail: true });
-    return legacy?.names ?? (Array.isArray(legacy) ? legacy : null);
+    return null;
 }
 
 async function cmdSwipe() {

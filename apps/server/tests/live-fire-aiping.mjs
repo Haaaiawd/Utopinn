@@ -168,10 +168,10 @@ try {
         r();
     }));
 
-    // 轮询 job 到 persisted(真上游流式,放宽到 120s)
+    // 轮询 job 到 persisted(真上游流式,放宽到 120s;utopinn 面同源字段)
     let status = null;
     for (let i = 0; i < 240; i++) {
-        const s = await post(server.baseURL, '/api/backends/chat-completions/jobs/status', session, { id: jobId });
+        const s = await get(server.baseURL, `/api/utopinn/jobs/${jobId}`, session);
         if (s.ok) {
             status = await s.json();
             if (status.persisted || status.status === 'failed' || status.status === 'cancelled') break;
