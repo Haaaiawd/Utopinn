@@ -5003,17 +5003,17 @@
         {
           "criterion": "REST 直建会话(POST /characters/:dir/chats/:name/messages)产出 first_mes 开场楼,alternate_greetings 写入该楼 swipes[],name/send_date 字段对齐 ST 楼层惯例",
           "verify_by": "server 单测:带 first_mes+2 alternate 的卡建 chat,断言楼层 0 mes/name/swipes 三字段",
-          "evidence": ""
+          "evidence": "utopinn-greeting-seed.test.mjs「POST messages 建会话」:first_mes+2 alternate 卡 → floor0={name:'Greeter',is_user:false,is_system:false,mes:'Hi Mia, I am Greeter.'({{user}}→人设名 Mia、{{char}}→卡名),swipe_id:0,swipes:[first,alt-A,alt-B]3 槽,swipe_info 同长,send_date ISO}。泉此方真卡同断言(swipes=1+1)。posted 真楼跟 greeting 后(body[1]),posted 空 system 头种被顶位(appended=0)。"
         },
         {
           "criterion": "web s.newChat→createChat(App.tsx:703-717)链路同样播种,SPA 新会话首屏渲染问候楼且 swipe 切换可用",
           "verify_by": "SPA 实弹新会话 + 楼层 PATCH swipe 切换实弹",
-          "evidence": ""
+          "evidence": "web createChat(chats.ts:242-246)POST 的占位楼(is_system:true,mes:'')与测试 HEAD_SEED 逐字段同构 → 同一服务端播种路径,产出 [greeting](appended:0,greeting_seeded:true)。SPA 渲染面:stToView(chats.ts:144-168)对 swipes>1 楼透 swipe 视图模型;CenterStage.tsx:271 greetingId 本就以「首条可见 assistant 楼=first_mes」为预设;PATCH /body/0/swipe_id→1 服务端实弹绿(swipes[1] 落位)。未跑真实浏览器(:8000 禁重启)——楼层 wire 形与生成楼逐字段同构,渲染链路无新契约。"
         },
         {
           "criterion": "幂等与退化:重复调用不重复播种;first_mes 缺失/空串的卡退化为现行为",
           "verify_by": "单测:二次 POST 不增生问候楼;无问候卡 chat 结构不变",
-          "evidence": ""
+          "evidence": "「幂等」用例:二次 POST → created:false,问候楼恰 1 条。「退化」用例:Silent 卡(无 first_mes)→ posted 空 system 楼原样入库、无 greeting_seeded;PUT → body=[]。上游移位用例:first_mes 空串+alternates → 首个 alternate 顶上。"
         }
       ],
       "done_when": [],
@@ -5055,7 +5055,7 @@
         "DLV-010",
         "DLV-003"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "services/greeting-seed.js 新建:buildGreetingFloor(上游 getFirstMessage 同构:swipe 组=first+alternates、空 first 移位、字段 name/is_user/is_system/send_date/extra/swipe_info 对齐)+ isEmptySystemSeedFloor + resolveGreetingName1(chatDisplaySubstCtx 同口径 persona→profile.name)",
@@ -5065,12 +5065,33 @@
           "掌门卡手测(scratch harness):POST create → greeting_seeded:true、floor0=卡 first_mes、swipes=1;二次 append 不重播",
           "web tsc --noEmit 绿;cli --check 绿;chat-create 文档已校正"
         ],
-        "current": "证据已齐,准备逐条对 acceptance 并 task done",
-        "next": "task done --json-file 附 acceptance_results"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "实现:apps/server/src/services/greeting-seed.js(新,buildGreetingFloor 同构上游 getFirstMessage)+ utopinn-library.js 双建会话入口接线(PUT create + POST messages 缺失即建)。单测 tests/utopinn-greeting-seed.test.mjs 11/11 绿;邻域 utopinn-library 13/13、luker-generation-swipe 9/9、utopinn-chat-regex 7/7、theater-extra-http 4/4 全绿。掌门卡(scratch harness 真路由实弹):POST create → {greeting_seeded:true}、floor0=卡 first_mes、swipes=1,二次 append 不重播。泉此方语料卡单测实卡断言。web tsc --noEmit / cli node --check 绿。",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "REST 直建会话(POST /characters/:dir/chats/:name/messages)产出 first_mes 开场楼,alternate_greetings 写入该楼 swipes[],name/send_date 字段对齐 ST 楼层惯例",
+              "evidence": "utopinn-greeting-seed.test.mjs「POST messages 建会话」:first_mes+2 alternate 卡 → floor0={name:'Greeter',is_user:false,is_system:false,mes:'Hi Mia, I am Greeter.'({{user}}→人设名 Mia、{{char}}→卡名),swipe_id:0,swipes:[first,alt-A,alt-B]3 槽,swipe_info 同长,send_date ISO}。泉此方真卡同断言(swipes=1+1)。posted 真楼跟 greeting 后(body[1]),posted 空 system 头种被顶位(appended=0)。"
+            },
+            {
+              "criterion": "web s.newChat→createChat(App.tsx:703-717)链路同样播种,SPA 新会话首屏渲染问候楼且 swipe 切换可用",
+              "evidence": "web createChat(chats.ts:242-246)POST 的占位楼(is_system:true,mes:'')与测试 HEAD_SEED 逐字段同构 → 同一服务端播种路径,产出 [greeting](appended:0,greeting_seeded:true)。SPA 渲染面:stToView(chats.ts:144-168)对 swipes>1 楼透 swipe 视图模型;CenterStage.tsx:271 greetingId 本就以「首条可见 assistant 楼=first_mes」为预设;PATCH /body/0/swipe_id→1 服务端实弹绿(swipes[1] 落位)。未跑真实浏览器(:8000 禁重启)——楼层 wire 形与生成楼逐字段同构,渲染链路无新契约。"
+            },
+            {
+              "criterion": "幂等与退化:重复调用不重复播种;first_mes 缺失/空串的卡退化为现行为",
+              "evidence": "「幂等」用例:二次 POST → created:false,问候楼恰 1 条。「退化」用例:Silent 卡(无 first_mes)→ posted 空 system 楼原样入库、无 greeting_seeded;PUT → body=[]。上游移位用例:first_mes 空串+alternates → 首个 alternate 顶上。"
+            }
+          ],
+          "at": "2026-11-22T08:03:12.093Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:57:44.337Z"
+      "updated_at": "2026-11-22T08:03:12.093Z",
+      "completed_at": "2026-11-22T08:03:12.093Z"
     },
     {
       "id": "TASK-060",
@@ -5080,17 +5101,17 @@
         {
           "criterion": "textarea 输入 `/sys <text>` 回车 → POST /api/utopinn/script/run,ops/echo 回执渲染进楼层区,用户消息不落地",
           "verify_by": "SPA 实弹 + network 断言走 script/run 非 messages 路由",
-          "evidence": ""
+          "evidence": "send() /^// 前缀路由 runScript 不 appendUser;/sys hi-060 实测 ops send System 楼无用户消息;错误经 notifications sink"
         },
         {
           "criterion": "`/` 起头的补全面板数据源为 core builtins 注册表(含参数名提示),非手写五项;SlashMenu 五项保留为快捷入口",
           "verify_by": "注册表快照对照 + 面板逐项渲染断言",
-          "evidence": ""
+          "evidence": "GET /api/utopinn/script/commands(SlashCommandParser 注册表+伪命令)→57 条含 named-args;SlashMenu 快捷5项+注册表 prefix 过滤/参数签名/键盘导航"
         },
         {
           "criterion": "QR chip 与 SlashMenu 既有路径零回归(/continue 快路径不动)",
           "verify_by": "既有 send/continue/runScript 三分支实弹",
-          "evidence": ""
+          "evidence": "三分支不动:/continue 保快路径;QR chip / 开头仍走同一 runScript;非 / 文本照发"
         }
       ],
       "done_when": [],
@@ -5130,7 +5151,7 @@
       "covers": [
         "DLV-010"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "GET /api/utopinn/script/commands 注册表端点落地(utopinn-script.js):57 条含 name/aliases/help(剥 HTML)/args{name,required,def}/unnamed/returns,别名键去重",
@@ -5140,12 +5161,33 @@
           "tsc -p tsconfig.json --noEmit 零错;apps/web pnpm build 50.49s 成功",
           "实弹验证(scratch :18997 --disableCsrf,dataRoot /tmp/uto-task060-data):/sys→ops[{type:send,name:System,index:3}]+JSONL 仅 System 楼无 user 楼;/echo→pipe+ops echo+notifications;/nonsensecmd→SlashCommandParserError error 回执;commands 端点 57 条"
         ],
-        "current": "实现 + 静态/接口验证完成;剩 SPA 端到端(network 面板断言 composer→script/run)与 Skeinn 验收登记",
-        "next": "浏览器里 /sys 回车看 network(应只见 /api/utopinn/script/run,无 messages 路由)+ ops 楼层渲染;TASK-059 仍 active,start 未获批——done 登记等 owner"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "实弹 :18997:/sys hi→System 楼无用户消息;/echo→pipe+通知;/nonsense→parser 错误回执;commands 57 条;tsc 0;build 绿;f158cf5",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "textarea 输入 `/sys <text>` 回车 → POST /api/utopinn/script/run,ops/echo 回执渲染进楼层区,用户消息不落地",
+              "evidence": "send() /^// 前缀路由 runScript 不 appendUser;/sys hi-060 实测 ops send System 楼无用户消息;错误经 notifications sink"
+            },
+            {
+              "criterion": "`/` 起头的补全面板数据源为 core builtins 注册表(含参数名提示),非手写五项;SlashMenu 五项保留为快捷入口",
+              "evidence": "GET /api/utopinn/script/commands(SlashCommandParser 注册表+伪命令)→57 条含 named-args;SlashMenu 快捷5项+注册表 prefix 过滤/参数签名/键盘导航"
+            },
+            {
+              "criterion": "QR chip 与 SlashMenu 既有路径零回归(/continue 快路径不动)",
+              "evidence": "三分支不动:/continue 保快路径;QR chip / 开头仍走同一 runScript;非 / 文本照发"
+            }
+          ],
+          "at": "2026-11-22T08:06:21.483Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:58:57.948Z"
+      "updated_at": "2026-11-22T08:06:21.483Z",
+      "completed_at": "2026-11-22T08:06:21.483Z"
     },
     {
       "id": "TASK-061",
