@@ -17,6 +17,7 @@ import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import { listPersonas, type ActivePersona, type PersonaItem } from './api/personas';
 import { getPreset, listPresets, savePreset, type PresetDocument } from './api/presets';
 import { getSettings, patchSettings } from './api/settings';
+import { listBackgrounds } from './api/backgrounds';
 import { listWorlds } from './api/worlds';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
@@ -256,7 +257,7 @@ function Shell() {
     const [stBg, setStBg] = useState<StBackground | null>(null);
     const [chatBgLock, setChatBgLock] = useState<string | null>(null);
     const [stCss, setStCss] = useState('');
-    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.34, glassBlur: 14, texAlpha: 0.06 });
+    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.62, glassBlur: 14, texAlpha: 0.06 });
     /* 置顶会话清单 —— accountStorage.pinnedChats(ST 同槽:{file_name,avatar})。 */
     const [pinnedChats, setPinnedChats] = useState<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
@@ -382,11 +383,12 @@ function Shell() {
     }, []);
 
     const refreshConnection = useCallback(async (opts?: { freshModels?: boolean }) => {
-        const [stRes, mdRes, prRes, wlRes] = await Promise.allSettled([
+        const [stRes, mdRes, prRes, wlRes, bgRes] = await Promise.allSettled([
             getSettings(),
             listModels({ fresh: opts?.freshModels }),
             listPresets('openai'),
             listWorlds(),
+            listBackgrounds(),
         ]);
 
         const st = stRes.status === 'fulfilled' ? stRes.value.settings : null;
@@ -411,7 +413,22 @@ function Shell() {
         if (st) {
             const bg = (st.background && typeof st.background === 'object' && !Array.isArray(st.background))
                 ? (st.background as Record<string, unknown>) : null;
-            setStBg(bg && typeof bg.url === 'string' && bg.url
+            /* 死指针容错:backgrounds/ 目录换血后 settings.background 可能仍指向
+               已删文件 → 清单在列才认(local url 以文件名判;远端/无法判定的原样保
+               留,清单拉取失败则不裁决,宁留勿清)。 */
+            const bgKnown = bgRes.status === 'fulfilled'
+                ? new Set(bgRes.value.items.map((i) => i.filename)) : null;
+            const bgAlive = (name: string, cssUrl: string): boolean => {
+                if (!bgKnown) return true;
+                const inner = (bgCssInner(cssUrl) || name).trim();
+                if (/^https?:\/\//i.test(inner) || inner.startsWith('data:')) return true;
+                const localFile = /(?:^|\/)backgrounds\/([^/?#]+)\s*$/.exec(inner)?.[1];
+                const rawFile = localFile ?? inner.split('/').pop() ?? name;
+                let file = rawFile;
+                try { file = decodeURIComponent(rawFile); } catch { /* 畸形 % 编码按原名判 */ }
+                return file ? bgKnown.has(file) : true;
+            };
+            setStBg(bg && typeof bg.url === 'string' && bg.url && bgAlive(str(bg.name), String(bg.url))
                 ? { name: str(bg.name), url: String(bg.url), fitting: str(bg.fitting) || 'classic' }
                 : null);
             const pu = (st.power_user && typeof st.power_user === 'object' && !Array.isArray(st.power_user))
@@ -424,7 +441,7 @@ function Shell() {
                 const num = (v: unknown, d: number, lo: number, hi: number) =>
                     typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
                 setUiAmbience({
-                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.34, 0, 0.8),
+                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.62, 0, 0.9),
                     glassBlur: num(u.glass_blur ?? u.glassBlur, 14, 0, 32),
                     texAlpha: num(u.tex_alpha ?? u.texAlpha, 0.06, 0, 0.3),
                 });
@@ -949,13 +966,44 @@ function wiObjCopy(raw: Record<string, unknown>): Record<string, unknown> {
     return { ...raw };
 }
 
+/** CSS url() → 内层地址('url("/backgrounds/x.png")' → '/backgrounds/x.png';
+ *  非 url() 形原样返回)。 */
+function bgCssInner(css: string): string {
+    const m = /url\(\s*['"]?([^'")]+?)['"]?\s*\)/.exec(css);
+    return (m?.[1] ?? css).trim();
+}
+
+/** 探测 cssUrl 指向的图片是否真实可取(null=进行中/无 url)。Image 预载
+ *  对 404/已删文件直接给 verdict,氛围层据此跳过死层或回落次选。 */
+function useWallOk(cssUrl: string | null): boolean | null {
+    const [ok, setOk] = useState<boolean | null>(null);
+    useEffect(() => {
+        const src = cssUrl ? bgCssInner(cssUrl) : '';
+        if (!src) { setOk(null); return; }
+        setOk(null);
+        let dead = false;
+        const img = new Image();
+        img.onload = () => { if (!dead) setOk(true); };
+        img.onerror = () => { if (!dead) setOk(false); };
+        img.src = src;
+        return () => { dead = true; img.onload = img.onerror = null; };
+    }, [cssUrl]);
+    return cssUrl ? ok : null;
+}
+
 /** 全局氛围层 —— App 根 backdrop,整壳半透明 chrome 透上来。
  *  图层:会话锁(chat_metadata.custom_background)> 全局 settings.background,
  *  重模糊压成氛围色场而非照片;bgMode 纹理叠其上;末层暗角保对比。
  *  浓度/模糊量全部由 --amb-* var 控(power_user.ui_ambience)。 */
 function AmbientBackdrop() {
     const s = useShell();
-    const wall = s.chatBgLock ?? s.stBg?.url ?? null;
+    /* 会话锁 > 全局;两源各自预载验证 —— 死文件(清单换血/已删)不渲,
+       锁死了回落全局而不是黑掉整层。 */
+    const lock = s.chatBgLock;
+    const glob = s.stBg?.url ?? null;
+    const lockOk = useWallOk(lock);
+    const globOk = useWallOk(glob);
+    const wall = lockOk ? lock : (globOk ? glob : null);
     return (
         <div className="pointer-events-none fixed inset-0" aria-hidden="true">
             <div className="absolute inset-0" style={{ background: 'var(--amb-base, #08090A)' }} />
@@ -967,7 +1015,7 @@ function AmbientBackdrop() {
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         opacity: 'var(--amb-bg-alpha)',
-                        filter: 'blur(16px) saturate(1.1) brightness(0.85)',
+                        filter: 'blur(10px) saturate(1.15) brightness(0.9)',
                     }}
                 />
             )}

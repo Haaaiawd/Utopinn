@@ -48,7 +48,7 @@ export interface StBackground {
 }
 
 /** 全局氛围层参数 —— power_user.ui_ambience 服务端槽(snake_case 落盘):
- *  bg_alpha 壁纸浓度(0~0.8) / glass_blur 毛玻璃 px(0~32) / tex_alpha 纹理浓度(0~0.3)。 */
+ *  bg_alpha 壁纸浓度(0~0.9) / glass_blur 毛玻璃 px(0~32) / tex_alpha 纹理浓度(0~0.3)。 */
 export interface UiAmbience {
     bgAlpha: number;
     glassBlur: number;

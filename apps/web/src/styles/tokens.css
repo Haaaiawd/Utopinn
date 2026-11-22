@@ -136,7 +136,7 @@
 
     /* 全局氛围层(App 根 backdrop):壁纸浓度 / 毛玻璃 / 纹理浓度 —
        power_user.ui_ambience 服务端槽,JS 水合后写这三个 var。 */
-    --amb-bg-alpha: 0.34;
+    --amb-bg-alpha: 0.62;
     --amb-glass-blur: 14px;
     --amb-tex-alpha: 0.06;
 }
@@ -148,9 +148,12 @@
     /* 氛围层底色(实心,垫在壁纸图下)。 */
     --amb-base: #08090A;
     /* chrome/canvas 两层半透明 —— 全局氛围层透上来 + backdrop-filter
-       毛玻璃;文字层(--surface-2/3 卡片/气泡)保持不透,可读性不动。 */
-    --canvas-bg: rgba(8, 9, 10, 0.58);
-    --surface-1: rgba(15, 16, 17, 0.60);
+       毛玻璃;文字层(--surface-2/3 卡片/气泡)保持不透,可读性不动。
+       覆盖色与 --amb-base 同色族:无壁纸时降 alpha 视觉不变(透出的是
+       同一底色),有壁纸时开窗量决定壁纸可见度 —— 0.58/0.60 实测把
+       壁纸压到不可感知(avgΔ<2),放到 0.45/0.50 氛围层才成立。 */
+    --canvas-bg: rgba(8, 9, 10, 0.45);
+    --surface-1: rgba(15, 16, 17, 0.50);
     --surface-2: #141516;
     --surface-3: #1C1D1F;
 
@@ -238,11 +241,13 @@
     --surface-3: #ECEAE2;
 
     --amb-base: #F5F4EF;
-    --bg-chrome: rgba(245, 244, 239, 0.90);
-    --bg-tray: rgba(245, 244, 239, 0.90);
-    --bg-sidebar: rgba(245, 244, 239, 0.90);
-    --bg-canvas: rgba(250, 249, 245, 0.92);
-    --bg-workbench: rgba(250, 249, 245, 0.92);
+    /* 亮色覆盖层同样要给氛围层留窗(0.90/0.92 时壁纸全灭);
+       底与面同色,无壁纸时外观不变。 */
+    --bg-chrome: rgba(245, 244, 239, 0.78);
+    --bg-tray: rgba(245, 244, 239, 0.78);
+    --bg-sidebar: rgba(245, 244, 239, 0.78);
+    --bg-canvas: rgba(250, 249, 245, 0.82);
+    --bg-workbench: rgba(250, 249, 245, 0.82);
     --bg-surface: #F2F0E8;
     --bg-input: #FFFFFF;
     --bg-surface-hover: #ECEAE2;

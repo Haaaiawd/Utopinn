@@ -1260,7 +1260,7 @@ function StAppearanceSection() {
             <div className="space-y-2.5">
                 <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.amb.title')}</div>
                 {([
-                    { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.7, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
+                    { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.9, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
                     { k: 'glassBlur' as const, lbl: t('st.amb.glass'), min: 0, max: 28, step: 1, fmt: (v: number) => `${v}px` },
                     { k: 'texAlpha' as const, lbl: t('st.amb.tex'), min: 0, max: 0.18, step: 0.01, fmt: (v: number) => `${Math.round(v * 100)}%` },
                 ]).map(({ k, lbl, min, max, step, fmt }) => (
