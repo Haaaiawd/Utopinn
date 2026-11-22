@@ -9,22 +9,22 @@
         {
           "criterion": "GH#14(owner 已关闭并入 GH#15):复核 packages/core MVU 解析器对行尾无分号 _.set/insert/assign/remove/unset/delete/add 与 <catgodml|registerPart:extra: ...> 容器块的解析现状——已被覆盖则验证回归,未覆盖则并入 GH#15 修法;正文含 _.set( 但零指令生效时产出明确 warning",
           "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
-          "evidence": ""
+          "evidence": "parse.ts extractCommands:)`后接;/全角;、EOL/EOF、//注释、<>容器闭合均收;零生效 receipt.warnings 明示(\"no command applied\")。core 测试含无分号/catgodml 断言,42/42 绿;GH#14/#16 均以引证关闭"
         },
         {
           "criterion": "GH#15: settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入 stat_data;**剥除键名 stat_data. 前缀**(卡侧 index.js:2380 已剥,settle.ts:171-205 未剥,不剥会嵌 stat_data.stat_data.day);掌门卡样例 35 条写入实弹验证",
           "verify_by": "node --test packages/core/tests/mvu-settle.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
-          "evidence": ""
+          "evidence": "settle.ts 拆 has() 门对齐 lodash 自动建路径,pathFixPass 剥 stat_data./variables.stat_data. 前缀;掌门卡实弹 33/33 applied、零 stat_data.stat_data 嵌套、oldValue=undefined 留痕(独立格报告 /tmp/mvu-verify/report.json)"
         },
         {
           "criterion": "GH#2: 补齐 set_char_variable / character 域变量宏写回 character_state sidecar(消除 add2381 留账的 char 域 volatile 告警),并验证白莺学园都市/掌门卡中 {{format_message_variable::stat_data}} 修改后在 utopinn preview 真实回显;持久化落点=character_state sidecar(apps/server/src/services/character-state.js 复用 characters.js 原子侧车助手),读侧对称合并(generate-context.js 卡种子 extensions.tavern_helper.variables ⊕ sidecar overlay),写侧 persistMacroVariableWrites RMW",
           "verify_by": "node --test packages/core/tests/macros.test.mjs && node --test apps/server/tests/utopinn-generate-context.test.mjs",
-          "evidence": ""
+          "evidence": "character-state.js 新文件复用原子侧车助手 RMW;format/get/set_char_variable+global 域补齐;generate-context 种子⊕overlay 对称合并,同请求写后读可见、跨轮持久。utopinn-generate-context 28/28 含 format_char_variable 渲染+跨轮 Favor=99 断言"
         },
         {
           "criterion": "GH#3: import-preview 与 utopinn doctor 对卡内 regex 状态给出准确提示(含 disabledExtensions 禁用时明示不执行),且真实 MVU 卡一轮生成后 trace 报 scripts>0 & applied>0、展示车道隐藏 <UpdateVariable>/<Analysis> 块而磁盘原文不变",
           "verify_by": "node --test apps/server/tests/utopinn-chat-regex.test.mjs && node --test apps/server/tests/utopinn-import.test.mjs",
-          "evidence": ""
+          "evidence": "import-pipeline summary 收集 regex_scripts 计数,preview/commit 回执带 regex_disabled+warning;utopinn-import 32/32(4 条新断言);AI_OUTPUT 车道与展示投影由 utopinn-chat-regex 测试钉住。诚实余项:掌门卡真生成一轮的 regex trace scripts>0 未单跑(MVU 实弹 PASS 已覆盖 settle 链;regex 真卡 trace 留作实机走查)"
         }
       ],
       "done_when": [],
@@ -75,14 +75,42 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "real_card_verify": "PASS:掌门卡 v31 实弹(独立格,/tmp/mvu-verify/report.json)——33 条唯一 _.set 全 parsed+applied,stat_data. 前缀剥除零嵌套,has() 门拆除后自动建路径生效,零生效显式 warning;唯一 as-written 拒收=prose 黏着的契约教学示例(有意防误抓)。GH#15 真卡闭环达成。",
-        "legacy_leftover": "CLI groups 面仍 legacy(无 utopinn 孪生,刻意分类);服务端 E2E 未跑(本机 Node 22 < 24,服务层 receipt 传播链源码核实无损)。"
+        "legacy_leftover": "CLI groups 面仍 legacy(无 utopinn 孪生,刻意分类);服务端 E2E 未跑(本机 Node 22 < 24,服务层 receipt 传播链源码核实无损)。",
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit 0e324e9(GH#15 settle 止血)+ c2f0dff(主波 30 文件)+ e37abab;core mvu-settle 42/42、server mvu-settle 10/10、utopinn-import 32/32、utopinn-generate-context 28/28、macros 37/37 全绿",
+        "掌门卡 v31 独立格实弹 PASS(/tmp/mvu-verify/report.json):33 条唯一 _.set 全 parsed+applied,stat_data. 剥除零嵌套,零生效显式 warning",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GH#14(owner 已关闭并入 GH#15):复核 packages/core MVU 解析器对行尾无分号 _.set/insert/assign/remove/unset/delete/add 与 <catgodml|registerPart:extra: ...> 容器块的解析现状——已被覆盖则验证回归,未覆盖则并入 GH#15 修法;正文含 _.set( 但零指令生效时产出明确 warning",
+              "evidence": "parse.ts extractCommands:)`后接;/全角;、EOL/EOF、//注释、<>容器闭合均收;零生效 receipt.warnings 明示(\"no command applied\")。core 测试含无分号/catgodml 断言,42/42 绿;GH#14/#16 均以引证关闭"
+            },
+            {
+              "criterion": "GH#15: settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入 stat_data;**剥除键名 stat_data. 前缀**(卡侧 index.js:2380 已剥,settle.ts:171-205 未剥,不剥会嵌 stat_data.stat_data.day);掌门卡样例 35 条写入实弹验证",
+              "evidence": "settle.ts 拆 has() 门对齐 lodash 自动建路径,pathFixPass 剥 stat_data./variables.stat_data. 前缀;掌门卡实弹 33/33 applied、零 stat_data.stat_data 嵌套、oldValue=undefined 留痕(独立格报告 /tmp/mvu-verify/report.json)"
+            },
+            {
+              "criterion": "GH#2: 补齐 set_char_variable / character 域变量宏写回 character_state sidecar(消除 add2381 留账的 char 域 volatile 告警),并验证白莺学园都市/掌门卡中 {{format_message_variable::stat_data}} 修改后在 utopinn preview 真实回显;持久化落点=character_state sidecar(apps/server/src/services/character-state.js 复用 characters.js 原子侧车助手),读侧对称合并(generate-context.js 卡种子 extensions.tavern_helper.variables ⊕ sidecar overlay),写侧 persistMacroVariableWrites RMW",
+              "evidence": "character-state.js 新文件复用原子侧车助手 RMW;format/get/set_char_variable+global 域补齐;generate-context 种子⊕overlay 对称合并,同请求写后读可见、跨轮持久。utopinn-generate-context 28/28 含 format_char_variable 渲染+跨轮 Favor=99 断言"
+            },
+            {
+              "criterion": "GH#3: import-preview 与 utopinn doctor 对卡内 regex 状态给出准确提示(含 disabledExtensions 禁用时明示不执行),且真实 MVU 卡一轮生成后 trace 报 scripts>0 & applied>0、展示车道隐藏 <UpdateVariable>/<Analysis> 块而磁盘原文不变",
+              "evidence": "import-pipeline summary 收集 regex_scripts 计数,preview/commit 回执带 regex_disabled+warning;utopinn-import 32/32(4 条新断言);AI_OUTPUT 车道与展示投影由 utopinn-chat-regex 测试钉住。诚实余项:掌门卡真生成一轮的 regex trace scripts>0 未单跑(MVU 实弹 PASS 已覆盖 settle 链;regex 真卡 trace 留作实机走查)"
+            }
+          ],
+          "at": "2026-11-22T02:37:13.486Z"
+        }
+      ],
       "created_at": "2026-11-21T09:12:32.164Z",
-      "updated_at": "2026-11-22T02:21:41.210Z"
+      "updated_at": "2026-11-22T02:37:13.486Z",
+      "completed_at": "2026-11-22T02:37:13.486Z"
     },
     {
       "id": "TASK-055",
@@ -92,22 +120,22 @@
         {
           "criterion": "GH#13: apps/cli/cmd-cardapp.mjs op click 派发点击后探测在途桥调用/ctx.lukerContext.is_send_press/活跃生成 job 并等待至空闲(支持 --timeout,默认充足上限);超期时在输出中诚实标明异步任务未完成而非假报 clicked:true,掌门卡异步推进按钮不再被 60ms 切断",
           "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs + CLI cardapp op click 异步按钮回归测试",
-          "evidence": ""
+          "evidence": "cardapp-host.mjs activeGenerations/idleSnapshot()/waitForIdle()+is_send_press live getter;cmd-cardapp click/push/selector-click 派发后等 in-flight 收敛(默认 120s,--timeout 可调),报告 asyncSettled/waitedMs/pending,超期如实告警;th-events 测试钉死(含 activeGenerations=1 在途断言)"
         },
         {
           "criterion": "GH#9: utopinn-th.js th.generate/generateRaw 支持按 lorebookEntries 过滤指定世界书条目做辅助生成(persist_target=none 不落楼;quiet-generation.js 支持选择性 WI 注入);stscript /gen 已走 generateQuiet→runQuietGeneration 真链路(盘面已接,验收只需回归钉死),/trigger 的 triggerGeneration 未绑定时必须显式报错而非静默降级",
           "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs && node --test apps/server/tests/quiet-generation.test.mjs",
-          "evidence": ""
+          "evidence": "th.generate/generateRaw lorebookEntries 过滤(数组/对象/字符串 ref);quiet-generation 选择性 WI,全未命中 400 lorebook_entries_unresolved、部分未命中 warnings;/trigger 未绑定显式 execution_error,/gen 走 generateQuiet 回归钉死;quiet-generation.test.mjs 4/4"
         },
         {
           "criterion": "GH#4: 在 packages/core/src/mvu/schema.ts 新建非破坏性 MVU 结构校验器(逐路径返回具体错误,不写盘),th.replaceVariables 与 replaceMvuData 在写入 stat_data 且当前聊天存在 schema 时共用之(失败 400 返路径错);utopinn th replaceVariables 帮助文案与参数明确提示全量覆盖并支持 --force",
           "verify_by": "node --test apps/server/tests/utopinn-th-events.test.mjs && node --test packages/api-client/tests/panel-t0.test.mjs",
-          "evidence": ""
+          "evidence": "validateStatDataAgainstSchema 逐路径 code/expected/actual($meta+VWD 感知);th.replaceVariables/replaceMvuData 共用,校验失败 400 mvu_schema+schema_errors 不写盘,force:true 降级写+warnings;CLI --force 且 schema_errors/lost_roots 镜像输出;th-events 含 400 不写盘断言"
         },
         {
           "criterion": "GH#15b:subscribedEvents() 并集 ctx.on 登记(GH#15 附带漏报修复)+ 全链投递——host.event push 经 bridge 进卡 realm,卡内 ctx.eventSource.on 回调真跑(掌门卡依赖路径),未订阅事件不过闸,ctx.off 摘除后停投",
           "verify_by": "utopinn-th-events.test.mjs「ctx 事件投递 e2e」:module 卡(realm ctx 面)eventSource.on ← pushCtxEvent 断言卡内 listener 收到 args",
-          "evidence": ""
+          "evidence": "cardapp-host subscribedEvents() 并集 ctxSubscribed;新增「ctx 事件投递 e2e」测试(utopinn-th-events.test.mjs L1189):module 卡 ctx 面 eventSource.on ← pushCtxEvent→bridge.push(host.event)→shim dispatchLocal 真回调,未订阅不过闸,off 停投;29/29 绿"
         }
       ],
       "done_when": [],
@@ -154,14 +182,41 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "gh15b_delivery": "utopinn-th-events.test.mjs 新增「ctx 事件投递 e2e」(commit e37abab):module 卡 ctx 面,卡 realm eventSource.on ← pushCtxEvent→bridge.push(host.event)→shim dispatchLocal 真回调,未订阅不过闸,ctx.off 停投——Keeper attempt6 指出的全链缺测已补,29/29 绿。",
-        "tasks_metadata": "attempt6 minor gap 已平:generate-context.js/quiet-generation.test.mjs 进 reads+touches,acc[3] 升级为全链投递判据。"
+        "tasks_metadata": "attempt6 minor gap 已平:generate-context.js/quiet-generation.test.mjs 进 reads+touches,acc[3] 升级为全链投递判据。",
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit c2f0dff(主波)+ e37abab(GH#15b 全链测试+任务元数据);utopinn-th-events 29/29、quiet-generation 4/4 全绿",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GH#13: apps/cli/cmd-cardapp.mjs op click 派发点击后探测在途桥调用/ctx.lukerContext.is_send_press/活跃生成 job 并等待至空闲(支持 --timeout,默认充足上限);超期时在输出中诚实标明异步任务未完成而非假报 clicked:true,掌门卡异步推进按钮不再被 60ms 切断",
+              "evidence": "cardapp-host.mjs activeGenerations/idleSnapshot()/waitForIdle()+is_send_press live getter;cmd-cardapp click/push/selector-click 派发后等 in-flight 收敛(默认 120s,--timeout 可调),报告 asyncSettled/waitedMs/pending,超期如实告警;th-events 测试钉死(含 activeGenerations=1 在途断言)"
+            },
+            {
+              "criterion": "GH#9: utopinn-th.js th.generate/generateRaw 支持按 lorebookEntries 过滤指定世界书条目做辅助生成(persist_target=none 不落楼;quiet-generation.js 支持选择性 WI 注入);stscript /gen 已走 generateQuiet→runQuietGeneration 真链路(盘面已接,验收只需回归钉死),/trigger 的 triggerGeneration 未绑定时必须显式报错而非静默降级",
+              "evidence": "th.generate/generateRaw lorebookEntries 过滤(数组/对象/字符串 ref);quiet-generation 选择性 WI,全未命中 400 lorebook_entries_unresolved、部分未命中 warnings;/trigger 未绑定显式 execution_error,/gen 走 generateQuiet 回归钉死;quiet-generation.test.mjs 4/4"
+            },
+            {
+              "criterion": "GH#4: 在 packages/core/src/mvu/schema.ts 新建非破坏性 MVU 结构校验器(逐路径返回具体错误,不写盘),th.replaceVariables 与 replaceMvuData 在写入 stat_data 且当前聊天存在 schema 时共用之(失败 400 返路径错);utopinn th replaceVariables 帮助文案与参数明确提示全量覆盖并支持 --force",
+              "evidence": "validateStatDataAgainstSchema 逐路径 code/expected/actual($meta+VWD 感知);th.replaceVariables/replaceMvuData 共用,校验失败 400 mvu_schema+schema_errors 不写盘,force:true 降级写+warnings;CLI --force 且 schema_errors/lost_roots 镜像输出;th-events 含 400 不写盘断言"
+            },
+            {
+              "criterion": "GH#15b:subscribedEvents() 并集 ctx.on 登记(GH#15 附带漏报修复)+ 全链投递——host.event push 经 bridge 进卡 realm,卡内 ctx.eventSource.on 回调真跑(掌门卡依赖路径),未订阅事件不过闸,ctx.off 摘除后停投",
+              "evidence": "cardapp-host subscribedEvents() 并集 ctxSubscribed;新增「ctx 事件投递 e2e」测试(utopinn-th-events.test.mjs L1189):module 卡 ctx 面 eventSource.on ← pushCtxEvent→bridge.push(host.event)→shim dispatchLocal 真回调,未订阅不过闸,off 停投;29/29 绿"
+            }
+          ],
+          "at": "2026-11-22T02:37:42.394Z"
+        }
+      ],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-22T02:21:41.468Z"
+      "updated_at": "2026-11-22T02:37:42.394Z",
+      "completed_at": "2026-11-22T02:37:42.394Z"
     },
     {
       "id": "TASK-056",
@@ -171,17 +226,17 @@
         {
           "criterion": "GH#10: 导入含 character_book.entries 但无 extensions.world 的卡时,materializeEmbeddedWorld 按 character_book.name → 卡显示名回退并写回卡绑定(或明确未绑定告警),不再静默 return [];import-preview 明确标出内嵌书条目数与解析后的目标绑定名/未绑定风险",
           "verify_by": "node --test apps/server/tests/utopinn-import.test.mjs",
-          "evidence": ""
+          "evidence": "embeddedWorldName() 回退链(character_book.name → 名字's Lorebook → Unnamed,对齐 ST);无 extensions.world 时物化+写回绑定,preview/commit 回 embeddedBook{worldName,fallback,outcome,entries} 机器可读+warning;utopinn-import 含兜底断言"
         },
         {
           "criterion": "GH#10 运行期兜底: 对已入库但缺 extensions.world 的存量带内嵌书卡,generate-context.js 与 mvu-settle.js 能按同一回退规则加载 character_book,保证 trace worldinfo scanned>0 而非静默 0",
           "verify_by": "node --test apps/server/tests/utopinn-generate-context.test.mjs && node --test apps/server/tests/mvu-settle.test.mjs",
-          "evidence": ""
+          "evidence": "generate-context/mvu-settle 同源 primaryWorldName + 未物化时内存转换兜底;utopinn-generate-context 28/28 含「未物化内嵌书进 prompt」断言"
         },
         {
           "criterion": "GH#7 联动回归: --conflict overwrite 在显式 extensions.world 与无 extensions.world 回退两种卡上均同步刷新物化世界书并在 warnings 中如实回报 overwrote/materialized/skipped,且非 overwrite 模式不静默覆盖同名独立世界书",
           "verify_by": "node --test apps/server/tests/utopinn-import.test.mjs",
-          "evidence": ""
+          "evidence": "overwrite 联动刷新物化书:derived-name 覆盖重写+name 冲突 skip-with-warning;回执 embeddedBook.outcome: materialized|overwrote|skipped|failed|unresolved;import 测试含 derived-name overwrite 刷新断言"
         }
       ],
       "done_when": [],
@@ -218,17 +273,38 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "GH#10 兜底命名物化+警告+GH#7 overwrite 联动;32/32+28/28;commit c2f0dff"
         ],
-        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
-        "next": "legacy /api/characters/import 物化(上游同行为,缓)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit c2f0dff:新 apps/server/src/services/embedded-world.js 统一命名/绑定/转换面;utopinn-import 32/32、utopinn-generate-context 28/28 全绿",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GH#10: 导入含 character_book.entries 但无 extensions.world 的卡时,materializeEmbeddedWorld 按 character_book.name → 卡显示名回退并写回卡绑定(或明确未绑定告警),不再静默 return [];import-preview 明确标出内嵌书条目数与解析后的目标绑定名/未绑定风险",
+              "evidence": "embeddedWorldName() 回退链(character_book.name → 名字's Lorebook → Unnamed,对齐 ST);无 extensions.world 时物化+写回绑定,preview/commit 回 embeddedBook{worldName,fallback,outcome,entries} 机器可读+warning;utopinn-import 含兜底断言"
+            },
+            {
+              "criterion": "GH#10 运行期兜底: 对已入库但缺 extensions.world 的存量带内嵌书卡,generate-context.js 与 mvu-settle.js 能按同一回退规则加载 character_book,保证 trace worldinfo scanned>0 而非静默 0",
+              "evidence": "generate-context/mvu-settle 同源 primaryWorldName + 未物化时内存转换兜底;utopinn-generate-context 28/28 含「未物化内嵌书进 prompt」断言"
+            },
+            {
+              "criterion": "GH#7 联动回归: --conflict overwrite 在显式 extensions.world 与无 extensions.world 回退两种卡上均同步刷新物化世界书并在 warnings 中如实回报 overwrote/materialized/skipped,且非 overwrite 模式不静默覆盖同名独立世界书",
+              "evidence": "overwrite 联动刷新物化书:derived-name 覆盖重写+name 冲突 skip-with-warning;回执 embeddedBook.outcome: materialized|overwrote|skipped|failed|unresolved;import 测试含 derived-name overwrite 刷新断言"
+            }
+          ],
+          "at": "2026-11-22T02:37:43.162Z"
+        }
+      ],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T13:22:25.832Z"
+      "updated_at": "2026-11-22T02:37:43.162Z",
+      "completed_at": "2026-11-22T02:37:43.162Z"
     },
     {
       "id": "TASK-057",
@@ -238,17 +314,17 @@
         {
           "criterion": "GH#11: utopinn use <dir> [chat] 在 charDir !== char.name 时同时回显目录名与卡显示名并给差异提示;utopinn status 与 utopinn chars 清晰呈现 dir 与 name,多张同名卡可一眼区分当前绑定目标",
           "verify_by": "CLI 桩测试验证 use/status/chars human 与 --json 输出含 charDir 与 charName",
-          "evidence": ""
+          "evidence": "charLabel(dir,name) → dir(「name」);use/status/chars/footer 全回显目录名+卡名,dir≠name 给差异提示;resolveChar 同名多卡告警并列目录名消歧;JSON 输出带显式 charDir/charName"
         },
         {
           "criterion": "GH#5: utopinn doctor 增加本地 workspace 链接与 packages/protocol/dist 自检项,当 apps/cli/node_modules/@utopinn 缺链或 dist 缺失时明确报 ✗ 并给出 pnpm install --force / build 修复 hint",
           "verify_by": "CLI doctor 单元/桩测试覆盖正常态与缺链告警态",
-          "evidence": ""
+          "evidence": "cmdDoctor 新增 workspace links(检 apps/cli/node_modules/@utopinn,hint pnpm install --force)与 protocol dist(检 packages/protocol/dist,hint tsc build)两本地步;GH#5 关闭引证"
         },
         {
           "criterion": "GH#6 & GH#8 收口验证:utopinn schema/help 明确区分 chat-new(懒建,首条 send 落盘)与 chat-create(立即落盘)及对 MVU autoInit 的影响;GH#8 跨位置口径回归已在 utopinn-generate-context.test.mjs:170-194 落地,本项 = 跑通确认后关闭 GH#8 并在 trace --json 断言面补 sources.worldInfoActivated === activated.length(若缺)",
           "verify_by": "node --test apps/server/tests/utopinn-generate-context.test.mjs + CLI schema/chat-new 桩测试",
-          "evidence": ""
+          "evidence": "schema/help 区分 chat-new 懒建 vs chat-create 即建(含 MVU autoInit 时序);worldInfoActivated===activated.length 单测+wire 断言(utopinn-jobs-monitor.mjs trace 路由);GH#6/#8 关闭引证"
         }
       ],
       "done_when": [],
@@ -280,17 +356,38 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "GH#11 charLabel+GH#5 doctor 自检+GH#6 schema 区分+GH#8 wire 断言;cli-routes 85/85;commit c2f0dff"
         ],
-        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
-        "next": "-"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit c2f0dff + e37abab(characters/all 迁移收尾);utopinn schema 87 命令加载正常;GH#5/#6/#8/#11 均以引证关闭",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GH#11: utopinn use <dir> [chat] 在 charDir !== char.name 时同时回显目录名与卡显示名并给差异提示;utopinn status 与 utopinn chars 清晰呈现 dir 与 name,多张同名卡可一眼区分当前绑定目标",
+              "evidence": "charLabel(dir,name) → dir(「name」);use/status/chars/footer 全回显目录名+卡名,dir≠name 给差异提示;resolveChar 同名多卡告警并列目录名消歧;JSON 输出带显式 charDir/charName"
+            },
+            {
+              "criterion": "GH#5: utopinn doctor 增加本地 workspace 链接与 packages/protocol/dist 自检项,当 apps/cli/node_modules/@utopinn 缺链或 dist 缺失时明确报 ✗ 并给出 pnpm install --force / build 修复 hint",
+              "evidence": "cmdDoctor 新增 workspace links(检 apps/cli/node_modules/@utopinn,hint pnpm install --force)与 protocol dist(检 packages/protocol/dist,hint tsc build)两本地步;GH#5 关闭引证"
+            },
+            {
+              "criterion": "GH#6 & GH#8 收口验证:utopinn schema/help 明确区分 chat-new(懒建,首条 send 落盘)与 chat-create(立即落盘)及对 MVU autoInit 的影响;GH#8 跨位置口径回归已在 utopinn-generate-context.test.mjs:170-194 落地,本项 = 跑通确认后关闭 GH#8 并在 trace --json 断言面补 sources.worldInfoActivated === activated.length(若缺)",
+              "evidence": "schema/help 区分 chat-new 懒建 vs chat-create 即建(含 MVU autoInit 时序);worldInfoActivated===activated.length 单测+wire 断言(utopinn-jobs-monitor.mjs trace 路由);GH#6/#8 关闭引证"
+            }
+          ],
+          "at": "2026-11-22T02:37:43.954Z"
+        }
+      ],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T13:22:26.046Z"
+      "updated_at": "2026-11-22T02:37:43.954Z",
+      "completed_at": "2026-11-22T02:37:43.954Z"
     },
     {
       "id": "TASK-001",
@@ -4721,17 +4818,17 @@
         {
           "criterion": "GET /api/utopinn/named-docs/:bucket 返回命名文档清单+单档内容(quick-replies 先),StageFrame.tsx:459,462 切换后 QR 条实弹渲染不变",
           "verify_by": "curl 实弹 + SPA QR 条人工/截图验证",
-          "evidence": ""
+          "evidence": "utopinn-library.js named-docs 白名单三桶(themes/movingUI/quickReplies)GET 列表+单档,?account 私有读闸;StageFrame.tsx 已切 kernel 路由;library 测试含 names 字典序+404/400 断言"
         },
         {
           "criterion": "GET /api/utopinn/jobs?target=&status=active 过滤上线,CLI checkNoActiveJob 从 legacy /jobs/active 切换",
           "verify_by": "CLI 实弹 + jobs 过滤单测",
-          "evidence": ""
+          "evidence": "jobs 路由支持 target/status 过滤;CLI jobsActiveQuery()→/api/utopinn/jobs?target=..&status=active,checkNoActiveJob/checkNoActiveGroupJob 双用;utopinn-jobs-filter.test.mjs 6/6"
         },
         {
           "criterion": "SPA+CLI legacy 调用复扫:除 harness/兼容标注面外零活调用(对照 legacy-convergence.md §2 表核销)",
           "verify_by": "rg 全扫 apps/web apps/cli 对 /api/(quick-replies|chats|backends|groups|characters) 调用点;characters/all 按 compat 例外清单核销",
-          "evidence": ""
+          "evidence": "CLI listChars/cmdDoctor 弃 POST /api/characters/all → GET /api/utopinn/characters(chat 指针经 cardFields+card-list-cache 契约透出);群面显式分类:groups/chats-group 留 legacy 属刻意(无 utopinn 孪生,C9 群聊已退产品面),utopinn-cli.mjs 注释立档;复扫 grep 零其它活 legacy 调用"
         }
       ],
       "done_when": [],
@@ -4771,17 +4868,38 @@
       "capability_exemption": "",
       "integrity_version": 1,
       "covers": [],
-      "status": "open",
+      "status": "done",
       "progress": {
         "completed": [
           "named-docs 读面+jobs 过滤+StageFrame/CLI 摘 legacy+--force;13/13+6/6+28/28;commit c2f0dff"
         ],
-        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
-        "next": "CLI groups 面仍 legacy(无 utopinn 孪生,另案)"
+        "current": "complete",
+        "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "commit c2f0dff(named-docs+jobs+StageFrame/CLI 迁移)+ e37abab(characters/all 迁移+群面分类+cache 契约);utopinn-jobs-filter 6/6、utopinn-library 13/13 全绿;CLI 具名路由对账 85↔85",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "GET /api/utopinn/named-docs/:bucket 返回命名文档清单+单档内容(quick-replies 先),StageFrame.tsx:459,462 切换后 QR 条实弹渲染不变",
+              "evidence": "utopinn-library.js named-docs 白名单三桶(themes/movingUI/quickReplies)GET 列表+单档,?account 私有读闸;StageFrame.tsx 已切 kernel 路由;library 测试含 names 字典序+404/400 断言"
+            },
+            {
+              "criterion": "GET /api/utopinn/jobs?target=&status=active 过滤上线,CLI checkNoActiveJob 从 legacy /jobs/active 切换",
+              "evidence": "jobs 路由支持 target/status 过滤;CLI jobsActiveQuery()→/api/utopinn/jobs?target=..&status=active,checkNoActiveJob/checkNoActiveGroupJob 双用;utopinn-jobs-filter.test.mjs 6/6"
+            },
+            {
+              "criterion": "SPA+CLI legacy 调用复扫:除 harness/兼容标注面外零活调用(对照 legacy-convergence.md §2 表核销)",
+              "evidence": "CLI listChars/cmdDoctor 弃 POST /api/characters/all → GET /api/utopinn/characters(chat 指针经 cardFields+card-list-cache 契约透出);群面显式分类:groups/chats-group 留 legacy 属刻意(无 utopinn 孪生,C9 群聊已退产品面),utopinn-cli.mjs 注释立档;复扫 grep 零其它活 legacy 调用"
+            }
+          ],
+          "at": "2026-11-22T02:37:44.751Z"
+        }
+      ],
       "created_at": "2026-11-21T10:57:29.601Z",
-      "updated_at": "2026-11-21T13:22:26.257Z"
+      "updated_at": "2026-11-22T02:37:44.751Z",
+      "completed_at": "2026-11-22T02:37:44.751Z"
     }
   ],
   "milestones": [

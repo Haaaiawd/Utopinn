@@ -91,3 +91,45 @@ generate+delivery+state 三族+mvu+th 覆盖。无结构性缺口,剩 polish。
 3. stats 插件(制卡调试刚需,优先于 galgame)
 4. galgame 三件套(choices 字段+assets 面+scene sidecar)——形态定稿后动
 5. ui.contrib manifest —— 最后,等贡献面真实需求出现
+
+## V3 落地记录(TASK-044 余量,ns 约定 + 偏差)
+
+<!-- V3 校准(2026-11-22):余量已落地,与上文草拟面的差异逐条记录。 -->
+
+### novel 章目录 —— 已落地
+- **ns 约定**:chat_state `chapters` ns,文档形 `{items:[{from,to?,title?,num?}]}`
+  (from=章起始 body 楼号;to 缺省=下一条 from-1/末楼,越界钳到末楼)。
+  读写走通用 `/api/utopinn/state/chat/*` 面 —— 不设专用写路由。
+- **聚合视图**(实际落点,非草拟的 `/chats/:id/chapters`):
+  `GET /api/utopinn/characters/:charDir/chats/:chatName/chapters`
+  → `{chat,charDir,floors,source,strategy,items[],total,skipped?}`。
+  sidecar 清单优先(source:'sidecar'),缺席时按 stagepack 同规则推导
+  (source:'derived',strategy: markers|segmented|single|empty)——
+  system 楼=分章标记,无标记 4 楼一节,再兜底单章。
+  章项 `{index,kind,num,title,range:[from,to]|null,floors,snippet,markerFloor?}`。
+- **`regen --range <from:to>`**:落点在 CLI 编排侧(patch 删区间→type:'regenerate'
+  续生成),不是草拟的「generate 插件加 range 参数」——本格 utopinn-generate.js
+  不在文件域。楼号=body 下标含两端,与章项 range 同口径;群聊不支持(群 regen
+  是追加语义);区间不在尾部时新楼落末尾(续生成,非原位回填)。
+
+### theater 三件套 —— 已落地
+- **assets 清单面**(实际落点,非草拟的 `/chars/:id/assets`):
+  `GET /api/utopinn/characters/:charDir/assets`
+  → `{charDir,name,sprites[],backgrounds[],bgm[],empty}`。
+  落盘约定沿用既有位:sprites=`characters/<名>/` 顶层图(label 同
+  /api/sprites/get 正则),backgrounds=`characters/<名>/backgrounds/`(charx
+  落点)+全局 `backgrounds/`。**新约定**:bgm=`characters/<名>/bgm/`+全局
+  `assets/bgm/`(charx 不产音频,此为本格新立乐库位)。卡不在→404,
+  目录缺席→空数组+empty(不静默造数据)。
+- **scene sidecar ns 定名 `scene`**(非草拟的 `galgame`)——ns 名跟着
+  floor.extra.scene 取值域走。文档形 `{bg?,bgm?,cast?:[{name,sprite?}],floor?,updatedAt?}`,
+  全字段稀疏可选。语义分层:floor `extra.scene` 仍是单楼场景引用(持久契约),
+  sidecar `scene` 是「当前场」运行态 —— 客户端切场后写、进场读最新。
+  读写通用 state 面,无专用路由。
+- choices/narrator 楼层契约(extra.choices / extra.narrator / extra.type)不变;
+  结构化产出保持 opt-in(luker_generation.theater|structured)。
+
+### 仍未做
+- novel 导出(txt/md)——优先级低,未动。
+- generate 插件原生 range 参数——文件域解冻后可视需要把删区间下沉服务端
+  (语义不变,CLI 侧可退化为单请求)。
