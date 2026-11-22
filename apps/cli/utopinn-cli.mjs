@@ -237,8 +237,11 @@ async function req(method, path, body, { allowFail = false, timeout, _reauthed =
 // ═══ 实体面 ═══
 const stripExt = (s, ext) => String(s ?? '').replace(new RegExp(`\\.${ext}$`, 'i'), '');
 async function listChars() {
-    const { data } = await req('POST', '/api/characters/all');
-    return Array.isArray(data) ? data : [];
+    // kernel GET /characters:{items:[{charDir,name,avatar,fileName,tags,readable,chat,dateAdded,dateLastChat}]}
+    // → legacy all 形状原位映射:avatar 兜底 dir.png(stripExt 取 dir 的调用方不动),chat 指针 kernel 已带。
+    const { data } = await req('GET', '/api/utopinn/characters');
+    const items = Array.isArray(data?.items) ? data.items : [];
+    return items.map(i => ({ ...i, avatar: i.avatar ?? `${i.charDir}.png`, chat: i.chat ?? '' }));
 }
 async function listChats(charDir, { simple = false } = {}) {
     // kernel GET chats:{items:[{fileName,messageCount,lastMessage,updatedAt,…}]}
@@ -391,6 +394,9 @@ async function checkNoActiveJob(charDir, chatName) {
 }
 
 // ═══ TASK-037 群聊:ctx 解析 + 群写盘(/api/chats/group/* 同 /group/get|append|patch 契约)═══
+// TASK-058 分类:以下群实体/群会话调用留在 legacy 是刻意的 —— 服务端没有
+// utopinn 群孪生(kernel 未建 group 资源),群聊也不在 V2 产品面(C9 已退)。
+// 已迁的部分:active-job 检查走 /api/utopinn/jobs?target=group:<id>(checkNoActiveGroupJob)。
 // persist key = {kind:'group', id:chatId}——chatId 是群聊文件名(=群 doc.chat_id,
 // 群档多聊时可 ≠ groupId);--gchat 显式覆盖,缺省取 doc.chat_id ?? doc.id。
 async function resolveGroup(fuzzy) {
@@ -1291,8 +1297,8 @@ async function cmdDoctor() {
     });
     await step('csrf + session', async () => {
         await session();
-        const { data } = await req('POST', '/api/characters/all');
-        return `session ok, ${Array.isArray(data) ? data.length : 0} chars`;
+        const { data } = await req('GET', '/api/utopinn/characters');
+        return `session ok, ${data?.total ?? 0} chars`;
     });
     await step('ws delivery', async () => {
         const ticket = await wsTicket();
@@ -1428,14 +1434,11 @@ const SCHEMA = {
 };
 
 async function cmdChars() {
-    // kernel GET /characters 给 tags/readable;chat 指针只在 legacy all 里 → 双源合并
+    // listChars 已走 kernel GET /characters:tags/readable/chat 指针单源齐全。
     const chars = await listChars();
-    const { data: kdata, status: kst } = await req('GET', '/api/utopinn/characters', undefined, { allowFail: true });
-    const kmap = new Map((kst < 400 && Array.isArray(kdata?.items) ? kdata.items : []).map(i => [i.charDir, i]));
     const rows = chars.map(c => {
         const dir = stripExt(c.avatar, 'png');
-        const k = kmap.get(dir) ?? {};
-        return { dir, name: c.name ?? k.name ?? '', chat: stripExt(c.chat ?? '', 'jsonl'), tags: k.tags, readable: k.readable };
+        return { dir, name: c.name ?? '', chat: stripExt(c.chat ?? '', 'jsonl'), tags: c.tags, readable: c.readable };
     });
     if (flags.out) { writeFileSync(resolve(flags.out), JSON.stringify(rows, null, 2)); warn(`wrote ${flags.out}`); }
     const show = flags.n ? rows.slice(0, flags.n) : rows;

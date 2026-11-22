@@ -1185,3 +1185,59 @@ test('subscribedEvents 含 ctx.on 登记(GH#15b);waitForIdle/is_send_press 探�
         await s.dispose().catch(() => { });
     }
 });
+
+test('ctx 事件投递 e2e:卡内 eventSource.on ← host.event push(GH#15b 全链)', async (t) => {
+    let mountCardApp;
+    try {
+        ({ mountCardApp } = await import('../../cli/cardapp-host.mjs'));
+        await import('jsdom');
+    } catch (e) {
+        t.skip(`headless harness 不可用: ${e?.message ?? e}`);
+        return;
+    }
+    // module 入口(.js)→ entryKind=module → face=ctx:卡 realm 才有
+    // __CARDAPP_CTX__/ctx.eventSource —— 掌门卡同款依赖路径。
+    const cardPath = path.join(ROOT, 'ctx-delivery-card.json');
+    fs.writeFileSync(cardPath, JSON.stringify({
+        name: CHAR,
+        data: {
+            name: CHAR,
+            extensions: {
+                card_app: {
+                    enabled: true, entry: 'index.js',
+                    files: {
+                        'index.js': `module.exports = { init(ctx) {
+                            window.__delivered = [];
+                            window.__deliverFn = function (a, b) { window.__delivered.push([a, b]); };
+                            ctx.eventSource.on('deliver_evt', window.__deliverFn);
+                        } };`,
+                    },
+                },
+            },
+        },
+    }));
+    const s = await mountCardApp({ server: BASE, charDir: CHAR, chatName: CHAT, card: cardPath, settleMs: 500 });
+    try {
+        assert.equal(s.face, 'ctx', 'module 入口 → ctx 面');
+        // ctx.on 是 fire-and-forget 桥调用 —— 等 ctxSubscribed 记账落位再发 push。
+        assert.ok(await waitFor(() => s.subscribedEvents().includes('deliver_evt')),
+            `deliver_evt 订阅记账: ${JSON.stringify(s.subscribedEvents())}`);
+        // 全链:pushCtxEvent → ctxSubscribed 门 → bridge.push('host.event') →
+        // 卡 shim __utopinnPanelReceive → dispatchLocal → 卡内 listener 真跑。
+        s.pushCtxEvent('deliver_evt', [7, 'seven']);
+        // 跨 realm:evalInCard 取出的是 jsdom realm 数组(原型不同,
+        // deepEqual 必拒)——卡内 stringify 取串比。
+        assert.equal(s.evalInCard('JSON.stringify(window.__delivered)'), '[[7,"seven"]]', 'host.event 投递进卡 realm');
+        // 未订阅名不过门:宿主侧 emit 了,但 bridge.push 被闸 —— 卡侧零投递。
+        s.pushCtxEvent('never_subscribed', [1]);
+        assert.equal(s.evalInCard('window.__delivered.length'), 1, '未订阅事件不进卡');
+        // ctx.off(带 fn 引用)摘除后不再投递。
+        s.evalInCard('window.__CARDAPP_CTX__.eventSource.off("deliver_evt", window.__deliverFn)');
+        assert.ok(await waitFor(() => !s.subscribedEvents().includes('deliver_evt')),
+            'ctx.off 摘除记账');
+        s.pushCtxEvent('deliver_evt', [8]);
+        assert.equal(s.evalInCard('window.__delivered.length'), 1, 'off 后事件不再投递');
+    } finally {
+        await s.dispose().catch(() => { });
+    }
+});

@@ -72,28 +72,28 @@ export function createCardListCache() {
          * @param {string} charDir 不含扩展名的角色目录名
          * @param {Array<{fileName:string,size:number,mtimeMs:number,ctimeMs:number}>} fingerprint
          *   该 stem 全部候选卡档的 stat 指纹(本函数内排序归一)
-         * @param {() => Promise<{name:string,tags:string[],readable:boolean}>} loader
-         * @returns {Promise<{name:string,tags:string[],readable:boolean,cached:boolean}>}
+         * @param {() => Promise<{name:string,tags:string[],readable:boolean,chat?:string}>} loader
+         * @returns {Promise<{name:string,tags:string[],readable:boolean,chat:string,cached:boolean}>}
          */
         async get(dir, charDir, fingerprint, loader) {
             const table = tableFor(dir);
             const fp = normalizeFingerprint(fingerprint);
             const hit = table.get(charDir);
             if (hit && sameFingerprint(hit.fingerprint, fp)) {
-                return { name: hit.name, tags: hit.tags, readable: hit.readable, cached: true };
+                return { name: hit.name, tags: hit.tags, readable: hit.readable, chat: hit.chat, cached: true };
             }
             const fields = await loader();
-            table.set(charDir, {
+            const entry = {
                 fingerprint: fp,
                 name: typeof fields?.name === 'string' ? fields.name : '',
                 tags: Array.isArray(fields?.tags) ? fields.tags : [],
                 readable: fields?.readable === true,
-            });
+                chat: typeof fields?.chat === 'string' ? fields.chat : '',
+            };
+            table.set(charDir, entry);
             return {
-                name: typeof fields?.name === 'string' ? fields.name : '',
-                tags: Array.isArray(fields?.tags) ? fields.tags : [],
-                readable: fields?.readable === true,
-                cached: false,
+                name: entry.name, tags: entry.tags, readable: entry.readable,
+                chat: entry.chat, cached: false,
             };
         },
 

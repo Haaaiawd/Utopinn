@@ -5,8 +5,8 @@
 **V2(2026-11-20 方向再拍板)= apps/web 新 SPA 即正式前端 + Cordis 插件后端 + CLI 参考客户端。** 11 个 `utopinn-*` 插件管全部服务端域(`profile.yaml` 声明式装载,84 路由),前端 cordis 语义微内核(贡献点:`nav.rail`/`view`/`sidebar.tree`/`stage.form`/`panel.type`/`renderer`/`ctbar.chat`/`locale`)按规范稿高保真还原并经 `/api/utopinn/ui/contrib` 水合对账,CLI 覆盖 83 具名路由(词表派生+加载期对账)。服务端大脑唯一组装路径(`/api/utopinn/generate`),浏览器零组装。
 
 **当前里程碑(post-TASK-053)**:基础真玩通链路(TASK-045~048)、TH 完整事件/写面/消息内嵌 iframe 宿主(TASK-049)与前端占位净身收口(TASK-053)已交付。当前活跃前沿聚焦两条线:
-1. **真实复杂卡生态 P0/P1 收口(TASK-054~057)**:修复来自实卡压测的 GitHub issues(MVU 自定义无分号 `_.set`/catgodml 解析、内嵌世界书无 `extensions.world` 静默丢弃、CLI `cardapp op click` 60ms 切断异步生成、TH 辅助生成过滤与 schema 校验、CLI 坐标与自检透明)。
-2. **V2 结构演进余量**:legacy 端点收敛(TASK-035)、非 openai 派发补齐(TASK-037)、novel 章目录与 theater 资产/sidecar 余量(TASK-044)、剧场模式 V2.1 单立绘旗舰打磨与配套卡(TASK-050)。
+1. **真实复杂卡生态 P0/P1 收口(TASK-054~057)**:修复来自实卡压测的 GitHub issues(GH#15 settle `_.set` 自动建路径+`stat_data.` 前缀剥除领衔,GH#14/16 无分号/catgodml 解析复核、内嵌世界书无 `extensions.world` 静默丢弃兜底、CLI `cardapp op click` 60ms 切断异步生成+事件总线 GH#15b、TH 辅助生成过滤与 schema 校验、CLI 坐标与自检透明)。
+2. **V2 结构演进余量**:legacy 产品面摘净(TASK-058;TASK-035 已 block 待 golden oracle 拍板)、非 openai 派发补齐(TASK-037)、novel 章目录与 theater 资产/sidecar 余量(TASK-044)、剧场模式 V2.1 单立绘旗舰打磨与配套卡(TASK-050)。
 
 **角色分工**:`apps/web` = 正式全功能管理端+游玩端(React 19+Vite+Tailwind 4,由 `:8000` 直供);`apps/cli` = agent-first 参考客户端与 headless CardApp 验收宿主;`apps/mobile` = 冻结/parked 参照态(Expo 骨架不演进主线,D-020 改判 IReader,未来移动端按 `distribution-forms` 红线走纯空客户端);`apps/server/public` 旧 jQuery UI = 兼容 harness(`LUKER_SERVE_LEGACY=1` 门控,默认不挂载,仅 e2e/golden 用)。
 

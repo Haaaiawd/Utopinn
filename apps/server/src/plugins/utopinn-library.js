@@ -229,14 +229,16 @@ function migrateCharacterStateSidecars(charactersDir, oldFileName, newFileName) 
     }
 }
 
-/** 从卡对象提取展示名与标签(兼容 v1 平铺与 v2 data.*)。 */
+/** 从卡对象提取展示名/标签/当前会话指针(兼容 v1 平铺与 v2 data.*;chat 规范写位是顶层)。 */
 function cardFields(card) {
     const data = (card?.data && typeof card.data === 'object' && !Array.isArray(card.data)) ? card.data : card ?? {};
     const name = typeof data.name === 'string' && data.name ? data.name
         : (typeof card?.name === 'string' && card.name ? card.name : '');
     const tags = Array.isArray(data.tags) ? data.tags
         : (Array.isArray(card?.tags) ? card.tags : []);
-    return { name, tags };
+    const chat = typeof card?.chat === 'string' && card.chat ? card.chat
+        : (typeof data.chat === 'string' ? data.chat : '');
+    return { name, tags, chat };
 }
 
 // ---------------------------------------------------------------------------
@@ -395,8 +397,8 @@ export function apply(ctx) {
                 if (!info.listed) continue; // 构造上不可能,防御跳过防空响应 500
                 const fields = await cardListCache.get(dir, charDir, info.files, async () => {
                     const card = await loadCharacterDoc(request.user.directories, charDir);
-                    const parsed = card ? cardFields(card) : { name: '', tags: [] };
-                    return { name: parsed.name, tags: parsed.tags, readable: card != null };
+                    const parsed = card ? cardFields(card) : { name: '', tags: [], chat: '' };
+                    return { name: parsed.name, tags: parsed.tags, chat: parsed.chat, readable: card != null };
                 });
                 if (fields.cached) cacheHits++;
                 // legacy /api/characters/all 语义:date_last_chat = 该角色全部会话 updatedAt 最大值
@@ -417,6 +419,8 @@ export function apply(ctx) {
                     tags: fields.tags,
                     // 卡文件存在但解析失败时仍列出,名字退化回 charDir
                     readable: fields.readable,
+                    // legacy /api/characters/all:chat = 卡内「当前会话」指针(jsonl 文件名)
+                    chat: fields.chat || null,
                     // legacy:date_added = 卡文件 ctime;date_last_chat = 最近会话活跃
                     dateAdded: info.listed.ctimeMs ?? 0,
                     dateLastChat,

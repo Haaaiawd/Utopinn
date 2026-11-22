@@ -3,7 +3,7 @@
   "tasks": [
     {
       "id": "TASK-054",
-      "title": "[P0] MVU 自定义语法解析与变量宏/正则实弹闭环(GH#14, GH#15, GH#2, GH#3)",
+      "title": "[P0] MVU 自定义语法解析与变量宏/正则实弹闭环(GH#15, GH#14/16, GH#2, GH#3)",
       "outcome": "领衔 GH#15:settle _.set 对 schema 未声明路径按卡侧 lodash 自动建路径语义写入(含 stat_data. 前缀剥除防 stat_data.stat_data 嵌套);GH#14 已被 owner 合并关闭入 GH#15——复核其无分号/catgodml 解析诉求是否被 GH#15 修法覆盖;GH#2 char 域变量宏回写 character_state;GH#3 禁用态导入/诊断提示;真实卡端到端验通。",
       "acceptance": [
         {
@@ -17,7 +17,7 @@
           "evidence": ""
         },
         {
-          "criterion": "GH#2: 补齐 set_char_variable / character 域变量宏写回 character_state sidecar(消除 add2381 留账的 char 域 volatile 告警),并验证白莺学园都市/掌门卡中 {{format_message_variable::stat_data}} 修改后在 utopinn preview 真实回显",
+          "criterion": "GH#2: 补齐 set_char_variable / character 域变量宏写回 character_state sidecar(消除 add2381 留账的 char 域 volatile 告警),并验证白莺学园都市/掌门卡中 {{format_message_variable::stat_data}} 修改后在 utopinn preview 真实回显;持久化落点=character_state sidecar(apps/server/src/services/character-state.js 复用 characters.js 原子侧车助手),读侧对称合并(generate-context.js 卡种子 extensions.tavern_helper.variables ⊕ sidecar overlay),写侧 persistMacroVariableWrites RMW",
           "verify_by": "node --test packages/core/tests/macros.test.mjs && node --test apps/server/tests/utopinn-generate-context.test.mjs",
           "evidence": ""
         },
@@ -35,7 +35,7 @@
       ],
       "guardrails": [
         "MVU 指令值解析严禁使用 eval/new Function,一律走 JSON5/jsonrepair 安全解析(packages/core/src/mvu/parse.ts)",
-        "packages/core 严守零 DOM/fs/网络纯库边界,所有持久化写入由 apps/server 经 Repo 层完成(core-engine.md)",
+        "packages/core 严守零 DOM/fs/网络纯库边界,所有持久化写入由 apps/server 经 Repo 层完成(core-engine.md);char 域变量落 character_state sidecar 必须复用 characters.js 原子侧车助手(character-state.js),不直写 fs",
         "正则/宏行为变更必须通过 golden-diff 与现有字符化单测,不破 ST 三车道与作用域语义(st-engine-compat)"
       ],
       "depends_on": [],
@@ -48,7 +48,11 @@
         "apps/server/src/services/mvu-settle.js",
         "apps/server/src/services/generate-context.js",
         "apps/server/src/services/extension-prompts.js",
-        "apps/cli/utopinn-cli.mjs"
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/plugins/utopinn-data.js",
+        "apps/server/src/services/import-pipeline.js",
+        "apps/server/src/endpoints/characters.js",
+        "apps/server/src/services/character-state.js"
       ],
       "touches": [
         "packages/core/src/mvu/parse.ts",
@@ -61,7 +65,9 @@
         "apps/server/tests/utopinn-generate-context.test.mjs",
         "apps/cli/utopinn-cli.mjs",
         "apps/server/tests/utopinn-chat-regex.test.mjs",
-        "apps/server/tests/utopinn-import.test.mjs"
+        "apps/server/tests/utopinn-import.test.mjs",
+        "apps/server/src/plugins/utopinn-data.js",
+        "apps/server/src/services/character-state.js"
       ],
       "implements": ".skeinn/design/core-engine.md#Components and control flow",
       "design_exemption": "",
@@ -102,8 +108,8 @@
           "evidence": ""
         },
         {
-          "criterion": "GH#15 附带:cardapp op push 输出 subscribed:[] 是 cardapp-host.mjs:1262 subscribedEvents() 漏报 ctxSubscribed 集合——修复后 push 应真实回显 ctx.on 订阅面",
-          "verify_by": "CLI cardapp op push 桩测试断言 ctx 订阅出现在 subscribed",
+          "criterion": "GH#15b:subscribedEvents() 并集 ctx.on 登记(GH#15 附带漏报修复)+ 全链投递——host.event push 经 bridge 进卡 realm,卡内 ctx.eventSource.on 回调真跑(掌门卡依赖路径),未订阅事件不过闸,ctx.off 摘除后停投",
+          "verify_by": "utopinn-th-events.test.mjs「ctx 事件投递 e2e」:module 卡(realm ctx 面)eventSource.on ← pushCtxEvent 断言卡内 listener 收到 args",
           "evidence": ""
         }
       ],
@@ -130,7 +136,8 @@
         "apps/server/src/plugins/utopinn-th.js",
         "apps/server/src/services/stscript-env.js",
         "apps/server/src/services/quiet-generation.js",
-        "packages/core/src/mvu/schema.ts"
+        "packages/core/src/mvu/schema.ts",
+        "apps/server/src/services/generate-context.js"
       ],
       "touches": [
         "apps/cli/cmd-cardapp.mjs",
@@ -140,7 +147,9 @@
         "apps/server/src/services/stscript-env.js",
         "apps/server/src/services/quiet-generation.js",
         "apps/server/tests/utopinn-th-events.test.mjs",
-        "packages/core/src/mvu/schema.ts"
+        "packages/core/src/mvu/schema.ts",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/tests/quiet-generation.test.mjs"
       ],
       "implements": ".skeinn/design/headless-cardapp-harness.md#0. 结论速览",
       "design_exemption": "",
@@ -206,7 +215,8 @@
         "apps/server/src/services/generate-context.js",
         "apps/server/src/services/mvu-settle.js",
         "apps/server/tests/utopinn-import.test.mjs",
-        "apps/server/tests/utopinn-generate-context.test.mjs"
+        "apps/server/tests/utopinn-generate-context.test.mjs",
+        "apps/server/src/services/embedded-world.js"
       ],
       "implements": ".skeinn/design/core-engine.md#Data and state",
       "design_exemption": "",
@@ -4712,7 +4722,7 @@
     {
       "id": "TASK-058",
       "title": "[P1] legacy 产品面摘净:named-doc 读面 + jobs active 过滤 + SPA/CLI 切换(TASK-035 拆出)",
-      "outcome": "utopinn REST 补齐两条被活产品消费的 legacy 面,并把 SPA/CLI 切过去:① GET /api/utopinn/named-docs/:bucket(bucket=quick-replies/themes/moving-ui)覆盖 StageFrame QR 条;② GET /api/utopinn/jobs 支持 ?target=<charDir>/<chatName>&status=active 过滤覆盖 CLI checkNoActiveJob。完成后 SPA 与 CLI 的 legacy 调用清单只剩 harness/兼容面。",
+      "outcome": "utopinn REST 补齐两条被活产品消费的 legacy 面,并把 SPA/CLI 切过去:① GET /api/utopinn/named-docs/:bucket(bucket=quick-replies/themes/moving-ui)覆盖 StageFrame QR 条;② GET /api/utopinn/jobs 支持 ?target=<charDir>/<chatName>&status=active 过滤覆盖 CLI checkNoActiveJob。完成后 SPA 与 CLI 的 legacy 调用清单只剩 harness/兼容面。;/api/characters/all 归类 compat 例外(legacy all 带当前 chat 指针,utopinn list 无孪生字段,迁移会丢 utopinn chars 的 ·chat 列);checkNoActiveGroupJob 已迁 ?target=group:<id>。",
       "acceptance": [
         {
           "criterion": "GET /api/utopinn/named-docs/:bucket 返回命名文档清单+单档内容(quick-replies 先),StageFrame.tsx:459,462 切换后 QR 条实弹渲染不变",
@@ -4726,7 +4736,7 @@
         },
         {
           "criterion": "SPA+CLI legacy 调用复扫:除 harness/兼容标注面外零活调用(对照 legacy-convergence.md §2 表核销)",
-          "verify_by": "rg 全扫 apps/web apps/cli 对 /api/(quick-replies|chats|backends|groups) 调用点",
+          "verify_by": "rg 全扫 apps/web apps/cli 对 /api/(quick-replies|chats|backends|groups|characters) 调用点;characters/all 按 compat 例外清单核销",
           "evidence": ""
         }
       ],
@@ -4748,14 +4758,18 @@
         "apps/server/src/plugins/utopinn-library.js",
         "apps/web/src/components/stage/StageFrame.tsx",
         "apps/cli/utopinn-cli.mjs",
-        "apps/server/src/plugins/utopinn-generate.js"
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/src/endpoints/backends/luker-generation.js"
       ],
       "touches": [
         "apps/server/src/plugins/utopinn-library.js",
         "packages/protocol/src/api.ts",
         "apps/web/src/components/stage/StageFrame.tsx",
         "apps/cli/utopinn-cli.mjs",
-        "apps/server/src/plugins/utopinn-generate.js"
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/tests/utopinn-jobs-filter.test.mjs",
+        "apps/server/tests/utopinn-library.test.mjs",
+        "apps/server/src/services/card-list-cache.js"
       ],
       "implements": ".skeinn/design/legacy-convergence.md#2. utopinn REST 补缺清单(legacy 有·utopinn 无·产品面需要)",
       "design_exemption": "",

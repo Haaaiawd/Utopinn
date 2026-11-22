@@ -76,6 +76,7 @@ let BASE;
 const CARD_ALICE = JSON.stringify({
     spec: 'chara_card_v2', spec_version: '2.0',
     name: 'Alice',
+    chat: 'c1',
     data: {
         name: 'Alice', description: 'A wandering knight.',
         tags: ['fantasy', 'knight'], first_mes: 'Hail, traveler.',
@@ -211,6 +212,7 @@ test('GET /characters — lists png + json cards with name/avatar/tags', async (
     assert.equal(byDir.Alice.avatar, 'Alice.png');
     assert.deepEqual(byDir.Alice.tags, ['fantasy', 'knight']);
     assert.equal(byDir.Alice.readable, true);
+    assert.equal(byDir.Alice.chat, 'c1'); // legacy all 语义:卡内当前会话指针
     assert.ok(byDir.Alice.fileSize > 0);
 
     // 纯 JSON 卡:avatar 为 null,仍能列出
