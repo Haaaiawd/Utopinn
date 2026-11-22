@@ -3542,10 +3542,11 @@
       ],
       "progress": {
         "completed": [
-          "P1 清点+收口方案落地:.skeinn/design/legacy-convergence.md(2026-11-21)",
-          "P2 安全删减(2026-11-21):19 端点文件删除(提供商 extras+SD+translate/speech/caption/search+files/backups/data-maid/media-cleanup/docs),google/content-manager 仅摘挂载(helper 被活代码 import),15 自测连删,eslint allowlist 清理;3 文件移出删减层(classify/image-metadata/thumbnails,135 e2e+群消息数据引用);全记录见 legacy-convergence.md §6"
+          "P2 安全删减(2026-11-21):19 端点文件删除(提供商 extras+SD+translate/speech/caption/search+files/backups/data-maid/media-cleanup/docs),google/content-manager 仅摘挂载(helper 被活代码 import),15 自测连删,eslint allowlist 清理;3 文件",
+          "2026-11-22 harness 依赖清点(legacy-convergence.md §7,全部 file:line 证据):桶①(utopinn覆盖+零依赖可删端点)实证为空——每面 compat 至少一处 harness/产品依赖。关键新钉子:panel-t0.ts:103-264 活调 6 个 deprecated 动词(CardApp ctx 桥),/api/chats、/api/settings 不止 harness;jest 88 文件直 import endpoints/*(chats×23/luker-generation×16/characters×10),删文件=测试连删;public/scripts 经 index.html→init.js:99→script.js 整树装载,moduleNameMapper 可越浏览器直引(MacroEnvBuilder 被144测试引用),无单文件可退;e2e 强制 LUKER_SERVE_LEGACY=1,capture-golden wire 体全靠浏览器旧UI——它们就是 oracle 本体。web/mobile 客户侧零残留(gap#2/#11 复核已落地修正)。可执行项已做 3/4(commit 1eff7a9):api-client abort→utopinn jobs/:id/abort、CLI presets 摘 legacy 兜底、live-fire 轮询→utopinn jobs/:id;第 4 项 panel-t0 动词迁移中 5/6 有孪生可迁,settingsPatch 卡 §2#4 语义拍板。"
         ],
-        "next": "阻塞:3.B 端点与 public/scripts 删除等 golden oracle 替代方案拍板;可执行小块(named-doc/jobs active/SPA 切换)已拆至 TASK-058"
+        "current": "blocked",
+        "next": "桶③ 等 golden oracle 拍板(冻结快照对拍,core/tests/golden-assemble.test.mjs 是现成技术底座);panel-t0 动词迁移除 settingsPatch 外可做"
       },
       "evidence": [
         "对照表:.skeinn/design/legacy-convergence.md(双面总表+补缺 12 项+删减两层候选+标注清单)",
@@ -3559,7 +3560,7 @@
         "必须等 32/33/34 全绿",
         "删除前全功能实弹清单过一遍"
       ],
-      "updated_at": "2026-11-21T09:00:00.000Z",
+      "updated_at": "2026-11-22T04:14:19.197Z",
       "note": "status: open→blocked(harness 耦合段;oracle 迁移方案按 compat-golden-diff.md 修正,/preview 直采不可行)",
       "touches": [
         ".skeinn/design/v2-stack-decisions.md",
