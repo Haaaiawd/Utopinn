@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
+import { SECRET_KEYS, readSecret, resolveProviderSecret } from '../endpoints/secrets.js';
 import { attachInspectionEndpoint, getInspectionAbortSignal } from '../request-inspector.js';
 
 const SOURCES = {
@@ -36,7 +36,7 @@ export async function getNomicAIBatchVector(texts, source, directories, sourceSe
 
     const key = reverseProxy
         ? proxyPassword
-        : readSecret(directories, config.secretKey, secretId);
+        : (request ? resolveProviderSecret(request, config.secretKey, secretId) : readSecret(directories, config.secretKey, secretId));
 
     if (!key) {
         console.warn('No API key found');

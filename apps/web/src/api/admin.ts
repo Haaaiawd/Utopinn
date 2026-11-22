@@ -189,6 +189,8 @@ export interface KernelSnapshot {
 export interface ConnectionProbeResult {
     ok: boolean;
     source: string;
+    /** 哪层凭据在生效(TASK-072):user=本人档 shared=服务端共享 proxy=proxy_password none=无。 */
+    credential: 'user' | 'shared' | 'proxy' | 'none';
     latencyMs: number;
     modelCount?: number;
     upstreamStatus: number | null;
@@ -370,4 +372,70 @@ export function getAdminSettings(): Promise<AdminSettings> {
 /** POST /api/users/settings/save */
 export function saveAdminSettings(settings: AdminSettings): Promise<AdminSettings> {
     return adminPostJson<AdminSettings>('/api/users/settings/save', settings);
+}
+
+/* ------------------------------------------------------------------ */
+/* 实例共享 secrets(endpoints/shared-secrets.js,TASK-072 §2.3)          */
+/* 六动词全 POST /api/users/shared-secrets/*;admin 面也只见掩码 ——       */
+/* masked 由服务端无条件打码,不认 allowKeysExposure;没有任何明文读面。    */
+/* ------------------------------------------------------------------ */
+
+export type SharedSecretMode = 'all' | 'handles' | 'none';
+
+/** admin list 单条:{id,label,active,masked,share} —— 无 value 字段。 */
+export interface SharedSecretEntry {
+    id: string;
+    label: string;
+    active: boolean;
+    masked: string;
+    share: { mode: SharedSecretMode; handles?: string[] };
+}
+
+export interface SharedSecretsListResponse {
+    items: Record<string, SharedSecretEntry[] | null>;
+}
+
+/** POST /api/users/shared-secrets/list */
+export function listSharedSecrets(): Promise<SharedSecretsListResponse> {
+    return adminPostJson<SharedSecretsListResponse>('/api/users/shared-secrets/list');
+}
+
+/** POST /api/users/shared-secrets/write —— 应答 {id},不 echo 明文。 */
+export function writeSharedSecret(input: {
+    key: string;
+    value: string;
+    label?: string;
+    mode?: SharedSecretMode;
+    handles?: string[];
+}): Promise<{ id: string }> {
+    return adminPostJson<{ id: string }>('/api/users/shared-secrets/write', input);
+}
+
+/** POST /api/users/shared-secrets/delete → 204 */
+export function deleteSharedSecret(key: string, id: string): Promise<void> {
+    return adminPostVoid('/api/users/shared-secrets/delete', { key, id });
+}
+
+/** POST /api/users/shared-secrets/rotate → 204(切 active)。 */
+export function rotateSharedSecret(key: string, id: string): Promise<void> {
+    return adminPostVoid('/api/users/shared-secrets/rotate', { key, id });
+}
+
+/** POST /api/users/shared-secrets/visibility → 204(mode 必填;handles 模式必须给名单)。 */
+export function setSharedSecretVisibility(
+    key: string,
+    id: string,
+    mode: SharedSecretMode,
+    handles?: string[],
+): Promise<void> {
+    return adminPostVoid('/api/users/shared-secrets/visibility', { key, id, mode, ...(handles ? { handles } : {}) });
+}
+
+/** POST /api/users/shared-secrets/promote —— 本人档 → 共享档复制,回新 {id}。 */
+export function promoteSharedSecret(
+    key: string,
+    id: string,
+    opts?: { label?: string; mode?: SharedSecretMode; handles?: string[] },
+): Promise<{ id: string }> {
+    return adminPostJson<{ id: string }>('/api/users/shared-secrets/promote', { key, id, ...opts });
 }

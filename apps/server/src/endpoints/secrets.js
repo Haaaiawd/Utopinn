@@ -317,6 +317,45 @@ export class SecretManager {
     }
 
     /**
+     * Sets (or clears) the `share` ACL on an existing entry and persists it.
+     * Only the instance-level shared secrets file (`<dataRoot>/_shared`) carries
+     * ACLs — per-user files never get `share` fields, so this method is only
+     * invoked through the admin shared-secrets surface.
+     * @param {string} key Secret key
+     * @param {string} id ID of the secret to update
+     * @param {{mode: string, handles?: string[]}|null} share Share ACL, or null to clear
+     * @returns {boolean} Whether the entry was found
+     */
+    updateSecretShare(key, id, share) {
+        if (!fs.existsSync(this.filePath)) {
+            return false;
+        }
+
+        const secrets = this._readSecretsFile();
+
+        if (!this._validateSecretKey(secrets, key)) {
+            return false;
+        }
+
+        const secretArray = secrets[key];
+        const entry = secretArray.find(s => s.id === id);
+
+        if (!entry) {
+            console.warn(`Secret with ID ${id} not found for key ${key}`);
+            return false;
+        }
+
+        if (share && typeof share === 'object') {
+            entry.share = share;
+        } else {
+            delete entry.share;
+        }
+
+        this._writeSecretsFile(secrets);
+        return true;
+    }
+
+    /**
      * Renames a secret by its ID
      * @param {string} key Secret key to rename
      * @param {string} id ID of the secret to rename
@@ -525,6 +564,183 @@ export function readProviderSecret(request, key) {
     }
     return readSecret(request.user.directories, key);
 }
+
+//#region Shared secrets (instance-level fallback)
+//
+// 设计:.skeinn/design/shared-secrets.md §2(TASK-072)。
+// `<dataRoot>/_shared/secrets.json` 是实例级共享兜底档,与 _storage/_uploads/
+// _errors 同风格 —— 在任何 user root 之外,天然不进 user backup / settings doc /
+// ctx / CardApp 面。条目在现有 {id,value,label,active} 上加 ACL:
+//   "share": {"mode":"all|handles|none", "handles":["friend-a"]}
+// 缺 share 字段 = none(不开放);ACL 只在 resolver 服务端判,读面不判。
+
+/** 共享档目录名(实例级,非 per-user)。 */
+export const SHARED_SECRETS_DIR = '_shared';
+
+/** share ACL 三态。 */
+export const SHARE_MODES = Object.freeze({
+    ALL: 'all',
+    HANDLES: 'handles',
+    NONE: 'none',
+});
+
+/** /api/utopinn/secrets 与 admin 共享面共用的写面 key 白名单。 */
+export const VALID_SECRET_KEYS = new Set(Object.values(SECRET_KEYS).filter(k => k !== SECRET_KEYS._MIGRATED));
+
+/**
+ * 共享档根目录 `<dataRoot>/_shared`。
+ * DATA_ROOT 未就绪(纯单测)时由 request.user.directories.root(<dataRoot>/<handle>)
+ * 反推 dataRoot;两者皆无 → null,共享层恒 miss。
+ * @param {import('express').Request} [request]
+ * @returns {string|null}
+ */
+export function getSharedSecretsRoot(request = null) {
+    const dataRoot = globalThis.DATA_ROOT
+        || (request?.user?.directories?.root ? path.dirname(request.user.directories.root) : '');
+    return dataRoot ? path.join(dataRoot, SHARED_SECRETS_DIR) : null;
+}
+
+/**
+ * 共享档 SecretManager({root:'<dataRoot>/_shared'})。
+ * @param {import('express').Request} [request]
+ * @returns {SecretManager|null} null when the data root cannot be located
+ */
+export function getSharedSecretManager(request = null) {
+    const root = getSharedSecretsRoot(request);
+    // SecretManager 只用 directories.root(与本类),{root} 即合法入参;
+    // backups 仅 migrateFlatSecrets 用,共享档永远数组格式,不走它。
+    return root ? new SecretManager(/** @type {any} */ ({ root })) : null;
+}
+
+/**
+ * 共享条目 ACL 判定 —— 只在 resolver 侧执行(§2.5.2:不在读面判,
+ * 防手填 chat_completion_source 蹭未开放的 key)。
+ * @param {object} entry Shared-file entry (may carry `share`)
+ * @param {string} handle Caller handle
+ * @returns {boolean}
+ */
+export function sharedEntryAllowsHandle(entry, handle) {
+    const share = entry?.share;
+    if (!share || typeof share !== 'object') {
+        return false; // 缺省 = none,不开放
+    }
+    if (share.mode === SHARE_MODES.ALL) {
+        return true;
+    }
+    if (share.mode === SHARE_MODES.HANDLES) {
+        return typeof handle === 'string' && Array.isArray(share.handles) && share.handles.includes(handle);
+    }
+    return false; // 'none' / 未知 mode → 拒
+}
+
+/**
+ * 共享档 active 条目(ACL 放行且值非空才返回);文件不存在 → null。
+ * @param {import('express').Request} request
+ * @param {string} key
+ * @returns {object|null}
+ */
+function readSharedActiveEntry(request, key) {
+    const root = getSharedSecretsRoot(request);
+    if (!root || !fs.existsSync(path.join(root, SECRETS_FILE))) {
+        return null;
+    }
+    const manager = getSharedSecretManager(request);
+    const secrets = manager?.getAllSecrets() ?? {};
+    const arr = secrets[key];
+    if (!Array.isArray(arr)) {
+        return null;
+    }
+    const entry = arr.find(s => s?.active);
+    if (!entry || typeof entry.value !== 'string' || !entry.value) {
+        return null;
+    }
+    const handle = request?.user?.profile?.handle;
+    return sharedEntryAllowsHandle(entry, handle) ? entry : null;
+}
+
+/**
+ * Provider 密钥统一解析 —— resolver 四层(§2.2):
+ *   1. secret_id 指定槽(本人档;命中即用,未命中继续)
+ *   2. 本人档 active
+ *   3. 共享档 active 且 share ACL 放行本 handle
+ *   4. ''
+ * proxy_password 不进本函数:各 provider 调用点保留 `body.proxy_password ||`
+ * 最优先(显式 per-request BYOK 不被共享档遮蔽)。
+ *
+ * 内部读面(getCsrfSecret / migrateFlatSecrets / STORAGE_KEYS)永不经过此函数 ——
+ * csrfSecret 等 per-user key 必须隔离,绝不能蹭共享档(§2.2 红线)。
+ *
+ * @param {import('express').Request} request
+ * @param {string} key SECRET_KEYS entry
+ * @param {string|null} [secretId] 显式槽位覆盖;缺省读 request.body.secret_id
+ * @returns {{value: string, source: 'user'|'shared'|'none'}}
+ */
+export function resolveProviderSecretDetailed(request, key, secretId = null) {
+    const directories = request?.user?.directories;
+    const userRoot = typeof directories?.root === 'string' ? directories.root : '';
+    const requestedId = (typeof secretId === 'string' && secretId.trim())
+        ? secretId.trim()
+        : getRequestedSecretId(request);
+
+    if (userRoot) {
+        if (requestedId) {
+            const requested = readSecret(directories, key, requestedId);
+            if (requested) {
+                return { value: requested, source: 'user' };
+            }
+        }
+        const active = readSecret(directories, key);
+        if (active) {
+            return { value: active, source: 'user' };
+        }
+    }
+
+    const shared = readSharedActiveEntry(request, key);
+    if (shared) {
+        return { value: shared.value, source: 'shared' };
+    }
+
+    return { value: '', source: 'none' };
+}
+
+/**
+ * resolveProviderSecretDetailed 的值投影 —— provider 调用点的主入口。
+ * @param {import('express').Request} request
+ * @param {string} key SECRET_KEYS entry
+ * @param {string|null} [secretId] 显式槽位覆盖;缺省读 request.body.secret_id
+ * @returns {string} resolved secret, or ''
+ */
+export function resolveProviderSecret(request, key, secretId = null) {
+    return resolveProviderSecretDetailed(request, key, secretId).value;
+}
+
+/**
+ * 普通用户可见的共享态:{key: {label, active:true} | null}。
+ * 只回「本 handle 可用」的共享条目的 label/active —— 不回 id、不回掩码、
+ * 不回 handles 名单(掩码也是信息,私有部署给布尔就够 —— §2.4)。
+ * @param {import('express').Request} request
+ * @returns {Record<string, {label: string, active: boolean}|null>}
+ */
+export function getSharedSecretState(request) {
+    const root = getSharedSecretsRoot(request);
+    const exists = root && fs.existsSync(path.join(root, SECRETS_FILE));
+    const secrets = exists ? (getSharedSecretManager(request)?.getAllSecrets() ?? {}) : {};
+    const handle = request?.user?.profile?.handle;
+    /** @type {Record<string, {label: string, active: boolean}|null>} */
+    const state = {};
+    for (const key of Object.values(SECRET_KEYS)) {
+        if (key === SECRET_KEYS._MIGRATED) {
+            continue;
+        }
+        const arr = Array.isArray(secrets[key]) ? secrets[key] : null;
+        const entry = arr?.find(s => s?.active) ?? null;
+        const usable = Boolean(entry) && typeof entry.value === 'string' && entry.value.length > 0
+            && sharedEntryAllowsHandle(entry, handle);
+        state[key] = usable ? { label: String(entry.label ?? ''), active: true } : null;
+    }
+    return state;
+}
+//#endregion
 
 /**
  * Migrates legacy flat secrets format to the new format for all user directories

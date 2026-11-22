@@ -97,7 +97,7 @@ router.post('/transcribe-audio', async function (request, response) {
         fs.unlinkSync(request.file.path);
 
         const headers = {};
-        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.KOBOLDCPP, server, request.user.directories);
+        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.KOBOLDCPP, server, request.user.directories, null, request);
 
         const url = new URL(server);
         url.pathname = '/api/extra/transcribe';
@@ -140,7 +140,7 @@ router.post('/embed', async function (request, response) {
         }
 
         const headers = {};
-        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.KOBOLDCPP, server, request.user.directories);
+        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.KOBOLDCPP, server, request.user.directories, null, request);
 
         const embeddingsUrl = new URL(server);
         embeddingsUrl.pathname = '/api/extra/embeddings';

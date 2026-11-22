@@ -857,6 +857,9 @@ function ConnectionSection() {
     const curKey = `api_key_${source}`;
     const curEntry = (secrets.data?.secrets?.[curKey] ?? []).find((en) => en.active) ?? secrets.data?.secrets?.[curKey]?.[0];
     const hasSecret = !!curEntry;
+    /* TASK-072:本人未配置时共享档兜底 —— 只在 !hasSecret 时提示「服务端已提供」;
+       本人有 key 恒优先,共享面此时不显示(免得误导成"共享在生效")。 */
+    const curShared = !hasSecret ? (secrets.data?.shared?.[curKey] ?? null) : null;
     const urlDirty = urlDraft.trim() !== serverBaseUrl;
 
     return (
@@ -923,8 +926,13 @@ function ConnectionSection() {
                 <div className="inset-row flex-col !items-stretch gap-1.5">
                     <div className="flex items-center justify-between">
                         <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')} · <span className={mono}>{curKey}</span></label>
-                        <span className={`text-[10.5px] ${mono}`} style={{ color: hasSecret ? 'var(--status-ok)' : 'var(--status-warn)' }}>
-                            {hasSecret ? `${t('st.secrets.managed')} · ${curEntry!.value}` : t('st.secrets.none2')}
+                        <span className={`text-[10.5px] ${mono}`} style={{ color: hasSecret ? 'var(--status-ok)' : curShared ? 'var(--status-info, var(--fg-secondary))' : 'var(--status-warn)' }}
+                            title={curShared ? t('st.secrets.sharedHint') : undefined}>
+                            {hasSecret
+                                ? `${t('st.secrets.managed')} · ${curEntry!.value}`
+                                : curShared
+                                    ? `${t('st.secrets.shared')}${curShared.label ? ` · ${curShared.label}` : ''}`
+                                    : t('st.secrets.none2')}
                         </span>
                     </div>
                     <div className="flex items-center gap-1.5">
@@ -963,7 +971,7 @@ function ConnectionSection() {
                         }}>
                             {probeRes
                                 ? (probeRes.ok
-                                    ? `✓ ${probeRes.source} · ${probeRes.latencyMs}ms · ${probeRes.modelCount ?? 0} models`
+                                    ? `✓ ${probeRes.source} · ${probeRes.latencyMs}ms · ${probeRes.modelCount ?? 0} models${probeRes.credential && probeRes.credential !== 'none' ? ` · ${t(`st.cred.${probeRes.credential}`)}` : ''}`
                                     : `✗ ${probeRes.error ?? 'error'}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`)
                                 : t('st.conn.probeHint')}
                         </div>

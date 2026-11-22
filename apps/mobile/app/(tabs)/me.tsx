@@ -1,4 +1,6 @@
-// 我的 — 连接设置:server baseUrl(SecureStore 持久化)+ 连通性自检。
+// 我的 — 连接设置:server baseUrl(SecureStore 持久化)+ 连通性自检
+// + 账户登录(enableUserAccounts 部署:handle+password → cookie-session,
+// jar 落 SecureStore 免重登;accounts-off 恒 default-user,本节可忽略)。
 // Android 模拟器用 10.0.2.2 指回宿主机;真机要填局域网 IP。
 // UI 面走 heroui-native(Card/TextField/Button)——chrome 件不再手搓。
 import { useEffect, useState } from 'react';
@@ -17,6 +19,10 @@ export default function MeScreen() {
     const queryClient = useQueryClient();
     const [draft, setDraft] = useState(session.baseUrl);
     const [checking, setChecking] = useState(false);
+    const [handle, setHandle] = useState('');
+    const [password, setPassword] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [authMsg, setAuthMsg] = useState<string | null>(null);
 
     // SecureStore 恢复完成后 baseUrl 可能才就位 —— 同步进输入框
     useEffect(() => {
@@ -35,6 +41,34 @@ export default function MeScreen() {
             await session.check();
         } finally {
             setChecking(false);
+        }
+    };
+
+    // 登录换 handle = 换数据命名空间 —— 与换 baseUrl 同级,全量 invalidate。
+    // accounts-off 的 default-user 无密码(服务端 user.password 空→跳过校验),
+    // handle 留空按 default-user 走;密码框空值合法。
+    const login = async () => {
+        setBusy(true);
+        setAuthMsg(null);
+        try {
+            const r = await session.login(handle.trim() || 'default-user', password);
+            setAuthMsg(`已登录:${r.handle}`);
+            setPassword('');
+            await queryClient.invalidateQueries();
+        } catch (e) {
+            setAuthMsg(e instanceof Error ? e.message : String(e));
+        } finally {
+            setBusy(false);
+        }
+    };
+    const logout = async () => {
+        setBusy(true);
+        setAuthMsg(null);
+        try {
+            await session.logout();
+            await queryClient.invalidateQueries();
+        } finally {
+            setBusy(false);
         }
     };
 
@@ -72,6 +106,59 @@ export default function MeScreen() {
                 </Card.Body>
             </Card>
 
+            <Text style={styles.section}>账户</Text>
+            <Card>
+                <Card.Body>
+                    {session.handle ? (
+                        <>
+                            <View style={styles.statusRow}>
+                                <View style={[styles.dot, { backgroundColor: colors.ok }]} />
+                                <Text style={styles.statusText}>已登录:{session.handle}</Text>
+                            </View>
+                            <View style={styles.row}>
+                                <Button variant="outline" size="sm" onPress={() => void logout()} isDisabled={busy}>
+                                    退出登录
+                                </Button>
+                            </View>
+                        </>
+                    ) : (
+                        <>
+                            <TextField>
+                                <Label>Handle</Label>
+                                <Input
+                                    value={handle}
+                                    onChangeText={setHandle}
+                                    placeholder="default-user"
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                            </TextField>
+                            <TextField>
+                                <Label>密码</Label>
+                                <Input
+                                    value={password}
+                                    onChangeText={setPassword}
+                                    placeholder="账户未设密码可留空"
+                                    secureTextEntry
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                                <Description>
+                                    enableUserAccounts 部署的登录面(cookie-session);
+                                    登录后 jar 落 SecureStore,重启 App 免重登。
+                                </Description>
+                            </TextField>
+                            <View style={styles.row}>
+                                <Button variant="primary" size="sm" onPress={() => void login()} isDisabled={busy}>
+                                    {busy ? '登录中…' : '登录'}
+                                </Button>
+                            </View>
+                        </>
+                    )}
+                    {authMsg ? <Text style={styles.authMsg}>{authMsg}</Text> : null}
+                </Card.Body>
+            </Card>
+
             <Text style={styles.section}>状态</Text>
             <Card>
                 <Card.Body>
@@ -105,5 +192,6 @@ const styles = StyleSheet.create({
     statusRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     dot: { width: 9, height: 9, borderRadius: 5 },
     statusText: { color: colors.text, fontSize: 15, fontWeight: '600' },
+    authMsg: { color: colors.sub, fontSize: 12, marginTop: 10 },
     mt: { marginTop: 10 },
 });

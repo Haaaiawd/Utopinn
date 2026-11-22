@@ -47,18 +47,24 @@ Agent 用 `utopinn` 完成「选卡→看历史→发消息→收流→看轨迹
   `UTOPINN_CARDAPP_DEPS_DIR` 供 9P/NFS 场景指本地盘快速路径);
   文件面也裂成 utopinn-cli.mjs + cmd-cardapp.mjs + cardapp-host.mjs,
   「单文件」收缩为「核心命令面单文件」。**
-- **核心面不走 api-client 包**:api-client 当前是骨架(TS,需构建,无 cookie
-  罐)。CLI 先自铺薄层;等 api-client 长全(WS 面+cookie)再迁。两者
+- **核心面不走 api-client 包**:~~api-client 当前是骨架(TS,需构建,无 cookie
+  罐)~~ **修订(TASK-071):api-client 已长全 cookie 罐 + `account` 域
+  (login/logout/me),CLI 的 jar/handshake 修法与它互为参照**。CLI 先自铺薄层;
+  等 api-client 长全(WS 面+cookie)再迁。两者
   消费同一协议,CLI 实现即 api-client 的行为参照。**修订:cardapp
   宿主已消费真包(`UtopinnClient` + `createPanelT0Handler`,
   cardapp-host.mjs:68-69)——迁移预言部分兑现,但 send/history 等核心
-  动词仍走自铺薄层(cookie 罐原因不变)。**
+  动词仍走自铺薄层(WS/重试语义原因不变)。**
 - **与浏览器同一条 wire**:CSRF cookie 会话 + REST + ws-ticket/ws-delivery
   帧流——不走任何后门接口。CLI 能做的事 = 浏览器能做的事,这是刻意
   约束:协议缺什么就暴露什么,不补私有通道。
-- **会话不落盘**:csrf token 与 session cookie 只活在单次进程内——每条
-  命令重新握手(`GET /csrf-token` → token + set-cookie,~1 RTT)。状态
-  文件永远不存凭证,cookie 罐不持久化。代价可忽略,换零 secret 面。
+- **会话分级落盘**(TASK-071 修订):匿名握手(csrf token + 匿名 cookie)
+  仍只活在单次进程内——无登录态时每条命令重新握手(~1 RTT)。
+  **`utopinn login` 后的登录 cookie 落 `<state>.session.json`(0600,
+  `--session`/`UTOPINN_SESSION_FILE` 覆盖)**——cookie-session 模型下
+  签名 cookie 本身就是凭证,跨进程复用是登录动词的存在意义。
+  凭证与坐标分档:state 文件仍永远不存凭证,session 文件不存坐标;
+  `utopinn logout` 两档俱清。
 - **楼层写盘归 CLI**(见「写盘时序」):生成走服务端,落盘走
   `/api/chats/append|patch` 并带 `luker_generation_id` 显式 ack——
   与浏览器「客户端写楼 + 服务端 persist 仅作崩溃兜底」同构,换取
@@ -68,7 +74,7 @@ Agent 用 `utopinn` 完成「选卡→看历史→发消息→收流→看轨迹
 
 | 面 | 浏览器 | CLI |
 |---|---|---|
-| CSRF | `GET /csrf-token` → `X-CSRF-Token` 头 | 同 + `Cookie` 头(set-cookie 罐,内存态) |
+| CSRF | `GET /csrf-token` → `X-CSRF-Token` 头 | 同 + `Cookie` 头(set-cookie 罐;匿名罐内存态,login 罐落 `.session.json`) |
 | 生成 | `POST /api/utopinn/generate` + `x-luker-request-id` 头 | 同;`job_id` 自铸 UUID 放 `luker_generation.job_id` |
 | 响应 | 200 + 空 body `{}`;真实结果走 job 帧 | 同;`x-luker-generation-id` 头回显 job id;`x-utopinn-perf` 头带组装耗时 |
 | 流式 | ws-delivery PROXY 拦截 fetch → POST 后 `subscribe`(实为 `resume from_seq:1`)→ head/chunk/end → 合成 SSE Response | **POST 先返回 200** → `POST /api/ws-ticket` → `new WebSocket(ws://…/api/ws-delivery,'luker-ws-ticket.'+t)` → 发 `{type:'resume',request_id,from_seq:1}` → 同帧 |
@@ -364,13 +370,18 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
 
 ## 安全边界
 
-- **不落盘的**:csrf token、session cookie、任何密钥(每进程重握手)。
-- **落盘的**:server url、charDir/chatName、persona、preset 名、integrity
-  slug、job id、回复预览、命令环——全是坐标,无凭证。
+- **不落盘的**:匿名 csrf token、匿名 session cookie、任何密钥(每进程重握手);
+  以及 **state 文件永不落凭证**(坐标与凭证分档)。
+- **落盘于 `<state>.session.json`(0600)**:`{server,handle,cookie,csrf,at}`
+  ——login 会话凭证专档,server 不匹配即弃;`utopinn logout` 清档。
+- **落盘于 state 文件的**:server url、charDir/chatName、persona、preset 名、
+  integrity slug、job id、回复预览、命令环——全是坐标,无凭证。
 - **网络面**:v1 只承诺 loopback/白名单会话。`--server` 指非 loopback →
-  stderr 一次性警告「未测远端/无登录面,建议 SSH tunnel 或白名单」。
-  需要登录的部署 → `session` 错 + 同 hint。**不做密码/basic-auth flag**
-  ——那等于把凭证写进命令行历史。
+  stderr 一次性警告「远端部署确认 enableUserAccounts + TLS/隧道」。
+  需要登录的部署 → `utopinn login`(cookie+CSRF 登录面,TASK-071 落地)。
+  凭据源优先级 `--flag > env > TTY 交互 > 管道`;**`--password` 存在但
+  打 stderr 警告**(argv 留 shell history/ps)——人敲走交互,agent 走
+  `UTOPINN_PASSWORD`/管道。**仍不做 basic-auth** ——同一条红线。
 - **写操作**:全部走 `/api/chats/*` 既有 CAS/校验;`--force` 是 opt-in;
   delete 必须显式点名。CLI 不直接碰数据目录。
 
@@ -383,9 +394,13 @@ stdout 只回 `wrote <path> (<bytes>B)` + footer。文件是 agent 的
   绑群 ctx,生成动词走 legacy `/api/chats/group/*` 契约 + `--member`/
   `--gchat`/`--no-chain`;utopinn generate 的 selected_group 仍不接,群路由
   绕它走 legacy 面——路径与预案不同,能力在**
-- 多 handle/多用户、登录流、远端部署凭证——大半仍不做;`--handle` 已开
-  小口子(lan-offer/import 的 admin 跨 handle + `state get --via get` 的
-  `?account=` 参数),不等于多用户面
+- ~~多 handle/多用户、登录流、远端部署凭证——大半仍不做~~ **修订
+  (TASK-071):登录动词已落地——`utopinn login/logout/whoami` 走
+  `/api/users/{login,logout,me}` wire 契约,登录 cookie 落 0600
+  session 档;403 同会话轮换 CSRF 重试(cookie 不丢,权限 403 不登出)**。
+  仍不做:自助注册、admin 管理动词(建号/禁用——web admin 面承接)、
+  OAuth/SSO 前端。`--handle` 的小口子保留(lan-offer/import 的 admin
+  跨 handle + `state get --via get` 的 `?account=` 参数)
 - ~~persona description 写入面~~ **已实现:`persona-edit` 写
   name/description/position/title/is_default**
 - ~~`wi`/`books` 专查~~ **已实现:`utopinn wi <book>` 条目表**

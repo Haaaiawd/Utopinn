@@ -4,7 +4,7 @@
  * 规格:.skeinn/capabilities/cli-client/capability.md(唯一契约,先读它)。
  * 零依赖:Node ≥22 原生 fetch + WebSocket。
  */
-import { readFileSync, writeFileSync, renameSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, existsSync, statSync, chmodSync, unlinkSync } from 'node:fs';
 import { resolve, basename, join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -68,6 +68,8 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--as') flags.as = argv[++i];
     else if (a === '--mode') flags.mode = argv[++i];
     else if (a === '--handle') flags.handle = argv[++i];
+    else if (a === '--password') flags.password = argv[++i];
+    else if (a === '--session') flags.sessionFile = argv[++i];
     else if (a === '--chat') flags.chat = argv[++i];
     else if (a === '--card') flags.card = argv[++i];
     else if (a === '--settle') flags.settle = Number(argv[++i]);
@@ -136,11 +138,11 @@ function ring(cmd, rc, extra = {}) {
 const SERVER = (flags.server || process.env.UTOPINN_SERVER || state.server || DEFAULT_SERVER).replace(/\/+$/, '');
 saveState({ server: SERVER });
 const isLoopback = /^https?:\/\/(127\.|localhost|\[?::1\]?)/.test(SERVER);
-if (!isLoopback) warn('non-loopback server — 未测远端/无登录面,建议 SSH tunnel 或白名单');
 
 // ═══ 输出层 ═══
 const JSON_MODE = Boolean(flags.json);
 const warn = (m) => { if (!JSON_MODE) process.stderr.write(`\x1b[2m[cli] ${m}\x1b[0m\n`); };
+if (!isLoopback) warn('non-loopback server — 远端部署确认 enableUserAccounts + TLS/隧道(明文 HTTP 密码裸奔);`utopinn login` 已接登录面');
 const trunc = (s, n) => { s = String(s ?? ''); return s.length > n ? `${s.slice(0, n)}…+${s.length - n}ch` : s; };
 function ctxSummary() {
     return {
@@ -198,18 +200,75 @@ const needCtx = () => {
     return { charDir: state.char.dir, chatName: state.chat.name, charName: state.char.name };
 };
 
-// ═══ 会话(CSRF+cookie 内存态)═══
-let csrf = '', cookie = '';
+// ═══ 会话(CSRF+cookie;login 后升级态落 SESSION_PATH 复用)═══
+// cookie-session:session 整体序列化在签名 cookie 里 —— login 响应的
+// Set-Cookie 才是登录态凭证,所以每个响应的 set-cookie 都得收罐合并。
+// 落盘约定:state 文件仍零凭证(capability 红线),凭证住独立的
+// <state>.session.json(0600;--session / UTOPINN_SESSION_FILE 覆盖)。
+let csrf = '', cookie = '', sessionHandle = null;
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function session() {
-    if (csrf) return;
-    const r = await fetch(`${SERVER}/csrf-token`, { signal: AbortSignal.timeout(flags.reqTimeout ?? DEFAULT_REQ_TIMEOUT) });
+const SESSION_PATH = flags.sessionFile
+    ? resolve(flags.sessionFile)
+    : (process.env.UTOPINN_SESSION_FILE
+        ? resolve(process.env.UTOPINN_SESSION_FILE)
+        : STATE_PATH.replace(/\.json$/i, '') + '.session.json');
+function loadDiskSession() {
+    try {
+        const s = JSON.parse(readFileSync(SESSION_PATH, 'utf8'));
+        return s && s.server === SERVER && typeof s.cookie === 'string' && s.cookie ? s : null;
+    } catch { return null; }
+}
+function persistDiskSession(handle = sessionHandle) {
+    try {
+        writeFileSync(SESSION_PATH,
+            JSON.stringify({ server: SERVER, handle, cookie, csrf, at: Date.now() }),
+            { mode: 0o600 });
+        try { chmodSync(SESSION_PATH, 0o600); } catch { /* win32 无 mode */ }
+    } catch (e) { warn(`session file write failed: ${e.message}`); }
+}
+function clearDiskSession() {
+    try { unlinkSync(SESSION_PATH); } catch { /* 本就没有 */ }
+}
+async function handshake() {
+    // 带当前 cookie 去握手:csrfToken 存 session(cookie-session 整体序列化)——
+    // 不带 cookie = 开匿名新 session,已登录态当场蒸发(与 api-client 同款修法)。
+    // 死 session 的 cookie 服务端认不出(签名/版本)→ 自动发新匿名 session,无害。
+    const r = await fetch(`${SERVER}/csrf-token`, {
+        headers: cookie ? { Cookie: cookie } : {},
+        signal: AbortSignal.timeout(flags.reqTimeout ?? DEFAULT_REQ_TIMEOUT),
+    });
     if (!r.ok) throw Object.assign(new Error(`csrf-token ${r.status}`), { code: 'session', status: r.status });
     csrf = (await r.json()).token;
-    const sc = typeof r.headers.getSetCookie === 'function' ? r.headers.getSetCookie() : [r.headers.get('set-cookie')].filter(Boolean);
-    cookie = sc.map(c => c.split(';')[0]).join('; ');
+    absorbSetCookie(r);
+    if (!cookie) sessionHandle = null;
+    persistDiskSession();
 }
-async function req(method, path, body, { allowFail = false, timeout, _reauthed = false } = {}) {
+async function session() {
+    if (csrf && cookie) return;
+    const disk = loadDiskSession();
+    if (disk) { csrf = disk.csrf ?? ''; cookie = disk.cookie; sessionHandle = disk.handle ?? null; }
+    if (!csrf || !cookie) { csrf = ''; cookie = ''; await handshake(); }
+}
+function absorbSetCookie(r) {
+    const sc = typeof r.headers.getSetCookie === 'function' ? r.headers.getSetCookie() : [r.headers.get('set-cookie')].filter(Boolean);
+    if (!sc.length) return;
+    const jar = new Map();
+    for (const pair of cookie.split(';')) {
+        const i = pair.indexOf('=');
+        if (i > 0) jar.set(pair.slice(0, i).trim(), pair.trim());
+    }
+    for (const c of sc) {
+        const pair = (c.split(';')[0] ?? '').trim();
+        const i = pair.indexOf('=');
+        if (i <= 0) continue;
+        const name = pair.slice(0, i).trim();
+        if (pair.slice(i + 1).trim()) jar.set(name, pair);
+        else jar.delete(name); // 服务端清 cookie(空值)→ 出罐
+    }
+    const next = [...jar.values()].join('; ');
+    if (next !== cookie) { cookie = next; persistDiskSession(); }
+}
+async function req(method, path, body, { allowFail = false, timeout, _reauthed = false, noReauth = false } = {}) {
     await session();
     const r = await fetch(`${SERVER}${path}`, {
         method,
@@ -217,9 +276,13 @@ async function req(method, path, body, { allowFail = false, timeout, _reauthed =
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: AbortSignal.timeout(timeout ?? flags.reqTimeout ?? DEFAULT_REQ_TIMEOUT),
     });
-    // 会话过期(服务端重启/cookie 轮换)→ 重握手一次重试
-    if ((r.status === 401 || r.status === 403) && !_reauthed) {
-        csrf = ''; cookie = '';
+    absorbSetCookie(r);
+    // 会话过期/CSRF 轮换 → 同会话换 token 重试一次,cookie 不丢
+    // (权限 403 不许顺手把登录态登出;会话真死时握手响应自会发匿名新 cookie)。
+    // noReauth:login 的 403 是凭据错,重试同样败还白烧限流点,不重。
+    if ((r.status === 401 || r.status === 403) && !_reauthed && !noReauth) {
+        csrf = '';
+        await handshake();
         return req(method, path, body, { allowFail, timeout, _reauthed: true });
     }
     const text = await r.text();
@@ -1139,6 +1202,92 @@ async function cmdStatus() {
     return c2;
 }
 
+// ═══ account 面(login/logout/whoami;multi-user.md §3.3)═══
+// 凭据源优先级:--flag > env(UTOPINN_HANDLE/UTOPINN_PASSWORD) > TTY 交互 > stdin 行。
+// --password 进 argv 会留 shell history/ps(capability 红线提醒)——人敲走交互,
+// agent 走 env/stdin。会话落 SESSION_PATH(0600),state 文件仍零凭证。
+function promptLine(query, { hidden = false } = {}) {
+    return new Promise((res) => {
+        const stdin = process.stdin;
+        if (!stdin.isTTY) {
+            // 管道喂入:读一行即够(密码不进 argv)
+            let buf = '';
+            stdin.setEncoding('utf8');
+            stdin.on('data', (c) => {
+                buf += c;
+                const i = buf.search(/\r?\n/);
+                if (i >= 0) { stdin.pause(); res(buf.slice(0, i)); }
+            });
+            stdin.on('end', () => res(buf));
+            stdin.resume();
+            return;
+        }
+        process.stderr.write(query);
+        if (!hidden) {
+            let buf = '';
+            stdin.setEncoding('utf8');
+            const onData = (c) => {
+                const i = String(c).search(/\r?\n/);
+                if (i >= 0) { cleanup(); res(buf + String(c).slice(0, i)); }
+                else buf += c;
+            };
+            const cleanup = () => { stdin.pause(); stdin.removeListener('data', onData); };
+            stdin.on('data', onData);
+            stdin.resume();
+            return;
+        }
+        // 隐藏输入:raw mode 逐字符,不回显
+        stdin.setRawMode(true);
+        stdin.resume();
+        stdin.setEncoding('utf8');
+        let buf = '';
+        const cleanup = () => { stdin.setRawMode(false); stdin.pause(); stdin.removeListener('data', onData); };
+        const onData = (ch) => {
+            ch = String(ch);
+            if (ch === '\u0003') { cleanup(); process.stderr.write('\n'); res(buf); }
+            else if (ch === '\r' || ch === '\n') { cleanup(); process.stderr.write('\n'); res(buf); }
+            else if (ch === '\u007F' || ch === '\b') { buf = buf.slice(0, -1); }
+            else buf += ch;
+        };
+        stdin.on('data', onData);
+    });
+}
+async function cmdLogin() {
+    const handle = flags.handle ?? process.env.UTOPINN_HANDLE
+        ?? (process.stdin.isTTY ? await promptLine('handle: ') : null);
+    if (!handle) return void fail('usage', 'utopinn login --handle <h>(或 UTOPINN_HANDLE / TTY 交互)', { rc: 2 });
+    let password = flags.password ?? process.env.UTOPINN_PASSWORD;
+    if (flags.password !== undefined) warn('--password 进 argv 会留 shell history/ps —— 建议 TTY 交互 / UTOPINN_PASSWORD / 管道喂入');
+    if (password === undefined) password = await promptLine('password: ', { hidden: true });
+    if (password === undefined || password === null) return void fail('usage', 'password 缺:--password / UTOPINN_PASSWORD / TTY 交互 / 管道喂入', { rc: 2 });
+    const { data, status } = await req('POST', '/api/users/login', { handle, password }, { allowFail: true, noReauth: true });
+    if (status === 429) return void fail('session', `login 限流:${data?.error ?? 'too many attempts'}`, { status, hint: '1 分钟 5 次;等窗或走 /api/users/recover-*' });
+    if (status !== 200) return void fail('session', `login 失败(${status}):${data?.error ?? 'unknown'}`, { status, hint: 'handle/密码错或账户被禁用;utopinn raw GET /api/users/me 看当前态' });
+    sessionHandle = data.handle;
+    persistDiskSession(data.handle);
+    if (JSON_MODE) return out({ handle: data.handle, sessionFile: SESSION_PATH }, [{ cmd: 'utopinn whoami' }]);
+    console.log(`logged in as ${data.handle} · session → ${SESSION_PATH}`);
+    next('utopinn whoami');
+    footer();
+}
+async function cmdLogout() {
+    const was = sessionHandle ?? loadDiskSession()?.handle ?? null;
+    const { status } = await req('POST', '/api/users/logout', {}, { allowFail: true }).catch(() => ({ status: 0 }));
+    csrf = ''; cookie = ''; sessionHandle = null;
+    clearDiskSession();
+    if (JSON_MODE) return out({ loggedOut: true, was, status });
+    console.log(`logged out${was ? ` (was ${was})` : ''} · session file cleared`);
+    footer();
+}
+async function cmdWhoami() {
+    const { data, status } = await req('GET', '/api/users/me', undefined, { allowFail: true });
+    if (status !== 200) return void fail('session', `me → ${status}`, { status, hint: 'enableUserAccounts 部署先 `utopinn login`;accounts-off 应恒 200(default-user)' });
+    sessionHandle = data.handle ?? sessionHandle;
+    if (JSON_MODE) return out({ ...data, sessionFile: SESSION_PATH });
+    console.log(`${data.handle} · ${data.name ?? ''}${data.admin ? ' · admin' : ''}${data.password ? '' : ' · no-password'}`);
+    footer();
+}
+
 // ═══ 具名路由表:字面钉样 + 词表派生对账 ═══
 // doctor "capability coverage" 拿本表 diff kernel 路由全集,未具名=raw-only 待补面
 // (kernel list() 的 "METHOD|kind|path" 串格式;--full 打印差集)。
@@ -1403,6 +1552,9 @@ const SCHEMA = {
     commands: [
         { cmd: 'utopinn', desc: '状态快照+next(零网络)', out: 'snapshot' },
         { cmd: 'utopinn status', desc: '在线 ctx/floors/integrity/active jobs', out: 'ctx+jobs' },
+        { cmd: 'utopinn login [--handle h] [--password p]', desc: '[account] /api/users/login 登录(enableUserAccounts 部署);凭据源 flag>env>TTY交互>管道;会话落 <state>.session.json(0600)', out: '{handle,sessionFile}' },
+        { cmd: 'utopinn logout', desc: '[account] /api/users/logout + 清本地 session 文件', out: '{loggedOut}' },
+        { cmd: 'utopinn whoami', desc: '[account] GET /api/users/me——登录态/handle/admin 探针', out: '{handle,name,admin}' },
         { cmd: 'utopinn doctor', desc: '链路体检(workspace 链接/protocol dist + server/session/ws/ctx;GH#5 构建病自查)', out: 'steps[]' },
         { cmd: 'utopinn schema', desc: '本目录(self-describing)', out: 'schema' },
         { cmd: 'utopinn chars [-n N]', desc: '角色列表', out: '[{dir,name,chat}]' },
@@ -1412,7 +1564,7 @@ const SCHEMA = {
         { cmd: 'utopinn groups', desc: '群列表(id/name/members/chat_id/strategy)', out: '[{id,name,members,chat_id}]' },
         { cmd: 'utopinn guse <id|name> [chatId]', desc: '绑群 ctx(send/regen/swipe 等自动走群路由;--member 点名,--gchat 换聊,--no-chain 只发第一人)', out: 'ctx' },
         { cmd: 'utopinn chat-new <name>', desc: '新聊天坐标·懒建:只绑坐标不落文件,use/status 标 pending;首条 send 才真建文件——MVU autoInit 也在这次 append/settle 触发(判据 floor-0 no_baseline)', out: 'chat' },
-        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建空聊天文件(PUT;chats 列表立即可见)。注意:空文件≠MVU 已初始化——autoInit 判据是首条 append 的 no_baseline,不在建文件时跑;要连文件都不建就用 chat-new', out: '{ok,integrity}' },
+        { cmd: 'utopinn chat-create <name>', desc: '[library] 立即建聊天文件(PUT;chats 列表立即可见;卡有 first_mes 时问候楼同步播种,TASK-059)。注意:文件≠MVU 已初始化——autoInit 判据是首条 append 的 no_baseline,不在建文件时跑;要连文件都不建就用 chat-new', out: '{ok,integrity}' },
         { cmd: 'utopinn chat-put [doc]', desc: '[library] 整文档替换(legacy /save 等价;--json-file/--stdin;CAS 自动+409 重锚)', out: '{ok,integrity,floors}' },
         { cmd: 'utopinn chat-get [chat]', desc: '[library] utopinn doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
@@ -1489,10 +1641,12 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId|chat|text|kobold|novel(生成源)', '--api-type t(textgen 后端:koboldcpp/ooba/…)', '--api-server url(kobold 上游)', '--model m(novel/各源模型覆盖)', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)|from:to(regen 楼区间)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId|chat|text|kobold|novel(生成源)', '--api-type t(textgen 后端:koboldcpp/ooba/…)', '--api-server url(kobold 上游)', '--model m(novel/各源模型覆盖)', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)|from:to(regen 楼区间)',
+        '--password p(login 凭据进 argv 留 history——优选 UTOPINN_PASSWORD/TTY交互/管道)', '--session f(session 文件路径;默认 <state>.session.json)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'bad_floor', 'corrupted', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
+    sessionFile: '~/.utopinn-cli.session.json(0600): {server,handle,cookie,csrf,at} —— 凭证专档,state 文件仍零凭证;--session / UTOPINN_SESSION_FILE 覆盖',
     flow: 'send: ctx → GET /api/utopinn/jobs?target&status=active 护栏 → append user 楼 → POST /api/utopinn/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
 };
 
@@ -3384,6 +3538,9 @@ try {
     switch (CMD) {
         case undefined: await cmdBare(); break;
         case 'status': await cmdStatus(); break;
+        case 'login': await cmdLogin(); break;
+        case 'logout': await cmdLogout(); break;
+        case 'whoami': case 'me': await cmdWhoami(); break;
         case 'doctor': await cmdDoctor(); break;
         case 'schema': console.log(JSON.stringify(SCHEMA, null, 2)); break;
         case 'chars': await cmdChars(); break;

@@ -8,7 +8,7 @@ import util from 'node:util';
 import urlJoin from 'url-join';
 import lodash from 'lodash';
 
-import { readSecret, SECRET_KEYS, readProviderSecret } from './secrets.js';
+import { SECRET_KEYS, resolveProviderSecret } from './secrets.js';
 import { GEMINI_SAFETY, VERTEX_SAFETY } from '../constants.js';
 import { delay, getConfigValue, trimTrailingSlash } from '../util.js';
 
@@ -50,7 +50,7 @@ export async function getVertexAIAuth(request) {
     }
 
     if (authMode === 'express') {
-        const apiKey = readSecret(request.user.directories, SECRET_KEYS.VERTEXAI);
+        const apiKey = resolveProviderSecret(request, SECRET_KEYS.VERTEXAI);
         if (apiKey) {
             return {
                 authHeader: `Bearer ${apiKey}`,
@@ -60,7 +60,7 @@ export async function getVertexAIAuth(request) {
         throw new Error('API key is required for Vertex AI Express mode');
     } else if (authMode === 'full') {
         // Get service account JSON from backend storage
-        const serviceAccountJson = readSecret(request.user.directories, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT);
+        const serviceAccountJson = resolveProviderSecret(request, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT);
 
         if (serviceAccountJson) {
             try {
@@ -192,7 +192,7 @@ export async function getGoogleApiConfig(request, model, endpoint = 'generateCon
         } else if (authType === 'full') {
             // Full mode: use project-specific URL with Authorization header
             // Get project ID from Service Account JSON
-            const serviceAccountJson = readSecret(request.user.directories, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT);
+            const serviceAccountJson = resolveProviderSecret(request, SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT);
             if (!serviceAccountJson) {
                 throw new Error('Vertex AI Service Account JSON is missing.');
             }
@@ -219,7 +219,7 @@ export async function getGoogleApiConfig(request, model, endpoint = 'generateCon
         }
     } else {
         // Google AI Studio
-        const apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
+        const apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
         const apiUrl = trimTrailingSlash(request.body.reverse_proxy || request.body.base_url || API_MAKERSUITE);
         const apiVersion = getConfigValue('gemini.apiVersion', 'v1beta');
         baseUrl = `${apiUrl}/${apiVersion}`;

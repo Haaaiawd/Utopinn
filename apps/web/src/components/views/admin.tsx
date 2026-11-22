@@ -30,12 +30,18 @@ import {
     isAdminForbidden,
     listAdminUsers,
     listLukerServerPlugins,
+    listSharedSecrets,
     probeUpstreamConnection,
+    promoteSharedSecret,
     promoteUserHandle,
+    rotateSharedSecret,
     saveAdminSettings,
     saveServerConfig,
+    setSharedSecretVisibility,
     setUserQuota,
     slugifyHandle,
+    writeSharedSecret,
+    deleteSharedSecret,
     type AdminOverview,
     type AdminSettings,
     type AdminUserItem,
@@ -43,9 +49,12 @@ import {
     type ConnectionProbeResult,
     type KernelSnapshot,
     type LukerServerPluginsList,
+    type SharedSecretEntry,
+    type SharedSecretMode,
     type StorageHealth,
     type StorageStatus,
 } from '../../api/admin';
+import { listSecrets } from '../../api/secrets';
 import { changeUserName, changeUserPassword, getMe, type CurrentUser } from '../../api/account';
 import { listPlugins, type PluginItem } from '../../api/plugins';
 import { diagStats, type DiagBusStats } from '../../api/diag';
@@ -63,7 +72,7 @@ import {
 /* 分区定义(刀1 三区)                                                   */
 /* ------------------------------------------------------------------ */
 
-export const ADMIN_NAVS = ['overview', 'users', 'config'] as const;
+export const ADMIN_NAVS = ['overview', 'users', 'keys', 'config'] as const;
 export type AdminNav = (typeof ADMIN_NAVS)[number];
 
 const ADMIN_BUCKETS: {
@@ -78,6 +87,7 @@ const ADMIN_BUCKETS: {
         bucketKey: 'admin.bucket.access',
         items: [
             { id: 'users', icon: 'user' },
+            { id: 'keys', icon: 'shield' },
             { id: 'config', icon: 'sliders' },
         ],
     },
@@ -1868,6 +1878,380 @@ function ConfigSection() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 4. 共享密钥(TASK-072 §2.3 六动词:admin 也只见掩码)                      */
+/* ------------------------------------------------------------------ */
+
+const SHARE_MODES: SharedSecretMode[] = ['all', 'handles', 'none'];
+
+/** 单条共享密钥行:masked + 可见性 ACL(all/handles/none + 名单)+ 激活/删除。 */
+function SharedEntryRow({
+    keyName,
+    en,
+    busy,
+    onVis,
+    onRotate,
+    onDelete,
+}: {
+    keyName: string;
+    en: SharedSecretEntry;
+    busy: boolean;
+    onVis: (mode: SharedSecretMode, handles?: string[]) => void;
+    onRotate: () => void;
+    onDelete: () => void;
+}) {
+    const { t } = useI18n();
+    const curMode = (en.share?.mode ?? 'none') as SharedSecretMode;
+    const curHandles = (en.share?.handles ?? []).join(', ');
+    const [mode, setMode] = useState<SharedSecretMode>(curMode);
+    const [handlesCsv, setHandlesCsv] = useState(curHandles);
+    useEffect(() => { setMode(curMode); setHandlesCsv(curHandles); }, [curMode, curHandles, en.id]);
+    const dirty = mode !== curMode || (mode === 'handles' && handlesCsv !== curHandles);
+
+    const applyVis = () => {
+        const handles = handlesCsv.split(',').map((h) => h.trim()).filter(Boolean);
+        onVis(mode, mode === 'handles' ? handles : undefined);
+    };
+
+    return (
+        <div
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3"
+            style={{ borderBottom: '1px solid var(--border-hairline)' }}
+        >
+            <div className="min-w-0 flex-1 basis-52">
+                <div className={`truncate text-[12px] font-medium text-[color:var(--fg-primary)] ${mono}`}>
+                    {keyName}
+                    {en.label ? <span className="ml-1.5 text-[10.5px] font-normal text-[color:var(--fg-muted)]">{en.label}</span> : null}
+                </div>
+                <div className={`mt-0.5 flex items-center gap-1.5 truncate text-[10.5px] ${mono}`} style={{ color: 'var(--fg-faint)' }}>
+                    {en.masked}
+                    {en.active && (
+                        <span className="inline-flex items-center gap-1" style={{ color: 'var(--status-ok)' }}>
+                            <StatusDot color="var(--status-ok)" />{t('admin.keys.active')}
+                        </span>
+                    )}
+                </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <select
+                    value={mode}
+                    disabled={busy}
+                    onChange={(e) => setMode(e.target.value as SharedSecretMode)}
+                    className="h-7 rounded-md border px-1.5 text-[11px] outline-none"
+                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    title={t('admin.keys.visibility')}
+                >
+                    {SHARE_MODES.map((m) => <option key={m} value={m}>{t(`admin.keys.mode.${m}`)}</option>)}
+                </select>
+                {mode === 'handles' && (
+                    <input
+                        value={handlesCsv}
+                        disabled={busy}
+                        onChange={(e) => setHandlesCsv(e.target.value)}
+                        placeholder={t('admin.keys.handlesPh')}
+                        className={`h-7 w-40 rounded-md border px-2 text-[11px] outline-none ${mono}`}
+                        style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    />
+                )}
+                {dirty && (
+                    <button
+                        className="h-7 rounded-md px-2.5 text-[11px] font-medium"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                        disabled={busy}
+                        onClick={applyVis}
+                    >
+                        {t('admin.keys.applyVis')}
+                    </button>
+                )}
+                {!en.active && (
+                    <button
+                        className="ghost-btn h-7 px-2 text-[11px]"
+                        disabled={busy}
+                        title={t('admin.keys.activate')}
+                        onClick={onRotate}
+                    >
+                        {t('admin.keys.activate')}
+                    </button>
+                )}
+                <button
+                    className="ghost-btn h-7 w-7"
+                    disabled={busy}
+                    title={t('admin.keys.delete')}
+                    style={{ color: 'var(--status-danger)' }}
+                    onClick={onDelete}
+                >
+                    <Icon name="trash" size={12} />
+                </button>
+            </div>
+        </div>
+    );
+}
+
+function KeysSection() {
+    const { t } = useI18n();
+    const s = useShell();
+    const remote = useRemote('admin:shared-keys', () =>
+        guardForbidden(async () => ({
+            shared: await listSharedSecrets(),
+            mine: await listSecrets(),
+        })));
+
+    const [createOpen, setCreateOpen] = useState(false);
+    const [wKey, setWKey] = useState('');
+    const [wValue, setWValue] = useState('');
+    const [wLabel, setWLabel] = useState('');
+    const [wMode, setWMode] = useState<SharedSecretMode>('all');
+    const [wHandles, setWHandles] = useState('');
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState<string | null>(null);
+    const [confirmDel, setConfirmDel] = useState<{ key: string; en: SharedSecretEntry } | null>(null);
+
+    if (remote.error) return <PanelError error={remote.error} onRetry={remote.reload} />;
+    if (remote.data?.forbidden) return <AdminForbiddenView />;
+
+    const d = remote.data?.value ?? null;
+    const items = d?.shared.items ?? {};
+    const allKeys = Object.keys(items);
+    const sharedKeys = allKeys.filter((k) => items[k]?.length);
+    const myKeys = Object.keys(d?.mine.secrets ?? {}).filter((k) => d!.mine.secrets[k]?.length);
+
+    const run = (fn: () => Promise<unknown>) => {
+        if (busy) return;
+        setBusy(true);
+        setErr(null);
+        void fn()
+            .then(() => { remote.reload(); s.hint(t('admin.keys.done')); })
+            .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+            .finally(() => setBusy(false));
+    };
+
+    const submitWrite = () => {
+        if (!wKey || !wValue.trim()) return;
+        run(() => writeSharedSecret({
+            key: wKey,
+            value: wValue.trim(),
+            ...(wLabel.trim() ? { label: wLabel.trim() } : {}),
+            mode: wMode,
+            ...(wMode === 'handles'
+                ? { handles: wHandles.split(',').map((h) => h.trim()).filter(Boolean) }
+                : {}),
+        }).then(() => {
+            setWValue('');
+            setWLabel('');
+            setWHandles('');
+            setCreateOpen(false);
+        }));
+    };
+
+    return (
+        <div className="space-y-5">
+            {/* 页头 */}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                    <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('admin.keys.title')}</h1>
+                    <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('admin.keys.sub')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                    <button
+                        className="ghost-btn h-8 gap-1.5 px-3 text-[12px]"
+                        style={{ border: '1px solid var(--border-hairline)', background: 'var(--bg-surface)' }}
+                        onClick={() => { remote.reload(); s.hint(t('admin.refreshed')); }}
+                    >
+                        <Icon name="refresh" size={14} />
+                        <span>{t('admin.refresh')}</span>
+                    </button>
+                    <button
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-[12px] font-medium"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                        onClick={() => { setCreateOpen((v) => !v); setErr(null); }}
+                    >
+                        <Icon name={createOpen ? 'x' : 'plus'} size={14} />
+                        <span>{t('admin.keys.new')}</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* 说明条:共享档语义一句话(布局讲清优先级,不堆文案) */}
+            <div
+                className="rounded-[10px] px-3.5 py-2.5 text-[12px] leading-relaxed"
+                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--fg-secondary)' }}
+            >
+                {t('admin.keys.banner')}
+            </div>
+
+            {/* 新建共享密钥折叠表单 */}
+            {createOpen && (
+                <div
+                    className="space-y-3 rounded-[12px] p-4"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', boxShadow: 'var(--shadow-card)' }}
+                >
+                    <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">
+                        {t('admin.keys.createTitle')}
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                        <div className="space-y-1">
+                            <label className="block text-[11px] text-[color:var(--fg-muted)]">{t('admin.keys.fieldKey')}</label>
+                            <select
+                                value={wKey}
+                                onChange={(e) => setWKey(e.target.value)}
+                                className={`${inputCls} ${mono}`}
+                                style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                            >
+                                <option value="">{t('admin.keys.fieldKeyPh')}</option>
+                                {allKeys.map((k) => <option key={k} value={k}>{k}</option>)}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[11px] text-[color:var(--fg-muted)]">{t('admin.keys.fieldValue')}</label>
+                            <input
+                                type="password"
+                                value={wValue}
+                                onChange={(e) => setWValue(e.target.value)}
+                                placeholder={t('admin.keys.fieldValuePh')}
+                                className={`${inputCls} ${mono}`}
+                                style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[11px] text-[color:var(--fg-muted)]">{t('admin.keys.fieldLabel')}</label>
+                            <input
+                                value={wLabel}
+                                onChange={(e) => setWLabel(e.target.value)}
+                                placeholder={t('admin.keys.fieldLabelPh')}
+                                className={inputCls}
+                                style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-[11px] text-[color:var(--fg-muted)]">{t('admin.keys.visibility')}</label>
+                            <select
+                                value={wMode}
+                                onChange={(e) => setWMode(e.target.value as SharedSecretMode)}
+                                className={inputCls}
+                                style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                            >
+                                {SHARE_MODES.map((m) => <option key={m} value={m}>{t(`admin.keys.mode.${m}`)}</option>)}
+                            </select>
+                        </div>
+                        {wMode === 'handles' && (
+                            <div className="space-y-1 sm:col-span-2">
+                                <label className="block text-[11px] text-[color:var(--fg-muted)]">{t('admin.keys.handlesLabel')}</label>
+                                <input
+                                    value={wHandles}
+                                    onChange={(e) => setWHandles(e.target.value)}
+                                    placeholder={t('admin.keys.handlesPh')}
+                                    className={`${inputCls} ${mono}`}
+                                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                                />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                        <button
+                            className="h-8 rounded-lg px-3 text-[12px] text-[color:var(--fg-secondary)] hover:bg-[color:var(--bg-active)]"
+                            disabled={busy}
+                            onClick={() => setCreateOpen(false)}
+                        >
+                            {t('admin.common.cancel')}
+                        </button>
+                        <button
+                            className="h-8 rounded-lg px-3.5 text-[12px] font-medium"
+                            style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: busy || !wKey || !wValue.trim() ? 0.45 : 1 }}
+                            disabled={busy || !wKey || !wValue.trim()}
+                            onClick={submitWrite}
+                        >
+                            {t('admin.keys.create')}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {err && (
+                <div className={`rounded-lg px-3 py-2 text-[11.5px] ${mono}`} style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                    {err}
+                </div>
+            )}
+
+            {/* 共享档条目(按 key 分组;每条 masked,永不回显明文) */}
+            {sharedKeys.length === 0 && !remote.loading ? (
+                <PanelEmpty icon="shield" desc={t('admin.keys.emptyDesc')}>{t('admin.keys.empty')}</PanelEmpty>
+            ) : (
+                sharedKeys.map((key) => (
+                    <div
+                        key={key}
+                        className="overflow-hidden rounded-[12px]"
+                        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}
+                    >
+                        {items[key]!.map((en) => (
+                            <SharedEntryRow
+                                key={en.id}
+                                keyName={key}
+                                en={en}
+                                busy={busy}
+                                onVis={(mode, handles) => run(() => setSharedSecretVisibility(key, en.id, mode, handles))}
+                                onRotate={() => run(() => rotateSharedSecret(key, en.id))}
+                                onDelete={() => setConfirmDel({ key, en })}
+                            />
+                        ))}
+                    </div>
+                ))
+            )}
+
+            {/* 本人密钥 → promote(复制进共享档,不删原条) */}
+            {myKeys.length > 0 && (
+                <div className="space-y-2 pt-2">
+                    <div className="text-[11px] font-medium text-[color:var(--fg-muted)]">{t('admin.keys.promoteTitle')}</div>
+                    <div
+                        className="overflow-hidden rounded-[12px]"
+                        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}
+                    >
+                        {myKeys.map((key) => (d!.mine.secrets[key] ?? []).map((en) => (
+                            <div
+                                key={`${key}:${en.id}`}
+                                className="flex items-center gap-3 px-4 py-2.5"
+                                style={{ borderBottom: '1px solid var(--border-hairline)' }}
+                            >
+                                <div className="min-w-0 flex-1">
+                                    <div className={`truncate text-[12px] font-medium text-[color:var(--fg-primary)] ${mono}`}>
+                                        {key}
+                                        {en.label ? <span className="ml-1.5 text-[10.5px] font-normal text-[color:var(--fg-muted)]">{en.label}</span> : null}
+                                    </div>
+                                    <div className={`truncate text-[10.5px] ${mono}`} style={{ color: 'var(--fg-faint)' }}>{en.value}</div>
+                                </div>
+                                <button
+                                    className="ghost-btn h-7 shrink-0 px-2.5 text-[11px]"
+                                    disabled={busy}
+                                    title={t('admin.keys.promoteHint')}
+                                    onClick={() => run(() => promoteSharedSecret(key, en.id))}
+                                >
+                                    {t('admin.keys.promote')}
+                                </button>
+                            </div>
+                        )))}
+                    </div>
+                </div>
+            )}
+
+            {/* 删除二次确认 */}
+            {confirmDel && (
+                <ConfirmDialog
+                    danger
+                    title={t('admin.keys.deleteTitle')}
+                    desc={`${confirmDel.key} · ${confirmDel.en.masked} — ${t('admin.keys.deleteDesc')}`}
+                    confirmLabel={t('admin.keys.delete')}
+                    busy={busy}
+                    onConfirm={() => {
+                        const { key, en } = confirmDel;
+                        setConfirmDel(null);
+                        run(() => deleteSharedSecret(key, en.id));
+                    }}
+                    onCancel={() => setConfirmDel(null)}
+                />
+            )}
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* AdminView —— 顶层出口(移动端走 mob.view.noMobile 占位)                */
 /* ------------------------------------------------------------------ */
 
@@ -1897,6 +2281,7 @@ export function AdminView() {
                 <div className="mx-auto max-w-4xl">
                     {nav === 'overview' && <OverviewSection />}
                     {nav === 'users' && <UsersSection />}
+                    {nav === 'keys' && <KeysSection />}
                     {nav === 'config' && <ConfigSection />}
                 </div>
             </div>

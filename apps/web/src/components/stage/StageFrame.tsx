@@ -6,7 +6,7 @@
 // 数据面(postGenerate/streamJob/appendUserMessage/patchChat/mvu),
 // 切形态不改协议语义;mock 路按规范稿 sendText 的 stage 分支回放
 // (chat→楼层 / messenger→频道 / novel→章末段 / theater→vn.line)。
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
@@ -22,6 +22,7 @@ import {
 import { ApiError, apiGet, apiPost } from '../../api/client';
 import { cardData, charImageUrl, loadCharDoc, type CardDoc } from '../../api/characters';
 import { getRegexFullView } from '../../api/regex';
+import { listScriptCommands, type ScriptCommandInfo } from '../../api/th';
 import { personaAvatarSrc } from '../../api/personas';
 
 import {
@@ -254,47 +255,110 @@ function PersonaPop({ onClose }: { onClose: () => void }) {
     );
 }
 
-/** 规范稿斜杠菜单 L1100-1117:icon + label/desc + slash chip;attach 禁用徽标。 */
-function SlashMenu({ onPick, onClose }: { onPick: (key: string) => void; onClose: () => void }) {
+/** 规范稿斜杠菜单 L1100-1117 + TASK-060 命令补全层:
+ *  上段 = 5 项壳内快捷动作(continue/regen/impersonate/mvu/attach,直接执行);
+ *  下段 = core builtins 注册表命令(/api/utopinn/script/commands 快照),
+ *  点选/Tab 把 /name 补全进草稿(不执行 —— Enter 才跑,草稿即真相)。
+ *  filter = draft 的 `/` token(正在打的命令词,前缀过滤;null = 按钮开的菜单不过滤);
+ *  inArgs = token 已完整且进入参数区 → 签名卡模式(参数名提示全展开)。
+ *  cmds 由父级预筛(非补全语境即草稿有非 `/` 正文时传空表 ——
+ *  防止点选命令把用户正文顶掉)。 */
+function SlashMenu({ onPick, onPickCommand, cmds, hi, setHi, filter, inArgs, onClose }: {
+    onPick: (key: string) => void;
+    onPickCommand: (name: string) => void;
+    cmds: ScriptCommandInfo[];
+    hi: number;
+    setHi: (n: number) => void;
+    filter: string | null;
+    inArgs: boolean;
+    onClose: () => void;
+}) {
     const { t } = useI18n();
-    const cmds: { key: string; icon: IconName; label: string; desc: string; slash: string; badge?: string }[] = [
+    const quickAll: { key: string; icon: IconName; label: string; desc: string; slash: string; badge?: string }[] = [
         { key: 'continue', icon: 'fastForward', label: t('slash.continue'), desc: t('slash.continue.desc'), slash: '/continue' },
         { key: 'regen', icon: 'refresh', label: t('slash.regen'), desc: t('slash.regen.desc'), slash: '/regen' },
         { key: 'impersonate', icon: 'wand', label: t('slash.impersonate'), desc: t('slash.impersonate.desc'), slash: '/impersonate' },
         { key: 'mvu', icon: 'database', label: t('slash.mvu'), desc: t('slash.mvu.desc'), slash: '/mvu sync' },
         { key: 'attach', icon: 'paperclip', label: t('slash.attach'), desc: t('slash.attach.desc'), slash: '/attach', badge: t('slash.attach.badge') },
     ];
+    const q = (filter ?? '').toLowerCase();
+    /* 参数区隐藏快捷入口(用户已在打真命令);有过滤词时快捷项也按 slash 前缀过滤 */
+    const quick = inArgs ? [] : quickAll.filter((c) => filter === null || c.slash.slice(1).toLowerCase().startsWith(q));
+    const sigMode = inArgs && cmds.length === 1;
+    /* 过滤态全灭(打出的 token 无匹配)→ 弹层不渲染占位壳,让用户看见没匹配。 */
+    if (filter !== null && quick.length === 0 && cmds.length === 0) return null;
     return (
         /* 规范稿 renderComposerCommandMenu:透明幕 + left-4/sm:left-6 锚,bottom 随 QR 条抬升 */
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
-                className="pop-in absolute left-4 w-[288px] max-w-[calc(100%-32px)] space-y-0.5 rounded-2xl p-1.5 sm:left-6"
+                className="pop-in absolute left-4 flex w-[288px] max-w-[calc(100%-32px)] flex-col rounded-2xl p-1.5 sm:left-6"
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--slash-pop-bottom, 94px)' }}
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-2.5 py-1.5 text-[10.5px] font-medium text-[color:var(--fg-muted)]">
                     <span>{t('slash.menu.title')}</span><span className="font-mono-ui">/ commands</span>
                 </div>
-                {cmds.map((c) => (
-                    <button
-                        key={c.key}
-                        className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]"
-                        style={c.badge ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
-                        onClick={() => { if (!c.badge) onPick(c.key); }}
-                        title={c.badge ? `${c.slash} · ${c.badge}` : c.slash}
-                    >
-                        <span className="flex min-w-0 items-center gap-2.5">
-                            <Icon name={c.icon} size={15} className="shrink-0 text-[color:var(--fg-secondary)]" />
-                            <span className="min-w-0">
-                                <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{c.label}</span>
-                                <span className="block truncate text-[10.5px] text-[color:var(--fg-muted)]">{c.desc}</span>
+                <div className="max-h-[46vh] space-y-0.5 overflow-y-auto">
+                    {quick.map((c) => (
+                        <button
+                            key={c.key}
+                            className="flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]"
+                            style={c.badge ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+                            onClick={() => { if (!c.badge) onPick(c.key); }}
+                            title={c.badge ? `${c.slash} · ${c.badge}` : c.slash}
+                        >
+                            <span className="flex min-w-0 items-center gap-2.5">
+                                <Icon name={c.icon} size={15} className="shrink-0 text-[color:var(--fg-secondary)]" />
+                                <span className="min-w-0">
+                                    <span className="block truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{c.label}</span>
+                                    <span className="block truncate text-[10.5px] text-[color:var(--fg-muted)]">{c.desc}</span>
+                                </span>
                             </span>
-                        </span>
-                        {c.badge
-                            ? <span className="shrink-0 rounded-md border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-1.5 py-0.5 text-[9px] text-[color:var(--fg-faint)]">{c.badge}</span>
-                            : <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{c.slash}</span>}
-                    </button>
-                ))}
+                            {c.badge
+                                ? <span className="shrink-0 rounded-md border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-1.5 py-0.5 text-[9px] text-[color:var(--fg-faint)]">{c.badge}</span>
+                                : <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{c.slash}</span>}
+                        </button>
+                    ))}
+                    {cmds.length > 0 && (
+                        <div className={quick.length > 0 ? 'mt-1 space-y-0.5 border-t border-[color:var(--border-hairline)] pt-1' : 'space-y-0.5'}>
+                            {cmds.map((c, i) => (
+                                <button
+                                    key={c.name}
+                                    className="flex w-full items-start gap-2 rounded-xl px-2.5 py-1.5 text-left transition-colors hover:bg-[color:var(--bg-active)]"
+                                    style={i === hi ? { background: 'var(--bg-active)' } : undefined}
+                                    onMouseEnter={() => setHi(i)}
+                                    onClick={() => onPickCommand(c.name)}
+                                    title={c.aliases.length ? `/${c.name} · /${c.aliases.join(' /')}` : `/${c.name}`}
+                                >
+                                    <span className="shrink-0 pt-px font-mono-ui text-[12px] font-medium text-[color:var(--brand)]">/{c.name}</span>
+                                    <span className="min-w-0 flex-1">
+                                        {c.help && <span className="block truncate text-[11px] text-[color:var(--fg-muted)]">{c.help}</span>}
+                                        {(c.args.length > 0 || (sigMode && c.unnamed.length > 0)) && (
+                                            <span className="mt-0.5 flex flex-wrap gap-1">
+                                                {/* 参数名提示:必填打 *,有字符串默认带 =def;签名卡模式全展开 */}
+                                                {c.args.slice(0, sigMode ? c.args.length : 5).map((a) => (
+                                                    <span
+                                                        key={a.name}
+                                                        className="rounded-md border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-1 py-px font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]"
+                                                        title={a.required ? `${a.name}= (required)` : undefined}
+                                                    >
+                                                        {a.name}{a.required ? '*' : a.def != null ? `=${a.def}` : '='}
+                                                    </span>
+                                                ))}
+                                                {!sigMode && c.args.length > 5 && (
+                                                    <span className="rounded-md px-1 py-px font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">+{c.args.length - 5}</span>
+                                                )}
+                                                {sigMode && c.unnamed.map((u, j) => (
+                                                    <span key={`u${j}`} className="rounded-md px-1 py-px font-mono-ui text-[9.5px] italic text-[color:var(--fg-faint)]">⟨{u}⟩</span>
+                                                ))}
+                                            </span>
+                                        )}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -429,6 +493,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const [job, setJob] = useState<{ id: string; type: GenerateVerb; floorId: number } | null>(null);
     const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
     const [menu, setMenu] = useState<'none' | 'context' | 'slash' | 'preset' | 'persona'>('none');
+    /* STscript 补全:core builtins 注册表快照(live 拉一次)+ 键盘高亮位。 */
+    const [scriptCmds, setScriptCmds] = useState<ScriptCommandInfo[]>([]);
+    const [slashHi, setSlashHi] = useState(0);
     const [qrChips, setQrChips] = useState<{ label: string; message: string }[]>([]);
     const [qrOpen, setQrOpen] = useState(true);
     const [ctxLen, setCtxLen] = useState<number | null>(null);
@@ -549,6 +616,17 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setQrChips([]);
         setCtxLen(null);
     }, [chatKey, s.live]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    /* ——— STscript 注册表:composer `/` 补全数据源(GET /script/commands 快照);
+           离线/缺席 → 空表,菜单只留快捷入口,不自抄词表 ——— */
+    useEffect(() => {
+        if (!s.live) { setScriptCmds([]); return; }
+        let dead = false;
+        listScriptCommands()
+            .then((cmds) => { if (!dead) setScriptCmds(cmds); })
+            .catch(() => { if (!dead) setScriptCmds([]); });
+        return () => { dead = true; };
+    }, [s.live]);
 
     /* ——— QR 条:/api/utopinn/named-docs/quick-replies 第一册(named-doc bucket,
            TASK-058 只读面);空档整条不渲染 ——— */
@@ -811,11 +889,53 @@ export function StageFrame({ children }: { children: ReactNode }) {
         }
     }, [s, busy, patchFloor, reload, writeBackGeneration, refreshTokens, refreshMvu, t]);
 
+    /* ——— QR/斜杠文本:斜杠指令走真服务端 STscript runner(楼层副作用
+     *     env 已落库 → 跑完 reload);非斜杠 = 普通用户输入 ——— */
+    const runScript = useCallback(async (script: string) => {
+        const chat = s.chat;
+        if (!s.live || !chat || busy) return;
+        setBusy(true);
+        try {
+            const res = await apiPost<{
+                ok?: boolean; pipe?: unknown; isAborted?: boolean;
+                notifications?: { severity?: string; text?: string }[];
+                popups?: unknown[]; inputs?: unknown[];
+            }>('/api/utopinn/script/run', { charDir: chat.charDir, chatName: chat.chatName, script });
+            for (const n of res.notifications ?? []) {
+                if (n?.text) s.hint(String(n.text), n.severity === 'error' || n.severity === 'warning');
+            }
+            if (typeof res.pipe === 'string' && res.pipe.trim()) s.hint(res.pipe.trim());
+            if ((res.popups?.length ?? 0) + (res.inputs?.length ?? 0) > 0) s.hint(t('stage.script.popup'), true);
+            await reload();
+            void refreshMvu();
+        } catch (e) {
+            s.hint(t('stage.script.failed') + ': ' + errText(e), true);
+        } finally {
+            setBusy(false);
+        }
+    }, [s, busy, t, reload, refreshMvu]);
+
     /* ——— 发送 ——— */
     const send = useCallback(async (text: string) => {
         const v = text.trim();
         if (!v || busy || offline || (s.live && !s.chat)) return;
+        /* STscript 路由(上游 processCommands 同义:trim 后 / 起头整条当脚本,
+           不落成用户消息):
+             // 起头 = 注释命令(parser 收为空操作,原样透传服务端)
+             \/ 起头 = 不路由,原样当文本(上游无输入层转义,不剥反斜杠)
+             裸 '/' = 菜单触发态,不发不跑
+             /continue = QR chip 同款快路径(上游 /continue 本就是客户端续写命令) */
+        if (v === '/') return;
         setDraft('');
+        setMenu('none');
+        if (v.startsWith('/')) {
+            /* token 边界:/continue、/continue <args> 走续写快路径;
+               /continueX 是另一命令名,仍透传服务端吃 error 回执。 */
+            if (/^\/continue(?:\s|$)/i.test(v)) { void runGenerate('continue'); return; }
+            if (!s.live || !s.chat) { s.hint(t('status.stub')); return; }
+            void runScript(v);
+            return;
+        }
         if (!s.live || !s.chat) {
             mockStagePush(stageKind, v);
             setBusy(true);
@@ -837,7 +957,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setBusy(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [busy, offline, s, runGenerate, stageKind, mockStagePush, mockStageReply]);
+    }, [busy, offline, s, runGenerate, runScript, t, stageKind, mockStagePush, mockStageReply]);
 
     /* ——— 中止:POST /api/utopinn/jobs/:id/abort(走 api/jobs.ts 面;
      *     服务端中止后 WS 未必回终帧 → settleRef 本地兜底 + 关 socket) ——— */
@@ -897,6 +1017,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
         if (!src) return;
         const block = src.split('\n').map((l) => `> ${l}`).join('\n') + '\n\n';
         setDraft((prev) => block + prev);
+        /* 引用块前置后 draft 必非 / 起头 —— slash 菜单若开着顺手收掉。 */
+        setMenu('none');
         draftTaRef.current?.focus();
     }, []);
 
@@ -984,34 +1106,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
         }
     }, [s, t, refreshMvu]);
 
-    /* ——— QR/斜杠文本:斜杠指令走真服务端 STscript runner(楼层副作用
-     *     env 已落库 → 跑完 reload);非斜杠 = 普通用户输入 ——— */
-    const runScript = useCallback(async (script: string) => {
-        const chat = s.chat;
-        if (!s.live || !chat || busy) return;
-        setBusy(true);
-        try {
-            const res = await apiPost<{
-                ok?: boolean; pipe?: unknown; isAborted?: boolean;
-                notifications?: { severity?: string; text?: string }[];
-                popups?: unknown[]; inputs?: unknown[];
-            }>('/api/utopinn/script/run', { charDir: chat.charDir, chatName: chat.chatName, script });
-            for (const n of res.notifications ?? []) {
-                if (n?.text) s.hint(String(n.text), n.severity === 'error' || n.severity === 'warning');
-            }
-            if (typeof res.pipe === 'string' && res.pipe.trim()) s.hint(res.pipe.trim());
-            if ((res.popups?.length ?? 0) + (res.inputs?.length ?? 0) > 0) s.hint(t('stage.script.popup'), true);
-            await reload();
-            void refreshMvu();
-        } catch (e) {
-            s.hint(t('stage.script.failed') + ': ' + errText(e), true);
-        } finally {
-            setBusy(false);
-        }
-    }, [s, busy, t, reload, refreshMvu]);
-
     const onSlash = useCallback((key: string) => {
         setMenu('none');
+        /* 菜单执行类快捷项落地时,`/`-前缀的半截脚本草稿作废(用户已选动作)。 */
+        setDraft((d) => (d.startsWith('/') ? '' : d));
         if (!s.live || !s.chat) {
             if (key === 'impersonate') { setDraft(MOCK_IMPERSONATE_DRAFT); return; }
             if (key === 'mvu') { s.hint(t('status.stub')); return; }
@@ -1026,6 +1124,33 @@ export function StageFrame({ children }: { children: ReactNode }) {
         else if (key === 'mvu') void onMvuSync();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [s, busy, runGenerate, onMvuSync, t, stageKind, mockStageReply]);
+
+    /* 命令补全落字:点选/Tab 把 /name 写进草稿(留尾随空格 → 进参数区,
+       菜单转签名卡);不执行 —— Enter 才跑,草稿即真相。 */
+    const completeCommand = useCallback((name: string) => {
+        setDraft(`/${name} `);
+        setSlashHi(0);
+        draftTaRef.current?.focus();
+    }, []);
+
+    /* draft 的 `/` 前缀解析(上游 trim().startsWith('/') 同语义):
+       token = `/` 后首个空白前的命令词(菜单按它前缀过滤);
+       inArgs = token 后已有空白 → 精确命中才显示(签名卡参考)。 */
+    const slashActive = draft.startsWith('/');
+    const slashToken = slashActive ? (draft.slice(1).match(/^\S*/)?.[0] ?? '') : null;
+    const slashInArgs = slashActive && /\s/.test(draft.slice(1));
+    const visibleCmds = useMemo(() => {
+        if (slashToken === null) return scriptCmds;
+        const q = slashToken.toLowerCase();
+        const match = (c: ScriptCommandInfo, pred: (n: string) => boolean) =>
+            pred(c.name.toLowerCase()) || c.aliases.some((a) => pred(a.toLowerCase()));
+        return slashInArgs
+            ? scriptCmds.filter((c) => match(c, (n) => n === q))
+            : scriptCmds.filter((c) => match(c, (n) => n.startsWith(q)));
+    }, [scriptCmds, slashToken, slashInArgs]);
+    /* 菜单实际展示的注册表行 —— 草稿有非 `/` 正文时为空
+       (补全语境只在空草稿或 `/` 草稿下成立),键盘导航同表。 */
+    const menuCmds = draft === '' || slashToken !== null ? visibleCmds : [];
 
     const opsOf = (m: FloorMsg, idx: number): FloorOps => ({
         isLast: idx === msgs.length - 1,
@@ -1188,7 +1313,18 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 {/* 规范稿三弹层锚在 section(绝对位),不是 composer 里 */}
                 {menu === 'context' && <ContextPop onClose={() => setMenu('none')} />}
                 {menu === 'persona' && <PersonaPop onClose={() => setMenu('none')} />}
-                {menu === 'slash' && <SlashMenu onPick={onSlash} onClose={() => setMenu('none')} />}
+                {menu === 'slash' && (
+                    <SlashMenu
+                        onPick={onSlash}
+                        onPickCommand={completeCommand}
+                        cmds={menuCmds}
+                        hi={Math.min(slashHi, Math.max(0, menuCmds.length - 1))}
+                        setHi={setSlashHi}
+                        filter={slashToken}
+                        inArgs={slashInArgs}
+                        onClose={() => setMenu('none')}
+                    />
+                )}
                 {menu === 'preset' && <PresetPop onClose={() => setMenu('none')} />}
                 {/* 形态体插槽:chat 楼层列 / novel 章节 / messenger 频道 / theater 场景 */}
                 {children}
@@ -1223,10 +1359,32 @@ export function StageFrame({ children }: { children: ReactNode }) {
                         <textarea
                             ref={draftTaRef}
                             value={draft}
-                            onChange={(e) => setDraft(e.target.value)}
+                            onChange={(e) => {
+                                const v = e.target.value;
+                                setDraft(v);
+                                setSlashHi(0);
+                                /* `/` 起头 → 开 slash 菜单并按 token 过滤(打 /xx 实时收);
+                                   非 / 起头 → 收起 slash(其它弹层状态不碰)。 */
+                                if (v.startsWith('/')) setMenu('slash');
+                                else setMenu((m) => (m === 'slash' ? 'none' : m));
+                            }}
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(draft); }
-                                if (e.key === '/' && !draft) { e.preventDefault(); setMenu('slash'); }
+                                /* Enter 恒发草稿(草稿即真相);菜单开着时 ↑↓ 移高亮、
+                                   Tab 补全 /name 进草稿、Esc 收菜单。 */
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(draft); return; }
+                                if (menu !== 'slash') return;
+                                if (e.key === 'Escape') { setMenu('none'); return; }
+                                if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && menuCmds.length) {
+                                    e.preventDefault();
+                                    const n = menuCmds.length;
+                                    setSlashHi((h) => (e.key === 'ArrowDown' ? h + 1 : h - 1 + n) % n);
+                                    return;
+                                }
+                                if (e.key === 'Tab' && menuCmds.length) {
+                                    e.preventDefault();
+                                    const c = menuCmds[Math.min(Math.max(slashHi, 0), menuCmds.length - 1)];
+                                    if (c) completeCommand(c.name);
+                                }
                             }}
                             placeholder={t(`composer.ph.${stageKind}`)}
                             rows={1}

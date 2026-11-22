@@ -394,10 +394,20 @@ export type ConnectionProbeErrorCode =
     | 'http_error'
     | 'unsupported';
 
+/**
+ * 哪层凭据在生效(TASK-072,shared-secrets.md §2.4):
+ *   proxy = 请求体 proxy_password 显式压 resolver;
+ *   user  = 本人档(secret_id 槽或 active);
+ *   shared = <dataRoot>/_shared 共享档且 ACL 放行;
+ *   none  = 无凭据(anonymous pollinations 也归此)。
+ */
+export type ProviderCredentialSource = 'user' | 'shared' | 'proxy' | 'none';
+
 /** POST /api/utopinn/connection/test */
 export interface ConnectionTestResponse {
     ok: boolean;
     source: string;
+    credential: ProviderCredentialSource;
     latencyMs: number;
     modelCount?: number;
     upstreamStatus: number | null;
@@ -413,6 +423,7 @@ export interface UpstreamModelItem {
 /** GET /api/utopinn/models(?fresh=1) */
 export interface ModelsResponse {
     source: string;
+    credential: ProviderCredentialSource;
     items: UpstreamModelItem[];
     stale?: boolean;
     error?: ConnectionProbeErrorCode | (string & {});
@@ -474,9 +485,20 @@ export interface SecretEntry {
     label: string;
     active: boolean;
 }
-/** GET /secrets → {secrets: {key: SecretEntry[] | null}}(null = 未设)。 */
+/**
+ * 实例共享档对当前 handle 的可用性视图(TASK-072 §2.4)。
+ * 只含 {label, active:true};null = 无可用共享(档缺 / 无 active / ACL 拒)。
+ * 不回 id / 掩码 / handles 名单 —— 普通用户只见"服务端已提供"。
+ */
+export interface SharedSecretAvailability {
+    label: string;
+    active: true;
+}
+
+/** GET /secrets → {secrets: {key: SecretEntry[] | null}, shared}(null = 未设)。 */
 export interface SecretsResponse {
     secrets: Record<string, SecretEntry[] | null>;
+    shared: Record<string, SharedSecretAvailability | null>;
 }
 /** PUT /secrets/:key —— 写一条新 secret(服务端铸 id,自动 active,不 echo 明文)。 */
 export interface SecretSetRequest {

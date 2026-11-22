@@ -31,7 +31,7 @@ export async function getVllmBatchVector(texts, apiUrl, model, directories, sour
     if (reverseProxy && proxyPassword) {
         headers['Authorization'] = `Bearer ${proxyPassword}`;
     } else {
-        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.VLLM, baseUrl, directories, secretId);
+        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.VLLM, baseUrl, directories, secretId, request);
     }
 
     const body = { input: texts, model };

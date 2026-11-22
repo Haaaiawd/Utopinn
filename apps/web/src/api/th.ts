@@ -19,7 +19,7 @@
 // 语义失败(scope/target 缺失、卡/聊天不在、args 非法)服务端按
 // {ok:false,error} + 非 2xx 回 —— 这里还原成同形 {ok:false,error,status}
 // 返回(与 200 的 unsupported 同一条处理路),只有传输层失败才抛 ApiError。
-import { ApiError, apiFetch, apiPost } from './client';
+import { ApiError, apiFetch, apiGet, apiPost } from './client';
 import type {
     ScriptRunResponse,
     ThCallRequest,
@@ -43,6 +43,28 @@ export async function runScript(
     ctx?: { charDir?: string; chatName?: string },
 ): Promise<ScriptRunResponse> {
     return apiPost('/api/utopinn/script/run', { script, ...ctx });
+}
+
+/** GET /api/utopinn/script/commands 的单条注册表快照(help 已压平纯文本)。 */
+export interface ScriptCommandInfo {
+    name: string;
+    aliases: string[];
+    /** 上游 helpString(HTML 标记已剥)。 */
+    help: string;
+    /** 命名参数提示:name + 必填位 + 字符串默认值(闭包默认不落,给 null)。 */
+    args: { name: string; required: boolean; def: string | null }[];
+    /** 匿名参数描述槽(如 'text')。 */
+    unnamed: string[];
+    returns?: string;
+}
+
+/**
+ * GET /api/utopinn/script/commands —— core builtins 注册表快照。
+ * composer 补全的唯一数据源;读不到/服务端缺席 → 空表(菜单只留快捷入口)。
+ */
+export async function listScriptCommands(): Promise<ScriptCommandInfo[]> {
+    const res = await apiGet<{ ok?: boolean; commands?: ScriptCommandInfo[] }>('/api/utopinn/script/commands');
+    return Array.isArray(res?.commands) ? res.commands : [];
 }
 
 /**

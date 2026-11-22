@@ -7,6 +7,7 @@ import { color, urlHostnameToIPv6, getHasIP } from './util.js';
 import { router as userDataRouter } from './users.js';
 import { router as usersPrivateRouter } from './endpoints/users-private.js';
 import { router as usersAdminRouter } from './endpoints/users-admin.js';
+import { router as sharedSecretsRouter } from './endpoints/shared-secrets.js';
 import { router as movingUIRouter } from './endpoints/moving-ui.js';
 import { router as imagesRouter } from './endpoints/images.js';
 import { router as quickRepliesRouter } from './endpoints/quick-replies.js';
@@ -65,6 +66,8 @@ export function setupPrivateEndpoints(app) {
     app.use('/', userDataRouter);
     app.use('/api/users', usersPrivateRouter);
     app.use('/api/users', usersAdminRouter);
+    // 共享 secrets 管理面(TASK-072):/api/users/shared-secrets/* 六动词。
+    app.use('/api/users', sharedSecretsRouter);
     app.use('/api/moving-ui', movingUIRouter);
     app.use('/api/images', imagesRouter);
     app.use('/api/quick-replies', quickRepliesRouter);

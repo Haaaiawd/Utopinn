@@ -34,8 +34,9 @@ import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { createCardListCache } from '../services/card-list-cache.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
+import { buildGreetingFloor, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
-import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
+import { SecretManager, VALID_SECRET_KEYS, getSharedSecretState } from '../endpoints/secrets.js';
 // TASK-032 写盘面统一:ack/integrity/gen-id/settle 机制与 legacy /api/chats 同源。
 import sanitize from 'sanitize-filename';
 import {
@@ -172,6 +173,52 @@ async function loadCharacterDocDetailed(directories, charDir) {
  */
 async function loadCharacterDoc(directories, charDir) {
     return (await loadCharacterDocDetailed(directories, charDir)).card;
+}
+
+/**
+ * 新会话问候播种(TASK-059):读卡 + settings,产出 [greetingFloor] 或 []。
+ * 两个建会话入口(PUT create / POST messages「缺失即建」)共用同一语义 —
+ * 播种只在建文件瞬间发生一次,落盘后继 append 不重播(楼层已存在,首楼
+ * 非空 system 占位)。
+ * 失败不阻塞建会话:问候楼是增益项,卡/settings 读不出时退化为空楼层
+ * (诚实空,同「卡无 first_mes」语义)。
+ * @param {object} request express request
+ * @param {string} charDir 角色目录名
+ * @param {string} chatName 会话名(→ substCtx.currentChatId)
+ * @param {object} chatMetadata 将随 header 落盘的 chat_metadata(活引用,
+ *   问候文本里 {{setvar}} 家族的写入随 header 一并入库)
+ * @returns {Promise<{floors: object[], variableWrites: object[]}>}
+ */
+async function greetingFloorsForNewChat(request, charDir, chatName, chatMetadata) {
+    try {
+        const card = await loadCharacterDoc(request.user.directories, charDir);
+        if (!card) return { floors: [], variableWrites: [] };
+        const settingsDoc = await getSettingsRepo().get(request.user.profile.handle).catch(() => null);
+        const variableWrites = [];
+        const floor = buildGreetingFloor({
+            card,
+            name1: resolveGreetingName1(request, settingsDoc),
+            chatMetadata,
+            chatName,
+            // 克隆隔离:setglobalvar 写进克隆后被丢弃(volatile),不污染
+            // settingsRepo 持有的共享 settings 文档对象。
+            globalVariables: structuredClone(settingsDoc?.extension_settings?.variables?.global ?? {}),
+            variableWrites,
+        });
+        return floor ? { floors: [floor], variableWrites } : { floors: [], variableWrites };
+    } catch (error) {
+        console.warn(`greeting seed skipped for ${charDir}/${chatName}:`, error?.message ?? error);
+        return { floors: [], variableWrites: [] };
+    }
+}
+
+/** 问候宏写进非 chat 域(message/global/preset/char)的 volatile 记账 —— 落盘点只有 header.chat_metadata,其余域诚实降级打日志。 */
+function warnVolatileGreetingWrites(variableWrites, charDir, chatName) {
+    const stray = (variableWrites ?? []).filter((w) => w?.domain !== 'chat');
+    if (stray.length) {
+        const domains = [...new Set(stray.map((w) => w?.domain).filter(Boolean))];
+        console.warn(`greeting seed ${charDir}/${chatName}: ${stray.length} variable write(s) to non-chat domain(s) [${domains.join(',')}] not persisted (volatile)`);
+    }
 }
 
 /**
@@ -1466,15 +1513,17 @@ export function apply(ctx) {
 
     // -----------------------------------------------------------------------
     // masked-secret:脱敏读(SecretManager.getSecretState 原生脱敏)+ 受限写
+    //   + shared 面(TASK-072 §2.4):实例共享档对本 handle 的可用性视图 —
+    //   只回 {label, active:true}|null,不回 id / 掩码 / handles 名单。
+    //   VALID_SECRET_KEYS 与 admin 共享面共用 secrets.js 的白名单。
     // -----------------------------------------------------------------------
 
-    const VALID_SECRET_KEYS = new Set(Object.values(SECRET_KEYS).filter((k) => k !== SECRET_KEYS._MIGRATED));
-
-    /** GET /secrets —— 全键脱敏态 {key: [{id,value:masked,label,active}]|null}。 */
+    /** GET /secrets —— 全键脱敏态 {key: [{id,value:masked,label,active}]|null} + shared 可用性。 */
     reg(`${P}/secrets`, async function (request, response) {
         try {
             const state = new SecretManager(request.user.directories).getSecretState();
-            return response.send({ secrets: state });
+            const shared = getSharedSecretState(request);
+            return response.send({ secrets: state, shared });
         } catch (error) {
             return sendError(response, error, 'utopinn/secrets get');
         }
@@ -1524,8 +1573,10 @@ export function apply(ctx) {
     // -----------------------------------------------------------------------
 
     /**
-     * PUT /characters/:charDir/chats/:chatName —— 新建空会话。
+     * PUT /characters/:charDir/chats/:chatName —— 新建会话。
      * body:{header?} → 缺省 {chat_metadata:{}};已存在 → 409。
+     * TASK-059:卡有问候时 body[0] 落 first_mes 开场楼(与 POST messages
+     * 「缺失即建」同一播种语义);无问候 → 真空文件(现行为)。
      */
     regPost(`${P}/characters/:charDir/chats/:chatName`, 'PUT', async function (request, response) {
         try {
@@ -1540,8 +1591,17 @@ export function apply(ctx) {
             if (header !== undefined && (typeof header !== 'object' || header === null || Array.isArray(header))) {
                 return response.status(400).send({ error: 'body.header must be an object when provided' });
             }
-            const { integrity } = await repo.save(handle, charDir, chatName, header ?? { chat_metadata: {} }, []);
-            return response.status(201).send({ ok: true, name: chatName, fileName: `${chatName}.jsonl`, integrity });
+            const headerDoc = header ?? { chat_metadata: {} };
+            if (typeof headerDoc.chat_metadata !== 'object' || headerDoc.chat_metadata === null || Array.isArray(headerDoc.chat_metadata)) {
+                headerDoc.chat_metadata = {};
+            }
+            const seed = await greetingFloorsForNewChat(request, charDir, chatName, headerDoc.chat_metadata);
+            warnVolatileGreetingWrites(seed.variableWrites, charDir, chatName);
+            const { integrity } = await repo.save(handle, charDir, chatName, headerDoc, seed.floors);
+            return response.status(201).send({
+                ok: true, name: chatName, fileName: `${chatName}.jsonl`, integrity,
+                ...(seed.floors.length ? { greeting_seeded: true } : {}),
+            });
         } catch (error) {
             return sendError(response, error, 'utopinn/chats create');
         }
@@ -1614,15 +1674,31 @@ export function apply(ctx) {
 
             // legacy「缺失即建」:首写/吞楼层依赖——create + autoInit settle
             if (!existing) {
-                const header = createChatHeader(body.chat_metadata && typeof body.chat_metadata === 'object' ? body.chat_metadata : {});
-                const { integrity: newIntegrity } = await repo.save(handle, charDir, chatName, header, cleanedMessages, null);
+                const header = createChatHeader(
+                    body.chat_metadata && typeof body.chat_metadata === 'object' && !Array.isArray(body.chat_metadata)
+                        ? body.chat_metadata : {});
+                // TASK-059 开场问候播种:卡 first_mes 落 body[0](swipe 组 =
+                // first+alternates);问候在场时客户端捎来的空 system「会话头种」
+                // 占位楼不再入库 —— 播种即顶位,保持上游新会话楼层形状。
+                const seed = await greetingFloorsForNewChat(request, charDir, chatName, header.chat_metadata);
+                warnVolatileGreetingWrites(seed.variableWrites, charDir, chatName);
+                const floors = seed.floors.length
+                    ? seed.floors.concat(cleanedMessages.filter((m) => !isEmptySystemSeedFloor(m)))
+                    : cleanedMessages;
+                const { integrity: newIntegrity } = await repo.save(handle, charDir, chatName, header, floors, null);
                 writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
                 if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
-                backup(header, cleanedMessages, newIntegrity);
+                backup(header, floors, newIntegrity);
                 await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
                 acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
                 await settleMvuAfterAppend(writeReq, { autoInit: true });
-                return response.send({ ok: true, appended: cleanedMessages.length, created: true, integrity: newIntegrity });
+                return response.send({
+                    ok: true,
+                    appended: floors.length - seed.floors.length,
+                    created: true,
+                    ...(seed.floors.length ? { greeting_seeded: true } : {}),
+                    integrity: newIntegrity,
+                });
             }
 
             // legacy 双去重:队首内容等值剥离 → body 级 gen-id 命中侧车剥离

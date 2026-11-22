@@ -479,6 +479,24 @@ input[type="range"] { accent-color: var(--brand); }
 }
 .hint-pill.err { color: var(--status-danger); }
 
+/* 登录失效引导条 —— 与 hint-pill 同位但常驻,直到用户点去 /login 重登。
+   enableUserAccounts 部署下会话过期/被禁用时,业务 API 持续 401/403 触发;
+   accounts-off 恒不亮(me() 永远 200)。 */
+.auth-expired-bar {
+    position: fixed; bottom: 22px; left: 50%; translate: -50% 0; z-index: 80;
+    display: flex; align-items: center; gap: 12px;
+    border-radius: 999px; padding: 8px 10px 8px 18px;
+    font-size: var(--fs-ui); color: var(--fg-primary);
+    background: var(--bg-elevated); box-shadow: var(--shadow-pop);
+    animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+    white-space: nowrap;
+}
+.auth-expired-bar button {
+    border: none; border-radius: 999px; padding: 6px 14px; cursor: pointer;
+    background: var(--brand); color: var(--brand-fg); font-size: var(--fs-ui);
+}
+.auth-expired-bar button:hover { background: var(--brand-hover); }
+
 /* 全局导入幕帘 —— 事件穿透,enter/leave 计数归 App。 */
 .drop-veil {
     position: fixed; inset: 10px; z-index: 70;

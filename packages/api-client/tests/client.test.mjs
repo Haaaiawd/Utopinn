@@ -102,11 +102,11 @@ test('group generate: skipped=no_activated_member body surfaces', async () => {
     assert.equal(r.data.skipped, 'no_activated_member');
 });
 
-test('abort stays on legacy /api/generation/:id/abort', async () => {
-    const f = mockFetch({ ...csrfRoute, '/api/generation/j1/abort': () => ({ aborted: true }) });
+test('abort goes to kernel /api/utopinn/jobs/:id/abort', async () => {
+    const f = mockFetch({ ...csrfRoute, '/api/utopinn/jobs/j1/abort': () => ({ aborted: true }) });
     const client = new UtopinnClient({ baseUrl: 'http://x', fetch: f });
     await client.generation.abort('j1');
-    assert.equal(f.calls.at(-1).path, '/api/generation/j1/abort');
+    assert.equal(f.calls.at(-1).path, '/api/utopinn/jobs/j1/abort');
     assert.equal(f.calls.at(-1).method, 'POST');
 });
 
@@ -240,4 +240,67 @@ test('state verbs wire: chat get/post + preset delete-all/rename', async () => {
     assert.equal((await client.state.preset.deleteAll(StateTargets.preset('p'))).deleted, 3);
     await client.state.preset.rename('openai', 'p2', 'p3');
     assert.deepEqual(f.calls.at(-1).body, { apiId: 'openai', oldName: 'p2', newName: 'p3' });
+});
+
+test('account: login → csrf first, Set-Cookie 升级进 jar,后续请求带新 cookie', async () => {
+    const f = mockFetch({
+        '/csrf-token': () => new Response(JSON.stringify({ token: 'csrf-1' }), {
+            headers: { 'set-cookie': 'sess=anon; Path=/; HttpOnly' },
+        }),
+        '/api/users/login': (b, call) => {
+            assert.equal(call.headers['Cookie'], 'sess=anon', 'login 前是匿名 session cookie');
+            assert.equal(call.headers['X-CSRF-Token'], 'csrf-1');
+            return new Response(JSON.stringify({ handle: b.handle }), {
+                headers: { 'set-cookie': 'sess=authed; Path=/; HttpOnly' },
+            });
+        },
+        '/api/users/me': (b, call) => {
+            assert.equal(call.headers['Cookie'], 'sess=authed', 'login 升级后的 cookie 进 jar');
+            return { handle: 'h1', name: 'H One', avatar: '', admin: false, password: true };
+        },
+    });
+    const client = new UtopinnClient({ baseUrl: 'http://x', fetch: f });
+    const r = await client.account.login('h1', 'pw');
+    assert.equal(r.handle, 'h1');
+    const loginCall = f.calls.find(c => c.path === '/api/users/login');
+    assert.equal(loginCall.method, 'POST');
+    assert.deepEqual(loginCall.body, { handle: 'h1', password: 'pw' });
+    const me = await client.account.me();
+    assert.equal(me.handle, 'h1');
+    assert.equal(me.admin, false);
+});
+
+test('account: login 403 不重试(skipReauth;不白烧登录限流点)', async () => {
+    const f = mockFetch({
+        ...csrfRoute,
+        '/api/users/login': () => ({ status: 403, data: { error: 'Incorrect credentials' } }),
+    });
+    const client = new UtopinnClient({ baseUrl: 'http://x', fetch: f });
+    await assert.rejects(() => client.account.login('h1', 'bad'), isSessionError);
+    assert.equal(f.calls.filter(c => c.path === '/api/users/login').length, 1);
+});
+
+test('account: logout POST → 204;空值 set-cookie 出罐;clearSession 后重握手拿新匿名 session', async () => {
+    // /csrf-token 模拟真实语义:带 cookie → token 落同 session(回声);
+    // 不带 → 发新匿名 session。
+    const f = mockFetch({
+        '/csrf-token': (b, call) => new Response(JSON.stringify({ token: 'csrf-1' }), {
+            headers: { 'set-cookie': `${call.headers['Cookie'] ?? 'sess=anon'}; Path=/; HttpOnly` },
+        }),
+        '/api/users/login': () => new Response(JSON.stringify({ handle: 'h1' }), {
+            headers: { 'set-cookie': 'sess=authed; Path=/; HttpOnly' },
+        }),
+        '/api/users/logout': () => new Response(null, {
+            status: 204,
+            headers: { 'set-cookie': 'sess=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT' },
+        }),
+        '/api/users/me': (b, call) => {
+            assert.equal(call.headers['Cookie'], 'sess=anon', 'logout+clearSession 后重握手拿到匿名 session,死 cookie 不复活');
+            return { status: 403, data: { error: 'forbidden' } };
+        },
+    });
+    const client = new UtopinnClient({ baseUrl: 'http://x', fetch: f, autoReauth: false });
+    await client.account.login('h1', 'pw');
+    await client.account.logout();
+    await assert.rejects(() => client.account.me(), isSessionError);
 });

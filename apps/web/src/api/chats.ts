@@ -236,7 +236,8 @@ export async function listChatsForChar(charDir: string): Promise<{ items: CharCh
 const chatMessagesUrl = (charDir: string, chatName: string) =>
     `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}/messages`;
 
-/** Create a chat file(server saves header + the seed system message;
+/** Create a chat file(server saves header;卡有 first_mes 时服务端
+ *  同步播种开场问候楼(TASK-059),捎上的空 system 占位楼被顶位;
  *  utopinn messages 路由「缺失即建」+ autoInit settle)。 */
 export async function createChat(charDir: string, chatName: string): Promise<void> {
     await apiPost(chatMessagesUrl(charDir, chatName), {

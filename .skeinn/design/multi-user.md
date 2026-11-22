@@ -85,8 +85,8 @@ Web SPA 已接:`apps/web/src/api/admin.ts`(285-373 全动词)+ `account.ts`(getM
 
 | # | 缺口 | 影响 | 证据 |
 |---|---|---|---|
-| G1 | **薄客户端无 login 动词**:api-client 只做 CSRF+cookie 握手,401/403 只重置会话重试,不会登录 | 开 accounts 后 mobile/CLI 全 403 | `packages/api-client/src/index.ts:139-204`;`apps/mobile/src/api/session.ts:139-169`;`apps/cli/utopinn-cli.mjs:201-222` |
-| G2 | **SPA 无登录页**:依赖 `shouldRedirectToLogin` → 旧 `public/login.html`(jQuery) | 能用,但风格断裂;RN/CLI 无此兜底 | `server-main.js:394`;`public/login.html` |
+| G1 | ~~**薄客户端无 login 动词**~~ **已补(TASK-071)**:api-client 长出 `account` 域 + 真 cookie 罐;mobile session.ts login/logout/me + SecureStore jar;CLI `login/logout/whoami` + 0600 session 档 | 剩余:mobile 登录屏 UI(api 层已通) | `packages/api-client/src/account.ts`;`apps/mobile/src/api/session.ts:260-311`;`apps/cli/utopinn-cli.mjs:1205-1287` |
+| G2 | **SPA 无登录页**:依赖 `shouldRedirectToLogin` → 旧 `public/login.html`(jQuery) | 短期接受:auth-expired 条引导去 /login(TASK-071);第一方页仍待另案 | `server-main.js:394`;`public/login.html`;`apps/web/src/App.tsx`(auth-expired bar) |
 | G3 | **default-user 仍是 admin 且无密码**;listen+accounts 首次启动会自动铸随机密码打 stderr(安全闸已有),但宿主体验是"密码在日志里" | 首次开放部署的操作摩擦 | `users.js:200-263` |
 | G4 | **新 handle 从空目录开始**:朋友的账户看不到宿主的卡/书/预设 | 体验缺口(不是 bug):要么接受(各自导入卡),要么做"播种" | `users-admin.js:924-928` 只播 SETTINGS |
 | G5 | 账户开关是**模块加载期常量**,config/save 热更后必须重启进程 | admin UI 改 enableUserAccounts 需重启 | `users.js:31`;users-admin.js:500-504 已标 restartRecommended |
@@ -115,7 +115,14 @@ ssl: 或交给 frp/cloudflared/Caddy 终结
 - `default-user`:开 accounts 后仍是首个 admin + 兜底(不可删,users-admin.js:948-950)。**建议宿主给它设密码**(`/api/users/change-password`,或接受首次 listen 启动自动铸密码打 stderr 的路径——能用但糙)。
 - 朋友登录:浏览器 → `http://host:port/` → 自动 302 /login(旧 jQuery 页,功能完整)→ handle+密码 → 回 `/` 进 SPA。**短期零开发可用。**
 
-### 3.3 客户端补齐(按优先级)
+### 3.3 客户端补齐(按优先级)——TASK-071 落地状态
+
+> **已落地(TASK-071,2026-11-22)**:1-3 完成并实弹验证(:18998 隔离实例,
+> 双 handle 隔离 + perm-403 保活全过);4 走「legacy /login 兜底 + SPA
+> auth-expired 条诚实引导」短路版,第一方登录页仍为后续任务。
+> 实现时纠出的隐藏坑:**`/csrf-token` 必须带当前 cookie 去取**(cookie-session
+> 把 csrfToken 存 session 内,不带 cookie 就换了匿名 session——perm-403 的
+> autoReauth 会把登录态登出)。三家客户端(api-client/mobile/CLI)已同款修法。
 
 1. **api-client 加 account 域**(所有薄客户端受益):
    ```

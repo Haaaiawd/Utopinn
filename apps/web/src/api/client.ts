@@ -24,6 +24,37 @@ async function fetchCsrfToken(): Promise<string | null> {
     return csrfToken;
 }
 
+/** 会话死透判定去重:多并发 403 只打一次 /api/users/me 探针。 */
+let sessionProbe: Promise<void> | null = null;
+let authExpiredNotified = false;
+
+/**
+ * enableUserAccounts 下,持续 401/403 有两种成因:「登录会话死」
+ * (过期/改密/禁用/secret 轮换)与「权限不足」(非 admin 碰 admin 面)。
+ * me() 同挂才判死 —— 判死后广播 'utopinn:auth-expired',壳层引导去
+ * /login(legacy 页恒可服务);accounts-off 时 me() 恒 200,永不触发。
+ */
+async function reportIfSessionDead(): Promise<void> {
+    sessionProbe ??= (async () => {
+        try {
+            const res = await fetch('/api/users/me', {
+                headers: csrfToken ? { 'x-csrf-token': csrfToken } : {},
+            });
+            if (res.status === 401 || res.status === 403) {
+                if (!authExpiredNotified && typeof window !== 'undefined') {
+                    authExpiredNotified = true;
+                    window.dispatchEvent(new CustomEvent('utopinn:auth-expired'));
+                }
+            } else if (res.ok) {
+                authExpiredNotified = false;
+            }
+        } catch { /* 网络层失败不判死 —— server down 走 offline 路径 */ } finally {
+            sessionProbe = null;
+        }
+    })();
+    return sessionProbe;
+}
+
 /**
  * fetch() with CSRF header attached. Retries once on 403 by rotating the
  * token — the session cookie may have been refreshed server-side.
@@ -43,6 +74,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
         try { await fetchCsrfToken(); } catch { /* ignore */ }
         res = await fetch(path, { ...init, headers: makeHeaders() });
     }
+    if (res.status === 401 || res.status === 403) void reportIfSessionDead();
     return res;
 }
 

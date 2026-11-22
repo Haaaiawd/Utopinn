@@ -209,6 +209,7 @@ function Shell() {
     const [cardappFs, setCardappFs] = useState(false);
     const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
+    const [authExpired, setAuthExpired] = useState(false);
     const [hintState, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
     const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -521,6 +522,13 @@ function Shell() {
     }, []);
 
     useEffect(() => { void refreshCards(); }, [refreshCards]);
+    /* 登录失效广播(api/client.ts 判死:持续 401/403 且 me() 同挂才发)。
+       诚实引导去 legacy /login —— 第一方登录页另案(multi-user.md §3.3)。 */
+    useEffect(() => {
+        const onExpired = () => setAuthExpired(true);
+        window.addEventListener('utopinn:auth-expired', onExpired);
+        return () => window.removeEventListener('utopinn:auth-expired', onExpired);
+    }, []);
     useEffect(() => {
         if (serverStatus !== 'checking') return;
         let dead = false;
@@ -952,6 +960,14 @@ function Shell() {
             <Cmdk />
             {!isMobile && <SettingsModal />}
             {hintState && <div className={`hint-pill spec-toast${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
+            {authExpired && (
+                <div className="auth-expired-bar spec-toast" role="alert">
+                    <span>{t('auth.expired')}</span>
+                    <button type="button" onClick={() => { window.location.assign('/login'); }}>
+                        {t('auth.relogin')}
+                    </button>
+                </div>
+            )}
             {dropVeil && (
                 <div className="drop-veil">
                     <Icon name="import" size={26} />

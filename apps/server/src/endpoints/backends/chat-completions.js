@@ -26,7 +26,7 @@ import {
     PROMPT_PROCESSING_TYPE,
 } from '../../prompt-converters.js';
 
-import { readSecret, SECRET_KEYS, readProviderSecret } from '../secrets.js';
+import { SECRET_KEYS, resolveProviderSecret } from '../secrets.js';
 import {
     getTokenizerModel,
     getSentencepiceTokenizer,
@@ -561,77 +561,77 @@ router.post('/status', async function (request, statusResponse) {
 
         if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.OPENAI) {
             apiUrl = normalizeProviderBaseUrl('openai', request.body.reverse_proxy || request.body.base_url || API_OPENAI);
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.OPENAI) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.OPENAI) || '';
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.OPENROUTER) {
             apiUrl = 'https://openrouter.ai/api/v1';
-            apiKey = readProviderSecret(request, SECRET_KEYS.OPENROUTER);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.OPENROUTER);
             // OpenRouter needs to pass the Referer and X-Title: https://openrouter.ai/docs#requests
             headers = { ...OPENROUTER_HEADERS };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MISTRALAI) {
             apiUrl = normalizeProviderBaseUrl('mistral', request.body.reverse_proxy || request.body.base_url || API_MISTRAL);
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.MISTRALAI) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.MISTRALAI) || '';
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES) {
             apiUrl = normalizeProviderBaseUrl('openai_responses', request.body.responses_url || 'https://api.openai.com/v1');
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.OPENAI_RESPONSES) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.OPENAI_RESPONSES) || '';
             headers = {};
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CUSTOM) {
             apiUrl = normalizeProviderBaseUrl('custom', request.body.custom_url);
-            apiKey = readProviderSecret(request, SECRET_KEYS.CUSTOM);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.CUSTOM);
             headers = {};
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.COHERE) {
             apiUrl = API_COHERE_V1;
-            apiKey = readProviderSecret(request, SECRET_KEYS.COHERE);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.COHERE);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CHUTES) {
             apiUrl = API_CHUTES;
-            apiKey = readProviderSecret(request, SECRET_KEYS.CHUTES);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.CHUTES);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.ELECTRONHUB) {
             apiUrl = API_ELECTRONHUB;
-            apiKey = readProviderSecret(request, SECRET_KEYS.ELECTRONHUB);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.ELECTRONHUB);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.NANOGPT) {
             apiUrl = API_NANOGPT;
-            apiKey = readProviderSecret(request, SECRET_KEYS.NANOGPT);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.NANOGPT);
             headers = {};
             queryParams = { detailed: true };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.DEEPSEEK) {
             apiUrl = normalizeProviderBaseUrl('deepseek', request.body.reverse_proxy || request.body.base_url || API_DEEPSEEK.replace('/beta', ''));
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.DEEPSEEK) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.DEEPSEEK) || '';
             headers = {};
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.XAI) {
             apiUrl = normalizeProviderBaseUrl('xai', request.body.reverse_proxy || request.body.base_url || API_XAI);
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.XAI) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.XAI) || '';
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.AIMLAPI) {
             apiUrl = API_AIMLAPI;
-            apiKey = readProviderSecret(request, SECRET_KEYS.AIMLAPI);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.AIMLAPI);
             headers = { ...AIMLAPI_HEADERS };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.POLLINATIONS) {
             const isAnonymous = request.body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
             apiUrl = 'https://gen.pollinations.ai/text';
-            apiKey = isAnonymous ? 'anonymous' : readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, request.body.secret_id);
+            apiKey = isAnonymous ? 'anonymous' : resolveProviderSecret(request, SECRET_KEYS.POLLINATIONS);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.GROQ) {
             apiUrl = API_GROQ;
-            apiKey = readProviderSecret(request, SECRET_KEYS.GROQ);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.GROQ);
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.COMETAPI) {
             apiUrl = API_COMETAPI;
-            apiKey = readProviderSecret(request, SECRET_KEYS.COMETAPI);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.COMETAPI);
             headers = {};
             throw new Error('This provider is temporarily disabled.');
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MOONSHOT) {
             apiUrl = normalizeProviderBaseUrl('moonshot', request.body.reverse_proxy || request.body.base_url || API_MOONSHOT);
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.MOONSHOT) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.MOONSHOT) || '';
             headers = {};
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.FIREWORKS) {
-            apiKey = readProviderSecret(request, SECRET_KEYS.FIREWORKS);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.FIREWORKS);
             const modelsUrl = 'https://api.fireworks.ai/v1/accounts/fireworks/models?filter=supports_serverless%3Dtrue&pageSize=200';
 
             try {
@@ -688,7 +688,7 @@ router.post('/status', async function (request, statusResponse) {
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.CLAUDE) {
             apiUrl = normalizeProviderBaseUrl('claude', request.body.reverse_proxy || request.body.base_url || API_CLAUDE);
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.CLAUDE) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.CLAUDE) || '';
             headers = {};
             mergeObjectWithYaml(headers, request.body.custom_include_headers);
 
@@ -760,7 +760,7 @@ router.post('/status', async function (request, statusResponse) {
                 return statusResponse.send({ error: true, bypass: true, data: { data: [] } });
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.MAKERSUITE) {
-            apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
+            apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
             apiUrl = normalizeProviderBaseUrl('makersuite', request.body.reverse_proxy || request.body.base_url || API_MAKERSUITE);
             const apiVersion = getConfigValue('gemini.apiVersion', 'v1beta');
             const modelsUrl = !apiKey && (request.body.base_url || request.body.reverse_proxy)
@@ -787,7 +787,7 @@ router.post('/status', async function (request, statusResponse) {
             }
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.AZURE_OPENAI) {
             const { azure_base_url, azure_deployment_name, azure_api_version } = request.body;
-            const apiKey = readProviderSecret(request, SECRET_KEYS.AZURE_OPENAI);
+            const apiKey = resolveProviderSecret(request, SECRET_KEYS.AZURE_OPENAI);
 
             // 1) Validate configuration from the frontend
             if (!apiKey || !azure_base_url || !azure_deployment_name || !azure_api_version) {
@@ -867,11 +867,11 @@ router.post('/status', async function (request, statusResponse) {
             const defaultApiUrl = request.body.siliconflow_endpoint === SILICONFLOW_ENDPOINT.CN
                 ? API_SILICONFLOW_CN : API_SILICONFLOW;
             apiUrl = defaultApiUrl;
-            apiKey = readProviderSecret(request, SECRET_KEYS.SILICONFLOW);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.SILICONFLOW);
             headers = {};
             queryParams = { type: 'text', sub_type: 'chat' };
         } else if (request.body.chat_completion_source === CHAT_COMPLETION_SOURCES.WORKERS_AI) {
-            apiKey = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI, request.body.secret_id);
+            apiKey = resolveProviderSecret(request, SECRET_KEYS.WORKERS_AI);
 
             if (!apiKey) {
                 console.warn('Cloudflare Workers AI API key is missing.');
@@ -1273,7 +1273,7 @@ multimodalModels.post('/electronhub', async (_req, res) => {
 
 multimodalModels.post('/chutes', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.CHUTES);
+        const key = resolveProviderSecret(req, SECRET_KEYS.CHUTES);
 
         if (!key) {
             return res.json([]);
@@ -1304,7 +1304,7 @@ multimodalModels.post('/chutes', async (req, res) => {
 
 multimodalModels.post('/mistral', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.MISTRALAI);
+        const key = resolveProviderSecret(req, SECRET_KEYS.MISTRALAI);
 
         if (!key) {
             return res.json([]);
@@ -1332,7 +1332,7 @@ multimodalModels.post('/mistral', async (req, res) => {
 
 multimodalModels.post('/xai', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.XAI);
+        const key = resolveProviderSecret(req, SECRET_KEYS.XAI);
 
         if (!key) {
             return res.json([]);
@@ -1365,7 +1365,7 @@ multimodalModels.post('/xai', async (req, res) => {
 
 multimodalModels.post('/moonshot', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.MOONSHOT);
+        const key = resolveProviderSecret(req, SECRET_KEYS.MOONSHOT);
 
         if (!key) {
             return res.json([]);
@@ -1394,7 +1394,7 @@ multimodalModels.post('/moonshot', async (req, res) => {
 
 multimodalModels.post('/workers_ai', async (req, res) => {
     try {
-        const key = readSecret(req.user.directories, SECRET_KEYS.WORKERS_AI);
+        const key = resolveProviderSecret(req, SECRET_KEYS.WORKERS_AI);
         const accountId = String(req.body.workers_ai_account_id || '').trim();
 
         if (!key || !accountId) {

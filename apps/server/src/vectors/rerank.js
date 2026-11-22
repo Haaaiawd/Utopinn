@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
+import { SECRET_KEYS, readSecret, resolveProviderSecret } from '../endpoints/secrets.js';
 import { attachInspectionEndpoint, getInspectionAbortSignal } from '../request-inspector.js';
 import { normalizeProviderBaseUrl } from '../util/base-url.js';
 
@@ -57,7 +57,7 @@ async function rerankCohere(settings, query, documents, topK, directories, reque
     const { reverseProxy, proxyPassword, secretId } = resolveTriplet(settings);
     const key = reverseProxy
         ? proxyPassword
-        : readSecret(directories, SECRET_KEYS.COHERE, secretId);
+        : (request ? resolveProviderSecret(request, SECRET_KEYS.COHERE, secretId) : readSecret(directories, SECRET_KEYS.COHERE, secretId));
     if (!key) {
         throw new Error('No Cohere API key found for reranking');
     }
@@ -104,7 +104,7 @@ async function rerankJina(settings, query, documents, topK, directories, request
     const { reverseProxy, proxyPassword, secretId } = resolveTriplet(settings);
     const key = reverseProxy
         ? proxyPassword
-        : readSecret(directories, SECRET_KEYS.JINA, secretId);
+        : (request ? resolveProviderSecret(request, SECRET_KEYS.JINA, secretId) : readSecret(directories, SECRET_KEYS.JINA, secretId));
     if (!key) {
         throw new Error('No Jina API key found for reranking');
     }

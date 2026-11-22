@@ -7,16 +7,18 @@
  * 连接配置源 = settings.oai_settings(当前生效),键形与 legacy
  * POST /api/backends/chat-completions/status 的 request.body 同构——
  * source→base url/key/headers/query 的解析与 /status 逐支对齐:同一批
- * API_* 常量 + normalizeProviderBaseUrl + readProviderSecret/readSecret +
+ * API_* 常量 + normalizeProviderBaseUrl + resolveProviderSecret(四层:
+ * proxy_password > secret_id 槽 > 本人 active > 共享档 ACL;TASK-072)+
  * mergeObjectWithYaml(custom_include_headers 与真实派发同构,宏不预替换)。
  * 密钥只用于上行 Authorization/x-api-key/api-key,绝不回显,也不进 diag。
  * body/query 只放行 secret_id(选密钥槽);URL 覆盖不开——
  * 这面读"生效配置",不是任意 URL 探针。
  *
- * test 契约:{ok, source, latencyMs, modelCount?, upstreamStatus, error?, detail?}
+ * test 契约:{ok, source, credential, latencyMs, modelCount?, upstreamStatus, error?, detail?}
+ *   credential ∈ user | shared | proxy | none —— 哪层凭据在生效(§2.4)。
  *   error ∈ not_configured | unreachable | timeout | auth_failed | http_error | unsupported
  *   upstreamStatus = 上游应答的 HTTP 状态;未触达(网络/超时/未配置)为 null。
- * models 契约:{items:[{id, owned_by?}], source, stale?, error?, upstreamStatus?}
+ * models 契约:{items:[{id, owned_by?}], source, credential, stale?, error?, upstreamStatus?}
  *   探测失败且有既往成功结果 → 回 stale:true + 上次 items(比空表有用)。
  */
 import fetch from 'node-fetch';
@@ -33,10 +35,10 @@ import {
 } from '../constants.js';
 import { getConfigValue, mergeObjectWithYaml, trimTrailingSlash } from '../util.js';
 import { normalizeProviderBaseUrl } from '../util/base-url.js';
-import { readProviderSecret, readSecret, SECRET_KEYS } from '../endpoints/secrets.js';
+import { resolveProviderSecretDetailed, SECRET_KEYS } from '../endpoints/secrets.js';
 import { getVertexAIAuth } from '../endpoints/google.js';
-import { fetchGoogleModels, GoogleModelsHttpError } from '../endpoints/backends/google-models.js';
-import { buildVertexModelsUrl, fetchVertexModels, VertexModelsHttpError } from '../endpoints/backends/vertex-models.js';
+import { fetchGoogleModels } from '../endpoints/backends/google-models.js';
+import { buildVertexModelsUrl, fetchVertexModels } from '../endpoints/backends/vertex-models.js';
 import { getSettingsRepo } from '../storage/index.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { sendError } from './_shared/http-utils.js';
@@ -105,17 +107,33 @@ function classifyProbeError(e) {
 }
 
 /**
- * source→{apiUrl, apiKey, headers, queryParams, kind} 解析 ——
+ * source→{apiUrl, apiKey, headers, queryParams, kind, credential} 解析 ——
  * endpoints/backends/chat-completions.js /status 的逐支镜像。
  * kind: 'openai'(通用 GET {apiUrl}/models)| claude | fireworks | makersuite |
  *       vertexai | azure | workers_ai | disabled | unsupported。
+ * credential ∈ 'proxy'|'user'|'shared'|'none'(TASK-072):哪层凭据在生效 —
+ *   proxy_password 显式压resolver 时 'proxy';resolver 分到的层(user 槽/
+ *   user active/shared ACL)如实标;没凭据 'none'。anonymous pollinations
+ *   不算凭据,归 'none'。
  * missing[] 收集 not_configured 的缺件(api_key / custom_url / …)。
  */
 function resolveConnection(request, body) {
     const source = String(body.chat_completion_source || CHAT_COMPLETION_SOURCES.OPENAI);
     const conn = {
-        source, kind: 'openai', marker: '',
+        source, kind: 'openai', marker: '', credential: 'none',
         apiUrl: '', apiKey: '', headers: {}, queryParams: {}, missing: [],
+    };
+    // resolver 分层 + proxy_password 覆盖的一次性分类:
+    //   hasProxy=true(该 source 的 /status 支吃 proxy_password)→ proxy 优先;
+    //   否则直接取 resolver 的 {value,source}。source='none' 即值空。
+    const pick = (key, { proxy = false } = {}) => {
+        if (proxy && body.proxy_password) {
+            conn.credential = 'proxy';
+            return body.proxy_password;
+        }
+        const d = resolveProviderSecretDetailed(request, key);
+        conn.credential = d.source;
+        return d.value || '';
     };
     // 通用族缺钥判定(/status L920 同款):有 key 或自定义 base/proxy 即视为可探。
     const genericMissingCheck = () => {
@@ -127,107 +145,121 @@ function resolveConnection(request, body) {
     switch (source) {
         case CHAT_COMPLETION_SOURCES.OPENAI:
             conn.apiUrl = normalizeProviderBaseUrl('openai', body.reverse_proxy || body.base_url || API_OPENAI);
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.OPENAI) || '';
+            conn.apiKey = pick(SECRET_KEYS.OPENAI, { proxy: true });
             break;
         case CHAT_COMPLETION_SOURCES.OPENROUTER:
             conn.apiUrl = 'https://openrouter.ai/api/v1';
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.OPENROUTER);
+            conn.apiKey = pick(SECRET_KEYS.OPENROUTER);
             conn.headers = { ...OPENROUTER_HEADERS };
             break;
         case CHAT_COMPLETION_SOURCES.MISTRALAI:
             conn.apiUrl = normalizeProviderBaseUrl('mistral', body.reverse_proxy || body.base_url || API_MISTRAL);
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.MISTRALAI) || '';
+            conn.apiKey = pick(SECRET_KEYS.MISTRALAI, { proxy: true });
             break;
         case CHAT_COMPLETION_SOURCES.OPENAI_RESPONSES:
             conn.apiUrl = normalizeProviderBaseUrl('openai_responses', body.responses_url || 'https://api.openai.com/v1');
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.OPENAI_RESPONSES) || '';
+            conn.apiKey = pick(SECRET_KEYS.OPENAI_RESPONSES, { proxy: true });
             mergeObjectWithYaml(conn.headers, body.custom_include_headers);
             break;
         case CHAT_COMPLETION_SOURCES.CUSTOM:
             conn.apiUrl = normalizeProviderBaseUrl('custom', body.custom_url);
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.CUSTOM);
+            conn.apiKey = pick(SECRET_KEYS.CUSTOM);
             mergeObjectWithYaml(conn.headers, body.custom_include_headers);
             break;
         case CHAT_COMPLETION_SOURCES.COHERE:
             conn.apiUrl = API_COHERE_V1;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.COHERE);
+            conn.apiKey = pick(SECRET_KEYS.COHERE);
             break;
         case CHAT_COMPLETION_SOURCES.CHUTES:
             conn.apiUrl = API_CHUTES;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.CHUTES);
+            conn.apiKey = pick(SECRET_KEYS.CHUTES);
             break;
         case CHAT_COMPLETION_SOURCES.ELECTRONHUB:
             conn.apiUrl = API_ELECTRONHUB;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.ELECTRONHUB);
+            conn.apiKey = pick(SECRET_KEYS.ELECTRONHUB);
             break;
         case CHAT_COMPLETION_SOURCES.NANOGPT:
             conn.apiUrl = API_NANOGPT;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.NANOGPT);
+            conn.apiKey = pick(SECRET_KEYS.NANOGPT);
             conn.queryParams = { detailed: true };
             break;
         case CHAT_COMPLETION_SOURCES.DEEPSEEK:
             conn.apiUrl = normalizeProviderBaseUrl('deepseek', body.reverse_proxy || body.base_url || API_DEEPSEEK.replace('/beta', ''));
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.DEEPSEEK) || '';
+            conn.apiKey = pick(SECRET_KEYS.DEEPSEEK, { proxy: true });
             mergeObjectWithYaml(conn.headers, body.custom_include_headers);
             break;
         case CHAT_COMPLETION_SOURCES.XAI:
             conn.apiUrl = normalizeProviderBaseUrl('xai', body.reverse_proxy || body.base_url || API_XAI);
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.XAI) || '';
+            conn.apiKey = pick(SECRET_KEYS.XAI, { proxy: true });
             break;
         case CHAT_COMPLETION_SOURCES.AIMLAPI:
             conn.apiUrl = API_AIMLAPI;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.AIMLAPI);
+            conn.apiKey = pick(SECRET_KEYS.AIMLAPI);
             conn.headers = { ...AIMLAPI_HEADERS };
             break;
         case CHAT_COMPLETION_SOURCES.POLLINATIONS: {
             const isAnonymous = body.pollinations_endpoint === POLLINATIONS_ENDPOINT.ANONYMOUS;
             conn.apiUrl = 'https://gen.pollinations.ai/text';
-            conn.apiKey = isAnonymous ? 'anonymous' : readSecret(request.user.directories, SECRET_KEYS.POLLINATIONS, body.secret_id);
+            conn.apiKey = isAnonymous ? 'anonymous' : pick(SECRET_KEYS.POLLINATIONS);
+            if (!isAnonymous) conn.credential = conn.apiKey ? conn.credential : 'none';
             break;
         }
         case CHAT_COMPLETION_SOURCES.GROQ:
             conn.apiUrl = API_GROQ;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.GROQ);
+            conn.apiKey = pick(SECRET_KEYS.GROQ);
             break;
         case CHAT_COMPLETION_SOURCES.COMETAPI:
             conn.apiUrl = API_COMETAPI;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.COMETAPI);
+            conn.apiKey = pick(SECRET_KEYS.COMETAPI);
             conn.kind = 'disabled'; // /status: throw 'This provider is temporarily disabled.'
             return conn;
         case CHAT_COMPLETION_SOURCES.MOONSHOT:
             conn.apiUrl = normalizeProviderBaseUrl('moonshot', body.reverse_proxy || body.base_url || API_MOONSHOT);
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.MOONSHOT) || '';
+            conn.apiKey = pick(SECRET_KEYS.MOONSHOT, { proxy: true });
             break;
         case CHAT_COMPLETION_SOURCES.SILICONFLOW:
             conn.apiUrl = body.siliconflow_endpoint === SILICONFLOW_ENDPOINT.CN ? API_SILICONFLOW_CN : API_SILICONFLOW;
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.SILICONFLOW);
+            conn.apiKey = pick(SECRET_KEYS.SILICONFLOW);
             conn.queryParams = { type: 'text', sub_type: 'chat' };
             break;
         case CHAT_COMPLETION_SOURCES.CLAUDE:
             conn.kind = 'claude';
             conn.apiUrl = normalizeProviderBaseUrl('claude', body.reverse_proxy || body.base_url || API_CLAUDE);
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.CLAUDE) || '';
+            conn.apiKey = pick(SECRET_KEYS.CLAUDE, { proxy: true });
             mergeObjectWithYaml(conn.headers, body.custom_include_headers);
             break;
         case CHAT_COMPLETION_SOURCES.FIREWORKS:
             conn.kind = 'fireworks';
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.FIREWORKS);
+            conn.apiKey = pick(SECRET_KEYS.FIREWORKS);
             conn.marker = 'fireworks';
             if (!conn.apiKey) conn.missing.push('api_key');
             return conn;
         case CHAT_COMPLETION_SOURCES.MAKERSUITE:
             conn.kind = 'makersuite';
-            conn.apiKey = body.proxy_password || readProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
+            conn.apiKey = pick(SECRET_KEYS.MAKERSUITE, { proxy: true });
             conn.apiUrl = normalizeProviderBaseUrl('makersuite', body.reverse_proxy || body.base_url || API_MAKERSUITE);
             if (!conn.apiKey && !body.base_url && !body.reverse_proxy) conn.missing.push('api_key');
             return conn;
-        case CHAT_COMPLETION_SOURCES.VERTEXAI:
+        case CHAT_COMPLETION_SOURCES.VERTEXAI: {
             conn.kind = 'vertexai';
             conn.marker = `vertexai|${body.vertexai_auth_mode || 'express'}|${body.vertexai_region || ''}|${body.reverse_proxy || body.base_url || ''}`;
+            // credential 粗分:getVertexAIAuth 以 reverse_proxy 命中 proxy 支
+            // (authType 'proxy' / Bearer proxy_password);否则 express/full 走
+            // resolver 分层(google.js 已切 resolver,凭据同源)。
+            const mode = String(body.vertexai_auth_mode || 'express');
+            if (body.reverse_proxy) {
+                conn.credential = 'proxy';
+            } else {
+                conn.credential = resolveProviderSecretDetailed(
+                    request,
+                    mode === 'full' ? SECRET_KEYS.VERTEXAI_SERVICE_ACCOUNT : SECRET_KEYS.VERTEXAI,
+                ).source;
+            }
             return conn; // 凭据在 exec 内 getVertexAIAuth 解析(express key / service account / proxy)
+        }
         case CHAT_COMPLETION_SOURCES.AZURE_OPENAI: {
             conn.kind = 'azure';
-            conn.apiKey = readProviderSecret(request, SECRET_KEYS.AZURE_OPENAI);
+            conn.apiKey = pick(SECRET_KEYS.AZURE_OPENAI);
             conn.marker = `azure|${body.azure_base_url || ''}|${body.azure_api_version || ''}`;
             if (!conn.apiKey) conn.missing.push('api_key');
             if (!body.azure_base_url) conn.missing.push('azure_base_url');
@@ -236,7 +268,7 @@ function resolveConnection(request, body) {
         }
         case CHAT_COMPLETION_SOURCES.WORKERS_AI: {
             conn.kind = 'workers_ai';
-            conn.apiKey = readSecret(request.user.directories, SECRET_KEYS.WORKERS_AI, body.secret_id);
+            conn.apiKey = pick(SECRET_KEYS.WORKERS_AI);
             conn.marker = `workers_ai|${body.workers_ai_account_id || ''}`;
             if (!conn.apiKey) conn.missing.push('api_key');
             if (!String(body.workers_ai_account_id || '').trim()) conn.missing.push('workers_ai_account_id');
@@ -423,7 +455,7 @@ async function loadConnection(request) {
 async function runProbe(request) {
     const t0 = performance.now();
     const { conn, probeReq, body } = await loadConnection(request);
-    const done = (r) => ({ source: conn.source, latencyMs: Math.max(0, Math.round(performance.now() - t0)), ...r });
+    const done = (r) => ({ source: conn.source, credential: conn.credential, latencyMs: Math.max(0, Math.round(performance.now() - t0)), ...r });
     if (conn.kind === 'disabled') {
         return done({ ok: false, upstreamStatus: null, error: 'unsupported', detail: `${conn.source} is temporarily disabled upstream` });
     }
@@ -470,6 +502,7 @@ export function apply(ctx) {
             return response.send({
                 ok: r.ok,
                 source: r.source,
+                credential: r.credential,
                 latencyMs: r.latencyMs,
                 ...(r.ok ? { modelCount: r.items.length } : {}),
                 upstreamStatus: r.upstreamStatus,
@@ -487,7 +520,7 @@ export function apply(ctx) {
     regGet(`${P}/models`, async function (request, response) {
         try {
             const { conn, probeReq, body } = await loadConnection(request);
-            const base = { source: conn.source };
+            const base = { source: conn.source, credential: conn.credential };
             if (conn.kind === 'disabled' || conn.kind === 'unsupported') {
                 return response.send({ ...base, items: [], error: 'unsupported', detail: conn.kind === 'disabled' ? `${conn.source} is temporarily disabled upstream` : `chat_completion_source "${conn.source}" has no models probe` });
             }

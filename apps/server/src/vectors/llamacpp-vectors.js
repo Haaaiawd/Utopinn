@@ -30,7 +30,7 @@ export async function getLlamaCppBatchVector(texts, apiUrl, directories, sourceS
     if (reverseProxy && proxyPassword) {
         headers['Authorization'] = `Bearer ${proxyPassword}`;
     } else {
-        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.LLAMACPP, baseUrl, directories, secretId);
+        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.LLAMACPP, baseUrl, directories, secretId, request);
     }
 
     const body = { input: texts };

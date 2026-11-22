@@ -9,7 +9,7 @@
 
 import fetch from 'node-fetch';
 
-import { SECRET_KEYS, readProviderSecret, readSecret } from '../endpoints/secrets.js';
+import { SECRET_KEYS, resolveProviderSecret } from '../endpoints/secrets.js';
 import { getCommonCredentials } from './source-settings.js';
 import { getConfigValue, trimV1 } from '../util.js';
 import { normalizeProviderBaseUrl } from '../util/base-url.js';
@@ -42,7 +42,7 @@ function resolveKey(request, secretKey, credentials) {
     if (credentials.reverseProxy) {
         return credentials.proxyPassword;
     }
-    return readSecret(request.user.directories, secretKey, credentials.secretId || null) || '';
+    return resolveProviderSecret(request, secretKey, credentials.secretId || null) || '';
 }
 
 /**
@@ -236,7 +236,7 @@ async function listWorkersAi(request, credentials, fetchImpl) {
 }
 
 async function listMakerSuite(request, fetchImpl) {
-    const apiKey = request.body.proxy_password || readProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
+    const apiKey = request.body.proxy_password || resolveProviderSecret(request, SECRET_KEYS.MAKERSUITE) || '';
     const apiUrl = normalizeProviderBaseUrl('makersuite', request.body.reverse_proxy || request.body.base_url || DEFAULT_URLS.makersuite);
     const apiVersion = getConfigValue('gemini.apiVersion', 'v1beta');
     if (!apiKey && !request.body.base_url && !request.body.reverse_proxy) {
@@ -286,7 +286,7 @@ async function listOllama(request, credentials, fetchImpl) {
     if (credentials.reverseProxy && credentials.proxyPassword) {
         headers['Authorization'] = `Bearer ${credentials.proxyPassword}`;
     } else {
-        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.OLLAMA, base, request.user.directories, credentials.secretId || null);
+        setAdditionalHeadersByType(headers, TEXTGEN_TYPES.OLLAMA, base, request.user.directories, credentials.secretId || null, request);
     }
     const data = await fetchJson(url.toString(), { headers, fetchImpl });
     const items = Array.isArray(data?.models) ? data.models : [];
@@ -305,7 +305,7 @@ async function listOpenAICompatibleServer(request, credentials, type, fetchImpl)
     if (credentials.reverseProxy && credentials.proxyPassword) {
         headers['Authorization'] = `Bearer ${credentials.proxyPassword}`;
     } else {
-        setAdditionalHeadersByType(headers, type, base, request.user.directories, credentials.secretId || null);
+        setAdditionalHeadersByType(headers, type, base, request.user.directories, credentials.secretId || null, request);
     }
     const data = await fetchJson(`${trimV1(base)}/v1/models`, { headers, fetchImpl });
     return mapOpenAIStyle(data);

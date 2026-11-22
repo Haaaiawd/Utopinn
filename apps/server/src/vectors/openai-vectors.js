@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
+import { SECRET_KEYS, readSecret, resolveProviderSecret } from '../endpoints/secrets.js';
 import { OPENROUTER_HEADERS } from '../constants.js';
 import { attachInspectionEndpoint, getInspectionAbortSignal } from '../request-inspector.js';
 import { normalizeProviderBaseUrl } from '../util/base-url.js';
@@ -102,7 +102,7 @@ export async function getOpenAIBatchVector(texts, source, directories, model = '
 
     const key = reverseProxy
         ? proxyPassword
-        : readSecret(directories, config.secretKey, secretId);
+        : (request ? resolveProviderSecret(request, config.secretKey, secretId) : readSecret(directories, config.secretKey, secretId));
 
     if (!key) {
         console.warn('No API key found');

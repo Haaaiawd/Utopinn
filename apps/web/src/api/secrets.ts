@@ -1,6 +1,9 @@
 // Secrets via /api/utopinn/secrets(apps/server/src/plugins/utopinn-library.js
 // L776-822;SecretManager 原生打码,应答里永远没有明文)。
-//   GET  /secrets            {secrets:{key:SecretEntry[]|null}} —— null=未设
+//   GET  /secrets            {secrets:{key:SecretEntry[]|null},
+//                             shared:{key:{label,active:true}|null}} ——
+//                            null=未设;shared 是本 handle 可用的共享档可用性视图
+//                            (TASK-072 §2.4:只回 label/active,不回 id/掩码/名单)
 //   PUT  /secrets/:key       body:{value,label?} → {ok,id,key,entries};
 //                            写一条自动置 active,同 key 旧值退役;
 //                            key 限 VALID_SECRET_KEYS 白名单 → 否则 400
@@ -12,7 +15,12 @@ import type {
     SecretSetResponse,
 } from '@utopinn/protocol';
 
-export type { SecretEntry, SecretsResponse, SecretSetResponse } from '@utopinn/protocol';
+export type {
+    SecretEntry,
+    SecretsResponse,
+    SecretSetResponse,
+    SharedSecretAvailability,
+} from '@utopinn/protocol';
 
 /** GET /api/utopinn/secrets —— 全键脱敏态(value 是掩码串,不是明文)。 */
 export async function listSecrets(): Promise<SecretsResponse> {

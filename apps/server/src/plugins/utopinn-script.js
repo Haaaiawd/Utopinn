@@ -10,6 +10,7 @@
 import {
     executeSlashCommandsWithOptions,
     registerBuiltinCommands,
+    SlashCommandParser,
 } from '@utopinn/core';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import { stripJsonlExt } from '../storage/name-validation.js';
@@ -23,6 +24,40 @@ export function apply(ctx) {
 
     const reg = (path, handler) =>
         ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
+    const regGet = (path, handler) =>
+        ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'GET', path, handler }));
+
+    /* 注册表读面(TASK-060):composer `/` 补全的数据源 —— 前端不抄词表,
+       直接消费 core builtins 注册表快照(含参数名提示)。
+       parser 伪命令(// 注释、break、breakpoint、parser-flag)由 parser 构造器
+       补注册,实例化一次让清单与「实际可解析的命令集」一致。 */
+    regGet('/api/utopinn/script/commands', async function (request, response) {
+        try {
+            new SlashCommandParser();
+            const commands = [];
+            for (const [key, cmd] of Object.entries(SlashCommandParser.commands)) {
+                if (key !== cmd.name) continue; // 别名键指向同一 command,只取规范名
+                commands.push({
+                    name: cmd.name,
+                    aliases: Array.isArray(cmd.aliases) ? [...cmd.aliases] : [],
+                    // helpString 上游含 <code>/<div> 标记,压平成纯文本供菜单渲染
+                    help: String(cmd.helpString ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(),
+                    args: (cmd.namedArgumentList ?? []).map((a) => ({
+                        name: a.name,
+                        required: a.isRequired === true,
+                        def: typeof a.defaultValue === 'string' ? a.defaultValue : null,
+                    })),
+                    unnamed: (cmd.unnamedArgumentList ?? []).map((a) => a.description).filter(Boolean),
+                    ...(cmd.returns ? { returns: cmd.returns } : {}),
+                });
+            }
+            commands.sort((a, b) => a.name.localeCompare(b.name));
+            return response.send({ ok: true, commands });
+        } catch (error) {
+            console.error('utopinn/script commands failed:', error);
+            return response.status(500).send({ error: String(error?.message ?? error) });
+        }
+    });
 
     reg('/api/utopinn/script/run', async function (request, response) {
         try {

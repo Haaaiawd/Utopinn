@@ -9,6 +9,7 @@
  *     或预传 `cookie` + `csrfToken`。
  *
  * 动词面(与 CLI apps/cli/utopinn-cli.mjs 一一对应,见各 domain):
+ *   client.account.*      login/logout/me(cookie-session;login 后同 jar 即用)
  *   client.library.*      characters/chats/presets/worlds/personas/settings/secrets
  *   client.state.*        state sidecar 三族(chat/char/preset)
  *   client.generation.*   generate/preview/jobs/jobGet/abort/streamJob/attachJob/waitForJob
@@ -24,6 +25,7 @@
  */
 
 import type { JsonPatchOp } from '@utopinn/protocol';
+import { AccountApi } from './account.js';
 import { ApiError } from './errors.js';
 import { GenerationApi } from './generate.js';
 import { LibraryApi } from './library.js';
@@ -64,6 +66,11 @@ export interface RequestOptions {
     signal?: AbortSignal;
     /** 逐请求附加头。 */
     headers?: Record<string, string>;
+    /**
+     * 本请求禁用「401/403 → 清会话重握手再试一次」(login 用:
+     * 凭据错的 403 重试同样会败,还白烧服务端登录限流点)。
+     */
+    skipReauth?: boolean;
 }
 
 /** requestRaw 的透传出参(不抛 HTTP 错;备份/头取数用)。 */
@@ -92,6 +99,7 @@ export class UtopinnClient {
     private readonly autoReauth: boolean;
     readonly timeoutMs?: number;
 
+    readonly account: AccountApi;
     readonly library: LibraryApi;
     readonly state: StateApi;
     readonly generation: GenerationApi;
@@ -114,6 +122,7 @@ export class UtopinnClient {
         this.autoReauth = opts.autoReauth ?? true;
         this.timeoutMs = opts.timeoutMs;
 
+        this.account = new AccountApi(this);
         this.library = new LibraryApi(this);
         this.state = new StateApi(this);
         this.generation = new GenerationApi(this);
@@ -136,19 +145,52 @@ export class UtopinnClient {
         this.cookie = cookie;
     }
 
-    /** GET /csrf-token —— 抓 token + Set-Cookie(Node/RN 会话续命)。 */
+    /**
+     * GET /csrf-token —— 抓 token + Set-Cookie(Node/RN 会话续命)。
+     * 必须带上当前 cookie:token 存在 session 里(cookie-session 整体序列化),
+     * 不带 cookie 去握手 = 开匿名新 session,login 态当场蒸发 ——
+     * 浏览器靠自动带 cookie 天然同源(token 落同一 session),Node/RN 手动模拟。
+     */
     async fetchCsrfToken(): Promise<string> {
-        const res = await this.fetchImpl(`${this.baseUrl}/csrf-token`, { headers: { ...this.headers } });
+        const headers: Record<string, string> = { ...this.headers };
+        if (this.cookie) headers['Cookie'] = this.cookie;
+        const res = await this.fetchImpl(`${this.baseUrl}/csrf-token`, { headers });
         if (!res.ok) throw new ApiError(res.status, await res.text());
         const data = await res.json() as { token?: string };
         if (typeof data.token === 'string' && data.token) this.csrfToken = data.token;
-        const setCookie = typeof (res.headers as { getSetCookie?: () => string[] }).getSetCookie === 'function'
-            ? (res.headers as unknown as { getSetCookie: () => string[] }).getSetCookie()
-            : [];
-        const cookie = setCookie.map((c) => c.split(';')[0]).filter(Boolean).join('; ');
-        if (cookie) this.cookie = cookie;
+        this.absorbSetCookie(res.headers);
         this.csrfFetched = true;
         return this.csrfToken ?? '';
+    }
+
+    /**
+     * Set-Cookie 收罐(按 name 合并;空值=服务端清该 cookie → 出罐)。
+     * cookie-session 模型下 session 整体序列化在签名 cookie 里,login/logout
+     * 的会话升级全靠响应 Set-Cookie——只吃 /csrf-token 一次的话,
+     * login 后 jar 里仍是匿名 session,后面全 403。
+     * 浏览器 fetch 拿不到 Set-Cookie(禁头)→ 天然 no-op。
+     */
+    private absorbSetCookie(headers: Headers): void {
+        const setCookie = typeof (headers as { getSetCookie?: () => string[] }).getSetCookie === 'function'
+            ? (headers as unknown as { getSetCookie: () => string[] }).getSetCookie()
+            : [];
+        if (!setCookie.length) return;
+        const jar = new Map<string, string>();
+        for (const pair of (this.cookie ?? '').split(';')) {
+            const i = pair.indexOf('=');
+            if (i > 0) jar.set(pair.slice(0, i).trim(), pair.trim());
+        }
+        for (const c of setCookie) {
+            const pair = c.split(';')[0]?.trim();
+            if (!pair) continue;
+            const i = pair.indexOf('=');
+            if (i <= 0) continue;
+            const name = pair.slice(0, i).trim();
+            const value = pair.slice(i + 1).trim();
+            if (value) jar.set(name, pair);
+            else jar.delete(name);
+        }
+        this.cookie = [...jar.values()].join('; ');
     }
 
     private ensureSession(): Promise<void> {
@@ -164,6 +206,11 @@ export class UtopinnClient {
         this.cookie = undefined;
         this.csrfFetched = false;
         this.sessionPromise = undefined;
+    }
+
+    /** 本地会话整桶清掉(logout 后/换账号前)。下一请求自动重新握手。 */
+    clearSession(): void {
+        this.resetSession();
     }
 
     /**
@@ -196,8 +243,13 @@ export class UtopinnClient {
             throw new ApiError(0, e instanceof Error ? e.message : String(e),
                 `network error ${opts.method ?? 'GET'} ${path}`, 'network');
         }
-        if ((res.status === 401 || res.status === 403) && !reauthed && this.autoReauth) {
-            this.resetSession();
+        this.absorbSetCookie(res.headers);
+        if ((res.status === 401 || res.status === 403) && !reauthed && this.autoReauth && !opts.skipReauth) {
+            // 同会话内轮换 CSRF 再试一次 —— cookie 不丢:浏览器语义就是
+            // /csrf-token 带当前 cookie,token 落同一 session。resetSession()
+            // 换成匿名握手等于「任何 403(含权限不足)都把登录态客户端侧登出」。
+            // 会话真死(签名失效/版本踢)时新 cookie 自来或照旧 403,殊途同归。
+            await this.fetchCsrfToken().catch(() => undefined);
             return this.perform(path, opts, true);
         }
         return res;
@@ -349,6 +401,7 @@ export {
 } from './generate.js';
 export { asPatchOps, StateTargets, type StateGetOptions } from './state.js';
 export type { BackupResult, ImportInput } from './misc.js';
+export { AccountApi, type AccountLoginResponse, type AccountMe } from './account.js';
 export { LibraryApi } from './library.js';
 export { GenerationApi } from './generate.js';
 export { StateApi } from './state.js';

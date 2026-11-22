@@ -77,6 +77,7 @@ const zh: Record<string, string> = {
     'plugins.nav.installed': '已安装', 'plugins.nav.market': '市场',
     /* 状态/导入 */
     'status.stub': '服务端连接中不可用', 'imp.tooLarge': '文件超过 64MB 上限', 'imp.queued': '已加入导入队列', 'imp.veil': '松手导入卡/书/预设',
+    'auth.expired': '登录会话已失效', 'auth.relogin': '重新登录',
     'chat.demo': '演示', 'stage.demoData': '离线演示数据 · 不落库',
     /* cmdk + 设置 */
     'cmdk.placeholder': '搜索卡、世界书、插件…', 'cmdk.empty': '没有匹配项', 'cmdk.views': '视图', 'cmdk.panels': '板块',
@@ -232,8 +233,10 @@ const zh: Record<string, string> = {
     'st.secrets.add': '新增密钥', 'st.secrets.value': '密钥值(写入后只回显掩码)',
     'st.secrets.labelPh': '备注(可选)', 'st.secrets.save': '保存', 'st.secrets.clear': '清除',
     'st.secrets.managed': '已托管', 'st.secrets.none2': '未配置密钥',
+    'st.secrets.shared': '服务端已提供', 'st.secrets.sharedHint': '本人未配置,回落共享密钥;写入自己的 Key 即覆盖',
     'st.secrets.active': '生效', 'st.secrets.delete': '删除密钥',
     'st.secrets.none': '还没有配置密钥', 'st.secrets.failed': '密钥操作失败',
+    'st.cred.user': '本人', 'st.cred.shared': '共享', 'st.cred.proxy': '代理', 'st.cred.none': '无',
     /* 移动资产工坊 */
     'mob.hub.assetHub': '资产工坊', 'mob.hub.back': '返回对话',
     'mob.hub.cards': '角色卡库', 'mob.hub.cardsN': '张作品卡', 'mob.hub.worldbook': '作品世界书',
@@ -317,6 +320,7 @@ const en: Record<string, string> = {
     'plugins.nav.installed': 'Installed', 'plugins.nav.market': 'Market',
     /* 状态/导入 */
     'status.stub': 'Unavailable while server is offline', 'imp.tooLarge': 'File exceeds the 64MB limit', 'imp.queued': 'Added to import queue', 'imp.veil': 'Drop to import cards / books / presets',
+    'auth.expired': 'Session expired', 'auth.relogin': 'Sign in again',
     'chat.demo': 'Demo', 'stage.demoData': 'Offline demo data · not persisted',
     /* cmdk + 设置 */
     'cmdk.placeholder': 'Search cards, lorebooks, plugins…', 'cmdk.empty': 'No matches', 'cmdk.views': 'Views', 'cmdk.panels': 'Panels',
@@ -471,8 +475,10 @@ const en: Record<string, string> = {
     'st.secrets.add': 'Add secret', 'st.secrets.value': 'Secret value (masked after save)',
     'st.secrets.labelPh': 'Label (optional)', 'st.secrets.save': 'Save', 'st.secrets.clear': 'Clear',
     'st.secrets.managed': 'Managed', 'st.secrets.none2': 'No secret configured',
+    'st.secrets.shared': 'Provided by server', 'st.secrets.sharedHint': 'No personal key — falling back to the shared key; save your own to override',
     'st.secrets.active': 'Active', 'st.secrets.delete': 'Delete secret',
     'st.secrets.none': 'No secrets configured yet', 'st.secrets.failed': 'Secret operation failed',
+    'st.cred.user': 'yours', 'st.cred.shared': 'shared', 'st.cred.proxy': 'proxy', 'st.cred.none': 'none',
     /* 移动资产工坊 */
     'mob.hub.assetHub': 'Asset Studio', 'mob.hub.back': 'Back to chat',
     'mob.hub.cards': 'Card Library', 'mob.hub.cardsN': 'cards', 'mob.hub.worldbook': 'Work Lorebooks',

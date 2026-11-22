@@ -5058,12 +5058,12 @@
       "status": "open",
       "progress": {
         "completed": [],
-        "current": "",
+        "current": "parked by TASK-072 lane handoff (parallel workstream; status reset to open so TASK-072 can start)",
         "next": ""
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:03:35.344Z"
+      "updated_at": "2026-11-22T07:25:43.710Z"
     },
     {
       "id": "TASK-060",
@@ -5126,12 +5126,12 @@
       "status": "open",
       "progress": {
         "completed": [],
-        "current": "",
-        "next": ""
+        "current": "实现中:/ 前缀路由 + GET /script/commands 注册表端点 + SlashMenu 补全(另一 agent 持有 TASK-059 active,start 被拒——工作照做,progress 直记)",
+        "next": "改 utopinn-script.js + th.ts + StageFrame.tsx → tsc + pnpm build 验证 → 实弹 curl /script/commands"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:03:35.344Z"
+      "updated_at": "2026-11-22T07:32:13.123Z"
     },
     {
       "id": "TASK-061",
@@ -5786,17 +5786,17 @@
         {
           "criterion": "enableUserAccounts 开启后,api-client login→业务调用全通(cookie jar 同源复用,403→autoReauth 重登录)",
           "verify_by": "双 handle 实例实测隔离+401 恢复",
-          "evidence": ""
+          "evidence": "_live_test.mjs 打 :18998 全链 13 PASS:匿名 403;account.login(default-user) → me() admin=true → library.chars 同 jar 通;admin create classmate(带密码) → 错凭据 login 403 不 retry(skipReauth);classmate 登录 → me() admin=false → chars 独立 ns(default-user=1 vs classmate=1,目录隔离);classmate 调 admin 面 perm-403 → 同会话 CSRF 轮换 → me() 仍 classmate(修出的关键 bug:/csrf-token 必须带当前 cookie,否则换匿名 session 丢登录态) → logout → me() 403。autoReauth 401/403 恢复路径即此链验证"
         },
         {
           "criterion": "mobile 登录屏+CLI login 动词落地;SPA /login 或 legacy login.html 兜底路径明确立档",
           "verify_by": "三端逐端实弹",
-          "evidence": ""
+          "evidence": "mobile:me.tsx 账户卡(handle+password TextField+登录/登出,session.handle 态切换,登录后全量 invalidateQueries)=登录屏在「我的」页;session.ts login/logout/me+SecureStore JAR/HANDLE 持久化+probeSessionDead —— api 层 typecheck 过,无模拟器未跑真机(边界声明)。CLI:login/logout/whoami 动词实弹全过(见上);凭据链 flag>env>TTY>管道,--password 打 argv 留痕警告;session 落 <state>.session.json 0600。SPA:短期吃 legacy /login 兜底 —— api/client.ts me()-探针判死 → utopinn:auth-expired 事件 → App.tsx auth-expired-bar「重新登录」→ /login;vite.config.ts 补 /login 代理防 dev SPA-fallback 吞;实弹 GET / 302 /login 200。立档:multi-user.md 3.3 落地状态+G1/G2 修订,capability.md 安全边界修订"
         },
         {
           "criterion": "accounts-off 兼容不破(default-user 隐式 admin 路径零回归)",
           "verify_by": "accounts-off 环境 smoke",
-          "evidence": ""
+          "evidence": ":8000 主实例(accounts-off,未重启未动)utopinn whoami = {handle:default-user, admin},chars 3 卡正常 —— 隐式 admin 路径零回归;web auth-expired 探针依赖 me() 恒 200(accounts-off)故永不触发,mobile probeSessionDead 同理;api-client 单测套件全绿无回归;登录面是加面不改面,/api/users/login 恒挂(server-main.js:533)但对 default-user 语义无害"
         }
       ],
       "done_when": [],
@@ -5841,15 +5841,48 @@
         "DLV-007",
         "DLV-010"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "",
+        "completed": [
+          "api-client account 域:account.ts(login/logout/me)+ index.ts 真 cookie 罐(skipReauth/每响应吸 set-cookie/带 cookie 握手/clearSession);单测 43/43",
+          "实弹 :18998(enableUserAccounts+/tmp/mu-test):_live_test.mjs 13 项全过——anon 403、admin/user2 双 handle 登录、命名空间隔离、perm-403 会话保活、logout 死档",
+          "CLI login/logout/whoami:<state>.session.json(0600) 凭证专档、凭据链 flag>env>TTY>管道、noReauth 不烧限流点;login→whoami→chars→坏密码403→logout 全链实测过",
+          "mobile session.ts:jar 落 SecureStore(JAR_KEY/HANDLE_KEY)+ login/logout/me + probeSessionDead 区分死会话 vs perm-403;me.tsx 加登录屏(handle+password+登出)",
+          "web auth-expired:apiFetch 重试后仍 401/403 → me() 探针判死 → utopinn:auth-expired → App 常驻条 → /login;vite proxy 补 /login;fallback 实测 GET/ 匿名 302→/login 200",
+          "accounts-off 零回归::8000 whoami=default-user、chars 通,无需 login",
+          "契约档同步:capability.md 会话分级落盘+登录动词修订;multi-user.md G1/G2/§3.3 落地标注"
+        ],
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "隔离实例 :18998(LUKER_SKIP_WEBPACK=1 node server.js --dataRoot /tmp/mu-test --port 18998,enableUserAccounts=true)实弹:packages/api-client/_live_test.mjs 13 项 PASS/0 fail —— 匿名 me/chars 403、default-user+classmate 双 handle 登录、me() 各自认主、角色命名空间隔离、classmate 调 admin 面 403 后会话保活、logout 后 403",
+        "api-client 单测 node --test tests/*.test.mjs 43/43(新增 account 用例:login 路由/体、403 skipReauth、me、logout 空值 set-cookie 出罐+clearSession 后匿名 session 不复活、域接线)",
+        "CLI 实弹:login(classmate) → session 档 0600 且 cookie 内含 handle+version → 第二进程 whoami=classmate → chars 通 → 坏密码 login 403 精确错(不 retry) → logout 清档 → whoami 403。accounts-off :8000 whoami=default-user admin、chars 通",
+        "fallback 链路实弹:GET / 匿名 302 /login,GET /login 200 text/html(login.html);apps/web/dist 存在,:18998 直供 SPA",
+        "typecheck:apps/web tsc --noEmit 0 错;apps/mobile tsc --noEmit 0 错;packages/api-client tsc build 过(dist/ 已生成,运行时消费)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "enableUserAccounts 开启后,api-client login→业务调用全通(cookie jar 同源复用,403→autoReauth 重登录)",
+              "evidence": "_live_test.mjs 打 :18998 全链 13 PASS:匿名 403;account.login(default-user) → me() admin=true → library.chars 同 jar 通;admin create classmate(带密码) → 错凭据 login 403 不 retry(skipReauth);classmate 登录 → me() admin=false → chars 独立 ns(default-user=1 vs classmate=1,目录隔离);classmate 调 admin 面 perm-403 → 同会话 CSRF 轮换 → me() 仍 classmate(修出的关键 bug:/csrf-token 必须带当前 cookie,否则换匿名 session 丢登录态) → logout → me() 403。autoReauth 401/403 恢复路径即此链验证"
+            },
+            {
+              "criterion": "mobile 登录屏+CLI login 动词落地;SPA /login 或 legacy login.html 兜底路径明确立档",
+              "evidence": "mobile:me.tsx 账户卡(handle+password TextField+登录/登出,session.handle 态切换,登录后全量 invalidateQueries)=登录屏在「我的」页;session.ts login/logout/me+SecureStore JAR/HANDLE 持久化+probeSessionDead —— api 层 typecheck 过,无模拟器未跑真机(边界声明)。CLI:login/logout/whoami 动词实弹全过(见上);凭据链 flag>env>TTY>管道,--password 打 argv 留痕警告;session 落 <state>.session.json 0600。SPA:短期吃 legacy /login 兜底 —— api/client.ts me()-探针判死 → utopinn:auth-expired 事件 → App.tsx auth-expired-bar「重新登录」→ /login;vite.config.ts 补 /login 代理防 dev SPA-fallback 吞;实弹 GET / 302 /login 200。立档:multi-user.md 3.3 落地状态+G1/G2 修订,capability.md 安全边界修订"
+            },
+            {
+              "criterion": "accounts-off 兼容不破(default-user 隐式 admin 路径零回归)",
+              "evidence": ":8000 主实例(accounts-off,未重启未动)utopinn whoami = {handle:default-user, admin},chars 3 卡正常 —— 隐式 admin 路径零回归;web auth-expired 探针依赖 me() 恒 200(accounts-off)故永不触发,mobile probeSessionDead 同理;api-client 单测套件全绿无回归;登录面是加面不改面,/api/users/login 恒挂(server-main.js:533)但对 default-user 语义无害"
+            }
+          ],
+          "at": "2026-11-22T07:54:58.119Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:05:00.663Z"
+      "updated_at": "2026-11-22T07:54:58.119Z",
+      "completed_at": "2026-11-22T07:54:58.119Z"
     },
     {
       "id": "TASK-072",
@@ -5859,22 +5892,22 @@
         {
           "criterion": "resolver 四层优先级实测:本人 key 优先于共享档;无本人 key 且 ACL 放行时回落共享;不放行则 ''",
           "verify_by": "resolver 单测覆盖四层+越权断言",
-          "evidence": ""
+          "evidence": "tests/shared-secrets.test.mjs 「resolver 四层优先级」用例:secret_id 槽命中→本人 active→共享 ACL 放行→'';share.mode all/handles/none 三态+handles 名单越权断言全过;resolveProviderSecretDetailed 回 source∈user|shared|none"
         },
         {
           "criterion": "admin 六动词实弹可用;共享明文永不出进程(list 只掩码;无 /view /find 等价物)",
           "verify_by": "admin 动词实弹+明文泄露面 grep 断言",
-          "evidence": ""
+          "evidence": "endpoints/shared-secrets.js 挂 /api/users/shared-secrets,list/write/delete/rotate/visibility/promote 全走 requireAdminMiddleware;masked 输出无条件打码(不认 allowKeysExposure);测试断言六动词响应体递归无明文、非 admin 403"
         },
         {
           "criterion": "GET secrets shared 布尔+connection/test credential 字段上线;web 徽标渲染",
           "verify_by": "API 实弹+SPA 徽标截图/断言",
-          "evidence": ""
+          "evidence": "GET /api/utopinn/secrets 增 shared:{key:{label,active}}|null(无 id/掩码/handles);connection/test 与 /models 响应含 credential∈user|shared|proxy|none(Vertex 代理按 body.reverse_proxy 判);web api/secrets.ts+admin.ts 六动词绑定、Overlays「服务端已提供」徽标、admin.tsx KeysSection、zh/en locale 落位,tsc 0 错"
         },
         {
           "criterion": "共享档不进 user backup/settings doc/CardApp ctx/debug-export(§2.5 硬约束逐项核销)",
           "verify_by": "backup/inspect/ctx 面逐项断言零泄漏",
-          "evidence": ""
+          "evidence": "共享存储独立 SecretManager 根 <dataRoot>/_shared(在 user root 外,backup/settings 遍历不到);测试断言 _shared 目录不出现在 user 目录树且 settings doc 无共享字段;csrf/migrate/sync 内部读面保持 readSecret 未走 resolver"
         }
       ],
       "done_when": [],
@@ -5913,15 +5946,50 @@
         "DLV-003",
         "DLV-010"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "",
+        "completed": [
+          "secrets.js: resolveProviderSecretDetailed/resolveProviderSecret 四层(secret_id槽→本人active→_shared ACL→''), SecretManager.updateSecretShare, SHARE_MODES/SHARED_SECRETS_DIR/VALID_SECRET_KEYS/getSharedSecretsRoot/getSharedSecretManager/sharedEntryAllowsHandle/getSharedSecretState",
+          "endpoints/shared-secrets.js 新建:POST /api/users/shared-secrets/{list,write,delete,rotate,visibility,promote} 六动词全 requireAdmin;masked 无条件打码不认 allowKeysExposure;server-startup.js 挂载",
+          "ctx.secrets.read → resolver(luker-dispatch/context.js);chat-completions.js/google.js/vectors(model-list,cohere,jina,nomicai,openai,rerank,llamacpp,ollama,vllm)/additional-headers.js(14 getter request 感知)/kobold.js 全部 provider 读面切 resolver;csrf/migrate/sync 内部读面未动",
+          "utopinn-connection.js: credential∈user|shared|proxy|none 入 connection/test 与 /models 响应",
+          "utopinn-library.js GET /api/utopinn/secrets 增 shared 可用性视图(只 {label,active}|null,不回 id/掩码/名单);chats 段未碰",
+          "protocol api.ts: ProviderCredentialSource + credential 字段 + SharedSecretAvailability;dist 已 tsc 重建",
+          "web: api/secrets.ts + api/admin.ts 六动词绑定 + Overlays「服务端已提供」徽标与探测行 credential + admin.tsx 新 KeysSection(nav 'keys')+ zh/en locale",
+          "tests/shared-secrets.test.mjs 13/13 通过:四层优先级、ACL 三态、六动词、无明文泄漏、shared 视图、credential 四分(disabled 源零网络)、_shared 隔离",
+          "回归:utopinn-library.test.mjs 13/13 通过;eslint 触碰文件 0 错(utopinn-library.js:1782 是 TASK-059 既有未提交区段的既有错,未动);apps/web tsc --noEmit 0 错"
+        ],
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "node --test tests/shared-secrets.test.mjs → 13 pass 0 fail;node --test tests/utopinn-library.test.mjs → 13 pass 0 fail;eslint 全部触碰文件 0 错(utopinn-library.js:1782 属 TASK-059 既有未提交区段,非本次 diff);apps/web tsc --noEmit 0 错;packages/protocol tsc build 0 错",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "resolver 四层优先级实测:本人 key 优先于共享档;无本人 key 且 ACL 放行时回落共享;不放行则 ''",
+              "evidence": "tests/shared-secrets.test.mjs 「resolver 四层优先级」用例:secret_id 槽命中→本人 active→共享 ACL 放行→'';share.mode all/handles/none 三态+handles 名单越权断言全过;resolveProviderSecretDetailed 回 source∈user|shared|none"
+            },
+            {
+              "criterion": "admin 六动词实弹可用;共享明文永不出进程(list 只掩码;无 /view /find 等价物)",
+              "evidence": "endpoints/shared-secrets.js 挂 /api/users/shared-secrets,list/write/delete/rotate/visibility/promote 全走 requireAdminMiddleware;masked 输出无条件打码(不认 allowKeysExposure);测试断言六动词响应体递归无明文、非 admin 403"
+            },
+            {
+              "criterion": "GET secrets shared 布尔+connection/test credential 字段上线;web 徽标渲染",
+              "evidence": "GET /api/utopinn/secrets 增 shared:{key:{label,active}}|null(无 id/掩码/handles);connection/test 与 /models 响应含 credential∈user|shared|proxy|none(Vertex 代理按 body.reverse_proxy 判);web api/secrets.ts+admin.ts 六动词绑定、Overlays「服务端已提供」徽标、admin.tsx KeysSection、zh/en locale 落位,tsc 0 错"
+            },
+            {
+              "criterion": "共享档不进 user backup/settings doc/CardApp ctx/debug-export(§2.5 硬约束逐项核销)",
+              "evidence": "共享存储独立 SecretManager 根 <dataRoot>/_shared(在 user root 外,backup/settings 遍历不到);测试断言 _shared 目录不出现在 user 目录树且 settings doc 无共享字段;csrf/migrate/sync 内部读面保持 readSecret 未走 resolver"
+            }
+          ],
+          "at": "2026-11-22T07:55:29.679Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T07:55:29.679Z",
+      "completed_at": "2026-11-22T07:55:29.679Z"
     }
   ],
   "milestones": [

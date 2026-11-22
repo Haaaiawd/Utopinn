@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import fetch from 'node-fetch';
-import { readSecret, getRequestedSecretId } from '../endpoints/secrets.js';
+import { resolveProviderSecret } from '../endpoints/secrets.js';
 import {
     createGenerationJob,
     appendGenerationEvent,
@@ -135,31 +135,24 @@ export function createDispatchContext({ request, task, abortController, onEmit, 
         },
 
         secrets: {
-            // Mirror legacy readProviderSecret(request, key) semantics:
-            //   - if body.secret_id is set AND resolves to a stored secret,
-            //     use it (connection profile / preset picked a specific
-            //     credential slot)
-            //   - otherwise fall back to the active secret for the key
-            // Callers passing an explicit `secretId` opt into a raw lookup
-            // (no fallback to active), matching legacy
-            // readSecret(dirs, key, id) callers (MINIMAX, POLLINATIONS,
-            // WORKERS_AI in chat-completions.js).
+            // Unified provider-credential resolution (shared-secrets.md §2.2,
+            // TASK-072) — one funnel covers every dispatch provider:
+            //   1. secret_id 指定槽(本人档;命中即用,未命中继续)
+            //   2. 本人档 active
+            //   3. 共享档 active 且 share ACL 放行本 handle(<dataRoot>/_shared)
+            //   4. ''
+            // Callers passing an explicit `secretId` use it as the layer-1 slot
+            // (MINIMAX / POLLINATIONS / WORKERS_AI / textgen dispatch all pass
+            // body.secret_id anyway); a stale/missing slot still falls through
+            // to active → shared — matching the resolver contract everywhere.
             //
-            // BEFORE this fix, ctx.secrets.read(KEY) called readSecret
-            // without an id and always returned the active secret —
-            // ignoring body.secret_id — so users who selected a non-active
-            // connection profile got authenticated against the wrong key.
+            // proxy_password is NOT resolved here: providers keep the
+            // `body.proxy_password || ctx.secrets.read(...)` shape.
             read(key, opts) {
-                const directories = request.user?.directories;
                 if (opts && Object.prototype.hasOwnProperty.call(opts, 'secretId')) {
-                    return readSecret(directories, key, opts.secretId);
+                    return resolveProviderSecret(request, key, opts.secretId);
                 }
-                const secretId = getRequestedSecretId(request);
-                if (secretId) {
-                    const requested = readSecret(directories, key, secretId);
-                    if (requested) return requested;
-                }
-                return readSecret(directories, key);
+                return resolveProviderSecret(request, key);
             },
         },
 

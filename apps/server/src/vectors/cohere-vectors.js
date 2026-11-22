@@ -1,5 +1,5 @@
 import fetch from 'node-fetch';
-import { SECRET_KEYS, readSecret } from '../endpoints/secrets.js';
+import { SECRET_KEYS, readSecret, resolveProviderSecret } from '../endpoints/secrets.js';
 import { attachInspectionEndpoint, getInspectionAbortSignal } from '../request-inspector.js';
 import { normalizeProviderBaseUrl } from '../util/base-url.js';
 
@@ -25,7 +25,7 @@ export async function getCohereBatchVector(texts, isQuery, directories, model, s
 
     const key = reverseProxy
         ? proxyPassword
-        : readSecret(directories, SECRET_KEYS.COHERE, secretId);
+        : (request ? resolveProviderSecret(request, SECRET_KEYS.COHERE, secretId) : readSecret(directories, SECRET_KEYS.COHERE, secretId));
 
     if (!key) {
         console.warn('No API key found');
