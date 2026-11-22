@@ -133,14 +133,24 @@
     --radius-pill: 999px;
 
     --ease: cubic-bezier(.22, 1, .36, 1);
+
+    /* 全局氛围层(App 根 backdrop):壁纸浓度 / 毛玻璃 / 纹理浓度 —
+       power_user.ui_ambience 服务端槽,JS 水合后写这三个 var。 */
+    --amb-bg-alpha: 0.34;
+    --amb-glass-blur: 14px;
+    --amb-tex-alpha: 0.06;
 }
 
 /* =========================================================================
    深邃黑(Hue ~215°~220° Cool Graphite)— 规范 dark 全套
    ========================================================================= */
 [data-theme="dark"] {
-    --canvas-bg: #08090A;
-    --surface-1: #0F1011;
+    /* 氛围层底色(实心,垫在壁纸图下)。 */
+    --amb-base: #08090A;
+    /* chrome/canvas 两层半透明 —— 全局氛围层透上来 + backdrop-filter
+       毛玻璃;文字层(--surface-2/3 卡片/气泡)保持不透,可读性不动。 */
+    --canvas-bg: rgba(8, 9, 10, 0.58);
+    --surface-1: rgba(15, 16, 17, 0.60);
     --surface-2: #141516;
     --surface-3: #1C1D1F;
 
@@ -227,11 +237,12 @@
     --surface-2: #FFFFFF;
     --surface-3: #ECEAE2;
 
-    --bg-chrome: #F5F4EF;
-    --bg-tray: #F5F4EF;
-    --bg-sidebar: #F5F4EF;
-    --bg-canvas: #FAF9F5;
-    --bg-workbench: #FAF9F5;
+    --amb-base: #F5F4EF;
+    --bg-chrome: rgba(245, 244, 239, 0.90);
+    --bg-tray: rgba(245, 244, 239, 0.90);
+    --bg-sidebar: rgba(245, 244, 239, 0.90);
+    --bg-canvas: rgba(250, 249, 245, 0.92);
+    --bg-workbench: rgba(250, 249, 245, 0.92);
     --bg-surface: #F2F0E8;
     --bg-input: #FFFFFF;
     --bg-surface-hover: #ECEAE2;

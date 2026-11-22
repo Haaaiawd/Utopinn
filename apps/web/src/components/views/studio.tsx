@@ -28,25 +28,25 @@ import {
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import { statsInject } from '../../api/stats';
-import { openImportModal, openCharEditor } from '../shell/overlayBus';
+import { openImportModal } from '../shell/overlayBus';
 
 /* ------------------------------------------------------------------ */
 /* studio nav 词表(端稿 L958-966 六类)                                  */
 /* ------------------------------------------------------------------ */
 
-export const STUDIO_NAVS = ['cards', 'global', 'worldbook', 'presets', 'persona', 'regex'] as const;
+/* 角色卡库栏目已撤 —— 卡面管理归门厅/卡选择弹窗,工坊只留资产域。 */
+export const STUDIO_NAVS = ['global', 'worldbook', 'presets', 'persona', 'regex'] as const;
 export type StudioNav = (typeof STUDIO_NAVS)[number];
 export const STUDIO_NAV_META: { id: StudioNav; icon: IconName }[] = [
-    { id: 'cards', icon: 'home' },
     { id: 'global', icon: 'layers' },
     { id: 'worldbook', icon: 'bookOpen' },
     { id: 'presets', icon: 'sliders' },
     { id: 'persona', icon: 'persona' },
     { id: 'regex', icon: 'code' },
 ];
-/** 旧词表(lore/chars/prompts/files)与非枚举值一律落 'cards'(App 缺省值兼容)。 */
+/** 旧词表(lore/chars/prompts/files/cards)与非枚举值一律落 'global'。 */
 export function normStudioNav(v: string): StudioNav {
-    return (STUDIO_NAVS as readonly string[]).includes(v) ? (v as StudioNav) : 'cards';
+    return (STUDIO_NAVS as readonly string[]).includes(v) ? (v as StudioNav) : 'global';
 }
 
 /* ------------------------------------------------------------------ */
@@ -212,7 +212,6 @@ function useWiHits(chatLabel: string | null) {
 /** 侧栏计数(端稿 cats.count):cards=卡数;global=选中/总数;worldbook=条目总数;
  *  presets/persona=总数;regex=三域脚本总数。 */
 export function useStudioCounts(): Record<StudioNav, string> {
-    const s = useShell();
     const worlds = useRemote('studio-cnt:worlds', listWorlds);
     const presets = useRemote('studio-cnt:presets', () => listPresets('openai'));
     const personas = useRemote('studio-cnt:personas', listPersonas);
@@ -227,7 +226,6 @@ export function useStudioCounts(): Record<StudioNav, string> {
             + regex.data.presets.reduce((acc, p) => acc + p.scripts.length, 0)
         : null;
     return {
-        cards: String(s.cards.size),
         global: `${slices.globalSelect.length}/${items.length}`,
         worldbook: entrySum !== null ? String(entrySum) : (worlds.data ? String(items.length) : '…'),
         presets: presets.data ? String(presets.data.total) : '…',
@@ -280,67 +278,6 @@ function StudioShell({ nav, children }: { nav: StudioNav; children: ReactNode })
                 </div>
             </div>
         </section>
-    );
-}
-
-/* ------------------------------------------------------------------ */
-/* 1. cards —— 卡格 + 详情/编辑(端稿 L1862)                              */
-/* ------------------------------------------------------------------ */
-
-function CardsPage() {
-    const { t } = useI18n();
-    const s = useShell();
-    const cards = [...s.cards.values()];
-    const chatCount = (dir: string) => s.chats.filter((c) => c.charDir === dir).length;
-    if (!cards.length) return <PanelEmpty icon="home">{t('studio.cards.empty')}</PanelEmpty>;
-    return (
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
-            {cards.map((c) => (
-                <CardGridTile key={c.charDir} card={c} chatCount={chatCount(c.charDir)} />
-            ))}
-        </div>
-    );
-}
-
-function CardGridTile({ card, chatCount }: { card: CardItem; chatCount: number }) {
-    const { t } = useI18n();
-    const s = useShell();
-    const [imgErr, setImgErr] = useState(false);
-    return (
-        <div className="group relative aspect-[16/11] overflow-hidden rounded-[12px] text-left" style={{ border: '1px solid var(--border-hairline)' }}>
-            {card.avatar && !imgErr ? (
-                <img
-                    src={charImageUrl(card.avatar)}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-                    onError={() => setImgErr(true)}
-                />
-            ) : (
-                <div className="absolute inset-0 flex items-center justify-center text-[34px]" style={{ background: 'var(--bg-active)', color: 'var(--brand)' }}>
-                    {(card.name || card.charDir)[0]}
-                </div>
-            )}
-            <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, transparent 35%, rgba(8,9,10,0.92) 100%)' }} />
-            <button
-                className="absolute right-2.5 top-2.5 h-7 rounded-lg px-2.5 text-[11px] font-medium backdrop-blur-md"
-                style={{ background: 'rgba(15,16,17,0.72)', color: '#F7F8F8', border: '1px solid rgba(255,255,255,0.14)' }}
-                onClick={() => openCharEditor(card.charDir)}
-            >
-                {t('studio.cards.detail')}
-            </button>
-            <button
-                className="absolute bottom-3 left-3.5 right-3.5 text-left"
-                onClick={() => {
-                    const chat = s.chats.find((x) => x.charDir === card.charDir);
-                    if (chat) s.selectChat(chat.id); else s.newChat(card.charDir);
-                }}
-            >
-                <div className="truncate text-[13.5px] font-medium text-white">{card.name || card.charDir}</div>
-                <div className="mt-0.5 truncate text-[11px] text-white/65">
-                    {card.readable ? `${card.fileName} · ${chatCount} ${t('studio.cards.chats')}` : `${card.fileName} · ${t('studio.cards.unreadable')}`}
-                </div>
-            </button>
-        </div>
     );
 }
 
@@ -1172,7 +1109,6 @@ export function StudioView() {
     const s = useShell();
     const nav = normStudioNav(s.studioNav);
     const body =
-        nav === 'cards' ? <CardsPage /> :
         nav === 'global' ? <GlobalPage /> :
         nav === 'worldbook' ? <WorldbookPage /> :
         nav === 'presets' ? <PresetsPage /> :
@@ -1219,11 +1155,11 @@ export function MobileHubView() {
             </header>
 
             <div className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-4">
-                {/* 1. hero:角色卡库(2px bold + 叠卡头像) */}
+                {/* 1. hero:卡墙入口(2px bold + 叠卡头像)→ home 卡画廊,工坊不再藏卡库。 */}
                 <button
                     className="flex w-full items-center justify-between gap-3 rounded-[12px] p-4 text-left transition-transform active:scale-[0.99]"
                     style={{ background: 'var(--bg-surface)', border: '2px solid var(--border-bold)', boxShadow: 'var(--shadow-card)' }}
-                    onClick={() => goStudio('cards')}
+                    onClick={() => s.setView('home')}
                 >
                     <div className="flex min-w-0 items-center gap-3">
                         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-primary)' }}>

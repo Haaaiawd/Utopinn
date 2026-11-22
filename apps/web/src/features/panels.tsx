@@ -11,7 +11,7 @@
 import type { Feature } from '../kernel/kernel';
 import type { PanelTypeContribution } from '../kernel/contributions';
 import {
-    CardAppPanel, ChannelsPanel, ChaptersPanel, LedgerPanel, LorePanel, MessageFramePanel, MvuPanel, NotesPanel, PresetPanel,
+    CardAppPanel, ChannelsPanel, ChaptersPanel, LorePanel, MessageFramePanel, MvuPanel, NotesPanel, PresetPanel,
 } from '../components/panels/SpecPanels';
 import { DiagPanel } from '../components/panels/DiagPanel';
 import { StatsPanel } from '../components/panels/StatsPanel';
@@ -26,7 +26,6 @@ export const panelsFeature: Feature = {
         const reg: RegisteredPanel[] = [];
         const add = (contrib: PanelTypeContribution) =>
             reg.push({ contrib, dispose: ctx.add('panel.type', contrib) });
-        add({ type: 'ledger', icon: 'notebook', wired: true, Body: LedgerPanel, desc: 'panel.desc.ledger', badge: 'panel.badge.cardapp', category: 'cardapp' });
         add({ type: 'cardapp', icon: 'layout', wired: true, Body: CardAppPanel, desc: 'panel.desc.cardapp', badge: 'panel.badge.cardapp', category: 'cardapp' });
         add({ type: 'mvu', icon: 'database', wired: true, Body: MvuPanel, desc: 'panel.desc.mvu', category: 'system' });
         add({ type: 'lore', icon: 'bookOpen', wired: true, Body: LorePanel, desc: 'panel.desc.lore', category: 'system' });

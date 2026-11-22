@@ -23,7 +23,7 @@ import { ApiError, apiGet, apiPost } from '../../api/client';
 import { cardData, charImageUrl, loadCharDoc, type CardDoc } from '../../api/characters';
 import { getRegexFullView } from '../../api/regex';
 import { personaAvatarSrc } from '../../api/personas';
-import { openCharEditor } from '../shell/overlayBus';
+
 import {
     MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
     MOCK_REPLY_NOVEL, MOCK_REPLY_VN,
@@ -1069,7 +1069,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const bookEntries = Array.isArray(embeddedBook?.entries) ? embeddedBook.entries.length
         : embeddedBook?.entries && typeof embeddedBook.entries === 'object' ? Object.keys(embeddedBook.entries).length : 0;
     const presetShort = s.live && s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : '';
-    const stageChipCls = 'inline-flex h-6 min-w-0 max-w-[130px] items-center gap-1 rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2 text-[11px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-active)] hover:text-[color:var(--fg-primary)]';
+    const stageChipCls = 'inline-flex h-7 min-w-0 max-w-[150px] items-center gap-1.5 rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 text-[12px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-active)] hover:text-[color:var(--fg-primary)]';
     return (
         <EngineCtx.Provider value={engine}>
             <section
@@ -1089,16 +1089,16 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                 <Icon name="menu" size={20} active={s.mobileDrawer} />
                             </button>
                         )}
+                        {/* 标题钮 → 角色页(点卡名看卡,直觉);上下文栈挪到内嵌书 chip 上。 */}
                         <button
-                            className="heading-tight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
-                            onClick={() => setMenu(menu === 'context' ? 'none' : 'context')}
-                            title={t('ctx.capsule')}
+                            className="heading-tight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[14px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
+                            onClick={() => s.chat && s.openChar(s.chat.charDir)}
+                            title={t('stage.chip.embedded')}
                         >
-                            <span className="char-avatar-ring h-5 w-5 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" onError={charImgFallback} /></span>
+                            <span className="char-avatar-ring h-7 w-7 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" onError={charImgFallback} /></span>
                             <span className="truncate text-[color:var(--fg-primary)]">
                                 {s.chat ? `${card?.name ?? s.chat.charDir} · ${s.chat.title}` : t('chat.none')}
                             </span>
-                            <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={13} /></span>
                         </button>
                         {/* persona 快切徽标(TASK-026):头像+名+⌄ → PersonaPop;
                             无人设目录时不画(诚实空,不占假名)。 */}
@@ -1129,8 +1129,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                     </button>
                                 )}
                                 {bookEntries > 0 && (
-                                    <button type="button" className={stageChipCls} title={t('stage.chip.embedded')} onClick={() => s.chat && openCharEditor(s.chat.charDir)}>
-                                        <Icon name="book" size={11} /><span className="truncate">{t('ov.char.bookEmbedded')} ×{bookEntries}</span>
+                                    <button type="button" className={stageChipCls} title={t('ctx.capsule')} onClick={() => setMenu(menu === 'context' ? 'none' : 'context')}>
+                                        <Icon name="book" size={12} /><span className="truncate">{t('ov.char.bookEmbedded')} ×{bookEntries}</span>
                                     </button>
                                 )}
                                 {regexChar && (

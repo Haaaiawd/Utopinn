@@ -499,7 +499,7 @@ export function NotesPanel() {
 }
 
 /* ----------------------------------------------------------------------- */
-/* ledger / cardapp —— CardAppFrame 真宿主                                    */
+/* cardapp —— CardAppFrame 真宿主                                             */
 /* ----------------------------------------------------------------------- */
 
 /** CardApp 挂载体:ctx 缺席 → 引导空态(不许拿默认卡名硬挂)。 */
@@ -513,18 +513,8 @@ function CardAppMount() {
     return <CardAppFrame charDir={chat.charDir} chatName={chat.chatName} />;
 }
 
-/** 总簿板块 —— CardApp 宿主:卡的 CardApp 自己渲总簿页。规范稿 mock 账簿
- *  的写死键(灵石/大殿耐久 平铺)对不上真 stat_data 契约(资源.灵石 嵌套、
- *  无耐久字段),面板体让位真宿主,不再维护假 schema。 */
-export function LedgerPanel() {
-    return (
-        <div className="h-full min-h-[320px]">
-            <CardAppMount />
-        </div>
-    );
-}
-
-/** CardApp 宿主板块 —— CardAppFrame 原样;离线时它自己给诚实错误态。 */
+/** CardApp 宿主板块 —— CardAppFrame 原样;离线时它自己给诚实错误态。
+ *  (旧 'ledger' 板块是 mock 账簿遗留,与 cardapp 同宿主 → 已并轨。) */
 export function CardAppPanel() {
     return (
         <div className="h-full min-h-[320px]">

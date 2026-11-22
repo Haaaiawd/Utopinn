@@ -29,7 +29,8 @@ import {
     type ImportConflictPolicy, type ImportDraft, type ImportPreview,
     type StScanKind, type StScanResult,
 } from '../../api/import';
-import { closeCharEditor, closeImportModal, openImportModal, useOverlay } from './overlayBus';
+import { closeCharEditor, closeImportModal, closeNewChatModal, openImportModal, useOverlay } from './overlayBus';
+import { CardMasonry, CardTile, GhostCardTile } from '../CardTile';
 import { PluginsSections, useServerPlugins } from '../views/plugins';
 
 const mono = 'font-mono-ui';
@@ -195,6 +196,7 @@ export function MobileFrame() {
                     <MobileSettingsSheet />
                     <ImportModal mobile />
                     <CharEditorModal mobile />
+                    <NewChatModal mobile />
                 </div>
             </div>
         </div>
@@ -657,6 +659,63 @@ function CharEditorModal({ mobile }: { mobile?: boolean }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* NewChatModal —— 新会话卡选择:newChat() 未指定卡时由 overlayBus 开。     */
+/* 点卡 → close + s.newChat(dir)(自动 ST 风格命名直建,不再 window.prompt)。*/
+/* ------------------------------------------------------------------ */
+
+function NewChatModal({ mobile }: { mobile?: boolean }) {
+    const { t } = useI18n();
+    const s = useShell();
+    const ov = useOverlay();
+    if (!ov.newChatOpen) return null;
+    const cards = [...s.cards.values()].filter((c) => c.readable !== false);
+    const chatCount = (dir: string) => s.chats.filter((c) => c.charDir === dir).length;
+    const pick = (dir: string) => { closeNewChatModal(); s.newChat(dir); };
+
+    return (
+        <div
+            className={`${mobile ? 'absolute' : 'fixed'} inset-0 z-[82] flex items-center justify-center bg-black/50 ${mobile ? '' : 'p-4'}`}
+            style={{ backdropFilter: 'blur(4px)' }}
+            onClick={closeNewChatModal}
+        >
+            <div
+                className={mobile
+                    ? 'pop-in flex h-full w-full flex-col overflow-hidden'
+                    : 'pop-in flex max-h-[82vh] w-full max-w-[620px] flex-col overflow-hidden rounded-2xl'}
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4">
+                    <span className="heading-tight text-[14px] font-medium text-[color:var(--fg-primary)]">{t('ov.newChat.title')}</span>
+                    <button className="ghost-btn h-7 w-7" onClick={closeNewChatModal}><Icon name="x" size={14} /></button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                    {cards.length === 0 ? (
+                        <div className="flex flex-col items-center gap-3 py-10">
+                            <p className="text-[12.5px] text-[color:var(--fg-muted)]">{t('ov.newChat.empty')}</p>
+                            <button
+                                className="h-8 rounded-lg px-4 text-[12px] font-medium"
+                                style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                                onClick={() => { closeNewChatModal(); openImportModal(); }}
+                            >
+                                {t('ov.newChat.import')}
+                            </button>
+                        </div>
+                    ) : (
+                        <CardMasonry className="lg:columns-3">
+                            {cards.map((c) => (
+                                <CardTile key={c.charDir} card={c} chatCount={chatCount(c.charDir)} onOpen={() => pick(c.charDir)} />
+                            ))}
+                            <GhostCardTile aspect="3/4" labeled />
+                        </CardMasonry>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* Cmdk —— 命令面板(原样保留)                                             */
 /* ------------------------------------------------------------------ */
 
@@ -1064,8 +1123,23 @@ function StAppearanceSection() {
     const bgs = useRemote(s.settingsOpen ? 'st:backgrounds' : null, listBackgrounds);
     const [cssDraft, setCssDraft] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const ambTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cssShown = cssDraft ?? s.stCss;
     const cssDirty = cssDraft !== null && cssDraft !== s.stCss;
+
+    /* 氛围滑杆:live 写 ctx(CSS var 即时生效),防抖 450ms 落 power_user.ui_ambience。 */
+    const setAmb = (patch: Partial<typeof s.uiAmbience>) => {
+        const next = { ...s.uiAmbience, ...patch };
+        s.setUiAmbience(next);
+        if (ambTimer.current) clearTimeout(ambTimer.current);
+        ambTimer.current = setTimeout(() => {
+            void patchSettings({ power_user: { ui_ambience: {
+                bg_alpha: next.bgAlpha,
+                glass_blur: next.glassBlur,
+                tex_alpha: next.texAlpha,
+            } } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
+        }, 450);
+    };
 
     const pickBg = (filename: string) => {
         if (busy) return;
@@ -1183,6 +1257,26 @@ function StAppearanceSection() {
                     ))}
                 </div>
             </div>
+            {/* 全局氛围层:壁纸浓度 / 毛玻璃 / 纹理浓度 —— power_user.ui_ambience 服务端槽 */}
+            <div className="space-y-2.5">
+                <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.amb.title')}</div>
+                {([
+                    { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.7, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
+                    { k: 'glassBlur' as const, lbl: t('st.amb.glass'), min: 0, max: 28, step: 1, fmt: (v: number) => `${v}px` },
+                    { k: 'texAlpha' as const, lbl: t('st.amb.tex'), min: 0, max: 0.18, step: 0.01, fmt: (v: number) => `${Math.round(v * 100)}%` },
+                ]).map(({ k, lbl, min, max, step, fmt }) => (
+                    <div key={k} className="flex items-center gap-3 px-0.5">
+                        <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>
+                        <input
+                            type="range" min={min} max={max} step={step}
+                            value={s.uiAmbience[k]}
+                            onChange={(e) => setAmb({ [k]: Number(e.target.value) })}
+                            className="min-w-0 flex-1"
+                        />
+                        <span className="w-10 shrink-0 text-right font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{fmt(s.uiAmbience[k])}</span>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
@@ -1272,6 +1366,7 @@ export function SettingsModal() {
             <SettingsSheet />
             <ImportModal />
             <CharEditorModal />
+            <NewChatModal />
         </>
     );
 }

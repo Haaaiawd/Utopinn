@@ -270,20 +270,10 @@ function ChatFloors() {
        收缩窗口不影响判定(renderable[0],非可见切片头)。 */
     const greetingId = renderable[0]?.m.role === 'assistant' ? renderable[0].m.id : undefined;
 
-    /* 酒馆背景:会话锁(chat_metadata.custom_background)> 全局 settings.background;
-       内置纹理是叠加滤镜,盖在背景之上。壁纸不滚 —— 层挂在滚容器外的包壳上。 */
-    const wallUrl = s.chatBgLock ?? s.stBg?.url ?? null;
+    /* 壁纸与氛围纹理已上移到 App 根全局 AmbientBackdrop(半透明 chrome 透出)——
+       舞台不再自绘大图;会话锁/全局槽的数据语义不变,只是渲染收口。 */
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
-            {wallUrl && (
-                <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{ backgroundImage: wallUrl, backgroundSize: 'cover', backgroundPosition: 'center' }}
-                />
-            )}
-            {s.chatSettings.bgMode !== 'none' && (
-                <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ background: `url('/assets/backgrounds/${s.chatSettings.bgMode}.png') center/cover no-repeat` }} />
-            )}
         {/* spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask */
         }
         <div ref={scrollRef} className="scroll-fade-mask relative min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-8">

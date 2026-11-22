@@ -25,11 +25,12 @@ import { LeftChrome } from './components/shell/Chrome';
 import { Workbench } from './components/shell/Workbench';
 import { bumpPanelFreq } from './components/shell/panelFreq';
 import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
+import { openNewChatModal } from './components/shell/overlayBus';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
     ShellProvider, useContribs, useShell,
     type ChatSettings, type PresetParams, type SheetSnap, type ShellCtx,
-    type StageData, type StBackground, type VpMode,
+    type StageData, type StBackground, type UiAmbience, type VpMode,
 } from './kernel/context';
 import { Kernel } from './kernel/kernel';
 import type { PanelType } from './kernel/contributions';
@@ -199,8 +200,8 @@ function Shell() {
     const [persona, setPersona] = useState<ActivePersona | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 920);
     const [workbenchOpen, setWorkbenchOpen] = useState(() => window.innerWidth > 1180);
-    const [openTabs, setOpenTabs] = useState<PanelType[]>(['ledger']);
-    const [activeTab, setActiveTab] = useState<string>('ledger');
+    const [openTabs, setOpenTabs] = useState<PanelType[]>(['cardapp']);
+    const [activeTab, setActiveTab] = useState<string>('cardapp');
     const [panelParams, setPanelParamsMap] = useState<Record<string, unknown>>({});
     const [floatingType, setFloatingType] = useState<PanelType | null>(null);
     const [floatingRect, setFloatingRect] = useState(DEFAULT_FLOAT_RECT);
@@ -250,10 +251,24 @@ function Shell() {
     });
     const [chatSettings, setChatSettings] = useState<ChatSettings>(loadChatSettings);
     /* 酒馆外观 ST 槽:stBg=settings.background;chatBgLock=会话锁;
-       stCss=power_user.custom_css(refreshConnection 水合)。 */
+       stCss=power_user.custom_css(refreshConnection 水合)。
+       uiAmbience=power_user.ui_ambience —— 全局氛围层参数。 */
     const [stBg, setStBg] = useState<StBackground | null>(null);
     const [chatBgLock, setChatBgLock] = useState<string | null>(null);
     const [stCss, setStCss] = useState('');
+    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.34, glassBlur: 14, texAlpha: 0.06 });
+    /* 置顶会话清单 —— accountStorage.pinnedChats(ST 同槽:{file_name,avatar})。 */
+    const [pinnedChats, setPinnedChats] = useState<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
+    const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
+    pinnedRef.current = pinnedChats;
+
+    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃/纹理 即时生效。 */
+    useEffect(() => {
+        const r = document.documentElement;
+        r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
+        r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
+        r.style.setProperty('--amb-tex-alpha', String(uiAmbience.texAlpha));
+    }, [uiAmbience]);
 
     const activePresetDocRef = useRef<{ name: string; doc: PresetDocument } | null>(null);
     const presetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -317,10 +332,14 @@ function Shell() {
     const refreshChats = useCallback(async () => {
         try {
             const real = await listAllChats();
+            const pins = pinnedRef.current;
+            const isPinned = (c: ChatSummary) => pins.some(
+                (p) => p.file_name === c.chatName && (p.charDir === c.charDir || p.avatar === `${c.charDir}.png`),
+            );
             setChats((prev) => {
                 const liveIds = new Set(real.map((c) => c.id));
                 const stageDemos = prev.filter((c) => c.id.startsWith('st-') && !liveIds.has(c.id));
-                return [...real, ...stageDemos];
+                return [...real.map((c) => ({ ...c, pinned: isPinned(c) })), ...stageDemos];
             });
             return true;
         } catch { return false; }
@@ -393,6 +412,23 @@ function Shell() {
             const pu = (st.power_user && typeof st.power_user === 'object' && !Array.isArray(st.power_user))
                 ? (st.power_user as Record<string, unknown>) : null;
             setStCss(str(pu?.custom_css));
+            /* power_user.ui_ambience(snake_case 落盘;camelCase 旧稿兼容读)。 */
+            const ua = pu?.ui_ambience;
+            if (ua && typeof ua === 'object' && !Array.isArray(ua)) {
+                const u = ua as Record<string, unknown>;
+                const num = (v: unknown, d: number, lo: number, hi: number) =>
+                    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
+                setUiAmbience({
+                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.34, 0, 0.8),
+                    glassBlur: num(u.glass_blur ?? u.glassBlur, 14, 0, 32),
+                    texAlpha: num(u.tex_alpha ?? u.texAlpha, 0.06, 0, 0.3),
+                });
+            }
+            /* accountStorage.pinnedChats —— ST 置顶会话清单槽(welcome-screen 同路径)。 */
+            const acct = (st.accountStorage && typeof st.accountStorage === 'object' && !Array.isArray(st.accountStorage))
+                ? (st.accountStorage as Record<string, unknown>) : null;
+            const pins = Array.isArray(acct?.pinnedChats) ? acct.pinnedChats : [];
+            setPinnedChats(pins.filter((p) => p && typeof p === 'object' && typeof (p as { file_name?: unknown }).file_name === 'string') as typeof pinnedChats);
         }
 
         const cfgModel = str(oai[`${src}_model`]) || str(oai.openai_model);
@@ -640,26 +676,52 @@ function Shell() {
         };
     }, [enqueueFiles]);
 
-    const onNewChat = useCallback((charDir?: string) => {
-        const targetDir = charDir ?? chat?.charDir ?? 'default_Seraphina';
-        if (serverStatus !== 'online') { setView('chat'); showHint(t('status.stub')); return; }
-        const name = window.prompt(`${t('sidebar.newChat')} (${targetDir})`, `chat-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}`);
-        if (!name?.trim()) return;
-        void createChat(targetDir, name.trim())
+    /* 会话名沿用 ST 默认格式 YYYY-M-D @HHh MMm SSs —— 自动命名,
+       不再走 window.prompt;未指定卡时弹卡选择模态(NewChatModal)。 */
+    const createChatFor = useCallback((targetDir: string) => {
+        const now = new Date();
+        const pad = (n: number) => String(n).padStart(2, '0');
+        const name = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()} @${pad(now.getHours())}h ${pad(now.getMinutes())}m ${pad(now.getSeconds())}s`;
+        void createChat(targetDir, name)
             .then(() => refreshChats())
-            .then(() => setActiveChat(`${targetDir}/${name.trim()}`))
+            .then(() => setActiveChat(`${targetDir}/${name}`))
             .then(() => setView('chat'))
             .catch((e) => showHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : e)));
-    }, [serverStatus, chat, refreshChats, showHint, t]);
+    }, [refreshChats, showHint, t]);
 
-    const onRenameChat = useCallback((c: ChatSummary) => {
+    const onNewChat = useCallback((charDir?: string) => {
+        if (serverStatus !== 'online') { setView('chat'); showHint(t('status.stub')); return; }
+        if (!charDir) { openNewChatModal(); return; }
+        createChatFor(charDir);
+    }, [serverStatus, createChatFor, showHint, t]);
+
+    /* 置顶切换 —— accountStorage.pinnedChats 浅合并写回(ST wire {file_name,avatar};
+       charDir 附键给自家列表用,ST 端无它也不伤)。 */
+    const onTogglePin = useCallback((c: ChatSummary) => {
         if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
-        const name = window.prompt(t('chat.rename'), c.chatName);
-        if (!name?.trim() || name.trim() === c.chatName) return;
-        void renameChat(c.charDir, c.chatName, name.trim())
-            .then((newName) => {
-                const id = `${c.charDir}/${newName}`;
-                setChats((prev) => prev.map((x) => (x.id === c.id ? { ...x, id, title: newName, chatName: newName } : x)));
+        const isPinned = pinnedRef.current.some(
+            (p) => p.file_name === c.chatName && (p.charDir === c.charDir || p.avatar === `${c.charDir}.png`),
+        );
+        const next = isPinned
+            ? pinnedRef.current.filter((p) => !(p.file_name === c.chatName && (p.charDir === c.charDir || p.avatar === `${c.charDir}.png`)))
+            : [...pinnedRef.current, { file_name: c.chatName, avatar: `${c.charDir}.png`, charDir: c.charDir }];
+        void patchSettings({ accountStorage: { pinnedChats: next } })
+            .then(() => {
+                pinnedRef.current = next;
+                setPinnedChats(next);
+                setChats((prev) => prev.map((x) => (x.id === c.id ? { ...x, pinned: !isPinned } : x)));
+            })
+            .catch((e) => showHint(t('chat.send.failed') + ': ' + (e instanceof Error ? e.message : e)));
+    }, [serverStatus, showHint, t]);
+
+    const onRenameChat = useCallback((c: ChatSummary, newName: string) => {
+        if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
+        const name = newName.trim();
+        if (!name || name === c.chatName) return;
+        void renameChat(c.charDir, c.chatName, name)
+            .then((resolved) => {
+                const id = `${c.charDir}/${resolved}`;
+                setChats((prev) => prev.map((x) => (x.id === c.id ? { ...x, id, title: resolved, chatName: resolved } : x)));
                 if (activeChat === c.id) setActiveChat(id);
             })
             .then(() => refreshChats())
@@ -668,7 +730,6 @@ function Shell() {
 
     const onDeleteChat = useCallback((c: ChatSummary) => {
         if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
-        if (!window.confirm(`${t('chat.delete.confirm')}\n${c.chatName}`)) return;
         const fallback = chats.filter((x) => x.id !== c.id)[0]?.id ?? '';
         void deleteChat(c.charDir, c.chatName)
             .then(() => refreshChats())
@@ -738,6 +799,7 @@ function Shell() {
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
+        togglePin: onTogglePin,
         cards, cardsMock, refreshCards,
         importDrafts, queueImport, dismissImportDraft,
         currentUser, refreshCurrentUser,
@@ -817,6 +879,7 @@ function Shell() {
         chatSettings,
         setChatSetting: (k, v) => setChatSettings((prev) => ({ ...prev, [k]: v })),
         stBg, setStBg, chatBgLock, setChatBgLock, stCss, setStCss,
+        uiAmbience, setUiAmbience,
         stageData, patchStageData: (p) => setStageData((prev) => ({ ...prev, ...p })),
         hint: showHint,
         live,
@@ -824,7 +887,7 @@ function Shell() {
     }), [
         view, railTab, chats, chat, activeChat, charDir, gotoView, pickPersona, sidebarOpen, workbenchOpen,
         openTabs, activeTab, floatingType, floatingRect, cardappFs, launcherSearch, panelParams,
-        showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, openPanel,
+        showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, onTogglePin, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         currentUser, refreshCurrentUser, personas, refreshPersonas, persona,
         openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
@@ -846,7 +909,8 @@ function Shell() {
             {chatSettings.customCss.trim() && (
                 <style id="utopinn-custom-css">{chatSettings.customCss}</style>
             )}
-            <div className="flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
+            <AmbientBackdrop />
+            <div className="relative flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
                 {isMobile ? (
                     <main className="min-h-0 flex-1">
                         <MobileFrame />
@@ -878,6 +942,45 @@ function Shell() {
 
 function wiObjCopy(raw: Record<string, unknown>): Record<string, unknown> {
     return { ...raw };
+}
+
+/** 全局氛围层 —— App 根 backdrop,整壳半透明 chrome 透上来。
+ *  图层:会话锁(chat_metadata.custom_background)> 全局 settings.background,
+ *  重模糊压成氛围色场而非照片;bgMode 纹理叠其上;末层暗角保对比。
+ *  浓度/模糊量全部由 --amb-* var 控(power_user.ui_ambience)。 */
+function AmbientBackdrop() {
+    const s = useShell();
+    const wall = s.chatBgLock ?? s.stBg?.url ?? null;
+    return (
+        <div className="pointer-events-none fixed inset-0" aria-hidden="true">
+            <div className="absolute inset-0" style={{ background: 'var(--amb-base, #08090A)' }} />
+            {wall && (
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        backgroundImage: wall,
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                        opacity: 'var(--amb-bg-alpha)',
+                        filter: 'blur(16px) saturate(1.1) brightness(0.85)',
+                    }}
+                />
+            )}
+            {s.chatSettings.bgMode !== 'none' && (
+                <div
+                    className="absolute inset-0"
+                    style={{
+                        background: `url('/assets/backgrounds/${s.chatSettings.bgMode}.png') center/cover no-repeat`,
+                        opacity: 'var(--amb-tex-alpha)',
+                    }}
+                />
+            )}
+            <div
+                className="absolute inset-0"
+                style={{ background: 'radial-gradient(130% 110% at 50% 0%, transparent 55%, rgba(0,0,0,0.38) 100%)' }}
+            />
+        </div>
+    );
 }
 
 export default function App() {

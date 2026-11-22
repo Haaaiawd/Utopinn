@@ -47,6 +47,14 @@ export interface StBackground {
     fitting: string;
 }
 
+/** 全局氛围层参数 —— power_user.ui_ambience 服务端槽(snake_case 落盘):
+ *  bg_alpha 壁纸浓度(0~0.8) / glass_blur 毛玻璃 px(0~32) / tex_alpha 纹理浓度(0~0.3)。 */
+export interface UiAmbience {
+    bgAlpha: number;
+    glassBlur: number;
+    texAlpha: number;
+}
+
 /** 舞台形态会话的展示数据(规范稿 s.chapters/s.channels/s.vn 落地位)。
  *  SPEC-DATA: 待接 —— 内容是 mock 种子;聊天形态不在此列。 */
 export interface StageData {
@@ -75,8 +83,11 @@ export interface ShellCtx {
     /** 打开某卡的角色页(视图切 'char',会话选择不变 —— 页内选会话才落聊天)。 */
     openChar: (charDir: string) => void;
     newChat: (charDir?: string) => void;
-    renameChat: (c: ChatSummary) => void;
+    /** 行内重命名提交 —— newName 为最终名;实现侧 trim/同名贵任由调用方先行。 */
+    renameChat: (c: ChatSummary, newName: string) => void;
     deleteChat: (c: ChatSummary) => void;
+    /** 置顶切换 —— accountStorage.pinnedChats 服务端槽(ST 同槽)。 */
+    togglePin: (c: ChatSummary) => void;
 
     /** 角色卡展示面(charDir → 行),App 单次拉取供侧栏/主区共用。 */
     cards: Map<string, CardItem>;
@@ -209,6 +220,9 @@ export interface ShellCtx {
     setChatBgLock: (url: string | null) => void;
     stCss: string;
     setStCss: (css: string) => void;
+    /** 全局氛围层(power_user.ui_ambience)—— 壁纸/纹理浓度 + 毛玻璃量。 */
+    uiAmbience: UiAmbience;
+    setUiAmbience: (a: UiAmbience) => void;
 
     /* ——— 舞台形态会话数据(SPEC-DATA:预演种子,面板与舞台共享) ——— */
     stageData: StageData;

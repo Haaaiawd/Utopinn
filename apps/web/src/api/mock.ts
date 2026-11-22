@@ -11,7 +11,7 @@ import type { ChatSummary, PreviewRequestBody, PreviewResponse } from '../types'
 // pinned/defaultTabs 是规范稿 s.* 语义(pinned → 侧栏置顶区,
 // defaultTabs → 选中时工作台自动开出的板块)。
 export const MOCK_CHATS: ChatSummary[] = [
-    { id: 'c1', title: '掌门账房线', charDir: 'default_Seraphina', chatName: 'demo-chat', group: 'ungrouped', updatedAt: '刚刚', pinned: true, defaultTabs: ['ledger'] },
+    { id: 'c1', title: '掌门账房线', charDir: 'default_Seraphina', chatName: 'demo-chat', group: 'ungrouped', updatedAt: '刚刚', pinned: true, defaultTabs: ['cardapp'] },
     { id: 'c2', title: '旧港灯塔', charDir: 'demo-card', chatName: 'lighthouse', group: 'ungrouped', updatedAt: '昨天', pinned: true },
 ];
 

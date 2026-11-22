@@ -472,8 +472,9 @@ export function sanitizeSettingsDoc(value) {
  * `world_info_settings` 承载 WI 引擎开关与 world_info.globalSelect/charLore("全局栈")。
  * 合入前过 sanitizeSettingsDoc——api_key_* 形字段一律拒绝落盘,密钥走 /secrets。
  * `background` 是 ST 全局聊天背景槽 {name,url,fitting,...}(#bg1 同源键)。
+ * `accountStorage` 是 ST 用户态袋(pinnedChats 等;welcome-screen/e2e 同槽)。
  */
-const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings', 'background']);
+const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings', 'background', 'accountStorage']);
 /**
  * 允许的顶层标量键(非对象段,直写不合并)。
  * `preset_settings_openai` 是"当前 openai 预设"选择指针:生成侧读顶层

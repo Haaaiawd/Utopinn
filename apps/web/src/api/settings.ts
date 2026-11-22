@@ -28,6 +28,8 @@ export interface SettingsPatch {
     /** 标量:当前 openai 预设选择指针;string 直写、null 删键(merge-patch),
      *  服务端镜像进 oai_settings.preset_settings_openai 双读取面。 */
     preset_settings_openai?: string | null;
+    /** ST accountStorage 对象段 —— pinnedChats 等账户级存储槽(ST 置顶同键)。 */
+    accountStorage?: Record<string, unknown>;
 }
 
 /**

@@ -2,7 +2,7 @@
 // chat 域:「+ 选择卡面」钮 + 置顶(卡头像环)+ 角色卡与会话分组(规范稿
 // PROJECTS 树形:组头=卡头像+名+折角,子会话纯文本挂 hairline 竖线)。
 // studio 域:板块目录;plugins 域:installed/market 两段 + 已激活列表。
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
@@ -43,44 +43,117 @@ export function relTime(iso?: string): string {
     return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function SessionRow({ s }: { s: ChatSummary }) {
+/** 会话行 —— ChatGPT 式:「···」行菜单(置顶/重命名/删除两步),
+ *  重命名走行内输入框,原生 prompt/confirm 全部退场。 */
+function SessionRow({ s, showCard }: { s: ChatSummary; showCard?: boolean }) {
     const { t } = useI18n();
     const shell = useShell();
     const active = shell.activeChat === s.id && shell.railTab === 'chat';
     const rel = relTime(s.updatedAt);
     const isDemo = s.id.startsWith('st-') || s.id === 'c1' || s.id === 'c2';
+    const canAct = !isDemo && shell.live;
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [renaming, setRenaming] = useState(false);
+    const [renameDraft, setRenameDraft] = useState(s.chatName);
+    const [delArmed, setDelArmed] = useState(false);
+    const rowRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
+
+    /* 点外行/菜单外 → 收菜单、弃删除武装;Esc 同理。 */
+    useEffect(() => {
+        if (!menuOpen) return;
+        const onDown = (e: PointerEvent) => {
+            if (rowRef.current && !rowRef.current.contains(e.target as Node)) {
+                setMenuOpen(false); setDelArmed(false);
+            }
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') { setMenuOpen(false); setDelArmed(false); }
+        };
+        document.addEventListener('pointerdown', onDown);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('pointerdown', onDown);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [menuOpen]);
+
+    useEffect(() => { if (renaming) inputRef.current?.select(); }, [renaming]);
+
+    const cardName = showCard ? (shell.cards.get(s.charDir)?.name ?? s.charDir) : '';
+    const commitRename = () => {
+        setRenaming(false);
+        shell.renameChat(s, renameDraft);
+    };
+    const menuBtn = 'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] transition-colors hover:bg-[color:var(--bg-active)]';
+
     return (
         <div
-            className="group/srow flex w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface)]"
+            ref={rowRef}
+            className="group/srow relative flex w-full items-center justify-between gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[color:var(--bg-surface)]"
             style={active ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
         >
-            <button type="button" className={`min-w-0 flex-1 truncate text-left ${isDemo ? 'opacity-55' : ''}`} onClick={() => shell.selectChat(s.id)}>
-                {s.title}
-            </button>
+            {renaming ? (
+                <input
+                    ref={inputRef}
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename();
+                        else if (e.key === 'Escape') { setRenaming(false); setRenameDraft(s.chatName); }
+                    }}
+                    onBlur={commitRename}
+                    className="min-w-0 flex-1 rounded-md px-1.5 py-0.5 text-[12.5px] outline-none"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--fg-primary)', border: '1px solid var(--brand)' }}
+                />
+            ) : (
+                <button type="button" className={`min-w-0 flex-1 truncate text-left ${isDemo ? 'opacity-55' : ''}`} onClick={() => shell.selectChat(s.id)}>
+                    {showCard ? `${cardName} · ${s.title}` : s.title}
+                </button>
+            )}
             {isDemo && <span className="shrink-0 font-mono-ui text-[10px] uppercase text-[color:var(--fg-faint)]">{t('chat.demo')}</span>}
             {s.unread && <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'var(--brand)' }} />}
-            {!isDemo && shell.live && (
-                <span className="hidden shrink-0 items-center gap-0.5 group-hover/srow:inline-flex">
-                    <button
-                        type="button"
-                        className="ghost-btn h-5 w-5"
-                        title={t('chat.rename')}
-                        onClick={(e) => { e.stopPropagation(); shell.renameChat(s); }}
-                    >
-                        <Icon name="pencil" size={11} />
-                    </button>
-                    <button
-                        type="button"
-                        className="ghost-btn h-5 w-5"
-                        title={t('stage.op.del')}
-                        style={{ color: 'var(--status-danger)' }}
-                        onClick={(e) => { e.stopPropagation(); shell.deleteChat(s); }}
-                    >
-                        <Icon name="trash" size={11} />
-                    </button>
-                </span>
+            {canAct && (
+                <button
+                    type="button"
+                    className={`ghost-btn h-5 w-5 shrink-0 ${shell.isMobile || menuOpen ? 'inline-flex' : 'hidden group-hover/srow:inline-flex'}`}
+                    title={t('chat.menu')}
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setDelArmed(false); }}
+                >
+                    <Icon name="more" size={12} />
+                </button>
             )}
-            {rel && <span className={`shrink-0 font-mono-ui text-[11px] text-[color:var(--fg-faint)] ${!isDemo && shell.live ? 'group-hover/srow:hidden' : ''}`}>{rel}</span>}
+            {rel && <span className={`shrink-0 font-mono-ui text-[11px] text-[color:var(--fg-faint)] ${canAct && !shell.isMobile ? 'group-hover/srow:hidden' : ''}`}>{rel}</span>}
+            {menuOpen && (
+                <div
+                    className="absolute right-1 top-full z-30 mt-0.5 w-36 overflow-hidden rounded-lg p-1"
+                    style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <button type="button" className={menuBtn} style={{ color: 'var(--fg-secondary)' }}
+                        onClick={() => { setMenuOpen(false); shell.togglePin(s); }}>
+                        <Icon name="pin" size={12} />
+                        {s.pinned ? t('chat.unpin') : t('chat.pin')}
+                    </button>
+                    <button type="button" className={menuBtn} style={{ color: 'var(--fg-secondary)' }}
+                        onClick={() => { setMenuOpen(false); setRenameDraft(s.chatName); setRenaming(true); }}>
+                        <Icon name="pencil" size={12} />
+                        {t('chat.rename')}
+                    </button>
+                    <button
+                        type="button"
+                        className={menuBtn}
+                        style={{ color: delArmed ? '#fff' : 'var(--status-danger)', background: delArmed ? 'var(--status-danger)' : undefined }}
+                        onClick={() => {
+                            if (!delArmed && shell.chatSettings.confirmDelete) { setDelArmed(true); return; }
+                            setMenuOpen(false); shell.deleteChat(s);
+                        }}
+                    >
+                        <Icon name="trash" size={12} />
+                        {delArmed ? t('chat.delete.armed') : t('stage.op.del')}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }
@@ -117,30 +190,12 @@ export function ChatTree() {
                 {pinned.length > 0 && (
                     <div className="space-y-0.5">
                         <div className={sect}><span>{t('tree.pinned')}</span></div>
-                        {pinned.map((s) => {
-                            const active = shell.activeChat === s.id && shell.railTab === 'chat';
-                            /* 规范稿置顶行:cardName · title 合成标签 */
-                            const cardName = shell.cards.get(s.charDir)?.name ?? s.charDir;
-                            return (
-                                <button
-                                    key={s.id}
-                                    className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12.5px] transition-colors"
-                                    style={active ? { background: 'var(--bg-active)', color: 'var(--fg-primary)' } : { color: 'var(--fg-secondary)' }}
-                                    onClick={() => shell.selectChat(s.id)}
-                                >
-                                    <CardRing charDir={s.charDir} />
-                                    <span className="min-w-0 flex-1 truncate">{cardName} · {s.title}</span>
-                                </button>
-                            );
-                        })}
+                        {pinned.map((s) => <SessionRow key={s.id} s={s} showCard />)}
                     </div>
                 )}
                 <div className="space-y-1.5">
                     <div className={sect}>
                         <span>{t('tree.cardSessions')}</span>
-                        <button className="transition-colors hover:text-[color:var(--fg-primary)]" onClick={() => shell.setView(shell.isMobile ? 'hub' : 'studio')}>
-                            {t('tree.manage')}
-                        </button>
                     </div>
                     {[...groups.entries()].map(([dir, list]) => (
                         <ChatGroup key={dir} dir={dir} list={list} />
