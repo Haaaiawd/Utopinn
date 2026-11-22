@@ -29,8 +29,9 @@ import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
 import { openNewChatModal } from './components/shell/overlayBus';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
+    clampFloatRect, DEFAULT_FLOAT_RECT,
     ShellProvider, useContribs, useShell,
-    type ChatSettings, type PresetParams, type SheetSnap, type ShellCtx,
+    type ChatSettings, type FloatRect, type PresetParams, type SheetSnap, type ShellCtx,
     type StageData, type StBackground, type UiAmbience, type VpMode,
 } from './kernel/context';
 import { Kernel } from './kernel/kernel';
@@ -155,30 +156,60 @@ const PARAM_DOC_KEY: Record<'temp' | 'topP' | 'ctxLen' | 'maxReply', string> = {
 interface WbLayout {
     openTabs: PanelType[];
     activeTab: string;
-    floatingType: PanelType | null;
-    floatingRect?: { x: number; y: number; w: number; h: number };
+    /** v3 逐板块浮窗:浮窗集(z 序 back→front)+ 各板块矩形记忆
+     *  (收档/关闭不抹,重浮回原位)。 */
+    floatOrder: PanelType[];
+    floatRects: Record<PanelType, FloatRect>;
 }
 
 const wbStorageKey = (chatKey: string) => `utopinn.wb.${chatKey}`;
-const DEFAULT_FLOAT_RECT = { x: 96, y: 96, w: 420, h: 480 };
+
+const isRect = (v: unknown): v is FloatRect => {
+    const r = v as Partial<FloatRect> | null | undefined;
+    const num = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
+    return !!r && num(r.x) && num(r.y) && num(r.w) && num(r.h);
+};
+
+/** 无记忆矩形时的级联落位 —— 每多一扇浮窗右下错 28px,不叠死。 */
+const cascadeFloatRect = (n: number): FloatRect =>
+    clampFloatRect({
+        x: DEFAULT_FLOAT_RECT.x + 28 * n,
+        y: DEFAULT_FLOAT_RECT.y + 28 * n,
+        w: DEFAULT_FLOAT_RECT.w,
+        h: DEFAULT_FLOAT_RECT.h,
+    }, window.innerWidth, window.innerHeight);
 
 function loadWbLayout(chatKey: string): WbLayout | null {
     try {
         const raw = localStorage.getItem(wbStorageKey(chatKey));
         if (!raw) return null;
-        const j = JSON.parse(raw) as Partial<WbLayout>;
-        const openTabs = Array.isArray(j.openTabs) ? j.openTabs.filter((x): x is string => typeof x === 'string') : null;
-        if (!openTabs) return null;
-        const r = j.floatingRect;
-        const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-        return {
-            openTabs,
-            activeTab: typeof j.activeTab === 'string' ? j.activeTab : (openTabs[0] ?? 'newtab'),
-            floatingType: typeof j.floatingType === 'string' ? j.floatingType : null,
-            floatingRect: r && num(r.x) && num(r.y) && num(r.w) && num(r.h)
-                ? { x: r.x, y: r.y, w: r.w, h: r.h }
-                : undefined,
+        const j = JSON.parse(raw) as Partial<WbLayout> & {
+            /* v2 旧档字段:整台 aside 浮窗(floatingType=发起板块)。 */
+            floatingType?: unknown;
+            floatingRect?: unknown;
         };
+        const str = (v: unknown): v is string => typeof v === 'string';
+        const floatOrder = Array.isArray(j.floatOrder) ? j.floatOrder.filter(str) : [];
+        const floatRects: Record<string, FloatRect> = {};
+        if (j.floatRects && typeof j.floatRects === 'object' && !Array.isArray(j.floatRects)) {
+            for (const [k, v] of Object.entries(j.floatRects)) {
+                if (isRect(v)) floatRects[k] = v;
+            }
+        }
+        /* v2 → v3 迁移:旧 floatingType/Rect 折成单板块浮窗条目,
+           openTabs 同步摘除(v2 不摘、v3 摘 —— 迁移照 v3 语义走)。 */
+        if (str(j.floatingType) && j.floatingType) {
+            if (!floatOrder.includes(j.floatingType)) floatOrder.push(j.floatingType);
+            if (isRect(j.floatingRect)) floatRects[j.floatingType] = j.floatingRect;
+        }
+        const rawTabs = Array.isArray(j.openTabs) ? j.openTabs.filter(str) : null;
+        if (!rawTabs) return null;
+        const openTabs = rawTabs.filter((x) => !floatOrder.includes(x));
+        const a = str(j.activeTab) ? j.activeTab : '';
+        const activeTab = a === 'newtab' || openTabs.includes(a)
+            ? a
+            : (openTabs[openTabs.length - 1] ?? 'newtab');
+        return { openTabs, activeTab, floatOrder, floatRects };
     } catch { return null; }
 }
 
@@ -204,8 +235,8 @@ function Shell() {
     const [openTabs, setOpenTabs] = useState<PanelType[]>(['cardapp']);
     const [activeTab, setActiveTab] = useState<string>('cardapp');
     const [panelParams, setPanelParamsMap] = useState<Record<string, unknown>>({});
-    const [floatingType, setFloatingType] = useState<PanelType | null>(null);
-    const [floatingRect, setFloatingRect] = useState(DEFAULT_FLOAT_RECT);
+    const [floatOrder, setFloatOrder] = useState<PanelType[]>([]);
+    const [floatRects, setFloatRects] = useState<Record<PanelType, FloatRect>>({});
     const [cardappFs, setCardappFs] = useState(false);
     const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
@@ -299,8 +330,8 @@ function Shell() {
     const wbKey = chat?.charDir && chat?.chatName ? `${chat.charDir}/${chat.chatName}` : null;
     const wbKeyRef = useRef(wbKey);
     const wbFirstRef = useRef(true);
-    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatingType, floatingRect });
-    wbLayoutRef.current = { openTabs, activeTab, floatingType, floatingRect };
+    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatOrder, floatRects });
+    wbLayoutRef.current = { openTabs, activeTab, floatOrder, floatRects };
     const chatRef = useRef(chat);
     chatRef.current = chat;
 
@@ -316,19 +347,52 @@ function Shell() {
         const stored = wbKey ? loadWbLayout(wbKey) : null;
         const next: WbLayout = stored ?? (() => {
             const tabs = [...(chatRef.current?.defaultTabs ?? [])];
-            return { openTabs: tabs, activeTab: tabs[0] ?? 'newtab', floatingType: null };
+            return { openTabs: tabs, activeTab: tabs[0] ?? 'newtab', floatOrder: [], floatRects: {} };
         })();
         setOpenTabs(next.openTabs);
         setActiveTab(next.activeTab);
-        setFloatingType(next.floatingType);
-        setFloatingRect(next.floatingRect ?? DEFAULT_FLOAT_RECT);
+        setFloatOrder(next.floatOrder);
+        const rects = Object.fromEntries(
+            Object.entries(next.floatRects).map(([k, v]) => [k, clampFloatRect(v, window.innerWidth, window.innerHeight)]),
+        ) as Record<PanelType, FloatRect>;
+        /* 缺记忆的活浮窗补级联默认位(畸形档防呆)。 */
+        next.floatOrder.forEach((tp, i) => { rects[tp] ??= cascadeFloatRect(i); });
+        setFloatRects(rects);
         setCardappFs(false);
-        if (next.openTabs.length || next.floatingType) setWorkbenchOpen(true);
+        if (next.openTabs.length || next.floatOrder.length) setWorkbenchOpen(true);
     }, [wbKey]);
 
     useEffect(() => {
-        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatingType, floatingRect });
-    }, [openTabs, activeTab, floatingType, floatingRect]);
+        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatOrder, floatRects });
+    }, [openTabs, activeTab, floatOrder, floatRects]);
+
+    /* 移动端无浮窗(屏小浮窗没意义,面板留工作台)——
+       isMobile 翻转时存量浮窗全数收档回 openTabs。 */
+    useEffect(() => {
+        if (!isMobile || floatOrder.length === 0) return;
+        setOpenTabs((prev) => [...prev, ...floatOrder.filter((tp) => !prev.includes(tp))]);
+        setFloatOrder([]);
+    }, [isMobile, floatOrder]);
+
+    /* 视口收缩 → 活浮窗矩形钳回视口内(防存档出屏/拖没)。 */
+    useEffect(() => {
+        if (floatOrder.length === 0) return;
+        const onResize = () => {
+            setFloatRects((prev) => {
+                let dirty = false;
+                const next = { ...prev };
+                for (const tp of floatOrder) {
+                    const r = next[tp];
+                    if (!r) continue;
+                    const c = clampFloatRect(r, window.innerWidth, window.innerHeight);
+                    if (c.x !== r.x || c.y !== r.y || c.w !== r.w || c.h !== r.h) { next[tp] = c; dirty = true; }
+                }
+                return dirty ? next : prev;
+            });
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, [floatOrder]);
 
     const showHint = useCallback((msg: string, err?: boolean) => {
         setHint({ msg, err });
@@ -774,15 +838,22 @@ function Shell() {
         }
         if (type === 'newtab') {
             setActiveTab('newtab');
+            if (isMobile) setSheetSnap('half');
+            else setWorkbenchOpen(true);
         } else {
             bumpPanelFreq(type);
-            setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
-            setActiveTab(type);
+            if (floatOrder.includes(type)) {
+                /* 板块已浮出 → 聚焦置顶它的浮窗,不塞回右栏。 */
+                setFloatOrder((prev) => [...prev.filter((x) => x !== type), type]);
+            } else {
+                setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
+                setActiveTab(type);
+                if (isMobile) setSheetSnap('half');
+                else setWorkbenchOpen(true);
+            }
         }
-        if (isMobile) setSheetSnap('half');
-        else setWorkbenchOpen(true);
         setLauncherSearch('');
-    }, [isMobile]);
+    }, [isMobile, floatOrder]);
 
     const openSettings = useCallback((tab?: string) => {
         if (tab) setSettingsTab(tab);
@@ -861,24 +932,47 @@ function Shell() {
             return { ...prev, [type]: params };
         }),
         detachPanel: (type) => {
-            setFloatingType(type);
+            if (isMobile) return;
+            setCardappFs(false);
+            setFloatRects((prev) => (prev[type] ? prev : { ...prev, [type]: cascadeFloatRect(floatOrder.length) }));
+            setFloatOrder((prev) => [...prev.filter((x) => x !== type), type]);
+            const next = openTabs.filter((x) => x !== type);
+            if (next.length !== openTabs.length) {
+                setOpenTabs(next);
+                if (activeTab === type) setActiveTab(next[next.length - 1] ?? 'newtab');
+            }
+            setWorkbenchOpen(true);
+        },
+        dockPanel: (type) => {
+            setFloatOrder((prev) => prev.filter((x) => x !== type));
+            setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
             setActiveTab(type);
             setWorkbenchOpen(true);
         },
-        dockBack: () => { setFloatingType(null); },
-        closeFloat: () => {
-            const tp = floatingType;
-            if (!tp) return;
-            setFloatingType(null);
-            setOpenTabs((prev) => {
-                const next = prev.filter((x) => x !== tp);
-                setActiveTab((a) => (a === tp ? (next[next.length - 1] ?? 'newtab') : a));
-                return next;
-            });
+        closeFloat: (type) => {
+            /* 矩形记忆(floatRects[type])刻意不抹 —— 重浮回原位。 */
+            setFloatOrder((prev) => prev.filter((x) => x !== type));
         },
-        floatingType, floatingRect, setFloatingRect,
+        floatToFront: (type) => {
+            setFloatOrder((prev) => (prev[prev.length - 1] === type ? prev : [...prev.filter((x) => x !== type), type]));
+        },
+        floatOrder, floatRects,
+        setFloatRect: (type, r) => setFloatRects((prev) => ({
+            ...prev,
+            [type]: clampFloatRect(r, window.innerWidth, window.innerHeight),
+        })),
         cardappFs, setCardappFs,
-        collapsePanels: () => { setCardappFs(false); setWorkbenchOpen(false); setSheetSnap('closed'); },
+        collapsePanels: () => {
+            setCardappFs(false);
+            /* 卡「收表面」:浮窗一并收档回抽屉 —— 留在外面就是没收净;
+               矩形记忆保留,工作台重开后重浮仍回原位。 */
+            if (floatOrder.length) {
+                setOpenTabs((prev) => [...prev, ...floatOrder.filter((tp) => !prev.includes(tp))]);
+                setFloatOrder([]);
+            }
+            setWorkbenchOpen(false);
+            setSheetSnap('closed');
+        },
         launcherSearch, setLauncherSearch,
         openDropdown, setOpenDropdown,
         accountPopOpen, setAccountPopOpen,
@@ -916,7 +1010,7 @@ function Shell() {
         serverStatus,
     }), [
         view, railTab, chats, chat, activeChat, charDir, gotoView, pickPersona, sidebarOpen, workbenchOpen,
-        openTabs, activeTab, floatingType, floatingRect, cardappFs, launcherSearch, panelParams,
+        openTabs, activeTab, floatOrder, floatRects, cardappFs, launcherSearch, panelParams,
         showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, onTogglePin, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         currentUser, refreshCurrentUser, personas, refreshPersonas, persona,

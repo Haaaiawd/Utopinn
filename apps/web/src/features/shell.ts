@@ -102,6 +102,7 @@ const zh: Record<string, string> = {
     'panel.type.diag': '诊断与观测', 'panel.type.stats': '统计与命中率',
     'panel.desc.diag': 'Jobs · Trace · 报错 · 日志', 'panel.desc.stats': '生成统计与 WI 命中',
     'wb.detach': '拆出为悬浮窗', 'wb.fs': '全屏', 'wb.fsExit': '退出全屏 (ESC)',
+    'wb.dockPanel': '收档回右栏', 'wb.floatGrip': '拖拽调整大小',
     'wb.launcher.cardapp': '卡绑面板(CardApp 宿主)', 'wb.launcher.system': '系统面板', 'wb.launcher.iframe': 'iframe 宿主',
     'wb.launcher.nocardapp': '该卡无 CardApp',
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
@@ -378,6 +379,7 @@ const en: Record<string, string> = {
     'panel.type.diag': 'Diagnostics', 'panel.type.stats': 'Stats & Hits',
     'panel.desc.diag': 'Jobs · Trace · Errors · Logs', 'panel.desc.stats': 'Generation stats & WI hits',
     'wb.detach': 'Pop out to floating window', 'wb.fs': 'Fullscreen', 'wb.fsExit': 'Exit fullscreen (ESC)',
+    'wb.dockPanel': 'Dock back to workbench', 'wb.floatGrip': 'Drag to resize',
     'wb.launcher.cardapp': 'Card-bound panels (CardApp host)', 'wb.launcher.system': 'System panels', 'wb.launcher.iframe': 'iframe host',
     'wb.launcher.nocardapp': 'No CardApp on this card',
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */

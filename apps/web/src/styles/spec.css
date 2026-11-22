@@ -305,7 +305,23 @@
 }
 .cardapp-fs-exit:hover { background: rgba(18,18,20,0.78); color: #fff; }
 
-/* 浮窗 v2 resize 拖柄(右下;min 320×240/上限视口 —— 钳位在壳侧)。 */
+/* 浮窗 v3 标题栏:DOM 序在 body 槽之后(保 iframe 不搬),order:-1 视觉置顶;
+   整条即拖柄(交互控件在壳侧 pointerdown 处过滤)。 */
+.wb-float-bar {
+    order: -1; flex-shrink: 0;
+    display: flex; align-items: center; gap: 8px;
+    height: 38px; padding: 0 6px 0 12px;
+    border-bottom: 1px solid var(--border-hairline);
+    cursor: grab; user-select: none; touch-action: none;
+}
+.wb-float-bar:active { cursor: grabbing; }
+.wb-float-title {
+    flex: 1; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--fs-ui-sm); font-weight: 500; color: var(--fg-primary);
+}
+
+/* 浮窗 resize 拖柄(右下;min/上限视口 —— 钳位在壳侧)。 */
 .wb-float-grip {
     position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
     cursor: nwse-resize; z-index: 2;

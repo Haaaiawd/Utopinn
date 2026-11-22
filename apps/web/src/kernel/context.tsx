@@ -18,6 +18,26 @@ import { Registry } from './registry';
 export type SheetSnap = 'closed' | 'half' | 'full';
 export type VpMode = 'auto' | 'desktop' | 'mobile';
 
+/** 浮窗矩形(视口内 fixed 定位,单位 px)。 */
+export interface FloatRect { x: number; y: number; w: number; h: number }
+
+/** 无记忆矩形时的默认落位;多窗级联偏移由调用方加。 */
+export const DEFAULT_FLOAT_RECT: FloatRect = { x: 96, y: 96, w: 420, h: 480 };
+
+/** 浮窗最小尺寸(拖拽/缩放/水合/视口钳位共用下界)。 */
+export const FLOAT_MIN_W = 320;
+export const FLOAT_MIN_H = 240;
+
+/** 矩形钳回视口内:尺寸不小于下界、四边不出屏 ——
+ *  拖/缩/存档水合/视口 resize 共用(纯函数,视口尺寸由调用方给)。 */
+export function clampFloatRect(r: FloatRect, vw: number, vh: number): FloatRect {
+    const w = Math.min(Math.max(FLOAT_MIN_W, r.w), Math.max(FLOAT_MIN_W, vw - 16));
+    const h = Math.min(Math.max(FLOAT_MIN_H, r.h), Math.max(FLOAT_MIN_H, vh - 16));
+    const x = Math.min(Math.max(0, r.x), Math.max(0, vw - w));
+    const y = Math.min(Math.max(0, r.y), Math.max(0, vh - h));
+    return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
+
 /** 预设/生成参数(由当前选中预设 doc 水合,调参防抖写回 PUT /presets/:name)。 */
 export interface PresetParams {
     temp: number;
@@ -130,25 +150,29 @@ export interface ShellCtx {
     panelParams: Record<string, unknown>;
     /** 整包替换某类型的载荷;板块体内部导航也走它(现场跨 tab 切换保持)。 */
     setPanelParams: (type: PanelType, params: unknown) => void;
-    /** 拆出为悬浮窗(规范稿 detach-panel)—— v2:整个工作台 aside 提升为
-     *  浮窗壳,openTabs 不摘、PanelBody 同一 React 子树,detach/dockBack
-     *  全程 iframe 零 remount(嵌卡不重启)。type = 发起板块,记档用。 */
+    /** 拆出为悬浮窗(规范稿 detach-panel)—— v3 逐板块浮窗:
+     *  板块从 openTabs 摘除进 floatOrder,PoolSlot 同 React 子树 class 换
+     *  floating-win 壳 —— detach/dock 全程 iframe 零 remount(嵌卡不重启)。
+     *  已浮出的 type 再调 = 置顶。 */
     detachPanel: (type: PanelType) => void;
-    /** 浮窗还原为右栏 aside(同树回挂,零 remount)。 */
-    dockBack: () => void;
-    /** 关浮窗 = 移除发起板块并还原 dock(沿用旧语义「面板丢弃」)。 */
-    closeFloat: () => void;
-    /** 浮窗态旗标:非 null = 工作台 aside 正以浮窗渲染;值=发起板块类型。 */
-    floatingType: PanelType | null;
-    /** 浮窗矩形(位置+尺寸);随 WbLayout 按会话存档。 */
-    floatingRect: { x: number; y: number; w: number; h: number };
-    setFloatingRect: (r: { x: number; y: number; w: number; h: number }) => void;
+    /** 浮窗收档回右栏:摘出浮窗集、补回 openTabs 尾并激活(矩形记忆保留)。 */
+    dockPanel: (type: PanelType) => void;
+    /** 关浮窗 = 摘出浮窗集不收档;矩形记忆保留,重浮回原位。 */
+    closeFloat: (type: PanelType) => void;
+    /** 点击浮窗置顶 —— floatOrder 末尾=最顶(只改 zIndex,不搬 DOM)。 */
+    floatToFront: (type: PanelType) => void;
+    /** 当前浮窗集,数组序 = z 序(back→front)。 */
+    floatOrder: PanelType[];
+    /** 各板块浮窗矩形记忆(type → rect):收档/关闭不抹,重浮/刷新回原位;
+     *  随 WbLayout 按会话存档。 */
+    floatRects: Record<PanelType, FloatRect>;
+    setFloatRect: (type: PanelType, r: FloatRect) => void;
     /** CardApp 全屏提升:cardapp 类板块激活时 tab 条给「全屏」钮;
      *  .cardapp-host 切 fixed inset-0(同树不 remount),ESC/关闭钮还原。 */
     cardappFs: boolean;
     setCardappFs: (v: boolean) => void;
     /** 跨格契约(卡「收表面」):收起面板区 —— 工作台折叠 + 移动 sheet 归
-     *  closed。复用现有「收起工作台」语义,openTabs 不清。 */
+     *  closed + 浮窗一并收档回 openTabs(矩形记忆保留,重浮回原位)。 */
     collapsePanels: () => void;
     launcherSearch: string;
     setLauncherSearch: (s: string) => void;

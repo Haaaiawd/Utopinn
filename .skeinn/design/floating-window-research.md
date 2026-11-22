@@ -219,7 +219,11 @@ L3 全屏/沉浸    theater z-[78] portal + requestFullscreen
 4. **全屏档复用 theater portal**:CardApp 面板头「全屏」钮 → portal 提升
    `.cardapp-host`(同树不 remount);iframe 补 allowfullscreen。
 5. **楼层帧保持封闭**:生态 C13 同向,文档化为接受降级。
-6. **多浮窗维持否决**;卡多窗引导成「一个表面多 tab 页」。
+6. ~~多浮窗维持否决~~ **已被用户需求推翻(2026-11-22)**:逐板块多浮窗
+   落地——Pool 槽位同 DOM 换 class,浮出/收档 iframe 零 remount;
+   `WbLayout` v3 {openTabs, activeTab, floatOrder, floatRects} 按会话
+   持久化,v2 档自动迁移;z 序只改 zIndex 不搬 DOM(池序 append/
+   remove-only 是隐性不变量——以后给池子加重排逻辑会 reload iframe)。
 
 ## 7. 未决/待验证
 
