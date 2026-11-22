@@ -35,7 +35,7 @@ export function CardTile({ card, sub, onOpen, onEdit }: {
                     <img
                         src={charImageUrl(card.avatar)}
                         alt={card.name || card.charDir}
-                        className="block h-auto w-full transition-transform duration-500 group-hover:scale-[1.02]"
+                        className="block h-auto w-full max-h-[420px] object-cover object-top transition-transform duration-500 group-hover:scale-[1.02]"
                         onError={() => setImgErr(true)}
                         loading="lazy"
                     />

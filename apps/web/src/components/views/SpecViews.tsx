@@ -46,7 +46,7 @@ export function HomeView() {
                                 );
                             })}
                             <GhostCardTile aspect="3/4" labeled />
-                            {Array.from({ length: Math.max(0, 3 - cards.length) }).map((_, i) => (
+                            {Array.from({ length: Math.max(0, 5 - cards.length) }).map((_, i) => (
                                 <GhostCardTile key={`g${i}`} aspect={GHOST_ASPECTS[i % GHOST_ASPECTS.length]!} />
                             ))}
                         </CardMasonry>
@@ -101,7 +101,7 @@ export function HomeView() {
                             );
                         })}
                         <GhostCardTile aspect="3/4" labeled />
-                        {Array.from({ length: Math.max(0, 3 - cards.length) }).map((_, i) => (
+                        {Array.from({ length: Math.max(0, 7 - cards.length) }).map((_, i) => (
                             <GhostCardTile key={`g${i}`} aspect={GHOST_ASPECTS[i % GHOST_ASPECTS.length]!} />
                         ))}
                     </CardMasonry>
