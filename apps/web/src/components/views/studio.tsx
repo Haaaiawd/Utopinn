@@ -134,19 +134,31 @@ function useWorldCounts(items: WorldListItem[]) {
     });
 }
 
-/** 卡 → 书反查:extensions.world 主绑 + settings charLore 辅书两层。 */
+/** 卡 → 书反查:extensions.world 主绑 + settings charLore 辅书两层。
+ *  bound    —— 任何绑定(主绑+辅书)都记;
+ *  embedded —— 书是该卡内嵌 character_book 的物化(有内嵌条目且绑定指向),
+ *              列表面把它标成「内嵌自 <卡>」,免得书名长得像卡混进了书库。 */
 function useWorldBindings(cards: CardItem[]) {
     const key = cards.map((c) => c.charDir).join('|');
     return useRemote(key ? `world-bind:${cards.length}:${key.length}` : null, async () => {
-        const map: Record<string, string[]> = {};
-        const push = (world: string, label: string) => {
+        const bound: Record<string, string[]> = {};
+        const embedded: Record<string, string[]> = {};
+        const push = (map: Record<string, string[]>, world: string, label: string) => {
             (map[world] ??= []).includes(label) || map[world]!.push(label);
         };
         await Promise.all(cards.map(async (c) => {
             try {
                 const doc = await loadCharDoc(c.charDir);
-                const world = cardData(doc).extensions?.world;
-                if (typeof world === 'string' && world) push(world, c.name || c.charDir);
+                const data = cardData(doc);
+                const world = data.extensions?.world;
+                if (typeof world === 'string' && world) {
+                    const label = c.name || c.charDir;
+                    push(bound, world, label);
+                    const book = data.character_book as { entries?: unknown } | null | undefined;
+                    const entries = book?.entries;
+                    const n = Array.isArray(entries) ? entries.length : (entries && typeof entries === 'object' ? Object.keys(entries).length : 0);
+                    if (n > 0) push(embedded, world, label);
+                }
             } catch { /* 读不出的卡不进反查 */ }
         }));
         try {
@@ -158,12 +170,12 @@ function useWorldBindings(cards: CardItem[]) {
                     const dir = typeof l?.name === 'string' ? l.name : '';
                     const label = cards.find((c) => c.charDir === dir)?.name || dir;
                     if (Array.isArray(l?.extraBooks)) {
-                        for (const b of l.extraBooks) if (typeof b === 'string' && b) push(b, label);
+                        for (const b of l.extraBooks) if (typeof b === 'string' && b) push(bound, b, label);
                     }
                 }
             }
         } catch { /* settings 取不到 → 只用卡面绑定层 */ }
-        return map;
+        return { bound, embedded };
     });
 }
 
@@ -293,6 +305,8 @@ function GlobalPage() {
     const [busy, setBusy] = useState<string | null>(null);
     const items = worlds.data?.items ?? [];
     const counts = useWorldCounts(items);
+    const cards = useMemo(() => [...s.cards.values()], [s.cards]);
+    const bindings = useWorldBindings(cards);
     const sel = new Set(slices.globalSelect);
 
     const toggleBook = (w: WorldListItem) => {
@@ -327,11 +341,17 @@ function GlobalPage() {
                         <div className="min-w-0">
                             <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">
                                 {w.displayName || w.name}
+                                {(bindings.data?.embedded?.[w.name]?.length ?? 0) > 0 && (
+                                    <span className="ml-1.5 rounded px-1 py-px font-mono-ui text-[9.5px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.world.embeddedTag')}</span>
+                                )}
                                 <span className="ml-1.5 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">
                                     {w.name}{n != null ? ` · ${n}${t('studio.world.entriesUnit')}` : ''}
                                 </span>
                             </div>
                             <div className="mt-0.5 text-[12px] text-[color:var(--fg-secondary)]">
+                                {(bindings.data?.embedded?.[w.name]?.length ?? 0) > 0
+                                    ? `${t('studio.world.embeddedPrefix')}${bindings.data!.embedded[w.name]!.join(' / ')} · `
+                                    : ''}
                                 {on ? t('studio.global.inStack') : t('studio.global.notInStack')}
                             </div>
                         </div>
@@ -410,7 +430,7 @@ function WorldbookPage() {
     if (worlds.error) return <PanelError error={worlds.error} onRetry={worlds.reload} />;
     if (worlds.data && !items.length) return <PanelEmpty icon="bookOpen">{t('studio.world.empty')}</PanelEmpty>;
 
-    const boundChips = curName ? (bindings.data?.[curName] ?? bindings.data?.[curMeta?.displayName ?? ''] ?? []) : [];
+    const boundChips = curName ? (bindings.data?.bound?.[curName] ?? bindings.data?.bound?.[curMeta?.displayName ?? ''] ?? []) : [];
     const curCount = curName ? counts.data?.[curName] ?? entries.length : 0;
 
     return (
@@ -429,7 +449,13 @@ function WorldbookPage() {
                         <div className="sh-select-menu pop-in">
                             {items.map((w) => {
                                 const n = counts.data?.[w.name];
-                                const bound2 = bindings.data?.[w.name] ?? [];
+                                const bound2 = bindings.data?.bound?.[w.name] ?? [];
+                                const emb = bindings.data?.embedded?.[w.name] ?? [];
+                                const sub = emb.length
+                                    ? `${t('studio.world.embeddedPrefix')}${emb.join(' / ')}`
+                                    : bound2.length
+                                        ? `${t('studio.world.boundPrefix')}${bound2.join(' / ')}`
+                                        : t('studio.world.unbound');
                                 return (
                                     <button
                                         key={w.name}
@@ -437,9 +463,14 @@ function WorldbookPage() {
                                         onClick={() => { setPicked(w.name); setSelUid(null); setDdOpen(false); }}
                                     >
                                         <div className="min-w-0">
-                                            <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{w.displayName || w.name}</div>
+                                            <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">
+                                                {w.displayName || w.name}
+                                                {emb.length > 0 && (
+                                                    <span className="ml-1.5 rounded px-1 py-px font-mono-ui text-[9.5px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.world.embeddedTag')}</span>
+                                                )}
+                                            </div>
                                             <div className="truncate font-mono-ui text-[10.5px] text-[color:var(--fg-muted)]">
-                                                {n == null ? '…' : `${n}${t('studio.world.entriesUnit')}`} · {bound2.length ? `${t('studio.world.boundPrefix')}${bound2.join(' / ')}` : t('studio.world.unbound')}
+                                                {n == null ? '…' : `${n}${t('studio.world.entriesUnit')}`} · {sub}
                                             </div>
                                         </div>
                                         {w.name === curName && <Icon name="check" size={14} className="shrink-0 text-[color:var(--brand)]" />}
