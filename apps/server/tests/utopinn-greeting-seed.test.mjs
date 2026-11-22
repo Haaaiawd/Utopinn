@@ -237,6 +237,17 @@ test('GET 楼层读面:问候楼原样透出(swipes/mes_display 契约不破)', 
     assert.equal(floor0.swipes.length, 3);
 });
 
+test('swipe 切换:PATCH /body/0/swipe_id 在问候楼上生效(SPA swipe 面)', async () => {
+    const patched = await api(chatUrl('Greeter', 'g-rest'), {
+        method: 'PATCH',
+        body: { ops: [{ op: 'replace', path: '/body/0/swipe_id', value: 1 }] },
+    });
+    assert.equal(patched.status, 200);
+    const chat = await getChatRepo().get(HANDLE, 'Greeter', 'g-rest');
+    assert.equal(chat.body[0].swipe_id, 1);
+    assert.equal(chat.body[0].swipes[1], 'Alt-A for Mia');
+});
+
 // ---------------------------------------------------------------------------
 // PUT create —— 与缺失即建同一播种语义
 // ---------------------------------------------------------------------------

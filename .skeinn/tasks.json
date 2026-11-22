@@ -5057,13 +5057,20 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "parked by TASK-072 lane handoff (parallel workstream; status reset to open so TASK-072 can start)",
-        "next": ""
+        "completed": [
+          "services/greeting-seed.js 新建:buildGreetingFloor(上游 getFirstMessage 同构:swipe 组=first+alternates、空 first 移位、字段 name/is_user/is_system/send_date/extra/swipe_info 对齐)+ isEmptySystemSeedFloor + resolveGreetingName1(chatDisplaySubstCtx 同口径 persona→profile.name)",
+          "utopinn-library.js 双入口接线:PUT chats create 与 POST messages「缺失即建」均播种;body[0]=greeting,空 system 占位楼被顶位;setvar 写随 header.chat_metadata 落盘;globalVariables 克隆隔离;响应加 greeting_seeded",
+          "单测 tests/utopinn-greeting-seed.test.mjs 10/10 绿(POST/PUT 播种、幂等二次 POST 不重播、无问候卡退化、first 空串移位、setvar 落 metadata、泉此方语料实卡)",
+          "邻域回归绿:utopinn-library 13/13、luker-generation-swipe 9/9、utopinn-chat-regex 7/7、theater-extra-http 4/4",
+          "掌门卡手测(scratch harness):POST create → greeting_seeded:true、floor0=卡 first_mes、swipes=1;二次 append 不重播",
+          "web tsc --noEmit 绿;cli --check 绿;chat-create 文档已校正"
+        ],
+        "current": "证据已齐,准备逐条对 acceptance 并 task done",
+        "next": "task done --json-file 附 acceptance_results"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:25:43.710Z"
+      "updated_at": "2026-11-22T07:57:44.337Z"
     },
     {
       "id": "TASK-060",
@@ -5125,13 +5132,20 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "实现中:/ 前缀路由 + GET /script/commands 注册表端点 + SlashMenu 补全(另一 agent 持有 TASK-059 active,start 被拒——工作照做,progress 直记)",
-        "next": "改 utopinn-script.js + th.ts + StageFrame.tsx → tsc + pnpm build 验证 → 实弹 curl /script/commands"
+        "completed": [
+          "GET /api/utopinn/script/commands 注册表端点落地(utopinn-script.js):57 条含 name/aliases/help(剥 HTML)/args{name,required,def}/unnamed/returns,别名键去重",
+          "th.ts +listScriptCommands()/ScriptCommandInfo,apiGet 快照消费",
+          "StageFrame send() 路由:trim 后 / 起头整条透传 runScript 不落用户消息;裸 / 只开菜单;// 注释与 /* 块注释透传服务端;/continue token 边界快路径保留;/ 非行首文本(URL/emoji/反斜杠转义)走普通发送",
+          "SlashMenu:快捷 5 项保留 + 注册表补全层(token 前缀过滤/别名参与匹配/参数名 chip 必填*/默认=/inArgs 签名卡展开/方向键 Tab Esc 键盘导航/点选补全落字不执行/草稿有非 / 正文时藏注册表行防覆盖)",
+          "tsc -p tsconfig.json --noEmit 零错;apps/web pnpm build 50.49s 成功",
+          "实弹验证(scratch :18997 --disableCsrf,dataRoot /tmp/uto-task060-data):/sys→ops[{type:send,name:System,index:3}]+JSONL 仅 System 楼无 user 楼;/echo→pipe+ops echo+notifications;/nonsensecmd→SlashCommandParserError error 回执;commands 端点 57 条"
+        ],
+        "current": "实现 + 静态/接口验证完成;剩 SPA 端到端(network 面板断言 composer→script/run)与 Skeinn 验收登记",
+        "next": "浏览器里 /sys 回车看 network(应只见 /api/utopinn/script/run,无 messages 路由)+ ops 楼层渲染;TASK-059 仍 active,start 未获批——done 登记等 owner"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.344Z",
-      "updated_at": "2026-11-22T07:32:13.123Z"
+      "updated_at": "2026-11-22T07:58:57.948Z"
     },
     {
       "id": "TASK-061",

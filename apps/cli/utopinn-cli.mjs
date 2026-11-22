@@ -2766,7 +2766,7 @@ async function cmdChatCreate() {
     if (charDir === state.char?.dir) saveState({ chat: { name }, floors: 0, integrity: data?.integrity ?? null });
     const n = [{ cmd: 'utopinn send "…"', why: '写第一楼' }];
     if (JSON_MODE) return out({ created: name, integrity: data?.integrity }, n);
-    console.log(`chat = ${name}(空文件已建)`);
+    console.log(`chat = ${name}(文件已建${data?.greeting_seeded ? ',问候楼已播种' : ''})`);
     footer();
     nextHints = n;
     console.log(`\x1b[2m· next: ${n.map(x => x.cmd).join(' · ')}\x1b[0m`);
