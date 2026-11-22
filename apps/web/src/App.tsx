@@ -270,6 +270,11 @@ function Shell() {
         r.style.setProperty('--amb-tex-alpha', String(uiAmbience.texAlpha));
     }, [uiAmbience]);
 
+    /* 正文字号 → --chat-font-size:设置滑杆/A± 即时落到 .chat-body-text。 */
+    useEffect(() => {
+        document.documentElement.style.setProperty('--chat-font-size', `${chatSettings.fontSize}px`);
+    }, [chatSettings.fontSize]);
+
     const activePresetDocRef = useRef<{ name: string; doc: PresetDocument } | null>(null);
     const presetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const worldInfoBaseRef = useRef<Record<string, unknown>>({});

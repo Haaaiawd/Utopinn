@@ -6,7 +6,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { openCharEditor, openImportModal } from '../shell/overlayBus';
-import { CardMasonry, CardTile, GhostCardTile, GHOST_ASPECTS } from '../CardTile';
+import { CardMasonry, CardTile } from '../CardTile';
 
 /** home:卡画廊 —— 点击卡面选中该卡最新会话(规范稿画廊网格)。
  *  移动端按规范稿 renderHomeGallery(true):h-12 头(menu + 标题 + 导入钮)
@@ -45,10 +45,6 @@ export function HomeView() {
                                     />
                                 );
                             })}
-                            <GhostCardTile aspect="3/4" labeled />
-                            {Array.from({ length: Math.max(0, 5 - cards.length) }).map((_, i) => (
-                                <GhostCardTile key={`g${i}`} aspect={GHOST_ASPECTS[i % GHOST_ASPECTS.length]!} tone={i + 1} />
-                            ))}
                         </CardMasonry>
                     </div>
                 </div>
@@ -100,10 +96,6 @@ export function HomeView() {
                                 />
                             );
                         })}
-                        <GhostCardTile aspect="3/4" labeled />
-                        {Array.from({ length: Math.max(0, 7 - cards.length) }).map((_, i) => (
-                            <GhostCardTile key={`g${i}`} aspect={GHOST_ASPECTS[i % GHOST_ASPECTS.length]!} tone={i + 1} />
-                        ))}
                     </CardMasonry>
                 )}
             </div>

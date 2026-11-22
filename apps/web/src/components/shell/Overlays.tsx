@@ -30,7 +30,7 @@ import {
     type StScanKind, type StScanResult,
 } from '../../api/import';
 import { closeCharEditor, closeImportModal, closeNewChatModal, openImportModal, useOverlay } from './overlayBus';
-import { CardMasonry, CardTile, GhostCardTile } from '../CardTile';
+import { CardMasonry, CardTile } from '../CardTile';
 import { PluginsSections, useServerPlugins } from '../views/plugins';
 
 const mono = 'font-mono-ui';
@@ -706,7 +706,6 @@ function NewChatModal({ mobile }: { mobile?: boolean }) {
                             {cards.map((c) => (
                                 <CardTile key={c.charDir} card={c} chatCount={chatCount(c.charDir)} onOpen={() => pick(c.charDir)} />
                             ))}
-                            <GhostCardTile aspect="3/4" labeled />
                         </CardMasonry>
                     )}
                 </div>

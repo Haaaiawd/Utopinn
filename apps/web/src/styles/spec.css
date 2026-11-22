@@ -19,9 +19,9 @@
 .workspace-inset {
     flex: 1; min-width: 0; height: 100%;
     background: var(--bg-canvas);
-    /* 全局氛围层透上半透明 chrome → 毛玻璃;模糊量随 --amb-glass-blur。 */
-    backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
-    -webkit-backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
+    /* 注意:不在此挂 backdrop-filter —— 它会使 fixed 后代(设置弹窗等)
+       以本容器为定位块,模态被锁死在中栏、右侧遮不住。玻璃感由全局
+       AmbientBackdrop 与半透明 token 承担。 */
     border: 2px solid var(--border-bold);
     border-radius: 12px;
     box-shadow: var(--shadow-card);
