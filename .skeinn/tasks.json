@@ -77,15 +77,12 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [
-          "GH#15+GH#14+GH#2+GH#3 全落:自动建路径+前缀剥除+无分号/catgodml+char 宏到 character_state+regex_disabled;core 79/79 server 102/102;commit 0e324e9+c2f0dff"
-        ],
-        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
-        "next": "掌门卡 35 条实弹+真卡 e2e(下一轮)"
+        "real_card_verify": "PASS:掌门卡 v31 实弹(独立格,/tmp/mvu-verify/report.json)——33 条唯一 _.set 全 parsed+applied,stat_data. 前缀剥除零嵌套,has() 门拆除后自动建路径生效,零生效显式 warning;唯一 as-written 拒收=prose 黏着的契约教学示例(有意防误抓)。GH#15 真卡闭环达成。",
+        "legacy_leftover": "CLI groups 面仍 legacy(无 utopinn 孪生,刻意分类);服务端 E2E 未跑(本机 Node 22 < 24,服务层 receipt 传播链源码核实无损)。"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.164Z",
-      "updated_at": "2026-11-21T13:21:58.164Z"
+      "updated_at": "2026-11-22T02:21:41.210Z"
     },
     {
       "id": "TASK-055",
@@ -159,15 +156,12 @@
       "covers": [],
       "status": "open",
       "progress": {
-        "completed": [
-          "GH#13 idle-wait+GH#15b ctxSubscribed+GH#9 lorebookEntries+/trigger 显式错+GH#4 schema 校验器 400 不写盘+--force CLI;28/28+4/4;commit c2f0dff"
-        ],
-        "current": "实现已提交验证(keeper 闸门未开,形式 done 待)",
-        "next": "掌门卡异步按钮实弹"
+        "gh15b_delivery": "utopinn-th-events.test.mjs 新增「ctx 事件投递 e2e」(commit e37abab):module 卡 ctx 面,卡 realm eventSource.on ← pushCtxEvent→bridge.push(host.event)→shim dispatchLocal 真回调,未订阅不过闸,ctx.off 停投——Keeper attempt6 指出的全链缺测已补,29/29 绿。",
+        "tasks_metadata": "attempt6 minor gap 已平:generate-context.js/quiet-generation.test.mjs 进 reads+touches,acc[3] 升级为全链投递判据。"
       },
       "evidence": [],
       "created_at": "2026-11-21T09:12:32.166Z",
-      "updated_at": "2026-11-21T13:22:25.590Z"
+      "updated_at": "2026-11-22T02:21:41.468Z"
     },
     {
       "id": "TASK-056",

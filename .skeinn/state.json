@@ -2,9 +2,9 @@
   "schema_version": 2,
   "project": {
     "name": "Utopinn",
-    "status": "shaping",
+    "status": "ready_for_keeper",
     "created_at": "2026-11-02T08:47:52.367Z",
-    "updated_at": "2026-11-22T02:07:37.750Z"
+    "updated_at": "2026-11-22T02:21:42.649Z"
   },
   "understanding": {
     "confirmed": [
@@ -663,8 +663,8 @@
         ]
       }
     ],
-    "prepared_digest": "043fa395e2958eb72d8784793fadd78962e710f8556ae621e5d03d18f0ca8bef",
-    "prepared_attempt": 5
+    "prepared_digest": "ebd2b62fd55e82c65c0704fdef13b0a460ae84c4b7d137833709c6d76e010b07",
+    "prepared_attempt": 6
   },
   "decision_ids": [
     "D-001",
