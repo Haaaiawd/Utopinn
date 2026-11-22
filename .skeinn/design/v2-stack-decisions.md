@@ -17,7 +17,9 @@
 1. **双 API 面并存** —— legacy `/api/characters/*` 等与 `/api/utopinn/*` 平行。短期必
    须(兼容 harness 靠它跑 golden/e2e)。收敛路径 = TASK-035:harness 专用端点标注
    compat 面、utopinn 可覆盖的删减、其余定退役序。**判断:不做大爆炸删除,先标注分
-   层再分批退。**
+   层再分批退。**(2026-11-22 清点:一层删减后残面**全部**仍有 harness 或 panel-t0
+   产品依赖,无"utopinn 全覆盖+零依赖"整面;详见 legacy-convergence.md §7——下一步
+   是客户侧调用点清理 + golden oracle 拍板,不是再删端点。)
 2. **插件散落 JS 直读** —— 部分插件绕 repo/formats 直摸文件。收编方向:存储读写一律
    过 repo 层,卡/书编解码一律过 @utopinn/formats——否则"引擎可换"是空话。随触碰
    逐步收,不开专项。
