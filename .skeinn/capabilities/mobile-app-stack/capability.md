@@ -16,7 +16,7 @@ React Native/Expo 应用工程选型:SDK 基线、导航、服务端状态、长
 
 ## Project scenario
 
-薄客户端聊天App:SDK58+dev build;expo-router;TanStack Query+WS ticket流式;LegendList v3;streamdown;NativeWind+共享tokens
+TASK-028 IReader 切割调研完成,mobile fork 方案成档 design/mobile-fork-ireader.md
 
 ## Decision tree
 

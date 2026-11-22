@@ -12,7 +12,7 @@ apps/web/src/kernel 的微内核语义:feature 装载模型({name,inject,apply})
 
 ## Project scenario
 
-cordis 语义微内核贡献点已落地为 web SPA 骨架(apps/web/src/kernel + /ui/contrib 水合对账)
+web SPA 微内核已多轮实战:TASK-026 三级路由+卡画廊瀑布流+工作台面板体系在产线验证
 
 ## Decision tree
 

@@ -12,7 +12,7 @@ gen_id 去重/patch 幂等——那是 repositories/ 自己的契约)、端点�
 
 ## Project scenario
 
-fs/sqlite 双引擎语义分层已落地并默认 fs 兼容、sqlite 部署推荐
+fs/sqlite 存储语义多轮测试钉死:utopinn-library 全绿,handle 目录隔离经多用户调研核实
 
 ## Decision tree
 

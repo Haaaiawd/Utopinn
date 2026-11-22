@@ -1,11 +1,11 @@
 {
-  "status": "provisional",
+  "status": "confirmed",
   "title": "存储引擎事务语义(fs/sqlite/mysql/postgres 差异决策树)",
   "field": "多引擎存储事务语义 (fs/sqlite/mysql/postgres)",
-  "scenario": "fs/sqlite 双引擎语义分层已落地并默认 fs 兼容、sqlite 部署推荐",
-  "confirmed_at": "",
+  "scenario": "fs/sqlite 存储语义多轮测试钉死:utopinn-library 全绿,handle 目录隔离经多用户调研核实",
+  "confirmed_at": "2026-11-22T07:11:02.178Z",
   "created_at": "2026-11-20T11:12:08.824Z",
-  "updated_at": "2026-11-21T09:14:25.388Z",
-  "source": "agent",
-  "selected_at": "2026-11-21T09:14:25.387Z"
+  "updated_at": "2026-11-22T07:11:02.178Z",
+  "source": "human",
+  "selected_at": "2026-11-22T07:11:02.178Z"
 }
