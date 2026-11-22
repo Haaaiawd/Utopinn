@@ -22,6 +22,7 @@ import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { charImageUrl } from '../../api/characters';
+import { builtinCoverSrc } from '../../api/personas';
 import type { FloorMsg } from '../../api/chats';
 import { extractFrontendBlocks } from '../../cardapp/messageFrame';
 import { MessageIframe } from '../../cardapp/MessageIframe';
@@ -42,10 +43,11 @@ export function CenterStage() {
 function StageAvatar({ name }: { name: string }) {
     const s = useShell();
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
-    const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    const coverKey = s.chat?.charDir ?? name;
+    const src = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(coverKey);
     return (
         <span className="char-avatar-ring mt-0.5 h-9 w-9 shrink-0">
-            <img src={src} alt={name} className="h-full w-full object-cover" onError={charImgFallback} />
+            <img src={src} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={coverKey} />
         </span>
     );
 }

@@ -13,19 +13,21 @@ import { createPortal } from 'react-dom';
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
 import { charImageUrl, type CardItem } from '../api/characters';
+import { builtinCoverSrc } from '../api/personas';
 import type { FloorMsg } from '../api/chats';
 import { Icon } from '../components/Icon';
 import { StageFrame, charImgFallback, useStageEngine } from '../components/stage/StageFrame';
 import type { Feature } from '../kernel/kernel';
 
-/** 卡头像环(形态内复用:会话卡图,无卡/离线 404 → default-char 占位)。 */
+/** 卡头像环(形态内复用:会话卡图,无卡/离线 404 → 内置卡面轮换,charDir 定面)。 */
 function StageRing({ size }: { size: number }) {
     const s = useShell();
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
-    const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    const coverKey = s.chat?.charDir ?? '';
+    const src = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(coverKey);
     return (
         <span className="char-avatar-ring shrink-0" style={{ width: size, height: size }}>
-            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} />
+            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={coverKey} />
         </span>
     );
 }

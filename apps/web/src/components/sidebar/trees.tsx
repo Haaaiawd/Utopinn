@@ -8,6 +8,7 @@ import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import type { ChatSummary } from '../../types';
 import { charImageUrl } from '../../api/characters';
+import { builtinCoverSrc } from '../../api/personas';
 import { charImgFallback } from '../stage/StageFrame';
 import { STUDIO_NAV_META, normStudioNav, useStudioCounts } from '../views/studio';
 import { pluginIcon, pluginLabel, useServerPlugins } from '../views/plugins';
@@ -16,14 +17,14 @@ import { MOCK_MARKET_PLUGINS } from '../../api/mock';
 /** 规范稿段标:text-[11px] font-medium fg-muted(非 caps)。 */
 const sect = 'flex items-center justify-between px-2 pb-1 text-[11px] font-medium text-[color:var(--fg-muted)]';
 
-/** 卡圆形头像环(规范稿 char-avatar-ring w-5 h-5):真卡图,无图 → default-char。 */
+/** 卡圆形头像环(规范稿 char-avatar-ring w-5 h-5):真卡图,无图 → 内置卡面轮换(charDir 定面)。 */
 function CardRing({ charDir, size = 20 }: { charDir: string; size?: number }) {
     const s = useShell();
     const card = s.cards.get(charDir);
-    const src = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    const src = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(charDir);
     return (
         <span className="char-avatar-ring shrink-0" style={{ width: size, height: size }}>
-            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} />
+            <img src={src} alt="" className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={charDir} />
         </span>
     );
 }

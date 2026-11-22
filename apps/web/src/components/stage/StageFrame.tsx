@@ -23,7 +23,7 @@ import { ApiError, apiGet, apiPost } from '../../api/client';
 import { cardData, charImageUrl, loadCharDoc, type CardDoc } from '../../api/characters';
 import { getRegexFullView } from '../../api/regex';
 import { listScriptCommands, type ScriptCommandInfo } from '../../api/th';
-import { personaAvatarSrc } from '../../api/personas';
+import { builtinCoverSrc, personaAvatarSrc } from '../../api/personas';
 
 import {
     MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
@@ -37,12 +37,19 @@ const mkMock = (role: 'user' | 'assistant', content: string, streaming = false, 
     id: ++mockMid, role, name: role === 'user' ? userName : '云栖宗 · 陈修线', content, streaming, timestamp: Date.now(),
 });
 
-/** 卡头像兜底:服务端 404/离线 → default-char 占位(诚实降级,不装作有图)。 */
+/** 卡头像兜底链:真图 404 → 内置卡面轮换(data-cover-key 稳定键定面)→ 终降固定卡面(black-cat)。
+ *  首图即卡面也挂时跳过同 URL 重试,直落终降。 */
 export const charImgFallback = (e: React.SyntheticEvent<HTMLImageElement>) => {
     const el = e.currentTarget;
-    if (el.dataset.fbk) return;
+    if (el.dataset.fbk === '2') return;
+    const cover = builtinCoverSrc(el.dataset.coverKey ?? '');
+    if (el.dataset.fbk === '1' || el.src.endsWith(cover)) {
+        el.dataset.fbk = '2';
+        el.src = '/assets/covers/black-cat.png';
+        return;
+    }
     el.dataset.fbk = '1';
-    el.src = '/assets/avatars/default-char.png';
+    el.src = cover;
 };
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -898,11 +905,18 @@ export function StageFrame({ children }: { children: ReactNode }) {
         try {
             const res = await apiPost<{
                 ok?: boolean; pipe?: unknown; isAborted?: boolean;
+                error?: { code?: string; message?: string; commandName?: string; line?: number; column?: string };
                 notifications?: { severity?: string; text?: string }[];
                 popups?: unknown[]; inputs?: unknown[];
             }>('/api/utopinn/script/run', { charDir: chat.charDir, chatName: chat.chatName, script });
             for (const n of res.notifications ?? []) {
                 if (n?.text) s.hint(String(n.text), n.severity === 'error' || n.severity === 'warning');
+            }
+            // TASK-064:结构化 error 回执(/del /swipe 等命令失败)→ hint 行,
+            // 原先是裸 HTTP 500 只出 'stage.script.failed'。
+            if (res.error?.message) {
+                const at = res.error.commandName ? ` /${res.error.commandName}` : '';
+                s.hint(`${res.error.code ?? 'error'}${at}: ${res.error.message}`, true);
             }
             if (typeof res.pipe === 'string' && res.pipe.trim()) s.hint(res.pipe.trim());
             if ((res.popups?.length ?? 0) + (res.inputs?.length ?? 0) > 0) s.hint(t('stage.script.popup'), true);
@@ -1184,7 +1198,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
        但弹层锚位仍按 quickRepliesOpen 抬(126/92 桌面,122/88 移动)。 */
     const qrSpace = qrOpen && qrChips.length > 0 && stageKind === 'chat';
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
-    const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(s.chat?.charDir ?? '');
     /* 舞台头读数(TASK-026):persona 当前项 + 卡绑定资产 + 激活预设 ——
        全部真值;读不到的面(chip 数据源缺席)照实不画,不凑数。 */
     const personaItem = s.personas.find((p) => p.avatar === s.persona?.avatar);
@@ -1220,7 +1234,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                             onClick={() => s.chat && s.openChar(s.chat.charDir)}
                             title={t('stage.chip.embedded')}
                         >
-                            <span className="char-avatar-ring h-7 w-7 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" onError={charImgFallback} /></span>
+                            <span className="char-avatar-ring h-7 w-7 shrink-0"><img src={headerAvatar} alt="" className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={s.chat?.charDir ?? ''} /></span>
                             <span className="truncate text-[color:var(--fg-primary)]">
                                 {s.chat ? `${card?.name ?? s.chat.charDir} · ${s.chat.title}` : t('chat.none')}
                             </span>

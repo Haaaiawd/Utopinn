@@ -45,18 +45,22 @@ accent (#FF6B5B) near chest like a badge, minimalist digital illustration,
 centered composition with circular crop safe area, no text, 512x512
 ```
 
-## avatars/ —— 卡面回退(1 张)
+## avatars/ —— 卡面回退(已退役)
 
-### `avatars/default-char.png` · 512×512
+~~`avatars/default-char.png`~~ —— 小龙灵兽 2025-11 上岗、2026-11 退休。卡面回退池已由 covers/ 五张故事卡面接管(`builtinCoverSrc` 轮换 + 黑猫终降),文件与代码引用已清。
 
-卡无立绘/加载失败时的回退,要和人头那三只**能区分又不违和**——用小灵兽而非普通动物:半透明的小精灵龙/雾团兽,轮廓柔和,体内浮着星火色光点,像"尚未被写成角色的存在"。它出现在画廊卡面和楼层头像位,频次最高,必须耐看。
+---
 
-```
-tiny translucent spirit creature, soft rounded silhouette like mist
-and a small dragon, faint glowing coral sparks (#FF6B5B) floating inside
-its body, dark charcoal background, ethereal minimalist illustration,
-centered composition with circular crop safe area, no text, 512x512
-```
+## covers/ —— 内置卡面(1024×1536,2:3)
+
+**已交付**:一套油画绘本风「夜读动物」故事卡面,同一画风同一书主题,五张气质各一。
+两种用法:① 卡无封面时的回退轮换池——`builtinCoverSrc(稳定键)` 哈希定面,同卡同面;② 人设头像第二选区(`cover-<id>.png` 键持久化)。
+
+- `covers/red-panda.png` —— 小熊猫:戴圆眼镜伏在摊开的旧书上夜读,爪背托腮,烛火暖橙书房。
+- `covers/red-fox.png` —— 赤狐:蜷睡在一摞旧书上,深蓝月夜,书堆边落几枝铃兰。
+- `covers/snowy-owl.png` —— 雪鸮:戴圆眼镜围红围巾,握羽毛笔在木桌上写信,墨水瓶与压花信纸在侧。
+- `covers/black-cat.png` —— 黑猫:卧在星月纹大茶杯里读一册小书,青绿底、金月与满杯星星。
+- `covers/cream-rabbit.png` —— 奶油兔:披绿斗篷抱书立在林间苔石上,画着风景的书页四处飞散,雏菊丛生。
 
 ---
 

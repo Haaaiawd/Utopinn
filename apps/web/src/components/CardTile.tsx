@@ -3,17 +3,19 @@
 // GhostCardTile 是占位阴影卡 —— 卡少时撑节奏,点击直达导入(非死砖)。
 import { useState, type ReactNode } from 'react';
 import { charImageUrl, type CardItem } from '../api/characters';
+import { builtinCoverSrc } from '../api/personas';
 import { useI18n } from '../i18n';
 import { Icon } from './Icon';
 import { openImportModal } from './shell/overlayBus';
+import { charImgFallback } from './stage/StageFrame';
 
 /** 瀑布流容器 —— CSS columns;子件需自带 mb + break-inside-avoid。 */
 export function CardMasonry({ children, className = '' }: { children: ReactNode; className?: string }) {
     return <div className={`columns-2 gap-3.5 sm:columns-3 lg:columns-4 ${className}`}>{children}</div>;
 }
 
-/** 无图卡的占位高宽比(与常见卡面同比例,瀑布流里不塌)。 */
-const FALLBACK_ASPECT = '3/4';
+/** 无图卡的内置卡面高宽比(covers 系列原生 2:3,瀑布流里不塌)。 */
+const FALLBACK_ASPECT = '2/3';
 
 export function CardTile({ card, sub, onOpen, onEdit }: {
     card: CardItem;
@@ -40,12 +42,16 @@ export function CardTile({ card, sub, onOpen, onEdit }: {
                         loading="lazy"
                     />
                 ) : (
-                    <span
-                        className="flex w-full items-center justify-center text-[34px]"
-                        style={{ aspectRatio: FALLBACK_ASPECT, background: 'var(--bg-active)', color: 'var(--brand)' }}
-                    >
-                        {(card.name || card.charDir)[0]}
-                    </span>
+                    /* 无图/加载失败 → 内置卡面轮换(charDir 定面,同卡同面);卡面再挂 → 黑猫终降。 */
+                    <img
+                        src={builtinCoverSrc(card.charDir || card.name)}
+                        alt=""
+                        data-cover-key={card.charDir || card.name}
+                        onError={charImgFallback}
+                        className="block w-full object-cover"
+                        style={{ aspectRatio: FALLBACK_ASPECT }}
+                        loading="lazy"
+                    />
                 )}
                 <span
                     className="absolute inset-0"

@@ -21,7 +21,7 @@ import { getSettings, patchSettings } from '../../api/settings';
 import { listBackgrounds, bgCssUrl } from '../../api/backgrounds';
 import { patchChat } from '../../api/chats';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry } from '../../api/secrets';
-import { personaAvatarSrc } from '../../api/personas';
+import { builtinCoverSrc, personaAvatarSrc } from '../../api/personas';
 import { listWorlds } from '../../api/worlds';
 import {
     commitImport, fileToDraft, previewImportWithFallback, scanStImport,
@@ -588,7 +588,7 @@ function CharEditorModal({ mobile }: { mobile?: boolean }) {
             >
                 <div className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-[color:var(--border-hairline)] px-4">
                     <div className="flex min-w-0 items-center gap-2.5">
-                        {card?.avatar ? <img src={charImageUrl(card.avatar)} alt="" className="h-7 w-7 rounded-lg object-cover" onError={charImgFallback} /> : <Icon name="home" size={16} className="text-[color:var(--fg-faint)]" />}
+                        <img src={card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(dir)} alt="" className="h-7 w-7 rounded-lg object-cover" onError={charImgFallback} data-cover-key={dir} />
                         <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{data?.name || card?.name || dir}</span>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
@@ -749,7 +749,7 @@ export function Cmdk() {
                                 return (
                                     <button key={c.id} className="flex w-full items-center justify-between rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.selectChat(c.id); s.setCmdkOpen(false); }}>
                                         <span className="flex min-w-0 items-center gap-2.5">
-                                            <img src={card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png'} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" onError={charImgFallback} />
+                                            <img src={card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(c.charDir)} alt="" className="h-5 w-5 shrink-0 rounded-full object-cover" onError={charImgFallback} data-cover-key={c.charDir} />
                                             <span className="truncate text-[13px] text-[color:var(--fg-primary)]">{card?.name ?? c.charDir} · {c.title}</span>
                                         </span>
                                         <span className="shrink-0 text-[11px] text-[color:var(--fg-muted)]">{t(`stage.label.${c.stage ?? 'chat'}`)}</span>

@@ -3,25 +3,33 @@
 // 旧实现 lore/chars/prompts/regex/files 词表作废(spec-v2-check D5 裁定稿侧为准)。
 //
 // 诚实面约定(wired 映射):
-//   worldbook 列表/条目启停 = GET/PUT /worlds 全真;命中率徽标 = stats/inject。
+//   worldbook 书目/书新建删/条目全字段编辑+增删复制 = GET/PUT/DELETE /worlds 全真;
+//   会话绑定书 = th.getChatLorebook/setChatLorebook(chat_metadata.world_info);命中率徽标 = stats/inject。
 //   global    全局栈读写全真(PATCH /settings → world_info_settings.world_info.globalSelect,保留 charLore)。
 //   presets   列表/参数/调参写 + 「设为默认」(preset_settings_openai)全真。
 //   persona   GET/PUT/DELETE 全真 + Utopinn 内置动物头像库(user-redpanda/fox/owl)。
 //   regex     GET/PUT/PATCH/DELETE /api/utopinn/regex 三域(global/char/preset)全真。
 import { useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { ChangeEvent, ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
-import { PanelEmpty, PanelError, chatKey, useRemote } from '../panels/panelShared';
+import { PanelEmpty, PanelError, chatKey, thCallTarget, useRemote } from '../panels/panelShared';
 import { cardData, loadCharDoc, charImageUrl, type CardItem } from '../../api/characters';
-import { listWorlds, getWorld, saveWorld, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
+import { listWorlds, getWorld, saveWorld, deleteWorld, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
+import { thCall } from '../../api/th';
+import {
+    applyDraft, draftDirty, draftOf, newEntry, nextUid,
+    LOGIC_OPTIONS, POSITION_OPTIONS, ROLE_OPTIONS,
+    type EntryDraft,
+} from './worldbookDraft';
 import { getSettings, patchSettings } from '../../api/settings';
 import { listPresets, getPreset, savePreset, type PresetDocument } from '../../api/presets';
 import {
-    BUILTIN_PERSONA_AVATARS, deletePersona, listPersonas, mintPersonaAvatarKey,
-    personaAvatarSrc, resolveBuiltinPersonaAvatar, savePersona,
-    type BuiltinPersonaAvatarId, type PersonaItem,
+    BUILTIN_COVERS, BUILTIN_PERSONA_AVATARS, builtinPickSrc, coverPersonaKey,
+    deletePersona, listPersonas, mintPersonaAvatarKey,
+    personaAvatarSrc, resolveBuiltinPersonaPick, savePersona,
+    type PersonaAvatarPick, type PersonaItem,
 } from '../../api/personas';
 import {
     deleteRegexScript, getRegexFullView, patchRegexScript, putRegexScope,
@@ -374,6 +382,144 @@ function entryTitle(uid: string, e: WorldEntry): string {
 }
 const entryKind = (e: WorldEntry): string => (e.constant ? '常驻' : '关键词');
 
+/* —— 条目编辑面小件(本页专用;样式与 preset/persona 输入同 token 族) —— */
+const wbInput = 'h-8 w-full rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-[12.5px] text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50';
+
+function WbField({ label, className, children }: { label: ReactNode; className?: string; children: ReactNode }) {
+    return (
+        <div className={className}>
+            <div className="mb-1 text-[11px] text-[color:var(--fg-muted)]">{label}</div>
+            {children}
+        </div>
+    );
+}
+
+function WbFlag({ label, on, onToggle, disabled }: { label: ReactNode; on: boolean; onToggle: () => void; disabled?: boolean }) {
+    return (
+        <span className="flex items-center gap-1.5 text-[12px] text-[color:var(--fg-secondary)]">
+            <Switch on={on} onToggle={onToggle} disabled={disabled} />
+            {label}
+        </span>
+    );
+}
+
+const LOGIC_NAMES = ['AND_ANY', 'NOT_ALL', 'NOT_ANY', 'AND_ALL'] as const;
+
+/**
+ * 条目编辑表单 —— 受控面:patch 改草稿,父级显式「保存」才 PUT 整档。
+ * 覆盖字段 = worldbookDraft.applyDraft 写入面;其余键原样透传不丢。
+ */
+function WbEntryForm({ draft, patch, disabled }: {
+    draft: EntryDraft;
+    patch: (p: Partial<EntryDraft>) => void;
+    disabled?: boolean;
+}) {
+    const { t } = useI18n();
+    const num = (v: string, on: (s: string) => void) => ({
+        type: 'number' as const, className: wbInput, value: v, disabled,
+        onChange: (e: ChangeEvent<HTMLInputElement>) => on(e.target.value),
+    });
+    return (
+        <div className="space-y-3">
+            <WbField label={t('studio.world.f.comment')}>
+                <input className={wbInput} value={draft.comment} disabled={disabled}
+                    onChange={(e) => patch({ comment: e.target.value })} />
+            </WbField>
+            <WbField label={t('studio.world.f.content')}>
+                <textarea
+                    className="min-h-[130px] w-full select-text resize-y rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-2.5 font-mono-ui text-[12px] leading-relaxed text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50"
+                    value={draft.content} disabled={disabled}
+                    onChange={(e) => patch({ content: e.target.value })}
+                />
+            </WbField>
+            <WbField label={t('studio.world.f.key')}>
+                <input className={`${wbInput} font-mono-ui`} value={draft.key} disabled={disabled}
+                    placeholder="foo, bar" onChange={(e) => patch({ key: e.target.value })} />
+            </WbField>
+            {/* 触发面:常驻免关键词;停用整条目;次级匹配开二段门槛 */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                <WbFlag label={t('studio.world.f.constant')} on={draft.constant} disabled={disabled}
+                    onToggle={() => patch({ constant: !draft.constant })} />
+                <WbFlag label={t('studio.world.f.disable')} on={draft.disable} disabled={disabled}
+                    onToggle={() => patch({ disable: !draft.disable })} />
+                <WbFlag label={t('studio.world.f.selective')} on={draft.selective} disabled={disabled}
+                    onToggle={() => patch({ selective: !draft.selective })} />
+            </div>
+            {draft.selective && (
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_140px]">
+                    <WbField label={t('studio.world.f.keysecondary')}>
+                        <input className={`${wbInput} font-mono-ui`} value={draft.keysecondary} disabled={disabled}
+                            onChange={(e) => patch({ keysecondary: e.target.value })} />
+                    </WbField>
+                    <WbField label={t('studio.world.f.selectiveLogic')}>
+                        <select className={`${wbInput} cursor-pointer`} value={draft.selectiveLogic} disabled={disabled}
+                            onChange={(e) => patch({ selectiveLogic: e.target.value })}>
+                            {LOGIC_OPTIONS.map((v) => <option key={v} value={v}>{LOGIC_NAMES[v]}</option>)}
+                        </select>
+                    </WbField>
+                </div>
+            )}
+            {/* 注入面:position 枚举 = core world_info_position 全域 0-7 */}
+            <div className="grid grid-cols-2 gap-2.5">
+                <WbField label={t('studio.world.f.position')} className="col-span-2">
+                    <select className={`${wbInput} cursor-pointer`} value={draft.position} disabled={disabled}
+                        onChange={(e) => patch({ position: e.target.value })}>
+                        {POSITION_OPTIONS.map((v) => <option key={v} value={v}>{t(`studio.world.pos.${v}`)}</option>)}
+                    </select>
+                </WbField>
+                {draft.position === '4' && (
+                    <>
+                        <WbField label={t('studio.world.f.depth')}>
+                            <input {...num(draft.depth, (v) => patch({ depth: v }))} />
+                        </WbField>
+                        <WbField label={t('studio.world.f.role')}>
+                            <select className={`${wbInput} cursor-pointer`} value={draft.role} disabled={disabled}
+                                onChange={(e) => patch({ role: e.target.value })}>
+                                {ROLE_OPTIONS.map((v) => <option key={v} value={v}>{t(`studio.world.role.${v}`)}</option>)}
+                            </select>
+                        </WbField>
+                    </>
+                )}
+                {draft.position === '7' && (
+                    <WbField label={t('studio.world.f.outletName')} className="col-span-2">
+                        <input className={wbInput} value={draft.outletName} disabled={disabled}
+                            onChange={(e) => patch({ outletName: e.target.value })} />
+                    </WbField>
+                )}
+                <WbField label={t('studio.world.f.order')}>
+                    <input {...num(draft.order, (v) => patch({ order: v }))} />
+                </WbField>
+                <WbField label={t('studio.world.f.probability')}>
+                    <div className="flex items-center gap-2">
+                        <input {...num(draft.probability, (v) => patch({ probability: v }))} min={0} max={100} />
+                        <WbFlag label={t('studio.world.f.useProb')} on={draft.useProbability} disabled={disabled}
+                            onToggle={() => patch({ useProbability: !draft.useProbability })} />
+                    </div>
+                </WbField>
+                <WbField label={t('studio.world.f.group')}>
+                    <input className={wbInput} value={draft.group} disabled={disabled}
+                        onChange={(e) => patch({ group: e.target.value })} />
+                </WbField>
+                <WbField label={t('studio.world.f.groupWeight')}>
+                    <input {...num(draft.groupWeight, (v) => patch({ groupWeight: v }))} />
+                </WbField>
+            </div>
+            {/* 定时效果三键 —— 留空写 null = 关(引擎 timedWorldInfo 语义) */}
+            <div className="grid grid-cols-3 gap-2.5">
+                <WbField label={t('studio.world.f.sticky')}>
+                    <input {...num(draft.sticky, (v) => patch({ sticky: v }))} min={0} />
+                </WbField>
+                <WbField label={t('studio.world.f.cooldown')}>
+                    <input {...num(draft.cooldown, (v) => patch({ cooldown: v }))} min={0} />
+                </WbField>
+                <WbField label={t('studio.world.f.delay')}>
+                    <input {...num(draft.delay, (v) => patch({ delay: v }))} min={0} />
+                </WbField>
+            </div>
+        </div>
+    );
+}
+
 function WorldbookPage() {
     const { t } = useI18n();
     const s = useShell();
@@ -390,15 +536,46 @@ function WorldbookPage() {
     });
     const [picked, setPicked] = useState<string | null>(null);
     const [ddOpen, setDdOpen] = useState(false);
+    const [creatingBook, setCreatingBook] = useState(false);
+    const [newBookName, setNewBookName] = useState('');
     const curName = (picked && items.some((i) => i.name === picked) ? picked : null)
         ?? bound.data ?? items[0]?.name ?? null;
     const curMeta = items.find((i) => i.name === curName) ?? null;
-    const docR = useRemote(curName ? `world:${curName}` : null, () => (curName ? loadWorldDoc(curName).then((doc) => ({ doc })) : Promise.reject(new Error('no world'))));
-    const doc = docR.data?.doc ?? null;
+    /* 乐观档:写回成功后立刻以写出的整档展示(reload 期间不等转场/不闪首条);
+     * 远端 GET 一落即交还(loadWorldDoc 成功回调自清),真值源仍是远端。 */
+    const [docOpt, setDocOpt] = useState<{ name: string; doc: WorldDoc } | null>(null);
+    const docR = useRemote(curName ? `world:${curName}` : null, () => (curName
+        ? loadWorldDoc(curName).then((d) => { setDocOpt(null); return { doc: d }; })
+        : Promise.reject(new Error('no world'))));
+    const doc = (docOpt && docOpt.name === curName ? docOpt.doc : docR.data?.doc) ?? null;
     const entries = useMemo(() => Object.entries(doc?.entries ?? {}), [doc]);
     const [selUid, setSelUid] = useState<string | null>(null);
     const selId = selUid && doc?.entries?.[selUid] ? selUid : (entries[0]?.[0] ?? null);
     const selEntry = selId && doc ? doc.entries[selId]! : null;
+
+    /* 编辑草稿:挂在选中 uid 上;脏基线 = draftOf(盘上条目)。
+     * 显式「保存」才 PUT 整档;结构操作(新建/复制/删除/启停)直写。 */
+    const [draftBox, setDraftBox] = useState<{ uid: string; d: EntryDraft } | null>(null);
+    const [busyWrite, setBusyWrite] = useState(false);
+    const curDraft: EntryDraft | null = selEntry
+        ? (draftBox && draftBox.uid === selId ? draftBox.d : draftOf(selEntry))
+        : null;
+    const dirty = !!(selEntry && curDraft && draftDirty(selEntry, curDraft));
+    const patchDraft = (p: Partial<EntryDraft>) => {
+        if (!selId || !curDraft) return;
+        setDraftBox({ uid: selId, d: { ...curDraft, ...p } });
+    };
+    const guardDirty = (): boolean => !dirty || window.confirm(t('studio.world.discardConfirm'));
+    const pickEntry = (uid: string) => {
+        if (!guardDirty()) return;
+        setSelUid(uid);
+        /* 确认丢弃后清草稿盒 —— 否则按 uid 匹配回跳会把「已放弃」的草稿复活。 */
+        setDraftBox(null);
+    };
+    const pickBook = (name: string) => {
+        if (!guardDirty()) return;
+        setPicked(name); setSelUid(null); setDraftBox(null); setDdOpen(false);
+    };
 
     const hits = useWiHits(chatKey(s.chat));
     const hitMap = useMemo(() => {
@@ -414,21 +591,118 @@ function WorldbookPage() {
     }, [hits.data, curName, curMeta]);
     const wiEvents = hits.data?.events ?? 0;
 
+    const hintFail = (e: unknown, key = 'studio.world.saveFailed') =>
+        s.hint(`${t(key)}: ${e instanceof Error ? e.message : String(e)}`, true);
+
+    /** 写回公共路:整档 PUT → 乐观档先显 → 失效缓存 → 刷远端与计数。 */
+    const writeDoc = (next: WorldDoc, after?: () => void, failKey = 'studio.world.saveFailed') => {
+        if (!curName || busyWrite) return;
+        setBusyWrite(true);
+        saveWorld(curName, next)
+            .then(() => { setDocOpt({ name: curName, doc: next }); invalidateWorldDoc(curName); docR.reload(); counts.reload(); after?.(); })
+            .catch((e) => hintFail(e, failKey))
+            .finally(() => setBusyWrite(false));
+    };
+
     const [toggling, setToggling] = useState<string | null>(null);
     const toggleEntry = (uid: string) => {
-        if (!doc || !curName || toggling) return;
+        if (!doc || !curName || toggling || busyWrite) return;
         const ent = doc.entries[uid];
         if (!ent) return;
-        const next: WorldDoc = { ...doc, entries: { ...doc.entries, [uid]: { ...ent, disable: !ent.disable } } };
         setToggling(uid);
-        saveWorld(curName, next)
-            .then(() => { invalidateWorldDoc(curName); docR.reload(); })
-            .catch((e) => s.hint(`${t('studio.world.toggleFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setToggling(null));
+        writeDoc(
+            { ...doc, entries: { ...doc.entries, [uid]: { ...ent, disable: !ent.disable } } },
+            () => setToggling(null),
+            'studio.world.toggleFailed',
+        );
+    };
+
+    /* —— 条目编辑面:暂存草稿显式保存;未覆盖字段 applyDraft 展开透传 —— */
+    const saveEntry = () => {
+        if (!doc || !selId || !selEntry || !curDraft) return;
+        const merged = applyDraft(selEntry, curDraft) as WorldEntry;
+        /* 保存后草稿换 normalized 形(draftOf(已写条目)):表单值不回闪;
+         * reload 落盘数据回来后基线对齐,dirty 自然归零。 */
+        writeDoc({ ...doc, entries: { ...doc.entries, [selId]: merged } },
+            () => setDraftBox({ uid: selId, d: draftOf(merged) }));
+    };
+
+    /* 条目结构操作:uid = max uid + 1(ST 惯例);新建 disable 起步安全。 */
+    const addEntry = () => {
+        if (!doc || !guardDirty()) return;
+        const uid = nextUid(doc.entries);
+        const next: WorldDoc = { ...doc, entries: { ...doc.entries, [String(uid)]: newEntry(uid) as WorldEntry } };
+        writeDoc(next, () => { setSelUid(String(uid)); setDraftBox(null); });
+    };
+    const dupEntry = () => {
+        if (!doc || !selId || !selEntry || !guardDirty()) return;
+        const uid = nextUid(doc.entries);
+        const next: WorldDoc = { ...doc, entries: { ...doc.entries, [String(uid)]: { ...selEntry, uid } } };
+        writeDoc(next, () => { setSelUid(String(uid)); setDraftBox(null); });
+    };
+    const delEntry = () => {
+        if (!doc || !selId || !selEntry) return;
+        if (!window.confirm(`${t('studio.world.delEntryConfirm')}\n${entryTitle(selId, selEntry)}`)) return;
+        const rest = { ...doc.entries };
+        delete rest[selId];
+        writeDoc({ ...doc, entries: rest }, () => { setSelUid(null); setDraftBox(null); });
+    };
+
+    /* —— 书级操作:PUT 建空档(引擎 resolveName 归一);DELETE 两步确认 —— */
+    const addBook = () => {
+        const name = newBookName.trim();
+        if (!name || busyWrite) return;
+        if (items.some((i) => i.name === name || i.displayName === name)) {
+            s.hint(t('studio.world.bookExists'), true);
+            return;
+        }
+        setBusyWrite(true);
+        saveWorld(name, { entries: {} })
+            .then((r) => {
+                setCreatingBook(false); setNewBookName('');
+                /* 用响应里的 canonical 名(resolveName 归一后可能 ≠ 输入)。 */
+                setPicked(r.name || name); setSelUid(null); setDraftBox(null);
+                worlds.reload();
+            })
+            .catch((e) => hintFail(e))
+            .finally(() => setBusyWrite(false));
+    };
+    const delBook = () => {
+        if (!curName || !guardDirty()) return;
+        if (!window.confirm(`${t('studio.world.delBookConfirm')}\n${curMeta?.displayName || curName}`)) return;
+        setBusyWrite(true);
+        deleteWorld(curName)
+            .then(() => {
+                invalidateWorldDoc(curName);
+                setPicked(null); setSelUid(null); setDraftBox(null);
+                worlds.reload();
+            })
+            .catch((e) => hintFail(e))
+            .finally(() => setBusyWrite(false));
+    };
+
+    /* —— 会话绑定书:chat_metadata.world_info(TH setChatLorebook 同键) —— */
+    const chatTarget = thCallTarget(s.chat);
+    const chatLb = useRemote(chatTarget ? `chatlb:${chatTarget.charDir}/${chatTarget.chatName}` : null, async () => {
+        const r = await thCall('getChatLorebook', {}, chatTarget!);
+        if (!r.ok) throw new Error('error' in r ? String(r.error) : `unsupported:${r.method}`);
+        return typeof r.result === 'string' && r.result ? r.result : null;
+    });
+    const chatLbBusy = useRef(false);
+    const setChatLb = (name: string | null) => {
+        if (!chatTarget || chatLbBusy.current) return;
+        chatLbBusy.current = true;
+        void thCall('setChatLorebook', { lorebook: name }, chatTarget)
+            .then((r) => {
+                if (!r.ok) throw new Error('error' in r ? String(r.error) : `unsupported:${r.method}`);
+                chatLb.reload();
+            })
+            .catch((e) => hintFail(e, 'studio.world.chatLbFailed'))
+            .finally(() => { chatLbBusy.current = false; });
     };
 
     if (worlds.error) return <PanelError error={worlds.error} onRetry={worlds.reload} />;
-    if (worlds.data && !items.length) return <PanelEmpty icon="bookOpen">{t('studio.world.empty')}</PanelEmpty>;
+    const noBooks = !!(worlds.data && !items.length);
 
     const boundChips = curName ? (bindings.data?.bound?.[curName] ?? bindings.data?.bound?.[curMeta?.displayName ?? ''] ?? []) : [];
     const curCount = curName ? counts.data?.[curName] ?? entries.length : 0;
@@ -436,51 +710,64 @@ function WorldbookPage() {
     return (
         <div className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-                {/* 书文件选择器(端稿 WORLDS_LIB 下拉 —— 选项带条目数+绑定注释) */}
-                <div className="relative min-w-[260px] max-w-[420px] flex-1">
-                    <button className="sh-select-trigger" onClick={() => setDdOpen(!ddOpen)}>
-                        <span className="truncate font-medium">
-                            {curMeta?.displayName || curName || '…'}
-                            <span className="ml-1 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">({curCount}{t('studio.world.entriesUnit')})</span>
-                        </span>
-                        <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={13} /></span>
-                    </button>
-                    {ddOpen && (
-                        <div className="sh-select-menu pop-in">
-                            {items.map((w) => {
-                                const n = counts.data?.[w.name];
-                                const bound2 = bindings.data?.bound?.[w.name] ?? [];
-                                const emb = bindings.data?.embedded?.[w.name] ?? [];
-                                const sub = emb.length
-                                    ? `${t('studio.world.embeddedPrefix')}${emb.join(' / ')}`
-                                    : bound2.length
-                                        ? `${t('studio.world.boundPrefix')}${bound2.join(' / ')}`
-                                        : t('studio.world.unbound');
-                                return (
-                                    <button
-                                        key={w.name}
-                                        className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left"
-                                        onClick={() => { setPicked(w.name); setSelUid(null); setDdOpen(false); }}
-                                    >
-                                        <div className="min-w-0">
-                                            <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">
-                                                {w.displayName || w.name}
-                                                {emb.length > 0 && (
-                                                    <span className="ml-1.5 rounded px-1 py-px font-mono-ui text-[9.5px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.world.embeddedTag')}</span>
-                                                )}
+                <div className="flex min-w-[260px] max-w-[520px] flex-1 items-center gap-1.5">
+                    {/* 书文件选择器(端稿 WORLDS_LIB 下拉 —— 选项带条目数+绑定注释);空库只剩 +/trash */}
+                    {!noBooks && (
+                    <div className="relative flex-1">
+                        <button className="sh-select-trigger" onClick={() => setDdOpen(!ddOpen)}>
+                            <span className="truncate font-medium">
+                                {curMeta?.displayName || curName || '…'}
+                                <span className="ml-1 font-mono-ui text-[11px] text-[color:var(--fg-muted)]">({curCount}{t('studio.world.entriesUnit')})</span>
+                            </span>
+                            <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={13} /></span>
+                        </button>
+                        {ddOpen && (
+                            <div className="sh-select-menu pop-in">
+                                {items.map((w) => {
+                                    const n = counts.data?.[w.name];
+                                    const bound2 = bindings.data?.bound?.[w.name] ?? [];
+                                    const emb = bindings.data?.embedded?.[w.name] ?? [];
+                                    const sub = emb.length
+                                        ? `${t('studio.world.embeddedPrefix')}${emb.join(' / ')}`
+                                        : bound2.length
+                                            ? `${t('studio.world.boundPrefix')}${bound2.join(' / ')}`
+                                            : t('studio.world.unbound');
+                                    return (
+                                        <button
+                                            key={w.name}
+                                            className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left"
+                                            onClick={() => pickBook(w.name)}
+                                        >
+                                            <div className="min-w-0">
+                                                <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">
+                                                    {w.displayName || w.name}
+                                                    {emb.length > 0 && (
+                                                        <span className="ml-1.5 rounded px-1 py-px font-mono-ui text-[9.5px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.world.embeddedTag')}</span>
+                                                    )}
+                                                </div>
+                                                <div className="truncate font-mono-ui text-[10.5px] text-[color:var(--fg-muted)]">
+                                                    {n == null ? '…' : `${n}${t('studio.world.entriesUnit')}`} · {sub}
+                                                </div>
                                             </div>
-                                            <div className="truncate font-mono-ui text-[10.5px] text-[color:var(--fg-muted)]">
-                                                {n == null ? '…' : `${n}${t('studio.world.entriesUnit')}`} · {sub}
-                                            </div>
-                                        </div>
-                                        {w.name === curName && <Icon name="check" size={14} className="shrink-0 text-[color:var(--brand)]" />}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                                            {w.name === curName && <Icon name="check" size={14} className="shrink-0 text-[color:var(--brand)]" />}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
                     )}
+                    {/* 书级操作:新建空档 / 删当前书(confirm 两步) */}
+                    <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.world.addBook')} disabled={busyWrite}
+                        onClick={() => { setCreatingBook((v) => !v); setNewBookName(''); }}>
+                        <Icon name="plus" size={14} />
+                    </button>
+                    <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.world.delBook')} disabled={busyWrite || !curName}
+                        onClick={delBook}>
+                        <Icon name="trash" size={14} />
+                    </button>
                 </div>
-                {/* 绑定反查 chips */}
+                {/* 绑定反查 chips + 会话书绑定(TH getChatLorebook/setChatLorebook) */}
                 <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
                     <span className="text-[color:var(--fg-muted)]">{t('studio.world.bound')}</span>
                     {boundChips.length ? boundChips.map((cn) => (
@@ -488,21 +775,65 @@ function WorldbookPage() {
                     )) : (
                         <span className="text-[color:var(--fg-faint)]">{bindings.error ? '—' : t('studio.world.boundNone')}</span>
                     )}
+                    {chatTarget && (
+                        <span className="ml-1.5 flex items-center gap-1 border-l border-[color:var(--border-hairline)] pl-2.5">
+                            <span className="text-[color:var(--fg-muted)]">{t('studio.world.chatLb')}</span>
+                            <span className="max-w-[140px] truncate font-mono-ui text-[10.5px] text-[color:var(--fg-secondary)]">
+                                {chatLb.data ?? (chatLb.loading ? '…' : t('studio.world.chatLbNone'))}
+                            </span>
+                            {curName && (chatLb.data === curName ? (
+                                <button className="ghost-btn h-6 rounded-md px-1.5 text-[10.5px]" onClick={() => setChatLb(null)}>
+                                    {t('studio.world.chatUnbind')}
+                                </button>
+                            ) : (
+                                <button className="ghost-btn h-6 rounded-md px-1.5 text-[10.5px] font-medium" style={{ color: 'var(--brand)' }}
+                                    onClick={() => setChatLb(curName)}>
+                                    {t('studio.world.chatBind')}
+                                </button>
+                            ))}
+                        </span>
+                    )}
                 </div>
             </div>
 
+            {/* 新建书内联行:文件名 → PUT 空 entries 档 */}
+            {creatingBook && (
+                <div className="flex max-w-[420px] items-center gap-1.5">
+                    <input
+                        className={wbInput} autoFocus value={newBookName}
+                        placeholder={t('studio.world.bookNamePh')} disabled={busyWrite}
+                        onChange={(e) => setNewBookName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') addBook();
+                            if (e.key === 'Escape') setCreatingBook(false);
+                        }}
+                    />
+                    <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.world.addBook')} disabled={busyWrite || !newBookName.trim()} onClick={addBook}>
+                        <Icon name="check" size={14} />
+                    </button>
+                    <button className="ghost-btn h-8 w-8 shrink-0" disabled={busyWrite} onClick={() => setCreatingBook(false)}>
+                        <Icon name="x" size={14} />
+                    </button>
+                </div>
+            )}
+
+            {noBooks && <PanelEmpty icon="bookOpen">{t('studio.world.empty')}</PanelEmpty>}
             {docR.error && <PanelError error={docR.error} onRetry={docR.reload} />}
             {doc && (
                 <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-                    {/* 左列:条目 + 命中徽标 + 启停 */}
+                    {/* 左列:新建 + 条目 + 命中徽标 + 启停直写 */}
                     <div className="inset-group h-fit lg:col-span-5">
+                        <button className="inset-row inset-row-btn w-full !justify-start gap-2" onClick={addEntry} disabled={busyWrite}>
+                            <Icon name="plus" size={13} className="shrink-0 text-[color:var(--fg-muted)]" />
+                            <span className="text-[12px] font-medium text-[color:var(--fg-secondary)]">{t('studio.world.addEntry')}</span>
+                        </button>
                         {entries.map(([uid, e]) => {
                             const hitsN = hitMap.get(uid) ?? null;
                             const rate = hitsN && wiEvents ? Math.round((hitsN / wiEvents) * 100) : null;
                             const enabled = !e.disable;
                             return (
                                 <div key={uid} className="inset-row" style={{ background: uid === selId ? 'var(--bg-active)' : 'transparent' }}>
-                                    <button className="min-w-0 flex-1 text-left" onClick={() => setSelUid(uid)}>
+                                    <button className="min-w-0 flex-1 text-left" onClick={() => pickEntry(uid)}>
                                         <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]" style={{ opacity: enabled ? 1 : 0.45 }}>
                                             {entryTitle(uid, e)}
                                         </div>
@@ -521,24 +852,42 @@ function WorldbookPage() {
                         })}
                         {!entries.length && <PanelEmpty icon="bookOpen">{t('studio.world.emptyEntries')}</PanelEmpty>}
                     </div>
-                    {/* 右列:条目 JSON 详情 */}
+                    {/* 右列:结构化条目编辑表单(JSON pre 已收编进字段面) */}
                     <div className="space-y-3 rounded-[12px] p-4 lg:col-span-7" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}>
-                        {selEntry ? (
+                        {selEntry && curDraft ? (
                             <>
                                 <div className="flex items-center justify-between gap-2">
-                                    <div className="heading-tight truncate text-[13.5px] font-medium text-[color:var(--fg-primary)]">{entryTitle(selId!, selEntry)}</div>
-                                    <span className="shrink-0 font-mono-ui text-[11px]" style={{ color: (hitMap.get(selId!) ?? 0) === 0 ? 'var(--brand)' : 'var(--fg-muted)' }}>
-                                        {hitMap.has(selId!)
-                                            ? `${t('studio.world.hitsPre')} ${hitMap.get(selId!)} ${t('studio.world.hitsUnit')}`
-                                            : hits.data ? t('studio.world.hitsZero2') : '—'}
-                                    </span>
+                                    <div className="flex min-w-0 items-center gap-2">
+                                        <span className="shrink-0 font-mono-ui text-[11px] text-[color:var(--fg-faint)]">#{selId}</span>
+                                        <span className="shrink-0 font-mono-ui text-[11px]" style={{ color: (hitMap.get(selId!) ?? 0) === 0 ? 'var(--brand)' : 'var(--fg-muted)' }}>
+                                            {hitMap.has(selId!)
+                                                ? `${t('studio.world.hitsPre')} ${hitMap.get(selId!)} ${t('studio.world.hitsUnit')}`
+                                                : hits.data ? t('studio.world.hitsZero2') : '—'}
+                                        </span>
+                                    </div>
+                                    <div className="flex shrink-0 items-center gap-1">
+                                        <button className="ghost-btn h-7 w-7" title={t('studio.world.dupEntry')} disabled={busyWrite} onClick={dupEntry}>
+                                            <Icon name="copy" size={13} />
+                                        </button>
+                                        <button className="ghost-btn h-7 w-7" title={t('studio.world.delEntry')} disabled={busyWrite} onClick={delEntry}>
+                                            <Icon name="trash" size={13} />
+                                        </button>
+                                        <button
+                                            className="ml-1 h-7 rounded-lg px-3 text-[12px] font-medium transition-opacity"
+                                            style={dirty
+                                                ? { background: 'var(--primary-bg)', color: 'var(--primary-fg)' }
+                                                : { background: 'var(--bg-active)', color: 'var(--fg-muted)' }}
+                                            disabled={!dirty || busyWrite}
+                                            onClick={saveEntry}
+                                        >
+                                            {busyWrite ? '…' : dirty ? `${t('studio.world.save')} · ${t('studio.world.dirty')}` : t('studio.world.save')}
+                                        </button>
+                                    </div>
                                 </div>
-                                <pre className="select-text overflow-x-auto rounded-lg p-3.5 font-mono-ui text-[12px] leading-relaxed" style={{ background: 'var(--bg-canvas)', color: 'var(--fg-secondary)' }}>
-                                    {JSON.stringify(selEntry, null, 2)}
-                                </pre>
+                                <WbEntryForm draft={curDraft} patch={patchDraft} disabled={busyWrite} />
                             </>
                         ) : (
-                            <PanelEmpty icon="bookOpen">{t('studio.world.noSel')}</PanelEmpty>
+                            <PanelEmpty icon="bookOpen">{t('studio.world.noSelEntry')}</PanelEmpty>
                         )}
                     </div>
                 </div>
@@ -711,7 +1060,8 @@ function PresetsPage() {
 interface PersonaDraft {
     name: string;
     description: string;
-    builtinAvatar: BuiltinPersonaAvatarId;
+    /** 选中的内置键:动物头像 id('user-*.png')或故事卡面 id('red-panda' 等)。 */
+    builtinAvatar: PersonaAvatarPick;
 }
 
 function PersonaPage() {
@@ -737,11 +1087,13 @@ function PersonaPage() {
     };
 
     const onSaveRow = (p: PersonaItem) => {
-        const curBuiltin = resolveBuiltinPersonaAvatar(p.avatar).id;
+        const curBuiltin = resolveBuiltinPersonaPick(p.avatar);
         const avatarChanged = !p.hasImage && draft.builtinAvatar !== curBuiltin;
         act(async () => {
             if (avatarChanged) {
-                const nextKey = mintPersonaAvatarKey(draft.builtinAvatar, items.map((x) => x.avatar));
+                /* 卡面选择铸 'cover-<id>.png' 键,动物头像直用 id —— 同一条换键保存路。 */
+                const cover = BUILTIN_COVERS.find((c) => c.id === draft.builtinAvatar);
+                const nextKey = mintPersonaAvatarKey(cover ? coverPersonaKey(cover.id) : draft.builtinAvatar, items.map((x) => x.avatar));
                 await savePersona(nextKey, {
                     name: draft.name.trim(),
                     description: draft.description,
@@ -797,7 +1149,7 @@ function PersonaPage() {
                             setDraft({
                                 name: p.name,
                                 description: p.description,
-                                builtinAvatar: resolveBuiltinPersonaAvatar(p.avatar).id,
+                                builtinAvatar: resolveBuiltinPersonaPick(p.avatar),
                             });
                         }}
                         onCancel={() => setEditing(null)}
@@ -836,7 +1188,7 @@ function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCance
     onSave: () => void; onDefault: () => void; onDelete: () => void;
 }) {
     const { t } = useI18n();
-    const fallbackSrc = resolveBuiltinPersonaAvatar(p.avatar).src;
+    const fallbackSrc = personaAvatarSrc(p.avatar, false);
     const [imgSrc, setImgSrc] = useState(() => personaAvatarSrc(p.avatar, p.hasImage));
     return (
         <div className="inset-row flex-col !items-stretch">
@@ -844,7 +1196,7 @@ function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCance
                 <div className="flex min-w-0 items-center gap-3.5">
                     <img
                         src={editing && !p.hasImage
-                            ? (BUILTIN_PERSONA_AVATARS.find((b) => b.id === draft.builtinAvatar)?.src ?? fallbackSrc)
+                            ? (builtinPickSrc(draft.builtinAvatar) ?? fallbackSrc)
                             : imgSrc}
                         alt=""
                         className="h-10 w-10 shrink-0 rounded-full object-cover"
@@ -878,29 +1230,55 @@ function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCance
             {editing && (
                 <div className="mt-2.5 space-y-2.5 border-t border-[color:var(--border-hairline)] pt-3">
                     {!p.hasImage && (
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] text-[color:var(--fg-muted)]">{t('studio.persona.avatarPick')}</span>
-                            <div className="flex items-center gap-2">
-                                {BUILTIN_PERSONA_AVATARS.map((av) => {
-                                    const picked = draft.builtinAvatar === av.id;
-                                    return (
-                                        <button
-                                            key={av.id}
-                                            type="button"
-                                            title={t(av.labelKey)}
-                                            onClick={() => onChange({ ...draft, builtinAvatar: av.id })}
-                                            className="flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 text-[11px] transition-colors"
-                                            style={{
-                                                background: picked ? 'var(--bg-active)' : 'var(--bg-surface)',
-                                                border: picked ? '1.5px solid var(--brand)' : '1px solid var(--border-hairline)',
-                                                color: picked ? 'var(--fg-primary)' : 'var(--fg-muted)',
-                                            }}
-                                        >
-                                            <img src={av.src} alt="" className="h-6 w-6 rounded-full object-cover" />
-                                            <span>{t(av.labelKey)}</span>
-                                        </button>
-                                    );
-                                })}
+                        <div className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-[color:var(--fg-muted)]">{t('studio.persona.av.groupAvatar')}</span>
+                                <div className="flex items-center gap-2">
+                                    {BUILTIN_PERSONA_AVATARS.map((av) => {
+                                        const picked = draft.builtinAvatar === av.id;
+                                        return (
+                                            <button
+                                                key={av.id}
+                                                type="button"
+                                                title={t(av.labelKey)}
+                                                onClick={() => onChange({ ...draft, builtinAvatar: av.id })}
+                                                className="flex items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2 text-[11px] transition-colors"
+                                                style={{
+                                                    background: picked ? 'var(--bg-active)' : 'var(--bg-surface)',
+                                                    border: picked ? '1.5px solid var(--brand)' : '1px solid var(--border-hairline)',
+                                                    color: picked ? 'var(--fg-primary)' : 'var(--fg-muted)',
+                                                }}
+                                            >
+                                                <img src={av.src} alt="" className="h-6 w-6 rounded-full object-cover" />
+                                                <span>{t(av.labelKey)}</span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            {/* 故事卡面第二选区:竖版 2:3 缩略方格裁中,选中铸 'cover-<id>.png' 键走同一保存路。 */}
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-[color:var(--fg-muted)]">{t('studio.persona.av.groupCover')}</span>
+                                <div className="flex items-center gap-1.5">
+                                    {BUILTIN_COVERS.map((cv) => {
+                                        const picked = draft.builtinAvatar === cv.id;
+                                        return (
+                                            <button
+                                                key={cv.id}
+                                                type="button"
+                                                title={t(cv.labelKey)}
+                                                onClick={() => onChange({ ...draft, builtinAvatar: cv.id })}
+                                                className="h-9 w-6 shrink-0 overflow-hidden rounded-[5px] transition-opacity"
+                                                style={{
+                                                    border: picked ? '1.5px solid var(--brand)' : '1px solid var(--border-hairline)',
+                                                    opacity: picked ? 1 : 0.7,
+                                                }}
+                                            >
+                                                <img src={cv.src} alt={t(cv.labelKey)} className="h-full w-full object-cover" />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         </div>
                     )}

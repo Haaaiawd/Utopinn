@@ -9,6 +9,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { cardData, charImageUrl, loadCharDoc } from '../../api/characters';
+import { builtinCoverSrc } from '../../api/personas';
 import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
 import { getSettings } from '../../api/settings';
@@ -160,9 +161,9 @@ export function CharView() {
                     <div className="flex items-start gap-5">
                         <div className={`relative shrink-0 overflow-hidden rounded-[14px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] ${s.isMobile ? 'h-36 w-24' : 'h-48 w-32'}`} style={{ boxShadow: 'var(--shadow-card)' }}>
                             {card?.avatar ? (
-                                <img src={charImageUrl(card.avatar)} alt={name} className="h-full w-full object-cover" onError={charImgFallback} />
+                                <img src={charImageUrl(card.avatar)} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
                             ) : (
-                                <img src="/assets/avatars/default-char.png" alt="" className="h-full w-full object-cover opacity-80" />
+                                <img src={builtinCoverSrc(dir)} alt="" className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
                             )}
                         </div>
                         <div className="min-w-0 flex-1 space-y-2.5 pt-0.5">

@@ -64,6 +64,37 @@ export const BUILTIN_PERSONA_AVATARS = [
 
 export type BuiltinPersonaAvatarId = (typeof BUILTIN_PERSONA_AVATARS)[number]['id'];
 
+/** 内置故事卡面库(public/assets/covers/,1024×1536 竖版)—— 卡无封面时的回退轮换池 + 人设头像第二选区。 */
+export const BUILTIN_COVERS = [
+    { id: 'red-panda', src: '/assets/covers/red-panda.png', labelKey: 'studio.persona.cv.redpanda' },
+    { id: 'red-fox', src: '/assets/covers/red-fox.png', labelKey: 'studio.persona.cv.fox' },
+    { id: 'snowy-owl', src: '/assets/covers/snowy-owl.png', labelKey: 'studio.persona.cv.owl' },
+    { id: 'black-cat', src: '/assets/covers/black-cat.png', labelKey: 'studio.persona.cv.cat' },
+    { id: 'cream-rabbit', src: '/assets/covers/cream-rabbit.png', labelKey: 'studio.persona.cv.rabbit' },
+] as const;
+
+export type BuiltinCoverId = (typeof BUILTIN_COVERS)[number]['id'];
+
+/** 任意字符串 → 内置卡面(src)。稳定散列取模,确定性轮换:同卡同面,空键落首面。 */
+export function builtinCoverSrc(key: string): string {
+    const raw = key.trim().toLowerCase();
+    if (!raw) return BUILTIN_COVERS[0].src;
+    let h = 0;
+    for (let i = 0; i < raw.length; i++) h = ((h * 31) + raw.charCodeAt(i)) >>> 0;
+    return BUILTIN_COVERS[h % BUILTIN_COVERS.length]!.src;
+}
+
+/** 卡面选择的人设持久化键形:'cover-red-panda.png'(纯文件名、NTFS 安全,复用 avatar 主键槽)。 */
+export const coverPersonaKey = (id: BuiltinCoverId): string => `cover-${id}.png`;
+
+/** avatar 键反解内置卡面 —— 'cover-red-panda[-ts].png' → red-panda;非卡面键返 null。 */
+export function resolveBuiltinCover(avatar: string | null | undefined): (typeof BUILTIN_COVERS)[number] | null {
+    const raw = (avatar ?? '').trim().toLowerCase().replace(/\.png$/i, '');
+    if (!raw.startsWith('cover-')) return null;
+    const mid = raw.slice('cover-'.length);
+    return BUILTIN_COVERS.find((c) => mid === c.id || mid.startsWith(`${c.id}-`) || mid.startsWith(`${c.id}_`)) ?? null;
+}
+
 /** 从任意存储键推断其绑定的内置动物头像(无匹配时按文件名稳定散列落三选一)。 */
 export function resolveBuiltinPersonaAvatar(avatar: string | null | undefined): (typeof BUILTIN_PERSONA_AVATARS)[number] {
     const raw = (avatar ?? '').trim().toLowerCase();
@@ -76,14 +107,28 @@ export function resolveBuiltinPersonaAvatar(avatar: string | null | undefined): 
     return BUILTIN_PERSONA_AVATARS[h % BUILTIN_PERSONA_AVATARS.length]!;
 }
 
-/** 人设头像 URL:服务端 User Avatars 真图优先,否则落 Utopinn 内置动物头像库。 */
+/** 编辑器选择键:动物头像 id 或卡面 id(两池 id 不撞 —— 头像 id 恒以 .png 结尾,卡面 id 无扩展名)。 */
+export type PersonaAvatarPick = BuiltinPersonaAvatarId | BuiltinCoverId;
+
+/** avatar 键 → 当前生效的内置选择 id(编辑器回显用:卡面键优先,再查动物头像)。 */
+export function resolveBuiltinPersonaPick(avatar: string | null | undefined): PersonaAvatarPick {
+    return resolveBuiltinCover(avatar)?.id ?? resolveBuiltinPersonaAvatar(avatar).id;
+}
+
+/** 选择 id → 预览 src(头像库与卡面库两查;非内置 id 返 undefined)。 */
+export function builtinPickSrc(pick: string): string | undefined {
+    return BUILTIN_PERSONA_AVATARS.find((b) => b.id === pick)?.src
+        ?? BUILTIN_COVERS.find((c) => c.id === pick)?.src;
+}
+
+/** 人设头像 URL:服务端 User Avatars 真图优先,否则落 Utopinn 内置库(卡面键→covers/,余者→动物头像)。 */
 export function personaAvatarSrc(avatar: string | null | undefined, hasImage?: boolean): string {
     if (hasImage && avatar) return `/User%20Avatars/${encodeURIComponent(avatar)}`;
-    return resolveBuiltinPersonaAvatar(avatar).src;
+    return resolveBuiltinCover(avatar)?.src ?? resolveBuiltinPersonaAvatar(avatar).src;
 }
 
 /** 为新建或换内置头像的人设铸造不冲突的 avatar 主键(保留内置前缀以便前端还原头像)。 */
-export function mintPersonaAvatarKey(baseId: BuiltinPersonaAvatarId, existingKeys: Iterable<string>): string {
+export function mintPersonaAvatarKey(baseId: string, existingKeys: Iterable<string>): string {
     const taken = new Set(existingKeys);
     if (!taken.has(baseId)) return baseId;
     const stem = baseId.replace(/\.png$/i, '');
