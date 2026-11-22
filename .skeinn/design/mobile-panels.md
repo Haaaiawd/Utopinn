@@ -19,8 +19,8 @@
 ## Components and control flow
 
 - 底导航:`对话` / `角色` / `面板` / `我的`
-- 面板页 = 当前聊天的 CardApp 聚合。每个 app 一个 `react-native-webview` 沙箱容器,注入最小 DOM 壳 + `ctx` 桥
-- **ctx 桥**:WebView 内 `ctx.*` 调用 → postMessage → RN 侧 → `@utopinn/api-client` → 服务端(`/api/chats/state/*`、`/api/worldinfo/*`、事件订阅经 WS)。API 面与 Luker web 端 CardApp ctx 一一对应,同一份卡片代码两端可跑
+- 面板页 = 当前聊天的 CardApp 聚合。每个 app 一个 `react-native-webview` 沙箱容器(**待复核**:IReader fork 地基下 = 平台 WebView composable——Android `CustomWebView` 现成;iOS 需新写 `UIKitView`+WKWebView+`WKScriptMessageHandler`;desktop 无嵌入 webview→空态),注入最小 DOM 壳 + `ctx` 桥
+- **ctx 桥**:WebView 内 `ctx.*` 调用 → postMessage → RN 侧(**待复核**:KMP 下为 `WebMessageListener`/`WKScriptMessageHandler` 通道,nonce 闸语义不变)→ `@utopinn/api-client`(**待复核**:KMP 侧为 Kotlin 移植 `UtopinnApi`,Ktor)→ 服务端(`/api/chats/state/*`、`/api/worldinfo/*`、事件订阅经 WS)。API 面与 Luker web 端 CardApp ctx 一一对应,同一份卡片代码两端可跑
 - **老卡兼容**:非 CardApp 的正则状态栏(服务端正则管线产出的 HTML)同样注入 WebView 壳渲染;需要一层 shim 兜住常见 ST 全局(`getContext()`、`eventSource`、jQuery 片段),戳不动的降级为静态渲染
 - 事件:服务端 WS 推 `chat.state.changed`/`message.*` → RN → 注入 WebView `eventSource` 派发
 
@@ -31,8 +31,8 @@
 
 ## Interfaces and dependencies
 
-- react-native-webview(已在 apps/mobile 依赖)
-- @utopinn/api-client、@utopinn/protocol(ctx 方法签名、事件名)
+- react-native-webview(已在 apps/mobile 依赖;IReader 地基下同位件=Android WebView/iOS WKWebView,见上「待复核」)
+- @utopinn/api-client、@utopinn/protocol(ctx 方法签名、事件名——KMP 地基下 protocol 仍是线形唯一事实源,api-client 换 Kotlin 移植)
 - 服务端 CardApp 资产路由 + state API(Luker 已有)
 
 ## Failure, safety, and recovery
@@ -46,6 +46,7 @@
 - 首版目标:能跑通 Luker docs 自带 CardApp 示例 + 归墟(GuiXu)级复杂度的交互卡
 - 不追求移动端原生重绘面板——WebView 保兼容,原生渲染是以后的锦上添花
 - 选型已固化(见 capabilities/mobile-app-stack + sandboxed-card-apps):expo-router 底导航、LegendList 聊天列表、TanStack Query+WS ticket、streamdown 流式 markdown、NativeWind 共享 tokens;沙箱=独立 WebView+nonce 白名单桥+CSP+shim 降级
+- **注(D-020 地基变更,待复核)**:上条 Expo 栈件整体冻结为参照;IReader fork(KMP/Compose)下同位件——底导航=AppTab 新增 Panels(替 Extensions 位)、聊天列表=LazyColumn、数据层=UtopinnApi(Ktor 移植)+WS ticket、流式 markdown=Compose 侧待选、沙箱桥=PanelBridge(nonce/白名单/CSP/shim 语义照原协议不变)。见 mobile-fork-ireader.md「RP 四件」
 
 ## 机制层扩展(2026-11-03 TavernWeave/生态调研后)
 

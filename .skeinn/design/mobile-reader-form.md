@@ -15,8 +15,9 @@
 
 - `prose` 渲染器(conversation-renderers.md §2 已定 V1 默认)在移动端的
   实例就是「小说流」;`bubble` 保留为一键切换的形态,任何卡/用户可回退。
-- 宿主(apps/mobile)负责:点中央呼出/收起 chrome、书写层(你的回合)、
-  阅读设置(Aa)、章节导航、书签。这些全是「手势+版式」,数据面不动。
+- 宿主(apps/mobile;**待复核**:IReader fork 地基下宿主=KMP 侧 ReaderScreen
+  + MainStarterScreen,职责划分不变)负责:点中央呼出/收起 chrome、书写层
+  (你的回合)、阅读设置(Aa)、章节导航、书签。这些全是「手势+版式」,数据面不动。
 - `MessageViewModel` 已带 `swipes/activeSwipe/streaming/reasoning/receipts/
   displayContent/hidden`,RendererActions 已带 swipe/edit/regen/branch——
   **协议零新增**;`TypingSettings` 直接承载阅读设置;`StageScheme` 供卡声明
@@ -79,6 +80,9 @@
 
 - 启发式分章:时间间隔(>4h)/场景词/字数节点(~4-6k);章名=首段首句截12字(远期 AI 拟题)。
 - 用户可手动钉书签位;进度条按字数拉通。
+- **注(IReader 地基复核)**:章目录已由服务端 `GET …/chats/:chat/chapters`
+  (TASK-044,sidecar 显式清单优先、缺省 derived 推导)承接,端侧启发式
+  降级为离线兜底;IReader `ChapterInfo` 与该端点 `ChatChapterItem` 直接对映。
 
 ## 3. 排版规格(v1 定死值)
 
@@ -93,7 +97,7 @@
 | 字体 | 系统/宋体/楷体三选(v1) | |
 | 深色双轨 | 阅读场景=低对比暖暗;非阅读场景=现有 `#0d0f14` 高对比深色 | 起点方法论 |
 | 对话高亮 | 默认单色弱强度;分人配色=实验开关 | Readori 同款机制 |
-| 避头尾 | v1 用 RN Text 系统换行近似(已知瑕疵);高保真自排版=v2 风险项 | RN 能力边界 |
+| 避头尾 | v1 用 RN Text 系统换行近似(已知瑕疵);高保真自排版=v2 风险项(**待复核**:KMP/Compose 文本排版引擎不同,近似策略与瑕疵边界需在 Compose `Text`/paragraph 体系下重评) | RN 能力边界 |
 
 ## 4. 阅读设置面板 v1 子集
 
@@ -116,7 +120,7 @@
 ## 6. 验收锚点
 
 - 书架→书页→阅读器三级路径通;点中央呼出/收起 <200ms。
-- prose 渲染器在 RN 落地:swipe 角标/墨迹生成/段尾操作长按全通。
+- prose 渲染器在 RN 落地(**待复核**:IReader fork 后为 KMP/Compose 落地,同语义):swipe 角标/墨迹生成/段尾操作长按全通。
 - Aa 面板五主题+字号+行距实时生效;夜读低对比不与非阅读深色混。
 - 「你的回合」半屏层发送→落版→墨迹接写全链;bubble 形态可切回。
 - CardApp 面板经原 bridge 在 chrome 内挂载(TASK-009 不变)。

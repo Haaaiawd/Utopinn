@@ -2822,46 +2822,94 @@
         {
           "criterion": "卡格→角色页→会话三级路径通",
           "verify_by": "pnpm --filter @utopinn/web dev 人工验证",
-          "evidence": "",
+          "evidence": "commit 6af2082: SpecViews 卡格两端(移动/桌面)+trees.tsx 侧栏组头→openChar→'char'视图(charpage.tsx 280 行:封面/名/greeting预览/会话列/新建会话/资产条/返回画廊)→会话行 selectChat 落聊天;数据走 loadCharDoc+listChatsForChar 真接口。tsc --noEmit 净。",
           "verified": ""
         },
         {
           "criterion": "舞台头 persona 快切+资产 chip 真实读数",
           "verify_by": "人工验证",
-          "evidence": "",
+          "evidence": "StageFrame.tsx:193-255 PersonaPop(人设目录真值,pickPersona 写 utopinn.persona.<chatId> localStorage+GenerateBody.user 携带;服务端 per-chat 持久化端点缺失已如实记档 web-rp-form.md §6,未伪装);:1092-1142 资产 chip 全真读数(extensions.world 主绑书/character_book.entries 内嵌条目/getRegexFullView 卡级正则 enabled/激活预设),离线或无卡清空不画。",
           "verified": ""
         },
         {
           "criterion": "ProseRenderer asterisk斜体/引号高亮/greeting版式/typing 四惯例",
           "verify_by": "人工验证+swipe回归",
-          "evidence": "",
+          "evidence": "prose.tsx+CenterStage:*x*→.prose-act 斜体弱墨;「…」『…』“…”\"…\"→.prose-say --quote 高亮;首条可见 assistant 楼 .prose-greeting 版式;流式空楼 .tdots 三点。FloorBody 走 'renderer' 贡献点(order 最小上岗,缺省回落 ProseFloor),swipe/编辑/HTML iframe 归宿主不变。spec.css reduced-motion 兼容。",
           "verified": ""
         }
       ],
       "progress": {
         "completed": [
-          "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。"
+          "2026-11-04 浏览器预验(localhost:5199+playwright):门厅问候/继续卡/卡条、角色页封面+greeting+Eldoria内嵌书chip+会话列表、舞台头头像+persona chip+prose渲染——三面渲染正常,console零错。剩人工审美目验。",
+          "2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。",
+          "2026-11-22 用户明示修理:P0 重落地(commit 6af2082)。三级路径:卡格(SpecViews 两端)+侧栏组头→openChar→'char'视图(charpage.tsx:封面/名/greeting预览/会话列/新建/资产条)→selectChat 落会话。PersonaPop 徽标快切:localStorage per-chat 槽 utopinn.persona.<chatId> + GenerateBody.user 携带(服务端 per-chat 持久化端点缺失,如实记档 web-rp-form.md §6)。资产 chip 全真读数:主绑书/内嵌书条目/卡级正则enabled/激活预设,离线清空不画。ProseFloor:*x*→.prose-act、中日引号→.prose-say、首条可见assistant楼 greeting 版式、流式三点;FloorBody 改走 'renderer' 贡献点缺省回落,swipe/编辑/iframe 归宿主不回归。loadCharDoc promise 级共享缓存+patchCharacter 自动失效,收编 studio 私持缓存。tsc --noEmit 净 / vite build 绿(55.8s)。残余:persona 服务端 per-chat 端点待补;门厅独立栏位/默认落点开关未做(不在 P0)。"
         ],
-        "current": "blocked",
-        "next": "方向重开/用户明示后解锁"
+        "current": "complete",
+        "next": ""
       },
       "evidence": [
         "cd apps/web && npx tsc -p tsconfig.json --noEmit → exit 0",
         "npx vite build → 4720 modules, dist/index.html + css ~46kB + js ~567kB, 仅有 chunk 体积 warning",
         "curl /api/utopinn/characters/default_Seraphina → extensions.world=Eldoria, character_book=dict, first_mes 以 *动作* 开头(惯例真实命中)",
-        "DECISIONS.md D-017/D-2026-11-10-g076 + PROJECT.md 搁置清单; TASK-026 标题已标注 [停泊·2026-11-10方向收缩]"
+        "DECISIONS.md D-017/D-2026-11-10-g076 + PROJECT.md 搁置清单; TASK-026 标题已标注 [停泊·2026-11-10方向收缩]",
+        {
+          "type": "block_reopened",
+          "reason": "用户明示修理 blocked 三任务(2026-11-22):桌面 RP 形态 P0 已实装并提交 6af2082,tsc/build 绿",
+          "at": "2026-11-22T04:06:49.362Z"
+        },
+        "commit 6af2082 (14 files, +960/-272; 新建 charpage.tsx/prose.tsx)",
+        "pnpm exec tsc -p tsconfig.json --noEmit → exit 0",
+        "vite build 55.8s 绿,dist 已由服务端静态直供(localhost:8000 实测 200)",
+        ".skeinn/design/web-rp-form.md §6 P0 落地偏差记录(persona 服务端端点缺失等 4 条诚实残余)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "卡格→角色页→会话三级路径通",
+              "verify_by": "pnpm --filter @utopinn/web dev 人工验证",
+              "evidence": "commit 6af2082: SpecViews 卡格两端(移动/桌面)+trees.tsx 侧栏组头→openChar→'char'视图(charpage.tsx 280 行:封面/名/greeting预览/会话列/新建会话/资产条/返回画廊)→会话行 selectChat 落聊天;数据走 loadCharDoc+listChatsForChar 真接口。tsc --noEmit 净。",
+              "verified": "pass"
+            },
+            {
+              "criterion": "舞台头 persona 快切+资产 chip 真实读数",
+              "verify_by": "人工验证",
+              "evidence": "StageFrame.tsx:193-255 PersonaPop(人设目录真值,pickPersona 写 utopinn.persona.<chatId> localStorage+GenerateBody.user 携带;服务端 per-chat 持久化端点缺失已如实记档 web-rp-form.md §6,未伪装);:1092-1142 资产 chip 全真读数(extensions.world 主绑书/character_book.entries 内嵌条目/getRegexFullView 卡级正则 enabled/激活预设),离线或无卡清空不画。",
+              "verified": "pass"
+            },
+            {
+              "criterion": "ProseRenderer asterisk斜体/引号高亮/greeting版式/typing 四惯例",
+              "verify_by": "人工验证+swipe回归",
+              "evidence": "prose.tsx+CenterStage:*x*→.prose-act 斜体弱墨;「…」『…』“…”\"…\"→.prose-say --quote 高亮;首条可见 assistant 楼 .prose-greeting 版式;流式空楼 .tdots 三点。FloorBody 走 'renderer' 贡献点(order 最小上岗,缺省回落 ProseFloor),swipe/编辑/HTML iframe 归宿主不变。spec.css reduced-motion 兼容。",
+              "verified": "pass"
+            }
+          ],
+          "at": "2026-11-22T04:07:06.650Z"
+        }
       ],
       "outcome": "桌面壳 RP 化:角色=一等对象。卡墙→角色页→会话三级路径;聊天页舞台头带 persona 快切与绑定资产;门厅首页;prose 渲染器吃 RP 文本惯例。",
-      "status": "blocked",
+      "status": "done",
       "boundaries": [
         "不动 rail+路由骨架与右面板宿主结构",
         "不改协议/renderer seam 契约",
         "移动端阅读器归 TASK-027 不在此",
         "stageScheme/per-chat 背景/立绘列 P1 不进本任务"
       ],
-      "updated_at": "2026-11-21T09:13:42.884Z",
+      "updated_at": "2026-11-22T04:07:06.651Z",
       "touches": [
-        ".skeinn/design/web-rp-form.md"
+        ".skeinn/design/web-rp-form.md",
+        "apps/web/src/types.ts",
+        "apps/web/src/kernel/context.tsx",
+        "apps/web/src/App.tsx",
+        "apps/web/src/api/characters.ts",
+        "apps/web/src/components/views/charpage.tsx",
+        "apps/web/src/components/stage/prose.tsx",
+        "apps/web/src/components/stage/CenterStage.tsx",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/web/src/components/views/SpecViews.tsx",
+        "apps/web/src/components/sidebar/trees.tsx",
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/features/chat.tsx",
+        "apps/web/src/styles/spec.css"
       ],
       "block": {
         "reason": "2026-11-10 方向收缩停泊(D-017/D-2026-11-10-g076); V2 当前聚焦 Web SPA 核心游玩与生态缺陷收口,本任务暂不启动。",
@@ -2869,7 +2917,9 @@
           "方向重开/用户明示"
         ],
         "at": "2026-11-21T09:13:42.882Z"
-      }
+      },
+      "reopened_at": "2026-11-22T04:06:49.362Z",
+      "completed_at": "2026-11-22T04:07:06.651Z"
     },
     {
       "id": "TASK-027",
@@ -2950,10 +3000,10 @@
       ],
       "progress": {
         "completed": [
-          "2026-11-04 D-020 立项。ref/ireader 已浅克隆(4919文件),模块切缝已勘察:书源层整块切除,presentation/domain/data/壳保留 | 2026-11-10 方向收缩:新SPA/移动端全部搁置,任务停泊(非取消),方向回暖可续。"
+          "2026-11 TASK-028 调研轮(方向收缩内可做部分,不建码):切割方案成稿——mobile-fork-ireader.md 重写为目录级保留/替换/删除清单 + utopinn 源契约逐项映射 + RP 四件嵌入点 + 工作量粗评;mobile-reader-form/mobile-panels 加 IReader 地基「待复核」注记。实测修正:上游已膨胀(rootProject=Infinity,presentation ~23w 行/domain ~20w 行,赘肉约 40-50%);iosApp 非脚手架(真 SwiftUI+160 iosMain 文件);可视 WebView composable 仅 Android 有(iOS WKWebView 需新写,desktop 无);TASK-044 已把 chapters/assets/scene 三件套落成服务端端点,章目录/剧场壳数据零新增;书架聚合先走 Expo 同款 N+1。核心手术点定位:LoadChapterContentUseCase 的 immutable-content 假定 vs RP 可变尾章(方案=utopinn 章 content 不落 DB+WS 失效)。渲染器 seam 拍板建议:自建轻 RendererRegistry,不整用 plugin-api(形状可借 ReaderScreenPlugin)。"
         ],
         "current": "blocked",
-        "next": "方向重开/用户明示后解锁"
+        "next": "方向重开/用户明示后解锁;待拍板清单在 mobile-fork-ireader.md「风险与未决问题」"
       },
       "evidence": [
         "DECISIONS.md D-017/D-020/D-2026-11-10-g076 + PROJECT.md 搁置清单; TASK-028 标题已标注 [停泊·2026-11-10方向收缩]"
@@ -2977,7 +3027,7 @@
         ".skeinn/design/mobile-reader-form.md",
         ".skeinn/design/mobile-panels.md"
       ],
-      "updated_at": "2026-11-21T09:13:43.243Z",
+      "updated_at": "2026-11-22T04:01:15.242Z",
       "block": {
         "reason": "2026-11-10 方向收缩停泊(D-017/D-020/D-2026-11-10-g076); 移动端整体 parked,Expo 骨架冻结,暂不启动。",
         "recovery_conditions": [
