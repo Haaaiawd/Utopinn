@@ -62,6 +62,10 @@ export interface ShellCtx {
     activeChat: string;
     chat: ChatSummary | null;
     selectChat: (id: string) => void;
+    /** 角色页(view==='char')当前展示的 charDir —— TASK-026 三级路径中层。 */
+    charDir: string | null;
+    /** 打开某卡的角色页(视图切 'char',会话选择不变 —— 页内选会话才落聊天)。 */
+    openChar: (charDir: string) => void;
     newChat: (charDir?: string) => void;
     renameChat: (c: ChatSummary) => void;
     deleteChat: (c: ChatSummary) => void;

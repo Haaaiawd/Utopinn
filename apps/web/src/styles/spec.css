@@ -374,6 +374,34 @@ input[type="range"] { accent-color: var(--brand); }
 }
 
 /* =========================================================================
+   prose 消息四惯例(TASK-026,渲染器面;chrome 归宿主)
+   ========================================================================= */
+/* *动作* = 斜体弱墨(ST asterisk 惯例 —— 叙述/动作弱于台词一档)。 */
+.prose-act { font-style: italic; color: var(--fg-muted); }
+/* 「…」『…』“…”"…" = 引号对话色(--quote,ST 主题 quote 槽位)。 */
+.prose-say { color: var(--quote); }
+/* greeting(首条可见 assistant 楼)= 首楼版式待遇:
+   顶发丝线 + 上缘拉开;正文抬字号档由渲染器按 chatSettings.fontSize ×1.06
+   内联落实(不在这里写死,字阶归用户档)。 */
+.prose-greeting {
+    border-top: 1px solid var(--border-hairline);
+    padding-top: 1.1em; margin-top: -0.4em;
+}
+.prose-greeting .heading-tight { letter-spacing: 0.08em; }
+/* typing:流式空文楼层三点脉冲(有文时仍走 .cursor-bar)。 */
+.tdots { display: inline-flex; gap: 5px; padding: 0.35em 2px; vertical-align: baseline; }
+.tdots i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--fg-faint); animation: tdots-pulse 1.2s infinite;
+}
+.tdots i:nth-child(2) { animation-delay: 0.15s; }
+.tdots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes tdots-pulse { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .tdots i, .cursor-bar { animation: none; }
+}
+
+/* =========================================================================
    theater 剧场小说 —— 台上幕拍 / 台口淡出 / hotbar 格槽(域专用,不挤他域)
    ========================================================================= */
 

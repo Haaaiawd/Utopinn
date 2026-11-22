@@ -20,8 +20,10 @@ import {
     type ChatPatchOp, type FloorMsg, type GenerateBody, type GenerateVerb,
 } from '../../api/chats';
 import { ApiError, apiGet, apiPost } from '../../api/client';
-import { charImageUrl } from '../../api/characters';
+import { cardData, charImageUrl, loadCharDoc, type CardDoc } from '../../api/characters';
+import { getRegexFullView } from '../../api/regex';
 import { personaAvatarSrc } from '../../api/personas';
+import { openCharEditor } from '../shell/overlayBus';
 import {
     MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
     MOCK_REPLY_NOVEL, MOCK_REPLY_VN,
@@ -183,6 +185,70 @@ function ContextPop({ onClose }: { onClose: () => void }) {
                     <span className="flex items-center gap-2"><Icon name="sliders" size={15} /><span>{t('ctx.openPreset')}</span></span>
                     <span className="text-[color:var(--fg-muted)]">›</span>
                 </button>
+            </div>
+        </div>
+    );
+}
+
+/** 舞台头 persona 快切弹层(TASK-026):暗幕 + top-12 左锚卡,人设列 =
+ *  GET /api/utopinn/personas 目录;选择经 s.setPersona 落本会话 localStorage
+ *  槽(per-chat 语义),生成时以 body.user 携带 —— 服务端无 per-chat 写回端点,
+ *  这里照实只做选择态+携带,不伪造写回面。 */
+function PersonaPop({ onClose }: { onClose: () => void }) {
+    const { t } = useI18n();
+    const s = useShell();
+    return (
+        <div className="absolute inset-0 z-40" style={{ background: 'rgba(0,0,0,0.34)' }} onClick={onClose}>
+            <div
+                className="pop-in absolute left-3 right-3 top-12 space-y-2.5 rounded-2xl p-3.5 sm:left-4 sm:right-auto sm:w-[290px]"
+                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)' }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11px] font-medium text-[color:var(--fg-muted)]">{t('ctx.persona')}</span>
+                    <button
+                        className="text-[11px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
+                        onClick={() => { onClose(); s.setView('studio'); s.setStudioNav('persona'); }}
+                    >
+                        {t('tree.manage')}
+                    </button>
+                </div>
+                {s.personas.length > 0 ? (
+                    <div className="inset-group max-h-64 overflow-y-auto">
+                        {s.personas.map((p) => {
+                            const act = s.persona?.avatar === p.avatar;
+                            return (
+                                <button
+                                    key={p.avatar}
+                                    type="button"
+                                    className="inset-row inset-row-btn w-full"
+                                    onClick={() => { s.setPersona({ avatar: p.avatar, name: p.name, description: p.description }); onClose(); }}
+                                >
+                                    <span className="flex min-w-0 items-center gap-2.5">
+                                        <img
+                                            src={personaAvatarSrc(p.avatar, p.hasImage)}
+                                            alt=""
+                                            className="h-6 w-6 shrink-0 rounded-full object-cover"
+                                            onError={(e) => { e.currentTarget.src = '/assets/avatars/user-redpanda.png'; }}
+                                        />
+                                        <span className="min-w-0">
+                                            <span className="block truncate text-[12.5px] text-[color:var(--fg-primary)]">
+                                                {p.name || p.avatar}
+                                                {p.isDefault && <span className="ml-1.5 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{t('studio.persona.default')}</span>}
+                                            </span>
+                                            {p.title && <span className="block truncate text-[10.5px] text-[color:var(--fg-muted)]">{p.title}</span>}
+                                        </span>
+                                    </span>
+                                    {act && <Icon name="check" size={14} className="shrink-0 text-[color:var(--brand)]" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-3 py-2.5 text-[11.5px] text-[color:var(--fg-muted)]">
+                        {t('studio.persona.empty')}
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -362,11 +428,15 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const [busy, setBusy] = useState(false);
     const [job, setJob] = useState<{ id: string; type: GenerateVerb; floorId: number } | null>(null);
     const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
-    const [menu, setMenu] = useState<'none' | 'context' | 'slash' | 'preset'>('none');
+    const [menu, setMenu] = useState<'none' | 'context' | 'slash' | 'preset' | 'persona'>('none');
     const [qrChips, setQrChips] = useState<{ label: string; message: string }[]>([]);
     const [qrOpen, setQrOpen] = useState(true);
     const [ctxLen, setCtxLen] = useState<number | null>(null);
     const [lastTokens, setLastTokens] = useState<number | null>(null);
+    /* 舞台头资产 chip 读数:卡文档(主绑书/内嵌书)+ 卡级正则组。
+       s.cards 进依赖 —— 卡编辑保存走 refreshCards → chip 随缓存失效重拉。 */
+    const [charDoc, setCharDoc] = useState<CardDoc | null>(null);
+    const [regexChar, setRegexChar] = useState<{ total: number; enabled: number; allowed: boolean } | null>(null);
     /** 胶囊数字背后的 job —— 点开胶囊直跳该 job 的 trace 页。 */
     const [lastJobId, setLastJobId] = useState<string | null>(null);
     const [loadErr, setLoadErr] = useState<string | null>(null);
@@ -386,6 +456,27 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const offline = s.serverStatus === 'offline';
     const streaming = busy && job !== null;
     const chatKey = s.chat?.charDir && s.chat?.chatName ? `${s.chat.charDir}/${s.chat.chatName}` : null;
+
+    /* 资产 chip 取数:会话切换/卡清单刷新时重拉;离线/无会话清空不取数。 */
+    useEffect(() => {
+        const dir = s.chat?.charDir;
+        if (!s.live || !dir) { setCharDoc(null); setRegexChar(null); return; }
+        let dead = false;
+        loadCharDoc(dir)
+            .then((d) => { if (!dead) setCharDoc(d); })
+            .catch(() => { if (!dead) setCharDoc(null); });
+        getRegexFullView()
+            .then((v) => {
+                if (dead) return;
+                const g = v.chars.find((x) => x.charDir === dir);
+                const scripts = g?.scripts ?? [];
+                setRegexChar(scripts.length
+                    ? { total: scripts.length, enabled: scripts.filter((x) => x.disabled !== true).length, allowed: g?.allowed !== false }
+                    : null);
+            })
+            .catch(() => { if (!dead) setRegexChar(null); });
+        return () => { dead = true; };
+    }, [s.live, s.chat?.charDir, s.cards]);
 
     const patchFloor = useCallback((id: number, p: Partial<FloorMsg>) => {
         setMsgs((prev) => prev.map((m) => (m.id === id ? { ...m, ...p } : m)));
@@ -958,6 +1049,16 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const qrSpace = qrOpen && qrChips.length > 0 && stageKind === 'chat';
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : '/assets/avatars/default-char.png';
+    /* 舞台头读数(TASK-026):persona 当前项 + 卡绑定资产 + 激活预设 ——
+       全部真值;读不到的面(chip 数据源缺席)照实不画,不凑数。 */
+    const personaItem = s.personas.find((p) => p.avatar === s.persona?.avatar);
+    const charDocData = cardData(charDoc);
+    const boundWorld = typeof charDocData.extensions?.world === 'string' && charDocData.extensions.world ? charDocData.extensions.world : '';
+    const embeddedBook = charDocData.character_book as { entries?: unknown } | undefined;
+    const bookEntries = Array.isArray(embeddedBook?.entries) ? embeddedBook.entries.length
+        : embeddedBook?.entries && typeof embeddedBook.entries === 'object' ? Object.keys(embeddedBook.entries).length : 0;
+    const presetShort = s.live && s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : '';
+    const stageChipCls = 'inline-flex h-6 min-w-0 max-w-[130px] items-center gap-1 rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2 text-[11px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-active)] hover:text-[color:var(--fg-primary)]';
     return (
         <EngineCtx.Provider value={engine}>
             <section
@@ -988,6 +1089,57 @@ export function StageFrame({ children }: { children: ReactNode }) {
                             </span>
                             <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={13} /></span>
                         </button>
+                        {/* persona 快切徽标(TASK-026):头像+名+⌄ → PersonaPop;
+                            无人设目录时不画(诚实空,不占假名)。 */}
+                        {s.personas.length > 0 && (
+                            <button
+                                type="button"
+                                className="flex h-7 max-w-[150px] shrink-0 items-center gap-1.5 rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] py-1 pl-1 pr-2 text-[11.5px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-active)] hover:text-[color:var(--fg-primary)]"
+                                onClick={() => setMenu(menu === 'persona' ? 'none' : 'persona')}
+                                title={t('ctx.persona')}
+                            >
+                                <img
+                                    src={personaAvatarSrc(s.persona?.avatar, personaItem?.hasImage)}
+                                    alt=""
+                                    className="h-5 w-5 shrink-0 rounded-full object-cover"
+                                    onError={(e) => { e.currentTarget.src = '/assets/avatars/user-redpanda.png'; }}
+                                />
+                                <span className="truncate">{s.persona?.name || s.currentUser?.name || s.currentUser?.handle || 'User'}</span>
+                                <span className="shrink-0"><Icon name="chevronDown" size={11} /></span>
+                            </button>
+                        )}
+                        {/* 卡绑定资产 chip(桌面):主绑书/内嵌书/卡级正则/激活预设,
+                            全真读数 —— 有哪个画哪个,没有的面不造。 */}
+                        {s.chat && s.live && (boundWorld || bookEntries > 0 || regexChar || presetShort) && (
+                            <div className="hidden min-w-0 items-center gap-1 overflow-hidden sm:flex">
+                                {boundWorld && (
+                                    <button type="button" className={stageChipCls} title={t('stage.chip.world')} onClick={() => { s.setView('studio'); s.setStudioNav('worldbook'); }}>
+                                        <Icon name="bookOpen" size={11} /><span className="truncate">{boundWorld}</span>
+                                    </button>
+                                )}
+                                {bookEntries > 0 && (
+                                    <button type="button" className={stageChipCls} title={t('stage.chip.embedded')} onClick={() => s.chat && openCharEditor(s.chat.charDir)}>
+                                        <Icon name="book" size={11} /><span className="truncate">{t('ov.char.bookEmbedded')} ×{bookEntries}</span>
+                                    </button>
+                                )}
+                                {regexChar && (
+                                    <button
+                                        type="button"
+                                        className={stageChipCls}
+                                        title={regexChar.allowed ? t('stage.chip.regex') : t('stage.chip.regex.off')}
+                                        style={!regexChar.allowed || regexChar.enabled === 0 ? { opacity: 0.55 } : undefined}
+                                        onClick={() => { s.setView('studio'); s.setStudioNav('regex'); }}
+                                    >
+                                        <Icon name="code" size={11} /><span className="truncate">{t('stage.chip.regex.short')} ×{regexChar.enabled}/{regexChar.total}</span>
+                                    </button>
+                                )}
+                                {presetShort && (
+                                    <button type="button" className={stageChipCls} title={t('panel.preset.preset')} onClick={() => setMenu(menu === 'preset' ? 'none' : 'preset')}>
+                                        <Icon name="sliders" size={11} /><span className="truncate">{presetShort}</span>
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
                         {s.isMobile ? (
@@ -1024,6 +1176,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 )}
                 {/* 规范稿三弹层锚在 section(绝对位),不是 composer 里 */}
                 {menu === 'context' && <ContextPop onClose={() => setMenu('none')} />}
+                {menu === 'persona' && <PersonaPop onClose={() => setMenu('none')} />}
                 {menu === 'slash' && <SlashMenu onPick={onSlash} onClose={() => setMenu('none')} />}
                 {menu === 'preset' && <PresetPop onClose={() => setMenu('none')} />}
                 {/* 形态体插槽:chat 楼层列 / novel 章节 / messenger 频道 / theater 场景 */}

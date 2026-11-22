@@ -85,3 +85,23 @@ charDir 分组已经对了)。
 - ProseRenderer:italic/quote/greeting/typing 四惯例生效,swipe 不回归。
 - stageScheme:卡声明 token 覆盖且用户可覆盖;缺失回退提示。
 - 沉浸完全体:收 rail+藏 panel+背景档,进出 <200ms。
+
+## 6. P0 落地偏差记录(TASK-026,2026-11)
+
+**已实现**:三级路径(卡格→`char` 视图角色页→会话)、舞台头 persona
+徽标+绑定资产 chip 全真读数、`utopinn.prose` renderer 贡献
+(asterisk 斜体弱墨 / 中英引号 `--quote` 高亮 / greeting 首楼版式 /
+typing 三点与流式 caret),swipe/编辑/HTML-楼层挂载归宿主不回归。
+
+**偏差**:
+- **persona 快切无服务端写回端点**——`GET /api/utopinn/personas`
+  只有目录读;无 per-chat persona PATCH。选择态落本会话
+  `localStorage['utopinn.persona.<chatId>']`,生成时以
+  `GenerateBody.user={name,description}` 携带。这是「选择+携带」,
+  不是服务端持久化;待服务端补端点后再换真写回面。
+- **门厅(foyer)**:门厅=卡格画廊 home view 承担,§3 图里独立的
+  「🚪门厅」栏位/最近段分组未单列;「默认落点可关」未做开关。
+- **stageScheme / 沉浸完全体**(验收锚点后两条)不在 P0 范围,未动。
+- 资产 chip 读数面:主绑书/内嵌书条目数/卡级正则(启用/总数)/
+  激活预设;数据源缺席的 chip 不画,不造占位数。辅绑世界书
+  (extra books)chip 只在角色页资产条列,未进舞台头。

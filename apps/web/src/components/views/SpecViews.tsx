@@ -41,7 +41,7 @@ export function HomeView() {
                                     <button
                                         key={c.charDir}
                                         className="group relative aspect-[16/11] overflow-hidden rounded-[12px] border border-[color:var(--border-hairline)] text-left"
-                                        onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
+                                        onClick={() => s.openChar(c.charDir)}
                                     >
                                         {c.avatar
                                             ? <img src={charImageUrl(c.avatar)} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]" onError={charImgFallback} />
@@ -104,7 +104,7 @@ export function HomeView() {
                                     <button
                                         type="button"
                                         className="absolute inset-0 h-full w-full text-left"
-                                        onClick={() => (chat ? s.selectChat(chat.id) : s.newChat(c.charDir))}
+                                        onClick={() => s.openChar(c.charDir)}
                                     >
                                         {c.avatar ? (
                                             <img

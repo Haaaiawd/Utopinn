@@ -3,8 +3,10 @@
 // re-declare server contracts).
 
 /** Primary navigation domains — 规范稿五 rail 域(home/chat/studio/plugins/admin)
- *  + 'hub'(移动端资产工坊页)。rail 域 = 左轨 nav.rail 贡献点直接映射。 */
-export const VIEW_IDS = ['home', 'chat', 'studio', 'plugins', 'admin', 'hub'] as const;
+ *  + 'hub'(移动端资产工坊页)+ 'char'(角色页,TASK-026 卡格→角色页→会话
+ *  三级路径的中间层;非 rail 视图,侧栏回落 chat 树)。
+ *  rail 域 = 左轨 nav.rail 贡献点直接映射。 */
+export const VIEW_IDS = ['home', 'chat', 'char', 'studio', 'plugins', 'admin', 'hub'] as const;
 export type ViewId = (typeof VIEW_IDS)[number];
 
 /** 左轨五域(规范稿 railTab);非 rail 视图回落 'chat' 侧栏树。 */

@@ -17,7 +17,7 @@
 //   gen-id/命中末楼 → ack 掉 awaiting_ack job;服务端 15s 兜底 persist
 //   只兜 tab 丢失。normal=append / regenerate=replace 末楼 / swipe=增槽
 //   / continue=末楼拼接 / impersonate·quiet=纯 gen-id 记账 patch。
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
@@ -25,6 +25,7 @@ import { charImageUrl } from '../../api/characters';
 import type { FloorMsg } from '../../api/chats';
 import { extractFrontendBlocks } from '../../cardapp/messageFrame';
 import { MessageIframe } from '../../cardapp/MessageIframe';
+import { FloorRenderProvider, ProseFloor } from './prose';
 import { StageFrame, useStageEngine, charImgFallback, type FloorOps } from './StageFrame';
 
 /** 贡献点出口:chat.stage → stage.form 组件;无匹配回落 ChatStage。 */
@@ -50,21 +51,28 @@ function StageAvatar({ name }: { name: string }) {
 }
 
 /** 楼层展示正文:TH「前端界面」检测 —— 文本里 pre>code 含 <body/<head/html>
- *  (卡惯用 ```html 栅栏块或整楼文档)→ 摘出挂 doc-mount iframe,余文正常渲。
+ *  (卡惯用 ```html 栅栏块或整楼文档)→ 摘出挂 doc-mount iframe;
+ *  余下文本面走 'renderer' 贡献点(缺省 ProseFloor,TASK-026 四惯例),
+ *  楼层经 FloorRenderCtx 下发 —— 换渲染器不换宿主 chrome。
  *  streaming 中不挂帧(内容未稳);编辑中走 textarea 不进本面。 */
-function FloorBody({ m, streaming }: { m: FloorMsg; streaming?: boolean }) {
+function FloorBody({ m, streaming, greeting }: { m: FloorMsg; streaming?: boolean; greeting?: boolean }) {
     const s = useShell();
     const text = m.displayContent ?? m.content;
     const split = extractFrontendBlocks(text);
     const charDir = s.chat?.charDir;
     const chatName = s.chat?.chatName;
+    /* renderer seam:order 最小者上岗;贡献缺席回落内建 ProseFloor(诚实兜底)。 */
+    const renderers = useContribs('renderer');
+    const Renderer = useMemo(
+        () => [...renderers].sort((a, b) => a.order - b.order)[0]?.Component ?? ProseFloor,
+        [renderers],
+    );
     return (
         <>
             {(split.text || streaming || !split.blocks.length) && (
-                <div className="chat-body-text whitespace-pre-line" style={{ fontSize: s.chatSettings.fontSize }}>
-                    {split.text || text}
-                    {streaming && <span className="cursor-bar" />}
-                </div>
+                <FloorRenderProvider value={{ m, text: split.text || text, streaming, greeting, fontSize: s.chatSettings.fontSize }}>
+                    <Renderer />
+                </FloorRenderProvider>
             )}
             {!streaming && charDir && split.blocks.map((b, i) => (
                 <MessageIframe key={`${m.id}-${i}`} charDir={charDir} chatName={chatName} html={b.html} messageId={m.id} blockIndex={i} />
@@ -73,7 +81,7 @@ function FloorBody({ m, streaming }: { m: FloorMsg; streaming?: boolean }) {
     );
 }
 
-function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
+function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOps; greeting?: boolean }) {
     const { t } = useI18n();
     const s = useShell();
     const [thinkOpen, setThinkOpen] = useState(false);
@@ -106,7 +114,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                             </div>
                         </div>
                     ) : (
-                        <FloorBody m={m} streaming={m.streaming} />
+                        <FloorBody m={m} streaming={m.streaming} greeting={greeting} />
                     )}
                 </div>
                 {/* 触屏无 hover —— 移动端 ops 常显(opacity-90),桌面保留 hover 显现 */}
@@ -130,7 +138,9 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
     const tOpen = s.chatSettings.autoExpandThink || thinkOpen;
     const receipts = (m.receipts ?? []).map((r) => r.summary).filter((x): x is string => !!x);
     return (
-        <article className="group/msg flex items-start gap-3.5">
+        /* greeting = 首条可见 assistant 楼(TASK-026 首楼版式待遇):
+           .prose-greeting 给 article 发丝线+间距,正文由渲染器抬字号档。 */
+        <article className={`group/msg flex items-start gap-3.5${greeting ? ' prose-greeting' : ''}`}>
             <StageAvatar name={name} />
             <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex items-center gap-2">
@@ -191,7 +201,7 @@ function Msg({ m, idx, ops }: { m: FloorMsg; idx: number; ops: FloorOps }) {
                     </div>
                 ) : (
                     <>
-                        <FloorBody m={m} streaming={m.streaming} />
+                        <FloorBody m={m} streaming={m.streaming} greeting={greeting} />
                         {m.aborted && !m.streaming && (
                             /* 规范稿已中止楼层 L1189 */
                             <span className="inline-flex items-center gap-2 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 py-1 text-[11.5px] text-[color:var(--fg-muted)]">
@@ -256,6 +266,9 @@ function ChatFloors() {
     const limit = Math.max(5, s.chatSettings.renderCount || 30);
     const hiddenCount = !showAll && renderable.length > limit ? renderable.length - limit : 0;
     const visible = hiddenCount > 0 ? renderable.slice(-limit) : renderable;
+    /* greeting 身份归数据:首条可见 assistant 楼(卡 first_mes 落位),
+       收缩窗口不影响判定(renderable[0],非可见切片头)。 */
+    const greetingId = renderable[0]?.m.role === 'assistant' ? renderable[0].m.id : undefined;
 
     return (
         /* spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask + bgMode 底图 */
@@ -315,7 +328,7 @@ function ChatFloors() {
                         </button>
                     </div>
                 )}
-                {visible.map(({ m, origIdx }) => <Msg key={m.id} m={m} idx={origIdx} ops={eng.opsOf(m, origIdx)} />)}
+                {visible.map(({ m, origIdx }) => <Msg key={m.id} m={m} idx={origIdx} ops={eng.opsOf(m, origIdx)} greeting={m.id === greetingId} />)}
             </div>
         </div>
     );

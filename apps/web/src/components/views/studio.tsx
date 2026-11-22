@@ -14,7 +14,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { PanelEmpty, PanelError, chatKey, useRemote } from '../panels/panelShared';
-import { cardData, getCharacter, charImageUrl, type CardDoc, type CardItem } from '../../api/characters';
+import { cardData, loadCharDoc, charImageUrl, type CardItem } from '../../api/characters';
 import { listWorlds, getWorld, saveWorld, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
 import { getSettings, patchSettings } from '../../api/settings';
 import { listPresets, getPreset, savePreset, type PresetDocument } from '../../api/presets';
@@ -103,16 +103,8 @@ function invalidateWorldDoc(name: string): void {
     worldDocCache.delete(name);
 }
 
-const cardDocCache = new Map<string, Promise<CardDoc>>();
-function loadCardDoc(charDir: string): Promise<CardDoc> {
-    let p = cardDocCache.get(charDir);
-    if (!p) {
-        p = getCharacter(charDir);
-        cardDocCache.set(charDir, p);
-        p.catch(() => cardDocCache.delete(charDir));
-    }
-    return p;
-}
+/* 卡文档缓存已收编进 api/characters.ts(loadCharDoc)—— 舞台头资产 chip /
+   角色页共享同一真值源,patchCharacter 自动失效,本文件不再私持。 */
 
 const presetDocCache = new Map<string, Promise<PresetDocument>>();
 function loadPresetDoc(name: string, apiId = 'openai'): Promise<PresetDocument> {
@@ -152,7 +144,7 @@ function useWorldBindings(cards: CardItem[]) {
         };
         await Promise.all(cards.map(async (c) => {
             try {
-                const doc = await loadCardDoc(c.charDir);
+                const doc = await loadCharDoc(c.charDir);
                 const world = cardData(doc).extensions?.world;
                 if (typeof world === 'string' && world) push(world, c.name || c.charDir);
             } catch { /* 读不出的卡不进反查 */ }
@@ -435,7 +427,7 @@ function WorldbookPage() {
     const counts = useWorldCounts(items);
     /* 默认书 = 当前会话卡的 extensions.world;取不到 → 列表首本。 */
     const bound = useRemote(s.chat?.charDir ?? null, async () => {
-        const doc = await loadCardDoc(s.chat!.charDir);
+        const doc = await loadCharDoc(s.chat!.charDir);
         const w = cardData(doc).extensions?.world;
         return typeof w === 'string' && w ? w : null;
     });

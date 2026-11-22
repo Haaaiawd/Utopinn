@@ -164,6 +164,16 @@ function ChatGroup({ dir, list }: { dir: string; list: ChatSummary[] }) {
                     <CardRing charDir={dir} />
                     <span className="min-w-0 flex-1 truncate">{card?.name || dir}</span>
                 </button>
+                {/* 组头二级动作(hover 显现):角色页 → 新会话 —— TASK-026
+                    角色=一等对象,侧栏也给入口,不只有卡墙一条路。 */}
+                <button
+                    type="button"
+                    className="ghost-btn hidden h-5 w-5 shrink-0 group-hover/cgroup:inline-flex"
+                    title={t('nav.char')}
+                    onClick={() => shell.openChar(dir)}
+                >
+                    <Icon name="user" size={12} />
+                </button>
                 {shell.live && (
                     <button
                         type="button"

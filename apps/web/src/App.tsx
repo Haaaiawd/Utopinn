@@ -11,7 +11,7 @@ import {
     type GlobalLoreItem, type ModelItem, type PresetItem,
 } from './api/mock';
 import { getMe, type CurrentUser } from './api/account';
-import { listCharacters, type CardItem } from './api/characters';
+import { invalidateCharDocs, listCharacters, type CardItem } from './api/characters';
 import { listModels } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import { listPersonas, type ActivePersona, type PersonaItem } from './api/personas';
@@ -95,6 +95,10 @@ function loadChatSettings(): ChatSettings {
         return DEFAULT_CHAT_SETTINGS;
     }
 }
+
+/** per-chat persona 选择态的本地键(服务端无 per-chat persona 端点,
+ *  选择态诚实存 localStorage;生效路径 = 生成 body.user 携带,TASK-026)。 */
+const personaKey = (chatId: string | null | undefined) => `utopinn.persona.${chatId ?? 'default'}`;
 
 function shortModelId(id: string): string {
     const tail = id.includes('/') ? id.slice(id.lastIndexOf('/') + 1) : id;
@@ -183,6 +187,7 @@ function saveWbLayout(chatKey: string, layout: WbLayout): void {
 function Shell() {
     const { t } = useI18n();
     const [view, setView] = useState<ViewId>('chat');
+    const [charDir, setCharDir] = useState<string | null>(null);
     const [chats, setChats] = useState<ChatSummary[]>([...MOCK_CHATS, ...MOCK_STAGE_SESSIONS]);
     const [activeChat, setActiveChat] = useState('c1');
     const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
@@ -321,6 +326,9 @@ function Shell() {
             const r = await listCharacters();
             setCards(new Map(r.items.map((c) => [c.charDir, c])));
             setCardsMock(false);
+            /* 卡清单重拉 = 外部改动可能已发生(导入覆盖/其他端写盘),
+               卡文档缓存整桶清掉 —— 角色页/舞台头 chip 不读陈旧真值。 */
+            invalidateCharDocs();
             if (serverStatus === 'offline') setServerStatus('online');
         } catch {
             setCards(new Map(MOCK_CARDS.map((c) => [c.charDir, c])));
@@ -338,15 +346,9 @@ function Shell() {
     const refreshPersonas = useCallback(async () => {
         try {
             const r = await listPersonas();
+            /* 生效 persona 的推导统一归下方 [chat?.id, personas] effect —
+               存值 → 默认 → 首条 单一路径,这里只搬目录。 */
             setPersonas(r.items);
-            setPersona((prev) => {
-                if (prev?.avatar) {
-                    const hit = r.items.find((x) => x.avatar === prev.avatar);
-                    if (hit) return { avatar: hit.avatar, name: hit.name, description: hit.description };
-                }
-                const def = r.items.find((x) => x.isDefault) ?? r.items[0];
-                return def ? { avatar: def.avatar, name: def.name, description: def.description } : null;
-            });
         } catch { /* ignore */ }
     }, []);
 
@@ -457,6 +459,19 @@ function Shell() {
             void refreshConnection();
         }
     }, [serverStatus, refreshChats, refreshCards, refreshCurrentUser, refreshPersonas, refreshConnection]);
+
+    /* persona per-chat 选择态(ST 语义:人设绑会话,不绑全局)。
+       会话切换/人设目录水合 → 本会话存值 → 默认人设 → 目录首条;
+       写回面 = pickPersona 落 localStorage,生成时以 body.user 携带。 */
+    useEffect(() => {
+        if (!personas.length) { setPersona(null); return; }
+        let stored = '';
+        try { stored = localStorage.getItem(personaKey(chat?.id)) ?? ''; } catch { /* storage 不可用 */ }
+        const hit = personas.find((p) => p.avatar === stored)
+            ?? personas.find((p) => p.isDefault)
+            ?? personas[0];
+        setPersona(hit ? { avatar: hit.avatar, name: hit.name, description: hit.description } : null);
+    }, [chat?.id, personas]);
 
     /* 在线首次拉到真会话且当前指针指向不存在的 mock c1 → 自动切首个真会话 */
     useEffect(() => {
@@ -665,20 +680,35 @@ function Shell() {
         setMobileDrawer(false);
     }, []);
 
+    /* 舞台头/ctx 弹层的 persona 快切 —— 选择态写回本会话 localStorage 槽
+       (chat 为 null 时落 'default' 桶,不影响任何会话记忆)。 */
+    const pickPersona = useCallback((p: ActivePersona | null) => {
+        setPersona(p);
+        try { localStorage.setItem(personaKey(chatRef.current?.id), p?.avatar ?? ''); } catch { /* storage 不可用 */ }
+    }, []);
+
+    /* setView 统一入口:移动端域映射(plugins→settings / studio→hub / home→chat)
+       + 收 drawer;openChar 也走它,'char' 视图无映射直通。 */
+    const gotoView = useCallback((v: ViewId) => {
+        if (isMobile) {
+            if (v === 'plugins') { openSettings('plugins'); return; }
+            if (v === 'studio') v = 'hub';
+            else if (v === 'home') v = 'chat';
+        }
+        setView(v);
+        setMobileDrawer(false);
+    }, [isMobile, openSettings]);
+
     const shell = useMemo<ShellCtx>(() => ({
         registry,
         view,
-        setView: (v: ViewId) => {
-            if (isMobile) {
-                if (v === 'plugins') { openSettings('plugins'); return; }
-                if (v === 'studio') v = 'hub';
-                else if (v === 'home') v = 'chat';
-            }
-            setView(v);
-            setMobileDrawer(false);
-        },
+        setView: gotoView,
         railTab,
         chats, activeChat, chat,
+        charDir,
+        /* 三级路径中层:卡格 → 角色页(view 'char') → 页内选会话 → 聊天。
+           charDir 记「最近看过的角色页」,selectChat 不清 —— 回看回同一页。 */
+        openChar: (d: string) => { setCharDir(d); gotoView('char'); },
         selectChat: (id) => {
             setActiveChat(id);
             setView('chat');
@@ -693,7 +723,7 @@ function Shell() {
         importDrafts, queueImport, dismissImportDraft,
         currentUser, refreshCurrentUser,
         personas, refreshPersonas,
-        persona, setPersona,
+        persona, setPersona: pickPersona,
         sidebarOpen,
         toggleSidebar: () => setSidebarOpen((v) => !v),
         workbenchOpen,
@@ -772,7 +802,7 @@ function Shell() {
         live,
         serverStatus,
     }), [
-        view, railTab, chats, chat, activeChat, sidebarOpen, workbenchOpen,
+        view, railTab, chats, chat, activeChat, charDir, gotoView, pickPersona, sidebarOpen, workbenchOpen,
         openTabs, activeTab, floatingType, floatingRect, cardappFs, launcherSearch, panelParams,
         showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, openPanel,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
