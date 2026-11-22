@@ -1,11 +1,16 @@
 /**
- * textgen-body —— /api/utopinn/generate body.api==='text' 派发 body 塑形(TASK-037 阶段1)。
+ * textgen-body —— /api/utopinn/generate 非 chat-completions 源派发 body 塑形
+ * (TASK-037:api==='text' 阶段1;api==='kobold'/'novel' 阶段5)。
  *
  * 逐字段对照浏览器 textgen-settings.js createTextGenGenerationData(:1664-1918)
  * 及其依赖:getStoppingStrings(script.js:6178)、getInstructStoppingSequences
  * (instruct-mode.js:301,经 core instructEngine)、getCustomStoppingStrings
  * (power-user.js:3883)、getCustomTokenBans(:453)、calculateLogitBias(:532)、
  * getTextGenModel(:1542)、getTextGenServer(:360)。
+ * kobold 对照 kai-settings.js getKoboldGenerationData(:178)+ setKoboldFlags(:417);
+ * novel 对照 nai-settings.js getNovelGenerationData(:524)+ selectPrefix(:704)
+ * + getBadWordIds(:443)+ getLogitBiasListResult(logit-bias.js:104)
+ * + getMaxContextTokens(script.js:10709)。
  *
  * 语义约定与浏览器一致:
  *  - undefined 值字段不上行(前端靠 JSON.stringify 丢,这里产出时同样剔除);
@@ -14,11 +19,17 @@
  *    裸文本经 tokenizer 编码(编码器按 encoding_tokenizer 设置/模型名启发式选,
  *    前端 API tokenizer 通道服务端暂无等价——回落本地 llama 兜底,见 REVIEW);
  *  - cfgValues(CFG 扩展)无服务端等价,guidance_scale/negative_prompt 只吃
- *    settings 值与 generation_overrides。
+ *    settings 值与 generation_overrides;
+ *  - novel 订阅层(tier)服务端无探测通道——getNovelMaxResponseTokens 的
+ *    tier→上限映射由调用方给(缺省 150,与 legacy 无 novel_data 兜底一致);
+ *  - kai_flags 服务端无主循环探测——body.kai_flags 传入优先,缺省由
+ *    probeKoboldFlags 生成时探测(/v1/info/version + /extra/version,
+ *    探测失败回落全 false,与前端未连过 status 的初始态同义)。
  */
 
 import { substituteParams } from '@utopinn/core';
 import { TEXTGEN_TYPES } from '../constants.js';
+import { getOverrideHeaders } from '../additional-headers.js';
 import { getSentencepiceTokenizer, getWebTokenizer, getTiktokenTokenizer } from '../endpoints/tokenizers.js';
 
 const {
@@ -694,6 +705,459 @@ export async function buildTextgenDispatchBody({
             delete params.guided_json;
         }
     }
+
+    // undefined 不上行(与前端 JSON.stringify 语义一致)
+    for (const key of Object.keys(params)) {
+        if (params[key] === undefined) {
+            delete params[key];
+        }
+    }
+    return params;
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// TASK-037 阶段5:api==='kobold' / 'novel' 派发体塑形
+// ═══════════════════════════════════════════════════════════════════════
+
+/** kai_flags 默认全集(kai-settings.js:60-70,未探测=全 false 保守形) */
+const KAI_FLAGS_DEFAULT = {
+    can_use_tokenization: false,
+    can_use_stop_sequence: false,
+    can_use_streaming: false,
+    can_use_default_badwordsids: false,
+    can_use_mirostat: false,
+    can_use_grammar: false,
+    can_use_min_p: false,
+};
+
+/**
+ * can_use_* 门版本(kai-settings.js:72-78)。src 列:
+ * 'united' = /v1/info/version(KoboldAI United),'cpp' = /extra/version(KoboldCpp)。
+ */
+const KAI_FLAG_GATES = [
+    ['can_use_stop_sequence', 'united', '1.2.2'],
+    ['can_use_streaming', 'cpp', '1.30'],
+    ['can_use_tokenization', 'cpp', '1.41'],
+    ['can_use_default_badwordsids', 'united', '1.2.4'],
+    ['can_use_mirostat', 'cpp', '1.35'],
+    ['can_use_grammar', 'cpp', '1.44'],
+    ['can_use_min_p', 'cpp', '1.48'],
+];
+
+/**
+ * versionCompare(utils.js:3157)服务端简版:
+ * 逐段数值比;任一侧不可解析回落 localeCompare(numeric) —— 与前端
+ * compareVersionLike 的 fallback 同形。core 相等时 src 带非数字尾巴
+ * (rc/日期版)按前端 prerelease 语义视作低于净版本号。
+ * @returns {boolean} srcVersion >= minVersion
+ */
+export function versionGte(srcVersion, minVersion) {
+    const parse = (v) => {
+        if (v === null || v === undefined) return null;
+        const m = String(v).trim().match(/^(\d+(?:\.\d+)*)(.*)$/);
+        if (!m) return null;
+        return { core: m[1].split('.').map(Number), rest: String(m[2] ?? '') };
+    };
+    const a = parse(srcVersion);
+    const b = parse(minVersion);
+    if (!a || !b) {
+        return String(srcVersion || '0.0.0')
+            .localeCompare(String(minVersion || '0.0.0'), undefined, { numeric: true, sensitivity: 'base' }) >= 0;
+    }
+    const len = Math.max(a.core.length, b.core.length);
+    for (let i = 0; i < len; i++) {
+        const av = a.core[i] ?? 0;
+        const bv = b.core[i] ?? 0;
+        if (av !== bv) return av > bv;
+    }
+    // core 全等:门版本恒为净版本号;src 带尾巴按 prerelease 语义低一档
+    if (a.rest && !b.rest) return false;
+    return true;
+}
+
+/**
+ * setKoboldFlags(kai-settings.js:417)纯函数版:两路版本号 → can_use_* 全集。
+ * 缺省/不可解析一律 false —— 与前端 kai_flags 初始态同义(旧上游对
+ * 未知字段做白名单校验,乱塞会被拒)。
+ */
+export function resolveKaiFlags({ koboldUnitedVersion, koboldCppVersion } = {}) {
+    const flags = {};
+    for (const [flag, src, min] of KAI_FLAG_GATES) {
+        flags[flag] = versionGte(src === 'united' ? koboldUnitedVersion : koboldCppVersion, min);
+    }
+    return flags;
+}
+
+/** api_server → {ts, flags} 探测缓存;短 TTL 摊薄每次生成的两次探测请求 */
+const kaiFlagsProbeCache = new Map();
+const KAI_FLAGS_PROBE_TTL_MS = 60_000;
+const KAI_FLAGS_PROBE_CACHE_MAX = 32;
+
+/**
+ * kobold 能力探测(/api/backends/kobold/status 的服务端等价):
+ * 并行取 /v1/info/version(united)+ /extra/version(koboldcpp)→ resolveKaiFlags。
+ * 探测失败/无 api_server → 全 false(保守,旧上游白名单校验不被未知字段炸)。
+ * 短 TTL 缓存:前端靠 status 轮询刷 kai_flags,服务端按 api_server 记一分钟。
+ * @param {string} apiServer kobold 上游地址(localhost → 127.0.0.1 与 dispatch 同形)
+ * @param {object} [opts] { fetchImpl, timeoutMs } —— fetchImpl 注入位(测试/定制)
+ * @returns {Promise<object>} can_use_* 全集(恒返回完整七键)
+ */
+export async function probeKoboldFlags(apiServer, { fetchImpl = globalThis.fetch?.bind(globalThis), timeoutMs = 4000 } = {}) {
+    const server = String(apiServer ?? '').replace('localhost', '127.0.0.1');
+    const hit = kaiFlagsProbeCache.get(server);
+    if (hit && Date.now() - hit.ts < KAI_FLAGS_PROBE_TTL_MS) {
+        return hit.flags;
+    }
+    let flags = { ...KAI_FLAGS_DEFAULT };
+    if (server && fetchImpl) {
+        const headers = { 'Content-Type': 'application/json' };
+        try {
+            Object.assign(headers, getOverrideHeaders(new URL(server).host));
+        } catch { /* 非法 URL → 无覆盖头(与 dispatch buildKoboldHeaders 同义) */ }
+        const get = async (path) => {
+            const r = await fetchImpl(`${server}${path}`, {
+                headers,
+                signal: AbortSignal.timeout(timeoutMs),
+            });
+            if (!r.ok) return null;
+            const j = await r.json().catch(() => null);
+            return j?.result ?? null;
+        };
+        try {
+            const [koboldUnitedVersion, koboldCppVersion] = await Promise.all([
+                get('/v1/info/version').catch(() => null),
+                get('/extra/version').catch(() => null),
+            ]);
+            flags = resolveKaiFlags({ koboldUnitedVersion, koboldCppVersion });
+        } catch { /* 探测整体失败 → 全 false */ }
+    }
+    if (kaiFlagsProbeCache.size >= KAI_FLAGS_PROBE_CACHE_MAX) {
+        kaiFlagsProbeCache.delete(kaiFlagsProbeCache.keys().next().value);
+    }
+    kaiFlagsProbeCache.set(server, { ts: Date.now(), flags });
+    return flags;
+}
+
+/**
+ * getKoboldGenerationData(kai-settings.js:178)服务端同构。
+ * 只做非 gui 袋;gui_settings=true 的瘦袋由调用方直接组(legacy 同序:
+ * preset_settings==='gui' → {prompt,gui_settings,max_length,
+ * max_context_length,api_server} 五键,streaming 键不上行)。
+ * @param {object} input
+ * @param {object} input.kaiSettings settings.kai_settings
+ * @param {object|null} [input.presetSettings] 'kobold' 预设档(仅 sampler_order 兜底)
+ * @param {string} input.prompt 组装好的单串 prompt
+ * @param {number|undefined} input.maxLength amount_gen 同位量
+ * @param {number|undefined} input.maxContext max_context 同位量
+ * @param {object} input.kaiFlags can_use_* 全集(探测/传入产物)
+ * @param {string} [input.type] 生成动词(grammar_retain_state 看 isContinue)
+ * @param {object} input.powerUser settings.power_user
+ * @param {object} input.substCtx 宏上下文
+ * @param {object} input.instructEngine core instruct 引擎
+ * @returns {object} 派发体(不含 streaming/can_abort/api_server/type/luker_generation;调用方补)
+ */
+export function buildKoboldDispatchBody({
+    kaiSettings, presetSettings, prompt, maxLength, maxContext,
+    kaiFlags, type = 'normal', powerUser, substCtx, instructEngine,
+}) {
+    const settings = kaiSettings ?? {};
+    const flags = { ...KAI_FLAGS_DEFAULT, ...(kaiFlags ?? {}) };
+    const subst = (content) => substituteParams(content, substCtx);
+    const isImpersonate = type === 'impersonate';
+    const isContinue = type === 'continue';
+    const stoppingStrings = buildStoppingStrings({
+        powerUser, substCtx, instructEngine, subst, isImpersonate, isContinue,
+    });
+
+    const params = {
+        'prompt': prompt,
+        'gui_settings': false,
+        'sampler_order': settings.sampler_order || presetSettings?.sampler_order,
+        'max_context_length': maxContext === undefined || maxContext === null ? undefined : Number(maxContext),
+        'max_length': maxLength,
+        'rep_pen': Number(settings.rep_pen),
+        'rep_pen_range': Number(settings.rep_pen_range),
+        'rep_pen_slope': settings.rep_pen_slope,
+        'temperature': Number(settings.temp),
+        'tfs': settings.tfs,
+        'top_a': settings.top_a,
+        'top_k': settings.top_k,
+        'top_p': settings.top_p,
+        'min_p': flags.can_use_min_p ? settings.min_p : undefined,
+        'typical': settings.typical,
+        'use_world_info': false,
+        'singleline': false,
+        'stop_sequence': flags.can_use_stop_sequence ? stoppingStrings : undefined,
+        'mirostat': flags.can_use_mirostat ? settings.mirostat : undefined,
+        'mirostat_tau': flags.can_use_mirostat ? settings.mirostat_tau : undefined,
+        'mirostat_eta': flags.can_use_mirostat ? settings.mirostat_eta : undefined,
+        'use_default_badwordsids': flags.can_use_default_badwordsids ? settings.use_default_badwordsids : undefined,
+        'grammar': flags.can_use_grammar ? subst(settings.grammar) : undefined,
+        'grammar_retain_state': (flags.can_use_grammar && isContinue) ? true : undefined,
+        'sampler_seed': settings.seed >= 0 ? settings.seed : undefined,
+    };
+
+    // undefined 不上行(与前端 JSON.stringify 语义一致);NaN 保留 —
+    // Number(undefined)=NaN 与 legacy 同款,JSON 边界落 null。
+    for (const key of Object.keys(params)) {
+        if (params[key] === undefined) {
+            delete params[key];
+        }
+    }
+    return params;
+}
+
+// —— novel ——
+
+/** getTokenizerTypeForModel(nai-settings.js:636):模型名 → 本地 tokenizer 名;无等价 → null */
+export function novelTokenizerNameForModel(model) {
+    const m = String(model || '');
+    if (m.includes('clio')) return 'nerdstash';
+    if (m.includes('kayra')) return 'nerdstash_v2';
+    if (m.includes('erato')) return 'llama3';
+    return null;
+}
+
+/**
+ * novel 编码器懒加载(与 createTextgenEncoder 同约定,但 llama3 必须走
+ * web tokenizer —— getSentencepiceTokenizer('llama3') 会先命中 spp_llama,
+ * 不能复用通用工厂)。加载失败 → encode [](前端失败跳过语义)。
+ */
+function createNovelEncoder(tokenizerName) {
+    let pending = null;
+    const load = () => pending ??= (async () => {
+        try {
+            if (tokenizerName === 'llama3') {
+                const web = getWebTokenizer('llama3');
+                const instance = await web?.get();
+                return instance ? (text) => Array.from(instance.encode(text)) : null;
+            }
+            const spp = getSentencepiceTokenizer(tokenizerName);
+            const instance = await spp?.get();
+            return instance ? (text) => instance.encodeIds(text) : null;
+        } catch (error) {
+            console.warn(`textgen-body: novel tokenizer "${tokenizerName}" unavailable:`, error?.message ?? error);
+        }
+        return null;
+    })();
+    return async (text) => {
+        const encoder = await load();
+        return encoder ? encoder(text) : [];
+    };
+}
+
+/** getBadWordPermutations(nai-settings.js:496):大小写/空格 10 变体 */
+function getNovelBadWordPermutations(text) {
+    const result = [
+        text,
+        ` ${text}`,
+        text[0].toUpperCase() + text.slice(1),
+        ` ${text[0].toUpperCase() + text.slice(1)}`,
+        text[0].toLowerCase() + text.slice(1),
+        ` ${text[0].toLowerCase() + text.slice(1)}`,
+        text.toUpperCase(),
+        ` ${text.toUpperCase()}`,
+        text.toLowerCase(),
+        ` ${text.toLowerCase()}`,
+    ];
+    return result.filter(onlyUnique);
+}
+
+/**
+ * getBadWordIds(nai-settings.js:443)异步版:{v}→verbatim 编码、[ids]→
+ * 原样 token id、裸文本→变体逐个编码。无服务端缓存层(badWordsCache
+ * 前端层;banned_tokens 行数小,缓存收益≈0)。
+ */
+async function getNovelBadWordIds(bannedTokens, encodeText) {
+    const result = [];
+    for (const raw of String(bannedTokens ?? '').split('\n')) {
+        const token = raw.trim();
+        if (!token.length) continue;
+        if (token.startsWith('{') && token.endsWith('}')) {
+            result.push(await encodeText(token.slice(1, -1)));
+        } else if (token.startsWith('[') && token.endsWith(']')) {
+            try {
+                const tokens = JSON.parse(token);
+                if (Array.isArray(tokens) && tokens.every(t => Number.isInteger(t))) {
+                    result.push(tokens);
+                } else {
+                    throw new Error('Not an array of integers');
+                }
+            } catch (err) {
+                console.log(`Failed to parse bad word token list: ${token}`, err);
+            }
+        } else {
+            for (const variant of getNovelBadWordPermutations(token)) {
+                result.push(await encodeText(variant));
+            }
+        }
+    }
+    return result;
+}
+
+/**
+ * getLogitBiasListResult(logit-bias.js:104)+ nai getBiasObject(:672)合体:
+ * {text,value}[] → [{bias,sequence,ensure_sequence_finish:false,generate_once:false}]。
+ */
+async function getNovelLogitBiasExp(biasPreset, encodeText) {
+    const result = [];
+    const toBiasObject = (bias, sequence) => ({
+        bias, sequence,
+        ensure_sequence_finish: false,
+        generate_once: false,
+    });
+    for (const entry of Array.isArray(biasPreset) ? biasPreset : []) {
+        if (!(entry?.text?.length > 0)) continue;
+        const text = String(entry.text).trim();
+        if (!text.length) continue;
+        if (text.startsWith('{') && text.endsWith('}')) {
+            result.push(toBiasObject(entry.value, await encodeText(text.slice(1, -1))));
+        } else if (text.startsWith('[') && text.endsWith(']')) {
+            try {
+                const tokens = JSON.parse(text);
+                if (Array.isArray(tokens) && tokens.every(t => Number.isInteger(t))) {
+                    result.push(toBiasObject(entry.value, tokens));
+                } else {
+                    throw new Error('Not an array of integers');
+                }
+            } catch (err) {
+                console.log(`Failed to parse logit bias token list: ${text}`, err);
+            }
+        } else {
+            result.push(toBiasObject(entry.value, await encodeText(` ${text}`)));
+        }
+    }
+    return result;
+}
+
+/**
+ * selectPrefix(nai-settings.js:704):新模型(clio/kayra/erato)按 prompt
+ * 尾部 1500 字符含 '}' 判 instruct → 'special_instruct',否则用设置值;
+ * 老模型恒 'vanilla'。
+ */
+export function selectNovelPrefix(selectedPrefix, finalPrompt, model) {
+    const m = String(model || '');
+    const isNewModel = m.includes('clio') || m.includes('kayra') || m.includes('erato');
+    if (isNewModel) {
+        // NAI 自称回看 1000 字符(非 token)找 instruct 括号 —— 前端给 1500 富余,照抄
+        const tail = String(finalPrompt ?? '').slice(-1500);
+        return tail.includes('}') ? 'special_instruct' : selectedPrefix;
+    }
+    return 'vanilla';
+}
+
+const NOVEL_DEFAULT_ORDER = [1, 5, 0, 2, 3, 4];
+const NOVEL_MAXIMUM_OUTPUT_LENGTH = 150;
+const NOVEL_MAX_STOP_SEQUENCES = 1024;
+
+/**
+ * getNovelGenerationData(nai-settings.js:524)服务端同构。
+ * @param {object} input
+ * @param {object} input.naiSettings settings.nai_settings
+ * @param {object|null} [input.presetSettings] 'novel' 预设档(仅 order 兜底)
+ * @param {string} input.prompt 组装好的单串 prompt(preamble 由调用方在转换时插入)
+ * @param {string} input.model 已解析模型名(调用方:body.model ?? nai_settings.model_novel)
+ * @param {number|undefined} input.maxLength amount_gen 同位量
+ * @param {number} [input.maxResponseTokens] tier 响应上限(缺省 150=legacy
+ *   maximum_output_length/无订阅数据兜底;Opus(tier3)调用方传 250)
+ * @param {string} [input.type] 生成动词
+ * @param {object} input.powerUser settings.power_user(num_logprobs 开关源)
+ * @param {object} input.substCtx 宏上下文
+ * @param {object} input.instructEngine core instruct 引擎
+ * @param {Function} [input.encodeText] 测试注入位:text→token ids;缺省按
+ *   model 解析(无匹配 tokenizer → 三处 id 数组恒 undefined/[])
+ * @returns {Promise<object>} 派发体(不含 streaming/type/luker_generation;调用方补)
+ */
+export async function buildNovelDispatchBody({
+    naiSettings, presetSettings, prompt, model,
+    maxLength, type = 'normal',
+    powerUser, substCtx, instructEngine,
+    maxResponseTokens, encodeText,
+}) {
+    const settings = naiSettings ?? {};
+    const subst = (content) => substituteParams(content, substCtx);
+    const isImpersonate = type === 'impersonate';
+    const isContinue = type === 'continue';
+    const modelName = String(model ?? '');
+    const isKayra = modelName.includes('kayra');
+    const isErato = modelName.includes('erato');
+
+    const tokenizerName = novelTokenizerNameForModel(modelName);
+    const encode = encodeText ?? (tokenizerName ? createNovelEncoder(tokenizerName) : null);
+
+    const stoppingStrings = buildStoppingStrings({
+        powerUser, substCtx, instructEngine, subst, isImpersonate, isContinue,
+    });
+
+    // erato 追加标点变体(:534-551,llama3 tokenizer 下 '\nX:' 也要 '.\nX:' 等形)
+    if (isErato) {
+        const additional = [];
+        for (const s of stoppingStrings) {
+            if (typeof s === 'string' && s.startsWith('\n')) {
+                for (const head of ['.', '!', '?', '*', '"', '_', '...', '."', '?"', '!"', '.*', ')']) {
+                    additional.push(head + s);
+                }
+            }
+        }
+        stoppingStrings.push(...additional);
+    }
+
+    const stopSequences = encode
+        ? await Promise.all(stoppingStrings.slice(0, NOVEL_MAX_STOP_SEQUENCES).map((s) => encode(s)))
+        : undefined;
+    const badWordIds = encode
+        ? await getNovelBadWordIds(settings.banned_tokens, encode)
+        : undefined;
+    const logitBias = encode && Array.isArray(settings.logit_bias) && settings.logit_bias.length
+        ? await getNovelLogitBiasExp(settings.logit_bias, encode)
+        : [];
+
+    const prefix = selectNovelPrefix(settings.prefix, prompt, modelName);
+
+    let finalPrompt = String(prompt ?? '');
+    if (isErato) {
+        finalPrompt = '<|startoftext|><|reserved_special_token81|>' + finalPrompt;
+    }
+
+    const adjustedMaxLength = (isKayra || isErato)
+        ? (maxResponseTokens ?? NOVEL_MAXIMUM_OUTPUT_LENGTH)
+        : NOVEL_MAXIMUM_OUTPUT_LENGTH;
+
+    const params = {
+        'input': finalPrompt,
+        'model': modelName,
+        'use_string': true,
+        'temperature': Number(settings.temperature),
+        'max_length': (Number.isFinite(Number(maxLength)) ? Math.min(Number(maxLength), adjustedMaxLength) : adjustedMaxLength),
+        'min_length': Number(settings.min_length),
+        'tail_free_sampling': Number(settings.tail_free_sampling),
+        'repetition_penalty': Number(settings.repetition_penalty),
+        'repetition_penalty_range': Number(settings.repetition_penalty_range),
+        'repetition_penalty_slope': Number(settings.repetition_penalty_slope),
+        'repetition_penalty_frequency': Number(settings.repetition_penalty_frequency),
+        'repetition_penalty_presence': Number(settings.repetition_penalty_presence),
+        'top_a': Number(settings.top_a),
+        'top_p': Number(settings.top_p),
+        'top_k': Number(settings.top_k),
+        'min_p': Number(settings.min_p),
+        'math1_temp': Number(settings.math1_temp),
+        'math1_quad': Number(settings.math1_quad),
+        'math1_quad_entropy_scale': Number(settings.math1_quad_entropy_scale),
+        'typical_p': Number(settings.typical_p),
+        'mirostat_lr': Number(settings.mirostat_lr),
+        'mirostat_tau': Number(settings.mirostat_tau),
+        'phrase_rep_pen': settings.phrase_rep_pen,
+        'stop_sequences': stopSequences,
+        'bad_words_ids': badWordIds,
+        'logit_bias_exp': logitBias,
+        'generate_until_sentence': true,
+        'use_cache': false,
+        'return_full_text': false,
+        'prefix': prefix,
+        'order': settings.order || presetSettings?.order || NOVEL_DEFAULT_ORDER,
+        'num_logprobs': powerUser?.request_token_probabilities ? 10 : undefined,
+    };
 
     // undefined 不上行(与前端 JSON.stringify 语义一致)
     for (const key of Object.keys(params)) {

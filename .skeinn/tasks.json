@@ -3638,7 +3638,8 @@
       "touches": [
         "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/src/services/textgen-body.js",
-        "apps/cli/utopinn-cli.mjs"
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/utopinn-generate-textapi.test.mjs"
       ],
       "implements": ".skeinn/design/core-engine.md#Components and control flow",
       "status": "open",
@@ -4040,14 +4041,13 @@
         ".skeinn/design/web-rp-form.md"
       ],
       "touches": [
-        "apps/server/src/plugins/utopinn-generate.js",
         "apps/server/src/plugins/utopinn-library.js",
-        "apps/server/src/endpoints/backends/luker-generation.js",
         "apps/server/tests/theater-extra.test.mjs",
         "apps/server/tests/theater-extra-http.test.mjs",
-        "apps/web/src/features/stagepack.tsx",
-        "apps/web/src/components/stage/StageFrame.tsx",
-        ".skeinn/design/plugin-surface-forms.md"
+        ".skeinn/design/plugin-surface-forms.md",
+        "packages/protocol/src/api.ts",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/tests/novel-theater.test.mjs"
       ],
       "implements": ".skeinn/design/v2-stack-decisions.md#前端",
       "capability_hooks": [],

@@ -164,6 +164,112 @@ export interface IntegrityConflictBody {
 }
 
 // =========================================================================
+// TASK-044 —— novel 章目录 + theater 三件套余量
+// =========================================================================
+
+/**
+ * GET …/chats/:chatName/chapters —— novel 章目录聚合视图。
+ * sidecar chat_state 'chapters' ns 有 {items:[]} 显式清单 → source:'sidecar';
+ * 否则按 web stagepack 同规则从楼层推导 → source:'derived'。
+ * range 为 body 楼号区间(含端点,不含标记楼)——CLI regen --range <from:to>
+ * 用同一口径。章无内容楼时 range=null。
+ */
+export interface ChatChapterItem {
+    index: number;
+    /** prologue|chapter|section|body(derived)/ sidecar(sidecar 清单)。 */
+    kind: 'prologue' | 'chapter' | 'section' | 'body' | 'sidecar';
+    /** 显式序号称谓('第三章'/'序章' 形);无显式序号 → null(按 index 自排)。 */
+    num: string | null;
+    title: string;
+    /** [from,to] body 楼号区间(含端点);空章 → null。 */
+    range: [number, number] | null;
+    /** 内容楼数(不含分章标记楼)。 */
+    floors: number;
+    /** 首内容楼首段 snippet(≤40 字)。 */
+    snippet: string;
+    /** markers 策略专有:分章标记楼(system 楼)的 body 下标。 */
+    markerFloor?: number;
+}
+export interface ChatChaptersResponse {
+    chat: string;
+    charDir: string;
+    /** 全书楼数(body)。 */
+    floors: number;
+    source: 'sidecar' | 'derived';
+    /** derived 细分:markers|segmented|single|empty;sidecar 恒 'sidecar'。 */
+    strategy: 'markers' | 'segmented' | 'single' | 'empty' | 'sidecar';
+    items: ChatChapterItem[];
+    total: number;
+    /** sidecar 源专有:清单里非法(from 非 int/越界/to<from)被跳过的条数。 */
+    skipped?: number;
+}
+
+/**
+ * sidecar chat_state ns 'chapters' 的显式章清单文档
+ * (读写走通用 /api/utopinn/state/chat/* 面;非此形 → 视图回推导路)。
+ */
+export interface NovelChaptersSidecar {
+    items: {
+        /** 章起始 body 楼号(必需,int ≥0)。 */
+        from: number;
+        /** 章末 body 楼号(缺省=下一条 from-1/末楼,越界钳到末楼)。 */
+        to?: number;
+        title?: string;
+        num?: string;
+    }[];
+}
+
+/**
+ * GET /characters/:charDir/assets —— theater 三件套资产清单。
+ * 卡不存在 → 404;资产目录缺席 → 空数组(不静默造数据)。
+ * sprites:characters/<名>/ 顶层图;label 与 legacy /api/sprites/get 同正则。
+ * backgrounds:char 级 backgrounds/(charx 落点,scope:'char')+ 全局
+ *   backgrounds/(scope:'global')。
+ * bgm:char 级 bgm/ + 全局 assets/bgm/(本格新约定乐库位)。
+ */
+export interface CharAssetItem {
+    /** 文件主名(去扩展名)。 */
+    name: string;
+    file: string;
+    /** 静态面直取路径(/characters|/backgrounds|/assets 前缀)。 */
+    url: string;
+    bytes: number;
+    scope: 'char' | 'global';
+}
+export interface CharAssetSpriteItem extends CharAssetItem {
+    /** 表情标签(joy-1.png → joy;与 /api/sprites/get 同抽取)。 */
+    label: string;
+}
+export interface CharAssetsResponse {
+    charDir: string;
+    name: string;
+    sprites: CharAssetSpriteItem[];
+    backgrounds: CharAssetItem[];
+    bgm: CharAssetItem[];
+    /** 三件套全空 → true(诚实语义,不合成默认资产)。 */
+    empty: boolean;
+}
+
+/**
+ * sidecar chat_state ns 'scene' 的 theater 场景运行态文档
+ * (读写走通用 state/chat/* 面)。楼层 extra.scene 是单楼场景引用;
+ * 本 sidecar 是「当前场」运行值 —— 客户端进聊天/切场后写,读侧取最新。
+ * 字段刻意稀疏:bg/bgm 取值域与 floor.extra.scene 一致(资产清单 url 或裸文件名)。
+ */
+export interface TheaterSceneState {
+    /** 当前底图 url(如 /characters/<名>/backgrounds/hall.jpg 或 /backgrounds/x.png)。 */
+    bg?: string;
+    /** 当前 BGM(bgm 清单 name/file/url 皆可,客户端自决)。 */
+    bgm?: string;
+    /** 台上立绘:[{name:角色显示名, sprite:表情 label}]。 */
+    cast?: { name: string; sprite?: string }[];
+    /** 最近一次写场景对应的 body 楼号(溯源用,可选)。 */
+    floor?: number;
+    /** ISO 时间戳(可选)。 */
+    updatedAt?: string;
+}
+
+// =========================================================================
 // library — presets / worlds / personas / settings / secrets
 // =========================================================================
 

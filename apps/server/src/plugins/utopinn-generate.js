@@ -16,12 +16,23 @@ import {
     memberAvatarThumbnailUrl,
     selectActivatedMembers,
 } from '../services/group-orchestration.js';
-import { getChatRepo, getGroupRepo } from '../storage/index.js';
+import { getChatRepo, getGroupRepo, getPresetRepo, getSettingsRepo } from '../storage/index.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
-import { buildTextgenDispatchBody, resolveTextgenModel, resolveTextgenServer, unescapeMacroBraces } from '../services/textgen-body.js';
+import {
+    buildKoboldDispatchBody,
+    buildNovelDispatchBody,
+    buildTextgenDispatchBody,
+    probeKoboldFlags,
+    resolveTextgenModel,
+    resolveTextgenServer,
+    unescapeMacroBraces,
+} from '../services/textgen-body.js';
 import { selectChatCompletionDispatch } from '../endpoints/backends/chat-completions.js';
 import { dispatchTextCompletions } from '../luker-dispatch/providers/text-completions/dispatch.js';
+import { dispatchKobold } from '../luker-dispatch/providers/kobold.js';
+import { dispatchNovelAI } from '../luker-dispatch/providers/novelai.js';
 import { TEXTGEN_TYPES } from '../constants.js';
+import { substituteParams } from '@utopinn/core';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
 import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequestId, failGenerationJob, getPersistChatKey } from '../endpoints/backends/luker-generation.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
@@ -182,18 +193,51 @@ const TEXTGEN_SETTINGS_ONLY_KEYS = new Set([
     'json_schema', 'banned_tokens', 'global_banned_tokens',
 ]);
 
-function messagesToTextgenPrompt(messages, engine, substCtx) {
+/**
+ * /api/utopinn/generate 的 api union(TASK-037)。未知值显式 400 ——
+ * 不静默落 chat 路(静默降级会把 kobold/novel 设置当 openai 组装派发)。
+ * horde/koboldhorde 本期划出(design §1.11:无 dispatch provider)。
+ */
+const GENERATE_API_KINDS = new Set(['chat', 'text', 'kobold', 'novel']);
+
+/** utopinn api → legacy main_api(substCtx.mainApi:mesExamples 块头/instruct 样例形态) */
+const MAIN_API_BY_UTOPINN_API = {
+    chat: 'openai',
+    text: 'textgenerationwebui',
+    kobold: 'kobold',
+    novel: 'novel',
+};
+
+/** nai-settings.js:29 default_preamble */
+const NOVEL_DEFAULT_PREAMBLE = '[ Style: chat, complex, sensory, visceral ]';
+
+/** getNovelMaxResponseTokens 的 tier→max_length 上限映射(:110-122);缺省=150 */
+const NOVEL_TIER_RESPONSE_CAPS = { 1: 150, 2: 150, 3: 250 };
+
+function messagesToTextgenPrompt(messages, engine, substCtx, { chatPreamble = null } = {}) {
     const { name1, name2 } = substCtx;
     const instructOn = !!substCtx.instruct?.enabled;
     const parts = [];
+    // novel:addChatsPreamble(script.js:10789)—— preamble 永远落在
+    // 聊天史块头(首个 user/assistant 楼之前);无聊天楼则落尾段前。
+    // kobold/textgen 无此概念,callers 不传。
+    let preamblePending = chatPreamble !== null && chatPreamble !== undefined && String(chatPreamble) !== '';
+    const emitPreamble = () => {
+        if (preamblePending) {
+            parts.push(`${chatPreamble}\n`);
+            preamblePending = false;
+        }
+    };
     for (const m of messages) {
         const content = String(m?.content ?? '');
         if (!content) continue;
         if (m?.role === 'user') {
+            emitPreamble();
             parts.push(instructOn
                 ? engine.formatChat(name1, content, true, false, false, name1, name2)
                 : `${name1}: ${content}\n`);
         } else if (m?.role === 'assistant') {
+            emitPreamble();
             // legacy formatMessageHistoryItem 用楼层自身 name —— 群聊里每楼
             // 都可能来自不同成员;单卡路 name===name2,语义不变。
             const floorName = m?.name || name2;
@@ -208,6 +252,7 @@ function messagesToTextgenPrompt(messages, engine, substCtx) {
     // 尾段:output_sequence+name2 前缀;instruct 关 → 裸 "name2:" 续写锚。
     // TODO(storystring):instruct-off 原版还会经 context 模板整包
     // (formatStoryString),更深一层 fidelity 随 TASK-020 后续切片。
+    emitPreamble();
     parts.push(instructOn ? engine.formatPrompt(name2, false, '', name1, name2) : `${name2}:`);
     return parts.join('');
 }
@@ -387,6 +432,13 @@ export function apply(ctx) {
     reg('/api/utopinn/generate', async function (request, response) {
         try {
             const body = request.body ?? {};
+            // api union 早判:未知源显式 400,不静默落 chat 路
+            const api = String(body.api ?? 'chat');
+            if (!GENERATE_API_KINDS.has(api)) {
+                return response.status(400).send({
+                    error: `api must be one of ${[...GENERATE_API_KINDS].join('|')} (got: ${api})`,
+                });
+            }
             // 认亲键:与 runner 的 requestId 同源(job_id > x-luker-request-id >
             // 现造 uuid)——组装期 inject 事件比 job 先出生,靠它挂回 job。
             request.utopinnDiagId = String(
@@ -438,9 +490,9 @@ export function apply(ctx) {
                 user: body.user ?? { name: request.user.profile.name },
                 type: generateType,
                 overrides: body.overrides ?? {},
-                // text 派发时 main_api 同位量为 'textgenerationwebui'
+                // text/kobold/novel 派发时 main_api 同位量各归各源
                 // (mesExamples 块头/instruct 样例走 instruct 形态,design TASK-037 §1.8)
-                mainApi: String(body.api ?? 'chat') === 'text' ? 'textgenerationwebui' : 'openai',
+                mainApi: MAIN_API_BY_UTOPINN_API[api] ?? 'openai',
                 ...(groupPlan
                     ? {
                         group: {
@@ -510,7 +562,7 @@ export function apply(ctx) {
             // 停止串四层/dynatemp/rep_pen 系/per-type 袋/禁词与 logit_bias 编码
             // 全部由 textgen-body.js 同构实现;这里只解连接面(api_server/model/
             // api_type)+ 响应长度/上下文上限,再按「透传 → 塑形 → 显式覆盖 → 固定键」合并。
-            if (String(body.api ?? 'chat') === 'text') {
+            if (api === 'text') {
                 const apiType = body.api_type ?? tgSettings?.type;
                 if (!apiType || !Object.values(TEXTGEN_TYPES).includes(apiType)) {
                     return response.status(400).send({
@@ -581,6 +633,130 @@ export function apply(ctx) {
                 return runLukerDispatch(request, response, {
                     endpoint: 'utopinn-generate',
                     select: () => dispatchTextCompletions,
+                });
+            }
+
+            // ---- TASK-037 kobold classic 分叉:body.api==='kobold' → dispatchKobold ----
+            // 塑形对照 kai-settings.js getKoboldGenerationData;can_use_* 旗标
+            // 由 body.kai_flags 传入或生成时探测(status 同两路端点)。
+            // 旗标名差异:kobold 派发读 body.streaming(textgen 读 stream)。
+            if (api === 'kobold') {
+                const handle = request.user.profile.handle;
+                const settingsDoc = await getSettingsRepo().get(handle);
+                const kaiSettings = settingsDoc?.kai_settings ?? {};
+                const apiServer = body.api_server ?? kaiSettings.api_server;
+                if (!apiServer) {
+                    return response.status(400).send({ error: 'api_server missing (body.api_server or settings.kai_settings.api_server)' });
+                }
+                const prompt = unescapeMacroBraces(messagesToTextgenPrompt(builtPrompt.messages, instructEngine, substCtx));
+                const maxLength = body.overrides?.maxTokens ?? amountGen;
+                // wire max_context_length 与组装预算同值不劈叉(组装已统一用
+                // openai 预设预算);generation_overrides 可显式盖。
+                const maxContext = oaiSettings?.openai_max_context ?? presetDoc?.openai_max_context;
+                let dispatchBody;
+                if (String(kaiSettings.preset_settings ?? 'gui') === 'gui') {
+                    // legacy script.js:9370-9376:preset='gui' → 瘦袋;
+                    // streaming/can_abort 键不上行(上游走自家 GUI 配置)
+                    dispatchBody = {
+                        prompt,
+                        gui_settings: true,
+                        max_length: maxLength,
+                        max_context_length: maxContext,
+                        api_server: apiServer,
+                    };
+                } else {
+                    // body.kai_flags 传入优先(调用方自担语义);缺省生成时探测
+                    const kaiFlags = body.kai_flags && typeof body.kai_flags === 'object'
+                        ? body.kai_flags
+                        : await probeKoboldFlags(apiServer);
+                    const presetSettings = kaiSettings.preset_settings
+                        ? await getPresetRepo().get(handle, 'kobold', kaiSettings.preset_settings).catch(() => null)
+                        : null;
+                    dispatchBody = buildKoboldDispatchBody({
+                        kaiSettings, presetSettings, prompt,
+                        maxLength, maxContext,
+                        kaiFlags, type: generateType,
+                        powerUser, substCtx, instructEngine,
+                    });
+                    // legacy: streaming=streaming_kobold&&can_use_streaming&&type!=='quiet';
+                    // body.streaming 显式位覆盖设置值(能力门照过);
+                    // can_abort=can_use_streaming(能力位,与实际是否流式无关)。
+                    dispatchBody.streaming = Boolean(body.streaming ?? kaiSettings.streaming_kobold)
+                        && kaiFlags.can_use_streaming === true && generateType !== 'quiet';
+                    dispatchBody.can_abort = kaiFlags.can_use_streaming === true;
+                    dispatchBody.api_server = apiServer;
+                }
+                request.body = {
+                    ...dispatchBody,
+                    ...(body.generation_overrides ?? {}),
+                    // verb 落 job.requestMeta(request.body.type);kobold
+                    // provider pickBy 自滤,不会发给上游
+                    type: generateType,
+                    luker_generation: {
+                        ...(body.luker_generation ?? {}),
+                        persist_target: body.luker_generation?.persist_target ?? persistTargetDefault,
+                    },
+                };
+                request.utopinnTrace = trace;
+                request.utopinnSources = sources;
+                request.utopinnPromptMessages = builtPrompt.messages;
+                response.setHeader('x-utopinn-perf', JSON.stringify(perf));
+                return runLukerDispatch(request, response, {
+                    endpoint: 'utopinn-generate',
+                    select: () => dispatchKobold,
+                });
+            }
+
+            // ---- TASK-037 novel 分叉:body.api==='novel' → dispatchNovelAI ----
+            // 塑形对照 nai-settings.js getNovelGenerationData;preamble 由转换器
+            // 落聊天史块头;erato 头/标点变体/token id 数组在塑形层。
+            // novel 不剥 \{ \} —— legacy generateNovelWithStreaming 直接
+            // JSON.stringify(generate_data),不跑 unescapeMacroBraces,照抄。
+            if (api === 'novel') {
+                const handle = request.user.profile.handle;
+                const settingsDoc = await getSettingsRepo().get(handle);
+                const naiSettings = settingsDoc?.nai_settings ?? {};
+                const model = body.model ?? naiSettings.model_novel;
+                if (!model) {
+                    return response.status(400).send({ error: 'model missing (body.model or settings.nai_settings.model_novel)' });
+                }
+                const preamble = substituteParams(
+                    naiSettings.preamble ?? NOVEL_DEFAULT_PREAMBLE, substCtx);
+                const prompt = messagesToTextgenPrompt(
+                    builtPrompt.messages, instructEngine, substCtx, { chatPreamble: preamble });
+                const presetSettings = naiSettings.preset_settings_novel
+                    ? await getPresetRepo().get(handle, 'novel', naiSettings.preset_settings_novel).catch(() => null)
+                    : null;
+                // tier 服务端无订阅探测:body.max_response_tokens 直给上限,
+                // 或 body.novel_tier(1|2|3)按 legacy 映射;缺省 150。
+                const maxResponseTokens = body.max_response_tokens
+                    ?? NOVEL_TIER_RESPONSE_CAPS[Number(body.novel_tier)]
+                    ?? undefined;
+                const shaped = await buildNovelDispatchBody({
+                    naiSettings, presetSettings, prompt, model,
+                    maxLength: body.overrides?.maxTokens ?? amountGen,
+                    type: generateType, powerUser, substCtx, instructEngine,
+                    maxResponseTokens,
+                });
+                request.body = {
+                    ...shaped,
+                    ...(body.generation_overrides ?? {}),
+                    type: generateType,
+                    // kobold/novel 派发读 streaming(textgen 读 stream);
+                    // body.streaming 显式位覆盖 nai_settings.streaming_novel
+                    streaming: Boolean(body.streaming ?? naiSettings.streaming_novel),
+                    luker_generation: {
+                        ...(body.luker_generation ?? {}),
+                        persist_target: body.luker_generation?.persist_target ?? persistTargetDefault,
+                    },
+                };
+                request.utopinnTrace = trace;
+                request.utopinnSources = sources;
+                request.utopinnPromptMessages = builtPrompt.messages;
+                response.setHeader('x-utopinn-perf', JSON.stringify(perf));
+                return runLukerDispatch(request, response, {
+                    endpoint: 'utopinn-generate',
+                    select: () => dispatchNovelAI,
                 });
             }
 

@@ -56,6 +56,9 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--dir') flags.dir = argv[++i];
     else if (a === '--html') flags.html = true;
     else if (a === '--api') flags.api = argv[++i];
+    else if (a === '--api-type') flags.apiType = argv[++i];
+    else if (a === '--api-server') flags.apiServer = argv[++i];
+    else if (a === '--model') flags.model = argv[++i];
     else if (a === '--kind') flags.kind = argv[++i];
     else if (a === '--lvl') flags.lvl = argv[++i];
     else if (a === '--since') flags.since = argv[++i];
@@ -363,7 +366,7 @@ function assistantFloor({ charName, text, jobId, model, genStarted, genFinished 
         name: charName, is_user: false, is_system: false,
         send_date: isoNow(), mes: text,
         gen_started: genStarted ?? isoNow(), gen_finished: genFinished ?? isoNow(),
-        extra: { api: 'cli', model: model ?? '', ...(jobId ? { luker_generation_id: jobId } : {}) },
+        extra: { api: flags.api ?? 'cli', model: model ?? '', ...(jobId ? { luker_generation_id: jobId } : {}) },
     };
 }
 function userFloor({ persona, text }) {
@@ -496,7 +499,7 @@ function groupAssistantFloor({ member, text, jobId, model, genStarted, genFinish
         send_date: isoNow(), mes: text,
         ...(member?.avatar ? { original_avatar: member.avatar, force_avatar: `/thumbnail?type=avatar&file=${encodeURIComponent(member.avatar)}` } : {}),
         gen_started: genStarted ?? isoNow(), gen_finished: genFinished ?? isoNow(),
-        extra: { api: 'cli', model: model ?? '', ...(jobId ? { luker_generation_id: jobId } : {}), ...(genId != null ? { gen_id: genId } : {}) },
+        extra: { api: flags.api ?? 'cli', model: model ?? '', ...(jobId ? { luker_generation_id: jobId } : {}), ...(genId != null ? { gen_id: genId } : {}) },
     };
 }
 
@@ -511,7 +514,17 @@ function parseSSEDelta(line) {
         const d = j.choices?.[0]?.delta ?? j.choices?.[0]?.message ?? {};
         const delta = d.content ?? j.choices?.[0]?.text ?? '';
         const reasoning = typeof d.reasoning_content === 'string' ? d.reasoning_content : '';
-        return (delta || reasoning) ? { delta, reasoning } : null;
+        if (delta || reasoning) return { delta, reasoning };
+        // TASK-037 非 openai 源原生帧:novel/koboldcpp {token:"…"},
+        // ooba textgen {token:{text:"…",…}},{results:[{text}]} 终包/非流式
+        if (j.token !== undefined && j.token !== null) {
+            const t = typeof j.token === 'object' ? String(j.token.text ?? '') : String(j.token ?? '');
+            return t ? { delta: t } : null;
+        }
+        if (Array.isArray(j.results) && typeof j.results[0]?.text === 'string') {
+            return j.results[0].text ? { delta: j.results[0].text } : null;
+        }
+        return null;
     } catch { return null; }
 }
 
@@ -630,6 +643,11 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     // 群路由:--group 或 guse 绑定 → 群生成面(成员选择在服务端,
     // 单卡 ctx 缺失不算错——群与单卡是两套 ctx)
     if (flags.group !== undefined || state.group?.id) {
+        // TASK-044:regen --range 需要单卡 patch 面;群 regen 是追加语义(不删楼),没有等价物
+        if (verb === 'regen' && flags.range != null) {
+            fail('usage', 'regen --range 暂不支持群聊(群 regen 是追加语义,不删楼)', { rc: 2 });
+            return null;
+        }
         return runGroupGeneration(verb, { promptText });
     }
     const ctx = needCtx();
@@ -661,17 +679,47 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
         if (!JSON_MODE) { footer('said'); }
         return { said: true };
     } else if (verb === 'regen') {
-        // 先删末 AI 楼(script.js:7901 同序)——不删则旧回复还在 prompt 里
         floorsData = await getChat(charDir, chatName);
-        saveState({ integrity: floorsData[0]?.chat_metadata?.integrity ?? state.integrity, floors: floorsData.length - 1 });
-        const lastIdx = floorsData.length - 1;
-        const last = floorsData[lastIdx];
-        if (!last || last.is_user || lastIdx < 1) {
-            fail('no_ai_floor', 'regen 需要末楼是 AI 楼', { hint: '末楼是 user——用 send 续对话', nexts: [{ cmd: 'utopinn send "…"' }] });
+        if (!Array.isArray(floorsData)) {
+            // new_chat/corrupted:两种形态都没有可删楼层
+            fail('no_floor', floorsData?.corrupted ? '聊天文件损坏,无法 regen' : '空聊天无可再生成楼层', { rc: 2 });
             return null;
         }
-        await patchFloors([{ op: 'remove', path: `/body/${lastIdx - 1}` }]);
-        saveState({ floors: (state.floors ?? 1) - 1 });
+        saveState({ integrity: floorsData[0]?.chat_metadata?.integrity ?? state.integrity, floors: floorsData.length - 1 });
+        if (flags.range != null) {
+            // TASK-044 novel 章再生成:「删 [from,to] 区间 + 续生成」——
+            // utopinn-generate.js 不在本格文件域,区间语义在编排侧实现:
+            // patch 删区间 → type:'regenerate' 照常组装续写。
+            // 楼号 = body 下标(与 --floor/edit 同口径,含两端)。
+            const m = /^(\d+)\s*[:：\-—~]\s*(\d+)$/.exec(String(flags.range).trim());
+            if (!m) {
+                fail('usage', `regen --range 形如 <from:to>(0-based 楼号,含两端)——收到 "${flags.range}"`, { rc: 2 });
+                return null;
+            }
+            const from = Number(m[1]), to = Number(m[2]);
+            const lastBody = floorsData.length - 2; // [header, ...floors]:末楼 body 下标 = 长度-2
+            if (lastBody < 0 || from > to || to > lastBody) {
+                fail('bad_floor', `range ${from}:${to} 越界(共 ${Math.max(0, floorsData.length - 1)} 楼)`, { rc: 2 });
+                return null;
+            }
+            // 同下标重复 remove:JSON-Patch 顺序应用,每删一格后续楼下移
+            const removed = to - from + 1;
+            const ops = Array.from({ length: removed }, () => ({ op: 'remove', path: `/body/${from}` }));
+            await patchFloors(ops);
+            saveState({ floors: (state.floors ?? 1) - removed });
+            ndjson({ type: 'write', op: 'remove-range', from, to, removed });
+            if (to < lastBody) warn(`range ${from}:${to} 不在尾部——新楼落在末尾(续生成语义),非原位回填`);
+        } else {
+            // 先删末 AI 楼(script.js:7901 同序)——不删则旧回复还在 prompt 里
+            const lastIdx = floorsData.length - 1;
+            const last = floorsData[lastIdx];
+            if (!last || last.is_user || lastIdx < 1) {
+                fail('no_ai_floor', 'regen 需要末楼是 AI 楼', { hint: '末楼是 user——用 send 续对话;章区间重生成用 regen --range <from:to>', nexts: [{ cmd: 'utopinn send "…"' }] });
+                return null;
+            }
+            await patchFloors([{ op: 'remove', path: `/body/${lastIdx - 1}` }]);
+            saveState({ floors: (state.floors ?? 1) - 1 });
+        }
     } else if (verb === 'swipe') {
         floorsData = await getChat(charDir, chatName);
         saveState({ integrity: floorsData[0]?.chat_metadata?.integrity ?? state.integrity, floors: floorsData.length - 1 });
@@ -697,6 +745,12 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     const body = {
         charDir, chatName, type,
         stream: !flags.noStream,
+        // TASK-037:--api text|kobold|novel 选非 openai 源;api_type/api_server/
+        // model 按需覆盖(textgen 需 api_type,kobold 需 api_server,novel 需 model)
+        api: flags.api ?? undefined,
+        api_type: flags.apiType ?? undefined,
+        api_server: flags.apiServer ?? undefined,
+        model: flags.model ?? undefined,
         presetName: flags.preset ?? state.preset ?? undefined,
         user: { name: flags.user ?? state.persona ?? 'User' },
         generation_overrides: flags.set ?? {},
@@ -857,6 +911,10 @@ async function runGroupGeneration(verb, { promptText = null } = {}) {
             chatId,
             type: typeOverride ?? type,
             stream: !flags.noStream,
+            api: flags.api ?? undefined,
+            api_type: flags.apiType ?? undefined,
+            api_server: flags.apiServer ?? undefined,
+            model: flags.model ?? undefined,
             presetName: flags.preset ?? state.preset ?? undefined,
             user: { name: flags.user ?? state.persona ?? 'User' },
             generation_overrides: flags.set ?? {},
@@ -920,7 +978,7 @@ async function runGroupGeneration(verb, { promptText = null } = {}) {
                 const baseInfo = baseSwipes.map((_, i) => oldInfo[i] ?? floorEntry);
                 await groupPatchFloors(chatId, [
                     { op: 'add', path: `/body/${bodyIdx}/swipes`, value: [...baseSwipes, first.text] },
-                    { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: new Date().toISOString(), gen_finished: isoNow(), extra: { api: 'cli', model: first.status?.model ?? '', luker_generation_id: first.jobId } }] },
+                    { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: new Date().toISOString(), gen_finished: isoNow(), extra: { api: flags.api ?? 'cli', model: first.status?.model ?? '', luker_generation_id: first.jobId } }] },
                     { op: 'add', path: `/body/${bodyIdx}/swipe_id`, value: baseSwipes.length },
                     { op: 'add', path: `/body/${bodyIdx}/mes`, value: first.text },
                 ], { luker_generation_id: first.jobId });
@@ -1122,6 +1180,9 @@ const NAMED_UTOPINN_ROUTES = new Set([
     'DELETE|pattern|/api/utopinn/regex/:id',
     'GET|pattern|/api/utopinn/characters/:charDir/chats',
     'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
+    // —— TASK-044:novel 章目录聚合 + theater 三件套资产清单 ——
+    'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName/chapters',
+    'GET|pattern|/api/utopinn/characters/:charDir/assets',
     // —— named-docs 只读面(TASK-058;buckets=quick-replies|themes|moving-ui)——
     'GET|pattern|/api/utopinn/named-docs/:bucket',
     'GET|pattern|/api/utopinn/named-docs/:bucket/:name',
@@ -1356,11 +1417,13 @@ const SCHEMA = {
         { cmd: 'utopinn chat-get [chat]', desc: '[library] utopinn doc 全文{header,messages,integrity}', out: '{doc}' },
         { cmd: 'utopinn chat-rename <new>', desc: '重命名当前聊天', out: 'renamed' },
         { cmd: 'utopinn chat-delete <name>', desc: '删除指定聊天(显式名)', out: 'deleted' },
+        { cmd: 'utopinn chapters', desc: '[novel] 章目录聚合视图(sidecar chapters ns 清单优先,否则楼→章推导;range 列=regen --range 入参口径)', out: '{source,strategy,items[]}' },
+        { cmd: 'utopinn assets [char]', desc: '[theater] 剧场三件套资产清单(立绘/背景/BGM;char 缺省=ctx 卡,空目录如实空数组)', out: '{sprites[],backgrounds[],bgm[],empty}' },
         { cmd: 'utopinn char <name>', desc: '[library] 角色卡全文(模糊名→目录名)', out: '{card}' },
         { cmd: 'utopinn char-edit <name> [json|--json-file|--stdin|--set k=v]', desc: '[library] 卡字段 merge-patch(11 个字符串字段+tags+extensions{world|alternate_greetings|regex_scripts};name 只改显示名不动 charDir)', out: '{card}' },
         { cmd: 'utopinn send <text>|--stdin', desc: 'append user 楼+生成+append AI 楼', out: 'stream text + footer' },
         { cmd: 'utopinn say <text>', desc: '只写 user 楼不生成', out: 'floor' },
-        { cmd: 'utopinn regen', desc: '删末 AI 楼重生成', out: 'stream text' },
+        { cmd: 'utopinn regen [--range from:to]', desc: '删末 AI 楼重生成;--range 删 body 楼区间后续生成(章区间重生成,群聊不支持)', out: 'stream text' },
         { cmd: 'utopinn swipe [N]|--list', desc: '末楼换一版/导航/列表', out: 'stream|swipe state' },
         { cmd: 'utopinn continue', desc: '末楼续写(合入同楼)', out: 'stream delta' },
         { cmd: 'utopinn impersonate [--write]', desc: '生成 user 口吻草稿(默认不落盘)', out: 'draft text' },
@@ -1426,9 +1489,9 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)'],
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId|chat|text|kobold|novel(生成源)', '--api-type t(textgen 后端:koboldcpp/ooba/…)', '--api-server url(kobold 上游)', '--model m(novel/各源模型覆盖)', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)|from:to(regen 楼区间)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
-    errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
+    errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'bad_floor', 'corrupted', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
     stateFile: '~/.utopinn-cli.json: {server, char{dir,name}, chat{name}, persona, preset, integrity, floors, lastJob{id,type,status,at,chars}, lastReplyPreview, recent[]}',
     flow: 'send: ctx → GET /api/utopinn/jobs?target&status=active 护栏 → append user 楼 → POST /api/utopinn/generate → ticket → WS resume from_seq:1 → head/chunk/end 帧 → append AI 楼(顶层+extra gen-id ack) → jobs/status 终态',
 };
@@ -1478,6 +1541,60 @@ async function cmdChats() {
     console.log(`\n${rows.length} chats for ${charDir}`);
     footer();
     return rows;
+}
+
+// TASK-044 novel:章目录聚合视图(sidecar 'chapters' ns 清单优先,否则楼→章推导)。
+// range 列就是 regen --range <from:to> 的入参口径(body 楼号,含两端)。
+async function cmdChapters() {
+    const c = needCtx();
+    if (!c) return;
+    const { data, status } = await req('GET',
+        `/api/utopinn/characters/${encodeURIComponent(c.charDir)}/chats/${encodeURIComponent(c.chatName)}/chapters`,
+        undefined, { allowFail: true });
+    if (data?.corrupted) return void fail('corrupted', `chat corrupted: ${c.chatName}`, { status });
+    if (status === 404) return void fail('not_found', `chat not found: ${c.charDir}/${c.chatName}`, { status });
+    if (status !== 200) return void fail('server', `chapters → ${status}`, { status, detail: data });
+    if (JSON_MODE) return out(data, [
+        { cmd: 'utopinn regen --range <from:to>', why: '章区间重生成' },
+        { cmd: 'utopinn state chat get chapters', why: '看 sidecar 章清单原文' },
+    ]);
+    console.log(`${c.chatName} · source=${data.source}/${data.strategy} · ${data.total} 章(${data.floors} 楼${data.skipped ? `,跳过 ${data.skipped} 条非法` : ''})`);
+    for (const ch of data.items ?? []) {
+        const r = ch.range ? `#${ch.range[0]}–${ch.range[1]}` : '(空章)';
+        console.log(` ${String(ch.index).padStart(2)} ${String(ch.num ?? ch.kind).padEnd(8)} ${r.padEnd(10)} ${String(ch.floors).padStart(2)}f  ${ch.title}${ch.snippet ? ` · ${ch.snippet}` : ''}`);
+    }
+    next('utopinn regen --range <from:to>');
+    footer();
+    return data;
+}
+
+// TASK-044 theater:三件套资产清单(立绘/背景/BGM;char 缺省=ctx 卡)。
+async function cmdAssets() {
+    const target = positional[1] ?? flags.char;
+    let charDir = state.char?.dir;
+    if (target) {
+        const resolved = await resolveChar(target);
+        if (!resolved) return;
+        charDir = stripExt(resolved.avatar, 'png');
+    }
+    if (!charDir) {
+        return void fail('no_ctx', 'assets 需要卡目标', { hint: 'utopinn use <char> 绑定,或 utopinn assets <卡名>', rc: 2 });
+    }
+    const { data, status } = await req('GET',
+        `/api/utopinn/characters/${encodeURIComponent(charDir)}/assets`,
+        undefined, { allowFail: true });
+    if (status === 404) return void fail('not_found', `character not found: ${charDir}`, { status });
+    if (status !== 200) return void fail('server', `assets → ${status}`, { status, detail: data });
+    if (JSON_MODE) return out(data);
+    console.log(`${charLabel(data.charDir, data.name)} · ${data.sprites.length} 立绘 ${data.backgrounds.length} 背景 ${data.bgm.length} BGM${data.empty ? '(空)' : ''}`);
+    for (const [grp, tag] of [['sprites', '立绘'], ['backgrounds', '背景'], ['bgm', 'BGM']]) {
+        for (const a of data[grp] ?? []) {
+            console.log(` ${tag}  ${String(a.label ?? a.name).padEnd(14)} ${String(a.scope).padEnd(6)} ${a.url}`);
+        }
+    }
+    next('utopinn state chat get scene');
+    footer();
+    return data;
 }
 
 async function cmdRecent() {
@@ -1961,7 +2078,7 @@ async function writeClientOwnedFloor(verb, { jobId, text, status, floorsData, ge
             const baseInfo = baseSwipes.map((_, i) => oldInfo[i] ?? floorEntry);
             const ops = [
                 { op: 'add', path: `/body/${bodyIdx}/swipes`, value: [...baseSwipes, text] },
-                { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: genStarted, gen_finished: genFinished, extra: { api: 'cli', model: status?.model ?? '', luker_generation_id: jobId } }] },
+                { op: 'add', path: `/body/${bodyIdx}/swipe_info`, value: [...baseInfo, { send_date: isoNow(), gen_started: genStarted, gen_finished: genFinished, extra: { api: flags.api ?? 'cli', model: status?.model ?? '', luker_generation_id: jobId } }] },
                 { op: 'add', path: `/body/${bodyIdx}/swipe_id`, value: baseSwipes.length },
                 { op: 'add', path: `/body/${bodyIdx}/mes`, value: text },
             ];
@@ -3282,6 +3399,8 @@ try {
         case 'chat-get': await cmdChatGet(); break;
         case 'chat-rename': await cmdChatRename(); break;
         case 'chat-delete': await cmdChatDelete(); break;
+        case 'chapters': await cmdChapters(); break;
+        case 'assets': await cmdAssets(); break;
         case 'char': await cmdChar(); break;
         case 'char-edit': await cmdCharEdit(); break;
         case 'history': await cmdHistory(); break;

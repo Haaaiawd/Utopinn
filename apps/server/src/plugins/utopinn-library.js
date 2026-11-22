@@ -242,6 +242,161 @@ function cardFields(card) {
 }
 
 // ---------------------------------------------------------------------------
+// novel 章目录 + theater 资产(TASK-044 余量)
+//
+// 章目录双源:chat_state sidecar 'chapters' ns(显式章清单 —— 读写走通用
+// state/chat/* 面,不另起存储)优先;缺席时按 apps/web stagepack.tsx
+// deriveChapters 同规则从楼层推导 —— system 楼=分章标记,无标记按
+// NOVEL_SEGMENT_FLOORS 楼一段,再兜底单章。
+// theater 场景运行态另有 'scene' ns 约定(见 .skeinn/design/plugin-surface-
+// forms.md):scene.bg/scene.bgm 的当前值落 sidecar,楼层 extra.scene 仍是
+// 单楼场景引用 —— 本文件不为它开新路由,通用 state 面即写读通路。
+// 资产清单 = 剧场三件套枚举,全部沿用既有落盘约定:
+//   sprites     characters/<名>/ 顶层图(label 与 /api/sprites/get 同正则)
+//   backgrounds characters/<名>/backgrounds/(charx 落点)+ 全局 backgrounds/
+//   bgm         characters/<名>/bgm/ + 全局 assets/bgm/(乐库位,本格新约定)
+// ---------------------------------------------------------------------------
+
+const NOVEL_SEGMENT_FLOORS = 4;
+const NOVEL_CHAPTERS_NS = 'chapters';
+const CHAPTER_HEAD_RE = /^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷回部篇]|序[章言]|楔子|尾声|Prologue\b|Chapter\s+\d+)\s*[:：·\-—、 ]*\s*(.*)$/i;
+const ASSET_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng', '.avif', '.bmp', '.jfif']);
+const ASSET_AUDIO_EXTS = new Set(['.ogg', '.mp3', '.wav', '.m4a', '.flac', '.opus', '.aac']);
+
+/** 首句/snippet 工具:空白压平后截 n 字,超出加省略号。 */
+function chapterSnippet(text, n) {
+    const v = String(text ?? '').trim().replace(/\s+/g, ' ');
+    return v.length > n ? `${v.slice(0, n)}…` : v;
+}
+
+/** 楼层正文首段(stagepack parasOf 同规则:空行切段取首段)。 */
+const firstParaText = (mes) => String(mes ?? '').split(/\n{2,}/)[0]?.trim() ?? '';
+
+/**
+ * 楼 → 章推导,与 apps/web/src/features/stagepack.tsx deriveChapters 同构。
+ * @param {object[]} floors 投影后楼层(数组下标 = body 楼号)
+ * @param {string} chatName 单章兜底时作题
+ * @returns {{strategy:'empty'|'markers'|'segmented'|'single', items:object[]}}
+ *   章项:{index,kind,num,title,range,floors,snippet,markerFloor?}
+ *   range = 内容楼区间(含端点,不含标记楼);kind ∈ prologue|chapter|section|body
+ */
+export function deriveNovelChapters(floors, chatName) {
+    // 只收「成书」楼:空 system 楼(会话头种)不构成章节
+    const list = [];
+    floors.forEach((m, idx) => {
+        const mes = String(m?.mes_display ?? m?.mes ?? '');
+        const isSystem = m?.is_system === true;
+        if (isSystem && !mes.trim()) return;
+        const role = m?.is_user ? 'user' : (isSystem ? 'system' : 'assistant');
+        list.push({ idx, role, mes });
+    });
+    if (!list.length) return { strategy: 'empty', items: [] };
+
+    const mk = (kind, num, title, slice, markerFloor) => {
+        const first = slice[0];
+        const last = slice[slice.length - 1];
+        return {
+            index: 0, kind, num, title,
+            range: slice.length ? [first.idx, last.idx] : null,
+            floors: slice.length,
+            snippet: chapterSnippet(firstParaText(first?.mes), 40),
+            ...(markerFloor != null ? { markerFloor } : {}),
+        };
+    };
+
+    const markerAt = list.map((f, i) => (f.role === 'system' ? i : -1)).filter((i) => i >= 0);
+    if (markerAt.length) {
+        const items = [];
+        if (markerAt[0] > 0) {
+            items.push(mk('prologue', '序章', '序章', list.slice(0, markerAt[0])));
+        }
+        markerAt.forEach((mi) => {
+            const end = markerAt.find((x) => x > mi) ?? list.length;
+            const marker = list[mi];
+            const line = marker.mes.trim().split('\n')[0]?.trim() ?? '';
+            const head = CHAPTER_HEAD_RE.exec(line);
+            const num = head ? head[1] : null;
+            const title = head ? (String(head[2] ?? '').trim() || head[1]) : chapterSnippet(line, 24);
+            items.push(mk('chapter', num, title, list.slice(mi + 1, end), marker.idx));
+        });
+        items.forEach((c, i) => { c.index = i; });
+        return { strategy: 'markers', items };
+    }
+    if (list.length > NOVEL_SEGMENT_FLOORS) {
+        const items = [];
+        for (let i = 0; i < list.length; i += NOVEL_SEGMENT_FLOORS) {
+            const slice = list.slice(i, i + NOVEL_SEGMENT_FLOORS);
+            items.push(mk('section', null, chapterSnippet(firstParaText(slice[0].mes), 24), slice));
+        }
+        items.forEach((c, i) => { c.index = i; });
+        return { strategy: 'segmented', items };
+    }
+    return { strategy: 'single', items: [mk('body', null, chatName || '单章', list)] };
+}
+
+/**
+ * sidecar 'chapters' ns 章清单 → 章项;doc 非 {items:[]} 形 → null(回推导路)。
+ * 条目:{from:int[,to:int][,title][,num]} —— to 缺省取下一条 from-1/末楼,
+ * 越界钳到末楼;from 非 int/越界/to<from 的条目计入 skipped 并跳过。
+ * @param {*} doc sidecar 文档
+ * @param {object[]} floors 投影后楼层
+ * @returns {{items:object[], skipped:number}|null}
+ */
+export function chaptersFromSidecarDoc(doc, floors) {
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !Array.isArray(doc.items)) return null;
+    const entries = doc.items
+        .map((e, i) => ({ e, i, from: Number(e?.from) }))
+        .filter((x) => Number.isInteger(x.from) && x.from >= 0)
+        .sort((a, b) => a.from - b.from || a.i - b.i);
+    const declared = doc.items.length - entries.length; // from 非 int 的先记废
+    const items = [];
+    let skipped = declared;
+    for (let i = 0; i < entries.length; i++) {
+        const { e, from } = entries[i];
+        if (!floors.length || from >= floors.length) { skipped++; continue; }
+        const nextFrom = entries.slice(i + 1).map((x) => x.from).find((v) => v > from);
+        let to = Number.isInteger(Number(e?.to)) ? Number(e.to) : (nextFrom ?? floors.length) - 1;
+        to = Math.min(to, floors.length - 1);
+        if (to < from) { skipped++; continue; }
+        const slice = floors.slice(from, to + 1);
+        items.push({
+            index: items.length,
+            kind: 'sidecar',
+            num: typeof e?.num === 'string' && e.num ? e.num : null,
+            title: typeof e?.title === 'string' && e.title ? e.title : `第${items.length + 1}章`,
+            range: [from, to],
+            floors: slice.length,
+            snippet: chapterSnippet(firstParaText(slice[0]?.mes_display ?? slice[0]?.mes), 40),
+        });
+    }
+    return { items, skipped };
+}
+
+/**
+ * 目录枚举:dir[/sub] 下命中扩展名的常规文件 → {name,file,bytes}(按文件名排序);
+ * 目录缺席/不可读 → [](诚实语义:没有就空,不静默造数据)。
+ */
+async function listAssetFiles(dir, extSet, sub) {
+    const target = sub ? path.join(dir, sub) : dir;
+    let entries;
+    try {
+        entries = await fs.promises.readdir(target, { withFileTypes: true });
+    } catch {
+        return [];
+    }
+    const out = [];
+    for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const ext = path.extname(entry.name).toLowerCase();
+        if (!extSet.has(ext)) continue;
+        const st = await fs.promises.stat(path.join(target, entry.name)).catch(() => null);
+        out.push({ name: entry.name.slice(0, entry.name.length - ext.length), file: entry.name, bytes: st?.size ?? 0 });
+    }
+    out.sort((a, b) => a.file.localeCompare(b.file));
+    return out;
+}
+
+// ---------------------------------------------------------------------------
 // 预设(预设 apiId 校验)
 // ---------------------------------------------------------------------------
 
@@ -517,6 +672,100 @@ export function apply(ctx) {
             });
         } catch (error) {
             return sendError(response, error, 'utopinn/chats get');
+        }
+    });
+
+    /**
+     * GET /characters/:charDir/chats/:chatName/chapters —— novel 章目录聚合视图(TASK-044)。
+     * sidecar 'chapters' ns 有 {items:[]} 章清单 → source:'sidecar';
+     * 否则按 stagepack 同规则推导 → source:'derived' + strategy 细分。
+     * 章项 range 为 body 楼号区间(含端点),CLI regen --range 用同一口径。
+     */
+    reg(`${P}/characters/:charDir/chats/:chatName/chapters`, async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            const chat = await repo.get(handle, charDir, chatName);
+            if (!chat) {
+                const chatFilePath = path.join(request.user.directories.chats, charDir, `${chatName}.jsonl`);
+                if (fs.existsSync(chatFilePath)) {
+                    console.warn(`Chat file exists but is unreadable (corrupted): ${chatFilePath}`);
+                    return response.send({ corrupted: true });
+                }
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            const floors = await projectChatFloorsForDisplayResponse(request, charDir, chat, chatName);
+            const sidecar = await repo.getState(handle, charDir, chatName, NOVEL_CHAPTERS_NS).catch(() => null);
+            const fromDoc = chaptersFromSidecarDoc(sidecar, floors);
+            if (fromDoc) {
+                return response.send({
+                    chat: chatName, charDir, floors: floors.length,
+                    source: 'sidecar', strategy: 'sidecar',
+                    items: fromDoc.items, total: fromDoc.items.length,
+                    ...(fromDoc.skipped ? { skipped: fromDoc.skipped } : {}),
+                });
+            }
+            const { strategy, items } = deriveNovelChapters(floors, chatName);
+            return response.send({
+                chat: chatName, charDir, floors: floors.length,
+                source: 'derived', strategy, items, total: items.length,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/chats chapters');
+        }
+    });
+
+    /**
+     * GET /characters/:charDir/assets —— 剧场三件套资产清单(TASK-044)。
+     * 卡不存在 → 404(诚实语义);资产目录缺席 → 空数组 + empty 标记。
+     * url 均为静态面可直接取的路径(/characters|/backgrounds|/assets)。
+     */
+    reg(`${P}/characters/:charDir/assets`, async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const card = await loadCharacterDoc(request.user.directories, charDir);
+            if (!card) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            const name = cardFields(card).name || charDir;
+            // 资产目录按「卡显示名」寻址(charx 落点 = sanitize(data.name));
+            // 名≠目录名时 charDir 目录也一并收(手工建资产目录常按文件名)
+            const folders = [...new Set([sanitize(name), charDir].filter(Boolean))];
+            const enc = encodeURIComponent;
+            const sprites = [];
+            const backgrounds = [];
+            const bgm = [];
+            for (const folder of folders) {
+                const base = path.join(request.user.directories.characters, folder);
+                for (const f of await listAssetFiles(base, ASSET_IMAGE_EXTS)) {
+                    sprites.push({
+                        // label 抽取与 legacy /api/sprites/get 同正则(joy-1.png → joy)
+                        label: f.name.toLowerCase().match(/^(.+?)(?:[-\\.].*?)?$/)?.[1] ?? f.name,
+                        name: f.name, file: f.file, bytes: f.bytes,
+                        url: `/characters/${enc(folder)}/${enc(f.file)}`, scope: 'char',
+                    });
+                }
+                for (const f of await listAssetFiles(base, ASSET_IMAGE_EXTS, 'backgrounds')) {
+                    backgrounds.push({ name: f.name, file: f.file, bytes: f.bytes, url: `/characters/${enc(folder)}/backgrounds/${enc(f.file)}`, scope: 'char' });
+                }
+                for (const f of await listAssetFiles(base, ASSET_AUDIO_EXTS, 'bgm')) {
+                    bgm.push({ name: f.name, file: f.file, bytes: f.bytes, url: `/characters/${enc(folder)}/bgm/${enc(f.file)}`, scope: 'char' });
+                }
+            }
+            for (const f of await listAssetFiles(request.user.directories.backgrounds, ASSET_IMAGE_EXTS)) {
+                backgrounds.push({ name: f.name, file: f.file, bytes: f.bytes, url: `/backgrounds/${enc(f.file)}`, scope: 'global' });
+            }
+            for (const f of await listAssetFiles(path.join(request.user.directories.assets, 'bgm'), ASSET_AUDIO_EXTS)) {
+                bgm.push({ name: f.name, file: f.file, bytes: f.bytes, url: `/assets/bgm/${enc(f.file)}`, scope: 'global' });
+            }
+            return response.send({
+                charDir, name, sprites, backgrounds, bgm,
+                empty: sprites.length + backgrounds.length + bgm.length === 0,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters assets');
         }
     });
 
