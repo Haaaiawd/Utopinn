@@ -29,7 +29,7 @@ import { TooltipProvider } from './components/ui/tooltip';
 import {
     ShellProvider, useContribs, useShell,
     type ChatSettings, type PresetParams, type SheetSnap, type ShellCtx,
-    type StageData, type VpMode,
+    type StageData, type StBackground, type VpMode,
 } from './kernel/context';
 import { Kernel } from './kernel/kernel';
 import type { PanelType } from './kernel/contributions';
@@ -249,6 +249,11 @@ function Shell() {
         vn: MOCK_VN,
     });
     const [chatSettings, setChatSettings] = useState<ChatSettings>(loadChatSettings);
+    /* 酒馆外观 ST 槽:stBg=settings.background;chatBgLock=会话锁;
+       stCss=power_user.custom_css(refreshConnection 水合)。 */
+    const [stBg, setStBg] = useState<StBackground | null>(null);
+    const [chatBgLock, setChatBgLock] = useState<string | null>(null);
+    const [stCss, setStCss] = useState('');
 
     const activePresetDocRef = useRef<{ name: string; doc: PresetDocument } | null>(null);
     const presetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -375,6 +380,20 @@ function Shell() {
         const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : '');
         const src = str(oai.chat_completion_source) || 'openai';
         setConnSource(src);
+
+        /* 酒馆外观水合:settings.background(#bg1 全局背景槽)+
+           power_user.custom_css。settings 拉取失败 → 槽位留旧值不动
+           (水合失败不清已有皮肤,与 conn 字段同策略)。 */
+        if (st) {
+            const bg = (st.background && typeof st.background === 'object' && !Array.isArray(st.background))
+                ? (st.background as Record<string, unknown>) : null;
+            setStBg(bg && typeof bg.url === 'string' && bg.url
+                ? { name: str(bg.name), url: String(bg.url), fitting: str(bg.fitting) || 'classic' }
+                : null);
+            const pu = (st.power_user && typeof st.power_user === 'object' && !Array.isArray(st.power_user))
+                ? (st.power_user as Record<string, unknown>) : null;
+            setStCss(str(pu?.custom_css));
+        }
 
         const cfgModel = str(oai[`${src}_model`]) || str(oai.openai_model);
         if (mdRes.status === 'fulfilled') {
@@ -797,6 +816,7 @@ function Shell() {
         refreshConnection,
         chatSettings,
         setChatSetting: (k, v) => setChatSettings((prev) => ({ ...prev, [k]: v })),
+        stBg, setStBg, chatBgLock, setChatBgLock, stCss, setStCss,
         stageData, patchStageData: (p) => setStageData((prev) => ({ ...prev, ...p })),
         hint: showHint,
         live,
@@ -817,6 +837,12 @@ function Shell() {
 
     return (
         <ShellProvider value={shell}>
+            {/* 自定义 CSS:服务端 power_user.custom_css 为主(ST 槽);
+               本地 chatSettings.customCss 是上线前遗留的本地槽,非空也照渲
+               (叠加层,不静默丢用户旧稿)。 */}
+            {stCss.trim() && (
+                <style id="utopinn-st-css">{stCss}</style>
+            )}
             {chatSettings.customCss.trim() && (
                 <style id="utopinn-custom-css">{chatSettings.customCss}</style>
             )}

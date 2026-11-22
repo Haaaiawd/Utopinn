@@ -471,8 +471,9 @@ export function sanitizeSettingsDoc(value) {
  * `oai_settings` 承载连接配置(source/baseUrl/model 选择,连接设置 tab 依赖);
  * `world_info_settings` 承载 WI 引擎开关与 world_info.globalSelect/charLore("全局栈")。
  * 合入前过 sanitizeSettingsDoc——api_key_* 形字段一律拒绝落盘,密钥走 /secrets。
+ * `background` 是 ST 全局聊天背景槽 {name,url,fitting,...}(#bg1 同源键)。
  */
-const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings']);
+const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings', 'oai_settings', 'world_info_settings', 'background']);
 /**
  * 允许的顶层标量键(非对象段,直写不合并)。
  * `preset_settings_openai` 是"当前 openai 预设"选择指针:生成侧读顶层
@@ -766,6 +767,27 @@ export function apply(ctx) {
             });
         } catch (error) {
             return sendError(response, error, 'utopinn/characters assets');
+        }
+    });
+
+    /**
+     * GET /backgrounds —— 全局聊天背景清单(backgrounds/ 目录,ST #bg1 选图源)。
+     * {items:[{filename,url,isAnimated}],total};url 静态面直取,isAnimated
+     * 按扩展名推断(legacy /api/backgrounds/all 的元数据缺省同款回落)。
+     * settings.background = {name,url,fitting} 经 PATCH /settings 写。
+     */
+    reg(`${P}/backgrounds`, async function (request, response) {
+        try {
+            const files = await listAssetFiles(request.user.directories.backgrounds, ASSET_IMAGE_EXTS);
+            const enc = encodeURIComponent;
+            const items = files.map((f) => ({
+                filename: f.file,
+                url: `/backgrounds/${enc(f.file)}`,
+                isAnimated: /\.(?:gif|webp|apng)$/i.test(f.file),
+            }));
+            return response.send({ items, total: items.length });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/backgrounds list');
         }
     });
 

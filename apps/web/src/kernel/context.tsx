@@ -35,8 +35,16 @@ export interface ChatSettings {
     showFloorNum: boolean;
     confirmDelete: boolean;
     fontSize: number;
+    /** 内置氛围纹理(本地滤镜,叠加于酒馆背景之上)。 */
     bgMode: string;
     customCss: string;
+}
+
+/** ST settings.background 槽({name,url,fitting};url 是 CSS url() 字符串)。 */
+export interface StBackground {
+    name: string;
+    url: string;
+    fitting: string;
 }
 
 /** 舞台形态会话的展示数据(规范稿 s.chapters/s.channels/s.vn 落地位)。
@@ -189,6 +197,18 @@ export interface ShellCtx {
     refreshConnection: (opts?: { freshModels?: boolean }) => Promise<void>;
     chatSettings: ChatSettings;
     setChatSetting: <K extends keyof ChatSettings>(k: K, v: ChatSettings[K]) => void;
+
+    /* ——— 酒馆外观(ST settings 槽)———
+       stBg:settings.background 全局聊天背景;chatBgLock:当前会话
+       chat_metadata.custom_background 锁(CSS url 或 null);stCss:
+       power_user.custom_css。三者均由 refreshConnection 的 settings 拉取水合,
+       写回走 PATCH /settings 与 chats PATCH(chat_metadata)。 */
+    stBg: StBackground | null;
+    setStBg: (b: StBackground | null) => void;
+    chatBgLock: string | null;
+    setChatBgLock: (url: string | null) => void;
+    stCss: string;
+    setStCss: (css: string) => void;
 
     /* ——— 舞台形态会话数据(SPEC-DATA:预演种子,面板与舞台共享) ——— */
     stageData: StageData;

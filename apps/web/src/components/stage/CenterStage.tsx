@@ -270,12 +270,23 @@ function ChatFloors() {
        收缩窗口不影响判定(renderable[0],非可见切片头)。 */
     const greetingId = renderable[0]?.m.role === 'assistant' ? renderable[0].m.id : undefined;
 
+    /* 酒馆背景:会话锁(chat_metadata.custom_background)> 全局 settings.background;
+       内置纹理是叠加滤镜,盖在背景之上。壁纸不滚 —— 层挂在滚容器外的包壳上。 */
+    const wallUrl = s.chatBgLock ?? s.stBg?.url ?? null;
     return (
-        /* spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask + bgMode 底图 */
-        <div ref={scrollRef} className="scroll-fade-mask relative min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-8">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+            {wallUrl && (
+                <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{ backgroundImage: wallUrl, backgroundSize: 'cover', backgroundPosition: 'center' }}
+                />
+            )}
             {s.chatSettings.bgMode !== 'none' && (
                 <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ background: `url('/assets/backgrounds/${s.chatSettings.bgMode}.png') center/cover no-repeat` }} />
             )}
+        {/* spec stage-scroll px-5 sm:px-8 py-6 + scroll-fade-mask */
+        }
+        <div ref={scrollRef} className="scroll-fade-mask relative min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-8">
             <div className="relative z-10 mx-auto max-w-[660px] space-y-7 pb-6">
                 {eng.loadErr && (() => {
                     let code = '', detail = eng.loadErr;
@@ -330,6 +341,7 @@ function ChatFloors() {
                 )}
                 {visible.map(({ m, origIdx }) => <Msg key={m.id} m={m} idx={origIdx} ops={eng.opsOf(m, origIdx)} greeting={m.id === greetingId} />)}
             </div>
+        </div>
         </div>
     );
 }

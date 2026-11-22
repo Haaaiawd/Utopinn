@@ -18,6 +18,8 @@ import { changeUserName } from '../../api/account';
 import { cardData, charImageUrl, getCharacter, patchCharacter } from '../../api/characters';
 import { testConnection, type ConnectionTestResponse } from '../../api/connection';
 import { getSettings, patchSettings } from '../../api/settings';
+import { listBackgrounds, bgCssUrl } from '../../api/backgrounds';
+import { patchChat } from '../../api/chats';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry } from '../../api/secrets';
 import { personaAvatarSrc } from '../../api/personas';
 import { listWorlds } from '../../api/worlds';
@@ -1022,10 +1024,6 @@ function SettingsTabContent() {
     const serverPlugins = useServerPlugins();
     const sw = (on: boolean, fn: () => void) => <button className="sh-switch" data-checked={on || undefined} onClick={fn}><span className="sh-switch-thumb" /></button>;
     const rowLbl = 'text-[12px] text-[color:var(--fg-secondary)]';
-    /* 规范稿背景格:文件名即 bgMode(接 CenterStage /assets/backgrounds/<mode>.png) */
-    const bgOpts: { k: string; lbl: string }[] = [
-        { k: 'none', lbl: '纯炭灰' }, { k: 'app-dark', lbl: '暗室底纹' }, { k: 'aurora-dark', lbl: '极光' }, { k: 'drawer-dark', lbl: '抽屉纹' },
-    ];
     return (
         <>
             {s.settingsTab === 'api' && <div className="inset-group"><ConnectionSection /></div>}
@@ -1039,32 +1037,7 @@ function SettingsTabContent() {
                                 <div className="inset-row"><span className={rowLbl}>{t('st.confirmDelete')}</span>{sw(cs.confirmDelete, () => s.setChatSetting('confirmDelete', !cs.confirmDelete))}</div>
                             </div>
                         )}
-                        {s.settingsTab === 'appearance' && (
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.bgMode')}</div>
-                                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                        {bgOpts.map(({ k, lbl }) => (
-                                            <button
-                                                key={k}
-                                                className="overflow-hidden rounded-xl border text-left transition-all"
-                                                style={{ borderColor: cs.bgMode === k ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
-                                                onClick={() => s.setChatSetting('bgMode', k)}
-                                            >
-                                                {k === 'none'
-                                                    ? <div className="flex h-12 items-center justify-center text-[11px] text-[color:var(--fg-muted)]">无图</div>
-                                                    : <img src={`/assets/backgrounds/${k}.png`} alt="" className="h-12 w-full object-cover" />}
-                                                <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">{lbl}</div>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="space-y-1.5">
-                                    <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.customCss')}</div>
-                                    <textarea rows={3} value={cs.customCss} placeholder={t('st.customCss.ph')} onChange={(e) => s.setChatSetting('customCss', e.target.value)} className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none" />
-                                </div>
-                            </div>
-                        )}
+                        {s.settingsTab === 'appearance' && <StAppearanceSection />}
                         {s.settingsTab === 'plugins' && <PluginsSections full plugins={serverPlugins} />}
                         {s.settingsTab === 'diagnostics' && (
                             <div className="inset-group">
@@ -1078,6 +1051,139 @@ function SettingsTabContent() {
                         )}
             {s.settingsTab === 'account' && <AccountSection />}
         </>
+    );
+}
+
+/** 外观页签 —— 酒馆语义面:settings.background(#bg1 全局壁纸)+
+ *  chat_metadata.custom_background(本会话锁)+ power_user.custom_css。
+ *  内置氛围纹理是本地滤镜层,与酒馆背景共存不冲突。 */
+function StAppearanceSection() {
+    const { t } = useI18n();
+    const s = useShell();
+    const cs = s.chatSettings;
+    const bgs = useRemote(s.settingsOpen ? 'st:backgrounds' : null, listBackgrounds);
+    const [cssDraft, setCssDraft] = useState<string | null>(null);
+    const [busy, setBusy] = useState(false);
+    const cssShown = cssDraft ?? s.stCss;
+    const cssDirty = cssDraft !== null && cssDraft !== s.stCss;
+
+    const pickBg = (filename: string) => {
+        if (busy) return;
+        setBusy(true);
+        /* ST 槽形:{name,url,fitting};'none' 写空 url(渲染判空不画层,
+           语义等同 legacy __transparent.png 占位)。 */
+        const bg = filename
+            ? { name: filename, url: bgCssUrl(filename), fitting: 'classic' }
+            : { name: '__transparent.png', url: '', fitting: 'classic' };
+        void patchSettings({ background: bg })
+            .then(() => { s.setStBg(filename ? bg : null); void s.refreshConnection(); })
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
+    const lockToChat = (on: boolean) => {
+        const chat = s.chat;
+        const url = s.stBg?.url ?? '';
+        if (!chat || busy || (on && !url)) return;
+        setBusy(true);
+        /* json-patch add = upsert;解锁写空串(读侧 falsy 即无锁)。 */
+        void patchChat(chat.charDir, chat.chatName, [
+            { op: 'add', path: '/header/chat_metadata/custom_background', value: on ? url : '' },
+        ])
+            .then(() => s.setChatBgLock(on ? url : null))
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
+    const saveCss = () => {
+        if (busy || !cssDirty) return;
+        setBusy(true);
+        void patchSettings({ power_user: { custom_css: cssShown } })
+            .then(() => { s.setStCss(cssShown); setCssDraft(null); void s.refreshConnection(); })
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
+    const selName = s.stBg?.name ?? '__transparent.png';
+    const locked = !!s.chatBgLock;
+    const items = bgs.data?.items ?? [];
+    return (
+        <div className="space-y-4">
+            <div className="space-y-2">
+                <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.stBg')}</span>
+                    {s.chat && (
+                        <label className="flex items-center gap-1.5 text-[10.5px] text-[color:var(--fg-muted)]" title={t('st.stBg.lockTip')}>
+                            <input type="checkbox" checked={locked} disabled={busy || (!locked && !s.stBg)} onChange={(e) => lockToChat(e.target.checked)} />
+                            {t('st.stBg.lock')}
+                        </label>
+                    )}
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <button
+                        className="overflow-hidden rounded-xl border text-left transition-all"
+                        style={{ borderColor: selName === '__transparent.png' ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
+                        onClick={() => pickBg('')}
+                        disabled={busy}
+                    >
+                        <div className="flex h-12 items-center justify-center text-[11px] text-[color:var(--fg-muted)]">{t('st.stBg.none')}</div>
+                        <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">__transparent</div>
+                    </button>
+                    {items.map((b) => (
+                        <button
+                            key={b.filename}
+                            className="overflow-hidden rounded-xl border text-left transition-all"
+                            style={{ borderColor: selName === b.filename ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
+                            onClick={() => pickBg(b.filename)}
+                            disabled={busy}
+                        >
+                            <img src={b.url} alt="" loading="lazy" className="h-12 w-full object-cover" />
+                            <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">{b.filename}</div>
+                        </button>
+                    ))}
+                </div>
+                {!bgs.data && bgs.error && <div className="px-0.5 text-[10.5px] text-[color:var(--status-warn)]">{bgs.error}</div>}
+            </div>
+            <div className="space-y-1.5">
+                <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.customCss')}</span>
+                    {cssDirty && (
+                        <button className="h-6 rounded-md px-2.5 text-[10.5px] font-medium" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }} disabled={busy} onClick={saveCss}>
+                            {t('st.secrets.save')}
+                        </button>
+                    )}
+                </div>
+                <textarea
+                    rows={4}
+                    value={cssShown}
+                    placeholder={t('st.customCss.ph')}
+                    onChange={(e) => setCssDraft(e.target.value)}
+                    onBlur={saveCss}
+                    className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none"
+                />
+            </div>
+            <div className="space-y-2">
+                <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.bgMode')}</div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    {([
+                        { k: 'none', lbl: t('st.bgMode.none') }, { k: 'app-dark', lbl: t('st.bgMode.appDark') },
+                        { k: 'aurora-dark', lbl: t('st.bgMode.aurora') }, { k: 'drawer-dark', lbl: t('st.bgMode.drawer') },
+                    ]).map(({ k, lbl }) => (
+                        <button
+                            key={k}
+                            className="overflow-hidden rounded-xl border text-left transition-all"
+                            style={{ borderColor: cs.bgMode === k ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
+                            onClick={() => s.setChatSetting('bgMode', k)}
+                        >
+                            {k === 'none'
+                                ? <div className="flex h-12 items-center justify-center text-[11px] text-[color:var(--fg-muted)]">{t('st.stBg.none')}</div>
+                                : <img src={`/assets/backgrounds/${k}.png`} alt="" className="h-12 w-full object-cover" />}
+                            <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">{lbl}</div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
     );
 }
 

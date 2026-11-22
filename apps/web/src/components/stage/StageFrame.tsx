@@ -512,8 +512,18 @@ export function StageFrame({ children }: { children: ReactNode }) {
         if (s.live && s.chat) {
             let dead = false;
             setMsgs([]);
+            /* 会话背景锁:chat_metadata.custom_background(CSS url 字符串)
+               与 settings.background 同级语义,锁在则覆盖全局(ST #bg1 优先级)。 */
+            s.setChatBgLock(null);
             getChat(s.chat.charDir, s.chat.chatName)
-                .then((d) => { if (!dead) setMsgs(d.messages); })
+                .then((d) => {
+                    if (dead) return;
+                    setMsgs(d.messages);
+                    const meta = (d.header?.chat_metadata ?? null) as Record<string, unknown> | null;
+                    const lock = typeof meta?.custom_background === 'string' && meta.custom_background.trim()
+                        ? meta.custom_background : null;
+                    sRef.current.setChatBgLock(lock);
+                })
                 .catch((e) => {
                     if (dead) return;
                     /* 持久指针指向已删会话(404/not-found)→ 落下一可用会话,
@@ -535,6 +545,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         }
         /* live 无会话 → 空楼层(选会话空态);离线/mock 路 → mock 种子。 */
         setMsgs(s.live ? [] : MOCK_MESSAGES);
+        s.setChatBgLock(null);
         setQrChips([]);
         setCtxLen(null);
     }, [chatKey, s.live]); // eslint-disable-line react-hooks/exhaustive-deps
