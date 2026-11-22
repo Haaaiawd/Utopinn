@@ -10,6 +10,18 @@ import type { SlashCommandAbortController, SlashCommandDebugController } from '.
 import type { NamedArguments } from './types.js';
 
 /**
+ * JSON-Patch op —— 与 PATCH /characters/:dir/chats/:name 的 ops 同形,
+ * path 命名空间限 /body/<i>/…(楼层字段)与 /header/…。/del /cut /swipe
+ * 等楼层写面全经它 —— 与 web 前端 opsOf/PATCH ops 同一事实源,
+ * 服务端落点同一个 repo.patch,不造平行写面。
+ */
+export interface StscriptPatchOp {
+    op: 'add' | 'remove' | 'replace';
+    path: string;
+    value?: unknown;
+}
+
+/**
  * 一条副作用回执。设计文档要求 ops 随 /run 响应返回,供渲染器做
  * variable receipt / 发送回执展示(与 MVU receipt 同通道)。
  */
@@ -26,6 +38,12 @@ export type StscriptOp =
     | { type: 'system-message'; text: string }
     | { type: 'popup'; text: string }
     | { type: 'setinput'; text: string }
+    /** 楼层写面回执:/del /cut /swipe /hide 等经 host.patchChat 落的 patch ops。 */
+    | { type: 'chat-patch'; ops: StscriptPatchOp[] }
+    /** 作者注写面:/note* 写 chat_metadata.note_*。 */
+    | { type: 'note'; key: string; value: unknown }
+    /** /go 会话跳转请求(客户端导航类 op receipt;服务端自身不切 ctx)。 */
+    | { type: 'go'; target: string; charDir?: string; chatName?: string }
     | { type: 'custom'; kind: string; data?: unknown };
 
 /** /send /sendas /sys /comment 构造的消息形状(与 Luker message 对象一致)。 */
@@ -128,6 +146,25 @@ export interface StscriptHost {
     avatarUrl?: (kind: 'avatar' | 'persona', id: string) => string;
     /** saveChatConditional / patch 持久化。 */
     persistChat?: () => void | Promise<void>;
+    /**
+     * 楼层 JSON-Patch 写面 —— 与 PATCH /characters/:dir/chats/:name
+     * 同一服务端写面(repo.patch)。/del /cut /delswipe /hide 等楼层
+     * 删除/字段写在改完内存 chat 数组后经它落盘;ops path 用
+     * /body/<i>/… 命名空间。缺省 = 无持久宿主:命令只改内存 chat。
+     */
+    patchChat?: (ops: StscriptPatchOp[]) => void | Promise<void>;
+    /**
+     * /go 的会话解析面:name → 可打开的会话目标。
+     * 服务端按 char 名/群名/'last'(最近聊天)解析;返回 null=未命中。
+     * 命令本身只发 go op receipt(导航类),实际切换是客户端的事。
+     */
+    resolveChatTarget?: (name: string) => Promise<{ charDir?: string; chatName?: string; name: string } | null> | { charDir?: string; chatName?: string; name: string } | null;
+    /**
+     * /swipe 右划越界(OVERSWIPE_REGENERATE)→ 生成新 swipe 版本。
+     * = Generate('swipe') 的宿主缝;与 /trigger 同类(TASK-069),
+     * 缺席时 /swipe 在越界位 revert + warn(不静默假装生成)。
+     */
+    generateSwipe?: (messageIndex: number) => Promise<boolean | void>;
     /** saveMetadataDebounced(局部变量写库)。 */
     persistMetadata?: () => void;
     /** saveSettingsDebounced(全局变量写库)。 */

@@ -8,8 +8,8 @@
  * seam 语义单点)。ops/UI sink 回执随响应返回。
  */
 import {
-    executeSlashCommandsWithOptions,
     registerBuiltinCommands,
+    runStscript,
     SlashCommandParser,
 } from '@utopinn/core';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
@@ -80,12 +80,17 @@ export function apply(ctx) {
                 return response.status(built.status ?? 500).send({ error: built.error });
             }
 
-            const result = await executeSlashCommandsWithOptions(built.env, script);
+            // runStscript(TASK-064):结构化 error 回执 {code,line,column,hint,
+            // commandName} —— 解析/执行错误不再 500 或静默空 pipe,CLI
+            // trace/web hint 直接吃这字段;HTTP 仍 200,ok 承载成败。
+            const out = await runStscript(built.env, script);
             return response.send({
-                ok: true,
-                pipe: result?.pipe ?? result ?? null,
-                isAborted: result?.isAborted ?? false,
-                ops: built.env.ops,
+                ok: !out.isError,
+                pipe: out.result,
+                isAborted: out.aborted,
+                abortReason: out.abortReason,
+                ops: out.ops,
+                error: out.error,
                 notifications: built.sinks.notifications,
                 popups: built.sinks.popups,
                 inputs: built.sinks.inputs,

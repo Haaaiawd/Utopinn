@@ -80,6 +80,7 @@ for (let i = 0; i < argv.length; i++) {
     else if (a === '--gchat') flags.gchat = argv[++i];
     else if (a === '--member') flags.member = argv[++i];
     else if (a === '--no-chain') flags.noChain = true;
+    else if (a === '--verbose' || a === '-v') flags.verbose = true;
     else if (a === '--global') flags.global = true;
     else if (a === '--enable') flags.enable = true;
     else if (a === '--disable') flags.disable = true;
@@ -1626,7 +1627,8 @@ const SCHEMA = {
         { cmd: 'utopinn mvu settle [--floor i]', desc: '[mvu] 手动重结算目标楼层', out: '{ok}' },
         { cmd: 'utopinn mvu resettle', desc: '[mvu] 全量重放投影(编辑/删楼/swipe 后)', out: '{ok}' },
         { cmd: 'utopinn mvu panel <tpl|--file f|--stdin>', desc: '[mvu] 模板×chat变量→面板HTML(--out 落盘,--html 裸输出)', out: '{html}' },
-        { cmd: 'utopinn script <stscript|--stdin>', desc: '[script] 服务端 STscript runner(/echo|/gen…)', out: '{pipe,ops,notifications}' },
+        { cmd: 'utopinn script <run|trace> <stscript|--stdin>', desc: '[script] 服务端 STscript runner:run=跑+回执;trace=run+ops/error 定位全展开(--verbose 同效);裸 <stscript> 仍兼容=run', out: '{pipe,ops,notifications,error?}' },
+        { cmd: 'utopinn script commands [--full] [-n N]', desc: '[script] GET /script/commands 注册表清单(补全数据源同款;--full 打 help)', out: '{commands[],count}' },
         { cmd: 'utopinn th <method> [json] [--force]', desc: '[th] TavernHelper 调用面(变量/消息/slash)。replaceVariables=变量域【全量覆写】:丢根/违 stat_data schema 拒 400(root_loss|mvu_schema),确认覆写加 --force → args.force:true(明细降级进 warnings/schema_errors 留痕)', out: '{result,warnings?,schema_errors?}' },
         { cmd: 'utopinn cardapp <mount|eval|call|op|status|unmount>', desc: '[cardapp] headless CardApp 宿主(jsdom 真跑卡 HTML/JS;一次性进程语义)', out: '{mount,result,console}' },
         { cmd: 'utopinn import-scan <dir>', desc: '[data] 扫 ST default-user 目录→可导入清单(admin)', out: '{counts,items}' },
@@ -1641,7 +1643,7 @@ const SCHEMA = {
         { cmd: 'utopinn state preset <delete-all|rename> <name>|<old> <new> [--api id]', desc: '[state] preset 独有:清全 ns →{deleted:n}/ 随名迁移(撞档 409)', out: '{deleted|renamed}' },
         { cmd: 'utopinn raw <M> </path> [json|--stdin]', desc: '逃生舱:任意 REST 端点直达(kernel 表全量可绑)', out: '{status,data}' },
     ],
-    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId|chat|text|kobold|novel(生成源)', '--api-type t(textgen 后端:koboldcpp/ooba/…)', '--api-server url(kobold 上游)', '--model m(novel/各源模型覆盖)', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)|from:to(regen 楼区间)',
+    flags: ['--json(机器 envelope/生成动词 NDJSON)', '--stream(JSON 时开 delta 帧)', '--full', '--out f', '-n N', '--floor i', '--stdin|-', '--wait ms', '--timeout ms', '--force(th 全量覆写确认;写盘 CAS 旁路)', '--write', '--quiet', '--no-stream', '--char d', '--user n', '--preset n|--off', '--set k=v', '--from seq', '--type t', '--section s', '--state f', '-s url|UTOPINN_SERVER', '--json-file f(JSON 文档源)', '--file f(二进制/模板载荷)', '--name n', '--id', '--value v', '--label l', '--code c', '--dir d', '--html(裸输出)', '--api apiId|chat|text|kobold|novel(生成源)', '--api-type t(textgen 后端:koboldcpp/ooba/…)', '--api-server url(kobold 上游)', '--model m(novel/各源模型覆盖)', '--kind k', '--conflict p', '--as name', '--mode m', '--handle h', '--chat n(state chat 目标覆盖)', '--via post|get(state get 线形)', '--group id|name(群路由)', '--gchat chatId(群聊文件覆盖)', '--member avatar|dir|name(点名发言)', '--no-chain(群队列只发第一人)', '--verbose|-v(script run ops/error 展开)', '--lvl l(diag 最低等级)', '--since ts(diag 时间过滤)', '--tail n(-n 别名)', '--job id(diag job 过滤/trace 目标)', '--by char|model|day(stats 分组维)', '--range 1h|24h|7d|all(stats 窗口)|from:to(regen 楼区间)',
         '--password p(login 凭据进 argv 留 history——优选 UTOPINN_PASSWORD/TTY交互/管道)', '--session f(session 文件路径;默认 <state>.session.json)'],
     exitCodes: { 0: 'ok', 1: 'server/generic', 2: 'usage', 3: 'conflict(integrity/ambiguous/active_job)', 4: 'network/session', 5: 'upstream failed/cancelled', 6: 'timeout-interrupted(job still running)' },
     errorCodes: ['usage', 'no_ctx', 'not_found', 'ambiguous', 'exists', 'integrity_conflict', 'active_job', 'no_floor', 'bad_floor', 'corrupted', 'no_ai_floor', 'no_swipe', 'new_chat', 'upstream', 'session', 'network', 'timeout', 'server'],
@@ -2612,20 +2614,116 @@ async function cmdMvu() {
     fail('usage', `utopinn mvu <${Object.keys(MVU_SUB_ROUTES).join('|')}>(settle --floor i · panel <tpl|--file|--stdin>)`, { rc: 2 });
 }
 
+/** ops 回执 → 人读行(TASK-064 script 调试面)。 */
+function scriptOpLine(op) {
+    if (!op || typeof op !== 'object') return `  ? ${JSON.stringify(op)}`;
+    switch (op.type) {
+        case 'send': return `  → send ${op.name} [floor ${op.index}]`;
+        case 'setvar': return `  → setvar ${op.scope}.${op.key} = ${trunc(JSON.stringify(op.value), 80)}`;
+        case 'delvar': return `  → delvar ${op.scope}.${op.key}`;
+        case 'echo': return `  → echo[${op.severity}] ${trunc(op.text, 120)}`;
+        case 'input': return `  → input ${trunc(op.prompt, 80)}`;
+        case 'trigger': return '  → trigger(generation)';
+        case 'gen': return '  → gen';
+        case 'abort': return `  → abort: ${trunc(op.reason, 120)}`;
+        case 'run': return `  → run ${op.name}`;
+        case 'system-message': return `  → system-message ${trunc(op.text, 120)}`;
+        case 'popup': return `  → popup ${trunc(op.text, 80)}`;
+        case 'setinput': return `  → setinput ${trunc(op.text, 80)}`;
+        case 'note': return `  → note chat_metadata.${op.key} = ${trunc(JSON.stringify(op.value), 80)}`;
+        case 'go': return `  → go ${op.charDir ?? '?'}/${op.chatName ?? '(new)'} (${op.target})`;
+        case 'chat-patch': {
+            const ops = Array.isArray(op.ops) ? op.ops : [];
+            const parts = ops.map(p => `${p.op} ${p.path}${p.op === 'remove' ? '' : ` = ${trunc(JSON.stringify(p.value), 60)}`}`);
+            return `  → chat-patch[${ops.length}] ${parts.join(' · ')}`;
+        }
+        case 'custom': return `  → custom:${op.kind} ${trunc(JSON.stringify(op.data), 80)}`;
+        default: return `  → ${op.type} ${trunc(JSON.stringify(op), 100)}`;
+    }
+}
+
+/** /script run 回执的可读渲染(JSON_MODE 走 envelope,不进这里)。 */
+function printScriptResult(data, { verbose = false } = {}) {
+    if (data.pipe != null && data.pipe !== '') console.log(typeof data.pipe === 'string' ? data.pipe : JSON.stringify(data.pipe, null, 2));
+    for (const n of data.notifications ?? []) {
+        const sev = n?.severity ?? 'info';
+        const color = sev === 'error' ? '\x1b[31m' : sev === 'warning' ? '\x1b[33m' : '\x1b[2m';
+        console.log(`${color}· ${sev}${n?.title ? ` ${n.title}` : ''}: ${n?.text ?? ''}\x1b[0m`);
+    }
+    if (data.isAborted) console.log(`\x1b[33maborted${data.abortReason ? `: ${data.abortReason}` : ''}\x1b[0m`);
+    const ops = data.ops ?? [];
+    if (verbose) {
+        for (const op of ops) console.log(`\x1b[36m${scriptOpLine(op)}\x1b[0m`);
+    } else if (ops.length) {
+        console.log(`\x1b[2mops:${ops.length} (--verbose 展开)\x1b[0m`);
+    }
+    if ((data.popups?.length ?? 0) + (data.inputs?.length ?? 0) > 0) {
+        console.log(`\x1b[2mpopup:${data.popups?.length ?? 0} input:${data.inputs?.length ?? 0}(服务端无法弹窗,回执存档)\x1b[0m`);
+    }
+}
+
+/** error{code,message,line,column,hint,commandName} → 定位行(trace 面核心)。 */
+function printScriptError(error) {
+    if (!error) return;
+    const at = [error.commandName ? `/${error.commandName}` : null,
+        error.line != null ? `line ${error.line}${error.column != null ? `:${error.column}` : ''}` : null,
+    ].filter(Boolean).join(' ');
+    console.error(`\x1b[31merror[${error.code ?? 'script'}]${at ? ` ${at}` : ''}\x1b[0m ${error.message ?? ''}`);
+    if (error.hint) console.error(`\x1b[2m${String(error.hint).trim()}\x1b[0m`);
+}
+
 async function cmdScript() {
-    const script = await readTextArg(positional.slice(1));
-    if (!script) return void fail('usage', 'utopinn script <stscript|--stdin>', { hint: '例:utopinn script "/echo hi"', rc: 2 });
+    const sub = String(positional[1] ?? '');
+    // ── script commands:注册表读面(GET /script/commands)──
+    if (sub === 'commands' || sub === 'list') {
+        const { data, status } = await req('GET', '/api/utopinn/script/commands', undefined, { allowFail: true });
+        if (status >= 400 || data?.error) return void fail('server', `script commands 失败:${data?.error ?? status}`, { status });
+        const commands = Array.isArray(data?.commands) ? data.commands : [];
+        if (JSON_MODE) return out({ commands, count: commands.length });
+        const show = flags.n ? commands.slice(0, flags.n) : commands;
+        for (const c of show) {
+            const alias = c.aliases?.length ? ` \x1b[2m(${c.aliases.map(a => '/' + a).join(' ')})\x1b[0m` : '';
+            const args = [...(c.args ?? []).map(a => `${a.name}=${a.def ?? '?'}${a.required ? '!' : ''}`), ...(c.unnamed ?? [])].filter(Boolean).join(' ');
+            console.log(`/${String(c.name).padEnd(18)}${alias}${args ? `  \x1b[2m${args}\x1b[0m` : ''}`);
+            if (flags.full && c.help) console.log(`   \x1b[2m${c.help}\x1b[0m`);
+        }
+        console.log(`\n${commands.length} commands registered`);
+        next('utopinn script run "/echo hi"');
+        footer();
+        return;
+    }
+    // ── script run|trace <stscript|--stdin> —— trace=run+verbose 全开 ──
+    const isTrace = sub === 'trace';
+    const isRun = sub === 'run';
+    const verbose = isTrace || flags.verbose === true;
+    const rest = (isRun || isTrace) ? positional.slice(2) : positional.slice(1);
+    const script = await readTextArg(rest);
+    if (!script) {
+        return void fail('usage', 'utopinn script <run|trace> <stscript|--stdin> | script commands [--full]', {
+            hint: '例:utopinn script run "/del 1" · trace 展开 ops/error 定位',
+            rc: 2,
+        });
+    }
     const c = needCtx() ?? {};
     const { data, status } = await req('POST', '/api/utopinn/script/run', {
         script,
         ...(c.charDir ? { charDir: c.charDir } : {}),
         ...(c.chatName ? { chatName: c.chatName } : {}),
     }, { allowFail: true });
-    if (status >= 400 || data?.error) return void fail('server', `script run 失败:${data?.error ?? ''}`);
-    if (JSON_MODE) return out(data);
-    if (data.pipe != null && data.pipe !== '') console.log(typeof data.pipe === 'string' ? data.pipe : JSON.stringify(data.pipe, null, 2));
-    const side = [data.ops?.length ? `ops:${data.ops.length}` : null, data.notifications?.length ? `notify:${data.notifications.length}` : null, data.popups?.length ? `popup:${data.popups.length}` : null, data.isAborted ? 'aborted' : null].filter(Boolean).join(' · ');
-    if (side) console.log(`\x1b[2m${side}\x1b[0m`);
+    if (status >= 400 && !data?.pipe && data?.ops === undefined) {
+        return void fail('server', `script run 失败:${data?.error ?? status}`, { status });
+    }
+    if (JSON_MODE) {
+        out(data);
+        if (data?.error || data?.ok === false) exitCode = Math.max(exitCode, 1);
+        return;
+    }
+    printScriptResult(data, { verbose });
+    if (data?.error || data?.ok === false) {
+        printScriptError(typeof data.error === 'object' ? data.error : { code: 'script', message: String(data.error ?? 'failed') });
+        exitCode = Math.max(exitCode, 1);
+        ring(CMD ?? '?', 1, { err: 'script_error' });
+    }
     footer();
 }
 

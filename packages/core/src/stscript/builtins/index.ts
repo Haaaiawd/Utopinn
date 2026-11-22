@@ -6,6 +6,8 @@
 import { SlashCommandParser } from '../parser.js';
 import { registerMessageCommands } from './messages.js';
 import { registerVariableCommands } from './variables.js';
+import { registerChatOpsCommands } from './chat-ops.js';
+import { registerNoteCommands } from './notes.js';
 
 let registered = false;
 
@@ -14,6 +16,8 @@ export function registerBuiltinCommands(): void {
     registered = true;
     registerMessageCommands();
     registerVariableCommands();
+    registerChatOpsCommands();
+    registerNoteCommands();
 }
 
 /** 已注册的 builtin 名清单(测试/白名单审计用)。 */
