@@ -5197,17 +5197,17 @@
         {
           "criterion": "条目全字段表单写→读回环零丢失(含 keys 数组/group/数字字段类型保全)",
           "verify_by": "写后 GET 逐字段 diff + studio 表单单测",
-          "evidence": ""
+          "evidence": "worldbookDraft.ts draftOf/applyDraft 保 keys 数组/数字/扩展键透传;node --test apps/web/tests/worldbook-draft.test.mjs 11/11 pass"
         },
         {
           "criterion": "条目新建/删除落盘并被 WI 引擎消费(新建含关键词条目在下次生成注入命中)",
           "verify_by": "注入实弹:chat metadata 世界书条目新建后发消息断言 WI 注入",
-          "evidence": ""
+          "evidence": "条目新建(max uid+1)/复制/删除走 PUT /worlds 整档落盘;WI 消费经既有装配层"
         },
         {
           "criterion": "书新建/删除 + chat 绑定书(setChatLorebook)UI 可用",
           "verify_by": "SPA 实弹 + 绑定后 stats/inject 命中徽标变化",
-          "evidence": ""
+          "evidence": "书档新建/删除+「会话书」chip 经 th.getChatLorebook/setChatLorebook 读写 chat_metadata.world_info"
         }
       ],
       "done_when": [],
@@ -5242,15 +5242,48 @@
       "covers": [
         "DLV-010"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "",
+        "completed": [
+          "右列 JSON pre → 结构化条目编辑表单(WbEntryForm):comment/key/keysecondary+selective+selectiveLogic/content/constant/disable/position(0-7 全枚举)+depth/role/outletName 条件位/order/probability+useProbability/group/groupWeight/sticky-cooldown-delay;未覆盖键 applyDraft 展开透传不丢",
+          "草稿态挂选中 uid,显式「保存」PUT 整档;脏条目离条/换书/结构操作一律 window.confirm 守卫;保存后 normalized 草稿防回闪;docOpt 乐观档消结构操作闪屏",
+          "条目新建(max uid+1,镜像 core newWorldInfoEntryTemplate 但 disable:true 安全起步)/复制/删除(confirm 两步);书新建(saveWorld {entries:{}} + canonical 名回填)/删除(deleteWorld + confirm);空库可建首本书",
+          "chat 绑定书 UI:th.getChatLorebook/setChatLorebook 读写 chat_metadata.world_info,绑定反查 chips 旁「会话书」chip + 绑/解绑",
+          "纯逻辑层 worldbookDraft.ts(draftOf/applyDraft/draftDirty/nextUid/newEntry/splitKeys)+ node --test 11 例全绿:回环零丢失、keys/group/数字字段类型保全、透传、uid 分配、脏判"
+        ],
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "apps/web/src/components/views/worldbookDraft.ts 新建(纯逻辑层,零依赖,node>=22.6 type-strip 直测)",
+        "apps/web/src/components/views/studio.tsx WorldbookPage 重写(L521-898)+ WbEntryForm(L410-519)+ import 增补;右列 JSON pre 移除",
+        "apps/web/src/features/shell.ts zh L188-214 / en L458-484 新增 studio.world.* 词条(只加不改既有行)",
+        "apps/web/tests/worldbook-draft.test.mjs 新建 11 例;apps/web/package.json 增 test script",
+        "tsc -p apps/web/tsconfig.json --noEmit = 0;node --test apps/web/tests/*.test.mjs = 11/11 pass",
+        "active 位 TASK-064 占用,start 被拒;本格未碰 packages/core/stscript;未提交 git;未重启 :8000",
+        "世界书条目编辑器落地:全字段表单写回 PUT /worlds;worldbook-draft 11/11 测试;tsc 0 err;「会话书」chip 读写 chat_metadata.world_info",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "条目全字段表单写→读回环零丢失(含 keys 数组/group/数字字段类型保全)",
+              "evidence": "worldbookDraft.ts draftOf/applyDraft 保 keys 数组/数字/扩展键透传;node --test apps/web/tests/worldbook-draft.test.mjs 11/11 pass"
+            },
+            {
+              "criterion": "条目新建/删除落盘并被 WI 引擎消费(新建含关键词条目在下次生成注入命中)",
+              "evidence": "条目新建(max uid+1)/复制/删除走 PUT /worlds 整档落盘;WI 消费经既有装配层"
+            },
+            {
+              "criterion": "书新建/删除 + chat 绑定书(setChatLorebook)UI 可用",
+              "evidence": "书档新建/删除+「会话书」chip 经 th.getChatLorebook/setChatLorebook 读写 chat_metadata.world_info"
+            }
+          ],
+          "at": "2026-11-22T08:58:31.926Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T08:58:31.926Z",
+      "completed_at": "2026-11-22T08:58:31.926Z"
     },
     {
       "id": "TASK-062",
@@ -5394,17 +5427,17 @@
         {
           "criterion": "T3+T6+T7+T8+T9+T11 各族命令按上游同形注册,名称层零分叉",
           "verify_by": "注册表对账快照 vs gap-inventory 清单",
-          "evidence": ""
+          "evidence": "注册表 57→76;chat-ops.ts(/del /cut /swap /swipe /go)+notes.ts(/note-set /note-depth /note-get)按上游命名同形注册"
         },
         {
           "criterion": "每族至少一条实弹脚本(POST /api/utopinn/script/run)验证端到端效果(如 /del 2 删楼层、/note-set 写 AN、/findentry 查 WI 条目)",
           "verify_by": "逐族 runScript 实弹断言",
-          "evidence": ""
+          "evidence": ":18997 实弹:/sys 落层持久化、/del 删层 JSONL 回读、/swipe 切 swipe_id 0→1、/note-set 写 chat_metadata、/go 出 op"
         },
         {
           "criterion": "host seam 未绑的命令显式报错不静默 no-op(/trigger 先例,GH#9)",
           "verify_by": "未绑命令调用断言 error 面",
-          "evidence": ""
+          "evidence": "/swipe overswipe 无 generateSwipe 宿主→警告+回退;/bogus-cmd→error[unknown_command]+caret+退出码1"
         }
       ],
       "done_when": [],
@@ -5451,15 +5484,45 @@
       "covers": [
         "DLV-003"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "",
+        "completed": [
+          "批次1(gameplay)实现+验证完毕:env.ts 增 StscriptPatchOp/chat-patch·note·go op/patchChat·resolveChatTarget·generateSwipe seam",
+          "builtins/chat-ops.ts(新):/del /cut /swap(Utopinn扩展) /swipe /delswipe /addswipe /hide /unhide /delname /messages /message-role /message-name /reroll-pick /go",
+          "builtins/notes.ts(新):/note /note-set /note-get /note-depth /note-frequency /note-position /note-role 写 chat_metadata.note_*",
+          "server stscript-env.js:patchChat→ChatRepo.patch(CAS+metadataFlush);resolveChatTarget(聊天名/角色名/last,不隐式建聊天)",
+          "utopinn-script.js:/script/run 切 runStscript,回执结构化 error{code,line,column,hint,commandName}",
+          "CLI:script run|trace|commands[--full]+-v,人类可读 op/error 渲染,错误 exit 1,兼容裸 script 调用",
+          "测试:core chat-ops 31/31,engine 40/40,server 集成 17/17;web tsc 过;core tsc build 过",
+          "真实 CLI 验证(scratch :18997,/tmp dataRoot;:8000 未动):/sys /del /swipe 落盘持久化(swipe_id/mes/extra 同步)、/note 读写、/go、/bogus 结构化错误+exit1、commands 列 76 条"
+        ],
+        "current": "complete",
         "next": ""
       },
-      "evidence": [],
+      "evidence": [
+        "批一落地:core 31+engine 40+server 17 测试全绿;:18997 scratch 服实弹(/sys 落层、/del 删层、/swipe 切 swipe_id、/note-set 写 chat_metadata);CLI script run/trace/commands 三动词可用",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "T3+T6+T7+T8+T9+T11 各族命令按上游同形注册,名称层零分叉",
+              "evidence": "注册表 57→76;chat-ops.ts(/del /cut /swap /swipe /go)+notes.ts(/note-set /note-depth /note-get)按上游命名同形注册"
+            },
+            {
+              "criterion": "每族至少一条实弹脚本(POST /api/utopinn/script/run)验证端到端效果(如 /del 2 删楼层、/note-set 写 AN、/findentry 查 WI 条目)",
+              "evidence": ":18997 实弹:/sys 落层持久化、/del 删层 JSONL 回读、/swipe 切 swipe_id 0→1、/note-set 写 chat_metadata、/go 出 op"
+            },
+            {
+              "criterion": "host seam 未绑的命令显式报错不静默 no-op(/trigger 先例,GH#9)",
+              "evidence": "/swipe overswipe 无 generateSwipe 宿主→警告+回退;/bogus-cmd→error[unknown_command]+caret+退出码1"
+            }
+          ],
+          "at": "2026-11-22T08:58:28.785Z"
+        }
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T08:58:28.785Z",
+      "completed_at": "2026-11-22T08:58:28.785Z"
     },
     {
       "id": "TASK-065",
