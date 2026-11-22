@@ -4994,6 +4994,934 @@
       "created_at": "2026-11-21T10:57:29.601Z",
       "updated_at": "2026-11-22T02:37:44.751Z",
       "completed_at": "2026-11-22T02:37:44.751Z"
+    },
+    {
+      "id": "TASK-059",
+      "title": "[P0] 开场问候播种:first_mes/alternate_greetings 落开场楼+swipes 槽(服务端+web 双侧)",
+      "outcome": "新建会话自动播种开场问候楼,对齐 ST 语义:卡的 first_mes 成为首楼(is_user=false、name=卡名、mes 宏展开),alternate_greetings 灌入该楼 swipes 槽供切版;REST「缺失即建」与 web createChat 两入口行为一致;无问候的卡保持现行为(空 system floor)不阻塞。证据:generate-context.js:725-727 已把 firstMessage/alternateGreetings 透给组装层但无人播种;createChat(apps/web/src/api/chats.ts:241-247)只发 mes:'' 的 is_system 楼;utopinn-library.js:1581 POST messages 路由是「缺失即建」锚点。",
+      "acceptance": [
+        {
+          "criterion": "REST 直建会话(POST /characters/:dir/chats/:name/messages)产出 first_mes 开场楼,alternate_greetings 写入该楼 swipes[],name/send_date 字段对齐 ST 楼层惯例",
+          "verify_by": "server 单测:带 first_mes+2 alternate 的卡建 chat,断言楼层 0 mes/name/swipes 三字段",
+          "evidence": ""
+        },
+        {
+          "criterion": "web s.newChat→createChat(App.tsx:703-717)链路同样播种,SPA 新会话首屏渲染问候楼且 swipe 切换可用",
+          "verify_by": "SPA 实弹新会话 + 楼层 PATCH swipe 切换实弹",
+          "evidence": ""
+        },
+        {
+          "criterion": "幂等与退化:重复调用不重复播种;first_mes 缺失/空串的卡退化为现行为",
+          "verify_by": "单测:二次 POST 不增生问候楼;无问候卡 chat 结构不变",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不改既有会话存量数据,不补历史 chat 文件",
+        "不改 generate-context 的 firstMessage 消费面(那层是 prompt 组装读面,与楼层播种是两条路)",
+        "播种放服务端权威,web 只消费;不在 createChat body 里新造协议字段"
+      ],
+      "guardrails": [
+        "楼层 owner/name/宏展开时机对齐上游 public/scripts 行为(st-engine-compat C2),不自定义问候格式",
+        "alternate_greetings 为空数组时不写空 swipes 字段",
+        "播种只触发一次——楼层已存在(首楼非 system 空楼)的 chat 不重播"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/web/src/api/chats.ts",
+        "apps/web/src/App.tsx"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/web/src/api/chats.ts",
+        "apps/server/tests/utopinn-greeting-seed.test.mjs"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C2",
+          "at": "播种语义",
+          "must_produce": "楼层字段逐项对齐上游断言"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010",
+        "DLV-003"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.344Z",
+      "updated_at": "2026-11-22T07:03:35.344Z"
+    },
+    {
+      "id": "TASK-060",
+      "title": "[P0] STscript composer 自由输入:`/` 前缀路由 /api/utopinn/script/run + 命令补全",
+      "outcome": "composer 手打 `/` 前缀文本回车即走 runScript(不当普通消息发出),补全面板从手写 5 项升级为按已注册命令生成。证据:StageFrame.tsx textarea onKeyDown `/` on empty draft 只开 SlashMenu(:1225 附近),send(draft) 不路由前缀——手打 /sys 根本无法输入成文本;SlashMenu 仅 5 项(:260-265);runScript(:989-998)唯一消费方是 QR chip(:1209);api 面 th.ts:41-45 + api-client misc.ts:170-172 已备。",
+      "acceptance": [
+        {
+          "criterion": "textarea 输入 `/sys <text>` 回车 → POST /api/utopinn/script/run,ops/echo 回执渲染进楼层区,用户消息不落地",
+          "verify_by": "SPA 实弹 + network 断言走 script/run 非 messages 路由",
+          "evidence": ""
+        },
+        {
+          "criterion": "`/` 起头的补全面板数据源为 core builtins 注册表(含参数名提示),非手写五项;SlashMenu 五项保留为快捷入口",
+          "verify_by": "注册表快照对照 + 面板逐项渲染断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "QR chip 与 SlashMenu 既有路径零回归(/continue 快路径不动)",
+          "verify_by": "既有 send/continue/runScript 三分支实弹",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "补全不做 fuzzy 全库搜索,先前缀匹配;参数值补全(file 参数拉世界书名等)另案",
+        "不改 stscript-env/script runner 语义,只接前端路由"
+      ],
+      "guardrails": [
+        "`/` 前缀文本整条原样透传服务端,前端不预展开宏/不拆 pipe",
+        "未识别命令交给服务端报错回显,前端不自写词表拦截",
+        "echo/op 回执走既有 ops sink 通道(ui op receipt),不另造通知体系"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/web/src/api/th.ts",
+        "apps/server/src/services/stscript-env.js",
+        ".skeinn/eval/stscript-gap-inventory-2026-11-06.md"
+      ],
+      "touches": [
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/web/src/api/th.ts",
+        "apps/server/src/plugins/utopinn-script.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C3",
+          "at": "composer 路由",
+          "must_produce": "副作用分层:输入路由不进 effects"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.344Z",
+      "updated_at": "2026-11-22T07:03:35.344Z"
+    },
+    {
+      "id": "TASK-061",
+      "title": "[P0] 世界书条目编辑器:WorldbookPage JSON 只读 → 结构化表单+条目/书新建删除",
+      "outcome": "studio WorldbookPage(studio.tsx:357)从「列表+启停+JSON 只读」升级为结构化条目编辑器:comment/content/keys/secondary_keys/depth/position/order/probability/selectiveLogic/group/sticky-cooldown-delay 分面表单;条目新建/删除;书新建/删除;chat 绑定书 UI(服务端 TH getChatLorebook/setChatLorebook 已有,§2 报告)。证据:报告§2 引擎面全有、编辑器半有。",
+      "acceptance": [
+        {
+          "criterion": "条目全字段表单写→读回环零丢失(含 keys 数组/group/数字字段类型保全)",
+          "verify_by": "写后 GET 逐字段 diff + studio 表单单测",
+          "evidence": ""
+        },
+        {
+          "criterion": "条目新建/删除落盘并被 WI 引擎消费(新建含关键词条目在下次生成注入命中)",
+          "verify_by": "注入实弹:chat metadata 世界书条目新建后发消息断言 WI 注入",
+          "evidence": ""
+        },
+        {
+          "criterion": "书新建/删除 + chat 绑定书(setChatLorebook)UI 可用",
+          "verify_by": "SPA 实弹 + 绑定后 stats/inject 命中徽标变化",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不动 WI 引擎/扫描注入语义(引擎完整度已验收)",
+        "不上 drag-reorder 与高级筛选,先做全字段表单",
+        "导出世界书在导出面任务(TASK-066 邻域)不重复做"
+      ],
+      "guardrails": [
+        "写面走 utopinn REST/worlds 契约,不经 legacy worldinfo.js 动词",
+        "表单字段集对齐 spec-v2 entry schema + ST 上游字段名,不自造键名",
+        "删除条目/书走二次确认,不误触"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/api/worlds.ts",
+        "apps/server/src/endpoints/worldinfo.js",
+        "apps/server/src/plugins/utopinn-th.js"
+      ],
+      "touches": [
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/api/worlds.ts",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-062",
+      "title": "[P1] 群聊端到端 UI:服务端 group-orchestration 已备 → SPA 建群/成员/编排面",
+      "outcome": "SPA 补齐群聊产品面:群列表/创建/成员 roster(disabled_members 启停)/activation_strategy(NATURAL/LIST/MANUAL/POOLED)/generation_mode(SWAP/APPEND/APPEND_DISABLED)编辑、群会话舞台与生成链路;MVU group target 已有服务端支撑。证据:group-orchestration.js 全量移植(成员选择/join 模板/depth_prompts 注入);endpoints/groups.js legacy REST(/all /create /edit /delete)在;web 零 UI(报告§5)。",
+      "acceptance": [
+        {
+          "criterion": "SPA 可建群、选成员、开群会话;群会话楼层列/composer 复用 chat 形态",
+          "verify_by": "双卡群创建→会话实弹",
+          "evidence": ""
+        },
+        {
+          "criterion": "成员启停(disabled_members)与 activation/generation_mode 编辑即时生效并反映在下轮生成编排",
+          "verify_by": "启停成员后触发生成,断言生成者集合变化",
+          "evidence": ""
+        },
+        {
+          "criterion": "群生成走 group-orchestration:策略选员/join 前缀模板/depth_prompts 注入在 job trace 可见",
+          "verify_by": "生成 job trace/楼层断言编排输出",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不做群头像合成/美化打磨,先功能闭环",
+        "群内 swipe/分支等楼层操作沿用 chat 面,不另造"
+      ],
+      "guardrails": [
+        "group REST 尽量 utopinn 化落契约;若短期复用 legacy groups.js 端点,按 legacy-convergence.md compat 例外清单显式立档",
+        "orchestration 保持纯函数层,前端不直接 import,不引 express/fs",
+        "MANUAL+isUserInput 空成员短路与 legacy 同义,不在 UI 层绕过"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/services/group-orchestration.js",
+        "apps/server/src/endpoints/groups.js",
+        ".skeinn/design/task037-group-textgen-surface.md",
+        ".skeinn/design/legacy-convergence.md"
+      ],
+      "touches": [
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/web/src/api/chats.ts",
+        "apps/web/src/App.tsx",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C2",
+          "at": "群编排消费",
+          "must_produce": "策略/模式语义逐项对齐上游"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010",
+        "DLV-006"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-063",
+      "title": "[P1] Quick Replies 完整面:册切换/编辑/启停/写面(named-doc 只读 → 双向)",
+      "outcome": "QR 从「第一册 12 chip 只读条」升级为 ST 最小等价面:册切换下拉、条目编辑(label/message)、册/条目启停、写面持久化;utopinn REST 补 named-doc 写路由(TASK-058 交付的是 GET 读面)。证据:StageFrame.tsx:553-565 只读 names[0] 一册;quick-replies.js legacy 有写;报告§7「半有(只读最小面)」。",
+      "acceptance": [
+        {
+          "criterion": "册切换列出全部 QR 册并可切 chip 集;册/条目启停状态持久化",
+          "verify_by": "多册 fixture 实弹切换 + 启停写读对账",
+          "evidence": ""
+        },
+        {
+          "criterion": "chip label/message 编辑落盘,经 named-doc 读面回读一致",
+          "verify_by": "SPA 编辑 → curl GET 对账",
+          "evidence": ""
+        },
+        {
+          "criterion": "写路由入 protocol 契约(非直通 legacy);chip 点击语义(/continue 快路径、/ 前缀 runScript)零回归",
+          "verify_by": "protocol 类型 + StageFrame 点击分支实弹",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不上 ST QR 的嵌套 set/context menu/拖拽重排全复杂度,先最小双向面",
+        "QR 导入在导入中心任务另案(报告§7 QR 可扫不可导)"
+      ],
+      "guardrails": [
+        "写面命名空间与 named-docs bucket 契约一致,不另开资源族",
+        "chip 点击三分支(continue 快路径/`/` runScript/普通 send)保持现有语义",
+        "named-doc 写面按 utopinn REST 契约走 packages/protocol,不新造线协议"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/endpoints/quick-replies.js",
+        ".skeinn/design/legacy-convergence.md"
+      ],
+      "touches": [
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/server/src/plugins/utopinn-library.js",
+        "packages/protocol/src/api.ts",
+        "apps/web/src/api/chats.ts"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010",
+        "DLV-002"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-064",
+      "title": "[P1] STscript 命令族分批补齐:消息操作/AN/WI/QR/persona/preset(参照 builtins 族清单)",
+      "outcome": "按 stscript-gap-inventory 工作令分批注册缺失命令族:T3 消息操作(del/swap/cut/hide/unhide/delname/delswipe/addswipe/message-role/name/reroll-pick)、T6 AN(note×5)、T7 WI 族(11)、T8 QR 族(22)、T9 persona 族、T11 设置预设族;每批带 host seam 绑定+实弹验证。证据:builtins 现仅 common/messages/variables 三文件 ~53 命令 vs 上游 ~307(报告§4;inventory 计数)。",
+      "acceptance": [
+        {
+          "criterion": "T3+T6+T7+T8+T9+T11 各族命令按上游同形注册,名称层零分叉",
+          "verify_by": "注册表对账快照 vs gap-inventory 清单",
+          "evidence": ""
+        },
+        {
+          "criterion": "每族至少一条实弹脚本(POST /api/utopinn/script/run)验证端到端效果(如 /del 2 删楼层、/note-set 写 AN、/findentry 查 WI 条目)",
+          "verify_by": "逐族 runScript 实弹断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "host seam 未绑的命令显式报错不静默 no-op(/trigger 先例,GH#9)",
+          "verify_by": "未绑命令调用断言 error 面",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不追 sampler 命令(Luker 已删)/foreach;getat/setat(ST-1.12+ 前向兼容)与 DOM 命令另列决策项",
+        "DOM 命令若做走 op-receipt ui op 类型,不直接碰前端"
+      ],
+      "guardrails": [
+        "命令名/参数面严格上游同形(st-engine-compat),不自创缩写",
+        "op 副作用走 StscriptOp 类型分层(C3),不在 executor 里直改数据",
+        "每批独立可收,族间不绑死顺序"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/stscript-gap-inventory-2026-11-06.md",
+        ".skeinn/design/stscript-engine.md",
+        "packages/core/src/stscript/builtins/messages.ts",
+        "packages/core/src/stscript/builtins/variables.ts",
+        "packages/core/src/stscript/builtins/common.ts",
+        "apps/server/src/services/stscript-env.js"
+      ],
+      "touches": [
+        "packages/core/src/stscript/builtins/messages.ts",
+        "packages/core/src/stscript/builtins/common.ts",
+        "packages/core/src/stscript/env.ts",
+        "apps/server/src/services/stscript-env.js"
+      ],
+      "implements": ".skeinn/eval/stscript-gap-inventory-2026-11-06.md#工作令",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C3",
+          "at": "命令族补齐",
+          "must_produce": "副作用分层断言+族级实弹"
+        },
+        {
+          "node": "st-engine-compat#C2",
+          "at": "名称对账",
+          "must_produce": "上游同形零分叉表"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-065",
+      "title": "[P1·决策] 分支/书签:做或钉死不做(merge/split 现仅 legacy 群面)",
+      "outcome": "拍板分支/书签是否进产品面。做:会话从任意楼层 fork 新 chat(ST branch 语义)+ 书签/快速回跳位;不做:在 design 钉死「不接受」并立降级说明。证据:报告§5「分支/书签:没有(merge/split 仅 legacy)」;chats.js:1300 的 /group/merge /group/split post-write hook 只服务群 chat 合并,非消息级分支。",
+      "acceptance": [
+        {
+          "criterion": "产出 skeinn decision 记录:做(范围/语义对齐 ST fork)或钉死不做(design 立档)",
+          "verify_by": "skeinn decision --json-file 落档 + DECISIONS.md 命中",
+          "evidence": ""
+        },
+        {
+          "criterion": "若做:楼层 fork 实弹(选楼→新 chat 带前缀历史);若不做:design/client-contract 补「分支不在产品面」声明",
+          "verify_by": "实弹或文档落点 diff",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "本任务先收决策不先写实现;实现验收仅当决策为「做」时生效",
+        "merge/split 群面语义不动"
+      ],
+      "guardrails": [
+        "决策需宿主确认,agent 不自定方向",
+        "「不做」也要在 design 显式钉死,不留含糊缺口"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/endpoints/chats.js",
+        ".skeinn/design/client-contract.md"
+      ],
+      "touches": [
+        ".skeinn/DECISIONS.md",
+        ".skeinn/design/client-contract.md"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "status": "blocked",
+      "progress": {
+        "completed": [],
+        "current": "blocked: 决策项,等宿主拍板:分支/书签做(ST 语义 fork 新 chat + 回跳位)或钉死不做(design 显式声明放弃)。任务本身即收口这个决定,阻塞点是方向选择不在 agent 权限内。",
+        "next": "宿主明示「做」→ unblock 并把 acceptance 第二支落到 fork 实弹实现; 宿主明示「不做」→ unblock 后只交付 design/client-contract「分支不在产品面」声明 + skeinn decision 记录; 或宿主直接把该任务标 done/cancel 并口头立档"
+      },
+      "evidence": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md §5:「分支/书签:没有(merge/split 仅 legacy)」",
+        "apps/server/src/endpoints/chats.js:1300 /group/merge /group/split post-write hook 仅服务群 chat 合并,非消息级分支",
+        "排期建议 P1⑦原文:「分支/书签决策(做或钉死不做)」"
+      ],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:04:19.991Z",
+      "block": {
+        "reason": "决策项,等宿主拍板:分支/书签做(ST 语义 fork 新 chat + 回跳位)或钉死不做(design 显式声明放弃)。任务本身即收口这个决定,阻塞点是方向选择不在 agent 权限内。",
+        "recovery_conditions": [
+          "宿主明示「做」→ unblock 并把 acceptance 第二支落到 fork 实弹实现",
+          "宿主明示「不做」→ unblock 后只交付 design/client-contract「分支不在产品面」声明 + skeinn decision 记录",
+          "或宿主直接把该任务标 done/cancel 并口头立档"
+        ],
+        "at": "2026-11-22T07:04:19.991Z"
+      }
+    },
+    {
+      "id": "TASK-066",
+      "title": "[P2] 预设全 apiId 编辑面 + prompt manager + instruct/context/sysprompt 编辑器",
+      "outcome": "studio presets 从 openai 4 滑杆扩展为全 apiId 面:textgen/kobold/novel 采样预设 + instruct/context/sysprompt/reasoning 目录编辑 + prompt manager(提示项编排)+ 预设导入/导出/复制/删除 UI。证据:studio.tsx:526 PRESET_API_ID='openai' 硬编码,仅 temp/topP/ctxLen/maxReply 四字段(:544-550);settings.js:166-213 服务端 instruct/context/sysprompt repo 全在;报告§6「预设管理半有」。",
+      "acceptance": [
+        {
+          "criterion": "每 apiId 预设列表+字段编辑+默认切换(不止 openai),写读对账一致",
+          "verify_by": "逐 apiId 抽样写→GET diff",
+          "evidence": ""
+        },
+        {
+          "criterion": "prompt manager 可编排 prompt 项(启停/排序/标识),与生成链 ordered_prompts 消费对齐",
+          "verify_by": "编排后 prompt 组装 diff",
+          "evidence": ""
+        },
+        {
+          "criterion": "预设复制/删除/导入导出走 import-center 契约",
+          "verify_by": "导出回导验证 + 删除实弹",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "raw prompt ordered_prompts 引擎侧 unsupported 是另一缺口,本任务只做管理面",
+        "非 openai tokenizer(ctxLen 只认 openai_max_context)另案,不在本任务"
+      ],
+      "guardrails": [
+        "apiId 白名单走 settings.js 既有九类,不新增 apiId 族",
+        "预设字段 schema 对齐上游 preset 结构,不丢字段",
+        "删除预设走确认流;当前启用预设删除需降级处理(切默认/报错明示)"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/api/presets.ts",
+        "apps/server/src/endpoints/settings.js",
+        ".skeinn/design/import-export-center.md"
+      ],
+      "touches": [
+        "apps/web/src/components/views/studio.tsx",
+        "apps/web/src/api/presets.ts",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-067",
+      "title": "[P2] emotes 立绘面 + persona 自定义头像 + 导出中心(chat/card/world/preset)",
+      "outcome": "SPA 三块补齐:①emotes/立绘面(sprites 列表/绑定/展示,legacy /api/sprites 在)②persona 自定义头像上传(legacy 有、utopinn 无)③导出中心:chat/card/world/preset 四类资源 utopinn 导出路由+UI 入口。证据:endpoints/sprites.js:117+;报告§7 导出「没有」、persona 大半有缺头像。",
+      "acceptance": [
+        {
+          "criterion": "emotes 面可视化 sprites 并绑定到卡/会话渲染面",
+          "verify_by": "SPA 实弹 + 楼层/舞台渲染断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "persona 头像上传落盘并在 PersonaPop/消息头像生效",
+          "verify_by": "上传→头像渲染实弹",
+          "evidence": ""
+        },
+        {
+          "criterion": "四类导出产出文件与 formats 解码面互认(导出→回导不丢语义)",
+          "verify_by": "逐类导出→import commit 回环断言",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "emotes 只做绑定+展示,不做 ST 的自动表情分类器重训",
+        "导出不含聊天图片内嵌打包(charx 资源包另案)"
+      ],
+      "guardrails": [
+        "导出格式走 packages/formats 编码面,与 import-pipeline 对称",
+        "persona 头像走 user/images 目录现有资产通道,不新建存储面",
+        "sprites 读面 utopinn 化;legacy /api/sprites 仅过渡,迁移状态立档"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/endpoints/sprites.js",
+        "apps/web/src/components/shell/Overlays.tsx",
+        ".skeinn/design/import-export-center.md",
+        "apps/server/src/services/import-pipeline.js"
+      ],
+      "touches": [
+        "apps/web/src/api/personas.ts",
+        "apps/web/src/components/shell/Overlays.tsx",
+        "apps/server/src/plugins/utopinn-library.js",
+        "packages/formats"
+      ],
+      "implements": ".skeinn/design/import-export-center.md#切三刀",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-010",
+        "DLV-004"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-068",
+      "title": "[P2] group_only_greetings 消费 + extensions 语义面(talkativeness 等半有字段)",
+      "outcome": "group_only_greetings 在群编排消费(群会话起手问候从该池选);extensions 子键(talkativeness/fav 等)从「透传不丢」升级为被编排/引擎消费或明示降级;PATCH extensions 放行面按消费需要扩(现只放行 3 子键)。证据:报告§1 group_only_greetings「没有」、extensions「半有(透传不丢,语义消费无;PATCH 只放行 3 子键)」。",
+      "acceptance": [
+        {
+          "criterion": "群会话起手从成员 group_only_greetings 选问候(语义对齐上游 group greeting 规则)",
+          "verify_by": "群起手实弹断言问候来源",
+          "evidence": ""
+        },
+        {
+          "criterion": "talkativeness 进成员选择权重(或明示降级立档);PATCH 放行集与消费集一致",
+          "verify_by": "编排断言 + PATCH 放行清单 diff",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不扩 PATCH 为全量 extensions 任意写——只放行被消费或确认需写的子键",
+        "fav 等纯 UI 态字段可钉死为「透传不消费」,降级要立档"
+      ],
+      "guardrails": [
+        "消费语义逐项对齐上游 public/scripts(st-engine-compat C2)",
+        "PATCH 放行清单与消费清单一表对账,不放行未被消费的键",
+        "group_only_greetings 缺失时退化路径与上游一致(普通问候/沉默)"
+      ],
+      "depends_on": [
+        "TASK-062"
+      ],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/services/group-orchestration.js",
+        "apps/server/src/services/import-pipeline.js",
+        "apps/server/src/types/spec-v2.d.ts",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "touches": [
+        "apps/server/src/services/group-orchestration.js",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-069",
+      "title": "[P2] /trigger 绑定 + STscript popup/input 回执 UI + ST theme JSON 导入",
+      "outcome": "三小件:①/trigger host seam 绑定(triggerGeneration→Generate('normal'),群成员参数可选),摘掉 GH#9 显式报错;②/popup /input 客户端往返回执 UI(op-receipt→UI 弹层→回传),做不通则文档化 null 降级;③ST theme JSON 导入进 named-doc themes bucket(现可扫不可导)。证据:stscript-env.js:12-13 triggerGeneration 未绑;env.ts:101-102 seam 定义;报告§4/§8。",
+      "acceptance": [
+        {
+          "criterion": "/trigger 触发 actual 生成(job 落库+楼层产出),member 参数语义对齐",
+          "verify_by": "runScript('/trigger') 实弹断言 job",
+          "evidence": ""
+        },
+        {
+          "criterion": "/input 回执 UI 可输入回传(或文档化降级立档);/popup 回执渲染",
+          "verify_by": "UI op 往返实弹或降级文档 diff",
+          "evidence": ""
+        },
+        {
+          "criterion": "ST theme JSON 经导入面落 themes bucket 并可被 theme 读面消费",
+          "verify_by": "导入→named-doc 读回环",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "/input 若做真往返须不阻塞 job(job 挂起等回执的超时/取消语义先定)",
+        "theme 只导入不做主题编辑器;moving-ui 只读桶维持设计"
+      ],
+      "guardrails": [
+        "triggerGeneration seam 绑在 stscript-env.js 既有 host 口,不绕开 ops 分层",
+        "/input 做不通宁可文档化降级,不许静默吞输入",
+        "theme JSON 导入复用 import center 管线,不新造解析"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/services/stscript-env.js",
+        "packages/core/src/stscript/env.ts",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        ".skeinn/design/import-export-center.md"
+      ],
+      "touches": [
+        "apps/server/src/services/stscript-env.js",
+        "apps/web/src/components/stage/StageFrame.tsx",
+        "apps/server/src/plugins/utopinn-library.js"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "st-engine-compat#C3",
+          "at": "/trigger+回执",
+          "must_produce": "seam 绑定+op receipt 往返"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003",
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-070",
+      "title": "[P2] preset scope 'in_use' 解析:TH regex preset 作用域落地生成链",
+      "outcome": "'in_use' 解析为当前 apiId 启用预设名(oai_settings.preset_settings_openai 及 apiId 对应 selected),preset-scope regex 据此进生成链;移除 utopinn-th.js:513-515/647-649 的「in_use 解析未实」400。证据:报告§3 preset 'in_use' 未实;th.js 两处硬报错点已定位。",
+      "acceptance": [
+        {
+          "criterion": "'in_use' 在 TH regex 读写面解析为当前启用预设,不再 400",
+          "verify_by": "in_use 调用实弹断言非 400 + 指向正确 preset",
+          "evidence": ""
+        },
+        {
+          "criterion": "preset-scope regex 在生成链按 'in_use' 归属过滤命中(七放置位语义不破)",
+          "verify_by": "preset regex 写→prompt/display 投影断言",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "只解 'in_use' 指代,不改 global/character 两域既有放行语义",
+        "卡 regex 自动放行 vs ST opt-in 是已钉死的设计偏差,本任务不回摆"
+      ],
+      "guardrails": [
+        "in_use 解析源走 settings(oai_settings),不读前端本地态",
+        "多 apiId 时按当前生成 apiId 的 selected 解,不拿 openai 预设硬套",
+        "regex 放置位投影等价性不破(display/prompt 双投影)"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/eval/st-parity-gap-2026-11-22.md",
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/src/endpoints/settings.js"
+      ],
+      "touches": [
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/tests/utopinn-th-regex-inuse.test.mjs"
+      ],
+      "implements": ".skeinn/eval/st-parity-gap-2026-11-22.md#排期建议",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
+    },
+    {
+      "id": "TASK-071",
+      "title": "[多用户] 薄客户端 account 域 + SPA/mobile/CLI 登录路径(multi-user.md §3.3)",
+      "outcome": "按 multi-user.md 推荐方案补薄客户端登录面:api-client 加 client.account.login/logout/me(复用现有 CSRF+cookie jar 握手);mobile login 屏(server URL+handle+password,cookie 落 SecureStore);CLI login 子命令/旗标;SPA 第一方 /login 路由(短期可继续吃 legacy login.html 兜底)。证据:multi-user.md G1/G2——api-client index.ts:139-204 只做 CSRF+cookie 握手无 login 动词;mobile session.ts:139-169;CLI utopinn-cli.mjs:201-222;服务端账户栈已完整继承(users.js/users-admin.js 全)。",
+      "acceptance": [
+        {
+          "criterion": "enableUserAccounts 开启后,api-client login→业务调用全通(cookie jar 同源复用,403→autoReauth 重登录)",
+          "verify_by": "双 handle 实例实测隔离+401 恢复",
+          "evidence": ""
+        },
+        {
+          "criterion": "mobile 登录屏+CLI login 动词落地;SPA /login 或 legacy login.html 兜底路径明确立档",
+          "verify_by": "三端逐端实弹",
+          "evidence": ""
+        },
+        {
+          "criterion": "accounts-off 兼容不破(default-user 隐式 admin 路径零回归)",
+          "verify_by": "accounts-off 环境 smoke",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "不做自助注册面(accountRegistration.enabled 保持 false 的私有部署基线)",
+        "不做 OAuth/SSO 前端集成(服务端面在,客户端不追)",
+        "admin 管理 UI 已接 admin.ts 不在本任务重造"
+      ],
+      "guardrails": [
+        "login 必须先 fetchCsrfToken 再 POST /api/users/login,顺序不破(multi-user.md §3.3)",
+        "裸 Basic 头不走鉴权——薄客户端只走 cookie+login 路径",
+        "accounts-off→on 切换后 default-user 数据零迁移,不动存储层"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/design/multi-user.md",
+        "packages/api-client/src/index.ts",
+        "apps/mobile/src/api/session.ts",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/server/src/users.js"
+      ],
+      "touches": [
+        "packages/api-client/src/index.ts",
+        "apps/mobile/src/api/session.ts",
+        "apps/cli/utopinn-cli.mjs",
+        "apps/web/src/api/admin.ts",
+        "apps/web/src/App.tsx"
+      ],
+      "implements": ".skeinn/design/multi-user.md#3. 推荐方案",
+      "design_exemption": "",
+      "capability_hooks": [
+        {
+          "node": "mobile-app-stack#C3",
+          "at": "mobile login 会话通道",
+          "must_produce": "SecureStore cookie 持久化 + WS ticket 复用"
+        }
+      ],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-005",
+        "DLV-007",
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:05:00.663Z"
+    },
+    {
+      "id": "TASK-072",
+      "title": "[混合密钥] 服务端共享 secrets 兜底:resolver 四层优先级+ACL+admin 六动词(shared-secrets.md §2)",
+      "outcome": "按 shared-secrets.md 实施切片落地:resolveProviderSecret 四层(secret_id 槽→本人 active→共享档 share.mode 放行→''),挂 ctx.secrets.read 与各 provider 调用点;`<dataRoot>/_shared/secrets.json` 复用 SecretManager+share ACL;admin 六动词(list/write/delete/rotate/visibility/promote);GET /api/utopinn/secrets 加 shared 布尔;connection/test 回 credential 字段;web 连接段「服务端已提供」徽标。证据:secrets.js:505-527 readProviderSecret 现状三层;context.js:152-163 收口点;报告外设计稿已落档。",
+      "acceptance": [
+        {
+          "criterion": "resolver 四层优先级实测:本人 key 优先于共享档;无本人 key 且 ACL 放行时回落共享;不放行则 ''",
+          "verify_by": "resolver 单测覆盖四层+越权断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "admin 六动词实弹可用;共享明文永不出进程(list 只掩码;无 /view /find 等价物)",
+          "verify_by": "admin 动词实弹+明文泄露面 grep 断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "GET secrets shared 布尔+connection/test credential 字段上线;web 徽标渲染",
+          "verify_by": "API 实弹+SPA 徽标截图/断言",
+          "evidence": ""
+        },
+        {
+          "criterion": "共享档不进 user backup/settings doc/CardApp ctx/debug-export(§2.5 硬约束逐项核销)",
+          "verify_by": "backup/inspect/ctx 面逐项断言零泄漏",
+          "evidence": ""
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "本期不做 token 计量(§2.6 后续项)",
+        "getCsrfSecret/migrateFlatSecrets 等内部读面不许经过新 resolver(§2.2 红线)",
+        "proxy_password 仍最优先(显式 BYOK 不被共享档遮蔽)"
+      ],
+      "guardrails": [
+        "共享明文永不离开进程:admin 面也只有掩码,唯一验证通道是 connection/test 连通性",
+        "ACL 在 resolver 服务端判,不在读面判——防手填 source 蹭 key(§2.5.2)",
+        "绝不把兜底塞进 readSecret 本身:csrfSecret 等 per-user key 必须隔离(§2.2)",
+        "共享档不回进 /api/secrets/* legacy 面(request.user.directories 天然够不到 _shared,但要断言)"
+      ],
+      "depends_on": [],
+      "reads": [
+        ".skeinn/design/shared-secrets.md",
+        "apps/server/src/endpoints/secrets.js",
+        "apps/server/src/plugins/utopinn-connection.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/web/src/components/shell/Overlays.tsx"
+      ],
+      "touches": [
+        "apps/server/src/endpoints/secrets.js",
+        "apps/server/src/plugins/utopinn-connection.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/web/src/api/secrets.ts",
+        "apps/web/src/components/shell/Overlays.tsx"
+      ],
+      "implements": ".skeinn/design/shared-secrets.md#2. 设计",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [
+        "DLV-003",
+        "DLV-010"
+      ],
+      "status": "open",
+      "progress": {
+        "completed": [],
+        "current": "",
+        "next": ""
+      },
+      "evidence": [],
+      "created_at": "2026-11-22T07:03:35.345Z",
+      "updated_at": "2026-11-22T07:03:35.345Z"
     }
   ],
   "milestones": [
