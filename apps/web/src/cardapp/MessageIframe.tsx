@@ -21,6 +21,7 @@ import { PANEL_METHODS_TH } from '@utopinn/protocol';
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
 import { Icon } from '../components/Icon';
+import { dockFrame, undockFrame, useDockedFrames } from './msgframeDock';
 
 interface DocMountBundle {
     mountId?: string;
@@ -32,20 +33,15 @@ interface DocMountBundle {
 const POLL_MS = 8_000;
 const clampHeight = (h: number) => Math.min(Math.max(Math.round(h), 32), 4000);
 
-/** dock 持久位:帧实例 = 会话坐标 + 楼号 + 块序(mountId 是进程内
- *  短寿命 capability,跨重开不稳 —— 楼层位才是可记的实例身份)。 */
-const dockKey = (charDir: string, chatName: string | undefined, messageId: number | undefined, blockIndex: number) =>
-    `utopinn.mf.dock.${charDir}/${chatName ?? ''}#${messageId ?? 'x'}:${blockIndex}`;
-
-const readDocked = (k: string): boolean => {
-    try { return localStorage.getItem(k) === '1'; } catch { return false; }
-};
+/** 帧可记档 ⇔ 有稳定楼层坐标(dock 注册表只记 {messageId,blockIndex})。 */
+const hasCoord = (messageId: number | undefined): messageId is number =>
+    typeof messageId === 'number' && Number.isFinite(messageId);
 
 /**
  * 楼层内嵌 TH iframe。props.html 一变 → 整枚重铸(TH 也是整帧重渲)。
- * chrome='floor':右上角 dock 钮 —— 收进右工作台 'messageframe' 板块
- * (同块源重铸),楼层位留细条可再展开;按帧实例 localStorage 记档。
- * chrome='panel':板块承载变体 —— 无 dock 钮,占满板块高。
+ * chrome='floor':右上角 dock 钮 —— 坐标记进 msgframeDock 注册表并开
+ * 右工作台 'messageframe' 板块(多块同收,面板按坐标反解当刻块源),
+ * 楼层位留细条可再展开。chrome='panel':板块承载变体 —— 无 dock 钮。
  */
 export function MessageIframe({ charDir, chatName, html, messageId, blockIndex = 0, chrome = 'floor' }: PanelContext & { html: string; messageId?: number; blockIndex?: number; chrome?: 'floor' | 'panel' }) {
     const s = useShell();
@@ -57,24 +53,25 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
     const [attempt, setAttempt] = useState(0);
     const frameRef = useRef<HTMLIFrameElement>(null);
 
-    const storeKey = dockKey(charDir, chatName, messageId, blockIndex);
-    const [docked, setDocked] = useState(() => readDocked(storeKey));
-    /* 帧实例坐标变了 → 以新 key 的存档重新判定(同组件实例复用时)。 */
-    useEffect(() => { setDocked(readDocked(storeKey)); }, [storeKey]);
+    /* 停靠判定 = 坐标在注册表里(响应式:别处放回/移除 → 本帧即时反映)。 */
+    const docked = useDockedFrames(charDir, chatName)
+        .some((f) => f.messageId === messageId && f.blockIndex === blockIndex);
 
     const dock = () => {
-        try { localStorage.setItem(storeKey, '1'); } catch { /* noop */ }
-        setDocked(true);
-        s.openPanel('messageframe', { charDir, chatName, html, messageId, blockIndex });
+        if (!hasCoord(messageId)) return; // 无楼层坐标 → 注册表记不了,不做假动作
+        dockFrame(charDir, chatName, messageId, blockIndex);
+        /* params 只带会话坐标钉面板读哪份注册表 —— html 不随行,
+           面板按坐标反解当刻块源(多块同收)。 */
+        s.openPanel('messageframe', { charDir, chatName });
     };
     const undock = () => {
-        try { localStorage.removeItem(storeKey); } catch { /* noop */ }
-        setDocked(false);
+        if (!hasCoord(messageId)) return;
+        undockFrame(charDir, chatName, messageId, blockIndex);
     };
 
     useEffect(() => {
         /* 收起的 floor 帧不 mint mount(细条期不白费服务端铸造);
-           panel 变体是 dock 的落点本身 —— 同一 storeKey 不挡它。 */
+           panel 变体是 dock 的落点本身 —— 同坐标不挡它。 */
         if (docked && chrome === 'floor') return;
         let gone = false;
         setMount(null);
@@ -135,7 +132,7 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
         return () => window.removeEventListener('message', onHeight);
     }, []);
 
-    /* 已收至右栏:楼层位留可再展开的细条(按帧实例记档);panel 变体不参与。 */
+    /* 已收至右栏:楼层位留可再展开的细条(坐标在册即收起);panel 变体不参与。 */
     if (docked && chrome === 'floor') {
         return (
             <button
@@ -178,16 +175,19 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
     return (
         <div className="relative my-1">
             {frame}
-            {/* 「收至右栏」dock 钮 —— 帧实例收敛进 messageframe 板块(同块源重铸),
-                楼层位留细条;选择按帧实例 localStorage 记档。 */}
-            <button
-                className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md text-white/75 backdrop-blur-sm transition-colors hover:text-white"
-                style={{ background: 'rgba(18,18,20,0.55)', border: '1px solid rgba(255,255,255,0.14)' }}
-                title={t('msgframe.dock')}
-                onClick={dock}
-            >
-                <Icon name="panelRight" size={13} />
-            </button>
+            {/* 「收至右栏」dock 钮 —— 坐标记进 msgframeDock 注册表 + 开
+                messageframe 板块(面板按坐标反解当刻块源),楼层位留细条;
+                无楼层坐标的帧不可记档,钮不出。 */}
+            {hasCoord(messageId) && (
+                <button
+                    className="absolute right-1.5 top-1.5 z-10 flex h-6 w-6 items-center justify-center rounded-md text-white/75 backdrop-blur-sm transition-colors hover:text-white"
+                    style={{ background: 'rgba(18,18,20,0.55)', border: '1px solid rgba(255,255,255,0.14)' }}
+                    title={t('msgframe.dock')}
+                    onClick={dock}
+                >
+                    <Icon name="panelRight" size={13} />
+                </button>
+            )}
         </div>
     );
 }

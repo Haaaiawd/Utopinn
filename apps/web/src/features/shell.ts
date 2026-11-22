@@ -107,6 +107,8 @@ const zh: Record<string, string> = {
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
     'msgframe.dock': '收至右栏', 'msgframe.docked': '卡面板已收至右栏', 'msgframe.expand': '展开',
     'panel.type.messageframe': '楼层卡面板', 'msgframe.idle': '从楼层卡面板右上角收至此处',
+    /* 多帧停靠栈(msgframeDock 注册表驱动) */
+    'msgframe.stored': '已收 {n} 帧', 'msgframe.restore': '放回', 'msgframe.gone': '楼层或块已不存在', 'msgframe.remove': '移除',
     'diag.sub.errors': '报错',
     'diag.jobs.empty': '暂无生成任务 —— 发起一轮对话后此处出现 Jobs',
     'diag.trace.pick': '先在 Jobs 页选一个任务', 'diag.trace.none': '该任务暂无注入时序',
@@ -381,6 +383,8 @@ const en: Record<string, string> = {
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
     'msgframe.dock': 'Dock to panel', 'msgframe.docked': 'Card panel docked to workbench', 'msgframe.expand': 'Expand',
     'panel.type.messageframe': 'Floor panel', 'msgframe.idle': 'Dock a floor card panel here',
+    /* multi-frame docked stack (msgframeDock registry driven) */
+    'msgframe.stored': '{n} docked', 'msgframe.restore': 'Restore', 'msgframe.gone': 'Floor or block gone', 'msgframe.remove': 'Remove',
     'diag.sub.errors': 'Errors',
     'diag.jobs.empty': 'No generation jobs — run a chat round and jobs appear here',
     'diag.trace.pick': 'Pick a job on the Jobs tab first', 'diag.trace.none': 'No injection timeline for this job yet',

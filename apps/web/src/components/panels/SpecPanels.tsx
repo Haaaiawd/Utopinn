@@ -13,8 +13,11 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import { CardAppFrame } from '../../cardapp/CardAppFrame';
 import { MessageIframe } from '../../cardapp/MessageIframe';
+import { extractFrontendBlocks } from '../../cardapp/messageFrame';
+import { undockFrame, useDockedFrames } from '../../cardapp/msgframeDock';
 import { ApiError } from '../../api/client';
 import { cardData, getCharacter } from '../../api/characters';
+import { getChat } from '../../api/chats';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
 import { thCall } from '../../api/th';
 import { getChatState, patchChatState, type JsonPatchOp } from '../../api/state';
@@ -524,29 +527,123 @@ export function CardAppPanel() {
 }
 
 /** 楼层卡面板板块 —— displayed_message 嵌帧「收至右栏」的落点
- *  (category:'hidden',不进 launcher;dock 动作 openPanel 顺带写
- *  params = {charDir,chatName,html,messageId,blockIndex})。
- *  params 缺席 → 引导空态(不拿别楼块源假挂载);内容按 params
- *  原样承载 —— 同块源重铸 mount,桥语义与楼层位同份。 */
+ *  (category:'hidden',不进 launcher)。多帧注册表驱动:
+ *  msgframeDock 清单里的每个 {messageId,blockIndex} 坐标 → getChat
+ *  拉楼层 + extractFrontendBlocks 反解当刻块源 → 一摞 chrome='panel'
+ *  MessageIframe,每帧自带「放回」;反解不出(楼/块没了)的坐标
+ *  诚实标记可移除。params 直传 html 的旧路保留(单帧承载);
+ *  params 缺席且注册表空 → 引导空态(不拿别楼块源假挂载)。 */
 export function MessageFramePanel() {
     const { t } = useI18n();
     const s = useShell();
     const p = s.panelParams['messageframe'] as
         | { charDir?: string; chatName?: string; html?: string; messageId?: number; blockIndex?: number }
         | undefined;
-    if (!p?.charDir || typeof p.html !== 'string' || !p.html.trim()) {
+    /* 旧路:params 直传 html → 单帧承载(原位兼容,不动)。 */
+    const legacy = p?.charDir && typeof p.html === 'string' && p.html.trim() ? p : null;
+    /* 注册表会话坐标:params 钉住优先,回落当前会话(纯 opt-in,不读别家)。 */
+    const charDir = legacy?.charDir ?? p?.charDir ?? s.chat?.charDir;
+    const chatName = legacy?.chatName ?? p?.chatName ?? s.chat?.chatName;
+    const frames = useDockedFrames(charDir, chatName);
+    const coordKey = frames.map((f) => `${f.messageId}:${f.blockIndex}`).join(',');
+    /* 坐标 → 当刻块源:一次 getChat 反解全部在册坐标;chat 更新
+       (updatedAt 变)与增删坐标都触发重解。chatName 缺席 → 不取数。 */
+    const canResolve = !!charDir && !!chatName && frames.length > 0;
+    const stamp = charDir === s.chat?.charDir && chatName === s.chat?.chatName ? (s.chat?.updatedAt ?? '') : '';
+    const resolved = useRemote(canResolve ? `msgframe-dock:${charDir}/${chatName}@${stamp}#${coordKey}` : null, async () => {
+        const { messages } = await getChat(charDir!, chatName!);
+        return frames.map((f) => {
+            const m = messages[f.messageId];
+            const html = m
+                ? extractFrontendBlocks(m.displayContent ?? m.content).blocks[f.blockIndex]?.html
+                : undefined;
+            return { ...f, html: typeof html === 'string' && html.trim() ? html : null };
+        });
+    });
+
+    if (legacy) {
+        return (
+            <div className="h-full p-1.5">
+                <MessageIframe
+                    charDir={legacy.charDir!}
+                    chatName={legacy.chatName}
+                    html={legacy.html!}
+                    messageId={legacy.messageId}
+                    blockIndex={legacy.blockIndex}
+                    chrome="panel"
+                />
+            </div>
+        );
+    }
+    if (!frames.length || !charDir) {
         return <PanelEmpty icon="layout" desc={t('msgframe.idle')}>{t('panel.type.messageframe')}</PanelEmpty>;
     }
+    if (resolved.error) {
+        return <PanelError error={resolved.error} onRetry={resolved.reload} />;
+    }
+    const items = resolved.data;
+    const restore = (f: { messageId: number; blockIndex: number }) =>
+        undockFrame(charDir, chatName, f.messageId, f.blockIndex);
     return (
-        <div className="h-full p-1.5">
-            <MessageIframe
-                charDir={p.charDir}
-                chatName={p.chatName}
-                html={p.html}
-                messageId={p.messageId}
-                blockIndex={p.blockIndex}
-                chrome="panel"
-            />
+        <div className="flex min-h-full flex-col gap-2.5 p-1.5">
+            <div className="flex items-center justify-between px-1 pt-0.5">
+                <span className="text-[11px] text-[color:var(--fg-faint)]">
+                    {t('msgframe.stored').replace('{n}', String(frames.length))}
+                </span>
+            </div>
+            {(items ?? frames.map((f) => ({ ...f, html: undefined }))).map((f) => {
+                const key = `${f.messageId}:${f.blockIndex}`;
+                if (f.html === undefined) {
+                    /* 反解中 —— 占位骨架(不闪空态)。 */
+                    return <div key={key} className="h-24 animate-pulse rounded-lg bg-[color:var(--bg-surface)]" />;
+                }
+                if (f.html === null) {
+                    /* 楼/块已没 —— 坐标成死档,诚实标记可移除。 */
+                    return (
+                        <div
+                            key={key}
+                            className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[color:var(--border-hairline)] px-3 py-2 text-[11.5px] text-[color:var(--fg-muted)]"
+                        >
+                            <span className="flex min-w-0 items-center gap-2">
+                                <Icon name="warning" size={13} className="shrink-0" />
+                                <span className="shrink-0 font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">#{f.messageId + 1}</span>
+                                <span className="truncate">{t('msgframe.gone')}</span>
+                            </span>
+                            <button
+                                className="shrink-0 font-medium text-[color:var(--fg-secondary)] transition-colors hover:text-[color:var(--fg-primary)]"
+                                onClick={() => restore(f)}
+                            >
+                                {t('msgframe.remove')}
+                            </button>
+                        </div>
+                    );
+                }
+                return (
+                    <section key={key} className="overflow-hidden rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)]">
+                        <div className="flex items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-2.5 py-1.5">
+                            <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">
+                                #{f.messageId + 1}{f.blockIndex > 0 ? ` · ${f.blockIndex + 1}` : ''}
+                            </span>
+                            <button
+                                className="flex items-center gap-1 text-[11px] font-medium text-[color:var(--fg-secondary)] transition-colors hover:text-[color:var(--fg-primary)]"
+                                title={t('msgframe.restore')}
+                                onClick={() => restore(f)}
+                            >
+                                <Icon name="dockBack" size={12} />
+                                <span>{t('msgframe.restore')}</span>
+                            </button>
+                        </div>
+                        <MessageIframe
+                            charDir={charDir}
+                            chatName={chatName}
+                            html={f.html}
+                            messageId={f.messageId}
+                            blockIndex={f.blockIndex}
+                            chrome="panel"
+                        />
+                    </section>
+                );
+            })}
         </div>
     );
 }
