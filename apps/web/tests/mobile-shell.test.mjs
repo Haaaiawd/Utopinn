@@ -16,7 +16,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
     computeKeyboardInset, resolveSheetSnap, sheetDragHeight, capMenuAbove,
-    KEYBOARD_MIN_INSET, SHEET_FLICK_V,
+    KEYBOARD_MIN_INSET, SHEET_FLICK_V, SHEET_SNAP_HALF, SHEET_SNAP_FULL,
 } from '../src/lib/mobileShell.ts';
 
 test('computeKeyboardInset — iOS 键盘:layout 不缩,vv 缩出全键盘高', () => {
@@ -83,6 +83,27 @@ test('resolveSheetSnap — 甩动越档:flick-to-dismiss / 上甩直全', () => 
     assert.equal(resolveSheetSnap(10, 100, -0.49), 'closed');
     /* 甩动在键盘 cap 坐标系下同样优先:cap 顶下甩 → closed。 */
     assert.equal(resolveSheetSnap(553, 553, 0.6), 'closed');
+});
+
+test('resolveSheetSnap — snap 档与阈值同尺:键盘期下拖不再假展开', () => {
+    /* 键盘期 availH=553(shell 844 − kbd 291);CSS snap 高 = 比率 × availH
+       (spec.css .vaul-sheet[data-snap] 与 SHEET_SNAP_* 同数)。 */
+    const availH = 553;
+    const halfH = SHEET_SNAP_HALF * availH; /* ≈298.6 = 54% avail */
+    const fullH = SHEET_SNAP_FULL * availH; /* ≈508.8 = 92% avail */
+    /* half 起慢拖下 30px → 48.6% → 仍 half。旧稿 CSS 按包含块算 54% 壳高
+       =456px(≈82.5% avail),下拖 30px 仍 >72% → 假弹 full —— 钉死。 */
+    assert.equal(resolveSheetSnap(halfH - 30, availH, 0), 'half');
+    /* full 起慢拖下 30px → 86.6% → 仍 full。 */
+    assert.equal(resolveSheetSnap(fullH - 30, availH, 0), 'full');
+    /* 跨阈值 → 换档:half 上推过 72% → full;下拉穿 24% → closed。 */
+    assert.equal(resolveSheetSnap(availH * 0.75, availH, 0), 'full');
+    assert.equal(resolveSheetSnap(availH * 0.2, availH, 0), 'closed');
+    /* 键盘 inset 下拖到 cap 顶(100% avail)→ full 可达。 */
+    assert.equal(resolveSheetSnap(availH, availH, 0), 'full');
+    /* 无键盘(availH=shellH):snap 档语义与旧稿一致,无回归。 */
+    assert.equal(resolveSheetSnap(SHEET_SNAP_HALF * 844 - 30, 844, 0), 'half');
+    assert.equal(resolveSheetSnap(SHEET_SNAP_FULL * 844 - 30, 844, 0), 'full');
 });
 
 test('sheetDragHeight — 拖拽 clamp 在可用舞台高内', () => {

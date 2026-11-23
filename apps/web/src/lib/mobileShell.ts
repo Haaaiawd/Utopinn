@@ -9,6 +9,11 @@ export const KEYBOARD_MIN_INSET = 140;
 /** sheet 甩动判定(px/ms):|v| ≥ 0.5(≈500px/s)的快速滑动直接越档。 */
 export const SHEET_FLICK_V = 0.5;
 
+/** snap 档高(占「可用舞台高」availH 的比率)——与 spec.css .vaul-sheet
+ *  [data-snap] 的 calc((100% - var(--vv-kbd)) * r) 同一对数,两端同步改。 */
+export const SHEET_SNAP_HALF = 0.54;
+export const SHEET_SNAP_FULL = 0.92;
+
 export type SheetSnapTarget = 'closed' | 'half' | 'full';
 
 /** 视口底缘被软键盘遮住的高度(px)。

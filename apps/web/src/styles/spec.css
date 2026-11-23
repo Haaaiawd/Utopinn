@@ -443,8 +443,11 @@
 }
 .vaul-sheet.dragging { transition: none !important; }
 .vaul-sheet[data-snap="closed"] { height: 0%; transform: translateY(100%); opacity: 0; pointer-events: none; }
-.vaul-sheet[data-snap="half"] { height: 54%; transform: translateY(0); opacity: 1; }
-.vaul-sheet[data-snap="full"] { height: 92%; transform: translateY(0); opacity: 1; }
+/* snap 档高 = 可用舞台高(shell 高 − --vv-kbd)的 54%/92% —— 与拖拽归一化/
+   resolveSheetSnap 阈值(mobileShell.SHEET_SNAP_*)同一把尺。
+   键盘期若仍按包含块算,54% 壳高已 >72% avail,下拖松手会假弹 full。 */
+.vaul-sheet[data-snap="half"] { height: calc((100% - var(--vv-kbd, 0px)) * 0.54); transform: translateY(0); opacity: 1; }
+.vaul-sheet[data-snap="full"] { height: calc((100% - var(--vv-kbd, 0px)) * 0.92); transform: translateY(0); opacity: 1; }
 
 /* composer 停靠条(QR 条 + 输入壳的公共外包,StageFrame 单挂点):
    底内边距 = 常规 1rem + home 条让位 + 键盘遮挡抬升。
