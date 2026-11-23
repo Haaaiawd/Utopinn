@@ -390,8 +390,19 @@ app.get('/callback/:source?', (request, response) => {
     return response.redirect(307, path);
 });
 
-// Host login page
-app.get('/login', loginPageMiddleware);
+// Host login page.
+// SPA mode: the new front end owns /login (LoginGate renders handle+password
+// against POST /api/users/login). Only the legacy shell keeps its own page,
+// and in that mode public/ is mounted below, so its assets resolve.
+// Serving public/login.html here while public/ is NOT mounted was the bug:
+// the page's style.css / css/login.css / img/logo.png then fell through to the
+// SPA history fallback and were answered with index.html, leaving the page
+// completely unstyled (all form controls measured 0x0) — a blank grey screen.
+if (serveWebSpa) {
+    app.get('/login', (_req, res) => res.sendFile(WEB_INDEX));
+} else {
+    app.get('/login', loginPageMiddleware);
+}
 
 // Host frontend assets.
 // LUKER_SERVE_LEGACY=1 keeps serving the bundled jQuery UI from public/
@@ -416,9 +427,54 @@ if (process.env.LUKER_SERVE_LEGACY === '1') {
 </ul></body>`;
     app.get('/_kernel', (_req, res) => res.type('html').send(kernelStatusPage));
     if (serveWebSpa) {
+        // Legacy shell assets stay reachable even when the SPA is the front end:
+        // style.css, css/, img/, webfonts/, sound/ … are referenced by cached
+        // pages, old bookmarks and the legacy login page.
+        //
+        // Deliberately mounted per-subdirectory rather than as the whole public/
+        // root: public/ also contains the 785KB legacy index.html, and exposing it
+        // at /index.html would let a stale page shadow the SPA shell. Mounting only
+        // the asset directories keeps exactly what the old markup needs and nothing
+        // that can hijack a route.
+        // login.html also references three root-level legacy files
+        // (style.css, favicon.ico, manifest.json). Serve exactly those three by
+        // name — serving the whole public/ root would additionally expose the
+        // 785KB legacy index.html at /index.html.
+        for (const rootFile of ['style.css', 'favicon.ico', 'manifest.json']) {
+            const file = path.join(serverDirectory, 'public', rootFile);
+            if (fs.existsSync(file)) {
+                app.get(`/${rootFile}`, (_req, res) => res.sendFile(file));
+            }
+        }
+        for (const assetDir of ['css', 'img', 'webfonts', 'sound', 'lib', 'locales', 'presets']) {
+            const dir = path.join(serverDirectory, 'public', assetDir);
+            if (fs.existsSync(dir)) {
+                app.use(`/${assetDir}`, express.static(dir, { index: false }));
+            }
+        }
         app.use(express.static(WEB_DIST, { index: false }));
-        // SPA history fallback:非 API/静态根的 GET → index.html。
-        // 静态根已在上方挂载,落到这里的就是壳路由(chat/hub/studio…)。
+        // SPA history fallback: non-API/static-root GETs → index.html.
+        // Static roots are mounted above, so what lands here is a shell route
+        // (chat/hub/studio…).
+        //
+        // Two guards, both load-bearing:
+        //
+        // 1. Asset-extension guard. A request that looks like a real file
+        //    (.css/.js/.png/…) must never be answered with index.html: the
+        //    browser would accept it with Content-Type text/html, the stylesheet
+        //    would silently fail to parse, and the page would render unstyled.
+        //    That is exactly how the login page went blank grey. Return 404 so
+        //    the failure is visible in devtools instead of silent.
+        // 2. Legacy public/ assets (style.css, css/, img/, webfonts/, …). These
+        //    are referenced by cached pages, bookmarks and the legacy shell, so
+        //    keep serving them from public/ even when the SPA is the front end.
+        //    Unhandled, they used to fall into this catch-all and get index.html.
+        const STATIC_ASSET_RE = /\.(css|js|mjs|map|json|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|mp3|wav|ogg|mp4|webm|txt|xml)$/i;
+        app.use((req, res, next) => {
+            if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+            if (STATIC_ASSET_RE.test(req.path)) return res.status(404).type('text/plain').send('Not found');
+            next();
+        });
         app.get(/^\/(?!api(\/|-extension)|card-runtime\/|characters\/|csrf-token|login|callback|lib\/|tokenizers|thumbnail|backgrounds\/|user\/|User%20Avatars|_kernel|assets\/|version|favicon).*$/, (_req, res) => {
             res.sendFile(WEB_INDEX);
         });
