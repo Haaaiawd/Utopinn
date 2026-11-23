@@ -110,7 +110,7 @@ export async function runTriggerGeneration({
     }
 
     const {
-        presetToDispatchParams, selectChatCompletionDispatch, runLukerDispatch,
+        resolveConnectionDispatch, selectChatCompletionDispatch, runLukerDispatch,
         getTaskByRequestId, acknowledgeGenerationJobsForRequest,
         createGenerationJob, failGenerationJob, persistJobReplyText,
         getPromptNames, postProcessPrompt,
@@ -159,21 +159,21 @@ export async function runTriggerGeneration({
         console.warn('utopinn/trigger-generate timedWorldInfo persist skipped:', persistErr?.message);
     }
 
-    const chatSource = oaiSettings?.chat_completion_source
-        ?? presetDoc?.chat_completion_source ?? 'openai';
+    // 连接派发段三处同构收敛 —— profile 命中压覆盖袋,未命中走旧单槽
+    // (services/connection-dispatch.js);trigger 合成 body 无 profile_id,
+    // 生效档指针 = oai_settings.connection.activeModel。
+    const connDispatch = resolveConnectionDispatch(oaiSettings, presetDoc, request.body);
+    if (connDispatch.profile) {
+        request.utopinnProfile = { id: connDispatch.profile.id, name: connDispatch.profile.name };
+    }
     const dispatchBody = {
-        ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
-        ...presetToDispatchParams(presetDoc),
-        chat_completion_source: chatSource,
+        ...connDispatch.body,
         type,
         messages: builtPrompt.messages,
         // 服务端触发面不做流式 —— 等终态拿全量再 persist,与 quiet 同。
         stream: false,
         luker_generation: { job_id: jobId, persist_target: persistTarget },
     };
-    const connModel = oaiSettings?.[chatSource + '_model'];
-    dispatchBody.model ??= (typeof connModel === 'string' && connModel.trim() ? connModel.trim() : null)
-        ?? dispatchBody[chatSource + '_model'] ?? null;
     dispatchBody.max_tokens ??= dispatchBody.openai_max_tokens ?? null;
     if (Array.isArray(dispatchBody.messages) && dispatchBody.custom_prompt_post_processing) {
         dispatchBody.messages = postProcessPrompt(

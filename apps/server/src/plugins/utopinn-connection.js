@@ -42,6 +42,15 @@ import { buildVertexModelsUrl, fetchVertexModels } from '../endpoints/backends/v
 import { getSettingsRepo } from '../storage/index.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { sendError } from './_shared/http-utils.js';
+import {
+    ensureConnectionProfiles,
+    readConnectionProfiles,
+    readActiveModel,
+    sanitizeProfileInput,
+    profileDispatchBag,
+    PROFILE_FORMATS,
+} from '../services/connection-dispatch.js';
+import { uuidv4 } from '../util.js';
 
 export const inject = ['webServer'];
 
@@ -435,26 +444,79 @@ async function probeModels(request, conn, body) {
     }
 }
 
+const pstr = (v) => (typeof v === 'string' && v.trim() ? v.trim() : '');
+
 /**
- * 装载"当前生效连接":settings.oai_settings + 可选 secret_id(body>query>oai)。
- * 返回 {conn, probeReq, body} —— probeReq 是把 body 换成连接配置形的请求视图,
- * readProviderSecret/getVertexAIAuth 照旧吃它(同一条取密钥路径)。
+ * 装载探测目标(profile 档案制三态):
+ *   body.profile_id(>query.profile_id)→ 该 profile 的派发袋;
+ *   body.format ∈ {openai,anthropic} → 编辑器草稿(未保存档也能测,
+ *     字段 {format, baseUrl/base_url, secretId/secret_id, key});
+ *   皆无 → 旧行为:oai_settings 生效配置 + secret_id(body>query>oai)。
+ * profile/draft 袋压在 {...oai} 底上 —— 与真实派发 includeConnection
+ * 全量透传同构(custom_include_headers 等连接外字段照吃,fidelity 对齐);
+ * 袋内 anti-bleed 空串同时压掉 oai 里的旧连接键。
+ * 草稿 key 是瞬时明文:探测后覆盖 conn.apiKey,不落盘、不进缓存键明文段。
+ * 返回 {body, probeReq, conn, marker, profileId} —— marker 是模型缓存
+ * 键的目标段(profile:<id> / draft:<hash> / ''),防跨档串缓存。
+ * probeReq 照旧喂 resolveConnection(同一条取密钥路径)。
  */
 async function loadConnection(request) {
     const settings = await getSettingsRepo().get(request.user.profile.handle) ?? {};
     const oai = (settings.oai_settings && typeof settings.oai_settings === 'object' && !Array.isArray(settings.oai_settings))
         ? settings.oai_settings : {};
-    const sid = request.body?.secret_id ?? request.body?.secretId
-        ?? request.query?.secret_id ?? request.query?.secretId ?? '';
-    const body = { ...oai, ...(sid ? { secret_id: String(sid).trim() } : {}) };
+    const rawBody = (request.body && typeof request.body === 'object' && !Array.isArray(request.body)) ? request.body : {};
+    const profileId = pstr(rawBody.profile_id ?? rawBody.profileId
+        ?? request.query?.profile_id ?? request.query?.profileId);
+    const draftFormat = PROFILE_FORMATS.includes(rawBody.format) ? rawBody.format : '';
+    const transientKey = pstr(rawBody.key);
+
+    let body;
+    let marker = '';
+    if (draftFormat) {
+        const bag = profileDispatchBag({
+            id: '', format: draftFormat,
+            baseUrl: pstr(rawBody.baseUrl ?? rawBody.base_url),
+            secretId: pstr(rawBody.secretId ?? rawBody.secret_id) || null,
+        }, null);
+        delete bag.profile_id;
+        body = { ...oai, ...bag };
+        // draft 指纹:格式+url+secretId 变 → 键变;瞬时 key 由 keyHash 段覆盖。
+        marker = 'draft:' + createHash('sha256')
+            .update([draftFormat, bag.custom_url || bag.reverse_proxy || '', bag.secret_id].join('|'))
+            .digest('hex').slice(0, 12);
+    } else if (profileId) {
+        const prof = readConnectionProfiles(oai).find((p) => p.id === profileId);
+        if (!prof) {
+            return { body: {}, probeReq: request, conn: null, marker: '', profileId, profileMissing: true };
+        }
+        body = { ...oai, ...profileDispatchBag(prof, null) };
+        marker = 'profile:' + profileId;
+    } else {
+        const sid = rawBody.secret_id ?? rawBody.secretId
+            ?? request.query?.secret_id ?? request.query?.secretId ?? '';
+        body = { ...oai, ...(sid ? { secret_id: String(sid).trim() } : {}) };
+    }
     const probeReq = { ...request, body };
-    return { body, probeReq, conn: resolveConnection(probeReq, body) };
+    const conn = resolveConnection(probeReq, body);
+    if (transientKey) {
+        // 编辑器未落盘草稿直打 —— 与 secret 槽同位,凭据归属记 user。
+        conn.apiKey = transientKey;
+        conn.credential = 'user';
+    }
+    return { body, probeReq, conn, marker, profileId };
 }
 
 /** missing/disabled/unsupported → 契约 error;否则跑 probeModels 并计时。 */
 async function runProbe(request) {
     const t0 = performance.now();
-    const { conn, probeReq, body } = await loadConnection(request);
+    const { conn, probeReq, body, profileMissing } = await loadConnection(request);
+    if (profileMissing || !conn) {
+        return {
+            ok: false, source: 'profile', credential: 'none',
+            latencyMs: Math.max(0, Math.round(performance.now() - t0)),
+            upstreamStatus: null, error: 'not_configured', detail: 'profile not found',
+        };
+    }
     const done = (r) => ({ source: conn.source, credential: conn.credential, latencyMs: Math.max(0, Math.round(performance.now() - t0)), ...r });
     if (conn.kind === 'disabled') {
         return done({ ok: false, upstreamStatus: null, error: 'unsupported', detail: `${conn.source} is temporarily disabled upstream` });
@@ -477,10 +539,12 @@ async function runProbe(request) {
 export function apply(ctx) {
     const reg = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'POST', path, handler }));
     const regGet = (path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method: 'GET', path, handler }));
+    const regMethod = (method, path, handler) => ctx.effect(() => ctx.webServer.register({ kind: 'pattern', method, path, handler }));
     const P = '/api/utopinn';
 
     // —— 模型清单缓存:30s TTL 防连点;失败时若有既往成功结果回 stale。 ——
-    // key 含 source+url+密钥散列+secret_id:换源/换钥自然换键,密钥本体不落缓存键。
+    // key 含 目标段(profile:<id>/draft:<hash>/legacy)+source+url+密钥散列
+    // +secret_id:换源/换钥/换档自然换键,密钥本体不落缓存键。
     const modelCache = new Map();   // key → {at, items}
     const inflight = new Map();     // key → Promise(并发请求合并一次上游拉取)
 
@@ -514,58 +578,199 @@ export function apply(ctx) {
     });
 
     /**
-     * GET /models —— 上游模型清单,归一化 {items:[{id, owned_by?}], source, stale?}。
-     * ?fresh=1 跳过 TTL;上游不通且无缓存 → {items:[], error, upstreamStatus}。
+     * 模型清单共用流(GET /models 与 POST /connection/models 同体):
+     * 契约 {items:[{id, owned_by?}], source, credential, stale?, error?,
+     * upstreamStatus?, detail?};恒 200。?fresh=1 / body.fresh 跳过 TTL。
+     * profile 目标探测完写回 models.lastProbe({at,items,ok})——草稿不写。
+     */
+    async function serveModels(request, response) {
+        const { conn, probeReq, body, marker, profileId, profileMissing } = await loadConnection(request);
+        if (profileMissing || !conn) {
+            return response.send({
+                source: 'profile', credential: 'none', items: [],
+                error: 'not_configured', upstreamStatus: null, detail: 'profile not found',
+            });
+        }
+        const base = { source: conn.source, credential: conn.credential };
+        if (conn.kind === 'disabled' || conn.kind === 'unsupported') {
+            return response.send({ ...base, items: [], error: 'unsupported', detail: conn.kind === 'disabled' ? `${conn.source} is temporarily disabled upstream` : `chat_completion_source "${conn.source}" has no models probe` });
+        }
+        if (conn.missing.length) {
+            return response.send({ ...base, items: [], error: 'not_configured', detail: `missing: ${conn.missing.join(', ')}` });
+        }
+
+        const keyHash = createHash('sha256').update(String(conn.apiKey ?? '')).digest('hex').slice(0, 12);
+        const cacheKey = [
+            request.user.profile.handle, marker, conn.source,
+            conn.apiUrl || conn.marker, keyHash, body.secret_id ?? '',
+        ].join('|');
+        const fresh = request.query?.fresh === '1' || request.query?.fresh === 'true'
+            || request.body?.fresh === true || request.body?.fresh === '1';
+        const cached = modelCache.get(cacheKey);
+        if (!fresh && cached && (Date.now() - cached.at) < MODELS_CACHE_MS) {
+            return response.send({ ...base, items: cached.items });
+        }
+
+        let promise = inflight.get(cacheKey);
+        if (!promise) {
+            promise = probeModels(probeReq, conn, body)
+                .then(r => ({ ok: true, ...r }))
+                .catch(e => ({ ok: false, err: classifyProbeError(e) }));
+            inflight.set(cacheKey, promise);
+            promise.finally(() => inflight.delete(cacheKey)).catch(() => { /* finally 链不产生拒绝面 */ });
+        }
+        const r = await promise;
+
+        // lastProbe 回写(仅 profile 目标;草稿/旧面不落)。
+        if (profileId) {
+            const probeItems = r.ok ? r.items : (cached?.items ?? []);
+            try {
+                await getSettingsRepo().update(request.user.profile.handle, (doc) => {
+                    const d = { ...(doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {}) };
+                    const o = (d.oai_settings && typeof d.oai_settings === 'object' && !Array.isArray(d.oai_settings))
+                        ? { ...d.oai_settings } : {};
+                    const list = readConnectionProfiles(o);
+                    o.connection_profiles = list.map((p) => p.id === profileId
+                        ? {
+                            ...p,
+                            models: {
+                                ...p.models,
+                                lastProbe: {
+                                    at: Date.now(), ok: !!r.ok,
+                                    items: probeItems.slice(0, 200).map((m) => ({ id: String(m.id) })),
+                                },
+                            },
+                        }
+                        : p);
+                    d.oai_settings = o;
+                    return d;
+                });
+            } catch { /* 簿记失败不吞探测结果 */ }
+        }
+
+        if (r.ok) {
+            modelCache.set(cacheKey, { at: Date.now(), items: r.items });
+            return response.send({ ...base, items: r.items });
+        }
+        // 失败:有既往成功结果 → stale 回放(旧数据 > 空表);没有 → 空 + error。
+        if (cached) {
+            return response.send({
+                ...base, items: cached.items, stale: true,
+                error: r.err.error, upstreamStatus: r.err.status, detail: r.err.message,
+            });
+        }
+        return response.send({
+            ...base, items: [],
+            error: r.err.error, upstreamStatus: r.err.status, detail: r.err.message,
+        });
+    }
+
+    /**
+     * GET /models —— 旧契约不动(CLI 在用):生效配置的上游模型清单。
+     * profile/draft 探测走 POST /connection/models。
      */
     regGet(`${P}/models`, async function (request, response) {
         try {
-            const { conn, probeReq, body } = await loadConnection(request);
-            const base = { source: conn.source, credential: conn.credential };
-            if (conn.kind === 'disabled' || conn.kind === 'unsupported') {
-                return response.send({ ...base, items: [], error: 'unsupported', detail: conn.kind === 'disabled' ? `${conn.source} is temporarily disabled upstream` : `chat_completion_source "${conn.source}" has no models probe` });
-            }
-            if (conn.missing.length) {
-                return response.send({ ...base, items: [], error: 'not_configured', detail: `missing: ${conn.missing.join(', ')}` });
-            }
-
-            const keyHash = createHash('sha256').update(String(conn.apiKey ?? '')).digest('hex').slice(0, 12);
-            const cacheKey = [
-                request.user.profile.handle, conn.source,
-                conn.apiUrl || conn.marker, keyHash, body.secret_id ?? '',
-            ].join('|');
-            const fresh = request.query?.fresh === '1' || request.query?.fresh === 'true';
-            const cached = modelCache.get(cacheKey);
-            if (!fresh && cached && (Date.now() - cached.at) < MODELS_CACHE_MS) {
-                return response.send({ ...base, items: cached.items });
-            }
-
-            let promise = inflight.get(cacheKey);
-            if (!promise) {
-                promise = probeModels(probeReq, conn, body)
-                    .then(r => ({ ok: true, ...r }))
-                    .catch(e => ({ ok: false, err: classifyProbeError(e) }));
-                inflight.set(cacheKey, promise);
-                promise.finally(() => inflight.delete(cacheKey)).catch(() => { /* finally 链不产生拒绝面 */ });
-            }
-            const r = await promise;
-
-            if (r.ok) {
-                modelCache.set(cacheKey, { at: Date.now(), items: r.items });
-                return response.send({ ...base, items: r.items });
-            }
-            // 失败:有既往成功结果 → stale 回放(旧数据 > 空表);没有 → 空 + error。
-            if (cached) {
-                return response.send({
-                    ...base, items: cached.items, stale: true,
-                    error: r.err.error, upstreamStatus: r.err.status, detail: r.err.message,
-                });
-            }
-            return response.send({
-                ...base, items: [],
-                error: r.err.error, upstreamStatus: r.err.status, detail: r.err.message,
-            });
+            return await serveModels(request, response);
         } catch (error) {
             return sendError(response, error, 'utopinn/models');
+        }
+    });
+
+    /**
+     * POST /connection/models —— profile/草稿目标的上游模型清单。
+     * body:{profile_id} | {format, baseUrl, secretId?, key?, fresh?}
+     */
+    reg(`${P}/connection/models`, async function (request, response) {
+        try {
+            return await serveModels(request, response);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/connection models');
+        }
+    });
+
+    /* ------------------------------------------------------------------ */
+    /* 连接配置档案 CRUD —— oai_settings.connection_profiles 整档操作。      */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * GET /connection/profiles —— {profiles, activeModel}。
+     * 惰性迁移:数组缺失/空 → 从旧单槽合成 'default' 档并落盘(旧键不删)。
+     */
+    regGet(`${P}/connection/profiles`, async function (request, response) {
+        try {
+            const r = await ensureConnectionProfiles(request, getSettingsRepo());
+            return response.send({ profiles: r.profiles, activeModel: r.activeModel });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/profiles get');
+        }
+    });
+
+    /**
+     * PUT /connection/profiles/:id —— upsert(id='new' 服务端发 uuid)。
+     * body:{name?, format?, baseUrl?, secretId?, models?{checked,manual}, disabled?}
+     * → {profiles, profile, activeModel};profile 引用 secret 只存 id 不存值。
+     */
+    regMethod('PUT', `${P}/connection/profiles/:id`, async function (request, response) {
+        try {
+            const repo = getSettingsRepo();
+            const handle = request.user.profile.handle;
+            const wanted = String(request.params.id ?? '').trim() || 'new';
+            const id = wanted === 'new' ? uuidv4() : wanted;
+            const next = await repo.update(handle, (doc) => {
+                const d = { ...(doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {}) };
+                const o = (d.oai_settings && typeof d.oai_settings === 'object' && !Array.isArray(d.oai_settings))
+                    ? { ...d.oai_settings } : {};
+                const list = readConnectionProfiles(o);
+                const idx = list.findIndex((p) => p.id === id);
+                const merged = sanitizeProfileInput(request.body, { existing: idx >= 0 ? list[idx] : null, id });
+                if (idx >= 0) list[idx] = merged; else list.push(merged);
+                o.connection_profiles = list;
+                d.oai_settings = o;
+                return d;
+            });
+            const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
+                ? next.oai_settings : {};
+            const profiles = readConnectionProfiles(nextOai);
+            return response.send({
+                profiles,
+                profile: profiles.find((p) => p.id === id) ?? null,
+                activeModel: readActiveModel(nextOai),
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/profiles put');
+        }
+    });
+
+    /**
+     * DELETE /connection/profiles/:id —— 删档;connection.activeModel 指向
+     * 该档时清针(不猜别档,下一次选择自然落)。secret 槽不动(只失引用)。
+     */
+    regMethod('DELETE', `${P}/connection/profiles/:id`, async function (request, response) {
+        try {
+            const repo = getSettingsRepo();
+            const handle = request.user.profile.handle;
+            const id = String(request.params.id ?? '').trim();
+            const next = await repo.update(handle, (doc) => {
+                const d = { ...(doc && typeof doc === 'object' && !Array.isArray(doc) ? doc : {}) };
+                const o = (d.oai_settings && typeof d.oai_settings === 'object' && !Array.isArray(d.oai_settings))
+                    ? { ...d.oai_settings } : {};
+                o.connection_profiles = readConnectionProfiles(o).filter((p) => p.id !== id);
+                const conn = (o.connection && typeof o.connection === 'object' && !Array.isArray(o.connection))
+                    ? { ...o.connection } : {};
+                if (conn.activeModel?.profileId === id) conn.activeModel = null;
+                o.connection = conn;
+                d.oai_settings = o;
+                return d;
+            });
+            const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
+                ? next.oai_settings : {};
+            return response.send({
+                profiles: readConnectionProfiles(nextOai),
+                activeModel: readActiveModel(nextOai),
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/profiles delete');
         }
     });
 }

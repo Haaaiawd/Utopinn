@@ -400,6 +400,16 @@ const zh: Record<string, string> = {
     'st.conn.sharedUrl': '共用', 'st.conn.modelLabel': '模型',
     'st.conn.modelPh': '模型 id(生效源可从上游清单选)',
     'st.conn.probeActivateHint': '探测只打生效源 —— 测试会先启用该卡再探测',
+    'st.conn.addProfile': '新增配置', 'st.conn.edit': '编辑', 'st.conn.delete': '删除',
+    'st.conn.delConfirm': '确认删除?', 'st.conn.empty': '还没有连接配置 —— 新增一份档案',
+    'st.conn.namePh': '配置名,如:DeepSeek 主用', 'st.conn.formatLabel': 'API 格式',
+    'st.conn.presetLabel': '供应商', 'st.conn.baseOptional': '留空 = 官方默认端点',
+    'st.conn.baseRequired': '必填 · OpenAI 兼容端点', 'st.conn.secretKeepPh': '留空保留已托管密钥;输入新 Key 覆盖',
+    'st.conn.probeDraftHint': '草稿直测 —— 不切源、不改生效配置',
+    'st.conn.modelsLabel': '可用模型(勾选要用的)', 'st.conn.staleModels': '旧清单',
+    'st.conn.manualLabel': '手填模型', 'st.conn.manualPh': '模型 id,回车加入',
+    'st.conn.disableLabel': '停用此配置(不进派发与选择器)',
+    'st.conn.defaultBadge': '默认', 'st.conn.disabledBadge': '已停用',
 };
 
 /* en 词面约定:缺省回显键名(占位诚实态);新增键给真英文的在这覆盖。 */
@@ -801,6 +811,16 @@ const en: Record<string, string> = {
     'st.conn.sharedUrl': 'shared', 'st.conn.modelLabel': 'Model',
     'st.conn.modelPh': 'Model id (pick from upstream list on the active source)',
     'st.conn.probeActivateHint': 'Probe hits the active source — testing activates this card first',
+    'st.conn.addProfile': 'Add profile', 'st.conn.edit': 'Edit', 'st.conn.delete': 'Delete',
+    'st.conn.delConfirm': 'Delete?', 'st.conn.empty': 'No connections yet — add a profile',
+    'st.conn.namePh': 'Profile name, e.g. DeepSeek main', 'st.conn.formatLabel': 'API format',
+    'st.conn.presetLabel': 'Provider', 'st.conn.baseOptional': 'Blank = official endpoint',
+    'st.conn.baseRequired': 'Required · OpenAI-compatible endpoint', 'st.conn.secretKeepPh': 'Blank keeps the managed key; enter a new key to replace',
+    'st.conn.probeDraftHint': 'Probes this draft — no source switch, no settings change',
+    'st.conn.modelsLabel': 'Available models (check to enable)', 'st.conn.staleModels': 'stale list',
+    'st.conn.manualLabel': 'Manual models', 'st.conn.manualPh': 'Model id, Enter to add',
+    'st.conn.disableLabel': 'Disable this profile (excluded from dispatch & picker)',
+    'st.conn.defaultBadge': 'default', 'st.conn.disabledBadge': 'disabled',
 };
 
 export const shellFeature: Feature = {

@@ -806,21 +806,30 @@ function PresetPop({ onClose }: { onClose: () => void }) {
                         <div className="relative min-w-0">
                             <button type="button" className="sh-select-trigger" title={t('panel.preset.model')} onClick={() => s.setOpenDropdown(s.openDropdown === 'model' ? null : 'model')}>
                                 <span className="truncate font-mono-ui text-[11.5px]">
-                                    {s.live ? (s.models.find((m) => m.id === s.activeModel)?.short || s.activeModel || t('st.conn.noModels')) : t('stage.demoData')}
+                                    {s.live ? (s.models.find((m) => m.id === s.activeModel?.modelId && (m.profileId ?? '') === (s.activeModel?.profileId ?? ''))?.short || s.activeModel?.modelId || t('st.conn.noModels')) : t('stage.demoData')}
                                 </span>
                                 <span className="shrink-0 text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                             </button>
                             {s.openDropdown === 'model' && (
                                 <div className="sh-select-menu max-h-60 overflow-y-auto">
-                                    {s.live && s.models.length > 0 ? s.models.map((m) => (
-                                        <button key={m.id} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
-                                            <span className="min-w-0 pr-2">
-                                                <span className="block truncate font-mono-ui text-[12px]">{m.id}</span>
-                                                <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{m.ctx ? `${m.provider} · ${m.ctx}` : m.provider}</span>
-                                            </span>
-                                            {m.id === s.activeModel && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
-                                        </button>
-                                    )) : (
+                                    {s.live && s.models.length > 0 ? s.connProfiles.filter((p) => !p.disabled).map((p) => {
+                                        const items = s.models.filter((m) => m.profileId === p.id);
+                                        if (!items.length) return null;
+                                        return (
+                                            <div key={p.id}>
+                                                <div className="px-2.5 pb-0.5 pt-2 text-[10px] font-medium text-[color:var(--fg-faint)]">{p.name}</div>
+                                                {items.map((m) => (
+                                                    <button key={`${p.id}:${m.id}`} type="button" className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-[color:var(--bg-active)]" onClick={() => { s.setActiveModel({ profileId: p.id, modelId: m.id }); s.setOpenDropdown(null); }}>
+                                                        <span className="min-w-0 pr-2">
+                                                            <span className="block truncate font-mono-ui text-[12px]">{m.id}</span>
+                                                            <span className="block truncate text-[10px] text-[color:var(--fg-muted)]">{m.ctx ? `${p.name} · ${m.ctx}` : p.name}</span>
+                                                        </span>
+                                                        {m.id === s.activeModel?.modelId && p.id === s.activeModel?.profileId && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        );
+                                    }) : (
                                         <div className="space-y-2 p-2.5 text-[11px] text-[color:var(--fg-muted)]">
                                             <div className="break-all font-mono-ui text-[10.5px]">{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
                                             <button
@@ -1023,7 +1032,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const missingChatsRef = useRef(new Set<string>());
     const sRef = useRef(s);
     sRef.current = s;
-    const model = s.models.find((m) => m.id === s.activeModel);
+    const model = s.models.find((m) => m.id === s.activeModel?.modelId && (m.profileId ?? '') === (s.activeModel?.profileId ?? ''));
     const offline = s.serverStatus === 'offline';
     const streaming = busy && job !== null;
     const groupId = s.chat?.groupId ?? null;
@@ -1417,6 +1426,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     type,
                     ...(member ? { member } : {}),
                     ...(presetClean ? { presetName: presetClean } : {}),
+                    ...(s.activeModel?.profileId ? { profile_id: s.activeModel.profileId, model: s.activeModel.modelId } : {}),
                     user: userBody,
                     clientWriteBack: true,
                 });
@@ -1605,6 +1615,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 chatName: chat.chatName,
                 type,
                 ...(presetClean ? { presetName: presetClean } : {}),
+                // 档案制显式指档:选中的 {profileId,modelId} 直接进派发链,
+                // 服务端不再猜「当前源」;指针空 → 不带键走旧单槽兜底。
+                ...(s.activeModel?.profileId ? { profile_id: s.activeModel.profileId, model: s.activeModel.modelId } : {}),
                 user: s.persona ? { name: s.persona.name, description: s.persona.description } : { name: fallbackUser },
             };
             const { jobId } = await postGenerate(body);

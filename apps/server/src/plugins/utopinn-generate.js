@@ -166,22 +166,12 @@ async function resolveGroupGenerationPlan({ request, body }) {
 }
 
 /**
- * presetDoc → chat-completions 派发 body 参数段(透传生成参数,
- * 与前端发往 /generate 的 oai_settings 子集同构)。
+ * presetDoc → chat-completions 派发 body 参数段 —— 本体在
+ * services/connection-dispatch.js(profile 派发三处共用;这里 re-export
+ * 保 loadDispatchLayer(gen.presetToDispatchParams) 兼容位)。
  */
-export function presetToDispatchParams(presetDoc, { includeConnection = false } = {}) {
-    const d = presetDoc ?? {};
-    const passthrough = {};
-    for (const [k, v] of Object.entries(d)) {
-        // model 是 wire 键不是设置键——oai_settings.model 是历史镜像残留,
-        // 透传会让 ??= 永远不触达 {source}_model/custom_model 的正典解析
-        // (getChatCompletionModel 同义),换源/换模型被旧值静默顶住。
-        if (['prompts', 'prompt_order', 'extensions', 'model'].includes(k)) continue;
-        if (!includeConnection && CONNECTION_KEYS.has(k)) continue;
-        passthrough[k] = v;
-    }
-    return passthrough;
-}
+export { presetToDispatchParams, resolveConnectionDispatch } from '../services/connection-dispatch.js';
+import { resolveConnectionDispatch } from '../services/connection-dispatch.js';
 
 /**
  * textgen(TASK-020):messages[] → 单串 prompt,instruct 壳。
@@ -272,22 +262,6 @@ function messagesToTextgenPrompt(messages, engine, substCtx, { chatPreamble = nu
     parts.push(instructOn ? engine.formatPrompt(name2, false, '', name1, name2) : `${name2}:`);
     return parts.join('');
 }
-
-/**
- * 连接层字段:URL/密钥代理/模型名/自定义进出体 + source。
- * 这些产品语义上属"当前连接配置"而非"生成预设"——ST 选预设会整体重写
- * oai_settings(连 URL 一起洗掉是出名的坑),我们把连接面固定在
- * settings.oai_settings,preset 只贡献生成参数。
- */
-const CONNECTION_KEYS = new Set([
-    'chat_completion_source', 'reverse_proxy', 'proxy_password',
-    'custom_url', 'custom_model', 'custom_include_body',
-    'custom_exclude_body', 'custom_include_headers',
-    'chat_completion_custom_models', 'show_external_models',
-    'kimi_partial_name_source',
-    'openrouter_group_models', 'openrouter_sort_models',
-    'chutes_sort_models', 'electronhub_sort_models', 'electronhub_group_models',
-]);
 
 /** jobs 状态全集:queued 暂无生产端写点,但 legacy 活动位口径含它(护栏同集)。 */
 const KNOWN_JOB_STATUSES = Object.freeze([
@@ -779,15 +753,17 @@ export function apply(ctx) {
                 });
             }
 
-            // 派发体 = 连接层 oai_settings(custom_url/reverse_proxy/source 等)
-            //  ← 预设生成参数覆盖(ST 选预设=重写 oai_settings)← 调用方显式字段
-            const chatSource = body.chat_completion_source
-                ?? oaiSettings?.chat_completion_source
-                ?? presetDoc?.chat_completion_source ?? 'openai';
+            // 派发体 = 连接层(oai_settings 全量 + 预设生成参数,profile 命中
+            // 时压 anti-bleed 覆盖袋)← 调用方显式字段。
+            // resolveConnectionDispatch 收敛三处同构:profile(body.profile_id
+            // > connection.activeModel.profileId)→ custom/claude 覆盖袋;
+            // 未命中(旧客户端/CLI)→ 旧单槽路径逐字等价。
+            const connDispatch = resolveConnectionDispatch(oaiSettings, presetDoc, body);
+            if (connDispatch.profile) {
+                request.utopinnProfile = { id: connDispatch.profile.id, name: connDispatch.profile.name };
+            }
             const dispatchBody = {
-                ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
-                ...presetToDispatchParams(presetDoc),
-                chat_completion_source: chatSource,
+                ...connDispatch.body,
                 // verb 落 job.requestMeta——jobs/status、attach 写盘重建都靠它;
                 // provider pickBy 自滤,不会发给上游。群路 = 成员内动词
                 // (generateType),与 legacy 成员 Generate 语义同位。
@@ -801,14 +777,10 @@ export function apply(ctx) {
                     persist_target: body.luker_generation?.persist_target ?? persistTargetDefault,
                 },
             };
-            // 上游 getChatCompletionModel(source→{source}_model)+
-            // openai_max_tokens→max_tokens:provider 只认 canonical 键;
-            // 连接层 oai_settings.{source}_model 非空时优先于预设内嵌模型,
-            // 缺省回退 presetDoc.{source}_model;generation_overrides 仍可显式盖掉。
-            const connModel = oaiSettings?.[`${chatSource}_model`];
-            dispatchBody.model ??= (typeof connModel === 'string' && connModel.trim() ? connModel.trim() : null)
-                ?? dispatchBody[`${chatSource}_model`]
-                ?? null;
+            // model 已在 resolveConnectionDispatch 内解析完(profile 兜底序
+            //   body.model → activeModel.modelId → checked[0] → manual[0];
+            //   旧路 oai.{src}_model → 预设 {src}_model)——
+            // generation_overrides 仍可显式盖掉。
             dispatchBody.max_tokens ??= dispatchBody.openai_max_tokens ?? null;
             if (body.generation_overrides) Object.assign(dispatchBody, body.generation_overrides);
 

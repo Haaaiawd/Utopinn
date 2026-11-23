@@ -31,6 +31,7 @@ export async function loadDispatchLayer() {
     ]);
     return {
         presetToDispatchParams: gen.presetToDispatchParams,
+        resolveConnectionDispatch: gen.resolveConnectionDispatch,
         selectChatCompletionDispatch: cc.selectChatCompletionDispatch,
         runLukerDispatch: runner.runLukerDispatch,
         getTaskByRequestId: jobs.getTaskByRequestId,
@@ -135,7 +136,7 @@ export async function runQuietGeneration({
     });
 
     const {
-        presetToDispatchParams, selectChatCompletionDispatch, runLukerDispatch,
+        resolveConnectionDispatch, selectChatCompletionDispatch, runLukerDispatch,
         getTaskByRequestId, acknowledgeGenerationJobsForRequest,
         createGenerationJob, failGenerationJob,
         getPromptNames, postProcessPrompt,
@@ -186,12 +187,15 @@ export async function runQuietGeneration({
     request.utopinnPerf = perf;
     logPerfLine('utopinn/quiet-generate', perf, { charDir, chatName: chatName ?? '-' });
 
-    const chatSource = oaiSettings?.chat_completion_source
-        ?? presetDoc?.chat_completion_source ?? 'openai';
+    // 连接派发段三处同构收敛 —— profile 命中压覆盖袋,未命中走旧单槽
+    // (services/connection-dispatch.js);quiet 合成 body 无 profile_id,
+    // 生效档指针 = oai_settings.connection.activeModel。
+    const connDispatch = resolveConnectionDispatch(oaiSettings, presetDoc, request.body);
+    if (connDispatch.profile) {
+        request.utopinnProfile = { id: connDispatch.profile.id, name: connDispatch.profile.name };
+    }
     const dispatchBody = {
-        ...presetToDispatchParams(oaiSettings, { includeConnection: true }),
-        ...presetToDispatchParams(presetDoc),
-        chat_completion_source: chatSource,
+        ...connDispatch.body,
         type: 'quiet',
         messages: builtPrompt.messages,
         stream: false,
@@ -200,7 +204,6 @@ export async function runQuietGeneration({
             persist_target: { kind: 'none' },
         },
     };
-    dispatchBody.model ??= dispatchBody[`${chatSource}_model`] ?? null;
     dispatchBody.max_tokens ??= dispatchBody.openai_max_tokens ?? null;
     // /gen length=N → 响应长度上限(上游同键映射)
     const responseLength = Number(params.responseLength ?? 0) || 0;

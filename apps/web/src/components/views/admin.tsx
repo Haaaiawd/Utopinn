@@ -345,6 +345,16 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
 
     const oai = (settingsRes?.settings?.oai_settings ?? {}) as Record<string, unknown>;
     const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    /* 档案制读面:activeModel 指针 → 命中 profile 显示 名·格式/端点;
+       未命中(旧库未迁移)→ legacy 单槽字段兜底。 */
+    const profs = (Array.isArray(oai.connection_profiles) ? oai.connection_profiles : [])
+        .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object' && !Array.isArray(p));
+    const conn = (oai.connection && typeof oai.connection === 'object' && !Array.isArray(oai.connection))
+        ? oai.connection as Record<string, unknown> : {};
+    const am = (conn.activeModel && typeof conn.activeModel === 'object' && !Array.isArray(conn.activeModel))
+        ? conn.activeModel as Record<string, unknown> : {};
+    const activeProf = profs.find((p) => str(p.id) === str(am.profileId) && !p.disabled)
+        ?? profs.find((p) => !p.disabled) ?? null;
     return {
         overview,
         me,
@@ -355,8 +365,12 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
         lukerPlugins,
         diag: diag as OverviewBundle['diag'],
         config,
-        oaiSource: str(oai.chat_completion_source),
-        oaiEndpoint: str(oai.reverse_proxy) ?? str(oai.custom_url),
+        oaiSource: activeProf
+            ? `${str(activeProf.name) ?? 'profile'} · ${str(activeProf.format) === 'anthropic' ? 'Anthropic' : 'OpenAI'}`
+            : str(oai.chat_completion_source),
+        oaiEndpoint: activeProf
+            ? (str(activeProf.baseUrl) ?? (str(activeProf.format) === 'anthropic' ? 'api.anthropic.com' : null))
+            : (str(oai.reverse_proxy) ?? str(oai.custom_url)),
     };
 }
 

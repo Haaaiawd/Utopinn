@@ -110,12 +110,20 @@ export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
    (MOCK_STAGE_SESSIONS `st-*`)及离线演示种子(MOCK_NOVEL_CHAPTERS/IM/VN)。
    ========================================================================= */
 
-/** 生成模型目录项(规范稿 MODELS)。 */
+/** 生成模型目录项(规范稿 MODELS)。
+ *  连接档案制:同 id 模型可属不同 profile —— profileId 是身份的一部分
+ *  (activeModel 指针 = {profileId, modelId});离线 mock 无 profile 域。 */
 export interface ModelItem {
     id: string;
     short: string;
     provider: string;
     ctx: string;
+    /** 属主 profile id(未分组/离线 mock 为空)。 */
+    profileId?: string;
+    /** 属主 profile 名(选择器分组头/行小注)。 */
+    profileName?: string;
+    /** 属主 profile 派发格式(徽标用)。 */
+    profileFormat?: 'openai' | 'anthropic';
 }
 
 export const MOCK_MODELS: ModelItem[] = [

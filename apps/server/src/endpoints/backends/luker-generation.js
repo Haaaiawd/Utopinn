@@ -440,6 +440,11 @@ function buildGenerationJobRequestMeta(request, persistTarget) {
         api: String(request.body?.chat_completion_source || request.body?.api_type || request.body?.api || 'unknown'),
         char_name: String(persistTarget?.char_name || request.body?.char_name || 'Assistant'),
         model: String(request.body?.model || ''),
+        // 连接档案制:派发体 profile_id 由 resolveConnectionDispatch 命中时
+        // 盖上(未命中走旧单槽 → 两键皆空);name 走 request.utopinnProfile
+        // (三处派发点回填,id 一致时同名,簿记不引二次查找)。
+        profileId: String(request.body?.profile_id || request.utopinnProfile?.id || ''),
+        profileName: String(request.utopinnProfile?.name || ''),
         // TASK-044 theater 契约:产出按「结构化 JSON 对象」解读——置真位
         // 有两个合法载体,等价宽松(luker_generation.theater|structured、
         // persist_target.theater|structured);不显式置真 = 原文落 mes,

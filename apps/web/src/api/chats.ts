@@ -77,6 +77,10 @@ export interface GenerateBody {
     chatName: string;
     presetName?: string;
     type?: GenerateVerb | string;
+    /** 连接档案制:显式指档派发(connection_profiles 命中);
+     *  不带 → 服务端 connection.activeModel 指针,再空 → 旧单槽。 */
+    profile_id?: string;
+    model?: string;
     user?: { name: string; description?: string };
     overrides?: Record<string, unknown>;
     /** 缺省服务端填本卡 {kind:'character'};客户端持有写盘的动词走默认目标

@@ -12,6 +12,7 @@ import type {
     GlobalLoreItem, ImChannel, ModelItem,
     NovelChapter, PresetItem, VnData, WorldbookItem,
 } from '../api/mock';
+import type { ActiveModelPointer, ConnectionProfile } from '../api/connection';
 import type { ChatSummary, ServerStatus, ViewId } from '../types';
 import type { Contributions, PanelType } from './contributions';
 import { Registry } from './registry';
@@ -223,10 +224,15 @@ export interface ShellCtx {
 
     /* ——— 生成连接/模型/预设/全局世界书(在线水合自 /settings /models /presets /worlds) ——— */
     connSource: string;
+    /** 全 profile 勾选模型的并集(每项带 profileId/profileName 属主)。 */
     models: ModelItem[];
     modelsError: string | null;
-    activeModel: string;
-    setActiveModel: (id: string) => void;
+    /** 生效模型指针 —— 同 id 模型可属不同 profile,必须带属主判同一。 */
+    activeModel: ActiveModelPointer | null;
+    /** 选模型 = 写 oai_settings.connection.activeModel;离线只动本地态。 */
+    setActiveModel: (sel: ActiveModelPointer) => void;
+    /** 连接配置档案目录(oai_settings.connection_profiles;refreshConnection 水合)。 */
+    connProfiles: ConnectionProfile[];
     presets: PresetItem[];
     activePresetId: string;
     /** 切换激活预设:写回 settings.preset_settings_openai 并装载采样/条目参数。 */

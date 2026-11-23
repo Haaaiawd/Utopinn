@@ -204,22 +204,27 @@ export class SecretManager {
      * @param {string} key Secret key
      * @param {string} value Secret value
      * @param {string} label Label for the secret
+     * @param {{ activate?: boolean }} [opts] activate=false 时新条不抢 active
+     *   槽(profile 迁移跨池复制用 —— readSecret 按 id 读不查 active,
+     *   旧路径的 active 兜底因此原样不动);缺省 true 与旧行为一致。
      * @returns {string} The ID of the newly created secret
      */
-    writeSecret(key, value, label = 'Unlabeled') {
+    writeSecret(key, value, label = 'Unlabeled', { activate = true } = {}) {
         const secrets = this._readSecretsFile();
 
         if (!Array.isArray(secrets[key])) {
             secrets[key] = [];
         }
 
-        this._deactivateAllSecrets(secrets[key]);
+        if (activate) {
+            this._deactivateAllSecrets(secrets[key]);
+        }
 
         const secret = {
             id: uuidv4(),
             value: value,
             label: label,
-            active: true,
+            active: activate,
         };
         secrets[key].push(secret);
 
