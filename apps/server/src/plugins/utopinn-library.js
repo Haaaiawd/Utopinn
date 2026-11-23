@@ -255,12 +255,30 @@ const PATCHABLE_CHAR_STRING_FIELDS = new Set([
     'name', 'description', 'personality', 'scenario', 'first_mes', 'mes_example',
     'creator_notes', 'system_prompt', 'post_history_instructions', 'creator', 'character_version',
 ]);
-const PATCHABLE_CHAR_FIELDS = new Set([...PATCHABLE_CHAR_STRING_FIELDS, 'tags', 'extensions']);
 /**
- * extensions 子键白名单:world=世界书绑定 / alternate_greetings / regex_scripts。
- * card_app 与资产二进制字段一律不放行 —— 那些走专用管线(card-app/charx 导入面)。
+ * data.* 数组字段(string[]):alternate_greetings/group_only_greetings
+ * 是问候消费面(TASK-059/068;extensions.alternate_greetings 影子键仍在
+ * 子键白名单兼容,但真实消费读位在 data.*)。
  */
-const PATCHABLE_CHAR_EXTENSIONS_KEYS = new Set(['world', 'alternate_greetings', 'regex_scripts']);
+const PATCHABLE_CHAR_ARRAY_FIELDS = new Set(['tags', 'alternate_greetings', 'group_only_greetings']);
+const PATCHABLE_CHAR_FIELDS = new Set([...PATCHABLE_CHAR_STRING_FIELDS, ...PATCHABLE_CHAR_ARRAY_FIELDS, 'extensions']);
+/**
+ * extensions 子键白名单 —— TASK-068「放行集 = 消费集」对账:
+ *   world            世界书绑定(消费:embedded-world/charLore)
+ *   alternate_greetings 影子键(真实读位 data.alternate_greetings,见上)
+ *   regex_scripts    卡内正则(消费:regex 管线)
+ *   talkativeness    群编排 NATURAL 权重(消费:group-orchestration memberTalkativeness)
+ *   depth_prompt     深度提示(消费:solo generate-context + collectGroupDepthPrompts)
+ *   group_greetings  群专属问候 legacy 位(消费:greeting-seed groupOnlyGreetingPool)
+ *   group_greetings_mode  群问候挑选模式 0=RANDOM/1=PICK(消费:同上)
+ * 钉死不放行:fav(纯 UI 态透传不消费,legacy merge-attributes 有专用写面)、
+ *   tavern_helper(引擎侧车管线写,直 PATCH 会和 sidecar overlay 打架)、
+ *   card_app(CardApp 专用端点写)、models(那是 config.yaml 键,与卡无关)。
+ */
+const PATCHABLE_CHAR_EXTENSIONS_KEYS = new Set([
+    'world', 'alternate_greetings', 'regex_scripts',
+    'talkativeness', 'depth_prompt', 'group_greetings', 'group_greetings_mode',
+]);
 
 /**
  * `<avatarFile>.state.<ns>.json` 侧车随卡文件改名迁移(.webp→.png 转换面用)。
@@ -1315,9 +1333,9 @@ export function apply(ctx) {
                     }
                     continue;
                 }
-                if (key === 'tags') {
-                    if (!Array.isArray(value) || !value.every((tag) => typeof tag === 'string')) {
-                        return response.status(422).send({ error: 'Field "tags" must be an array of strings' });
+                if (PATCHABLE_CHAR_ARRAY_FIELDS.has(key)) {
+                    if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+                        return response.status(422).send({ error: 'Field "' + key + '" must be an array of strings' });
                     }
                     continue;
                 }
@@ -1350,6 +1368,29 @@ export function apply(ctx) {
                     if (key === 'regex_scripts' && (!Array.isArray(value) || !value.every((item) => item && typeof item === 'object' && !Array.isArray(item)))) {
                         return response.status(422).send({ error: 'extensions.regex_scripts must be an array of objects' });
                     }
+                    if (key === 'talkativeness' && (typeof value !== 'number' || !Number.isFinite(value))) {
+                        return response.status(422).send({ error: 'extensions.talkativeness must be a finite number' });
+                    }
+                    if (key === 'depth_prompt') {
+                        if (typeof value !== 'object' || Array.isArray(value)) {
+                            return response.status(422).send({ error: 'extensions.depth_prompt must be an object {prompt?,depth?,role?}' });
+                        }
+                        if ('prompt' in value && typeof value.prompt !== 'string') {
+                            return response.status(422).send({ error: 'extensions.depth_prompt.prompt must be a string' });
+                        }
+                        if ('depth' in value && (typeof value.depth !== 'number' || !Number.isFinite(value.depth))) {
+                            return response.status(422).send({ error: 'extensions.depth_prompt.depth must be a finite number' });
+                        }
+                        if ('role' in value && typeof value.role !== 'string') {
+                            return response.status(422).send({ error: 'extensions.depth_prompt.role must be a string' });
+                        }
+                    }
+                    if (key === 'group_greetings' && (!Array.isArray(value) || !value.every((item) => typeof item === 'string'))) {
+                        return response.status(422).send({ error: 'extensions.group_greetings must be an array of strings' });
+                    }
+                    if (key === 'group_greetings_mode' && value !== 0 && value !== 1) {
+                        return response.status(422).send({ error: 'extensions.group_greetings_mode must be 0 (RANDOM) or 1 (PICK)' });
+                    }
                 }
                 extensionsPatch = patch.extensions;
             }
@@ -1367,6 +1408,13 @@ export function apply(ctx) {
                 if (key === 'extensions') continue;
                 if (value === null) {
                     delete fieldTarget[key];
+                    // 显式 null = 整字段删除:根/data 双存形下连根副本一起摘,
+                    // 否则 PNG 写盘时 toStoredV2Character 把旧根值提升复活、
+                    // JSON 卡读面也经 ?? 回落根值(PR#25 黄 2)。字段缺席不进
+                    // 本循环 → 根副本原样不动(merge-patch 缺席语义保留)。
+                    if (fieldTarget !== next) {
+                        delete next[key];
+                    }
                 } else {
                     fieldTarget[key] = value;
                 }
@@ -1378,6 +1426,13 @@ export function apply(ctx) {
                 for (const [key, value] of Object.entries(extensionsPatch)) {
                     if (value === null) {
                         delete extensionsTarget[key];
+                        // 同款复活洞:toStoredV2Character 把根 extensions
+                        // deepMerge 进 data.extensions —— 显式 null 连另一层
+                        // 副本一起摘(缺席键同样不动)。
+                        const otherExtensions = hasData ? next.extensions : next.data?.extensions;
+                        if (otherExtensions && typeof otherExtensions === 'object' && !Array.isArray(otherExtensions)) {
+                            delete otherExtensions[key];
+                        }
                     } else {
                         extensionsTarget[key] = value;
                     }

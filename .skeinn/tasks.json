@@ -5825,12 +5825,12 @@
         {
           "criterion": "群会话起手从成员 group_only_greetings 选问候(语义对齐上游 group greeting 规则)",
           "verify_by": "群起手实弹断言问候来源",
-          "evidence": ""
+          "evidence": "greeting-seed.js groupOnlyGreetingPool(移植官方 Extension-GroupGreetings getListFromCharacterData):data.group_only_greetings(specV3)优先,extensions.group_greetings 兜底,池非空整体覆盖 first_mes/alternate 基选;mode 0=RANDOM/1=PICK(服务端退化 random,其他值不覆盖)。另修 TASK-062 移植偏差:补上游 [first_mes,...alts].filter(x=>x) 先滤空再挑。实弹:utopinn-group-greeting.test.mjs 15/15(POST /groups 播种断言逐成员问候来源 + GET 首开播种 + PATCH 改池闭环)"
         },
         {
           "criterion": "talkativeness 进成员选择权重(或明示降级立档);PATCH 放行集与消费集一致",
           "verify_by": "编排断言 + PATCH 放行清单 diff",
-          "evidence": ""
+          "evidence": "talkativeness 已在 group-orchestration memberTalkativeness 消费(NATURAL 序掷骰权重),测试钉死 talkativeness=1 恒激活。PATCH 放行集扩为消费集:extensions+=talkativeness/depth_prompt/group_greetings/group_greetings_mode,data.*+=alternate_greetings/group_only_greetings;fav(纯UI)/tavern_helper(引擎管线)/card_app(专用端点)钉死不放行,对账注释在 PATCHABLE_CHAR_EXTENSIONS_KEYS 头注。protocol CharacterPatchExtensions/Request 类型同步。"
         }
       ],
       "done_when": [],
@@ -5865,15 +5865,23 @@
       "covers": [
         "DLV-003"
       ],
-      "status": "open",
+      "status": "done",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "group_only_greetings 群起手消费(扩展语义忠实移植)",
+          "上游滤空修正",
+          "PATCH 放行集=消费集",
+          "talkativeness 权重断言"
+        ],
+        "current": "complete",
+        "next": "",
+        "notes": "PICK 模式服务端无交互退化 random(与扩展未挑中兜底一致);mode 非 0/1 不覆盖(忠实上游)。服务端真机起服冒烟未跑(本机 Node22<24);真链路经真 FsEngine+express+HTTP 集成测试覆盖。"
       },
-      "evidence": [],
+      "evidence": [
+        "apps/server/tests/utopinn-group-greeting.test.mjs 15/15 绿;回归 utopinn-greeting-seed 11/11、utopinn-library 35/35、utopinn-import+generate-context 63/63 全绿"
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-23T06:16:03.559Z"
     },
     {
       "id": "TASK-069",

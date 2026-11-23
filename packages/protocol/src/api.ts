@@ -360,11 +360,21 @@ export interface SettingsPatchRequest {
     preset_settings_openai?: string | null;
 }
 
-/** PATCH /characters/:charDir —— 字段级 Merge Patch(C-3)。 */
+/** PATCH /characters/:charDir —— 字段级 Merge Patch(C-3)。
+ *  放行集 = 服务端消费集(TASK-068 对账,见 utopinn-library PATCHABLE_CHAR_EXTENSIONS_KEYS);
+ *  fav/tavern_helper/card_app 钉死不放行。 */
 export interface CharacterPatchExtensions {
     world?: string | null;
+    /** 影子键:真实读位在 data.alternate_greetings(顶层字段),保留兼容。 */
     alternate_greetings?: string[] | null;
     regex_scripts?: Record<string, unknown>[] | null;
+    /** 群编排 NATURAL 权重(0-1,服务端只校验有限 number)。 */
+    talkativeness?: number | null;
+    depth_prompt?: { prompt?: string; depth?: number; role?: string } | null;
+    /** 群专属问候 legacy 位(specV3 真位在顶层 group_only_greetings)。 */
+    group_greetings?: string[] | null;
+    /** 群问候挑选模式:0=RANDOM,1=PICK(服务端 PICK 退化 random)。 */
+    group_greetings_mode?: 0 | 1 | null;
 }
 export interface CharacterPatchRequest {
     name?: string;
@@ -379,6 +389,10 @@ export interface CharacterPatchRequest {
     creator?: string | null;
     character_version?: string | null;
     tags?: string[] | null;
+    /** 真实消费位(单聊问候 swipe 组 + 群问候 base 池)。 */
+    alternate_greetings?: string[] | null;
+    /** CCv3 data 顶键:群专属问候池,优先于 first_mes/alternate。 */
+    group_only_greetings?: string[] | null;
     extensions?: CharacterPatchExtensions;
 }
 
