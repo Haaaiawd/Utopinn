@@ -92,6 +92,9 @@ export class PanelEventPump {
     private lastEventSeq = 0;
     /** getEventLog 被判 unsupported → 永久停拉(老服务端无信箱面)。 */
     private eventLogDead = false;
+    /** seed() 完成前 tick 一律 no-op —— 游标未钉头就跑 pollEventLog 会回放
+     *  滞留信箱(refresh 重铸环);diff 基线此刻也没立(web ctxHost 同闸)。 */
+    private seeded = false;
     private dead = false;
     /** 上一次 chat doc 的楼层数组(seed() 建立基线,diff 不回头补发)。 */
     private chatMessages: unknown[] | null = null;
@@ -260,12 +263,15 @@ export class PanelEventPump {
                 if (typeof e?.event === 'string' && CHAT_MUTATING_EVENTS.has(e.event)) {
                     this.deps.onChatChanged?.();
                 }
+                if (typeof e?.event !== 'string' || !e.event) continue;
+                const args = Array.isArray(e.args) ? e.args : [];
+                /* 宿主旁路同此理:帧脚本 refreshOneMessage 经 eventEmit 写出的
+                   refresh_message(origin=本 hostId)也要触发本 mount 重铸
+                   (MessageFrame onThEvent → 重 mint);origin 去重只挡
+                   「推回帧脚本 listener」这半路,防回声双发。 */
+                this.deps.onThEvent?.(e.event, args);
                 if (e?.origin && e.origin === this.hostId) continue;
-                if (typeof e?.event === 'string' && e.event) {
-                    const args = Array.isArray(e.args) ? e.args : [];
-                    this.deps.onThEvent?.(e.event, args);
-                    this.emitTh(e.event, args);
-                }
+                this.emitTh(e.event, args);
             }
         } catch { /* 信箱面缺席/抖动不致命 —— 下轮泵再试 */ }
     }
@@ -283,30 +289,37 @@ export class PanelEventPump {
      */
     async seed(): Promise<void> {
         if (this.dead) return;
-        if (this.deps.chatName) {
-            try {
-                const doc = await this.deps.fetchChat();
-                this.chatMessages = Array.isArray(doc?.messages) ? doc!.messages! : null;
-            } catch (e) {
-                this.deps.log?.(`seed failed: ${e instanceof Error ? e.message : e}`);
-            }
-        }
-        if (!this.eventLogDead) {
-            try {
-                const res = ((await this.deps.thCall('getEventLog', { since: Number.MAX_SAFE_INTEGER })) ?? {}) as LooseThResult;
-                if (res.unsupported) {
-                    this.eventLogDead = true;
-                    return;
+        try {
+            if (this.deps.chatName) {
+                try {
+                    const doc = await this.deps.fetchChat();
+                    this.chatMessages = Array.isArray(doc?.messages) ? doc!.messages! : null;
+                } catch (e) {
+                    this.deps.log?.(`seed failed: ${e instanceof Error ? e.message : e}`);
                 }
-                const seq = (res.result as { seq?: number } | undefined)?.seq;
-                if (typeof seq === 'number') this.lastEventSeq = seq;
-            } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
+            }
+            if (!this.eventLogDead) {
+                try {
+                    const res = ((await this.deps.thCall('getEventLog', { since: Number.MAX_SAFE_INTEGER })) ?? {}) as LooseThResult;
+                    if (res.unsupported) {
+                        this.eventLogDead = true;
+                        return;
+                    }
+                    const seq = (res.result as { seq?: number } | undefined)?.seq;
+                    if (typeof seq === 'number') this.lastEventSeq = seq;
+                } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
+            }
+        } finally {
+            // 无论钉头成败都放行 tick —— gate 挡「seed 未竟时 tick 抢跑」,
+            // 「拉不到留 0 有界回放」的兜底语义不动。
+            this.seeded = true;
         }
     }
 
-    /** 一轮泵:chat diff → 楼层事件 + chat.updated;随后信箱拉新。 */
+    /** 一轮泵:chat diff → 楼层事件 + chat.updated;随后信箱拉新。
+     *  seed 未竟的拍整轮跳过 —— 游标钉头是顺序前置,不是可选优化。 */
     async tick(): Promise<void> {
-        if (this.dead) return;
+        if (this.dead || !this.seeded) return;
         if (this.deps.chatName) {
             try {
                 const doc = await this.deps.fetchChat();

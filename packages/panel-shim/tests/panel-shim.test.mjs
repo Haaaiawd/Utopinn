@@ -253,6 +253,32 @@ test('getCurrentMessageId uses bootstrap messageId without a round-trip', async 
     assert.equal(sent.length, 0);
 });
 
+test('楼层帧(entry=__message__)refreshOneMessage 改走 eventEmit,不发闸外请求', async () => {
+    const { win, sent, lastRequest, respond } = makeEnv({ entry: '__message__' });
+    let local = null;
+    win.eventOn('refresh_message', (mid) => { local = mid; });
+    respond(lastRequest().requestId, {});
+    const p = win.refreshOneMessage(5);
+    const req = lastRequest();
+    // 桥闸内路径:th.eventEmit(授权面内),不是被闸拒的 th.refreshOneMessage
+    assert.equal(req.method, 'th.eventEmit');
+    assert.deepEqual(JSON.parse(JSON.stringify(req.args)), { event: 'refresh_message', args: [5] });
+    assert.equal(local, 5);   // 本帧 listener 本地立响(自楼重渲靠它)
+    respond(req.requestId, null);
+    await p;
+    assert.ok(!sent.some((m) => m.method === 'th.refreshOneMessage'), '楼层帧不应再发 th.refreshOneMessage');
+});
+
+test('非楼层帧(CardApp)refreshOneMessage 直发 th.refreshOneMessage', async () => {
+    const { win, lastRequest, respond } = makeEnv({ entry: 'index.html' });
+    const p = win.refreshOneMessage(5);
+    const req = lastRequest();
+    assert.equal(req.method, 'th.refreshOneMessage');
+    assert.deepEqual(JSON.parse(JSON.stringify(req.args)), { message_id: 5 });
+    respond(req.requestId, null);
+    await p;
+});
+
 test('responses reject on ok:false', async () => {
     const { win, lastRequest, respond } = makeEnv();
     const p = win.getVariables({});

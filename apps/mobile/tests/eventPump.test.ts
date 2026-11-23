@@ -259,6 +259,58 @@ test('chatName 缺席 → diff 泵停摆,信箱仍拉(seed 也钉游标)', async
     assert.deepEqual(pushes, []);
 });
 
+test('seed 未竟时 tick 整轮 no-op(信箱抢跑竞态闸,web 同修)', async () => {
+    let releaseChat: (() => void) | undefined;
+    let gateFirst = true;
+    const box = fakeMailbox([{ seq: 7, at: 0, event: 'refresh_message', args: [0] }]);
+    let fetched = 0;
+    const { deps, thCalls } = makeDeps({
+        fetchChat: async () => {
+            fetched++;
+            // 只闸第一趟(seed 内那次)—— 后续 tick 的 fetchChat 照常返回
+            if (gateFirst) { gateFirst = false; await new Promise<void>((r) => { releaseChat = r; }); }
+            return { messages: [] };
+        },
+        thCall: box.thCall,
+    });
+    const pump = new PanelEventPump(deps);
+    const seedP = pump.seed();           // 卡在 fetchChat —— seed 未竟
+    await pump.tick();                    // seeded=false → 整轮 no-op
+    assert.equal(fetched, 1);             // 只有 seed 自己那次
+    assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 0);
+    releaseChat!();
+    await seedP;
+    await pump.tick();                    // 现在正常泵(since=钉过的头位)
+    assert.equal(fetched, 2);
+    const gl = thCalls.filter((c) => c.method === 'getEventLog');
+    assert.equal(gl.length, 2);
+    assert.equal(gl[0]!.args.since, Number.MAX_SAFE_INTEGER);
+    assert.equal(gl[1]!.args.since, 7);
+});
+
+test('自源 refresh_message:onThEvent 收(宿主重铸恰好一次)但 emitTh 不回声', async () => {
+    const host: { name: string; args: unknown[] }[] = [];
+    const box = fakeMailbox();
+    const { deps, pushes } = makeDeps({
+        onThEvent: (name, args) => host.push({ name, args }),
+        thCall: box.thCall,
+    });
+    const pump = new PanelEventPump(deps);
+    pump.trackOutbound('th.eventOn', { event: 'refresh_message' });
+    await pump.seed();
+    // 帧脚本 refreshOneMessage(mid) 的真实产物:trackOutbound 给
+    // eventEmit 注 origin=hostId —— 信箱条目带本 mount 去重标
+    const emitted = pump.trackOutbound('th.eventEmit', { event: 'refresh_message', args: [3] });
+    box.log.push({ seq: 1, at: 0, event: 'refresh_message', args: [3], origin: emitted.origin as string });
+    await pump.tick();
+    // 宿主旁路收到自源条目 —— origin 去重不挡 host 重铸这半路
+    assert.deepEqual(host, [{ name: 'refresh_message', args: [3] }]);
+    // 卡侧无回声 —— 订阅了也不推(发起帧 dispatchLocal 已响过)
+    assert.deepEqual(pushes.filter((p) => p.event === 'th.event'), []);
+    await pump.tick();
+    assert.equal(host.length, 1);   // 游标已走,重铸恰好一次
+});
+
 test('dispose 后 tick 不再发请求', async () => {
     const { deps, thCalls } = makeDeps();
     const pump = new PanelEventPump(deps);
