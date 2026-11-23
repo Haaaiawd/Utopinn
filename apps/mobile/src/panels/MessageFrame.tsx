@@ -2,7 +2,8 @@
 //
 //   POST /api/card-runtime/mounts {kind:'message',charId,chatName,html}
 //   → doc-mount(entryUrl + bridgeNonce)→ WebView 加载 ?shim=t0
-//   → 'utopinn-panel' 桥 + 全 TH 面(PANEL_METHODS_TH;转发 → th/call)。
+//   → 'utopinn-panel' 桥 + 只读 TH 子集(PANEL_METHODS_TH_MSGFRAME —— 块是
+//     模型产出,不给写面;见 protocol panels.ts 注释)。
 //
 // 与 web MessageIframe 的对齐/差异:
 //   - 高度:web 靠 doc 壳的 autoheight 脚本 parent.postMessage 回报 —— RN
@@ -18,7 +19,7 @@
 import { useCallback, useEffect, useMemo, useState, type FC, type ReactElement, type Ref } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { PANEL_METHODS_TH } from '@utopinn/protocol';
+import { PANEL_METHODS_TH_MSGFRAME } from '@utopinn/protocol';
 import { mountMessageFrame, type MountBundle } from './mounts';
 import { usePanelHost, type WebViewHandle } from './host';
 import { useSession } from '../state/session';
@@ -112,7 +113,12 @@ export function MessageFrame({ charDir, chatName, html, messageId }: {
         }
     }, [charDir, chatName, html, messageId]);
 
-    const allowed = useMemo(() => new Set<string>(PANEL_METHODS_TH), []);
+    /* 授权子集 = 只读 + 订阅 + UI 动词(protocol PANEL_METHODS_TH_MSGFRAME)。
+       楼层块是模型产出 —— deleteChatMessages/变量写/generate/triggerSlash
+       这类写法不能随 HTML 白送;TH 合法的「按钮写变量」走显式确认门,
+       未实现前一律拒。与 web MessageIframe 的全 TH 面是有意的分歧(web
+       同隐患未修,移动端先收)。 */
+    const allowed = useMemo(() => new Set<string>(PANEL_METHODS_TH_MSGFRAME), []);
     // 楼层帧本身即可视表面:open → delivered:'floor_frame';close → 无壳可收,
     // 如实 no_shell_nav(ctx.* 在 PANEL_METHODS_TH 闸下根本到不了 dispatch,
     // 这是防御性应答,与桥 allowlist 分层不冲突)。

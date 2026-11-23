@@ -11,6 +11,7 @@
 // surfaceOpen 无接线时如实 no_shell_surface 降级 —— 不假装成了。
 import { useEffect, useRef } from 'react';
 import { client, getChat } from '../api/client';
+import { notifyChatChanged } from '../state/chatSync';
 import { PanelBridge } from './bridge';
 import { PanelEventPump } from './eventPump';
 import { dispatchPanelCall } from './ctxApi';
@@ -81,6 +82,8 @@ export function usePanelHost(opts: PanelHostOpts): {
                 client().th.call(method, { target: { charDir, chatName }, args }),
             fetchChat: () => getChat(charDir, chatName!),
             onThEvent,
+            // 帧/面板的 TH 写改了 chat doc → 广播给该会话的读者重对坐标。
+            onChatChanged: () => notifyChatChanged(charDir, chatName),
         });
         const bridge = new PanelBridge({
             // No nonce in the bundle → '' — which no card can match, so every

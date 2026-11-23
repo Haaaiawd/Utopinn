@@ -7,11 +7,14 @@
 //   - chat diff:追加楼层 → rendered+received/sent;swipe_id 变 → swiped;
 //     mes 变 → edited+updated;任何差 → chat_changed + 'chat.updated'
 //   - getEventLog unsupported → 停拉;seq 单调不回退
+//   - seed 把信箱游标钉到头(不回放历史 —— refresh_message 滞留不炸重铸)
+//   - mutation 事件/diff dirty → onChatChanged(读者坐标同步,含自产 origin)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PanelEventPump, type PanelEventPumpDeps } from '../src/panels/eventPump.ts';
 
 interface PushRec { event: string; payload?: Record<string, unknown> }
+interface LogEntry { seq: number; at: number; event: string; args?: unknown[]; origin?: string }
 
 function makeDeps(over: Partial<PanelEventPumpDeps> = {}) {
     const pushes: PushRec[] = [];
@@ -31,6 +34,21 @@ function makeDeps(over: Partial<PanelEventPumpDeps> = {}) {
         return inner ? inner(method, args) : { ok: true, result: { seq: 0, entries: [] } };
     };
     return { deps, pushes, thCalls };
+}
+
+/** 忠实信箱模型:getEventLog 按 since 过滤 + 回当前头 seq。 */
+function fakeMailbox(entries: LogEntry[] = []) {
+    const log: LogEntry[] = [...entries];
+    return {
+        log,
+        thCall: async (_m: string, args: Record<string, unknown>) => ({
+            ok: true,
+            result: {
+                seq: log.length ? log[log.length - 1]!.seq : 0,
+                entries: log.filter((e) => e.seq > Number(args.since ?? 0)),
+            },
+        }),
+    };
 }
 
 test('seed 建立 diff 基线,不回放历史楼层', async () => {
@@ -92,38 +110,43 @@ test('swipe_id 变 → message_swiped;mes 变 → edited+updated', async () => {
     assert.ok(names2.includes('message_updated'));
 });
 
-test('信箱:订阅事件推卡;origin=hostId 的条目被跳过', async () => {
+test('seed 把信箱游标钉到头:滞留 refresh_message 不再回放(reviewer 返修)', async () => {
+    const host: { name: string; args: unknown[] }[] = [];
+    // 挂载前信箱里已有一条 refresh_message —— 老实现 seq=0 回放 → 无限重铸环
+    const box = fakeMailbox([
+        { seq: 7, at: 0, event: 'refresh_message', args: [3] },
+        { seq: 8, at: 0, event: 'generation_ended', args: [] },
+    ]);
     const { deps, pushes } = makeDeps({
-        thCall: async () => ({
-            ok: true,
-            result: {
-                seq: 3,
-                entries: [
-                    { seq: 1, at: 0, event: 'generation_ended', args: [9] },
-                    { seq: 2, at: 0, event: 'echo', args: [], origin: 'WILL-SKIP' },
-                    { seq: 3, at: 0, event: 'unsubscribed_thing', args: [] },
-                ],
-            },
-        }),
+        onThEvent: (name, args) => host.push({ name, args }),
+        thCall: box.thCall,
     });
     const pump = new PanelEventPump(deps);
-    const selfOrigin = pump.hostId;
-    // 把第 2 条的 origin 伪造成本 mount —— 模拟自己 eventEmit 的回声
-    deps.thCall = async () => ({
-        ok: true,
-        result: {
-            seq: 3,
-            entries: [
-                { seq: 1, at: 0, event: 'generation_ended', args: [9] },
-                { seq: 2, at: 0, event: 'echo', args: [], origin: selfOrigin },
-                { seq: 3, at: 0, event: 'unsubscribed_thing', args: [] },
-            ],
-        },
-    });
+    pump.trackOutbound('th.eventOn', { event: 'refresh_message' });
+    pump.trackOutbound('th.eventOn', { event: 'generation_ended' });
+    await pump.seed();
+    await pump.tick();
+    assert.deepEqual(host, []);                                    // 旁路不吃历史
+    assert.deepEqual(pushes.filter((p) => p.event === 'th.event'), []); // 卡侧不吃历史
+    // seed 之后新到的事件照常送达
+    box.log.push({ seq: 9, at: 1, event: 'refresh_message', args: [3] });
+    await pump.tick();
+    assert.deepEqual(host, [{ name: 'refresh_message', args: [3] }]);
+});
+
+test('信箱:订阅事件推卡;origin=hostId 的条目被跳过', async () => {
+    const box = fakeMailbox();
+    const { deps, pushes } = makeDeps({ thCall: box.thCall });
+    const pump = new PanelEventPump(deps);
     pump.trackOutbound('th.eventOn', { event: 'generation_ended' });
     pump.trackOutbound('th.eventOn', { event: 'echo' });
     pump.trackOutbound('th.eventOn', { event: 'unsubscribed_thing' });
     await pump.seed();
+    box.log.push(
+        { seq: 1, at: 0, event: 'generation_ended', args: [9] },
+        { seq: 2, at: 0, event: 'echo', args: [], origin: pump.hostId },
+        { seq: 3, at: 0, event: 'unsubscribed_thing', args: [] },
+    );
     await pump.tick();
     const names = pushes.filter((p) => p.event === 'th.event').map((p) => p.payload?.name);
     assert.deepEqual(names, ['generation_ended', 'unsubscribed_thing']);
@@ -132,18 +155,45 @@ test('信箱:订阅事件推卡;origin=hostId 的条目被跳过', async () => {
 
 test('信箱旁路 onThEvent 不经订阅面也收到事件', async () => {
     const host: { name: string; args: unknown[] }[] = [];
+    const box = fakeMailbox();
     const { deps } = makeDeps({
         onThEvent: (name, args) => host.push({ name, args }),
-        thCall: async () => ({
-            ok: true,
-            result: { seq: 1, entries: [{ seq: 1, at: 0, event: 'refresh_message', args: [4] }] },
-        }),
+        thCall: box.thCall,
     });
     const pump = new PanelEventPump(deps);
-    // 故意不订阅 refresh_message —— 旁路仍该收到
     await pump.seed();
+    box.log.push({ seq: 1, at: 0, event: 'refresh_message', args: [4] });
     await pump.tick();
     assert.deepEqual(host, [{ name: 'refresh_message', args: [4] }]);
+});
+
+test('mutation 信箱事件 → onChatChanged(含本 mount 自产 origin)', async () => {
+    const box = fakeMailbox();
+    let changed = 0;
+    const { deps } = makeDeps({ thCall: box.thCall, onChatChanged: () => changed++ });
+    const pump = new PanelEventPump(deps);
+    await pump.seed();
+    box.log.push(
+        { seq: 1, at: 0, event: 'chat_changed', args: [] },
+        // 自己的写也通知 —— 读者缓存同样过期,origin 去重只管卡侧回声
+        { seq: 2, at: 0, event: 'message_deleted', args: [5], origin: pump.hostId },
+        { seq: 3, at: 0, event: 'totally_unrelated', args: [] },
+    );
+    await pump.tick();
+    assert.equal(changed, 2);
+});
+
+test('diff dirty → onChatChanged(帧写面/他端写 → 读者重对坐标)', async () => {
+    const { deps } = makeDeps({ fetchChat: async () => ({ messages: [] }) });
+    let changed = 0;
+    deps.onChatChanged = () => changed++;
+    const pump = new PanelEventPump(deps);
+    await pump.seed();
+    deps.fetchChat = async () => ({ messages: [{ mes: 'x' }] });
+    await pump.tick();
+    assert.equal(changed, 1);
+    await pump.tick(); // doc 不再变 → 不重复通知
+    assert.equal(changed, 1);
 });
 
 test('getEventLog unsupported → 永久停拉(不再发 thCall)', async () => {
@@ -157,15 +207,20 @@ test('getEventLog unsupported → 永久停拉(不再发 thCall)', async () => {
     assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 1);
 });
 
-test('seq 单调推进:since 用上次最大 seq', async () => {
+test('seq 单调推进:seed 钉头后,since 跟随最新头', async () => {
+    let head = 40;
     const { deps, thCalls } = makeDeps({
-        thCall: async (_m, args) => ({ ok: true, result: { seq: Number(args.since) + 5, entries: [] } }),
+        thCall: async () => ({ ok: true, result: { seq: head, entries: [] } }),
     });
     const pump = new PanelEventPump(deps);
-    await pump.tick();
-    await pump.tick();
-    assert.equal(thCalls[0]!.args.since, 0);
-    assert.equal(thCalls[1]!.args.since, 5);
+    await pump.seed();            // 头位拉取:since=MAX → 游标 40
+    head = 42;
+    await pump.tick();            // since=40 → 游标 42
+    head = 50;
+    await pump.tick();            // since=42 → 游标 50
+    assert.equal(thCalls[0]!.args.since, Number.MAX_SAFE_INTEGER);
+    assert.equal(thCalls[1]!.args.since, 40);
+    assert.equal(thCalls[2]!.args.since, 42);
 });
 
 test('trackOutbound:eventEmit 注入 origin;ClearEvent 捎上已知 lids', () => {
@@ -192,7 +247,7 @@ test('eventRemoveListener 按 lid 摘;无 lid 按 event 摘', () => {
     assert.deepEqual(pump.subscribedEvents(), []);
 });
 
-test('chatName 缺席 → diff 泵停摆,信箱仍拉', async () => {
+test('chatName 缺席 → diff 泵停摆,信箱仍拉(seed 也钉游标)', async () => {
     const { deps, pushes, thCalls } = makeDeps({ chatName: undefined });
     let fetched = 0;
     deps.fetchChat = async () => { fetched++; return { messages: [] }; };
@@ -200,7 +255,7 @@ test('chatName 缺席 → diff 泵停摆,信箱仍拉', async () => {
     await pump.seed();
     await pump.tick();
     assert.equal(fetched, 0);
-    assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 1);
+    assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 2); // seed 头位 + tick
     assert.deepEqual(pushes, []);
 });
 

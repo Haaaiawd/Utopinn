@@ -47,12 +47,34 @@ export interface PanelEventPumpDeps {
     fetchChat: () => Promise<ChatDocLike | null>;
     /** 信箱事件宿主旁路(不过卡订阅面)——MessageFrame 用 refresh_message 自刷。 */
     onThEvent?: (name: string, args: unknown[]) => void;
+    /**
+     * chat doc 发生变更的宿主通知(diff dirty 或信箱 mutation 事件命中)——
+     * 面板写面(TH set/delete/create/rotate)改完楼层,reader 的消息坐标必须
+     * 立刻重对,否则编辑/选稿按旧下标写错楼(issue: 帧删楼后坐标漂移)。
+     * 本 mount 自己的写(origin 命中)也要通知 —— 读者缓存同样过期。
+     */
+    onChatChanged?: () => void;
     /** 诊断/日志行(默认静默 —— 泵失败不该吵到面板上)。 */
     log?: (msg: string) => void;
 }
 
 const jsonClone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)) as T);
 const asMsg = (v: unknown): Record<string, unknown> => (v ?? {}) as Record<string, unknown>;
+
+/**
+ * 信箱里标识 chat doc 变更的事件(服务端在 set/create/delete/rotate/
+ * 生成落盘路径上 recordThEvent,见 utopinn-th.js)—— 命中即通知宿主重对
+ * 楼层坐标,不用等下一轮 diff。
+ */
+const CHAT_MUTATING_EVENTS = new Set([
+    'chat_changed',
+    'message_deleted',
+    'message_edited',
+    'message_updated',
+    'message_sent',
+    'message_received',
+    'message_swiped',
+]);
 
 /** swipe 槽位文本:string | {mes} 两种线形归一成可比较值。 */
 function swipeSlotText(s: unknown): string | undefined {
@@ -214,6 +236,9 @@ export class PanelEventPump {
             const chatId = this.deps.chatName ? `${this.deps.chatName}.jsonl` : null;
             this.emitTh('chat_changed', [chatId]);
             this.deps.push('chat.updated', {});
+            // 面板写面/他端写造成的楼层变化 → 读者缓存同步(reviewer issue:
+            // 帧删楼后 reader 还拿旧坐标,编辑写错楼层)。
+            this.deps.onChatChanged?.();
         }
     }
 
@@ -230,6 +255,11 @@ export class PanelEventPump {
             if (!result) return;
             if (typeof result.seq === 'number') this.lastEventSeq = Math.max(this.lastEventSeq, result.seq);
             for (const e of result.entries ?? []) {
+                // mutation 事件先行通知宿主 —— 含本 mount 自己的写
+                // (origin 去重只防「卡侧回声」,不防「读者该知道变了」)。
+                if (typeof e?.event === 'string' && CHAT_MUTATING_EVENTS.has(e.event)) {
+                    this.deps.onChatChanged?.();
+                }
                 if (e?.origin && e.origin === this.hostId) continue;
                 if (typeof e?.event === 'string' && e.event) {
                     const args = Array.isArray(e.args) ? e.args : [];
@@ -242,14 +272,35 @@ export class PanelEventPump {
 
     // ── 生命周期 ──────────────────────────────────────────────────────────
 
-    /** 初次快照 —— bridge 就位后调一次,建立 diff 基线(不回放历史)。 */
+    /**
+     * 初次快照 —— bridge 就位后调一次,建立 diff 基线(不回放历史)。
+     * 信箱游标同钉到当前头:滞留 refresh_message/chat_changed 若被当新
+     * 事件投递,MessageFrame 会掉进「投递 → 重铸 → 新泵 → 再投递」无限环
+     * (reviewer issue)。since=MAX_SAFE_INTEGER 语义 = 只要头位不取条目
+     * (服务端 filter seq>since → 空 entries + 回当前 seq)。
+     * 头位拉取失败时游标留 0 —— 下轮 tick 至多回放一轮历史(有界,网络
+     * 恢复即自愈),不为边界放弃信箱面。
+     */
     async seed(): Promise<void> {
-        if (this.dead || !this.deps.chatName) return;
-        try {
-            const doc = await this.deps.fetchChat();
-            this.chatMessages = Array.isArray(doc?.messages) ? doc!.messages! : null;
-        } catch (e) {
-            this.deps.log?.(`seed failed: ${e instanceof Error ? e.message : e}`);
+        if (this.dead) return;
+        if (this.deps.chatName) {
+            try {
+                const doc = await this.deps.fetchChat();
+                this.chatMessages = Array.isArray(doc?.messages) ? doc!.messages! : null;
+            } catch (e) {
+                this.deps.log?.(`seed failed: ${e instanceof Error ? e.message : e}`);
+            }
+        }
+        if (!this.eventLogDead) {
+            try {
+                const res = ((await this.deps.thCall('getEventLog', { since: Number.MAX_SAFE_INTEGER })) ?? {}) as LooseThResult;
+                if (res.unsupported) {
+                    this.eventLogDead = true;
+                    return;
+                }
+                const seq = (res.result as { seq?: number } | undefined)?.seq;
+                if (typeof seq === 'number') this.lastEventSeq = seq;
+            } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
         }
     }
 
