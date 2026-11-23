@@ -30,7 +30,7 @@ import { createAppContext, WebServer, loadProfileFile, importPluginModule, loadY
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
 import { emit as diagEmit } from './services/diag-bus.js';
 
 export const appCtx = createAppContext();
@@ -73,7 +73,11 @@ export const webServer = appCtx.webServer;
 
 const here = dirname(fileURLToPath(import.meta.url));
 const profilePath = join(here, 'profile.yaml');
-const patchPath = join(here, 'profile.patch.yaml');
+// patch 是运行时面(toggle 会写):Docker/只读镜像部署下源码目录不可写,
+// 可变副本落到 dataRoot;读时 dataRoot 优先、回落镜像内文件——
+// 旧部署留在源码旁的 patch 不丢,首次 upsert 会带着旧行整体落进 dataRoot。
+const bundledPatchPath = join(here, 'profile.patch.yaml');
+const patchPath = join(globalThis.DATA_ROOT || here, 'profile.patch.yaml');
 const baseProfile = loadYaml(await readFile(profilePath, 'utf8'));
 
 // ---------------------------------------------------------------------------
@@ -84,8 +88,9 @@ const fibers = new Map();   // id → Fiber
 const results = new Map();  // id → LoadedPlugin
 
 async function readPatchRows() {
-    if (!existsSync(patchPath)) return [];
-    const doc = loadYaml(await readFile(patchPath, 'utf8'));
+    const src = existsSync(patchPath) ? patchPath : bundledPatchPath;
+    if (!existsSync(src)) return [];
+    const doc = loadYaml(await readFile(src, 'utf8'));
     return doc?.plugins ?? [];
 }
 
@@ -112,6 +117,7 @@ async function upsertPatchRow(id, disabled) {
         if (i >= 0) rows[i] = row;
         else rows.push(row);
         // 原子写:tmp+rename,避免崩溃留半文件 → 下次启动 loadYaml 抛错。
+        await mkdir(dirname(patchPath), { recursive: true });
         const tmp = `${patchPath}.${process.pid}.tmp`;
         await writeFile(tmp, dumpYaml({ plugins: rows }), 'utf8');
         await rename(tmp, patchPath);

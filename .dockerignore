@@ -1,0 +1,61 @@
+# --- VCS / agent ---
+.git
+.gitignore
+.skeinn
+.taste-skill
+
+# --- 参考代码 / 测试 / 工作区(不进构建) ---
+ref/
+tests/
+work/
+**/tests
+coverage/
+docs/
+
+# --- 依赖与构建产物(镜像内重建) ---
+**/node_modules
+**/dist
+**/build
+**/*.tsbuildinfo
+**/.expo
+
+# --- 本地实例状态与密钥(严禁进镜像,宁多勿漏) ---
+**/config.yaml
+!apps/server/default/config.yaml
+**/whitelist.txt
+**/data
+data/
+**/backups
+**/cookie-secret.txt
+**/access.log
+.env
+.env.*
+**/.env
+**/.env.*
+*.local
+*.pem
+*.key
+**/certs
+# 旧版 apps/server 自带 docker 件已删,防历史检出残留回灌
+apps/server/Dockerfile
+apps/server/docker-compose*
+apps/server/docker/
+
+# --- 非服务端应用:只保留 manifest 保 lockfile 一致,源码不进上下文 ---
+apps/mobile/**
+!apps/mobile/package.json
+apps/cli/**
+!apps/cli/package.json
+
+# --- 构建件自身 ---
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# --- 杂项 ---
+*.log
+*.bat
+*.cmd
+.DS_Store
+Thumbs.db
+assets/

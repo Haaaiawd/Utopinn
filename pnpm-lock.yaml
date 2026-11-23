@@ -273,6 +273,9 @@ importers:
       '@utopinn/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@utopinn/formats':
+        specifier: workspace:*
+        version: link:../../packages/formats
       '@utopinn/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -592,9 +595,6 @@ importers:
       '@types/yauzl':
         specifier: ^2.10.3
         version: 2.10.3
-      '@utopinn/formats':
-        specifier: workspace:*
-        version: link:../../packages/formats
       eslint:
         specifier: ^8.57.1
         version: 8.57.1

@@ -686,13 +686,13 @@ export function getCookieSecret(dataRoot) {
     const oldSecret = getConfigValue(STORAGE_KEYS.cookieSecret);
     if (oldSecret) {
         console.log('Migrating cookie secret from config.yaml...');
-        writeFileAtomicSync(cookieSecretPath, oldSecret, { encoding: 'utf8' });
+        writeFileAtomicSync(cookieSecretPath, oldSecret, { encoding: 'utf8', mode: 0o600 });
         return oldSecret;
     }
 
     console.warn(color.yellow('Cookie secret is missing from data root. Generating a new one...'));
     const secret = crypto.randomBytes(64).toString('base64');
-    writeFileAtomicSync(cookieSecretPath, secret, { encoding: 'utf8' });
+    writeFileAtomicSync(cookieSecretPath, secret, { encoding: 'utf8', mode: 0o600 });
     return secret;
 }
 

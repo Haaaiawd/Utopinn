@@ -1,0 +1,39 @@
+# Utopinn all-in-one:内核 + SPA + 单数据卷。
+# 配置不用环境变量管——首启后改 ./data/config.yaml(卷内事实源),重启生效。
+services:
+  app:
+    build: .
+    image: utopinn:latest
+    container_name: utopinn
+    ports:
+      # 默认只绑本机回环;公网分发交给前置 TLS(见下方 caddy 注释块或 cloudflared),
+      # 别把应用端口直接暴露到公网
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # 单卷全状态:config.yaml/账号/卡/聊天/secrets/共享卡库全在里面
+      # 备份这个目录 = 备份一切
+      - ./data:/data
+    restart: unless-stopped
+
+  # ---------- 可选:Caddy TLS 前置 ----------
+  # 1) 取消注释本服务与文件底部 volumes.caddy_data
+  # 2) cp docker/Caddyfile.example docker/Caddyfile,或直接用样例
+  #    (`{$DOMAIN} { reverse_proxy app:8000 }`,应用层 IP 白名单要加 ACL,见 README #39 段)
+  # 3) .env 写 DOMAIN=your.domain,或起服前 export DOMAIN
+  # caddy:
+  #   image: caddy:2
+  #   container_name: utopinn-caddy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   environment:
+  #     - DOMAIN=${DOMAIN:?set DOMAIN in .env or shell environment}
+  #   volumes:
+  #     - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #   depends_on:
+  #     - app
+
+# volumes:
+#   caddy_data:
