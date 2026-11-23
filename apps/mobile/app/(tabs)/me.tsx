@@ -90,6 +90,9 @@ export default function MeScreen() {
                         <Description>
                             Android 模拟器:{DEFAULT_BASE_URL} 指向宿主机;
                             真机/模拟器外:填服务端局域网地址(如 http://192.168.x.x:8000)。
+                            公网/共享网络部署请用 https://(反代终止 TLS)—— 会话
+                            cookie 走明文 http 会被沿途窃取;纯局域网 http 可接受,
+                            iOS 上若被系统拦截需在 ATS 里放行该域。
                         </Description>
                     </TextField>
                     <View style={styles.row}>

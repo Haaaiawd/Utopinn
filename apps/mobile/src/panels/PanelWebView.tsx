@@ -1,8 +1,9 @@
-// PanelWebView — RN host for untrusted card HTML (TASK-009).
+// PanelWebView — RN host for untrusted card HTML (TASK-009 + P0-4/5).
 // Flow mirrors the web CardAppFrame (apps/web/src/cardapp/CardAppFrame.tsx):
-//   POST /api/card-runtime/mounts {charId} → mount bundle (entryUrl +
+//   POST /api/card-runtime/mounts {charId,chatName} → mount bundle (entryUrl +
 //   bridgeNonce + manifest) → WebView at entryUrl?shim=t0 → 'utopinn-panel'
-//   bridge → ctxApi → server TH layer.
+//   bridge → ctxApi → server TH layer;事件泵(usePanelHost/PanelEventPump)
+//   把订阅过的 th.event 打进 WebView —— 状态类 CardApp 靠它活着。
 //
 // Security posture (same model as design/cardapp-web-host.md + protocol
 // panels.ts, carried to the RN transport):
@@ -18,14 +19,17 @@
 //     echoed by the shim (onMessage has no ev.source — nonce equality is
 //     the whole check); ungranted methods are denied without dispatch;
 //   - 'ctx'-only manifests degrade to a badge (t0 shim serves the th face).
-import { useEffect, useMemo, useRef, useState, type FC, type ReactElement, type Ref } from 'react';
+import { useEffect, useMemo, useState, type FC, type ReactElement, type Ref } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
-import { dispatchPanelCall, type PanelContext } from './ctxApi';
-import { expandApiGrants, PanelBridge } from './bridge';
+import { type PanelContext } from './ctxApi';
+import { expandApiGrants } from './bridge';
 import { mountCardApp, mountErrorCode, revokeMount, type MountBundle } from './mounts';
+import { usePanelHost, type WebViewHandle } from './host';
 import { useSession } from '../state/session';
 import { colors } from '../ui/theme';
+
+export type { WebViewHandle };
 
 /**
  * Phase machine:
@@ -39,25 +43,9 @@ type Phase =
     | { kind: 'none'; reason: 'no_card_app' | 'card_app_disabled' }
     | { kind: 'error'; message: string };
 
-/**
- * host→card wire delivery: inject `window.__utopinnPanelReceive(msg)` — the
- * entrypoint the t0 shim installs for exactly this host (it also listens
- * for 'message' events, but direct delivery skips the event hop).
- * U+2028/U+2029 are legal JSON yet illegal inside JS string literals —
- * escape them or card data containing them would break the injection.
- */
-function receiveJs(msg: unknown): string {
-    const wire = JSON.stringify(msg).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-    return `(function(){var f=window.__utopinnPanelReceive;if(typeof f==='function'){f(${wire});}})();true;`;
-}
-
 // RNW 14 的 WebViewProps = IOS&Android&Windows 声明交集,在 strict 下塌成
 // never(库 d.ts 自身的问题,不是用法错)——这里声明我们实际使用的公共面,
 // 既绕开塌缩又保住对本文件 props 的类型检查。
-/** WebView 句柄的最小结构 —— 我们只调 injectJavaScript。 */
-export interface WebViewHandle {
-    injectJavaScript: (js: string) => void;
-}
 
 interface PanelWebViewElementProps {
     ref?: Ref<WebViewHandle>;
@@ -87,16 +75,16 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
     const [mount, setMount] = useState<MountBundle | null>(null);
     const [phase, setPhase] = useState<Phase>({ kind: 'mounting' });
     const [attempt, setAttempt] = useState(0);
-    const webRef = useRef<WebViewHandle | null>(null);
-    const bridgeRef = useRef<PanelBridge | null>(null);
 
     // ── mount lifecycle: mint → load; cleanup → revoke(会话切换/卸载即收) ──
+    // chatName 进 body(P0-5):服务端拿它喂 bootstrap.chatName + th 桥
+    // target.chatName —— 缺席时变量/信箱落到全局/会话态域,卡拿不到会话上下文。
     useEffect(() => {
         let dead = false;
         let mintedId: string | null = null;
         setMount(null);
         setPhase({ kind: 'mounting' });
-        mountCardApp(charDir)
+        mountCardApp(charDir, chatName)
             .then((m) => {
                 if (dead) {
                     // unmounted mid-mint — the fresh capability must not leak
@@ -125,46 +113,27 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
             dead = true;
             if (mintedId) void revokeMount(mintedId).catch(() => { });
         };
-    }, [charDir, conn.baseUrl, attempt]);
+    }, [charDir, chatName, conn.baseUrl, attempt]);
 
     const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api), [mount]);
 
-    // ── bridge lifecycle: nonce + allowlist + dispatch, tied to this mount ──
-    useEffect(() => {
-        if (!mount) return;
-        const bridge = new PanelBridge({
-            // No nonce in the bundle → '' — which no card can match, so every
-            // request is denied rather than silently authorized.
-            nonce: mount.bridgeNonce ?? '',
-            allowed: grants.allowed,
-            send: (msg) => webRef.current?.injectJavaScript(receiveJs(msg)),
-            dispatch: async (method, args) => {
-                // 卡「表面可见性」(ctx.openOverlay/closeOverlay → wire
-                // ctx.surfaceOpen/surfaceClose):面板页本身就是卡的可视表面 ——
-                // open 即达意(无需再导航);close → 壳回调回上一页,未接如实降级。
-                if (method === 'ctx.surfaceOpen') {
-                    return { ok: true, delivered: 'panel_page' };
-                }
-                if (method === 'ctx.surfaceClose') {
-                    if (onSurfaceClose) {
-                        onSurfaceClose();
-                        return { ok: true };
-                    }
-                    return { ok: false, reason: 'no_shell_nav' };
-                }
-                return dispatchPanelCall(method, args, { charDir, chatName });
-            },
-        });
-        bridgeRef.current = bridge;
-        return () => {
-            bridgeRef.current = null;
-            bridge.dispose();
-        };
-    }, [mount, grants, charDir, chatName, onSurfaceClose]);
+    // ── bridge + 事件泵(usePanelHost 共享接线)─────────────────────────────
+    // surface 语义:面板页本身就是卡的可视表面 —— open 即达意(delivered:
+    // panel_page);close → 壳回调回上一页,未接如实 no_shell_nav 降级。
+    // surface 对象要稳定身份(effect deps)——useMemo 钉在 onSurfaceClose 上。
+    const surface = useMemo(
+        () => ({ deliveredAs: 'panel_page', onClose: onSurfaceClose }),
+        [onSurfaceClose],
+    );
+    const { webRef, onMessage } = usePanelHost({
+        mount,
+        allowed: grants.allowed,
+        charDir,
+        chatName,
+        surface,
+    });
 
-    const onMessage = (e: WebViewMessageEvent) => {
-        bridgeRef.current?.onMessage(e.nativeEvent.data);
-    };
+    const onWvMessage = (e: WebViewMessageEvent) => onMessage(e.nativeEvent.data);
 
     if (phase.kind === 'error') {
         return (
@@ -209,7 +178,7 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
             <WView
                 ref={webRef}
                 source={{ uri: src }}
-                onMessage={onMessage}
+                onMessage={onWvMessage}
                 // Navigation gate ≈ iframe staying inside the mount space:
                 // main-frame loads may only hit the session-free
                 // /card-runtime surface (or non-http schemes the card may

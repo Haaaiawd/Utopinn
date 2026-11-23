@@ -52,6 +52,8 @@ export interface ChatSession {
     note: (msg: string) => void;
     /** 会话级全文(导出用)。 */
     fullText: () => string;
+    /** 编辑种子:楼层的 wire 原文(content 槽是展示投影,不可写回)。 */
+    rawFloorText: (floorId: number) => string;
 }
 
 export function useChatSession(charDir: string, chatName: string, charName: string): ChatSession {
@@ -209,6 +211,23 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
             .catch((e) => setHint(`选稿失败:${e instanceof Error ? e.message : String(e)}`));
     }, [charDir, chatName]);
 
+    /**
+     * 编辑种子的 wire 原文(web floorRawText 对应物):content 槽是展示
+     * 投影(GH#3),直接拿去编辑会把投影文本写回存储字段 —— 从 st[] 的
+     * active swipe 取未映射原文。
+     */
+    const rawFloorText = useCallback((floorId: number): string => {
+        const w = st[floorId];
+        if (!w) return messages?.find((m) => m.id === floorId)?.content ?? '';
+        const arr = Array.isArray(w.swipes) ? w.swipes : null;
+        if (arr && arr.length) {
+            const sid = Math.min(Math.max(0, Number(w.swipe_id ?? 0)), arr.length - 1);
+            const s = arr[sid]!;
+            return typeof s === 'string' ? s : (s && typeof s === 'object' ? (s.mes ?? '') : '');
+        }
+        return typeof w.mes === 'string' ? w.mes : '';
+    }, [st, messages]);
+
     const submitEdit = useCallback(async (floorId: number, text: string): Promise<boolean> => {
         const raw = st[floorId];
         const ops: JsonPatchOp[] = [{ op: 'replace', path: `/body/${floorId}/mes`, value: text }];
@@ -329,7 +348,7 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
 
     return {
         messages, loadErr, hint, live, busy,
-        send, swipe, submitEdit, regenerate, branch, copyFloor, fullText,
+        send, swipe, submitEdit, regenerate, branch, copyFloor, fullText, rawFloorText,
         dismissHint: () => setHint(null),
         note: (msg: string) => setHint(msg),
     };

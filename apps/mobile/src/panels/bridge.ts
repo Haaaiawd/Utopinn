@@ -144,11 +144,10 @@ export class PanelBridge {
     }
 
     /**
-     * Host → card unsolicited push. TODO(host.event): forward the host event
-     * bus / WS subscription as PanelPush 'th.event' ({name,args}) once that
-     * slice lands — server-side subscriptions are already tracked via
-     * th.eventOn; this is the delivery joint, intentionally not wired yet
-     * (same state as the web host).
+     * Host → card unsolicited push — the event pump's delivery joint
+     * (PanelEventPump via usePanelHost):'th.event' ({name,args}) for the
+     * card's eventOn-subscribed events (chat-doc diff + th.getEventLog
+     * mailbox), 'chat.updated' as the coarse doc-changed signal.
      */
     push(event: PanelPush['event'], payload?: Record<string, unknown>): void {
         if (this.dead) return;

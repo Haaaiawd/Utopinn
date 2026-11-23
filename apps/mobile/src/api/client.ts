@@ -49,15 +49,23 @@ export interface ChatItem {
     updatedAt?: string | number;
 }
 
-/** ST wire floor (JSONL row). */
+/** ST wire floor (JSONL row) — 展示投影字段与 apps/web stToView 同口径。 */
 export interface StChatMessage {
     name?: string;
     is_user?: boolean;
     is_system?: boolean;
     mes?: string;
+    /** 展示投影(GH#3):regex AI_OUTPUT 后的楼层展示文本(存储字段不动)。 */
+    mes_display?: string;
+    /** 展示投影:与 swipes 平行同序(元素恒为投影后文本)。 */
+    swipes_display?: string[];
+    /** 展示投影:extra.reasoning 的展示文本(REASONING placement)。 */
+    reasoning_display?: string;
     send_date?: number | string;
     swipe_id?: number;
     swipes?: (string | { mes?: string; send_date?: number | string })[];
+    /** 与 swipes 平行的生成簿记;[i].extra.reasoning_display = 各版推理投影。 */
+    swipe_info?: Record<string, unknown>[];
     extra?: Record<string, unknown>;
 }
 
@@ -265,21 +273,42 @@ function toMs(v: number | string | undefined): number | undefined {
     return Number.isNaN(n) ? undefined : n;
 }
 
+/**
+ * ST wire → 楼层视图模型(与 apps/web stToView 同口径,GH#3):
+ *   mes_display / swipes_display / reasoning_display / swipe_info[i].extra.
+ *   reasoning_display 优先、原文字段回落 —— content/swipes[i].content/
+ *   reasoning 槽直接放展示文本(展示车道);编辑种子从 wire 取,见
+ *   useConversation.rawFloorText —— 别拿 content 写回 mes/swipes。
+ */
 export function stToView(m: StChatMessage, id: number): MessageViewModel {
+    const asStr = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+    const siExtra = (i: number): Record<string, unknown> | undefined => {
+        const si = Array.isArray(m.swipe_info) ? m.swipe_info[i] : undefined;
+        const ex = si && typeof si === 'object' ? (si as { extra?: unknown }).extra : undefined;
+        return ex && typeof ex === 'object' ? (ex as Record<string, unknown>) : undefined;
+    };
     const active = Number(m.swipe_id ?? 0);
+    /* swipes_display 与 swipes 同序对齐;extra.display_text 已折进服务端
+       投影,客户端只挑「投影 ?? 原文」。 */
     const swipes: SwipeView[] | undefined = Array.isArray(m.swipes) && m.swipes.length > 1
-        ? m.swipes.map((s, i) => ({
-            index: i,
-            content: stripStatusPlaceholder(typeof s === 'string' ? s : (s.mes ?? '')),
-            timestamp: typeof s === 'object' ? toMs(s.send_date) : undefined,
-        }))
+        ? m.swipes.map((s, i) => {
+            const si = siExtra(i);
+            return {
+                index: i,
+                content: stripStatusPlaceholder(asStr(m.swipes_display?.[i]) ?? (typeof s === 'string' ? s : (s.mes ?? ''))),
+                reasoning: asStr(si?.reasoning_display) ?? asStr(si?.reasoning),
+                timestamp: typeof s === 'object' ? toMs(s.send_date) : undefined,
+            };
+        })
         : undefined;
     const base = swipes?.[Math.min(active, swipes.length - 1)];
+    const si = siExtra(Math.min(Math.max(active, 0), Math.max(0, (m.swipe_info?.length ?? 1) - 1)));
     return {
         id,
         role: m.is_user ? 'user' : m.is_system ? 'system' : 'assistant',
         name: m.name ?? '',
-        content: stripStatusPlaceholder(base?.content ?? m.mes ?? ''),
+        content: stripStatusPlaceholder(asStr(m.mes_display) ?? base?.content ?? m.mes ?? ''),
+        reasoning: asStr(m.reasoning_display) ?? asStr(m.extra?.reasoning) ?? asStr(si?.reasoning_display) ?? asStr(si?.reasoning),
         timestamp: toMs(m.send_date),
         swipes,
         activeSwipe: swipes ? Math.min(active, swipes.length - 1) : undefined,
