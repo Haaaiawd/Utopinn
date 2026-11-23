@@ -1,8 +1,10 @@
 // LogoU — 规范稿的 U 字 + Portal Spark 星火组合标(SVG 原样收编)。
 // 描边色走 --logo-u-stroke(暗/亮双套),星火恒 #FF6B5B。
+// viewBox 收到墨迹圈(实量 x17.7-104.4 / y13.1-103.3,中心 61,58):
+// 原 120 盒墨迹只占 ~75%,22px 渲染只剩 ~16px 视觉 —— 比 rail icon 小一号。
 export function LogoU({ size = 26 }: { size?: number }) {
     return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="8 5 106 106"
             width={size} height={size} fill="none" aria-hidden="true">
             <path d="M 24.5 44 L 24.5 71 A 25.5 25.5 0 0 0 75.36 73.67"
                 stroke="var(--logo-u-stroke)" strokeWidth="13.6" strokeLinecap="round" strokeLinejoin="round" />

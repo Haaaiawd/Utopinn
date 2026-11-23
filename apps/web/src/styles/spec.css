@@ -48,27 +48,65 @@
 }
 .brand-pill-btn {
     height: 38px; border-radius: 10px; padding: 0 5px;
-    display: inline-flex; align-items: center; gap: 8px;
-    cursor: pointer; transition: background 0.14s ease;
-    overflow: hidden; min-width: 38px;
+    display: inline-flex; align-items: center;
+    cursor: pointer; overflow: hidden; min-width: 38px;
+    transition: background 0.14s ease,
+        margin-left 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        min-width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+        border-radius 280ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .brand-pill-btn:hover { background: var(--bg-active); }
+/* 字标/动作组不走 display:none —— 那是「闪现」根因:收展瞬间元素
+   出/入布局,pill 宽度跳变。改为 max-width 0→上限 + margin/padding
+   同步过渡,字标是滑出来的;min-width:0 必须给,否则 flex 自动最小宽
+   把 max-width 顶回内容宽(border-box 下横向 padding 也会撑盒,
+   一并收进过渡)。 */
 .brand-wordmark {
     font-size: var(--fs-title); font-weight: 600; letter-spacing: -0.03em;
     color: var(--fg-primary); white-space: nowrap;
-    opacity: 0; transform: translateX(-6px); pointer-events: none;
-    transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    max-width: 0; min-width: 0; margin-left: 0; padding-right: 0;
+    overflow: hidden; opacity: 0; transform: translateX(-8px);
+    pointer-events: none;
+    transition:
+        max-width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        margin-left 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        padding-right 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 180ms ease;
 }
 .brand-actions {
     display: inline-flex; align-items: center; gap: 2px;
-    padding: 2px; border-radius: 9px;
-    opacity: 0; transform: translateX(-6px); pointer-events: none;
-    transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+    border-radius: 9px; padding: 0;
+    max-width: 0; min-width: 0; overflow: hidden;
+    opacity: 0; transform: translateX(-8px); pointer-events: none;
+    transition:
+        max-width 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 180ms ease;
 }
 .left-chrome[data-open="true"] .brand-wordmark,
 .left-chrome[data-open="true"] .brand-actions {
     opacity: 1; transform: translateX(0); pointer-events: auto;
-    transition: opacity 210ms ease 70ms, transform 240ms cubic-bezier(0.22, 1, 0.36, 1) 55ms;
+    transition:
+        max-width 280ms cubic-bezier(0.22, 1, 0.36, 1) 20ms,
+        margin-left 280ms cubic-bezier(0.22, 1, 0.36, 1) 20ms,
+        padding 280ms cubic-bezier(0.22, 1, 0.36, 1) 20ms,
+        padding-right 280ms cubic-bezier(0.22, 1, 0.36, 1) 20ms,
+        transform 280ms cubic-bezier(0.22, 1, 0.36, 1) 20ms,
+        opacity 200ms ease 80ms;
+}
+.left-chrome[data-open="true"] .brand-wordmark { max-width: 120px; margin-left: 8px; padding-right: 6px; }
+.left-chrome[data-open="true"] .brand-actions { max-width: 84px; padding: 2px; }
+/* 收起态:row 保持 padding 9 + space-between 不动(切 justify/padding
+   不可过渡,会跳变);pill 与 rail-btn 同规格(46 方盒)—— 左沿 = row
+   padding 9,中心 9+23=32,与下方 rail icon 同一条中轴。
+   盒与墨同 rail-btn 规格(46 方盒/26 标):row 52 - pill 46 → 底沿 49,
+   首个 rail-btn 顶沿 52+pt-1 4=56,缝 7px ≈ rail gap 6 —— 视觉节拍统一。 */
+.left-chrome:not([data-open="true"]) .brand-pill-btn {
+    margin-left: 0; min-width: 46px; height: 46px;
+    justify-content: center; border-radius: 12px;
 }
 
 .left-tree-pane {
@@ -166,6 +204,13 @@
     100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 .pop-in { animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* 书签「跳回该层」落点闪示 —— CenterStage 加/摘 .floor-jump 一次性播放 */
+@keyframes floorJumpFlash {
+    0% { box-shadow: 0 0 0 2px var(--brand); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+.floor-jump { animation: floorJumpFlash 1.4s ease-out; border-radius: 12px; }
 
 .scroll-fade-mask {
     -webkit-mask-image: linear-gradient(to bottom, transparent 0px, black 18px, black calc(100% - 22px), transparent 100%);
@@ -321,7 +366,19 @@
     font-size: var(--fs-ui-sm); font-weight: 500; color: var(--fg-primary);
 }
 
-/* 浮窗 resize 拖柄(右下;min/上限视口 —— 钳位在壳侧)。 */
+/* 浮窗八向缩放隐形热区:边 6px 透明条 + 角 14px 方块。
+   .floating-win overflow:hidden,热区出不了外侧只能内嵌;
+   边条两端内缩 12px 给角区让位(角落永远命中角热区)。 */
+.wb-float-rz { position: absolute; z-index: 3; touch-action: none; }
+.wb-float-rz-n { top: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.wb-float-rz-s { bottom: 0; left: 12px; right: 12px; height: 6px; cursor: ns-resize; }
+.wb-float-rz-e { top: 12px; bottom: 12px; right: 0; width: 6px; cursor: ew-resize; }
+.wb-float-rz-w { top: 12px; bottom: 12px; left: 0; width: 6px; cursor: ew-resize; }
+.wb-float-rz-nw { top: 0; left: 0; width: 14px; height: 14px; cursor: nwse-resize; }
+.wb-float-rz-ne { top: 0; right: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+.wb-float-rz-sw { bottom: 0; left: 0; width: 14px; height: 14px; cursor: nesw-resize; }
+
+/* 浮窗 resize 拖柄(右下可见握把,兼作 SE 角热区)。 */
 .wb-float-grip {
     position: absolute; right: 0; bottom: 0; width: 18px; height: 18px;
     cursor: nwse-resize; z-index: 2;

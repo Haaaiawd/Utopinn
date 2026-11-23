@@ -7,7 +7,7 @@ import {
     MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
     MOCK_IM_CHANNELS, MOCK_MODELS,
     MOCK_NOVEL_CHAPTERS, MOCK_PRESET_BLOCKS, MOCK_PRESETS,
-    MOCK_STAGE_SESSIONS, MOCK_VN, MOCK_WORLDBOOK,
+    MOCK_VN, MOCK_WORLDBOOK,
     type GlobalLoreItem, type ModelItem, type PresetItem,
 } from './api/mock';
 import { getMe, type CurrentUser } from './api/account';
@@ -20,6 +20,7 @@ import { getSettings, patchSettings } from './api/settings';
 import { listBackgrounds } from './api/backgrounds';
 import { listWorlds } from './api/worlds';
 import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
+import { listGroupChatSummaries, deleteGroupChat } from './api/groups';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
 import { LeftChrome } from './components/shell/Chrome';
@@ -160,6 +161,8 @@ interface WbLayout {
      *  (收档/关闭不抹,重浮回原位)。 */
     floatOrder: PanelType[];
     floatRects: Record<PanelType, FloatRect>;
+    /** 工作台占满聊天区(右栏吃全 inset)。 */
+    expanded?: boolean;
 }
 
 const wbStorageKey = (chatKey: string) => `utopinn.wb.${chatKey}`;
@@ -209,7 +212,7 @@ function loadWbLayout(chatKey: string): WbLayout | null {
         const activeTab = a === 'newtab' || openTabs.includes(a)
             ? a
             : (openTabs[openTabs.length - 1] ?? 'newtab');
-        return { openTabs, activeTab, floatOrder, floatRects };
+        return { openTabs, activeTab, floatOrder, floatRects, expanded: j.expanded === true };
     } catch { return null; }
 }
 
@@ -221,7 +224,7 @@ function Shell() {
     const { t } = useI18n();
     const [view, setView] = useState<ViewId>('chat');
     const [charDir, setCharDir] = useState<string | null>(null);
-    const [chats, setChats] = useState<ChatSummary[]>([...MOCK_CHATS, ...MOCK_STAGE_SESSIONS]);
+    const [chats, setChats] = useState<ChatSummary[]>([...MOCK_CHATS]);
     const [activeChat, setActiveChat] = useState('c1');
     const [cards, setCards] = useState<Map<string, CardItem>>(new Map());
     const [cardsMock, setCardsMock] = useState(false);
@@ -238,6 +241,7 @@ function Shell() {
     const [floatOrder, setFloatOrder] = useState<PanelType[]>([]);
     const [floatRects, setFloatRects] = useState<Record<PanelType, FloatRect>>({});
     const [cardappFs, setCardappFs] = useState(false);
+    const [wbExpand, setWbExpand] = useState(false);
     const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
     const [authExpired, setAuthExpired] = useState(false);
@@ -269,6 +273,7 @@ function Shell() {
     const [activeModel, setActiveModelState] = useState(MOCK_MODELS[0]!.id);
     const [presets, setPresets] = useState<PresetItem[]>(MOCK_PRESETS);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
+    const [presetDoc, setPresetDoc] = useState<PresetDocument | null>(null);
     const [presetParams, setPresetParams] = useState<PresetParams>({
         temp: 0.85, topP: 0.92, ctxLen: 200000, maxReply: 8192,
         blocks: MOCK_PRESET_BLOCKS.map((b) => ({ ...b })),
@@ -330,8 +335,8 @@ function Shell() {
     const wbKey = chat?.charDir && chat?.chatName ? `${chat.charDir}/${chat.chatName}` : null;
     const wbKeyRef = useRef(wbKey);
     const wbFirstRef = useRef(true);
-    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatOrder, floatRects });
-    wbLayoutRef.current = { openTabs, activeTab, floatOrder, floatRects };
+    const wbLayoutRef = useRef<WbLayout>({ openTabs, activeTab, floatOrder, floatRects, expanded: wbExpand });
+    wbLayoutRef.current = { openTabs, activeTab, floatOrder, floatRects, expanded: wbExpand };
     const chatRef = useRef(chat);
     chatRef.current = chat;
 
@@ -347,7 +352,7 @@ function Shell() {
         const stored = wbKey ? loadWbLayout(wbKey) : null;
         const next: WbLayout = stored ?? (() => {
             const tabs = [...(chatRef.current?.defaultTabs ?? [])];
-            return { openTabs: tabs, activeTab: tabs[0] ?? 'newtab', floatOrder: [], floatRects: {} };
+            return { openTabs: tabs, activeTab: tabs[0] ?? 'newtab', floatOrder: [], floatRects: {}, expanded: false };
         })();
         setOpenTabs(next.openTabs);
         setActiveTab(next.activeTab);
@@ -359,12 +364,13 @@ function Shell() {
         next.floatOrder.forEach((tp, i) => { rects[tp] ??= cascadeFloatRect(i); });
         setFloatRects(rects);
         setCardappFs(false);
+        setWbExpand(next.expanded === true);
         if (next.openTabs.length || next.floatOrder.length) setWorkbenchOpen(true);
     }, [wbKey]);
 
     useEffect(() => {
-        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatOrder, floatRects });
-    }, [openTabs, activeTab, floatOrder, floatRects]);
+        if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatOrder, floatRects, expanded: wbExpand });
+    }, [openTabs, activeTab, floatOrder, floatRects, wbExpand]);
 
     /* 移动端无浮窗(屏小浮窗没意义,面板留工作台)——
        isMobile 翻转时存量浮窗全数收档回 openTabs。 */
@@ -402,16 +408,19 @@ function Shell() {
 
     const refreshChats = useCallback(async () => {
         try {
-            const real = await listAllChats();
+            /* 群会话行与单聊同列(TASK-062);群面挂了只少群行,不拖垮单聊清单。 */
+            const [charChats, groupChats] = await Promise.all([
+                listAllChats(),
+                listGroupChatSummaries().catch(() => [] as ChatSummary[]),
+            ]);
+            const real = [...charChats, ...groupChats];
             const pins = pinnedRef.current;
             const isPinned = (c: ChatSummary) => pins.some(
                 (p) => p.file_name === c.chatName && (p.charDir === c.charDir || p.avatar === `${c.charDir}.png`),
             );
-            setChats((prev) => {
-                const liveIds = new Set(real.map((c) => c.id));
-                const stageDemos = prev.filter((c) => c.id.startsWith('st-') && !liveIds.has(c.id));
-                return [...real.map((c) => ({ ...c, pinned: isPinned(c) })), ...stageDemos];
-            });
+            /* st-* 舞台预演演示会话不再注入侧栏清单 —— 会话列以服务端真值为准,
+               MOCK_STAGE_SESSIONS 种子仍留给舞台形态离线演示。 */
+            setChats(real.map((c) => ({ ...c, pinned: isPinned(c) })));
             return true;
         } catch { return false; }
     }, []);
@@ -487,6 +496,8 @@ function Shell() {
                 if (!bgKnown) return true;
                 const inner = (bgCssInner(cssUrl) || name).trim();
                 if (/^https?:\/\//i.test(inner) || inner.startsWith('data:')) return true;
+                /* 前端内置静态资产(/assets/*)不受服务端 Backgrounds 清单裁决。 */
+                if (inner.startsWith('/assets/')) return true;
                 const localFile = /(?:^|\/)backgrounds\/([^/?#]+)\s*$/.exec(inner)?.[1];
                 const rawFile = localFile ?? inner.split('/').pop() ?? name;
                 let file = rawFile;
@@ -564,6 +575,7 @@ function Shell() {
                 ?? (chosen ? await getPreset(chosen, 'openai').then((r) => r.doc).catch(() => null) : null);
             if (chosenDoc) {
                 activePresetDocRef.current = { name: chosen, doc: chosenDoc };
+                setPresetDoc(chosenDoc);
                 setPresetParams(extractPresetParams(chosenDoc));
             }
         }
@@ -632,11 +644,27 @@ function Shell() {
         }
     }, [live, chats, activeChat]);
 
-    const schedulePresetSave = useCallback((mutator: (doc: PresetDocument) => PresetDocument) => {
+    /**
+     * 激活预设统一写路 —— fn(curDoc)→nextDoc:ref 换写(save 真值源)、
+     * presetDoc 状态水合编辑面、presetParams 投影与 presets 行摘要同步,
+     * 450ms 防抖整档 PUT。PresetDocEditor / setPresetParam / togglePresetBlock
+     * 全走这一条;ref 链保证连续编辑叠在同一 base 上,末次写赢。
+     */
+    const mutatePresetDoc = useCallback((fn: (doc: PresetDocument) => PresetDocument) => {
         if (!live || !activePresetDocRef.current) return;
         const { name, doc } = activePresetDocRef.current;
-        const nextDoc = mutator(doc);
+        const nextDoc = fn(doc);
+        if (nextDoc === doc) return;
         activePresetDocRef.current = { name, doc: nextDoc };
+        setPresetDoc(nextDoc);
+        setPresetParams(extractPresetParams(nextDoc));
+        setPresets((prev) => prev.map((p) => (p.id === name ? {
+            ...p,
+            temp: numOr(nextDoc.temperature, p.temp),
+            topP: numOr(nextDoc.top_p, p.topP),
+            ctxLen: numOr(nextDoc.openai_max_context, p.ctxLen),
+            maxReply: numOr(nextDoc.openai_max_tokens, p.maxReply),
+        } : p)));
         if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
         presetSaveTimer.current = setTimeout(() => {
             void savePreset(name, nextDoc, 'openai').catch((e) => {
@@ -644,6 +672,17 @@ function Shell() {
             });
         }, 450);
     }, [live, showHint, t]);
+
+    /** 外部写面(studio 等)改过激活预设后重拉真值 —— 只读 GET,不动 settings。 */
+    const reloadPresetDoc = useCallback(() => {
+        const cur = activePresetDocRef.current;
+        if (!live || !cur) return;
+        void getPreset(cur.name, 'openai').then((res) => {
+            activePresetDocRef.current = { name: cur.name, doc: res.doc };
+            setPresetDoc(res.doc);
+            setPresetParams(extractPresetParams(res.doc));
+        }).catch(() => undefined);
+    }, [live]);
 
     const setActiveModel = useCallback((id: string) => {
         setActiveModelState(id);
@@ -667,6 +706,7 @@ function Shell() {
             getPreset(clean, 'openai'),
         ]).then(([, res]) => {
             activePresetDocRef.current = { name: clean, doc: res.doc };
+            setPresetDoc(res.doc);
             setPresetParams(extractPresetParams(res.doc));
         }).catch((e) => {
             showHint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -674,22 +714,25 @@ function Shell() {
     }, [live, presets, showHint, t]);
 
     const setPresetParam = useCallback((k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => {
-        setPresetParams((prev) => ({ ...prev, [k]: v }));
-        setPresets((prev) => prev.map((p) => (p.id === activePresetId ? { ...p, [k]: v } : p)));
-        schedulePresetSave((doc) => ({ ...doc, [PARAM_DOC_KEY[k]]: v }));
-    }, [activePresetId, schedulePresetSave]);
+        if (!live) {
+            setPresetParams((prev) => ({ ...prev, [k]: v }));
+            setPresets((prev) => prev.map((p) => (p.id === activePresetId ? { ...p, [k]: v } : p)));
+            return;
+        }
+        mutatePresetDoc((doc) => ({ ...doc, [PARAM_DOC_KEY[k]]: v }));
+    }, [live, activePresetId, mutatePresetDoc]);
 
     const togglePresetBlock = useCallback((id: string) => {
-        let nextEnabled = true;
-        setPresetParams((prev) => ({
-            ...prev,
-            blocks: prev.blocks.map((b) => {
-                if (b.id !== id) return b;
-                nextEnabled = !b.enabled;
-                return { ...b, enabled: nextEnabled };
-            }),
-        }));
-        schedulePresetSave((doc) => {
+        if (!live) {
+            setPresetParams((prev) => ({
+                ...prev,
+                blocks: prev.blocks.map((b) => (b.id === id ? { ...b, enabled: !b.enabled } : b)),
+            }));
+            return;
+        }
+        /* live:翻 prompt_order.order[].enabled —— blocks 投影由
+           mutatePresetDoc 内的 extractPresetParams 重算,不双写。 */
+        mutatePresetDoc((doc) => {
             const d = doc as Record<string, unknown>;
             if (!Array.isArray(d.prompt_order)) return doc;
             const nextOrder = d.prompt_order.map((po) => {
@@ -699,13 +742,13 @@ function Shell() {
                     ...entry,
                     order: entry.order.map((o) => {
                         const item = o as Record<string, unknown>;
-                        return item.identifier === id ? { ...item, enabled: nextEnabled } : o;
+                        return item.identifier === id ? { ...item, enabled: item.enabled === false } : o;
                     }),
                 };
             });
             return { ...doc, prompt_order: nextOrder };
         });
-    }, [schedulePresetSave]);
+    }, [live, mutatePresetDoc]);
 
     const toggleGlobalLore = useCallback((id: string) => {
         setGlobalLore((prev) => {
@@ -793,6 +836,9 @@ function Shell() {
        charDir 附键给自家列表用,ST 端无它也不伤)。 */
     const onTogglePin = useCallback((c: ChatSummary) => {
         if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
+        /* 群会话 pin 面未接(pinnedChats 是卡域 {file_name,avatar} 键)——
+           侧栏群行不画该钮;双保险防外部调用误写。 */
+        if (c.groupId) return;
         const isPinned = pinnedRef.current.some(
             (p) => p.file_name === c.chatName && (p.charDir === c.charDir || p.avatar === `${c.charDir}.png`),
         );
@@ -810,6 +856,9 @@ function Shell() {
 
     const onRenameChat = useCallback((c: ChatSummary, newName: string) => {
         if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
+        /* 群会话 rename 面未接(renameChat 是卡域路由)→ 侧栏群行不画;
+           双保险,误调不改名也不写。 */
+        if (c.groupId) return;
         const name = newName.trim();
         if (!name || name === c.chatName) return;
         void renameChat(c.charDir, c.chatName, name)
@@ -825,7 +874,9 @@ function Shell() {
     const onDeleteChat = useCallback((c: ChatSummary) => {
         if (serverStatus !== 'online') { showHint(t('status.stub')); return; }
         const fallback = chats.filter((x) => x.id !== c.id)[0]?.id ?? '';
-        void deleteChat(c.charDir, c.chatName)
+        /* 群会话走群域删面(文件 + 群文档 chats[] 解绑);单聊不变。 */
+        const del = c.groupId ? deleteGroupChat(c.groupId, c.chatName) : deleteChat(c.charDir, c.chatName);
+        void del
             .then(() => refreshChats())
             .then(() => setChats((prev) => prev.filter((x) => x.id !== c.id)))
             .then(() => { if (activeChat === c.id) setActiveChat(fallback); })
@@ -897,6 +948,7 @@ function Shell() {
             setMobileDrawer(false);
             setStageData((prev) => ({ ...prev, selParaId: null }));
         },
+        refreshChats,
         newChat: onNewChat,
         renameChat: onRenameChat,
         deleteChat: onDeleteChat,
@@ -962,6 +1014,7 @@ function Shell() {
             [type]: clampFloatRect(r, window.innerWidth, window.innerHeight),
         })),
         cardappFs, setCardappFs,
+        wbExpand, setWbExpand,
         collapsePanels: () => {
             setCardappFs(false);
             /* 卡「收表面」:浮窗一并收档回抽屉 —— 留在外面就是没收净;
@@ -994,6 +1047,7 @@ function Shell() {
         connSource,
         models, modelsError, activeModel, setActiveModel,
         presets, activePresetId, pickPreset,
+        presetDoc, mutatePresetDoc, reloadPresetDoc,
         presetParams,
         setPresetParam,
         togglePresetBlock,
@@ -1010,14 +1064,14 @@ function Shell() {
         serverStatus,
     }), [
         view, railTab, chats, chat, activeChat, charDir, gotoView, pickPersona, sidebarOpen, workbenchOpen,
-        openTabs, activeTab, floatOrder, floatRects, cardappFs, launcherSearch, panelParams,
-        showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, onTogglePin, openPanel,
+        openTabs, activeTab, floatOrder, floatRects, cardappFs, wbExpand, launcherSearch, panelParams,
+        showHint, serverStatus, live, onNewChat, onRenameChat, onDeleteChat, onTogglePin, openPanel, refreshChats,
         cards, cardsMock, refreshCards, importDrafts, queueImport, dismissImportDraft,
         currentUser, refreshCurrentUser, personas, refreshPersonas, persona,
         openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
         connSource, models, modelsError, activeModel, setActiveModel,
-        presets, activePresetId, pickPreset, presetParams, setPresetParam, togglePresetBlock,
+        presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, presetParams, setPresetParam, togglePresetBlock,
         globalLore, toggleGlobalLore, worldbook, refreshConnection,
         chatSettings, stageData, openSettings,
     ]);
@@ -1044,7 +1098,9 @@ function Shell() {
                         <LeftChrome />
                         <div className="flex min-w-0 flex-1 overflow-hidden py-[8px] pr-[8px] pl-0">
                             <div className="workspace-inset">
-                                <main className="flex min-w-0 flex-1 flex-col"><ViewOutlet /></main>
+                                {/* wbExpand:main 压 0 宽不 unmount —— 楼层/CardApp 挂载不死,
+                                    还原即回原样(display:none 会 remount,不用)。 */}
+                                <main className={wbExpand && workbenchOpen && !isMobile ? 'flex w-0 min-w-0 flex-col overflow-hidden' : 'flex min-w-0 flex-1 flex-col'}><ViewOutlet /></main>
                                 <Workbench />
                             </div>
                         </div>

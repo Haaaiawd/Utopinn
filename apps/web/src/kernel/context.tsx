@@ -7,6 +7,7 @@ import type { CurrentUser } from '../api/account';
 import type { CardItem } from '../api/characters';
 import type { ImportDraft } from '../api/import';
 import type { ActivePersona, PersonaItem } from '../api/personas';
+import type { PresetDocument } from '../api/presets';
 import type {
     GlobalLoreItem, ImChannel, ModelItem,
     NovelChapter, PresetItem, VnData, WorldbookItem,
@@ -98,6 +99,8 @@ export interface ShellCtx {
     activeChat: string;
     chat: ChatSummary | null;
     selectChat: (id: string) => void;
+    /** 会话清单重拉(外部建会话后导航前置 —— selectChat 的 id 需在列里)。 */
+    refreshChats: () => Promise<boolean>;
     /** 角色页(view==='char')当前展示的 charDir —— TASK-026 三级路径中层。 */
     charDir: string | null;
     /** 打开某卡的角色页(视图切 'char',会话选择不变 —— 页内选会话才落聊天)。 */
@@ -171,6 +174,11 @@ export interface ShellCtx {
      *  .cardapp-host 切 fixed inset-0(同树不 remount),ESC/关闭钮还原。 */
     cardappFs: boolean;
     setCardappFs: (v: boolean) => void;
+    /** 工作台占满聊天区:右栏吃整个 workspace-inset 宽(main 压 0 宽但
+     *  不 unmount —— 楼层/挂载不死),还原回原宽。按会话随 WbLayout 记档;
+     *  移动端不出钮(小屏无意义)。 */
+    wbExpand: boolean;
+    setWbExpand: (v: boolean) => void;
     /** 跨格契约(卡「收表面」):收起面板区 —— 工作台折叠 + 移动 sheet 归
      *  closed + 浮窗一并收档回 openTabs(矩形记忆保留,重浮回原位)。 */
     collapsePanels: () => void;
@@ -223,6 +231,15 @@ export interface ShellCtx {
     activePresetId: string;
     /** 切换激活预设:写回 settings.preset_settings_openai 并装载采样/条目参数。 */
     pickPreset: (id: string) => void;
+    /** 激活预设(openai 家族)的整档 doc —— PresetDocEditor 直接读;
+     *  离线或档未拉到为 null(编辑器禁用,不写假档)。 */
+    presetDoc: PresetDocument | null;
+    /** 激活预设统一写路:fn(doc)→next —— 同步重算 presetParams 投影与
+     *  presets 行摘要,防抖整档 PUT;编辑面一律走它,不另开写路。 */
+    mutatePresetDoc: (fn: (doc: PresetDocument) => PresetDocument) => void;
+    /** 外部写面(studio 页/其他端)改过激活预设档后,重拉服务端真值
+     *  回灌 presetDoc/presetParams —— 双编辑面收敛位。 */
+    reloadPresetDoc: () => void;
     presetParams: PresetParams;
     setPresetParam: (k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => void;
     togglePresetBlock: (id: string) => void;

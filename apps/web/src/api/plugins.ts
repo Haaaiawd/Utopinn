@@ -12,6 +12,12 @@ export interface PluginItem {
     status: string;
     /** 该行进过 profile.patch.yaml —— 即用户手调过启停。 */
     patch: boolean;
+    /**
+     * profile.yaml 行 core:true —— 锁定不可停用(关掉破坏产品闭环)。
+     * 服务端唯一真相源;disable 会被内核闸与路由闸双 400 拒绝。
+     * 旧服务端不回此字段 → undefined,前端回退内置锁表。
+     */
+    core?: boolean;
 }
 
 export interface PluginActResult {

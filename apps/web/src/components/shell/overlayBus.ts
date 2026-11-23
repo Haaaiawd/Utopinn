@@ -10,9 +10,11 @@ export interface OverlayState {
     charEditor: string | null;
     /** 新会话卡选择模态 —— newChat() 未指定卡时开。 */
     newChatOpen: boolean;
+    /** 建群模态(TASK-062)—— 成员多选 + 编排设置。 */
+    groupOpen: boolean;
 }
 
-let state: OverlayState = { importOpen: false, charEditor: null, newChatOpen: false };
+let state: OverlayState = { importOpen: false, charEditor: null, newChatOpen: false, groupOpen: false };
 const listeners = new Set<() => void>();
 
 function patch(p: Partial<OverlayState>): void {
@@ -26,6 +28,8 @@ export const openCharEditor = (charDir: string) => patch({ charEditor: charDir }
 export const closeCharEditor = () => patch({ charEditor: null });
 export const openNewChatModal = () => patch({ newChatOpen: true });
 export const closeNewChatModal = () => patch({ newChatOpen: false });
+export const openGroupModal = () => patch({ groupOpen: true });
+export const closeGroupModal = () => patch({ groupOpen: false });
 
 export function useOverlay(): OverlayState {
     return useSyncExternalStore(

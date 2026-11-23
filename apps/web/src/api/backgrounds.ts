@@ -21,3 +21,25 @@ export function bgCssUrl(filename: string): string {
 export function listBackgrounds(): Promise<{ items: BackgroundItem[]; total: number }> {
     return apiGet('/api/utopinn/backgrounds');
 }
+
+/** 内置壁纸清单 —— public/assets/backgrounds/ 自家静态资产(WANTED.md 契约)。
+ *  与目录图同走 settings.background 写路:name 打 'builtin:<key>' 前缀作
+ *  选中态判据;url 直给前端资产路径,不经服务端目录(水合活判对 /assets/
+ *  前缀放行 —— App.tsx bgAlive)。lbl 段对应 st.chatBg.wall.<key>。 */
+export const BUILTIN_WALLPAPERS = [
+    { key: 'appDark', file: 'app-dark.png' },
+    { key: 'appLight', file: 'app-light.png' },
+    { key: 'aurora', file: 'aurora-dark.png' },
+    { key: 'drawer', file: 'drawer-dark.png' },
+    { key: 'stage', file: 'stage-galgame.png' },
+    { key: 'hall', file: 'stage-hall.jpg' },
+    { key: 'starCat', file: 'star-cat.png' },
+    { key: 'claudeStudy', file: 'claude-study.png' },
+    { key: 'trioRoom', file: 'trio-room.png' },
+    { key: 'whaleMaid', file: 'whale-maid.png' },
+] as const;
+
+/** 内置壁纸 → CSS url 值(前端静态资产,settings.background.url 落盘形)。 */
+export function builtinBgCssUrl(file: string): string {
+    return `url('/assets/backgrounds/${file}')`;
+}

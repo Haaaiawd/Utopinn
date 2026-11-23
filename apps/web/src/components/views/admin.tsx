@@ -1,8 +1,8 @@
 // 管理面板视图(TASK-052 刀1):
-//   · AdminTree —— 侧栏分区索引(按桶排:实例·总览 / 访问·账号+服务端配置)+ Cordis 插件域深链
+//   · AdminTree —— 侧栏分区索引(按桶排:实例·总览 / 访问·账号+服务端配置)+ 内核插件域深链
 //   · AdminView —— 移动端落 mob.view.noMobile 占位;桌面渲染三区:
 //       1) 总览(Overview):实例/内核/存储引擎/数据根/多 handle 概览/上游连接探测 +
-//          Cordis vs Luker Server Plugins 两套插件体系视觉分家 + 安全待办
+//          内核 vs Luker Server Plugins 两套插件体系视觉分家 + 安全待办
 //       2) 账号(Users):多 handle 生命周期(列/建含 slugify 预览/改名/改密/配额/启停/升降权/删含 purge),
 //          危险动作(停用/降权/删除)全部二次确认;不做「以 handle 身份游玩」
 //       3) 服务端配置(Config):访问控制表单 ↔ config.yaml 原文同源双写 + 安全闸回显 +
@@ -14,6 +14,7 @@ import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { PanelEmpty, PanelError, useRemote } from '../panels/panelShared';
 import { WiredBadge } from './studio';
+import { pluginLabel } from './plugins';
 import {
     ConfigSaveError,
     createUserHandle,
@@ -310,7 +311,7 @@ interface OverviewBundle {
     storageHealth: StorageHealth | null;
     storageStatus: StorageStatus | null;
     kernel: KernelSnapshot | null;
-    cordisPlugins: PluginItem[];
+    kernelPlugins: PluginItem[];
     lukerPlugins: LukerServerPluginsList | null;
     diag: (DiagBusStats & { events?: { total: number }; errors?: { total: number } }) | null;
     config: ConfigDocument | null;
@@ -325,7 +326,7 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
         storageHealth,
         storageStatus,
         kernel,
-        cordisRes,
+        kernelRes,
         lukerPlugins,
         diag,
         config,
@@ -350,7 +351,7 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
         storageHealth,
         storageStatus,
         kernel,
-        cordisPlugins: cordisRes.items ?? [],
+        kernelPlugins: kernelRes.items ?? [],
         lukerPlugins,
         diag: diag as OverviewBundle['diag'],
         config,
@@ -383,9 +384,9 @@ function OverviewSection() {
     if (remote.error) return <PanelError error={remote.error} onRetry={remote.reload} />;
     if (remote.data?.forbidden) return <AdminForbiddenView />;
 
-    const cordisActive = d?.cordisPlugins.filter((p) => !p.disabled && p.status === 'active').length ?? 0;
-    const cordisDisabled = d?.cordisPlugins.filter((p) => p.disabled).length ?? 0;
-    const cordisFailed = d?.cordisPlugins.filter((p) => p.status === 'failed').length ?? 0;
+    const kernelActive = d?.kernelPlugins.filter((p) => !p.disabled && p.status === 'active').length ?? 0;
+    const kernelDisabled = d?.kernelPlugins.filter((p) => p.disabled).length ?? 0;
+    const kernelFailed = d?.kernelPlugins.filter((p) => p.status === 'failed').length ?? 0;
 
     const diagErrCount = d?.diag?.errors?.total ?? ((d?.diag?.byLvl?.warn ?? 0) + (d?.diag?.byLvl?.error ?? 0));
     const diagEventCount = d?.diag?.events?.total ?? d?.diag?.size ?? 0;
@@ -623,11 +624,11 @@ function OverviewSection() {
                         </div>
                     </div>
 
-                    {/* 两套插件体系视觉分家:Cordis(profile.yaml) vs Luker Server Plugins(plugins/ 目录) */}
+                    {/* 两套插件体系视觉分家:内核(profile.yaml) vs Luker Server Plugins(plugins/ 目录) */}
                     <div className="space-y-2.5">
                         <div className="flex items-center justify-between px-0.5">
                             <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('admin.ov.pluginsSplit')}</span>
-                            <span className={`text-[10.5px] ${mono} text-[color:var(--fg-faint)]`}>cordis ≠ server plugins</span>
+                            <span className={`text-[10.5px] ${mono} text-[color:var(--fg-faint)]`}>{t('admin.ov.pluginsSplitNote')}</span>
                         </div>
                         <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                             {/* 左:Cordis 内核插件 */}
@@ -637,7 +638,7 @@ function OverviewSection() {
                                         <div className="flex items-center gap-2">
                                             <Icon name="plugins" size={15} className="text-[color:var(--brand)]" />
                                             <span className="text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('admin.ov.cordis.title')}</span>
-                                            <span className={`text-[11px] ${mono} text-[color:var(--fg-muted)]`}>{d.cordisPlugins.length}</span>
+                                            <span className={`text-[11px] ${mono} text-[color:var(--fg-muted)]`}>{d.kernelPlugins.length}</span>
                                         </div>
                                         <div className="mt-0.5 text-[11px] text-[color:var(--fg-muted)]">{t('admin.ov.cordis.sub')}</div>
                                     </div>
@@ -654,26 +655,27 @@ function OverviewSection() {
                                     <div className={`flex flex-wrap items-center gap-3 text-[11.5px] ${mono}`}>
                                         <span className="inline-flex items-center gap-1.5 text-[color:var(--fg-primary)]">
                                             <StatusDot color="var(--status-ok)" />
-                                            {cordisActive} {t('admin.ov.cordis.active')}
+                                            {kernelActive} {t('admin.ov.cordis.active')}
                                         </span>
                                         <span className="inline-flex items-center gap-1.5 text-[color:var(--fg-muted)]">
                                             <StatusDot color="var(--fg-faint)" />
-                                            {cordisDisabled} {t('admin.ov.cordis.disabled')}
+                                            {kernelDisabled} {t('admin.ov.cordis.disabled')}
                                         </span>
-                                        {cordisFailed > 0 && (
+                                        {kernelFailed > 0 && (
                                             <span className="inline-flex items-center gap-1.5 text-[color:var(--status-danger)]">
                                                 <StatusDot color="var(--status-danger)" />
-                                                {cordisFailed} {t('admin.ov.cordis.failed')}
+                                                {kernelFailed} {t('admin.ov.cordis.failed')}
                                             </span>
                                         )}
                                     </div>
                                     <span className={`text-[10px] ${mono} text-[color:var(--fg-faint)]`}>/api/utopinn/plugins</span>
                                 </div>
-                                {d.cordisPlugins.length > 0 ? (
+                                {d.kernelPlugins.length > 0 ? (
                                     <div className="inset-row flex-wrap !justify-start gap-1.5">
-                                        {d.cordisPlugins.map((p) => (
+                                        {d.kernelPlugins.map((p) => (
                                             <span
                                                 key={p.id}
+                                                title={p.id}
                                                 className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] ${mono}`}
                                                 style={{
                                                     background: 'var(--bg-canvas)',
@@ -690,7 +692,7 @@ function OverviewSection() {
                                                                 : 'var(--status-ok)'
                                                     }
                                                 />
-                                                {p.id}
+                                                {pluginLabel(p.id)}
                                             </span>
                                         ))}
                                     </div>
