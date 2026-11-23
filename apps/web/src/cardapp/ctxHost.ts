@@ -79,6 +79,10 @@ export class CardAppHost {
     private lastEventSeq = 0;
     private eventLogUnsupported = false;
 
+    /** seed() 完成前 poll 一律 no-op —— 信箱游标未钉头就跑 pollEventLog
+     *  会回放滞留历史(refresh 重铸环);diff 基线此刻也没立。
+     *  无论 seed 钉头成败都置位:「拉不到留 0 有界回放」的兜底语义不动。 */
+    private seeded = false;
     private client: UtopinnClient;
     private chatDoc: ChatDoc | null = null;
     private varCache: Record<string, unknown> = {};
@@ -232,9 +236,10 @@ export class CardAppHost {
         } catch { /* 信箱面缺席/抖动不致命 — 下轮泵再试 */ }
     }
 
-    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated + 信箱。 */
+    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated + 信箱。
+     *  seed 未竟的拍整轮跳过 —— 游标钉头是顺序前置,不是可选优化。 */
     async pollChat(): Promise<void> {
-        if (this.dead) return;
+        if (this.dead || !this.seeded) return;
         const r = await this.syncChat();
         if (r) this.diffAndEmitChat(r.prev, r.next);
         await this.pollEventLog();
@@ -251,17 +256,23 @@ export class CardAppHost {
      * 头位拉取失败时游标留 0 —— 下轮 tick 至多回放一轮有界历史,可接受。
      */
     async seed(): Promise<void> {
-        await this.syncChat();
-        if (this.eventLogUnsupported) return;
         try {
-            const res = loose(await this.client.th.call('getEventLog', {
-                target: { charDir: this.charDir, chatName: this.chatName },
-                args: { since: Number.MAX_SAFE_INTEGER },
-            }));
-            if (res?.unsupported) { this.eventLogUnsupported = true; return; }
-            const seq = (res?.result as { seq?: number } | undefined)?.seq;
-            if (typeof seq === 'number') this.lastEventSeq = seq;
-        } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
+            await this.syncChat();
+            if (this.eventLogUnsupported) return;
+            try {
+                const res = loose(await this.client.th.call('getEventLog', {
+                    target: { charDir: this.charDir, chatName: this.chatName },
+                    args: { since: Number.MAX_SAFE_INTEGER },
+                }));
+                if (res?.unsupported) { this.eventLogUnsupported = true; return; }
+                const seq = (res?.result as { seq?: number } | undefined)?.seq;
+                if (typeof seq === 'number') this.lastEventSeq = seq;
+            } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
+        } finally {
+            // gate 挡「seed 未竟时 poll 抢跑回放滞留信箱」;钉头失败也放行,
+            // 有界历史回放兜底交给 pollEventLog 自己消化。
+            this.seeded = true;
+        }
     }
 
     // ── 生成面(ctx.sendMessage 非 silent + ctx.generate + lukerContext.generate)

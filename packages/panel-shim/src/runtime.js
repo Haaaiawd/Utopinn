@@ -15,6 +15,10 @@
 
     var NONCE = (typeof window.__UTOPINN_PANEL_NONCE__ === 'string') ? window.__UTOPINN_PANEL_NONCE__ : '';
     var BOOTSTRAP = window.__UTOPINN_PANEL_BOOTSTRAP__ || {};
+    // 楼层帧(doc-mount)标记 —— mounts.js createDocMount 合成 manifest
+    // 的 entry 占位符 '__message__' 经 bootstrapTag 下发。楼层块 HTML 是
+    // 模型产出,宿主桥面只给 MSGFRAME 只读子集(写面一律桥闸拒)。
+    var IS_FLOOR_FRAME = BOOTSTRAP.entry === '__message__';
 
     var pending = {};
     var seq = 0;
@@ -223,6 +227,14 @@
             return request('th.rotateChatMessages', { begin: begin, middle: middle, end: end, refresh: o && o.refresh });
         },
         refreshOneMessage: function (messageId) {
+            /* 楼层帧内 th.refreshOneMessage 必被桥闸拒(MSGFRAME 无此法)——
+               直连只是「denied 死面」。但「刷新楼层」在服务端本来也只是
+               信箱信号(utopinn-th.js refreshOneMessage → recordThEvent
+               'refresh_message'),eventEmit 在授权面内 —— 改走它语义等价:
+                 本帧 refresh_message listener 本地立响(dispatchLocal);
+                 它楼 mount 的宿主泵拾到条目、坐标匹配 → 重铸该帧;
+                 本 mount 的泵因 origin 去重不回声(自楼重渲由本帧 listener 承)。 */
+            if (IS_FLOOR_FRAME) return api.eventEmit('refresh_message', Number(messageId));
             return request('th.refreshOneMessage', { message_id: messageId });
         },
 

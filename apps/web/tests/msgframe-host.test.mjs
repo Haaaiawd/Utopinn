@@ -123,6 +123,47 @@ test('getEventLog unsupported → 永久停拉(不再发 th.call)', async () => 
     assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 1);
 });
 
+test('seed 未竟时 pollChat 整轮 no-op(信箱抢跑竞态闸)', async () => {
+    let releaseChat;
+    let gateFirst = true;
+    const chatGetCalls = [];
+    const box = fakeMailbox([{ seq: 7, at: 0, event: 'refresh_message', args: [0] }]);
+    const thCalls = [];
+    const client = {
+        library: {
+            chatGet: async () => {
+                chatGetCalls.push(1);
+                // 只闸第一趟(seed 内那次)—— 后续 poll 的 chatGet 照常返回
+                if (gateFirst) { gateFirst = false; await new Promise((r) => { releaseChat = r; }); }
+                return { header: {}, messages: [] };
+            },
+        },
+        th: {
+            call: async (method, opts = {}) => {
+                thCalls.push({ method, args: opts.args ?? {} });
+                return { ok: true, result: { seq: box.head(), entries: box.entries(opts.args?.since) } };
+            },
+        },
+    };
+    const host = new CardAppHost(
+        { charDir: 'card.png', chatName: 'c', push: () => { }, log: () => { } },
+        /** @type {any} */(client),
+    );
+    const seedP = host.seed();          // 卡在 chatGet —— seed 未竟
+    await host.pollChat();               // seeded=false → 整轮 no-op
+    assert.equal(chatGetCalls.length, 1);                        // 只有 seed 自己那次
+    assert.equal(thCalls.filter((c) => c.method === 'getEventLog').length, 0);
+    releaseChat();
+    await seedP;                          // seed 落地(seeded=true;内有一次钉头 getEventLog)
+    await host.pollChat();               // 现在正常泵
+    assert.equal(chatGetCalls.length, 2);
+    const gl = thCalls.filter((c) => c.method === 'getEventLog');
+    assert.equal(gl.length, 2);          // seed 钉头 + poll 拉新
+    assert.equal(gl[0].args.since, Number.MAX_SAFE_INTEGER);
+    // 钉过头:首轮 poll 的 since=7 而非 0 —— 滞留 refresh 没回放
+    assert.equal(gl[1].args.since, 7);
+});
+
 test('chatName 缺席 → diff 泵停摆,seed 仍钉信箱游标', async () => {
     let fetched = 0;
     const box = fakeMailbox([{ seq: 5, at: 0, event: 'refresh_message', args: [0] }]);

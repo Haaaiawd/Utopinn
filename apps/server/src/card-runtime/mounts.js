@@ -262,8 +262,11 @@ export function createDocMount({ handle, directories, charId, chatName, doc, ttl
         chatName: typeof chatName === 'string' && chatName.trim() ? chatName.trim() : null,
         kind: 'message',
         doc,
-        // 合成 manifest:TH 楼层 iframe = 全 TH 面(TH 给嵌入代码完整
-        // TavernHelper);sameOrigin 恒 false(楼层文档从不提权)。
+        // 合成 manifest:'__message__' 是楼层帧占位符(bootstrapTag 下发,
+        // shim 据此判 IS_FLOOR_FRAME)。授权面注:manifest api:['th'] 仅为
+        // 形态标 —— 楼层块是模型产出,宿主实际桥面是 MSGFRAME 只读子集
+        // (web MessageIframe/mobile MessageFrame 各自闸,不读本字段);
+        // sameOrigin 恒 false(楼层文档从不提权)。
         manifest: {
             entry: '__message__',
             entryKind: 'document',
