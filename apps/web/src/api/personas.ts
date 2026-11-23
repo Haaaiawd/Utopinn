@@ -121,9 +121,14 @@ export function builtinPickSrc(pick: string): string | undefined {
         ?? BUILTIN_COVERS.find((c) => c.id === pick)?.src;
 }
 
-/** 人设头像 URL:服务端 User Avatars 真图优先,否则落 Utopinn 内置库(卡面键→covers/,余者→动物头像)。 */
+/** ST 迁移随包带进来的酒馆素材头像 —— 一律不当真图,落自家内置库。 */
+const ST_STOCK_AVATARS = new Set(['user-default.png']);
+
+/** 人设头像 URL:服务端 User Avatars 真图优先(酒馆素材除外),否则落 Utopinn 内置库(卡面键→covers/,余者→动物头像)。 */
 export function personaAvatarSrc(avatar: string | null | undefined, hasImage?: boolean): string {
-    if (hasImage && avatar) return `/User%20Avatars/${encodeURIComponent(avatar)}`;
+    if (hasImage && avatar && !ST_STOCK_AVATARS.has(avatar.trim().toLowerCase())) {
+        return `/User%20Avatars/${encodeURIComponent(avatar)}`;
+    }
     return resolveBuiltinCover(avatar)?.src ?? resolveBuiltinPersonaAvatar(avatar).src;
 }
 
@@ -154,4 +159,20 @@ export async function savePersona(avatar: string, patch: PersonaPatch): Promise<
 export async function deletePersona(avatar: string): Promise<void> {
     const res = await apiFetch(`/api/utopinn/personas/${encodeURIComponent(avatar)}`, { method: 'DELETE' });
     await assertOk(res);
+}
+
+/**
+ * 自定义头像上传(TASK-067)—— POST /api/utopinn/personas/avatar。
+ * 与 legacy /api/avatars/upload 同一落点(User Avatars 目录)+ 同一
+ * 裁剪/落盘管线;multipart field 'avatar'。overwriteName 指定落盘文件名
+ * (persona 主键 = 头像文件名,覆盖式更新头像即覆写该键的文件);
+ * 缺省服务端铸 <ts>.png 并回 {path} —— 新建人设先传图再 PUT 该键。
+ */
+export async function uploadPersonaImage(file: File, overwriteName?: string): Promise<{ path: string }> {
+    const form = new FormData();
+    form.append('avatar', file);
+    if (overwriteName) form.append('overwrite_name', overwriteName);
+    const res = await apiFetch('/api/utopinn/personas/avatar', { method: 'POST', body: form });
+    await assertOk(res);
+    return (await res.json()) as { path: string };
 }

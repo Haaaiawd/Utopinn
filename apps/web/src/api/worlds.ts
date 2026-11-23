@@ -33,6 +33,10 @@ export async function listWorlds(): Promise<{ items: WorldListItem[]; total: num
     return apiGet('/api/utopinn/worlds');
 }
 
+/** 跨页深链(qrStudioFocus 同款):世界书编辑器挂载时消费一次,
+ *  选中指定书;不进 studioNav(域词表不含书名)。 */
+export const wbStudioFocus: { set: string | null } = { set: null };
+
 export async function getWorld(name: string): Promise<{ name: string; doc: WorldDoc }> {
     return apiGet(`/api/utopinn/worlds/${encodeURIComponent(name)}`);
 }

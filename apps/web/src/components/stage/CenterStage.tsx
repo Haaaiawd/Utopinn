@@ -28,6 +28,7 @@ import { extractFrontendBlocks } from '../../cardapp/messageFrame';
 import { MessageIframe } from '../../cardapp/MessageIframe';
 import { FloorRenderProvider, ProseFloor } from './prose';
 import { StageFrame, useStageEngine, charImgFallback, type FloorOps } from './StageFrame';
+import { useBoundEmote } from './emotes';
 
 /** 贡献点出口:chat.stage → stage.form 组件;无匹配回落 ChatStage。 */
 export function CenterStage() {
@@ -40,11 +41,19 @@ export function CenterStage() {
 /* ——— 消息泡(规范稿 renderStageContent chat 分支:
  *     assistant=article gap-3.5 + w-9 头像环 + ops 条(左 swipe/copy/edit/del/回滚,
  *     右 deltas mono 芯);user=右列 rounded-2xl bg-user-bubble)——— */
-function StageAvatar({ name }: { name: string }) {
+function StageAvatar({ name, m }: { name: string; m?: FloorMsg }) {
     const s = useShell();
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const coverKey = s.chat?.charDir ?? name;
-    const src = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(coverKey);
+    /* 本会话立绘绑定(TASK-067):绑了则楼层头像渲 sprite;未绑回落卡头像。 */
+    const bound = useBoundEmote(s.chat?.id);
+    /* 群楼层(TASK-062):每楼发言成员自己的头像 —— wire 层 original_avatar
+       (avatar 文件名)/force_avatar(thumbnail 直链);都没有才回落会话
+       封面兜底 —— 不再全员共用主卡头像。 */
+    const groupSrc = s.chat?.groupId
+        ? (m?.raw?.force_avatar || (m?.raw?.original_avatar ? charImageUrl(m.raw.original_avatar) : ''))
+        : '';
+    const src = groupSrc || bound?.url || (card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(coverKey));
     return (
         <span className="char-avatar-ring mt-0.5 h-9 w-9 shrink-0">
             <img src={src} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={coverKey} />
@@ -61,7 +70,11 @@ function FloorBody({ m, streaming, greeting }: { m: FloorMsg; streaming?: boolea
     const s = useShell();
     const text = m.displayContent ?? m.content;
     const split = extractFrontendBlocks(text);
-    const charDir = s.chat?.charDir;
+    /* 群楼层:成员楼内嵌 CardApp 挂帧的 charDir 是该楼发言成员的
+       (original_avatar 剥扩展名),不是会话键 —— 会话 charDir 群路是空串。 */
+    const charDir = s.chat?.groupId
+        ? (m.raw?.original_avatar ?? '').replace(/\.(png|webp|jpe?g)$/i, '') || undefined
+        : s.chat?.charDir;
     const chatName = s.chat?.chatName;
     /* renderer seam:order 最小者上岗;贡献缺席回落内建 ProseFloor(诚实兜底)。 */
     const renderers = useContribs('renderer');
@@ -89,12 +102,19 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
     const [thinkOpen, setThinkOpen] = useState(false);
     const isUser = m.role === 'user';
     const fallbackUser = s.persona?.name || s.currentUser?.name || s.currentUser?.handle || 'User';
-    /* 规范稿 sender = 卡名 · 线名合成;m.name 有值(真 char 名)优先 */
-    const name = m.name || (isUser ? fallbackUser : (s.chat ? `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}` : 'Seraphina'));
+    /* 规范稿 sender = 卡名 · 线名合成;m.name 有值(真 char 名/群成员名)优先;
+       群路兜底群名,不拿 charDir 空串拼名。 */
+    const name = m.name || (isUser
+        ? fallbackUser
+        : (s.chat
+            ? s.chat.groupId
+                ? (s.chat.group ?? s.chat.title)
+                : `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}`
+            : 'Seraphina'));
     const time = typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? new Date(m.timestamp).toTimeString().slice(0, 5) : '';
     if (isUser) {
         return (
-            <div className="group/msg flex flex-col items-end">
+            <div className="group/msg flex flex-col items-end" data-floor={m.id}>
                 <div className="max-w-[80%] rounded-2xl px-4 py-2.5 text-[14px] leading-relaxed" style={{ background: 'var(--bg-user-bubble)' }}>
                     {ops.editing?.id === m.id ? (
                         <div className="space-y-2">
@@ -125,6 +145,13 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
+                    {/* 新建分支:从该楼直岔新会话(整楼 swipe 组随拷贝);
+                        真会话真楼才出钮;群会话无卡域 fork 路由不画 */}
+                    {s.live && s.chat && !s.chat.groupId && m.id >= 0 && (
+                        <button className="ghost-btn h-7 w-7" title={t('floor.fork')} onClick={() => ops.onForkFloor(m)}>
+                            <Icon name="gitFork" size={14} />
+                        </button>
+                    )}
                     {m.snapshot && (
                         <button className="ghost-btn h-7 gap-1 px-2 text-[11.5px]" title={t('stage.op.rewind') + ` #${idx + 1}`} onClick={() => ops.onRewind(m)}>
                             <Icon name="rewind" size={14} /><span>{t('stage.op.rewind')}</span>
@@ -142,8 +169,8 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
     return (
         /* greeting = 首条可见 assistant 楼(TASK-026 首楼版式待遇):
            .prose-greeting 给 article 发丝线+间距,正文由渲染器抬字号档。 */
-        <article className={`group/msg flex items-start gap-3.5${greeting ? ' prose-greeting' : ''}`}>
-            <StageAvatar name={name} />
+        <article className={`group/msg flex items-start gap-3.5${greeting ? ' prose-greeting' : ''}`} data-floor={m.id}>
+            <StageAvatar name={name} m={m} />
             <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex items-center gap-2">
                     <span className="heading-tight text-[13px] font-medium text-[color:var(--fg-primary)]">{name}</span>
@@ -228,6 +255,13 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
                             <button className="ghost-btn h-7 w-7" title={t('stage.op.del')} onClick={() => ops.onDelete(m)}><Icon name="trash" size={14} /></button>
+                            {/* 新建分支:从该楼直岔新会话(整楼 swipe 组随拷贝);
+                                真会话真楼才出钮;群会话无卡域 fork 路由不画 */}
+                            {s.live && s.chat && !s.chat.groupId && m.id >= 0 && (
+                                <button className="ghost-btn h-7 w-7" title={t('floor.fork')} onClick={() => ops.onForkFloor(m)}>
+                                    <Icon name="gitFork" size={14} />
+                                </button>
+                            )}
                             {m.snapshot && (
                                 <button className="ghost-btn h-7 gap-1 px-2 text-[11.5px]" title={t('stage.op.rewind') + ` #${idx + 1}`} onClick={() => ops.onRewind(m)}>
                                     <Icon name="rewind" size={14} /><span>{t('stage.op.rewind')}</span>
@@ -261,6 +295,21 @@ function ChatFloors() {
     }, [s.chat?.id]);
 
     useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [eng.msgs]);
+
+    /* 「跳回该层」(书签面板):目标楼在收起的窗口外 → 先展开全部再滚;
+       data-floor 锚只在 chat 形态打(其余形态 jump 请求静默落空 ——
+       面板侧已按形态禁钮,这里是兜底)。 */
+    useEffect(() => {
+        if (!eng.jump) return;
+        const el = document.querySelector(`[data-floor="${eng.jump.floor}"]`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('floor-jump');
+            window.setTimeout(() => el.classList.remove('floor-jump'), 1400);
+            return;
+        }
+        if (!showAll) setShowAll(true); // 展开后 effect 重跑,命中再走上面分支
+    }, [eng.jump, showAll]);
 
     const renderable = eng.msgs
         .map((m, origIdx) => ({ m, origIdx }))

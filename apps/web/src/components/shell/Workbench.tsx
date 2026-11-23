@@ -12,6 +12,8 @@ import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
 import type { PanelType, PanelTypeContribution } from '../../kernel/contributions';
 import { cardAppInfo, type CardAppInfo } from '../../api/cardRuntime';
+import { charImageUrl } from '../../api/characters';
+import { builtinCoverSrc } from '../../api/personas';
 import { readPanelFreq, panelFreqScore } from './panelFreq';
 
 /** 按类型解析板块体(panel.type 贡献点;未注册 → 诚实占位)。 */
@@ -72,9 +74,33 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
         .map((x) => x.c);
     const suggested = contribs.filter((c) => c.category === 'suggested' && match(c));
     const sect = 'px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]';
+    /* 当前会话情境行:launcher 顶对齐后首部用「你在开谁的面板」压住场,
+       不空顶(群会话无卡头像 → 只列会话名)。 */
+    const chat = shell.chat;
+    const card = chat?.charDir ? shell.cards.get(chat.charDir) : undefined;
     return (
-        <div className="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto px-5 py-8">
+        <div className="flex min-h-0 flex-1 flex-col justify-start overflow-y-auto px-5 pb-8 pt-5">
             <div className="mx-auto w-full max-w-[440px] space-y-7">
+                {chat && (
+                    <div className="flex items-center gap-3 px-0.5">
+                        {chat.charDir && (
+                            <img
+                                src={card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(chat.charDir)}
+                                alt=""
+                                className="h-9 w-9 shrink-0 rounded-[10px] border border-[color:var(--border-hairline)] object-cover"
+                                onError={(e) => { e.currentTarget.src = builtinCoverSrc(chat.charDir!); }}
+                            />
+                        )}
+                        <div className="min-w-0">
+                            <div className="truncate text-[12.5px] font-medium leading-tight text-[color:var(--fg-primary)]">
+                                {card?.name ?? chat.title}
+                            </div>
+                            <div className="mt-0.5 truncate font-mono-ui text-[10.5px] leading-tight text-[color:var(--fg-faint)]">
+                                {chat.title}
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <div
                     className="flex h-10 items-center gap-2.5 rounded-full px-4"
                     style={{ background: 'var(--bg-input)', border: '1px solid var(--border-subtle)', boxShadow: 'var(--inner-highlight)' }}
@@ -227,6 +253,13 @@ function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
                         <Icon name="detach" size={15} />
                     </button>
                 )}
+                {/* 占满聊天区:右栏吃整个 workspace-inset(main 压 0 宽不 unmount),
+                    还原回原宽 —— CardApp/TH JS 的大视面通道。 */}
+                {!isMobile && (
+                    <button className="ghost-btn h-7 w-7" onClick={() => shell.setWbExpand(!shell.wbExpand)} title={shell.wbExpand ? t('wb.restore') : t('wb.expand')}>
+                        <Icon name={shell.wbExpand ? 'dockBack' : 'wbExpand'} size={15} />
+                    </button>
+                )}
                 {!isMobile && (
                     <button className="ghost-btn h-7 w-7" onClick={shell.toggleWorkbench} title={t('wb.collapse')}>
                         <Icon name="x" size={15} />
@@ -238,6 +271,13 @@ function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
 }
 
 const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** 浮窗八向缩放的拖拽方向;光标映射给热区样式 + 拖拽中 body 锁形。 */
+type FloatResizeDir = 'n' | 's' | 'e' | 'w' | 'nw' | 'ne' | 'sw' | 'se';
+const RZ_CURSORS: Record<FloatResizeDir, string> = {
+    n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
+    nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize',
+};
 
 /** 单板块宿主槽 —— 板块池里按 type keyed 的常驻位:
  *  docked(右栏体)与 floating(浮窗壳)是「同一个 div 换 className」,
@@ -286,26 +326,37 @@ function PoolSlot({ type, isMobile, docked }: { type: PanelType; isMobile: boole
         window.addEventListener('pointerup', onUp);
     };
 
-    /* 右下缩放柄:min FLOAT_MIN_W×H,上限不越视口右边/底边。 */
-    const onGripDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    /* 八向缩放(边 N/S/E/W + 四角):E/S 只改尺寸(锚左上),W/N 位置
+       尺寸同改(锚右/下边)。每帧从 r0 快照单向推导,不累积误差;
+       拖拽中钳 min + 视口 8px 余量,松手 setFloatRect→clampFloatRect 收口。
+       不 stopPropagation —— 冒泡到壳触发 floatToFront,拖边也置顶。 */
+    const onResizeDown = (dir: FloatResizeDir) => (e: React.PointerEvent<HTMLDivElement>) => {
         e.preventDefault();
-        e.stopPropagation();
         const sx = e.clientX;
         const sy = e.clientY;
-        const sw = rectRef.current.w;
-        const sh = rectRef.current.h;
+        const r0 = rectRef.current;
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        document.body.style.cursor = RZ_CURSORS[dir];
         const onMove = (ev: PointerEvent) => {
-            setRect((r) => {
-                const maxW = Math.max(160, window.innerWidth - r.x - 8);
-                const maxH = Math.max(140, window.innerHeight - r.y - 8);
-                return {
-                    ...r,
-                    w: Math.round(clampN(sw + (ev.clientX - sx), Math.min(FLOAT_MIN_W, maxW), maxW)),
-                    h: Math.round(clampN(sh + (ev.clientY - sy), Math.min(FLOAT_MIN_H, maxH), maxH)),
-                };
-            });
+            const dx = ev.clientX - sx;
+            const dy = ev.clientY - sy;
+            let { x, y, w, h } = r0;
+            if (dir.includes('e')) w = clampN(r0.w + dx, FLOAT_MIN_W, Math.max(FLOAT_MIN_W, vw - r0.x - 8));
+            if (dir.includes('s')) h = clampN(r0.h + dy, FLOAT_MIN_H, Math.max(FLOAT_MIN_H, vh - r0.y - 8));
+            if (dir.includes('w')) {
+                /* 锚右边:x+w 不动,w 变 x 跟;上限 x≥8(对称 SE 的 8px 余量)。 */
+                w = clampN(r0.w - dx, FLOAT_MIN_W, Math.max(FLOAT_MIN_W, r0.x + r0.w - 8));
+                x = r0.x + r0.w - w;
+            }
+            if (dir.includes('n')) {
+                h = clampN(r0.h - dy, FLOAT_MIN_H, Math.max(FLOAT_MIN_H, r0.y + r0.h - 8));
+                y = r0.y + r0.h - h;
+            }
+            setRect({ x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
         };
         const onUp = () => {
+            document.body.style.cursor = '';
             shell.setFloatRect(type, rectRef.current);
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
@@ -341,7 +392,12 @@ function PoolSlot({ type, isMobile, docked }: { type: PanelType; isMobile: boole
                     </button>
                 </div>
             )}
-            {floating && <div className="wb-float-grip" title={t('wb.floatGrip')} onPointerDown={onGripDown} />}
+            {/* 八向隐形热区:7 条透明边/角(SE 角由下方可见握把兼任)。 */}
+            {floating &&
+                (['n', 's', 'e', 'w', 'nw', 'ne', 'sw'] as const).map((d) => (
+                    <div key={d} className={`wb-float-rz wb-float-rz-${d}`} onPointerDown={onResizeDown(d)} />
+                ))}
+            {floating && <div className="wb-float-grip" title={t('wb.floatGrip')} onPointerDown={onResizeDown('se')} />}
         </div>
     );
 }
@@ -394,6 +450,8 @@ export function Workbench() {
     const hasFloats = shell.floatOrder.length > 0;
     if (!open && !hasFloats) return null;
 
+    /* 磁吸阈值(按视口宽):请求宽 ≥ 2/3 → 放手吸成「占满聊天区」;
+       ≤ 1/4 → 放手吸成「全屏聊天」(收起工作台)。中间正常定宽。 */
     const onResizerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         e.preventDefault();
         const handle = e.currentTarget;
@@ -401,16 +459,22 @@ export function Workbench() {
         document.body.style.cursor = 'col-resize';
         const startX = e.clientX;
         const startW = widthRef.current;
-        const maxW = Math.min(680, Math.floor(window.innerWidth * 0.56));
+        const vw = window.innerWidth;
+        const maxW = Math.min(680, Math.floor(vw * 0.56));
         const minW = 290;
+        let snap: 'expand' | 'close' | null = null;
         const onMove = (ev: PointerEvent) => {
-            setWidth(Math.round(Math.max(minW, Math.min(maxW, startW + (startX - ev.clientX)))));
+            const req = startW + (startX - ev.clientX);
+            snap = req >= vw * 0.66 ? 'expand' : req <= vw * 0.25 ? 'close' : null;
+            setWidth(Math.round(Math.max(minW, Math.min(maxW, req))));
         };
         const onUp = () => {
             handle.classList.remove('dragging');
             document.body.style.cursor = '';
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            if (snap === 'expand') { setWidth(410); shell.setWbExpand(true); }
+            else if (snap === 'close') { setWidth(410); shell.toggleWorkbench(); }
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
@@ -418,7 +482,7 @@ export function Workbench() {
 
     return (
         <>
-            {open && (
+            {open && !shell.wbExpand && (
                 <div
                     className="wb-resizer"
                     title="左右拖动调节右栏宽度 · 双击重置"
@@ -429,8 +493,8 @@ export function Workbench() {
                 </div>
             )}
             <aside
-                className={open ? 'h-full shrink-0' : 'w-0 shrink-0'}
-                style={open ? { width } : { width: 0 }}
+                className={open ? (shell.wbExpand ? 'h-full min-w-0 flex-1' : 'h-full shrink-0') : 'w-0 shrink-0'}
+                style={open && !shell.wbExpand ? { width } : undefined}
             >
                 <WorkbenchBody dockedLive={open} />
             </aside>

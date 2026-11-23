@@ -5,14 +5,14 @@
 // 规范组件与老组件共用同一个 <Icon name=…> 组件。
 import { UtopinnIcon, type UtopinnIconName } from '../icons/UtopinnIcons';
 import {
-    ArrowClockwise, ArrowCounterClockwise, ArrowLeft, ArrowRight, ArrowSquareOut, ArrowUp, Book, BookBookmark,
+    ArrowClockwise, ArrowCounterClockwise, ArrowLeft, ArrowRight, ArrowSquareOut, ArrowUp, ArrowsLeftRight, Book, BookBookmark,
     BookOpen, Books, Brain, Broadcast, Cards, CaretDown, CaretLeft, CaretRight, ChartLine,
     Chats, ChatsCircle, Check, Clock, Code, Command, Copy, CornersIn, CornersOut, Cpu, Database,
-    DeviceMobile, DiceFive, DotsThree, DownloadSimple, Eye, EyeClosed, FastForward, Feather, File, Folder, GearSix, GitFork, Globe,
+    DeviceMobile, DiceFive, DotsThree, DotsThreeVertical, DownloadSimple, Eye, EyeClosed, FastForward, Feather, File, Folder, GearSix, GitFork, Globe,
     GridFour, House, Image, Layout, Lightning, Link, List, ListNumbers, MagicWand, MagnifyingGlass, Minus, Monitor,
-    Moon, MusicNote, Note, NotePencil, Notebook, Paperclip, PenNib, PencilSimple, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
-    Quotes, ShieldCheck, SidebarSimple, SignOut, Divide, SlidersHorizontal, Sparkle, Square, Stack, Storefront, Sun,
-    Terminal, Trash, UploadSimple, User, Warning, X,
+    Moon, MusicNote, Note, NotePencil, Notebook, Paperclip, PenNib, PencilSimple, Play, Plugs, Plus, Pulse, PushPin, PuzzlePiece,
+    Quotes, ShieldCheck, SidebarSimple, SignOut, Divide, SlidersHorizontal, Sparkle, SpeakerHigh, SpeakerSlash, Square, Stack, Storefront, Sun,
+    Terminal, Trash, UploadSimple, User, Users, Warning, X,
     type Icon as PhosphorIcon,
 } from '@phosphor-icons/react';
 
@@ -40,6 +40,7 @@ const MAP = {
     arrowLeft: ArrowLeft,
     edit: NotePencil,
     more: DotsThree,
+    moreV: DotsThreeVertical,
     x: X,
     minus: Minus,
     square: Square,
@@ -51,6 +52,7 @@ const MAP = {
     command: Command,
     clock: Clock,
     user: User,
+    users: Users,
     layers: Stack,
     file: File,
     list: List,
@@ -74,6 +76,7 @@ const MAP = {
     slash: Divide,
     detach: ArrowSquareOut,
     dockBack: CornersIn,
+    wbExpand: ArrowsLeftRight,
     copy: Copy,
     rewind: ArrowCounterClockwise,
     fastForward: FastForward,
@@ -112,6 +115,10 @@ const MAP = {
     puzzle: PuzzlePiece,
     penNib: PenNib,
     quote: Quotes,
+    /* —— TASK-062 群名册:点名发言/禁停开关 —— */
+    play: Play,
+    speakerHigh: SpeakerHigh,
+    speakerSlash: SpeakerSlash,
 } as const satisfies Record<string, PhosphorIcon>;
 
 export type IconName = keyof typeof MAP | 'persona' | 'branch' | 'compass' | 'bookmark' | 'flame';

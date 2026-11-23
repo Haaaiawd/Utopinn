@@ -1,7 +1,7 @@
 // 规范稿板块体:PANEL_CATALOG 七块 —— 预设/模型、MVU 变量、手记、总簿
 // (CardApp 宿主)、世界书、章节、频道、卡面应用。
 // 每块无 props,ctx 一律 useShell();数据获取走 api 层 ——
-//   preset  → listPresets/getPreset(openai 家族,只读;写面后续)
+//   preset  → s.presetDoc + s.mutatePresetDoc(openai 家族全字段面;写=防抖整档 PUT)
 //   mvu     → getMvuState + settle/resettle + insertOrAssignVariables(经 th)
 //   notes   → chat_state get/patch(ns='notes',test-op CAS,409 提示重试)
 //   ledger/cardapp → CardAppFrame 真宿主
@@ -21,12 +21,12 @@ import { getChat } from '../../api/chats';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
 import { thCall } from '../../api/th';
 import { getChatState, patchChatState, type JsonPatchOp } from '../../api/state';
-import { getPreset } from '../../api/presets';
 import { statsInject } from '../../api/stats';
 import { getWorld } from '../../api/worlds';
 import {
     PanelEmpty, PanelError, chatKey, chatStateTarget, flattenStatData, thCallTarget, useRemote, type MvuVarRow,
 } from './panelShared';
+import { PresetDocEditor } from './presetEditor';
 
 const lbl = 'mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
 const group = 'inset-group mb-3';
@@ -76,16 +76,13 @@ function ParamSlider({ label, value, min, max, step, fmt, onChange }: {
     );
 }
 
-/** 预设 / 模型板块 —— 与壳共享实时连接/模型/预设源,滑杆与条目开关防抖写回服务端。 */
+/** 预设 / 模型板块 —— 与壳共享实时连接/模型/预设源。
+ *  在线:PresetDocEditor 全字段编辑面(s.presetDoc + s.mutatePresetDoc 统一写路);
+ *  离线:保留 4 滑杆 + 条目开关 demo 位(不落库,诚实演示)。 */
 export function PresetPanel() {
     const { t } = useI18n();
     const s = useShell();
-    const [jsonView, setJsonView] = useState(false);
     const activeClean = s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : '';
-    const detail = useRemote(
-        s.live && jsonView && activeClean ? `panel-preset:${PRESET_API_ID}/${activeClean}` : null,
-        () => getPreset(activeClean, PRESET_API_ID),
-    );
     const pp = s.presetParams;
 
     if (s.live && s.presets.length === 0) {
@@ -93,16 +90,9 @@ export function PresetPanel() {
     }
     return (
         <div className="p-4">
-            <div className="mb-5 flex items-start justify-between gap-2">
-                <div>
-                    <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
-                    <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
-                </div>
-                {s.live && activeClean && (
-                    <button className="ghost-btn h-7 shrink-0 px-2.5 text-[11px]" onClick={() => setJsonView(!jsonView)}>
-                        {jsonView ? t('panel.mvu.table') : 'JSON'}
-                    </button>
-                )}
+            <div className="mb-5">
+                <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
+                <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
             </div>
             <div className="mb-5 space-y-3">
                 <div className="relative">
@@ -157,11 +147,12 @@ export function PresetPanel() {
                     )}
                 </div>
             </div>
-            {detail.error && <PanelError error={detail.error} onRetry={detail.reload} />}
-            {jsonView && detail.data?.doc ? (
-                <pre className="inset-group mb-3 overflow-x-auto p-3 font-mono-ui text-[11px] leading-relaxed text-[color:var(--fg-secondary)]">
-                    {JSON.stringify(detail.data.doc, null, 2)}
-                </pre>
+            {s.live ? (
+                s.presetDoc ? (
+                    <PresetDocEditor doc={s.presetDoc} onMutate={s.mutatePresetDoc} />
+                ) : (
+                    <PanelError error={`${activeClean || '—'} · doc 未拉到`} onRetry={() => void s.refreshConnection()} />
+                )
             ) : (
                 <>
                     <div className="mb-5 space-y-1.5">

@@ -13,12 +13,12 @@
 //   停止串 custom_stop_strings:string[](数组形;JSON 串形兼容读、写回升格数组)
 //   编排   prompts[{identifier,name,role,content,marker,...}] +
 //          prompt_order[{character_id,order:[{identifier,enabled}]}]
-//   绑定   chat_completion_source + <source>_model
-import { useId, useState } from 'react';
+//   注     chat_completion_source / <source>_model 是连接域字段 —— 档内
+//          透传不丢(JSON 视图可见),编辑面归连接设置/模型选择,此组件不渲。
+import { useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
-import type { ModelItem } from '../../api/mock';
 import type { PresetDocument } from '../../api/presets';
 
 const numOr = (v: unknown, fallback: number): number =>
@@ -29,15 +29,6 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 
 const inputCls =
     'h-8 w-full rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-[12.5px] text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50';
-
-/* 上游 chat_completion_sources(openai.js:177)—— 预设档内 source 绑定枚举。 */
-const CHAT_SOURCES = [
-    'openai', 'claude', 'openrouter', 'ai21', 'makersuite', 'vertexai',
-    'mistralai', 'custom', 'cohere', 'perplexity', 'groq', 'electronhub',
-    'chutes', 'nanogpt', 'deepseek', 'aimlapi', 'xai', 'pollinations',
-    'moonshot', 'fireworks', 'cometapi', 'azure_openai', 'zai',
-    'siliconflow', 'workers_ai', 'minimax',
-];
 
 /* ---------------------------------------------------------------- */
 /* 小件                                                              */
@@ -208,30 +199,20 @@ function effectiveOrders(doc: PresetDocument): OrderBlock[] {
 /* 主组件                                                            */
 /* ---------------------------------------------------------------- */
 
-export function PresetDocEditor({ doc, onMutate, models, disabled }: {
+export function PresetDocEditor({ doc, onMutate, disabled }: {
     /** 当前预设整档(宿主真值;每次 onMutate 后宿主应以 next 重渲)。 */
     doc: PresetDocument;
     /** fn(curDoc) → nextDoc;宿主防抖整档 PUT。同步调用,组件内即时生效。 */
     onMutate: (fn: (doc: PresetDocument) => PresetDocument) => void;
-    /** 模型下拉候选(壳 live 列表);缺省 → 绑定模型纯文本输入。 */
-    models?: ModelItem[];
     /** 离线/写中禁用整面。 */
     disabled?: boolean;
 }) {
     const { t } = useI18n();
-    const listId = useId();
     const [openSec, setOpenSec] = useState<Record<string, boolean>>({ prompts: true });
     const toggleSec = (k: string) => setOpenSec((p) => ({ ...p, [k]: !p[k] }));
 
     /** 顶键 patch —— 其余键透传。 */
     const patch = (p: Record<string, unknown>) => onMutate((d) => ({ ...d, ...p }));
-
-    /* ——— 模型绑定:chat_completion_source + <source>_model ——— */
-    const source = typeof doc.chat_completion_source === 'string' && doc.chat_completion_source
-        ? doc.chat_completion_source : 'openai';
-    const srcKnown = CHAT_SOURCES.includes(source);
-    const modelKey = `${source}_model`;
-    const boundModel = typeof doc[modelKey] === 'string' ? (doc[modelKey] as string) : '';
 
     /* ——— 停止串 ——— */
     const stops = readStops(doc.custom_stop_strings);
@@ -299,36 +280,6 @@ export function PresetDocEditor({ doc, onMutate, models, disabled }: {
 
     return (
         <div>
-            {/* 档内模型绑定 —— 生成链 presetDoc.{source}_model 正典消费位。 */}
-            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1.4fr]">
-                <div>
-                    <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('preset.ed.source')}</label>
-                    <select
-                        className={`${inputCls} cursor-pointer font-mono-ui text-[12px]`}
-                        value={srcKnown ? source : '__other'} disabled={disabled}
-                        onChange={(e) => patch({ chat_completion_source: e.target.value })}
-                    >
-                        {!srcKnown && <option value="__other">{source}</option>}
-                        {CHAT_SOURCES.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                </div>
-                <div>
-                    <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">
-                        {t('preset.ed.model')} <span className="font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{modelKey}</span>
-                    </label>
-                    <input
-                        className={`${inputCls} font-mono-ui`} value={boundModel} disabled={disabled}
-                        placeholder={t('preset.ed.modelPh')} list={`${listId}-models`}
-                        onChange={(e) => patch({ [modelKey]: e.target.value })}
-                    />
-                    {models && models.length > 0 && (
-                        <datalist id={`${listId}-models`}>
-                            {models.map((m) => <option key={m.id} value={m.id} />)}
-                        </datalist>
-                    )}
-                </div>
-            </div>
-
             {/* 采样与生成 */}
             <Section
                 title={t('preset.ed.sampling')} open={openSec.sampling ?? true} onToggle={() => toggleSec('sampling')}

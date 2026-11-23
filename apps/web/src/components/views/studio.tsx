@@ -1,6 +1,7 @@
 // 规范稿 studio 六页(端稿 renderStudioMain)+ 移动端资产工坊(renderMobileHubPage)。
 // 六类对齐端稿 studio nav:cards/global/worldbook/presets/persona/regex ——
-// 旧实现 lore/chars/prompts/regex/files 词表作废(spec-v2-check D5 裁定稿侧为准)。
+// 旧实现 lore/chars/prompts/regex/files 词表作废(spec-v2-check D5 裁定稿侧为准);
+// TASK-063 增补第七类 quickreplies(ST QR 管理面,稿外资产域补位)。
 //
 // 诚实面约定(wired 映射):
 //   worldbook 书目/书新建删/条目全字段编辑+增删复制 = GET/PUT/DELETE /worlds 全真;
@@ -8,15 +9,16 @@
 //   global    全局栈读写全真(PATCH /settings → world_info_settings.world_info.globalSelect,保留 charLore)。
 //   presets   列表/参数/调参写 + 「设为默认」(preset_settings_openai)全真。
 //   persona   GET/PUT/DELETE 全真 + Utopinn 内置动物头像库(user-redpanda/fox/owl)。
-//   regex     GET/PUT/PATCH/DELETE /api/utopinn/regex 三域(global/char/preset)全真。
-import { useMemo, useRef, useState } from 'react';
+//   regex     GET/PUT/PATCH/DELETE /api/utopinn/regex 全真;本页只列 global/char
+//             两域 —— preset 脚本本体在预设档内,归宿预设编辑器(PresetRegexSection)。
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { PanelEmpty, PanelError, chatKey, thCallTarget, useRemote } from '../panels/panelShared';
 import { cardData, loadCharDoc, charImageUrl, type CardItem } from '../../api/characters';
-import { listWorlds, getWorld, saveWorld, deleteWorld, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
+import { listWorlds, getWorld, saveWorld, deleteWorld, wbStudioFocus, type WorldDoc, type WorldListItem, type WorldEntry } from '../../api/worlds';
 import { thCall } from '../../api/th';
 import {
     applyDraft, draftDirty, draftOf, newEntry, nextUid,
@@ -24,7 +26,8 @@ import {
     type EntryDraft,
 } from './worldbookDraft';
 import { getSettings, patchSettings } from '../../api/settings';
-import { listPresets, getPreset, savePreset, type PresetDocument } from '../../api/presets';
+import { listPresets, getPreset, savePreset, deletePreset, type PresetDocument } from '../../api/presets';
+import { PresetDocEditor } from '../panels/presetEditor';
 import {
     BUILTIN_COVERS, BUILTIN_PERSONA_AVATARS, builtinPickSrc, coverPersonaKey,
     deletePersona, listPersonas, mintPersonaAvatarKey,
@@ -32,18 +35,26 @@ import {
     type PersonaAvatarPick, type PersonaItem,
 } from '../../api/personas';
 import {
-    deleteRegexScript, getRegexFullView, patchRegexScript, putRegexScope,
+    deleteRegexScript, getRegexFullView, getRegexPresetScope, patchRegexScript, putRegexScope,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import { statsInject } from '../../api/stats';
 import { openImportModal } from '../shell/overlayBus';
+import { downloadExport, exportPresetUrl, exportWorldUrl } from '../../api/export';
+import { uploadPersonaImage } from '../../api/personas';
+import {
+    deleteQrSet, getChatQrConfig, getQrSet, getQrSettingsDoc, listQrSets,
+    newQrSetDoc, patchChatQrConfig, patchQrSettingsDoc, qrBound, qrCharScopeKey,
+    qrConfigWithLink, qrStudioFocus, saveQrSet,
+    type QrConfig, type QrEntry, type QrSetDoc, type QrSetLink, type QrSettings,
+} from '../../api/quickreplies';
 
 /* ------------------------------------------------------------------ */
 /* studio nav 词表(端稿 L958-966 六类)                                  */
 /* ------------------------------------------------------------------ */
 
 /* 角色卡库栏目已撤 —— 卡面管理归门厅/卡选择弹窗,工坊只留资产域。 */
-export const STUDIO_NAVS = ['global', 'worldbook', 'presets', 'persona', 'regex'] as const;
+export const STUDIO_NAVS = ['global', 'worldbook', 'presets', 'persona', 'regex', 'quickreplies'] as const;
 export type StudioNav = (typeof STUDIO_NAVS)[number];
 export const STUDIO_NAV_META: { id: StudioNav; icon: IconName }[] = [
     { id: 'global', icon: 'layers' },
@@ -51,6 +62,7 @@ export const STUDIO_NAV_META: { id: StudioNav; icon: IconName }[] = [
     { id: 'presets', icon: 'sliders' },
     { id: 'persona', icon: 'persona' },
     { id: 'regex', icon: 'code' },
+    { id: 'quickreplies', icon: 'zap' },
 ];
 /** 旧词表(lore/chars/prompts/files/cards)与非枚举值一律落 'global'。 */
 export function normStudioNav(v: string): StudioNav {
@@ -230,12 +242,13 @@ function useWiHits(chatLabel: string | null) {
 }
 
 /** 侧栏计数(端稿 cats.count):cards=卡数;global=选中/总数;worldbook=条目总数;
- *  presets/persona=总数;regex=三域脚本总数。 */
+ *  presets/persona=总数;regex=两域脚本总数(global+char,与页口径一致)。 */
 export function useStudioCounts(): Record<StudioNav, string> {
     const worlds = useRemote('studio-cnt:worlds', listWorlds);
     const presets = useRemote('studio-cnt:presets', () => listPresets('openai'));
     const personas = useRemote('studio-cnt:personas', listPersonas);
     const regex = useRemote('studio-cnt:regex', getRegexFullView);
+    const qr = useRemote('studio-cnt:qr', listQrSets);
     const { slices } = useSettingsSlices();
     const items = worlds.data?.items ?? [];
     const counts = useWorldCounts(items);
@@ -243,7 +256,6 @@ export function useStudioCounts(): Record<StudioNav, string> {
     const regexTotal = regex.data
         ? regex.data.global.length
             + regex.data.chars.reduce((acc, c) => acc + c.scripts.length, 0)
-            + regex.data.presets.reduce((acc, p) => acc + p.scripts.length, 0)
         : null;
     return {
         global: `${slices.globalSelect.length}/${items.length}`,
@@ -251,6 +263,7 @@ export function useStudioCounts(): Record<StudioNav, string> {
         presets: presets.data ? String(presets.data.total) : '…',
         persona: personas.data ? String(personas.data.total) : '…',
         regex: regexTotal !== null ? String(regexTotal) : '…',
+        quickreplies: qr.data ? String(qr.data.length) : '…',
     };
 }
 
@@ -258,7 +271,10 @@ export function useStudioCounts(): Record<StudioNav, string> {
 /* 页壳(端稿 renderStudioMain 外框:移动 header + 桌面标题行 + 导入钮)     */
 /* ------------------------------------------------------------------ */
 
-function StudioShell({ nav, children }: { nav: StudioNav; children: ReactNode }) {
+/** fill:页面要求「满高内滚」时用(世界书编辑器双栏)——内层转 flex 列、
+ *  页头定高、children 界高(flex-1+min-h-0),lg 起整页不再滚,滚动归
+ *  栏内;非 fill 页保持整页滚原样。移动端一律整页滚。 */
+function StudioShell({ nav, fill, children }: { nav: StudioNav; fill?: boolean; children: ReactNode }) {
     const { t } = useI18n();
     const s = useShell();
     const importBtn = (
@@ -283,10 +299,10 @@ function StudioShell({ nav, children }: { nav: StudioNav; children: ReactNode })
                     {importBtn}
                 </header>
             )}
-            <div className={`min-h-0 flex-1 overflow-y-auto ${s.isMobile ? 'p-4' : 'px-10 py-8'}`}>
-                <div className="mx-auto max-w-4xl space-y-5">
+            <div className={`min-h-0 flex-1 overflow-y-auto ${fill ? 'lg:overflow-hidden' : ''} ${s.isMobile ? 'p-4' : 'px-10 py-8'}`}>
+                <div className={`mx-auto max-w-4xl space-y-5 ${fill ? 'lg:flex lg:h-full lg:flex-col' : ''}`}>
                     {!s.isMobile && (
-                        <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
                             <div>
                                 <h1 className="heading-tight text-title-lg font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</h1>
                                 <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t(`studio.${nav}.sub`)}</p>
@@ -294,7 +310,7 @@ function StudioShell({ nav, children }: { nav: StudioNav; children: ReactNode })
                             {importBtn}
                         </div>
                     )}
-                    {children}
+                    {fill ? <div className="min-h-0 lg:flex-1">{children}</div> : children}
                 </div>
             </div>
         </section>
@@ -535,6 +551,12 @@ function WorldbookPage() {
         return typeof w === 'string' && w ? w : null;
     });
     const [picked, setPicked] = useState<string | null>(null);
+    /* 深链落点:会话信息层/外部跳某本书时 wbStudioFocus.set 置名 ——
+       书目一到位即消费一次(qrStudioFocus 同款,不进 studioNav 词表)。 */
+    useEffect(() => {
+        const f = wbStudioFocus.set;
+        if (f && items.some((i) => i.name === f)) { wbStudioFocus.set = null; setPicked(f); }
+    }, [items]);
     const [ddOpen, setDdOpen] = useState(false);
     const [creatingBook, setCreatingBook] = useState(false);
     const [newBookName, setNewBookName] = useState('');
@@ -708,7 +730,9 @@ function WorldbookPage() {
     const curCount = curName ? counts.data?.[curName] ?? entries.length : 0;
 
     return (
-        <div className="space-y-4">
+        /* lg 起:h-full 链接 StudioShell 定高滚动口 → 编辑器双栏各自
+           overflow-y-auto(条目长/表单长互不拖累);移动端仍整页滚。 */
+        <div className="flex flex-col gap-4 lg:h-full lg:min-h-0">
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex min-w-[260px] max-w-[520px] flex-1 items-center gap-1.5">
                     {/* 书文件选择器(端稿 WORLDS_LIB 下拉 —— 选项带条目数+绑定注释);空库只剩 +/trash */}
@@ -757,10 +781,14 @@ function WorldbookPage() {
                         )}
                     </div>
                     )}
-                    {/* 书级操作:新建空档 / 删当前书(confirm 两步) */}
+                    {/* 书级操作:新建空档 / 导出 JSON(TASK-067)/ 删当前书(confirm 两步) */}
                     <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.world.addBook')} disabled={busyWrite}
                         onClick={() => { setCreatingBook((v) => !v); setNewBookName(''); }}>
                         <Icon name="plus" size={14} />
+                    </button>
+                    <button className="ghost-btn h-8 w-8 shrink-0" title={t('ov.export.world')} disabled={!curName}
+                        onClick={() => { if (curName) downloadExport(exportWorldUrl(curName)); }}>
+                        <Icon name="upload" size={14} />
                     </button>
                     <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.world.delBook')} disabled={busyWrite || !curName}
                         onClick={delBook}>
@@ -820,9 +848,9 @@ function WorldbookPage() {
             {noBooks && <PanelEmpty icon="bookOpen">{t('studio.world.empty')}</PanelEmpty>}
             {docR.error && <PanelError error={docR.error} onRetry={docR.reload} />}
             {doc && (
-                <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+                <div className="grid grid-cols-1 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-12">
                     {/* 左列:新建 + 条目 + 命中徽标 + 启停直写 */}
-                    <div className="inset-group h-fit lg:col-span-5">
+                    <div className="inset-group h-fit lg:col-span-5 lg:h-full lg:min-h-0 lg:overflow-y-auto">
                         <button className="inset-row inset-row-btn w-full !justify-start gap-2" onClick={addEntry} disabled={busyWrite}>
                             <Icon name="plus" size={13} className="shrink-0 text-[color:var(--fg-muted)]" />
                             <span className="text-[12px] font-medium text-[color:var(--fg-secondary)]">{t('studio.world.addEntry')}</span>
@@ -853,7 +881,7 @@ function WorldbookPage() {
                         {!entries.length && <PanelEmpty icon="bookOpen">{t('studio.world.emptyEntries')}</PanelEmpty>}
                     </div>
                     {/* 右列:结构化条目编辑表单(JSON pre 已收编进字段面) */}
-                    <div className="space-y-3 rounded-[12px] p-4 lg:col-span-7" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}>
+                    <div className="space-y-3 rounded-[12px] p-4 lg:col-span-7 lg:h-full lg:min-h-0 lg:overflow-y-auto" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}>
                         {selEntry && curDraft ? (
                             <>
                                 <div className="flex items-center justify-between gap-2">
@@ -919,16 +947,117 @@ function presetModel(doc: PresetDocument | undefined): string | null {
     return null;
 }
 
-interface PresetTune { temp: number | null; topP: number | null; ctxLen: number | null; maxReply: number | null }
-const tuneOf = (doc: PresetDocument | undefined): PresetTune => ({
+/** 行摘要用四元组(读档直显,不写面 —— 写面全归 PresetDocEditor)。 */
+const tuneOf = (doc: PresetDocument | undefined) => ({
     temp: pnum(doc?.temperature),
     topP: pnum(doc?.top_p),
     ctxLen: pnum(doc?.openai_max_context),
     maxReply: pnum(doc?.openai_max_tokens),
 });
-const TUNE_KEY: Record<keyof PresetTune, string> = {
-    temp: 'temperature', topP: 'top_p', ctxLen: 'openai_max_context', maxReply: 'openai_max_tokens',
+
+/* 预设 extensions 袋:regex_scripts 读出/写回共用的窄化。 */
+const presetExtBag = (d: PresetDocument): Record<string, unknown> =>
+    (d.extensions && typeof d.extensions === 'object' && !Array.isArray(d.extensions))
+        ? (d.extensions as Record<string, unknown>) : {};
+
+const presetRegexScripts = (doc: PresetDocument): RegexScriptData[] => {
+    const arr = presetExtBag(doc).regex_scripts;
+    return Array.isArray(arr)
+        ? arr.filter((x): x is RegexScriptData => !!x && typeof x === 'object' && !Array.isArray(x))
+        : [];
 };
+
+/** 预设档内正则脚本小节 —— 脚本本体是预设档数据(extensions.regex_scripts),
+ *  启停/删除走 doc 写路(onMutate 与调参同一防抖整档 PUT 通道,无跨通道竞写);
+ *  放行闸 preset_allowed_regex 在 settings 不在档 —— scoped GET 取态、
+ *  PUT allow 写回,in_use 徽标同源。真管理面,不假编辑脚本内容。 */
+function PresetRegexSection({ apiId, name, doc, onMutate }: {
+    apiId: string;
+    name: string;
+    doc: PresetDocument;
+    onMutate: (fn: (d: PresetDocument) => PresetDocument) => void;
+}) {
+    const { t } = useI18n();
+    const s = useShell();
+    const scripts = useMemo(() => presetRegexScripts(doc), [doc]);
+    const scope = useRemote(`regex-preset:${apiId}:${name}`, () => getRegexPresetScope(apiId, name));
+    const [allowBusy, setAllowBusy] = useState(false);
+
+    /* 写穿 mutate fn 内现取 d 的脚本数组 —— 渲染期 scripts 仅作展示,
+       避免与在途调参改动错拍(同通道 fn 串行,恒以最新档为准)。 */
+    const writeScripts = (fn: (arr: RegexScriptData[]) => RegexScriptData[]) => onMutate((d) => ({
+        ...d, extensions: { ...presetExtBag(d), regex_scripts: fn(presetRegexScripts(d)) },
+    }));
+    const toggleScript = (i: number) =>
+        writeScripts((arr) => arr.map((sc, j) => (j === i ? { ...sc, disabled: sc.disabled === true ? false : true } : sc)));
+    const delScript = (i: number) => {
+        const label = scripts[i]?.scriptName || `#${i}`;
+        if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
+        writeScripts((arr) => arr.filter((_, j) => j !== i));
+    };
+    const toggleAllow = () => {
+        if (allowBusy || !scope.data) return;
+        setAllowBusy(true);
+        void putRegexScope({ scope: 'preset', apiId, preset: name }, { allow: !scope.data.allowed })
+            .then(() => scope.reload())
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setAllowBusy(false));
+    };
+
+    return (
+        <div className="mt-3 border-t border-[color:var(--border-hairline)] pt-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">
+                    {t('studio.presets.regex')}
+                    <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{scripts.length}</span>
+                    {scope.data?.inUse && (
+                        <span className="shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
+                            {t('studio.regex.inUse')}
+                        </span>
+                    )}
+                </span>
+                {scope.error ? (
+                    <button className="shrink-0 text-[10.5px] text-[color:var(--status-danger)]" onClick={scope.reload}>{t('panel.retry')}</button>
+                ) : (
+                    <span className="flex shrink-0 items-center gap-2">
+                        <span className="text-[10.5px] text-[color:var(--fg-faint)]">{t('studio.regex.allowPreset')}</span>
+                        <Switch on={scope.data?.allowed ?? false} disabled={allowBusy || !scope.data} title={t('studio.regex.allowPreset')} onToggle={toggleAllow} />
+                    </span>
+                )}
+            </div>
+            {scripts.length === 0 ? (
+                <div className="inset-row"><span className="text-[11px] text-[color:var(--fg-faint)]">{t('studio.presets.regexEmpty')}</span></div>
+            ) : (
+                <div className="inset-group">
+                    {scripts.map((sc, i) => {
+                        const nm = typeof sc.scriptName === 'string' && sc.scriptName ? sc.scriptName : t('studio.regex.unnamed');
+                        const on = sc.disabled !== true;
+                        return (
+                            <div key={typeof sc.id === 'string' && sc.id ? sc.id : i} className="inset-row gap-3">
+                                <div className="min-w-0 flex-1">
+                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]" style={{ opacity: on ? 1 : 0.5 }}>{nm}</div>
+                                    {typeof sc.findRegex === 'string' && sc.findRegex && (
+                                        <div className="mt-0.5 truncate font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{sc.findRegex}</div>
+                                    )}
+                                </div>
+                                <div className="flex shrink-0 items-center gap-2">
+                                    <Switch on={on} onToggle={() => toggleScript(i)} />
+                                    <button
+                                        className="ghost-btn h-7 w-7" title={t('studio.persona.delete')}
+                                        style={{ color: 'var(--status-danger)' }}
+                                        onClick={() => delScript(i)}
+                                    >
+                                        <Icon name="trash" size={13} />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
 
 function PresetsPage() {
     const { t } = useI18n();
@@ -944,11 +1073,59 @@ function PresetsPage() {
         }));
         return out;
     });
-    const [tuneOpen, setTuneOpen] = useState<string | null>(null);
-    const [tuneDrafts, setTuneDrafts] = useState<Record<string, PresetTune>>({});
+    /* 编辑面真值 = overrides ?? docs —— ref 直写同步(连续编辑不丢步),
+     * 写穿缓存 + 700ms 防抖整档 PUT;PUT 失败 → 丢 override + 失效重拉(回滚)。 */
+    const ovRef = useRef<Record<string, PresetDocument>>({});
+    const docsRef = useRef<Record<string, PresetDocument | null> | null>(null);
+    docsRef.current = docs.data;
+    const [, bumpOv] = useState(0);
     const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
     const [saving, setSaving] = useState<Record<string, boolean>>({});
     const [switching, setSwitching] = useState<string | null>(null);
+    const [editOpen, setEditOpen] = useState<string | null>(null);
+    const [creating, setCreating] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [busyRow, setBusyRow] = useState<string | null>(null);
+
+    const docFor = (n: string): PresetDocument | undefined => ovRef.current[n] ?? docs.data?.[n] ?? undefined;
+
+    /* 编辑底必须新鲜:docsRef 是打开页时的快照,工作台(App.mutatePresetDoc)
+       保存不回流本页 —— 以旧档整档 PUT 会把对面已存的改动盖回(Devin#19)。
+       无 override 时现取服务端档;同名串行,连击叠在同一 base 上。 */
+    const mutateSeq = useRef<Record<string, Promise<unknown>>>({});
+    const mutateFor = (n: string) => (fn: (d: PresetDocument) => PresetDocument) => {
+        mutateSeq.current[n] = (mutateSeq.current[n] ?? Promise.resolve()).then(async () => {
+            const cur = ovRef.current[n] ?? (await getPreset(n, PRESET_API_ID)).doc;
+            if (!cur) return;
+            const next = fn(cur);
+            if (next === cur) return;
+            ovRef.current[n] = next;
+            presetDocCache.set(`${PRESET_API_ID}/${n}`, Promise.resolve(next));
+            bumpOv((c) => c + 1);
+            clearTimeout(saveTimer.current[n]);
+            saveTimer.current[n] = setTimeout(() => {
+                setSaving((p) => ({ ...p, [n]: true }));
+                savePreset(n, next, PRESET_API_ID)
+                    .then(() => {
+                        /* 改的是激活档 → 面板/舞台侧 doc 回灌收敛(只读 GET)。 */
+                        if (slices.activePreset === n || slices.activePreset === `${n}.json`) s.reloadPresetDoc();
+                    })
+                    .catch((e) => {
+                        /* 回滚服务端真值:override 与缓存一并丢,重拉远端。 */
+                        delete ovRef.current[n];
+                        presetDocCache.delete(`${PRESET_API_ID}/${n}`);
+                        docs.reload();
+                        s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+                    })
+                    .finally(() => setSaving((p) => ({ ...p, [n]: false })));
+            }, 700);
+        }).catch((e) => {
+            /* 取档失败不落旧基座 —— 那样整档 PUT 会盖掉别处的保存。 */
+            s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+        });
+    };
+
+    const refreshAll = () => Promise.all([list.reload(), docs.reload(), s.refreshConnection(), sReload()]);
 
     const activatePreset = (name: string) => {
         if (switching) return;
@@ -960,95 +1137,160 @@ function PresetsPage() {
             .finally(() => setSwitching(null));
     };
 
-    const setTune = (name: string, k: keyof PresetTune, v: number) => {
-        const base = tuneDrafts[name] ?? tuneOf(docs.data?.[name] ?? undefined);
-        const draft = { ...base, [k]: v };
-        setTuneDrafts((p) => ({ ...p, [name]: draft }));
-        const doc = docs.data?.[name];
-        if (!doc) return;
-        clearTimeout(saveTimer.current[name]);
-        saveTimer.current[name] = setTimeout(() => {
-            const next = { ...doc, [TUNE_KEY[k]]: v } as PresetDocument;
-            setSaving((p) => ({ ...p, [name]: true }));
-            savePreset(name, next, PRESET_API_ID)
-                .then(() => { presetDocCache.delete(`${PRESET_API_ID}/${name}`); docs.reload(); })
-                .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-                .finally(() => setSaving((p) => ({ ...p, [name]: false })));
-        }, 600);
+    /* 新建 = PUT 空档(字段随编辑写入);复制 = 整档深拷自动取名;
+       删除 = confirm 两步 + 激活档降级(余档切默认/空档清指针)。 */
+    const addPreset = () => {
+        const name = newName.trim();
+        if (!name || busyRow) return;
+        if (names.includes(name)) { s.hint(t('studio.presets.exists'), true); return; }
+        setBusyRow('new');
+        void savePreset(name, {}, PRESET_API_ID)
+            .then(() => { setCreating(false); setNewName(''); setEditOpen(name); return refreshAll(); })
+            .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyRow(null));
+    };
+    const copyPreset = (n: string) => {
+        const src = docFor(n);
+        if (!src || busyRow) return;
+        let cand = `${n}-copy`; let i = 2;
+        while (names.includes(cand)) cand = `${n}-copy-${i++}`;
+        const target = cand;
+        setBusyRow(n);
+        void savePreset(target, JSON.parse(JSON.stringify(src)) as PresetDocument, PRESET_API_ID)
+            .then(() => { setEditOpen(target); return refreshAll(); })
+            .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyRow(null));
+    };
+    const delPreset = (n: string) => {
+        if (busyRow) return;
+        if (!window.confirm(`${t('studio.presets.delConfirm')}\n${n}`)) return;
+        const wasActive = slices.activePreset === n || slices.activePreset === n.replace(/\.json$/i, '');
+        const remaining = names.filter((x) => x !== n);
+        setBusyRow(n);
+        void deletePreset(n, PRESET_API_ID)
+            .then(() => {
+                delete ovRef.current[n];
+                presetDocCache.delete(`${PRESET_API_ID}/${n}`);
+                clearTimeout(saveTimer.current[n]);
+                if (editOpen === n) setEditOpen(null);
+                /* 激活档被删 → 降级:有余档切首档(走 pickPreset 完整水合),
+                   空库清指针 null(merge-patch 删键)。 */
+                if (wasActive) {
+                    if (remaining[0]) s.pickPreset(remaining[0]);
+                    else void patchSettings({ preset_settings_openai: null }).catch(() => undefined);
+                }
+                return refreshAll();
+            })
+            .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusyRow(null));
     };
 
     if (list.error) return <PanelError error={list.error} onRetry={list.reload} />;
-    if (list.data && !names.length) return <PanelEmpty icon="sliders">{t('studio.presets.empty')} · {PRESET_API_ID}</PanelEmpty>;
 
     return (
-        <div className="inset-group">
-            {names.map((n) => {
-                const doc = docs.data?.[n] ?? undefined;
-                const tune = tuneDrafts[n] ?? tuneOf(doc);
-                const active = slices.activePreset === n || slices.activePreset === n.replace(/\.json$/i, '');
-                const open = tuneOpen === n;
-                return (
-                    <div key={n} className="inset-row flex-col !items-stretch">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <div className="truncate font-mono-ui text-[13px] font-medium text-[color:var(--fg-primary)]">{n}</div>
-                                <div className="mt-0.5 truncate font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">
-                                    {doc === null && docs.data ? t('studio.presets.unreadable')
-                                        : `T ${tune.temp ?? '—'} · TopP ${tune.topP ?? '—'} · ${tune.maxReply ?? '—'} tok${presetModel(doc) ? ` · ${presetModel(doc)}` : ''}`}
+        <div className="space-y-3">
+            {/* 页级操作:新建空档 / 行内复制 / 行内删除(两步确认)。
+                副标题只由 StudioShell 页头渲,此容器只留操作钮。 */}
+            <div className="flex items-center justify-end gap-2">
+                <button
+                    className="ghost-btn h-7 shrink-0 gap-1 px-2.5 text-[11.5px]"
+                    disabled={busyRow !== null}
+                    onClick={() => { setCreating((v) => !v); setNewName(''); }}
+                >
+                    <Icon name="plus" size={12} /> {t('studio.presets.new')}
+                </button>
+            </div>
+            {creating && (
+                <div className="flex max-w-[420px] items-center gap-1.5">
+                    <input
+                        className={wbInput} autoFocus value={newName}
+                        placeholder={t('studio.presets.newNamePh')} disabled={busyRow === 'new'}
+                        onChange={(e) => setNewName(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') addPreset();
+                            if (e.key === 'Escape') setCreating(false);
+                        }}
+                    />
+                    <button className="ghost-btn h-8 w-8 shrink-0" title={t('studio.presets.new')} disabled={busyRow === 'new' || !newName.trim()} onClick={addPreset}>
+                        <Icon name="check" size={14} />
+                    </button>
+                    <button className="ghost-btn h-8 w-8 shrink-0" disabled={busyRow === 'new'} onClick={() => setCreating(false)}>
+                        <Icon name="x" size={14} />
+                    </button>
+                </div>
+            )}
+            {list.data && !names.length && <PanelEmpty icon="sliders">{t('studio.presets.empty')} · {PRESET_API_ID}</PanelEmpty>}
+            <div className="inset-group">
+                {names.map((n) => {
+                    const doc = docFor(n);
+                    const tune = tuneOf(doc);
+                    const active = slices.activePreset === n || slices.activePreset === n.replace(/\.json$/i, '');
+                    const open = editOpen === n;
+                    /* docs.data[n]===null = 服务端档读不出(unreadable);undefined = 尚未取回。 */
+                    const unreadable = !!(docs.data && docs.data[n] === null && !ovRef.current[n]);
+                    return (
+                        <div key={n} className="inset-row flex-col !items-stretch">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="truncate font-mono-ui text-[13px] font-medium text-[color:var(--fg-primary)]">{n}</div>
+                                    <div className="mt-0.5 truncate font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">
+                                        {unreadable ? t('studio.presets.unreadable')
+                                            : `T ${tune.temp ?? '—'} · TopP ${tune.topP ?? '—'} · ${tune.maxReply ?? '—'} tok${presetModel(doc) ? ` · ${presetModel(doc)}` : ''}`}
+                                    </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1.5">
+                                    {saving[n] && <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{t('panel.notes.saving')}</span>}
+                                    {/* 导出整档 JSON(TASK-067):回出即 import 'preset' 嗅探形。 */}
+                                    <button
+                                        className="ghost-btn h-7 w-7" disabled={!doc}
+                                        onClick={() => downloadExport(exportPresetUrl(n, PRESET_API_ID))} title={t('ov.export.preset')}
+                                    >
+                                        <Icon name="upload" size={12} />
+                                    </button>
+                                    <button
+                                        className="ghost-btn h-7 w-7" disabled={!doc || busyRow === n}
+                                        onClick={() => copyPreset(n)} title={t('studio.presets.copy')}
+                                    >
+                                        <Icon name="copy" size={12} />
+                                    </button>
+                                    <button
+                                        className="ghost-btn h-7 w-7" disabled={busyRow === n}
+                                        onClick={() => delPreset(n)} title={t('studio.presets.delete')}
+                                    >
+                                        <Icon name="trash" size={12} />
+                                    </button>
+                                    <button
+                                        className="ghost-btn h-7 rounded-md px-2 text-[11px]"
+                                        disabled={!doc}
+                                        onClick={() => setEditOpen(open ? null : n)}
+                                        title={t('studio.presets.tune')}
+                                    >
+                                        <Icon name={open ? 'chevronDown' : 'sliders'} size={12} />
+                                    </button>
+                                    {active ? (
+                                        <span className="rounded-lg px-3 py-1 text-[12px] font-medium" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.presets.active')}</span>
+                                    ) : (
+                                        <button
+                                            className="rounded-lg px-3 py-1 text-[12px] font-medium transition-opacity"
+                                            style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: switching === n ? 0.5 : 1 }}
+                                            disabled={switching !== null}
+                                            onClick={() => activatePreset(n)}
+                                        >
+                                            {t('studio.presets.setDefault')}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                                {saving[n] && <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{t('panel.notes.saving')}</span>}
-                                <button
-                                    className="ghost-btn h-7 rounded-md px-2 text-[11px]"
-                                    disabled={!doc}
-                                    onClick={() => setTuneOpen(open ? null : n)}
-                                    title={t('studio.presets.tune')}
-                                >
-                                    <Icon name="sliders" size={12} />
-                                </button>
-                                {active ? (
-                                    <span className="rounded-lg px-3 py-1 text-[12px] font-medium" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('studio.presets.active')}</span>
-                                ) : (
-                                    <button
-                                        className="rounded-lg px-3 py-1 text-[12px] font-medium transition-opacity"
-                                        style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: switching === n ? 0.5 : 1 }}
-                                        disabled={switching !== null}
-                                        onClick={() => activatePreset(n)}
-                                    >
-                                        {t('studio.presets.setDefault')}
-                                    </button>
-                                )}
-                            </div>
+                            {open && doc && (
+                                <div className="mt-2 border-t border-[color:var(--border-hairline)] pt-3">
+                                    <PresetDocEditor doc={doc} onMutate={mutateFor(n)} />
+                                    <PresetRegexSection apiId={PRESET_API_ID} name={n} doc={doc} onMutate={mutateFor(n)} />
+                                </div>
+                            )}
                         </div>
-                        {open && doc && (
-                            <div className="mt-2 space-y-2.5 border-t border-[color:var(--border-hairline)] pt-3">
-                                {([
-                                    ['temp', t('param.temp'), 0, 2, 0.05],
-                                    ['topP', t('param.topP'), 0, 1, 0.01],
-                                    ['ctxLen', t('param.ctxLen'), 1024, 200000, 1024],
-                                    ['maxReply', t('param.maxReply'), 128, 8192, 64],
-                                ] as [keyof PresetTune, string, number, number, number][]).map(([k, label, min, max, step]) => (
-                                    <div key={k} className="flex items-center justify-between gap-3 text-[12.5px]">
-                                        <span className="text-[color:var(--fg-secondary)]">{label}</span>
-                                        <div className="flex items-center gap-2">
-                                            <input
-                                                type="range" min={min} max={max} step={step}
-                                                value={tune[k] ?? min}
-                                                disabled={tune[k] === null}
-                                                className="w-[160px]"
-                                                onChange={(e) => setTune(n, k, Number(e.target.value))}
-                                            />
-                                            <span className="w-14 text-right font-mono-ui text-[10.5px] text-[color:var(--fg-primary)]">{tune[k] ?? '—'}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                                <p className="text-[10px] text-[color:var(--fg-faint)]">{t('studio.presets.tuneNote')}</p>
-                            </div>
-                        )}
-                    </div>
-                );
-            })}
+                    );
+                })}
+            </div>
         </div>
     );
 }
@@ -1076,6 +1318,8 @@ function PersonaPage() {
         builtinAvatar: BUILTIN_PERSONA_AVATARS[0].id,
     });
     const [busy, setBusy] = useState(false);
+    /* 头像版本戳:同键重传后 URL 不变,?v= 戳破浏览器静态缓存。 */
+    const [avVer, setAvVer] = useState(0);
 
     const act = (fn: () => Promise<unknown>) => {
         if (busy) return;
@@ -1163,6 +1407,13 @@ function PersonaPage() {
                             if (!window.confirm(`${t('studio.persona.delConfirm')}\n${p.name || p.avatar}`)) return;
                             act(() => deletePersona(p.avatar));
                         }}
+                        ver={avVer}
+                        onUpload={(f) => act(async () => {
+                            /* overwrite=avatar 键:文件落 User Avatars/<key>,hasImage 翻真,
+                               主键不变 —— name/desc/isDefault 全部原位保留,无需迁档。 */
+                            await uploadPersonaImage(f, p.avatar);
+                            setAvVer((v) => v + 1);
+                        })}
                     />
                 ))}
                 {list.data && !items.length && <PanelEmpty icon="persona">{t('studio.persona.empty')}</PanelEmpty>}
@@ -1179,17 +1430,26 @@ function PersonaPage() {
     );
 }
 
-function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCancel, onChange, onSave, onDefault, onDelete }: {
+function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCancel, onChange, onSave, onDefault, onDelete, onUpload, ver }: {
     p: PersonaItem; busy: boolean; inSession: boolean; editing: boolean;
     draft: PersonaDraft;
     onUse: () => void;
     onEdit: () => void; onCancel: () => void;
     onChange: (d: PersonaDraft) => void;
     onSave: () => void; onDefault: () => void; onDelete: () => void;
+    /** 自定义头像上传(TASK-067):选文件 → POST /personas/avatar(overwrite=p.avatar)。 */
+    onUpload: (f: File) => void;
+    /** 头像版本戳(同键重传 ?v= 破缓存)。 */
+    ver: number;
 }) {
     const { t } = useI18n();
     const fallbackSrc = personaAvatarSrc(p.avatar, false);
     const [imgSrc, setImgSrc] = useState(() => personaAvatarSrc(p.avatar, p.hasImage));
+    const fileRef = useRef<HTMLInputElement>(null);
+    /* 上传后 hasImage 翻真/同键换图 → 同步真 URL(带版本戳);hasImage 变化才走。 */
+    useEffect(() => {
+        setImgSrc(personaAvatarSrc(p.avatar, p.hasImage) + (p.hasImage ? `?v=${ver}` : ''));
+    }, [p.avatar, p.hasImage, ver]);
     return (
         <div className="inset-row flex-col !items-stretch">
             <div className="flex items-center justify-between gap-3">
@@ -1282,6 +1542,27 @@ function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCance
                             </div>
                         </div>
                     )}
+                    {/* 自定义头像(TASK-067):现有资产通道落盘 User Avatars/<avatar 键>,
+                        键不换、hasImage 翻真;有图后内置选区收起(与 !hasImage 守卫互斥)。 */}
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-[color:var(--fg-muted)]">{t('studio.persona.av.custom')}</span>
+                        <button
+                            type="button"
+                            className="ghost-btn h-7 gap-1.5 rounded-md px-2 text-[11px]"
+                            disabled={busy}
+                            onClick={() => fileRef.current?.click()}
+                        >
+                            <Icon name="upload" size={12} /> {p.hasImage ? t('studio.persona.av.replace') : t('studio.persona.av.upload')}
+                        </button>
+                        <input
+                            ref={fileRef} type="file" accept="image/*" className="hidden"
+                            onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                e.target.value = '';
+                                if (f) onUpload(f);
+                            }}
+                        />
+                    </div>
                     <input
                         value={draft.name}
                         onChange={(e) => onChange({ ...draft, name: e.target.value })}
@@ -1310,7 +1591,9 @@ function PersonaRow({ p, busy, inSession, editing, draft, onUse, onEdit, onCance
 }
 
 /* ------------------------------------------------------------------ */
-/* 6. regex —— /api/utopinn/regex 全量三域读写(global / char / preset)    */
+/* 6. regex —— /api/utopinn/regex 读写;本页口径 = global/char 两域        */
+/*   (preset 脚本本体在预设档 extensions.regex_scripts,归宿预设编辑器内  */
+/*    PresetRegexSection,不在此混列)。                                  */
 /* ------------------------------------------------------------------ */
 
 interface FlatRegexItem {
@@ -1352,18 +1635,6 @@ function RegexPage() {
                     target: { scope: 'char', charDir: c.charDir },
                     idOrIdx,
                     scopeLabel: `${t('studio.regex.scope')} · ${c.name || c.charDir}`,
-                    script: sc,
-                });
-            });
-        }
-        for (const p of full.data.presets) {
-            p.scripts.forEach((sc, idx) => {
-                const idOrIdx = typeof sc.id === 'string' && sc.id ? sc.id : idx;
-                out.push({
-                    key: `preset:${p.apiId}:${p.name}:${idOrIdx}:${idx}`,
-                    target: { scope: 'preset', apiId: p.apiId, preset: p.name },
-                    idOrIdx,
-                    scopeLabel: `${t('panel.preset.preset')} · ${p.name}`,
                     script: sc,
                 });
             });
@@ -1511,6 +1782,449 @@ function RegexPage() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 6. quickreplies —— QR 册管理(TASK-063 双向写面)                        */
+/*   册 CRUD = named-docs PUT/DELETE;条目 label/message/启停 = 册档      */
+/*   qrList 整档写回;绑定面 = quickReplyV2(全局/卡)+ chat_metadata        */
+/*   (本会话)三 scope link 管理 —— link 在 = 已绑,isVisible = 亮。        */
+/* ------------------------------------------------------------------ */
+
+/** scope 芯片行:已绑 link 列(名 + 可见钮 + 摘绑)+ 未绑下拉补绑。 */
+function QrScopeChips({ label, cfg, names, disabled, hint, onOp }: {
+    label: ReactNode;
+    cfg: QrConfig | null;
+    names: string[];
+    disabled?: boolean;
+    hint?: string;
+    onOp: (set: string, op: 'on' | 'off' | 'unbind') => void;
+}) {
+    const { t } = useI18n();
+    const list = cfg?.setList ?? [];
+    const unbound = names.filter((n) => !list.some((l) => l && l.set === n));
+    return (
+        <div className="inset-row flex-wrap items-center gap-1.5 py-2.5">
+            <span className="w-16 shrink-0 text-[12px] text-[color:var(--fg-secondary)]">{label}</span>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                {list.map((l, i) => {
+                    const nm = typeof l.set === 'string' ? l.set : '';
+                    const on = l.isVisible !== false;
+                    return (
+                        <span key={`${nm}-${i}`} className="flex h-7 items-center gap-1 rounded-full border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] pl-2.5 pr-1 text-[11.5px]">
+                            <span className={on ? 'text-[color:var(--fg-primary)]' : 'text-[color:var(--fg-faint)] line-through'}>{nm || '—'}</span>
+                            <button
+                                type="button"
+                                className="ghost-btn h-5 w-5 text-[color:var(--fg-faint)]"
+                                title={t('studio.qr.bind.toggle')}
+                                disabled={disabled}
+                                onClick={() => onOp(nm, on ? 'off' : 'on')}
+                            >
+                                <Icon name={on ? 'eye' : 'eyeClosed'} size={11} />
+                            </button>
+                            <button
+                                type="button"
+                                className="ghost-btn h-5 w-5 text-[color:var(--fg-faint)]"
+                                title={t('studio.qr.bind.unbind')}
+                                disabled={disabled}
+                                onClick={() => onOp(nm, 'unbind')}
+                            >
+                                <Icon name="x" size={11} />
+                            </button>
+                        </span>
+                    );
+                })}
+                {unbound.length > 0 && !disabled && (
+                    <select
+                        className="h-7 rounded-full border border-dashed border-[color:var(--border-hairline)] bg-transparent px-2 text-[11.5px] text-[color:var(--fg-muted)]"
+                        value=""
+                        onChange={(e) => { if (e.target.value) onOp(e.target.value, 'on'); }}
+                    >
+                        <option value="">{t('studio.qr.bind.add')}</option>
+                        {unbound.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                )}
+                {list.length === 0 && unbound.length === 0 && (
+                    <span className="text-[11px] text-[color:var(--fg-faint)]">{hint ?? t('studio.qr.bind.none')}</span>
+                )}
+                {disabled && hint && <span className="text-[11px] text-[color:var(--fg-faint)]">{hint}</span>}
+            </div>
+        </div>
+    );
+}
+
+function QuickRepliesPage() {
+    const { t } = useI18n();
+    const s = useShell();
+    const names = useRemote('qr:names', listQrSets);
+    const [sel, setSel] = useState('');
+    const [doc, setDoc] = useState<QrSetDoc | null>(null);
+    const [draft, setDraft] = useState<QrSetDoc | null>(null);
+    const [dirty, setDirty] = useState(false);
+    const [qr, setQr] = useState<QrSettings | null>(null);
+    const [chatCfg, setChatCfg] = useState<QrConfig | null>(null);
+    const [charKey, setCharKey] = useState('');
+    const [busy, setBusy] = useState<string | null>(null);
+    const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+    const [newName, setNewName] = useState('');
+    const [renName, setRenName] = useState('');
+
+    /* —— 取数:绑定档(settings)+ 本会话 link;深链落点 qrStudioFocus 消一次 —— */
+    useEffect(() => { void getQrSettingsDoc().then(setQr).catch(() => setQr(null)); }, []);
+    useEffect(() => {
+        if (!s.chat?.charDir || !s.chat?.chatName) { setChatCfg(null); return; }
+        let dead = false;
+        getChatQrConfig(s.chat.charDir, s.chat.chatName)
+            .then((c) => { if (!dead) setChatCfg(c); })
+            .catch(() => { if (!dead) setChatCfg(null); });
+        return () => { dead = true; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [s.chat?.id]);
+
+    /* 名录 → 选中册:深链 > 现选留 > 首册。 */
+    useEffect(() => {
+        const ns = names.data ?? [];
+        if (!ns.length) { setSel(''); return; }
+        if (sel && ns.includes(sel)) return;
+        const focus = qrStudioFocus.set;
+        qrStudioFocus.set = null;
+        setSel(focus && ns.includes(focus) ? focus : ns[0] ?? '');
+    }, [names.data, sel]);
+
+    /* 选中册 → 档进编辑稿;脏稿拦切换?—— 保持轻:切换直接弃稿(worldbook
+       页同款语义,编辑器上的「未保存」徽是提醒不是锁)。 */
+    useEffect(() => {
+        if (!sel) { setDoc(null); setDraft(null); setDirty(false); return; }
+        let dead = false;
+        setDoc(null); setDraft(null); setDirty(false); setRenName(sel);
+        getQrSet(sel)
+            .then((d) => { if (!dead) { setDoc(d); setDraft(JSON.parse(JSON.stringify(d)) as QrSetDoc); } })
+            .catch(() => { if (!dead) { setDoc(null); setDraft(null); } });
+        return () => { dead = true; };
+    }, [sel]);
+
+    /* 卡 scope 默认键 = 当前会话的卡;无会话取卡表第一张。 */
+    const cards = useMemo(() => [...s.cards.values()], [s.cards]);
+    const chatCardKey = s.chat?.charDir
+        ? qrCharScopeKey(s.cards.get(s.chat.charDir)?.avatar ?? null, s.chat.charDir)
+        : '';
+    useEffect(() => {
+        if (charKey) return;
+        if (chatCardKey) { setCharKey(chatCardKey); return; }
+        const first = cards[0];
+        if (first) setCharKey(qrCharScopeKey(first.avatar, first.charDir));
+    }, [charKey, chatCardKey, cards]);
+
+    /* —— 写面 —— */
+    const flash = (ok: boolean, text: string) => setNote({ ok, text });
+    const failText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+    const createSet = async () => {
+        const nm = newName.trim();
+        if (!nm || busy) return;
+        if ((names.data ?? []).includes(nm)) { flash(false, t('studio.qr.exists')); return; }
+        setBusy('new');
+        try {
+            await saveQrSet(nm, newQrSetDoc(nm));
+            setNewName('');
+            names.reload();
+            setSel(nm);
+        } catch (e) { flash(false, `${t('studio.qr.opFailed')} · ${failText(e)}`); }
+        finally { setBusy(null); }
+    };
+
+    /** 摘绑:把册名从 settings 全域 link(global + 所有 characterConfigs)
+        与 chat cfg 中摘净 —— 删册/改名共用,不留死链。 */
+    const stripLinks = async (name: string, renameTo?: string) => {
+        if (qr) {
+            const rewrite = (cfg: QrConfig | undefined): QrConfig | undefined => {
+                if (!cfg?.setList) return cfg;
+                const list = cfg.setList
+                    .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
+                    .filter((l): l is QrSetLink => l != null);
+                return { ...cfg, setList: list };
+            };
+            const next: QrSettings = { ...qr, config: rewrite(qr.config) };
+            if (qr.characterConfigs) {
+                const cc: Record<string, QrConfig> = {};
+                for (const [k, v] of Object.entries(qr.characterConfigs)) {
+                    const r = rewrite(v);
+                    if (r) cc[k] = r;
+                }
+                next.characterConfigs = cc;
+            }
+            await patchQrSettingsDoc(next);
+            setQr(next);
+        }
+        if (s.chat && qrBound(chatCfg, name)) {
+            const list = (chatCfg?.setList ?? [])
+                .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
+                .filter((l): l is QrSetLink => l != null);
+            const cfg: QrConfig = { ...(chatCfg ?? {}), setList: list };
+            await patchChatQrConfig(s.chat.charDir, s.chat.chatName, cfg);
+            setChatCfg(cfg);
+        }
+    };
+
+    const deleteSet = async (name: string) => {
+        if (busy || !window.confirm(t('studio.qr.delConfirm'))) return;
+        setBusy('del');
+        try {
+            await deleteQrSet(name);
+            await stripLinks(name);
+            names.reload();
+            if (sel === name) setSel('');
+            flash(true, t('studio.qr.deleted'));
+        } catch (e) { flash(false, `${t('studio.qr.opFailed')} · ${failText(e)}`); }
+        finally { setBusy(null); }
+    };
+
+    const renameSet = async () => {
+        const nm = renName.trim();
+        if (!nm || !sel || nm === sel || busy) return;
+        if ((names.data ?? []).includes(nm)) { flash(false, t('studio.qr.exists')); return; }
+        setBusy('ren');
+        try {
+            /* 改名 = 新名 PUT 现稿 → 旧名 DELETE → 全域 link 指向换新;
+               脏稿随改名一起落(等价于先存再改,语义直白)。 */
+            const body: QrSetDoc = { ...(draft ?? doc ?? newQrSetDoc(sel)), name: nm };
+            await saveQrSet(nm, body);
+            await deleteQrSet(sel);
+            await stripLinks(sel, nm);
+            names.reload();
+            setSel(nm);
+            flash(true, t('studio.qr.saved'));
+        } catch (e) { flash(false, `${t('studio.qr.opFailed')} · ${failText(e)}`); }
+        finally { setBusy(null); }
+    };
+
+    const editEntry = (i: number, patch: Partial<QrEntry>) => {
+        setDraft((d) => {
+            if (!d?.qrList) return d;
+            const list = [...d.qrList];
+            list[i] = { ...list[i], ...patch };
+            return { ...d, qrList: list };
+        });
+        setDirty(true);
+    };
+    const addEntry = () => {
+        setDraft((d) => {
+            if (!d) return d;
+            const idx = (d.idIndex ?? 0) + 1;
+            const list = [...(d.qrList ?? []), { id: idx, label: '', message: '', isHidden: false, showLabel: true } as QrEntry];
+            return { ...d, idIndex: idx, qrList: list };
+        });
+        setDirty(true);
+    };
+    const delEntry = (i: number) => {
+        setDraft((d) => {
+            if (!d?.qrList) return d;
+            const list = [...d.qrList];
+            list.splice(i, 1);
+            return { ...d, qrList: list };
+        });
+        setDirty(true);
+    };
+    const saveDraft = async () => {
+        if (!sel || !draft || busy) return;
+        setBusy('save');
+        try {
+            /* 落盘前摘全空行(label+message 皆空 = 死钮);其余键透传。 */
+            const body: QrSetDoc = {
+                ...draft, name: sel,
+                qrList: (draft.qrList ?? []).filter((q) => ((q.label ?? '') + (q.message ?? '')).trim().length > 0),
+            };
+            await saveQrSet(sel, body);
+            setDoc(body); setDraft(JSON.parse(JSON.stringify(body)) as QrSetDoc); setDirty(false);
+            flash(true, t('studio.qr.saved'));
+        } catch (e) { flash(false, `${t('studio.qr.saveFailed')} · ${failText(e)}`); }
+        finally { setBusy(null); }
+    };
+
+    /* scope link 写:global/char → settings 档;chat → chat_metadata。 */
+    const scopeOp = async (scope: 'global' | 'char' | 'chat', set: string, op: 'on' | 'off' | 'unbind') => {
+        if (busy) return;
+        setBusy(`scope:${scope}:${set}`);
+        try {
+            if (scope === 'chat') {
+                if (!s.chat) return;
+                const cfg = qrConfigWithLink(chatCfg, set, op);
+                await patchChatQrConfig(s.chat.charDir, s.chat.chatName, cfg);
+                setChatCfg(cfg);
+                return;
+            }
+            const base: QrSettings = qr ?? { isEnabled: true };
+            const next: QrSettings = { ...base };
+            if (scope === 'global') {
+                next.config = qrConfigWithLink(base.config, set, op);
+            } else {
+                const cc = { ...(base.characterConfigs ?? {}) };
+                cc[charKey] = qrConfigWithLink(cc[charKey], set, op);
+                next.characterConfigs = cc;
+            }
+            await patchQrSettingsDoc(next);
+            setQr(next);
+        } catch (e) { flash(false, `${t('studio.qr.opFailed')} · ${failText(e)}`); }
+        finally { setBusy(null); }
+    };
+
+    /* —— 渲染 —— */
+    const ns = names.data ?? [];
+    const entries = draft?.qrList ?? [];
+    if (names.error) return <PanelError error={names.error} onRetry={names.reload} />;
+    return (
+        <div className="space-y-5">
+            {/* 册名录 + 新建 */}
+            <div className="inset-group">
+                <div className="inset-row items-center gap-2 py-2.5">
+                    <input
+                        className="min-w-0 flex-1 rounded-lg bg-transparent px-2 py-1 text-[12.5px] outline-none placeholder:text-[color:var(--fg-faint)]"
+                        placeholder={t('studio.qr.newNamePh')}
+                        value={newName}
+                        onChange={(e) => setNewName(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') void createSet(); }}
+                    />
+                    <button
+                        type="button"
+                        className="h-7 shrink-0 rounded-lg px-2.5 text-[11.5px] font-medium transition-colors hover:bg-[color:var(--bg-active)]"
+                        style={{ border: '1px solid var(--border-strong)', color: 'var(--fg-primary)' }}
+                        disabled={busy === 'new' || !newName.trim()}
+                        onClick={() => void createSet()}
+                    >
+                        {t('studio.qr.new')}
+                    </button>
+                </div>
+                {!names.loading && ns.length === 0 && (
+                    <div className="inset-row py-3">
+                        <span className="text-[12px] text-[color:var(--fg-faint)]">{t('studio.qr.empty')} — {t('studio.qr.emptyDesc')}</span>
+                    </div>
+                )}
+                {ns.map((n) => {
+                    const on = sel === n;
+                    return (
+                        <div key={n} className="inset-row inset-row-btn items-center gap-2 py-2.5" style={on ? { background: 'var(--bg-active)' } : undefined} onClick={() => setSel(n)}>
+                            <Icon name="zap" size={14} className="shrink-0 text-[color:var(--fg-muted)]" />
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-[color:var(--fg-primary)]">{n}</span>
+                            {on && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
+                            <button
+                                type="button"
+                                className="ghost-btn h-6 w-6 shrink-0 text-[color:var(--fg-faint)] hover:text-[color:var(--status-danger)]"
+                                title={t('studio.qr.delete')}
+                                onClick={(e) => { e.stopPropagation(); void deleteSet(n); }}
+                            >
+                                <Icon name="trash" size={13} />
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* 绑定面:全局 / 卡 / 本会话 三 scope link 管理 */}
+            <div className="inset-group">
+                <div className="inset-row py-2.5">
+                    <span className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('studio.qr.bind.title')}</span>
+                </div>
+                <QrScopeChips label={t('studio.qr.bind.global')} cfg={qr?.config ?? null} names={ns} disabled={!names.data} onOp={(st, op) => void scopeOp('global', st, op)} />
+                <div className="inset-row flex-wrap items-center gap-1.5 py-2.5">
+                    <span className="w-16 shrink-0 text-[12px] text-[color:var(--fg-secondary)]">{t('studio.qr.bind.char')}</span>
+                    <select
+                        className="h-7 max-w-[200px] rounded-lg border border-[color:var(--border-hairline)] bg-transparent px-2 text-[11.5px] text-[color:var(--fg-secondary)]"
+                        value={charKey}
+                        onChange={(e) => setCharKey(e.target.value)}
+                    >
+                        {cards.map((c) => {
+                            const k = qrCharScopeKey(c.avatar, c.charDir);
+                            return <option key={k} value={k}>{c.name || c.charDir}</option>;
+                        })}
+                    </select>
+                </div>
+                {charKey && (
+                    <QrScopeChips label="" cfg={qr?.characterConfigs?.[charKey] ?? null} names={ns} disabled={!charKey} onOp={(st, op) => void scopeOp('char', st, op)} />
+                )}
+                <QrScopeChips
+                    label={t('studio.qr.bind.chat')}
+                    cfg={chatCfg}
+                    names={ns}
+                    disabled={!s.chat}
+                    hint={s.chat ? (s.chat.chatName || undefined) : t('studio.qr.bind.noChat')}
+                    onOp={(st, op) => void scopeOp('chat', st, op)}
+                />
+            </div>
+
+            {/* 选中册内容编辑:册名 + 条目 label/message + 行启停 */}
+            {draft && (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <input
+                            className="h-8 min-w-0 flex-1 rounded-lg bg-[color:var(--bg-surface)] px-2.5 text-[12.5px] outline-none"
+                            style={{ border: '1px solid var(--border-hairline)' }}
+                            value={renName}
+                            onChange={(e) => setRenName(e.target.value)}
+                        />
+                        <button
+                            type="button"
+                            className="h-8 shrink-0 rounded-lg px-3 text-[12px] font-medium transition-colors hover:bg-[color:var(--bg-active)]"
+                            style={{ border: '1px solid var(--border-strong)', color: 'var(--fg-primary)' }}
+                            disabled={busy === 'ren' || !renName.trim() || renName.trim() === sel}
+                            onClick={() => void renameSet()}
+                        >
+                            {t('studio.qr.rename')}
+                        </button>
+                    </div>
+                    <div className="inset-group">
+                        {entries.map((q, i) => (
+                            <div key={q.id ?? i} className="inset-row flex-col items-stretch gap-1.5 py-2.5">
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        className="h-7 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-[12.5px] outline-none placeholder:text-[color:var(--fg-faint)]"
+                                        placeholder={t('studio.qr.f.label')}
+                                        value={q.label ?? ''}
+                                        onChange={(e) => editEntry(i, { label: e.target.value })}
+                                    />
+                                    <Switch on={q.isHidden !== true} title={t('studio.qr.f.visible')} onToggle={() => editEntry(i, { isHidden: q.isHidden === true ? false : true })} />
+                                    <button type="button" className="ghost-btn h-6 w-6 shrink-0 text-[color:var(--fg-faint)] hover:text-[color:var(--status-danger)]" title={t('studio.qr.f.delete')} onClick={() => delEntry(i)}>
+                                        <Icon name="trash" size={13} />
+                                    </button>
+                                </div>
+                                <textarea
+                                    className="min-h-[52px] w-full resize-y rounded-md bg-transparent px-1.5 py-1 font-mono-ui text-[11.5px] leading-relaxed outline-none placeholder:text-[color:var(--fg-faint)]"
+                                    placeholder={t('studio.qr.f.message')}
+                                    value={q.message ?? ''}
+                                    onChange={(e) => editEntry(i, { message: e.target.value })}
+                                />
+                            </div>
+                        ))}
+                        <div className="inset-row py-2">
+                            <button type="button" className="flex items-center gap-1.5 text-[12px] text-[color:var(--fg-secondary)] transition-colors hover:text-[color:var(--fg-primary)]" onClick={addEntry}>
+                                <Icon name="plus" size={13} />
+                                {t('studio.qr.addEntry')}
+                            </button>
+                        </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                        <span className="text-[11.5px] text-[color:var(--fg-faint)]">
+                            {dirty ? t('studio.qr.dirty') : ''}
+                            {note && (
+                                <span className="ml-2" style={{ color: note.ok ? 'var(--status-ok)' : 'var(--status-danger)' }}>{note.text}</span>
+                            )}
+                        </span>
+                        <button
+                            type="button"
+                            className="h-8 shrink-0 rounded-lg px-4 text-[12.5px] font-medium"
+                            style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: dirty ? 1 : 0.55 }}
+                            disabled={!dirty || busy === 'save'}
+                            onClick={() => void saveDraft()}
+                        >
+                            {t('studio.qr.save')}
+                        </button>
+                    </div>
+                </div>
+            )}
+            {!draft && sel && names.data && (
+                <PanelEmpty icon="zap" desc={t('studio.qr.loadWait')}>{sel}</PanelEmpty>
+            )}
+        </div>
+    );
+}
+
+/* ------------------------------------------------------------------ */
 /* StudioView 派发 + MobileHubView(端稿 renderMobileHubPage)              */
 /* ------------------------------------------------------------------ */
 
@@ -1522,8 +2236,9 @@ export function StudioView() {
         nav === 'worldbook' ? <WorldbookPage /> :
         nav === 'presets' ? <PresetsPage /> :
         nav === 'persona' ? <PersonaPage /> :
+        nav === 'quickreplies' ? <QuickRepliesPage /> :
         <RegexPage />;
-    return <StudioShell nav={nav}>{body}</StudioShell>;
+    return <StudioShell nav={nav} fill={nav === 'worldbook'}>{body}</StudioShell>;
 }
 
 /** 移动端资产工坊(端稿 renderMobileHubPage):
@@ -1663,6 +2378,16 @@ export function MobileHubView() {
                         </div>
                         <div className="flex shrink-0 items-center gap-1.5">
                             <span className="font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">{studioCnts.regex}</span>
+                            <span className="text-[color:var(--fg-faint)]"><Icon name="arrowRight" size={14} /></span>
+                        </div>
+                    </button>
+                    <button className="inset-row inset-row-btn py-3" onClick={() => goStudio('quickreplies')}>
+                        <div className="flex min-w-0 items-center gap-3">
+                            <span className="text-[color:var(--fg-primary)]"><Icon name="zap" size={18} /></span>
+                            <span className="truncate text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('studio.nav.quickreplies')}</span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                            <span className="font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">{studioCnts.quickreplies}</span>
                             <span className="text-[color:var(--fg-faint)]"><Icon name="arrowRight" size={14} /></span>
                         </div>
                     </button>
