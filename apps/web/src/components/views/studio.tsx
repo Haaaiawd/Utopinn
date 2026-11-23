@@ -1089,31 +1089,40 @@ function PresetsPage() {
 
     const docFor = (n: string): PresetDocument | undefined => ovRef.current[n] ?? docs.data?.[n] ?? undefined;
 
+    /* 编辑底必须新鲜:docsRef 是打开页时的快照,工作台(App.mutatePresetDoc)
+       保存不回流本页 —— 以旧档整档 PUT 会把对面已存的改动盖回(Devin#19)。
+       无 override 时现取服务端档;同名串行,连击叠在同一 base 上。 */
+    const mutateSeq = useRef<Record<string, Promise<unknown>>>({});
     const mutateFor = (n: string) => (fn: (d: PresetDocument) => PresetDocument) => {
-        const cur = ovRef.current[n] ?? docsRef.current?.[n];
-        if (!cur) return;
-        const next = fn(cur);
-        if (next === cur) return;
-        ovRef.current[n] = next;
-        presetDocCache.set(`${PRESET_API_ID}/${n}`, Promise.resolve(next));
-        bumpOv((c) => c + 1);
-        clearTimeout(saveTimer.current[n]);
-        saveTimer.current[n] = setTimeout(() => {
-            setSaving((p) => ({ ...p, [n]: true }));
-            savePreset(n, next, PRESET_API_ID)
-                .then(() => {
-                    /* 改的是激活档 → 面板/舞台侧 doc 回灌收敛(只读 GET)。 */
-                    if (slices.activePreset === n || slices.activePreset === `${n}.json`) s.reloadPresetDoc();
-                })
-                .catch((e) => {
-                    /* 回滚服务端真值:override 与缓存一并丢,重拉远端。 */
-                    delete ovRef.current[n];
-                    presetDocCache.delete(`${PRESET_API_ID}/${n}`);
-                    docs.reload();
-                    s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
-                })
-                .finally(() => setSaving((p) => ({ ...p, [n]: false })));
-        }, 700);
+        mutateSeq.current[n] = (mutateSeq.current[n] ?? Promise.resolve()).then(async () => {
+            const cur = ovRef.current[n] ?? (await getPreset(n, PRESET_API_ID)).doc;
+            if (!cur) return;
+            const next = fn(cur);
+            if (next === cur) return;
+            ovRef.current[n] = next;
+            presetDocCache.set(`${PRESET_API_ID}/${n}`, Promise.resolve(next));
+            bumpOv((c) => c + 1);
+            clearTimeout(saveTimer.current[n]);
+            saveTimer.current[n] = setTimeout(() => {
+                setSaving((p) => ({ ...p, [n]: true }));
+                savePreset(n, next, PRESET_API_ID)
+                    .then(() => {
+                        /* 改的是激活档 → 面板/舞台侧 doc 回灌收敛(只读 GET)。 */
+                        if (slices.activePreset === n || slices.activePreset === `${n}.json`) s.reloadPresetDoc();
+                    })
+                    .catch((e) => {
+                        /* 回滚服务端真值:override 与缓存一并丢,重拉远端。 */
+                        delete ovRef.current[n];
+                        presetDocCache.delete(`${PRESET_API_ID}/${n}`);
+                        docs.reload();
+                        s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+                    })
+                    .finally(() => setSaving((p) => ({ ...p, [n]: false })));
+            }, 700);
+        }).catch((e) => {
+            /* 取档失败不落旧基座 —— 那样整档 PUT 会盖掉别处的保存。 */
+            s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
+        });
     };
 
     const refreshAll = () => Promise.all([list.reload(), docs.reload(), s.refreshConnection(), sReload()]);
