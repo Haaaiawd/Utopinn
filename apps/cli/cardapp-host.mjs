@@ -67,112 +67,21 @@ async function loadDeps() {
         formats,
         UtopinnClient: apiClient.UtopinnClient,
         createPanelT0Handler: apiClient.createPanelT0Handler,
+        PanelBridge: apiClient.PanelBridge,
     };
     return deps;
 }
 
-// ─── expandApiGrants(bridge.ts:34 同语义,参照实现必须同一份逻辑)───────────
-//   'th'     → 全 T0 表(PANEL_METHODS_TH_T0)
-//   'th.x'   → 单方法
-//   'ctx'    → 全 ctx 面(PANEL_METHODS)——ctx-shim 走桥的方法面
-//   'ctx.x'  → 单方法(shim 的 realm-local 成员不过桥)
-// api 空/未声明 → 生态缺省 = 全 T0 表。
-function expandApiGrants(api, T0, CTX = []) {
-    if (!api || api.length === 0) {
-        return { allowed: new Set(T0), ctxFace: false, thFace: true };
-    }
-    const allowed = new Set();
-    let ctxFace = false;
-    let thFace = false;
-    for (const grant of api) {
-        if (grant === 'th') {
-            thFace = true;
-            for (const m of T0) allowed.add(m);
-        } else if (grant === 'ctx') {
-            ctxFace = true;
-            for (const m of CTX) allowed.add(m);
-        } else if (String(grant).startsWith('ctx.')) {
-            ctxFace = true;
-            allowed.add(grant);
-        } else if (String(grant).startsWith('th.')) {
-            thFace = true;
-            allowed.add(grant);
-        }
-    }
-    return { allowed, ctxFace, thFace };
-}
-
-// ─── wire 校验(bridge.ts PanelBridge 的 headless 传输退化版)───────────────
-// 语义锚:channel/direction/requestId/nonce/shape/allowlist 六门 + pending 台账
-// + deny/respond/push/dispose。ev.source 门退化为"传输唯一性"(设计 §3b):
-// 能调 __utopinnPanelPost 的只有被注入该函数的 realm。
+// ─── wire 层已上收共享包(耦合格调研 §5.1–5.3;原此处三份同构实现之 CLI 份)───
+//   expandApiGrants / isPanelRequestData / toWireError → @utopinn/protocol
+//     panel-wire.ts(CLI 走全 ctx 面语义 —— 不传 surfaceOnlyCtx)
+//   PanelBridge → @utopinn/api-client panel-bridge.ts;进程内传输 seam:
+//     normalize=jsonClone(① 斩断跨 realm 引用 ② 落实"wire 可序列化")
+//     encodeResult=jsonClone(result) ?? null,send=__utopinnPanelReceive 直递。
+// ev.source 门退化为"传输唯一性"(设计 §3b):能调 __utopinnPanelPost 的
+// 只有被注入该函数的 realm。isPanelMethod 注入随之取消——共享 shape 门
+// (isPanelRequestData)内嵌同一 ALL_PANEL_METHODS 白名单。
 const jsonClone = (v) => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
-
-function isPanelRequest(data, isPanelMethod) {
-    return data && data.channel === 'utopinn-panel' && data.direction === 'request'
-        && typeof data.requestId === 'string' && data.requestId.length > 0
-        && typeof data.method === 'string' && isPanelMethod(data.method)
-        && (data.args === undefined || (typeof data.args === 'object' && data.args !== null));
-}
-
-function toWireError(e) {
-    const message = e instanceof Error ? e.message : String(e);
-    const code = message.startsWith('unsupported_method') ? 'unsupported_method' : 'call_failed';
-    return { code, message };
-}
-
-class PanelBridge {
-    constructor({ nonce, allowed, isPanelMethod, receive, dispatch }) {
-        this.nonce = nonce;
-        this.allowed = allowed;
-        this.isPanelMethod = isPanelMethod;
-        this.receive = receive;          // (wireMsg) => window.__utopinnPanelReceive(msg)
-        this.dispatch = dispatch;
-        this.pending = new Set();
-        this.dead = false;
-    }
-    /** shim → 宿主:__utopinnPanelPost(msg) 的宿主端(等价 bridge.onMessage)。 */
-    onCardMessage(raw) {
-        if (this.dead) return;
-        const data = jsonClone(raw);   // ① 斩断跨 realm 引用 ② 落实"wire 可序列化"
-        if (!data || data.channel !== 'utopinn-panel' || data.direction !== 'request') return;
-        if (typeof data.requestId !== 'string') return;
-        if (data.nonce !== this.nonce) {
-            return this.deny(data.requestId, 'bad_nonce', 'bridge nonce mismatch');
-        }
-        if (!isPanelRequest(data, this.isPanelMethod)) {
-            return this.deny(data.requestId, 'bad_request', 'malformed panel request');
-        }
-        if (!this.allowed.has(data.method)) {
-            return this.deny(data.requestId, 'denied', `method not granted: ${data.method}`);
-        }
-        const requestId = data.requestId;
-        this.pending.add(requestId);
-        Promise.resolve(this.dispatch(data.method, data.args ?? {}))
-            .then((result) => this.respond(requestId, { ok: true, result: jsonClone(result) ?? null }))
-            .catch((e) => this.respond(requestId, { ok: false, error: toWireError(e) }))
-            .finally(() => this.pending.delete(requestId));
-    }
-    respond(requestId, body) {
-        if (this.dead) return;
-        this.receive({
-            channel: 'utopinn-panel', direction: 'response',
-            nonce: this.nonce, requestId, ...body,
-        });
-    }
-    deny(requestId, code, message) {
-        this.respond(requestId, { ok: false, error: { code, message } });
-    }
-    /** 宿主 → 卡 push(th.event 由 shim 分发,同 bridge.ts:125)。 */
-    push(event, payload) {
-        if (this.dead) return;
-        this.receive({
-            channel: 'utopinn-panel', direction: 'push',
-            nonce: this.nonce, event, payload,
-        });
-    }
-    dispose() { this.dead = true; this.pending.clear(); }
-}
 
 // ─── jsdom 缺口桩表(设计 §1;卡码运行前注入)────────────────────────────────
 function installDomStubs(window) {
@@ -374,7 +283,7 @@ async function loadLocalCardSource(file, { formats, serverManifestMod }) {
  *               mountTtlMs?, settleMs?, withParentDoc?, surface? })
  *   surface = { panelType?, openPanel?, collapsePanels? } —— 卡「表面可见性」
  *   (ctx.surfaceOpen/surfaceClose)的壳接线,与 web ctxHost.ts 同一契约;
- *   缺席 → headless 如实 headless_no_shell 降级。
+ *   缺席 → 如实 PANEL_SURFACE_UNAVAILABLE 降级。
  * → session handle { window, document, mount, face, grants, ctx, bridge,
  *                    eventSource, consoleLog, pushThEvent, pushCtxEvent,
  *                    evalInCard, callDispatch, subscribedEvents, syncChat,
@@ -389,7 +298,7 @@ export async function mountCardApp(opts) {
     dbg('loadDeps…');
     const D = await loadDeps();
     dbg('deps ok');
-    const { protocol, UtopinnClient, createPanelT0Handler } = D;
+    const { protocol, UtopinnClient, createPanelT0Handler, PanelBridge } = D;
     const server = String(opts.server ?? '').replace(/\/+$/, '');
     const charDir = String(opts.charDir ?? '').trim();
     const chatName = String(opts.chatName ?? '').trim().replace(/\.jsonl$/i, '');
@@ -454,7 +363,7 @@ export async function mountCardApp(opts) {
         const e = new Error('mount bundle 缺 manifest.entry'); e.code = 'server'; throw e;
     }
 
-    const grants = expandApiGrants(manifest.permissions?.api, protocol.PANEL_METHODS_TH_T0, protocol.PANEL_METHODS);
+    const grants = protocol.expandApiGrants(manifest.permissions?.api);
     const face = manifest.entryKind === 'module' ? 'ctx' : 'th';   // 约定:module 入口 = ctx 面(Luker loader 形)
     const mountOrigin = `${server}${resolver.assetBasePath}`;
 
@@ -511,7 +420,6 @@ export async function mountCardApp(opts) {
         ].filter(Boolean).join('\n');
     }
 
-    const isPanelMethod = (m) => protocol.ALL_PANEL_METHODS.includes(m);
     const VirtualConsole = new D.VirtualConsole();
     VirtualConsole.on('log', (...a) => pushConsole('log', a.join(' ')));
     VirtualConsole.on('info', (...a) => pushConsole('info', a.join(' ')));
@@ -729,12 +637,12 @@ export async function mountCardApp(opts) {
         } finally { activeGenerations--; }
     };
 
-    // GH#13 click/push 归闲探针:三门桥在途 bridge.pending(卡→宿主调用未回)、
+    // GH#13 click/push 归闲探针:三门桥在途 bridge.pendingCount()(卡→宿主调用未回)、
     // 宿主侧生成 job activeGenerations(is_send_press 真值源)。grace 窗内
     // 无条件等待——点击处理链的 setTimeout/微任务尾巴里才发桥调,过早
     // 判闲会把异步链掐死在摇篮里;过了 grace 才按快照判闲。
     const idleSnapshot = () => ({
-        bridgePending: bridge?.pending?.size ?? 0,
+        bridgePending: bridge?.pendingCount?.() ?? 0,
         activeGenerations,
         isSendPress: activeGenerations > 0,
     });
@@ -1074,7 +982,7 @@ export async function mountCardApp(opts) {
                     return { ok: true, panel: panelType };
                 }
                 pushConsole('log', 'ctx.surfaceOpen: 无壳可收(headless)→ degraded');
-                return { ok: false, reason: 'headless_no_shell', surface: 'open' };
+                return { ok: false, reason: protocol.PANEL_SURFACE_UNAVAILABLE, surface: 'open' };
             }
             case 'surfaceClose': {
                 const s = opts.surface;
@@ -1083,7 +991,7 @@ export async function mountCardApp(opts) {
                     return { ok: true };
                 }
                 pushConsole('log', 'ctx.surfaceClose: 无壳可收(headless)→ degraded');
-                return { ok: false, reason: 'headless_no_shell', surface: 'close' };
+                return { ok: false, reason: protocol.PANEL_SURFACE_UNAVAILABLE, surface: 'close' };
             }
             default: throw new Error(`unsupported_method: ctx.${sub}`);
         }
@@ -1116,7 +1024,7 @@ export async function mountCardApp(opts) {
                 initializedGlobals: [],
                 messageId: getMessages().length - 1,
             };
-            window.__utopinnPanelPost = (m) => { bridge ? bridge.onCardMessage(m) : pendingInbound.push(m); };
+            window.__utopinnPanelPost = (m) => { bridge ? bridge.onMessage(m) : pendingInbound.push(m); };
             installDomStubs(window);
             if (shimSource) {
                 try { window.eval(shimSource); }
@@ -1134,8 +1042,11 @@ export async function mountCardApp(opts) {
     bridge = new PanelBridge({
         nonce: bridgeNonce,
         allowed: grants.allowed,
-        isPanelMethod,
-        receive: (msg) => { try { window.__utopinnPanelReceive?.(jsonClone(msg)); } catch (e) { pushConsole('warn', `panelReceive threw: ${e?.message ?? e}`); } },
+        // 进程内传输 seam(见 §5.3):normalize 斩 jsdom realm 引用并落实
+        // "wire 可序列化";encodeResult 同理 —— 响应体只携可序列化值。
+        normalize: jsonClone,
+        encodeResult: (r) => jsonClone(r) ?? null,
+        send: (msg) => { try { window.__utopinnPanelReceive?.(jsonClone(msg)); } catch (e) { pushConsole('warn', `panelReceive threw: ${e?.message ?? e}`); } },
         dispatch,
     });
 
@@ -1157,7 +1068,7 @@ export async function mountCardApp(opts) {
     });
 
     // bridge+panelT0 就位——构造期卡码(内联 script/init 外提)寄存的请求放行
-    for (const m of pendingInbound.splice(0)) bridge.onCardMessage(m);
+    for (const m of pendingInbound.splice(0)) bridge.onMessage(m);
 
     containerRef = window.document.getElementById('card-app-container') ?? window.document.body;
 
@@ -1306,5 +1217,3 @@ export async function mountCardApp(opts) {
         resolver,
     };
 }
-
-export { expandApiGrants };

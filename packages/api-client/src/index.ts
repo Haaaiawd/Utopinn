@@ -416,3 +416,4 @@ export interface ChatGetResult {
 }
 
 export { createPanelT0Handler, type PanelT0Deps } from './panel-t0.js';
+export { PanelBridge, type PanelBridgeOpts } from './panel-bridge.js';

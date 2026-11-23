@@ -8,13 +8,14 @@
 // dispatch 统一形态:surface 面在宿主层应答(面板页=卡的可视表面;
 // 楼层帧=内联可视表面),th.getCurrentMessageId 按挂载语义覆盖,
 // 其余方法经 pump.trackOutbound(订阅簿记+eventEmit origin)后 th/call 透传。
-// surfaceOpen 无接线时如实 no_shell_surface 降级 —— 不假装成了。
+// surface 动词无接线时如实 PANEL_SURFACE_UNAVAILABLE 降级 —— 不假装成了。
 import { useEffect, useRef } from 'react';
 import { client, getChat } from '../api/client';
 import { notifyChatChanged } from '../state/chatSync';
-import { PanelBridge } from './bridge';
+import { PanelBridge } from '@utopinn/api-client';
 import { PanelEventPump } from './eventPump';
 import { dispatchPanelCall } from './ctxApi';
+import { PANEL_SURFACE_UNAVAILABLE } from '@utopinn/protocol';
 import type { AnyPanelMethod, PanelPush, PanelResponse } from '@utopinn/protocol';
 import type { MountBundle } from './mounts';
 
@@ -48,8 +49,8 @@ export interface PanelHostOpts {
     /**
      * 卡「表面可见性」语义(ctx.surfaceOpen/surfaceClose):
      *   open  → 本挂载形态已是可视表面时回 {ok:true,delivered};无面可承
-     *           传 undefined → 如实 no_shell_surface 降级。
-     *   close → 壳回调(屏幕侧 navigation.goBack 等);未接 → no_shell_nav。
+     *           传 undefined → 如实 PANEL_SURFACE_UNAVAILABLE 降级。
+     *   close → 壳回调(屏幕侧 navigation.goBack 等);未接 → 同码降级。
      */
     surface?: {
         /** open 应答里的 delivered 语义标签(诊断面)。 */
@@ -90,6 +91,12 @@ export function usePanelHost(opts: PanelHostOpts): {
             // request is denied rather than silently authorized.
             nonce: mount.bridgeNonce ?? '',
             allowed,
+            // RNW onMessage 给的是 JSON string;非 JSON/外来流量容错丢弃
+            // (卡可能为自有目的用 ReactNativeWebView.postMessage)。
+            normalize: (raw) => {
+                if (typeof raw !== 'string') return raw;
+                try { return JSON.parse(raw); } catch { return undefined; }
+            },
             send: (msg: PanelResponse | PanelPush) => webRef.current?.injectJavaScript(receiveJs(msg)),
             dispatch: async (method: AnyPanelMethod, args: Record<string, unknown>) => {
                 // 卡「表面可见性」(ctx.openOverlay/closeOverlay → wire
@@ -97,14 +104,14 @@ export function usePanelHost(opts: PanelHostOpts): {
                 if (method === 'ctx.surfaceOpen') {
                     return surface
                         ? { ok: true, delivered: surface.deliveredAs }
-                        : { ok: false, reason: 'no_shell_surface' };
+                        : { ok: false, reason: PANEL_SURFACE_UNAVAILABLE, surface: 'open' };
                 }
                 if (method === 'ctx.surfaceClose') {
                     if (surface?.onClose) {
                         surface.onClose();
                         return { ok: true };
                     }
-                    return { ok: false, reason: 'no_shell_nav' };
+                    return { ok: false, reason: PANEL_SURFACE_UNAVAILABLE, surface: 'close' };
                 }
                 // 楼层帧语义:getCurrentMessageId = 所在楼层(web panelT0 本地
                 // 应答 mountMessageId;服务端实现拿 lastMessageId,不同义)。

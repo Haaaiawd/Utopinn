@@ -8,4 +8,5 @@ export * from './resources.js';
 export * from './api.js';
 export * from './generation.js';
 export * from './panels.js';
+export * from './panel-wire.js';
 export * from './renderers.js';

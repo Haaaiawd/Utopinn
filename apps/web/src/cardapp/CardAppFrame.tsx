@@ -24,7 +24,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
-import { expandApiGrants, PanelBridge } from './bridge';
+import { expandApiGrants } from '@utopinn/protocol';
+import { PanelBridge } from '@utopinn/api-client';
 import { CardAppHost } from './ctxHost';
 import { useI18n } from '../i18n';
 import { useShell } from '../kernel/context';
@@ -117,7 +118,11 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
             // request is denied rather than silently authorized.
             nonce: mount.bridgeNonce ?? '',
             allowed: grants.allowed,
-            getWindow: () => frameRef.current?.contentWindow ?? null,
+            verifySource: (ev) => (ev as MessageEvent).source === frameRef.current?.contentWindow,
+            normalize: (ev) => (ev as MessageEvent).data,
+            // Opaque-origin iframe: target must be '*'; inbound source+nonce
+            // checks are what authenticate the other side.
+            send: (msg) => frameRef.current?.contentWindow?.postMessage(msg, '*'),
             dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }, host),
         });
         const host = new CardAppHost({
