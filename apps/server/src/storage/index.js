@@ -10,6 +10,7 @@ import { WorldInfoRepo } from './repositories/world-info-repo.js';
 import { NamedDocRepo } from './repositories/named-doc-repo.js';
 import { GroupRepo } from './repositories/group-repo.js';
 import { StatsRepo } from './repositories/stats-repo.js';
+import { izumiAfterChatWrite } from '../services/izumi.js';
 
 export { setReadOnly, isReadOnly, withReadOnlyBypass } from './read-only-mode.js';
 
@@ -58,7 +59,9 @@ export async function initStorage({
     } else {
         throw new Error(`initStorage: unknown storage mode "${mode}" (expected 'fs', 'sqlite', 'mysql', or 'postgres')`);
     }
-    _chatRepo = new ChatRepo({ engine: _engine });
+    // afterWrite 装配点:IzumiEdit 解释器在楼层持久化的同事务内应用编辑块
+    // (services/izumi.js;不挂此处 → save/append/patch 都不扫,纯存储行为)。
+    _chatRepo = new ChatRepo({ engine: _engine, afterWrite: [izumiAfterChatWrite] });
     _settingsRepo = new SettingsRepo({ engine: _engine });
     _presetRepo = new PresetRepo({ engine: _engine });
     _worldInfoRepo = new WorldInfoRepo({ engine: _engine });

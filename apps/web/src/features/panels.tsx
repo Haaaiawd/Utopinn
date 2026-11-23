@@ -11,7 +11,7 @@
 import type { Feature } from '../kernel/kernel';
 import type { PanelTypeContribution } from '../kernel/contributions';
 import {
-    CardAppPanel, ChannelsPanel, ChaptersPanel, LorePanel, MessageFramePanel, MvuPanel, NotesPanel, PresetPanel,
+    CardAppPanel, ChannelsPanel, ChaptersPanel, IzumiPanel, LorePanel, MessageFramePanel, MvuPanel, NotesPanel, PresetPanel,
 } from '../components/panels/SpecPanels';
 import { DiagPanel } from '../components/panels/DiagPanel';
 import { StatsPanel } from '../components/panels/StatsPanel';
@@ -28,6 +28,7 @@ export const panelsFeature: Feature = {
             reg.push({ contrib, dispose: ctx.add('panel.type', contrib) });
         add({ type: 'cardapp', icon: 'layout', wired: true, Body: CardAppPanel, desc: 'panel.desc.cardapp', badge: 'panel.badge.cardapp', category: 'cardapp' });
         add({ type: 'mvu', icon: 'database', wired: true, Body: MvuPanel, desc: 'panel.desc.mvu', category: 'system' });
+        add({ type: 'izumi', icon: 'brain', wired: true, Body: IzumiPanel, desc: 'panel.desc.izumi', category: 'system' });
         add({ type: 'lore', icon: 'bookOpen', wired: true, Body: LorePanel, desc: 'panel.desc.lore', category: 'system' });
         add({ type: 'diag', icon: 'code', wired: true, Body: DiagPanel, desc: 'panel.desc.diag', badge: 'diag', category: 'system' });
         add({ type: 'stats', icon: 'compass', wired: true, Body: StatsPanel, desc: 'panel.desc.stats', badge: 'stats', category: 'system' });

@@ -19,6 +19,7 @@ import { ApiError } from '../../api/client';
 import { cardData, getCharacter } from '../../api/characters';
 import { getChat } from '../../api/chats';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
+import { getIzumiState, putIzumiState } from '../../api/izumi';
 import { thCall } from '../../api/th';
 import { getChatState, patchChatState, type JsonPatchOp } from '../../api/state';
 import { statsInject } from '../../api/stats';
@@ -819,6 +820,123 @@ export function ChannelsPanel() {
                     </button>
                 ))}
             </div>
+        </div>
+    );
+}
+
+/* ----------------------------------------------------------------------- */
+/* izumi —— IzumiEdit 信息库查看面(/api/utopinn/izumi/*)                     */
+/* ----------------------------------------------------------------------- */
+
+/** IzumiEdit 信息库板块 —— 聊天级小此信息库查看:条目列表(操作名/scope/
+ *  开关态)+ 点开看正文 + 开/关切换(put 写面)+ 隐藏楼层清单 + 注入文预览。
+ *  条目正文编辑 v1 不做(服务端 put 已支持 content 字段,面板押后)。 */
+export function IzumiPanel() {
+    const { t } = useI18n();
+    const s = useShell();
+    const target = chatStateTarget(s.chat);
+    const key = chatKey(s.chat);
+    const remote = useRemote(key, () => getIzumiState(target!));
+    const [openName, setOpenName] = useState<string | null>(null);
+    const [showKonata, setShowKonata] = useState(false);
+    const [busy, setBusy] = useState(false);
+
+    const data = remote.data;
+    const entries = data?.entries ?? [];
+    const hiddenFloors = data?.hiddenFloors ?? [];
+
+    const toggle = useCallback(async (opName: string, enabled: boolean) => {
+        if (!target || busy) return;
+        setBusy(true);
+        try {
+            await putIzumiState(target, { entries: { [opName]: { enabled } } });
+            remote.reload();
+        } catch (e) {
+            s.hint(e instanceof Error ? e.message : String(e), true);
+        } finally {
+            setBusy(false);
+        }
+    }, [target, busy, remote, s]);
+
+    if (!target) return <PanelEmpty icon="brain">{t('panel.needChat')}</PanelEmpty>;
+    if (remote.error) return <PanelError error={remote.error} onRetry={remote.reload} />;
+
+    return (
+        <div className="space-y-3 p-4">
+            <div className="flex items-center justify-between">
+                <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">
+                    {t('panel.izumi.title')}
+                    {entries.length > 0 && (
+                        <span className="ml-1.5 align-middle font-mono-ui text-[10px] font-normal text-[color:var(--fg-faint)]">{entries.length}</span>
+                    )}
+                </div>
+                <span className="flex items-center gap-1">
+                    {data?.konata && (
+                        <button className="ghost-btn h-6 px-2 text-[10px]" onClick={() => setShowKonata(!showKonata)}>{t('panel.izumi.preview')}</button>
+                    )}
+                    <button className="ghost-btn h-6 w-6" onClick={() => remote.reload()} disabled={remote.loading}>
+                        <Icon name="refresh" size={12} />
+                    </button>
+                </span>
+            </div>
+            {data?.worldSystemClosed && (
+                <p className="px-1 text-[10.5px] leading-relaxed" style={{ color: 'var(--status-danger)' }}>{t('panel.izumi.closed')}</p>
+            )}
+            {showKonata && data?.konata && (
+                <pre className="inset-group mb-3 max-h-60 overflow-auto whitespace-pre-wrap p-3 font-mono-ui text-[10.5px] leading-relaxed text-[color:var(--fg-secondary)]">
+                    {data.konata}
+                </pre>
+            )}
+            {!data ? (
+                <PanelEmpty icon="brain">…</PanelEmpty>
+            ) : entries.length === 0 ? (
+                <PanelEmpty icon="brain" desc={t('panel.izumi.emptyDesc')}>{t('panel.izumi.empty')}</PanelEmpty>
+            ) : (
+                <div className={group}>
+                    {entries.map((e) => {
+                        const open = openName === e.opName;
+                        return (
+                            <div key={e.opName}>
+                                <div
+                                    className={`${row} inset-row-btn cursor-pointer`}
+                                    style={!e.enabled ? { opacity: 0.55 } : undefined}
+                                    onClick={() => setOpenName(open ? null : e.opName)}
+                                >
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-[12.5px] text-[color:var(--fg-primary)]">{e.name}</span>
+                                        {e.scope !== 'info' && (
+                                            <span className="mt-0.5 block font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{e.scope}</span>
+                                        )}
+                                    </span>
+                                    <span onClick={(ev) => ev.stopPropagation()}>
+                                        <Switch on={e.enabled} onToggle={() => void toggle(e.opName, !e.enabled)} />
+                                    </span>
+                                </div>
+                                {open && (
+                                    <pre className="mx-1 mb-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg p-2.5 font-mono-ui text-[10.5px] leading-relaxed text-[color:var(--fg-secondary)]" style={{ background: 'var(--bg-surface)' }}>
+                                        {e.content || t('panel.izumi.emptyEntry')}
+                                    </pre>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            {hiddenFloors.length > 0 && (
+                <>
+                    <span className={lbl}>{t('panel.izumi.hidden')}</span>
+                    <div className={group}>
+                        {hiddenFloors.map((r, i) => (
+                            <div key={`${r.from}-${r.to}-${i}`} className={row}>
+                                <span className="font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">
+                                    {r.from === r.to ? `${r.from}` : `${r.from}~${r.to}`} {t('panel.izumi.floor')}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                </>
+            )}
+            <p className="px-1 text-[9.5px] leading-relaxed text-[color:var(--fg-faint)]">{t('panel.izumi.note')}</p>
         </div>
     );
 }

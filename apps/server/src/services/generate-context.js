@@ -41,6 +41,15 @@ import {
 } from './extension-prompts.js';
 import { getChatRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import {
+    hiddenFloorIndexSet,
+    IZUMI_INDEX_MARKER,
+    IZUMI_INJECT_DEPTH,
+    IZUMI_KONATA_KEY,
+    IZUMI_NS,
+    renderIzumiCatalog,
+    renderKonataExtraInformation,
+} from './izumi.js';
+import {
     readCharacterStateSidecar,
     resolveCharacterFilePath,
     writeCharacterStateSidecar,
@@ -63,6 +72,8 @@ const TH_INJECT_NS = 'th.inject';
 const TH_CHAR_STATE_NS = 'tavern_helper';
 /** mergedExtPrompts 注入键前缀(与 script_inject_* 并列,免撞名) */
 const TH_INJECT_KEY_PREFIX = 'th_inject_';
+/** chat_state 命名空间:IzumiEdit 信息库(services/izumi.js 写侧落点)。 */
+const IZUMI_STATE_NS = IZUMI_NS;
 
 /**
  * [perf] 摘要行。约定:调用方把 endpoint 侧 cardMs 并入 perf.cardMs
@@ -474,7 +485,7 @@ async function buildGenerationContextImpl({
     const worldInfoRepo = getWorldInfoRepo();
 
     const isGroup = Boolean(group);
-    const [chatDoc, settingsDoc, thInjectState] = await Promise.all([
+    const [chatDoc, settingsDoc, thInjectState, izumiState] = await Promise.all([
         isGroup
             // 群聊文件寻址同 /api/chats/group/*:{charDir:'',name:chatId,isGroup,groupId}
             ? chatRepo.get(handle, '', String(group.chatId), { isGroup: true, groupId: String(group.chatId) })
@@ -487,6 +498,12 @@ async function buildGenerationContextImpl({
             ? chatRepo.getState(handle, '', String(group.chatId), TH_INJECT_NS,
                 { isGroup: true, groupId: String(group.chatId) }).catch(() => null)
             : chatRepo.getState(handle, charDir, chatName, TH_INJECT_NS).catch(() => null),
+        // chat_state ns `izumi` 读侧:IzumiEdit 解释器在楼层持久化时写,
+        // 这里消费成 hiddenFloors 过滤 + KonataExtraInformation 注入。
+        isGroup
+            ? chatRepo.getState(handle, '', String(group.chatId), IZUMI_STATE_NS,
+                { isGroup: true, groupId: String(group.chatId) }).catch(() => null)
+            : chatRepo.getState(handle, charDir, chatName, IZUMI_STATE_NS).catch(() => null),
     ]);
     perf.loadMs += performance.now() - seg;
     if (!chatDoc) throw new Error(isGroup ? `Group chat not found: ${group.chatId}` : `Chat not found: ${charDir}/${chatName}`);
@@ -535,7 +552,14 @@ async function buildGenerationContextImpl({
             : null;
     }
 
-    const chatMessages = chatBodyToInput(chatDoc.body);
+    // IzumiEdit 隐藏楼层:被「隐藏 N楼~M楼」标记的 body 下标留在存储、
+    // 从本轮组装剔除(预设原文「从此它们不再在提示词里出现」)——WI 扫描
+    // 与楼层面共用同一份 chatMessages,两路一致剔除。
+    const izumiHidden = hiddenFloorIndexSet(izumiState);
+    const chatBodyForPrompt = izumiHidden.size
+        ? (chatDoc.body ?? []).filter((_, i) => !izumiHidden.has(i))
+        : chatDoc.body;
+    const chatMessages = chatBodyToInput(chatBodyForPrompt);
     // 上游 script.js:8000-8002:type==='swipe' 时弹出末层(swipe 槽
     // 重新生成旧楼层);WI 扫描缓冲同步不含该层。
     if (type === 'swipe' && chatMessages.length) chatMessages.pop();
@@ -781,6 +805,25 @@ async function buildGenerationContextImpl({
             ids: thInjectPrompts.map((p) => p?.id).filter(Boolean).slice(0, 8),
         });
     }
+    // chat_state ns `izumi` → KonataExtraInformation 注入(TH 悬浮窗脚本的
+    // setExtensionPrompt IN_CHAT depth 4 同语义;条目目录 + enabled 正文,
+    // 关闭条目不进;scan=false 信息库不喂 WI 触发)。worldSystemClosed /
+    // 无可注入条目 → renderKonataExtraInformation 回 null,整块不注入。
+    const izumiKonata = renderKonataExtraInformation(izumiState);
+    if (izumiKonata) {
+        mergedExtPrompts[IZUMI_KONATA_KEY] = {
+            value: izumiKonata,
+            position: extension_prompt_types.IN_CHAT,
+            depth: IZUMI_INJECT_DEPTH,
+            scan: false,
+            role: roleByName('system'),
+        };
+        injectEvt('izumi', {
+            injected: 1, key: IZUMI_KONATA_KEY, depth: IZUMI_INJECT_DEPTH,
+            entries: Object.keys(izumiState?.entries ?? {}).length,
+            hiddenFloors: izumiState?.hiddenFloors?.length ?? 0,
+        });
+    }
 
     // —— Author's Note + 卡 depth_prompt + persona 通道(上游在 WI 扫描前置位,
     //    scan=allowWIScan 的条目参与本轮扫描;AN 合并/persona-AN 合并/outlet 在扫描后)——
@@ -985,6 +1028,21 @@ async function buildGenerationContextImpl({
     const cardMesExample = groupCardFields?.mesExample ?? (card?.data?.mes_example ?? card?.mes_example ?? '');
     const mergedMesExample = [...emBefore, cardMesExample, ...emAfter].filter(Boolean).join('\n<START>\n');
 
+    // [[IZUMI_CHAT_INDEX_V1]] 目录占位(预设「🌏Izumi世界系统」的
+    // 「可整理的条目:…」一行):TH 脚本原生目录的等价物 —— 换上实时
+    // 条目名表,模型照抄目录里的完整操作名才能引用条目。
+    // 信息库为空 → '(无)',语义上等同「还没有可整理条目」。
+    const izumiCatalogText = renderIzumiCatalog(izumiState);
+    const presetPromptsRaw = Array.isArray(presetDoc.prompts) ? presetDoc.prompts : [];
+    const assemblyPrompts = presetPromptsRaw.some((p) => String(p?.content ?? '').includes(IZUMI_INDEX_MARKER))
+        ? presetPromptsRaw.map((p) => {
+            const content = String(p?.content ?? '');
+            return content.includes(IZUMI_INDEX_MARKER)
+                ? { ...p, content: content.split(IZUMI_INDEX_MARKER).join(izumiCatalogText) }
+                : p;
+        })
+        : presetPromptsRaw;
+
     const assemblyRequest = {
         card: {
             name: substCtx.name2,
@@ -999,7 +1057,7 @@ async function buildGenerationContextImpl({
         },
         user: { name: substCtx.name1, description: user?.description ?? powerUser.persona_description ?? '' },
         chat: chatPromptMessages,
-        prompts: Array.isArray(presetDoc.prompts) ? presetDoc.prompts : [],
+        prompts: assemblyPrompts,
         promptOrder: resolvePromptOrder(presetDoc),
         settings: presetToAssemblySettings(presetDoc, powerUser),
         contextTokens: presetDoc.openai_max_context ?? 8192,

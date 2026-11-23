@@ -641,6 +641,70 @@ export interface MvuSettleResponse {
 export type MvuResettleRequest = Omit<MvuSettleRequest, 'message_index'>;
 export type MvuResettleResponse = MvuSettleResponse;
 
+// =========================================================================
+// izumi —— /api/utopinn/izumi/*(IzumiEdit 信息库面板面)
+// =========================================================================
+
+/** 信息库条目(操作名 = scope 前缀 + 短名;'info' scope 无前缀)。 */
+export interface IzumiEntry {
+    /** 完整操作名(目录里照抄的引用名,含 '资料/'/'预设/' 前缀)。 */
+    opName: string;
+    /** 短名(无前缀)。 */
+    name: string;
+    /** 'info'(小此信息库,默认)| '资料' | '预设'。 */
+    scope: 'info' | '资料' | '预设' | string;
+    /** 关闭条目不进 KonataExtraInformation 注入文。 */
+    enabled: boolean;
+    /** 创建序(渲染/目录排序键)。 */
+    order: number;
+    content: string;
+}
+
+/** 「隐藏 N楼~M楼」落地的楼层区间(0-based body 下标,闭区间)。 */
+export interface IzumiHiddenRange {
+    from: number;
+    to: number;
+}
+
+/** 单条 op 回执(写侧解释器逐 op 记入 state.log)。 */
+export interface IzumiLogEntry {
+    at: number;
+    floor?: number;
+    verb: string;
+    name: string;
+    ok: boolean;
+    reason?: string;
+}
+
+/** GET|POST /izumi/state 与 POST /izumi/put 的统一视图应答。 */
+export interface IzumiStateView {
+    ok: true;
+    entries: IzumiEntry[];
+    hiddenFloors: IzumiHiddenRange[];
+    log: IzumiLogEntry[];
+    /** 「关闭 世界系统」落旗 —— 置位时不再注入 KonataExtraInformation。 */
+    worldSystemClosed: boolean;
+    /** 服务端重建的注入文预览(下轮组装的实际注入文本;null = 本轮不注入)。 */
+    konata: string | null;
+    /** [[IZUMI_CHAT_INDEX_V1]] 目录替换文。 */
+    catalog: string;
+    /** put 面逐项回执(未应用的改动 + 原因)。 */
+    errors?: { opName: string; reason: string }[];
+}
+
+/** POST /izumi/put 请求体(target 字段并入;body.patch 缺省时顶层即 patch)。 */
+export interface IzumiPutRequest {
+    entries?: Record<string, { enabled?: boolean; content?: string }>;
+    hiddenFloors?: IzumiHiddenRange[];
+    worldSystemClosed?: boolean;
+}
+
+/** POST /izumi/reset → {ok,deleted:true};无聊天 → 404。 */
+export interface IzumiResetResponse {
+    ok: true;
+    deleted: boolean;
+}
+
 /**
  * POST /mvu/panel/render —— 模板 × 变量 → 面板 HTML。
  * scope 缺省取目标聊天的 chatVariables(此时必须带 target)。
