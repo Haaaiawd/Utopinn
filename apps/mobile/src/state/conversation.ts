@@ -22,6 +22,7 @@ import {
     type StChatMessage,
 } from '../api/client';
 import { postGenerate, streamJob, waitForPersistedReply } from '../api/generate';
+import { subscribeChatChanged } from './chatSync';
 
 /** 与 apps/web 一致的用户名。 */
 export const USER_NAME = '旅人';
@@ -52,6 +53,8 @@ export interface ChatSession {
     note: (msg: string) => void;
     /** 会话级全文(导出用)。 */
     fullText: () => string;
+    /** 编辑种子:楼层的 wire 原文(content 槽是展示投影,不可写回)。 */
+    rawFloorText: (floorId: number) => string;
 }
 
 export function useChatSession(charDir: string, chatName: string, charName: string): ChatSession {
@@ -87,6 +90,33 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
     }, [charDir, chatName, applyServer]);
 
     useEffect(() => () => abortRef.current?.(), []);
+
+    // ── 面板写面坐标同步(reviewer 返修):楼层帧/CardApp 的 TH 写面
+    // (set/delete/create/rotateChatMessages)改服务端 doc 后,事件泵经
+    // chatSync 广播到这里 —— 不重对的话,messages/st 里的楼层下标漂移,
+    // submitEdit 会按旧坐标写错楼。防抖合并多帧连发;流式期间不抢 ——
+    // reload 收尾会追上权威态。live 走 ref:订阅闭包拿当刻值,不冻在装载时。
+    const liveRef = useRef<LiveFloor | null>(null);
+    liveRef.current = live;
+    useEffect(() => {
+        let timer: ReturnType<typeof setTimeout> | null = null;
+        let inflight = false;
+        const unsub = subscribeChatChanged(charDir, chatName, () => {
+            if (timer || inflight || liveRef.current) return;
+            timer = setTimeout(() => {
+                timer = null;
+                inflight = true;
+                getChat(charDir, chatName)
+                    .then((d) => applyServer(d.messages ?? []))
+                    .catch(() => { /* 重拉失败不致命 —— 下轮广播/重进再对 */ })
+                    .finally(() => { inflight = false; });
+            }, 300);
+        });
+        return () => {
+            unsub();
+            if (timer) clearTimeout(timer);
+        };
+    }, [charDir, chatName, applyServer]);
 
     // ── 墨迹定速:acc 是权威,shown 按节奏追 —— 落后太多会加速赶上 ──
     useEffect(() => {
@@ -199,22 +229,66 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
         })();
     }, [charDir, chatName, live, messages, runGenerate]);
 
+    /**
+     * 楼层当前选稿下标 —— VM activeSwipe 优先(用户当刻选择),wire
+     * swipe_id 回落;rawFloorText 与 submitEdit 共用同一把尺,种子/写
+     * 目标永不打架(reviewer:旧口径下两者各看一份下标)。
+     */
+    const activeSwipeIndex = useCallback((floorId: number): number => {
+        const vm = messages?.find((m) => m.id === floorId);
+        const w = st[floorId];
+        const len = Array.isArray(w?.swipes) ? w.swipes.length : (vm?.swipes?.length ?? 0);
+        const sel = Number(vm?.activeSwipe ?? w?.swipe_id ?? 0);
+        return len ? Math.min(Math.max(0, sel), len - 1) : 0;
+    }, [messages, st]);
+
     const swipe = useCallback((floorId: number, index: number) => {
+        const prevIdx = activeSwipeIndex(floorId);
+        // 乐观更新两层:VM 展示位 + wire swipe_id(rawFloorText 的坐标
+        // 与 PATCH 目标同源 —— 不同步的话,编辑会拿旧稿原文当种子)。
         setMessages((prev) => prev?.map((m) => {
             if (m.id !== floorId || !m.swipes?.[index]) return m;
             const s = m.swipes[index]!;
             return { ...m, activeSwipe: index, content: s.content, reasoning: s.reasoning, receipts: s.receipts ?? m.receipts };
         }) ?? prev);
+        setSt((prev) => prev.map((w, i) => (i === floorId ? { ...w, swipe_id: index } : w)));
         patchChatOps(charDir, chatName, [{ op: 'replace', path: `/body/${floorId}/swipe_id`, value: index }])
-            .catch((e) => setHint(`选稿失败:${e instanceof Error ? e.message : String(e)}`));
-    }, [charDir, chatName]);
+            .catch((e) => {
+                // 落账失败 → 两层同回滚(只回滚一层会留下「看的和写的不是一稿」)。
+                setMessages((prev) => prev?.map((m) => {
+                    if (m.id !== floorId || !m.swipes?.[prevIdx]) return m;
+                    const s = m.swipes[prevIdx]!;
+                    return { ...m, activeSwipe: prevIdx, content: s.content, reasoning: s.reasoning, receipts: s.receipts ?? m.receipts };
+                }) ?? prev);
+                setSt((prev) => prev.map((w, i) => (i === floorId ? { ...w, swipe_id: prevIdx } : w)));
+                setHint(`选稿失败:${e instanceof Error ? e.message : String(e)}`);
+            });
+    }, [charDir, chatName, activeSwipeIndex]);
+
+    /**
+     * 编辑种子的 wire 原文(web floorRawText 对应物):content 槽是展示
+     * 投影(GH#3),直接拿去编辑会把投影文本写回存储字段 —— 从 st[] 的
+     * 当前稿下标取未映射原文。swipe/submitEdit 均同步 st(reviewer:
+     * 快照不更新 → 下次编辑拿旧文覆盖新稿)。
+     */
+    const rawFloorText = useCallback((floorId: number): string => {
+        const w = st[floorId];
+        if (!w) return messages?.find((m) => m.id === floorId)?.content ?? '';
+        const arr = Array.isArray(w.swipes) ? w.swipes : null;
+        if (arr && arr.length) {
+            const sid = activeSwipeIndex(floorId);
+            const s = arr[sid]!;
+            return typeof s === 'string' ? s : (s && typeof s === 'object' ? (s.mes ?? '') : '');
+        }
+        return typeof w.mes === 'string' ? w.mes : '';
+    }, [st, messages, activeSwipeIndex]);
 
     const submitEdit = useCallback(async (floorId: number, text: string): Promise<boolean> => {
         const raw = st[floorId];
+        const a = activeSwipeIndex(floorId);
         const ops: JsonPatchOp[] = [{ op: 'replace', path: `/body/${floorId}/mes`, value: text }];
-        if (raw && Array.isArray(raw.swipes)) {
-            const a = Math.min(Number(raw.swipe_id ?? 0), raw.swipes.length - 1);
-            const entry = raw.swipes[a];
+        const entry = Array.isArray(raw?.swipes) ? raw.swipes[a] : undefined;
+        if (entry !== undefined) {
             ops.push(typeof entry === 'string'
                 ? { op: 'replace', path: `/body/${floorId}/swipes/${a}`, value: text }
                 : { op: 'replace', path: `/body/${floorId}/swipes/${a}/mes`, value: text });
@@ -223,15 +297,28 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
             await patchChatOps(charDir, chatName, ops);
             setMessages((prev) => prev?.map((m) => {
                 if (m.id !== floorId) return m;
-                const swipes = m.swipes?.map((s) => (s.index === (m.activeSwipe ?? 0) ? { ...s, content: text } : s));
+                const swipes = m.swipes?.map((s) => (s.index === a ? { ...s, content: text } : s));
                 return { ...m, content: text, swipes };
             }) ?? prev);
+            // wire 缓存同写 —— 否则下一次 rawFloorText 还吐旧稿原文
+            // (reviewer:编辑种子吃旧快照)。展示投影位(*_display)不在这里
+            // 伪造 —— 服务端重算后经 applyServer 落到正确车道。
+            setSt((prev) => prev.map((w, i) => {
+                if (i !== floorId) return w;
+                const next: StChatMessage = { ...w, mes: text };
+                if (Array.isArray(next.swipes) && entry !== undefined) {
+                    const swipes = [...next.swipes];
+                    swipes[a] = typeof entry === 'string' ? text : { ...entry, mes: text };
+                    next.swipes = swipes;
+                }
+                return next;
+            }));
             return true;
         } catch (e) {
             setHint(`保存失败:${e instanceof Error ? e.message : String(e)}`);
             return false;
         }
-    }, [charDir, chatName, st]);
+    }, [charDir, chatName, st, activeSwipeIndex]);
 
     /**
      * 重写此段:
@@ -329,7 +416,7 @@ export function useChatSession(charDir: string, chatName: string, charName: stri
 
     return {
         messages, loadErr, hint, live, busy,
-        send, swipe, submitEdit, regenerate, branch, copyFloor, fullText,
+        send, swipe, submitEdit, regenerate, branch, copyFloor, fullText, rawFloorText,
         dismissHint: () => setHint(null),
         note: (msg: string) => setHint(msg),
     };

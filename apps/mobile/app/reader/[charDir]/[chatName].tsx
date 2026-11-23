@@ -336,6 +336,7 @@ export default function ReaderScreen() {
                         onSwipeBadge={onSwipeBadge}
                         onViewPara={setViewPara}
                         footer={yourTurnFooter}
+                        frameCtx={{ charDir: charDir!, chatName: chatName! }}
                     />
                 ) : (
                     <BubbleFlow
@@ -351,6 +352,7 @@ export default function ReaderScreen() {
                         onLongPressFloor={onLongPressFloor}
                         onSwipeBadge={onSwipeBadge}
                         footer={yourTurnFooter}
+                        frameCtx={{ charDir: charDir!, chatName: chatName! }}
                     />
                 )}
             </View>
@@ -476,7 +478,9 @@ export default function ReaderScreen() {
             <EditSheet
                 visible={editFloor != null}
                 theme={theme}
-                initial={editFloor ? (editFloor.displayContent ?? editFloor.content) : ''}
+                /* content 槽是展示投影(GH#3)—— 编辑种子必须走 wire 原文,
+                   否则投影文本会被写回 mes/swipes 污染存储。 */
+                initial={editFloor ? session.rawFloorText(editFloor.id) : ''}
                 busy={session.busy}
                 onSave={(text) => {
                     const f = editFloor;

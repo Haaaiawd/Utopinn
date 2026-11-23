@@ -207,11 +207,13 @@ export function ChatTree() {
             {/* 桌面:顶部 h-1.5 呼吸位(规范稿无域头);移动 drawer 头部统一管 */}
             {!shell.isMobile && <div className="h-1.5 shrink-0" />}
             <div className="shrink-0 px-2.5 pb-3">
-                {/* 规范稿:移动端此钮 = rail→home(卡画廊选面),桌面才直发 newChat */}
+                {/* 移动端同样直发 newChat —— NewChatModal 是 in-shell 模态
+                    (Overlays.tsx 有 mobile 变体);旧链 setView('home') 会被
+                    gotoView 映射回 chat,等于没有「+新会话」入口(P0-3)。 */}
                 <button
                     className="flex h-9 w-full items-center justify-center gap-2 rounded-[9px] px-3 text-[12.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface-hover)]"
                     style={{ background: 'var(--bg-surface)', border: '1.5px solid var(--border-strong)', boxShadow: 'var(--shadow-card)', color: 'var(--fg-primary)' }}
-                    onClick={() => (shell.isMobile ? shell.setView('home') : shell.newChat())}
+                    onClick={() => shell.newChat()}
                 >
                     <Icon name="plus" size={15} />
                     <span>{t('tree.pickCard')}</span>

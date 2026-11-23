@@ -5,6 +5,7 @@
 //   章节 = 语义切片(>4h 时间间隔 / ~5k 字节点,章名=首段首句截12字)
 // 全部是显示计算 —— 不碰消息语义,不持久化。
 import type { MessageViewModel, RendererMessageRole } from '@utopinn/protocol';
+import { floorFrontendSplit } from '../panels/frontendBlocks';
 
 // ---------- inline marks ----------
 
@@ -69,21 +70,36 @@ export interface Para {
     floor: MessageViewModel;
     isFloorFirst: boolean;
     isFloorLast: boolean;
+    /** 楼层末段携带的 TH 前端块 HTML(渲染位 → MessageFrame 栈;P1)。 */
+    frontendBlocks?: string[];
 }
 
-/** 楼层 → 展示段落:assistant 按行拆(空行丢弃);其余整层一段。 */
+/**
+ * 楼层 → {展示段落, 前端块}:前端块(html 栅栏/整楼文档)从展示文本摘出,
+ * 不参与正文排版 —— 渲染器把它们画成 MessageFrame。
+ */
+export function floorSplit(m: MessageViewModel): { paras: string[]; blocks: string[] } {
+    const split = floorFrontendSplit(m);
+    let paras: string[];
+    if (m.role !== 'assistant') {
+        paras = [split.text];
+    } else {
+        const parts = split.text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+        paras = parts.length ? parts : [''];
+    }
+    return { paras, blocks: split.blocks.map((b) => b.html) };
+}
+
+/** 楼层 → 展示段落(旧签名,前端块位丢弃 —— 需要块请用 floorSplit)。 */
 export function floorParas(m: MessageViewModel): string[] {
-    const text = (m.displayContent ?? m.content).replace(/\r\n?/g, '\n');
-    if (m.role !== 'assistant') return [text];
-    const parts = text.split(/\n+/).map((s) => s.trim()).filter(Boolean);
-    return parts.length ? parts : [''];
+    return floorSplit(m).paras;
 }
 
 /** 消息流 → 扁平段落流(渲染器不重排楼层 —— 只展开)。 */
 export function buildParas(messages: MessageViewModel[]): Para[] {
     const out: Para[] = [];
     for (const m of messages) {
-        const parts = floorParas(m);
+        const { paras: parts, blocks } = floorSplit(m);
         parts.forEach((text, i) => {
             out.push({
                 key: `${m.id}:${i}`,
@@ -94,6 +110,7 @@ export function buildParas(messages: MessageViewModel[]): Para[] {
                 floor: m,
                 isFloorFirst: i === 0,
                 isFloorLast: i === parts.length - 1,
+                frontendBlocks: i === parts.length - 1 && blocks.length ? blocks : undefined,
             });
         });
     }

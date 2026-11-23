@@ -155,6 +155,53 @@ export const PANEL_METHODS_TH_T0 = [
 ] as const satisfies readonly PanelMethodTH[];
 export type PanelMethodTHT0 = (typeof PANEL_METHODS_TH_T0)[number];
 
+/**
+ * 「前端界面」楼层帧(doc-mount/message mount)授权子集 —— **只读 + 订阅
+ * + UI 动词**。楼层块的 HTML 是模型产出的内容,不是可信卡代码:
+ * deleteChatMessages/setChatMessages/generate/triggerSlash/变量写/
+ * 提示注入/世界书与正则写一律拒(桥 allowlist 闸,过不了 dispatch)。
+ * TH 生态确有「状态栏按钮写变量」的合法写需求 —— 那不是隐式能力,
+ * 需要显式确认门(未实现;先按只读落地,不假装有)。
+ *   eventEmit/eventEmitAndWait 保留:信箱 append 是 UI 通信动词
+ * (块内按钮 → 卡逻辑),不直接改数据面;eventOn 家族是事件送达的前置。
+ */
+export const PANEL_METHODS_TH_MSGFRAME = [
+    // ── reads ───────────────────────────────────────────────────────────
+    'th.getVariables',
+    'th.getChatMessages',
+    'th.getLastMessageId',
+    'th.getCurrentMessageId',
+    'th.getCharacter',
+    'th.getCurrentCharacterName',
+    'th.getLorebook',
+    'th.getLorebooks',
+    'th.getLorebookEntries',
+    'th.getChatLorebook',
+    'th.getCharLorebooks',
+    'th.getTavernRegexes',
+    'th.isCharacterTavernRegexesEnabled',
+    'th.getMvuData',
+    // ── pure transforms(无服务端写)──────────────────────────────────
+    'th.formatAsTavernRegexedString',
+    'th.formatAsDisplayedMessage',
+    'th.retrieveDisplayedMessage',
+    'th.substituteMacros',
+    // ── event subscription(送达前置;写的是宿主影子簿记,非数据面)────
+    'th.eventOn',
+    'th.eventOnce',
+    'th.eventRemoveListener',
+    'th.eventMakeLast',
+    'th.eventMakeFirst',
+    'th.eventClearEvent',
+    'th.eventClearListener',
+    'th.eventClearAll',
+    // ── UI verbs ────────────────────────────────────────────────────────
+    'th.eventEmit',
+    'th.eventEmitAndWait',
+    'th.waitGlobalInitialized',
+] as const satisfies readonly PanelMethodTH[];
+export type PanelMethodTHMsgframe = (typeof PANEL_METHODS_TH_MSGFRAME)[number];
+
 // ─── TH face argument/result shapes ─────────────────────────────────────
 
 /** Variable scopes understood by the TH face. */

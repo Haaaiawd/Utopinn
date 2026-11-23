@@ -10,6 +10,13 @@ import type { MessageReceipt, MessageViewModel } from '@utopinn/protocol';
 import type { ReadingSettings } from '../state/reading';
 import { inlineSegs, PARA_INDENT, type Chapter, type InlineSeg, type Para } from './format';
 import { readerFontFamily, type ReaderTheme } from './theme';
+import { MessageFrame } from '../panels/MessageFrame';
+
+/** TH 前端块的宿主坐标 —— 楼层帧 doc-mount 要 charDir+chatName。 */
+export interface FrameCtx {
+    charDir: string;
+    chatName?: string;
+}
 
 export interface ProseFlowProps {
     paras: Para[];
@@ -27,6 +34,8 @@ export interface ProseFlowProps {
     onViewPara: (index: number) => void;
     /** 末尾「——轮到你落笔」占位。 */
     footer?: ReactElement;
+    /** TH 前端块宿主坐标;缺省 → 前端块楼层退化显示原文。 */
+    frameCtx?: FrameCtx;
 }
 
 // ---------- inline 渲染 ----------
@@ -105,17 +114,36 @@ function Reasoning({ text, theme }: { text: string; theme: ReaderTheme }) {
 
 // ---------- 段落行 ----------
 
+/** 楼层末段挂着的前端块栈(P1)—— 每块一枚 MessageFrame(doc-mount)。 */
+function FloorFrames({ blocks, floorId, frameCtx }: { blocks?: string[]; floorId: number; frameCtx?: FrameCtx }) {
+    if (!blocks?.length || !frameCtx) return null;
+    return (
+        <View>
+            {blocks.map((html, i) => (
+                <MessageFrame
+                    key={`${floorId}:${i}:${html.length}`}
+                    charDir={frameCtx.charDir}
+                    chatName={frameCtx.chatName}
+                    html={html}
+                    messageId={floorId}
+                />
+            ))}
+        </View>
+    );
+}
+
 interface RowProps {
     para: Para;
     theme: ReaderTheme;
     settings: ReadingSettings;
     chapterTitle?: string;
     streaming: boolean;
+    frameCtx?: FrameCtx;
     onLongPressPara: (para: Para) => void;
     onSwipeBadge: (floor: MessageViewModel) => void;
 }
 
-const ParaRow = memo(function ParaRow({ para, theme, settings, chapterTitle, streaming, onLongPressPara, onSwipeBadge }: RowProps) {
+const ParaRow = memo(function ParaRow({ para, theme, settings, chapterTitle, streaming, frameCtx, onLongPressPara, onSwipeBadge }: RowProps) {
     const [hiddenOpen, setHiddenOpen] = useState(false);
     const m = para.floor;
     const body = {
@@ -133,6 +161,7 @@ const ParaRow = memo(function ParaRow({ para, theme, settings, chapterTitle, str
             <View>
                 {chapterTitle ? <ChapterHead title={chapterTitle} theme={theme} /> : null}
                 {para.text ? <Text style={[styles.systemNote, { color: theme.inkFaint, fontSize: settings.fontSize * 0.72 }]}>{para.text}</Text> : null}
+                <FloorFrames blocks={para.frontendBlocks} floorId={para.floorId} frameCtx={frameCtx} />
             </View>
         );
     }
@@ -145,6 +174,7 @@ const ParaRow = memo(function ParaRow({ para, theme, settings, chapterTitle, str
                         幕间 · {hiddenOpen ? para.text : `${para.text.slice(0, 24)}${para.text.length > 24 ? '…' : ''}(展开)`}
                     </Text>
                 </Pressable>
+                <FloorFrames blocks={para.frontendBlocks} floorId={para.floorId} frameCtx={frameCtx} />
             </View>
         );
     }
@@ -193,6 +223,7 @@ const ParaRow = memo(function ParaRow({ para, theme, settings, chapterTitle, str
                 </View>
             ) : null}
             {para.isFloorLast && m.receipts?.length ? <Receipts receipts={m.receipts} theme={theme} /> : null}
+            <FloorFrames blocks={para.frontendBlocks} floorId={para.floorId} frameCtx={frameCtx} />
         </View>
     );
 });
@@ -221,6 +252,7 @@ export function ProseFlow({
     onSwipeBadge,
     onViewPara,
     footer,
+    frameCtx,
 }: ProseFlowProps) {
     const chapterHeads = new Map<number, string>();
     if (settings.chapterTitleInPage) {
@@ -238,6 +270,7 @@ export function ProseFlow({
                     settings={settings}
                     chapterTitle={chapterHeads.get(item.index)}
                     streaming={streamingFloorId != null && item.floorId === streamingFloorId}
+                    frameCtx={frameCtx}
                     onLongPressPara={onLongPressPara}
                     onSwipeBadge={onSwipeBadge}
                 />

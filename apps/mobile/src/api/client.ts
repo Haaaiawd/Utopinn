@@ -5,9 +5,8 @@
 // endpoints yet, so they are declared here against the server contract
 // (apps/server/src/plugins/utopinn-library.js, utopinn-generate.js).
 import { UtopinnClient } from '@utopinn/api-client';
-import { MVU_STATUS_PLACEHOLDER } from '@utopinn/protocol';
-import type { MessageViewModel, SwipeView } from '@utopinn/protocol';
 import { session } from './session';
+import { stToView, type StChatMessage } from './chatView';
 
 let cached: UtopinnClient | null = null;
 let cachedBase = '';
@@ -49,17 +48,8 @@ export interface ChatItem {
     updatedAt?: string | number;
 }
 
-/** ST wire floor (JSONL row). */
-export interface StChatMessage {
-    name?: string;
-    is_user?: boolean;
-    is_system?: boolean;
-    mes?: string;
-    send_date?: number | string;
-    swipe_id?: number;
-    swipes?: (string | { mes?: string; send_date?: number | string })[];
-    extra?: Record<string, unknown>;
-}
+/** ST wire floor 线型 —— 实型在 chatView.ts(纯映射,node 可测);此出口只为兼容。 */
+export type { StChatMessage };
 
 export interface ChatDetail {
     name: string;
@@ -252,36 +242,6 @@ export async function branchChat(
     return newName;
 }
 
-// ---------- ST wire → view model (same mapping as apps/web/src/api/chats.ts) ----------
-
-/** 剥离 MVU 状态占位符 —— 存储层保留(卡 shim 定位用),视图层不渲染。 */
-const stripStatusPlaceholder = (s: string): string =>
-    s.includes(MVU_STATUS_PLACEHOLDER) ? s.replaceAll(MVU_STATUS_PLACEHOLDER, '').trimEnd() : s;
-
-/** send_date can be epoch ms OR an ISO string (server persist writes ISO). */
-function toMs(v: number | string | undefined): number | undefined {
-    if (v == null) return undefined;
-    const n = typeof v === 'number' ? v : Date.parse(String(v));
-    return Number.isNaN(n) ? undefined : n;
-}
-
-export function stToView(m: StChatMessage, id: number): MessageViewModel {
-    const active = Number(m.swipe_id ?? 0);
-    const swipes: SwipeView[] | undefined = Array.isArray(m.swipes) && m.swipes.length > 1
-        ? m.swipes.map((s, i) => ({
-            index: i,
-            content: stripStatusPlaceholder(typeof s === 'string' ? s : (s.mes ?? '')),
-            timestamp: typeof s === 'object' ? toMs(s.send_date) : undefined,
-        }))
-        : undefined;
-    const base = swipes?.[Math.min(active, swipes.length - 1)];
-    return {
-        id,
-        role: m.is_user ? 'user' : m.is_system ? 'system' : 'assistant',
-        name: m.name ?? '',
-        content: stripStatusPlaceholder(base?.content ?? m.mes ?? ''),
-        timestamp: toMs(m.send_date),
-        swipes,
-        activeSwipe: swipes ? Math.min(active, swipes.length - 1) : undefined,
-    };
-}
+// ---------- ST wire → view model ----------
+// stToView 本体在 ./chatView.ts(纯映射,node --test 可直测);此出口仅为兼容。
+export { stToView };
