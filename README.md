@@ -61,14 +61,25 @@ Luker 底子自带多账号基建,开 `enableUserAccounts` 即可:
 
 ## 部署速查(云端/网站分发)
 
+开服 checklist(`apps/server/default/config.yaml` 或实例 `config.yaml`):
+
+| 项 | 值 | 说明 |
+|---|---|---|
+| `enableUserAccounts` | `true` | **必须先开**——关掉时人人是 admin,无任何隔离 |
+| `listen` / `listenAddress` | `true` / `0.0.0.0` | 对外开放监听 |
+| `whitelistMode` | `true` | 建议开,只放自己人 IP/网段;公网裸奔勿关 |
+| `basicAuthMode`/`perUserBasicAuth` | 视部署面 | SSO/前置认证场景用 |
+| `dataRoot` | 云机原生盘 | **备份这个目录=备份一切**(卡/聊天/账号/secrets 全在里面) |
+
 ```bash
 cd apps/server
-# config.yaml: enableUserAccounts:true、listen:true、whitelistMode 按需
 LUKER_SKIP_WEBPACK=1 node server.js --dataRoot <原生盘数据目录> --port 18997
 ```
 
-- web SPA 构建产物由服务端同源挂载;对外服务前置 TLS(域名+HTTPS,secure cookie 依赖)
-- `whitelistMode` 建议开;`basicAuthMode`/`perUserBasicAuth` 视部署面选
+- web SPA 构建产物由服务端同源挂载,手机浏览器直接开 `https://<域名>` 即玩,无需装包
+- **TLS 必做**(secure cookie + 移动端都需要):Caddy 两行(`<域名>` + `reverse_proxy :18997`)或 `cloudflared` 免费隧道均可
+- 每人各管各的连接档案与 key(`secretId` 隔离);管理员可投共享 key 到 `_shared` 层
+- 共享卡往 `<dataRoot>/_library/characters/` 一丢全实例可见,编辑自动物化不污染池
 - scratch/dataRoot 别放高延迟挂载盘(WSL `/mnt` 9P 会楔死,见 AGENTS.md)
 
 ## CLI 速览
