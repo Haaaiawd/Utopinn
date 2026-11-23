@@ -23,6 +23,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { consumeEphemeralScriptInjects } from '@utopinn/core';
 import { getChatRepo } from '../storage/index.js';
 import { emit as diagEmit } from './diag-bus.js';
 import {
@@ -81,6 +82,23 @@ export async function runTriggerGeneration({
     const diagId = randomUUID();
     const jobId = randomUUID();
     const thCtx = { handle, charDir, chatName };
+    /**
+     * Luker consumeEphemeralScriptInjectsForMainGeneration(script.js
+     * hideStopButton 同点):非 quiet 生成生命周期结束 —— 终态/失败/停止
+     * 同口径 —— 清除 ephemeral inject。chatMetadata 为 buildGenerationContext
+     * 读到的活对象;assemble 早夭时回落新取。失败仅告警不掩生成结果。
+     */
+    const consumeEphemerals = async () => {
+        try {
+            const md = chatMetadata
+                ?? await getChatRepo().get(handle, charDir, chatName).then(d => d?.header?.chat_metadata).catch(() => null);
+            if (md && consumeEphemeralScriptInjects(md) > 0) {
+                await getChatRepo().updateChatMetadata(handle, charDir, chatName, { script_injects: md.script_injects });
+            }
+        } catch (e) {
+            console.warn('trigger-generate ephemeral injects cleanup failed:', e?.message);
+        }
+    };
     const request = {
         method: 'POST',
         url: '/internal/trigger-generate',
@@ -141,6 +159,7 @@ export async function runTriggerGeneration({
             if (failedJob) failGenerationJob(failedJob, 'trigger generation assemble failed: ' + reason);
         } catch { /* 台账登记失败不掩盖原始异常 */ }
         await emitTh(thCtx, 'generation_stopped', [reason.slice(0, 300)]);
+        await consumeEphemerals();
         throw assembleError;
     }
     request.utopinnPerf = perf;
@@ -264,6 +283,7 @@ export async function runTriggerGeneration({
 
         const text = String(job.text ?? '');
         await emitTh(thCtx, 'generation_ended', [text]);
+        await consumeEphemerals();
         if (floorIndex !== null) {
             await emitTh(thCtx, type === 'swipe' ? 'message_swiped' : 'message_received', [floorIndex]);
             await emitTh(thCtx, 'chat_changed', [{ chat: chatName }]);
@@ -282,6 +302,7 @@ export async function runTriggerGeneration({
             ctx: { charDir, chatId: chatName, verb: type, diagId },
             data: { jobId },
         });
+        await consumeEphemerals();
         throw error;
     }
 }

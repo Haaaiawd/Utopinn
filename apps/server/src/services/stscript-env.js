@@ -223,6 +223,51 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             }
             return null;
         },
+        // /newchat → doNewChat 服务端面:`<name2> - <humanizedDateTime>` 命名
+        // + buildGreetingFloor 开场播种(上游新会话自带卡 first_mes 楼,
+        // 空 body 会让客户端开进无问候会话 —— 不合上游)。
+        // deleteCurrent=true → 新会话落成后删当前(上游 deleteCurrentChat 同语义)。
+        newChat: async ({ deleteCurrent }) => {
+            if (!charDir) return null;
+            const { humanizedDateTime } = await import('../util.js');
+            const { buildGreetingFloor } = await import('./greeting-seed.js');
+            const newName = `${name2} - ${humanizedDateTime()}`;
+            const newMetadata = {};
+            const greeting = buildGreetingFloor({
+                card,
+                name1,
+                chatMetadata: newMetadata,
+                chatName: newName,
+                globalVariables: extVars.global,
+            });
+            const body = greeting ? [greeting] : [];
+            // header 惯例对齐 Luker chats.js/本文件 appendMessage 写面:
+            // user_name/character_name 是 ST 遗留 vestigial 字段,一律 'unused'。
+            const header = { user_name: 'unused', character_name: 'unused', chat_metadata: newMetadata };
+            try {
+                await getChatRepo().createIfAbsent(handle, charDir, newName, header, body);
+                if (deleteCurrent && chatName) {
+                    await getChatRepo().delete(handle, charDir, chatName).catch((e) => {
+                        console.warn('stscript newChat deleteCurrent failed:', e?.message);
+                    });
+                }
+                return { name: newName, charDir, chatName: newName };
+            } catch (error) {
+                console.warn('stscript newChat failed:', error?.message ?? error);
+                return null;
+            }
+        },
+        // /delchat → 上游 UI 删除路径的服务端面:删当前绑定会话文件。
+        deleteChat: async () => {
+            if (!charDir || !chatName) return false;
+            try {
+                await getChatRepo().delete(handle, charDir, chatName);
+                return true;
+            } catch (error) {
+                console.warn('stscript deleteChat failed:', error?.message ?? error);
+                return false;
+            }
+        },
         persistSettings: () => {
             void getSettingsRepo().save(handle, settings)
                 .catch((e) => console.warn('stscript persistSettings failed:', e?.message));

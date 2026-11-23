@@ -1,8 +1,10 @@
 /**
  * 会话/角色命名族 — 移植自 ref/Luker public/scripts/slash-commands.js:
- * /renamechat /getchatname /forcesave /rename-char /impersonate。
+ * /renamechat /getchatname /forcesave /rename-char /impersonate
+ * + 会话生命周期:/newchat /delchat /closechat(power-user.js doNewChat
+ *   与 slash-commands.js 的 UI 删除/关闭路径的服务端面)。
  *
- * 落点(TASK-064 批二):
+ * 落点(TASK-064 批二/批三):
  * - /renamechat → host.renameChat(服务端 = ChatRepo.rename,同一写面);
  *   成功后 currentChatId 指向新名(env.macro 为活对象)
  * - /getchatname → env.macro.currentChatId(零 seam)
@@ -11,6 +13,12 @@
  *   +可选历史聊天消息名重写);未绑显式报错,不静默
  * - /impersonate → host.generateImpersonate(=Generate('impersonate'));
  *   未绑显式报错,与 /trigger(GH#9)同一路线
+ * - /newchat → host.newChat(服务端 = ChatRepo.createIfAbsent
+ *   `<name2> - <humanizedDateTime>`);成功后发 go op(上游自动开新会话
+ *   的导航等价);未绑显式报错
+ * - /delchat → host.deleteChat(服务端 = ChatRepo.delete 当前会话);
+ *   成功后发 close-chat custom op(客户端离开已删会话)
+ * - /closechat → 纯导航:close-chat custom op(零 seam,客户端回会话列表)
  */
 import type { NamedArguments, UnnamedArguments } from '../types.js';
 import { ARGUMENT_TYPE, SlashCommand, SlashCommandArgument, SlashCommandNamedArgument, booleanEnumProvider } from '../types.js';
@@ -154,6 +162,50 @@ export async function personaSetCallback(args: NamedArguments, value: UnnamedArg
     return '';
 }
 
+/**
+ * /newchat → doNewChat({deleteCurrentChat}) 服务端面。
+ * 上游清会话 → 建 `<name2> - <humanizedDateTime>` 空会话 → 自动跳转;
+ * 服务端文件动作走 host.newChat,导航走 go op(与 /go 同通道)。
+ */
+export async function newChatCallback(args: NamedArguments): Promise<string> {
+    const env = envOf(args);
+    if (typeof env.host.newChat !== 'function') {
+        throw new Error('/newchat requires host.newChat seam — not bound on this host');
+    }
+    const target = await env.host.newChat({ deleteCurrent: isTrueBoolean(String(args['delete'] ?? '')) });
+    if (!target) {
+        await env.host.notify?.('warning', undefined, 'Failed to create a new chat.');
+        return '';
+    }
+    env.ops.push({ type: 'go', target: target.name, charDir: target.charDir, chatName: target.chatName });
+    return '';
+}
+
+/**
+ * /delchat → 删除当前会话(上游 UI 删除路径;CHAT_DELETED 事件 → 界面
+ * 离开已删会话)。服务端 = host.deleteChat + close-chat custom op。
+ */
+export async function delChatCallback(args: NamedArguments): Promise<string> {
+    const env = envOf(args);
+    if (typeof env.host.deleteChat !== 'function') {
+        throw new Error('/delchat requires host.deleteChat seam — not bound on this host');
+    }
+    const deleted = await env.host.deleteChat();
+    if (!deleted) {
+        await env.host.notify?.('error', undefined, 'Failed to delete the current chat.');
+        return '';
+    }
+    env.ops.push({ type: 'custom', kind: 'close-chat' });
+    return '';
+}
+
+/** /closechat → $('#option_close_chat') 导航等价:custom op,客户端回会话列表。 */
+export function closeChatCallback(args: NamedArguments): string {
+    const env = envOf(args);
+    env.ops.push({ type: 'custom', kind: 'close-chat' });
+    return '';
+}
+
 export function registerSessionCommands(): void {
     addCommandObject(SlashCommand.fromProps({
         name: 'persona-set',
@@ -240,5 +292,29 @@ export function registerSessionCommands(): void {
                 If <code>await=true</code> named argument is passed, the command will wait for the impersonation to end before continuing.
             </div>
         `,
+    }));
+    addCommandObject(SlashCommand.fromProps({
+        name: 'newchat',
+        callback: (args) => newChatCallback(args),
+        namedArgumentList: [
+            SlashCommandNamedArgument.fromProps({
+                name: 'delete',
+                description: 'delete the current chat',
+                typeList: [ARGUMENT_TYPE.BOOLEAN],
+                defaultValue: 'false',
+                enumList: booleanEnumProvider('trueFalse')(),
+            }),
+        ],
+        helpString: 'Start a new chat with the current character. Emits a go op receipt for the client to navigate to the new chat.',
+    }));
+    addCommandObject(SlashCommand.fromProps({
+        name: 'delchat',
+        callback: (args) => delChatCallback(args),
+        helpString: 'Deletes the current chat. Emits a close-chat op receipt for the client to navigate away.',
+    }));
+    addCommandObject(SlashCommand.fromProps({
+        name: 'closechat',
+        callback: (args) => closeChatCallback(args),
+        helpString: 'Closes the current chat. Emits a close-chat op receipt for the client to navigate back.',
     }));
 }
