@@ -607,7 +607,7 @@ const en: Record<string, string> = {
     'stage.patch.failed': 'Write failed',
     'stage.rewind.done': 'Rewound and MVU re-settled', 'stage.rewind.failed': 'Rewind failed',
     'stage.mvu.synced': 'MVU re-settled', 'stage.mvu.failed': 'MVU re-settle failed',
-    'stage.offline.banner': 'Server connection lost — changes won't be saved', 'stage.offline.reconnect': 'Reconnect',
+    'stage.offline.banner': 'Server connection lost — changes won\'t be saved', 'stage.offline.reconnect': 'Reconnect',
     'stage.token.title': 'Tokens assembled last round (from latest job trace) · click for diagnostics',
     'stage.qr.collapse': 'Collapse quick replies', 'stage.abort.title': 'Abort generation',
     /* composer QR row (TASK-063 two-way surface) */
