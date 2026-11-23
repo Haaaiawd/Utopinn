@@ -570,6 +570,44 @@ input[type="range"] { accent-color: var(--brand); }
 }
 .auth-expired-bar button:hover { background: var(--brand-hover); }
 
+/* 第一方登录面 —— 会话死(auth-expired)时全屏接管。前门未登录 GET /
+   由服务端 302 去 legacy /login;本面只管 SPA 在途会话失效一段。
+   视觉沿用壳语汇:--bg-elevated 卡 + --shadow-pop + popIn。 */
+.login-gate {
+    position: fixed; inset: 0; z-index: 90;
+    display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--bg-canvas) 78%, transparent);
+    backdrop-filter: blur(6px);
+    animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.login-card {
+    display: flex; flex-direction: column; gap: 14px;
+    width: min(340px, calc(100vw - 48px));
+    padding: 22px 22px 18px;
+    border-radius: 12px;
+    background: var(--bg-elevated); color: var(--fg-primary);
+    box-shadow: var(--shadow-pop);
+}
+.login-card-head {
+    display: flex; align-items: center; gap: 10px;
+    font-size: var(--fs-title); font-weight: 600;
+}
+.login-field { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-ui); color: var(--fg-secondary); }
+.login-field input {
+    border: 1px solid var(--stroke-strong, var(--border)); border-radius: 8px;
+    padding: 8px 10px; font-size: var(--fs-ui);
+    background: var(--bg-inset, var(--bg-canvas)); color: var(--fg-primary);
+    outline: none;
+}
+.login-field input:focus { border-color: var(--brand); }
+.login-error { font-size: var(--fs-ui); color: var(--status-danger); }
+.login-card button[type="submit"] {
+    border: none; border-radius: 8px; padding: 9px 12px; cursor: pointer;
+    background: var(--brand); color: var(--brand-fg); font-size: var(--fs-ui); font-weight: 500;
+}
+.login-card button[type="submit"]:hover:not(:disabled) { background: var(--brand-hover); }
+.login-card button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+
 /* 全局导入幕帘 —— 事件穿透,enter/leave 计数归 App。 */
 .drop-veil {
     position: fixed; inset: 10px; z-index: 70;

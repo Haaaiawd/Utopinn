@@ -121,6 +121,8 @@ const zh: Record<string, string> = {
     /* 状态/导入 */
     'status.stub': '服务端连接中不可用', 'imp.tooLarge': '文件超过 64MB 上限', 'imp.queued': '已加入导入队列', 'imp.veil': '松手导入卡/书/预设',
     'auth.expired': '登录会话已失效', 'auth.relogin': '重新登录',
+    'login.title': '登录乌有馆', 'login.handle': '账号 handle', 'login.password': '密码',
+    'login.submit': '登录', 'login.working': '登录中…',
     'chat.demo': '演示', 'stage.demoData': '离线演示数据 · 不落库',
     /* cmdk + 设置 */
     'cmdk.placeholder': '搜索卡、世界书、插件…', 'cmdk.empty': '没有匹配项', 'cmdk.views': '视图', 'cmdk.panels': '板块',
@@ -533,6 +535,8 @@ const en: Record<string, string> = {
     /* 状态/导入 */
     'status.stub': 'Unavailable while server is offline', 'imp.tooLarge': 'File exceeds the 64MB limit', 'imp.queued': 'Added to import queue', 'imp.veil': 'Drop to import cards / books / presets',
     'auth.expired': 'Session expired', 'auth.relogin': 'Sign in again',
+    'login.title': 'Sign in to Utopinn', 'login.handle': 'Account handle', 'login.password': 'Password',
+    'login.submit': 'Sign in', 'login.working': 'Signing in…',
     'chat.demo': 'Demo', 'stage.demoData': 'Offline demo data · not persisted',
     /* cmdk + 设置 */
     'cmdk.placeholder': 'Search cards, lorebooks, plugins…', 'cmdk.empty': 'No matches', 'cmdk.views': 'Views', 'cmdk.panels': 'Panels',

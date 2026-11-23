@@ -28,6 +28,7 @@ import { Workbench } from './components/shell/Workbench';
 import { bumpPanelFreq } from './components/shell/panelFreq';
 import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
 import { openNewChatModal } from './components/shell/overlayBus';
+import { LoginGate } from './components/shell/LoginGate';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
     clampFloatRect, DEFAULT_FLOAT_RECT,
@@ -1131,14 +1132,10 @@ function Shell() {
             <Cmdk />
             {!isMobile && <SettingsModal />}
             {hintState && <div className={`hint-pill spec-toast${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
-            {authExpired && (
-                <div className="auth-expired-bar spec-toast" role="alert">
-                    <span>{t('auth.expired')}</span>
-                    <button type="button" onClick={() => { window.location.assign('/login'); }}>
-                        {t('auth.relogin')}
-                    </button>
-                </div>
-            )}
+            {/* 会话死 → 第一方登录面全屏接管(POST /api/users/login,成功即
+                整页重载走新会话引导;前门未登录 GET / 仍由服务端 302 legacy
+                /login 把守)。 */}
+            {authExpired && <LoginGate />}
             {dropVeil && (
                 <div className="drop-veil">
                     <Icon name="import" size={26} />
