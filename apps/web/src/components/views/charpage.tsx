@@ -4,11 +4,11 @@
 // 辅书 charLore / 卡级正则,全部真接口,读不到照实空着不造假)。
 // 数据:卡文档 loadCharDoc(共享缓存)、会话 listChatsForChar、
 // 正则 getRegexFullView、辅书 settings.charLore —— 离线回落 ctx.chats 汇总。
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
-import { cardData, charImageUrl, loadCharDoc } from '../../api/characters';
+import { cardData, charImageUrl, installCharacter, loadCharDoc } from '../../api/characters';
 import { builtinCoverSrc } from '../../api/personas';
 import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
@@ -57,6 +57,9 @@ export function CharView() {
     const s = useShell();
     const dir = s.charDir;
     const card = dir ? s.cards.get(dir) : undefined;
+    // 共享池卡:显式物化动作 —— 装完跳新私有干名(同干名时即原地转私有)。
+    const [installing, setInstalling] = useState(false);
+    const [installErr, setInstallErr] = useState<string | null>(null);
 
     /* 三/四条取数互不相干:卡文档 / 会话列表 / 正则全量 / 辅书(settings)。
        离线一律不取(key=null) —— 空态如实,不拿 mock 糊窗。 */
@@ -115,6 +118,20 @@ export function CharView() {
     }
 
     const name = data.name || card?.name || dir;
+    const doInstall = async () => {
+        if (!dir || installing) return;
+        setInstalling(true);
+        setInstallErr(null);
+        try {
+            const r = await installCharacter(dir);
+            await s.refreshCards();
+            s.openChar(r.charDir);
+        } catch (e) {
+            setInstallErr(e instanceof Error ? e.message : String(e));
+        } finally {
+            setInstalling(false);
+        }
+    };
     /* 带书名跳 studio:本页看的卡 ≠ 活跃会话卡,必须显式带书,
        否则 WorldbookPage 回落到活跃 chat 的绑书(StageFrame ChatInfoPop 同款)。 */
     const goStudio = (nav: string, book?: string) => {
@@ -144,6 +161,17 @@ export function CharView() {
                     <span className="heading-tight truncate text-[13.5px] font-medium text-[color:var(--fg-primary)]">{name}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                    {card?.shared && (
+                        <button
+                            className="ghost-btn h-8 gap-1.5 border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 text-[12px] text-[color:var(--fg-secondary)]"
+                            style={{ borderRadius: 10 }}
+                            onClick={doInstall}
+                            disabled={installing}
+                            title={t('charpage.install.hint')}
+                        >
+                            <Icon name="import" size={14} /><span className="hidden sm:inline">{installing ? t('charpage.installing') : t('charpage.install')}</span>
+                        </button>
+                    )}
                     {/* 卡导出(TASK-067):GET /export/card → 盘上原卡文件(PNG tEXt 原字节)。 */}
                     <button
                         className="ghost-btn h-8 w-8 shrink-0"
@@ -185,8 +213,14 @@ export function CharView() {
                             <h1 className="heading-tight truncate text-[20px] font-semibold text-[color:var(--fg-primary)]">{name}</h1>
                             <div className="font-mono-ui text-[11.5px] text-[color:var(--fg-muted)]">
                                 {card ? `${card.fileName} · ${fmtSize(card.fileSize)}` : dir}
+                                {card?.shared ? <span style={{ color: 'var(--brand)' }}> · {t('studio.cards.shared')}</span> : null}
                                 {!card?.readable && card ? <span style={{ color: 'var(--status-danger)' }}> · {t('studio.cards.unreadable')}</span> : null}
                             </div>
+                            {installErr && (
+                                <div className="rounded-lg px-2.5 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                                    {t('charpage.install.failed')}: {installErr}
+                                </div>
+                            )}
                             {docR.error && (
                                 <div className="rounded-lg px-2.5 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
                                     {t('charpage.docFailed')}: {docR.error}

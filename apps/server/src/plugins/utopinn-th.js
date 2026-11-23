@@ -560,13 +560,25 @@ async function readRegexScope(ctx2, a) {
     }
     return { error: `type must be global|character|preset`, status: 400 };
 }
-/** 卡文件写面(.json 原子写;.png 走 writeCharacterData 懒加载;.webp 拒)。 */
+/** 卡文件写面(.json 原子写;.png 走 writeCharacterData 懒加载;.webp 拒)。
+ *  仅共享卡在场 → 先物化(copy-on-write),写永远落私有 copy。 */
 async function writeCardRegexScripts(ctx2, charDir, scripts) {
     const dir = ctx2.directories.characters;
     const fs = await import('node:fs');
     const path = await import('node:path');
     const candidates = ['.png', '.webp', '.json'].map((ext) => ({ file: path.join(dir, `${charDir}${ext}`), ext }));
-    const target = candidates.find((c) => fs.existsSync(c.file));
+    // `.state.*.json` 是侧车不是卡 —— 同名探测不许命中它。
+    const { isCharacterStateSidecarFileName } = await import('../services/character-state.js');
+    let target = candidates.find((c) => !isCharacterStateSidecarFileName(path.basename(c.file)) && fs.existsSync(c.file));
+    if (!target) {
+        const { resolveCharacterFileMerged, materializeSharedCharacter } = await import('../services/shared-library.js');
+        if (resolveCharacterFileMerged(ctx2.directories, charDir)?.shared) {
+            try {
+                await materializeSharedCharacter(ctx2.directories, charDir);
+                target = candidates.find((c) => fs.existsSync(c.file));
+            } catch { /* 物化失败按 404 如实回报 */ }
+        }
+    }
     if (!target) return { error: `character file not found: ${charDir}`, status: 404 };
     if (target.ext === '.webp') {
         return { error: `scoped regex write supports .png/.json cards only: ${charDir}.webp`, status: 400 };
@@ -590,7 +602,9 @@ async function writeCardRegexScripts(ctx2, charDir, scripts) {
         writeFileAtomicSync(target.file, JSON.stringify(card, null, 2), 'utf8');
     } else {
         const { writeCharacterData } = await import('../endpoints/characters.js');
-        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName } }, lastWriteCharacterDataError: undefined };
+        // directories 必带 —— writeCharacterData 按 request.user.directories
+        // .characters 定位输出档(STscript writer 同款 fakeReq 形)。
+        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName }, directories: ctx2.directories }, lastWriteCharacterDataError: undefined };
         const ok = await writeCharacterData(target.file, JSON.stringify(card), charDir, fakeReq, undefined,
             { allowMissingInputFallback: false, requireExistingOutput: true });
         if (!ok) return { error: fakeReq.lastWriteCharacterDataError ?? 'character card write failed', status: 500 };
@@ -603,6 +617,11 @@ async function resolveAvatarName(directories, charDir) {
     for (const ext of ['.png', '.webp']) {
         if (fs.existsSync(path.join(directories.characters, `${charDir}${ext}`))) return `${charDir}${ext}`;
     }
+    if (fs.existsSync(path.join(directories.characters, `${charDir}.json`))) return `${charDir}.json`;
+    // 仅共享卡在场 → 报池内真实文件名(放行表按 avatar 文件名记)。
+    const { resolveSharedCharacterFile } = await import('../services/shared-library.js');
+    const shared = resolveSharedCharacterFile(directories, charDir);
+    if (shared) return shared.fileName;
     return `${charDir}.json`;
 }
 /** 真宏上下文:chat/chatMetadata/globalVariables 缺一即炸(getChatIdHash 等)。 */

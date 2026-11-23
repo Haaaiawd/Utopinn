@@ -23,7 +23,14 @@ import {
 import { read as readCharacterCard } from '../character-card-parser.js';
 import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { runQuietGeneration } from './quiet-generation.js';
-import { renameAllCharacterStateSidecars } from './character-state.js';
+import { renameAllCharacterStateSidecars, resolveCharacterFilePath } from './character-state.js';
+import {
+    SHARED_LIBRARY_DIRNAME,
+    getSharedCharactersDir,
+    loadCharacterDocMerged,
+    materializeSharedCharacter,
+    resolveCharacterFileMerged,
+} from './shared-library.js';
 import { runTriggerGeneration } from './trigger-generation.js';
 
 /** 'Foo.png'/'Foo.webp'/'Foo.json' → 'Foo'(avatar key → charDir)。 */
@@ -31,35 +38,36 @@ export function avatarToCharDir(avatar) {
     return String(avatar ?? '').replace(/\.(png|webp|json)$/i, '');
 }
 
-/** avatar/charDir 穿越闸:含路径分隔或 .. 的 id 直接判死 —
- *  STscript 入参可达此面,不洗就 join 出 characters 目录(PR#18 review)。 */
+/** avatar/charDir 穿越闸:含路径分隔/.. 或 _library 保留名的 id 直接判死 —
+ *  STscript 入参可达此面,不洗就 join 出 characters 目录(PR#18 review)。
+ *  `_library` 不许作为 charDir 寻址(大小写不敏感)—— 防把池目录本身当卡。 */
 export function safeCharDirName(avatar) {
     const d = avatarToCharDir(avatar);
-    return (d && !d.includes('..') && !d.includes('/') && !d.includes('\\')) ? d : null;
+    if (!d || d.includes('..') || d.includes('/') || d.includes('\\')) return null;
+    return d.toLowerCase() !== SHARED_LIBRARY_DIRNAME ? d : null;
 }
 
+/**
+ * 合并读卡:私有在场即私有(同名遮蔽),否则回落 _library 共享池。
+ * 返回的卡对象不带 source/共享位 —— STscript 只消费字段。
+ */
 export async function loadCard(directories, charDir) {
-    const pngPath = path.join(directories.characters, `${charDir}.png`);
-    const jsonPath = path.join(directories.characters, `${charDir}.json`);
-    try {
-        const raw = await fs.readFile(pngPath);
-        return JSON.parse(readCharacterCard(raw));
-    } catch {
-        const raw = await fs.readFile(jsonPath, 'utf8').catch(() => null);
-        return raw ? JSON.parse(raw) : null;
-    }
+    return (await loadCharacterDocMerged(directories, charDir)).card;
 }
 
-/** 角色名解析(/sendas name=):扫 characters 目录对卡名。 */
+/** 角色名解析(/sendas name=):扫私有 + 共享池对卡名,私有先中。 */
 export async function resolveCharacterByName(directories, name) {
-    const files = await fs.readdir(directories.characters).catch(() => []);
-    for (const f of files) {
-        if (!f.endsWith('.png')) continue;
-        try {
-            const card = JSON.parse(readCharacterCard(await fs.readFile(path.join(directories.characters, f))));
-            const cardName = card?.data?.name ?? card?.name;
-            if (cardName === name) return { name: cardName, avatar: f };
-        } catch { /* 坏卡跳过 */ }
+    const dirs = [directories.characters, getSharedCharactersDir(directories)].filter(Boolean);
+    for (const dir of dirs) {
+        const files = await fs.readdir(dir).catch(() => []);
+        for (const f of files) {
+            if (!f.endsWith('.png')) continue;
+            try {
+                const card = JSON.parse(readCharacterCard(await fs.readFile(path.join(dir, f))));
+                const cardName = card?.data?.name ?? card?.name;
+                if (cardName === name) return { name: cardName, avatar: f };
+            } catch { /* 坏卡跳过 */ }
+        }
     }
     return null;
 }
@@ -468,30 +476,49 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             return d ? loadCard(directories, d) : null;
         },
         // writeExtensionField('world'):extensions.world 写回卡文件。
-        // png → writeCharacterData 同端点写面(重嵌 chunk);json → 直写。
+        // png/webp → writeCharacterData 同端点写面(重嵌 chunk);json → 直写。
+        // 仅共享卡在场 → 先物化(copy-on-write),写永远不落到 _library。
         setCharacterWorld: async (avatar, worldName) => {
             const charDirName = safeCharDirName(avatar);
             if (!charDirName) return false;
-            const pngPath = path.join(directories.characters, `${charDirName}.png`);
-            const jsonPath = path.join(directories.characters, `${charDirName}.json`);
+            const merged = resolveCharacterFileMerged(directories, charDirName);
+            if (!merged) return false;
+            if (merged.shared) {
+                try {
+                    await materializeSharedCharacter(directories, charDirName);
+                } catch (error) {
+                    console.warn('stscript setCharacterWorld: materialize failed:', error?.message ?? error);
+                    return false;
+                }
+            }
+            const filePath = resolveCharacterFilePath(directories.characters, charDirName);
+            if (!filePath) return false;
+            const ext = path.extname(filePath).toLowerCase();
             const fakeReq = { user: { profile: { handle, name: name1 }, directories } };
             try {
-                const pngBuf = await fs.readFile(pngPath).catch(() => null);
-                if (pngBuf) {
+                if (ext !== '.json') {
                     const { readCharacterData, writeCharacterData } = await import('../endpoints/characters.js');
-                    const cardObj = JSON.parse(await readCharacterData(pngPath));
+                    const cardObj = JSON.parse(await readCharacterData(filePath));
                     cardObj.data ??= {};
                     cardObj.data.extensions ??= {};
                     cardObj.data.extensions.world = worldName;
-                    const ok = await writeCharacterData(pngPath, JSON.stringify(cardObj), charDirName, fakeReq);
-                    return Boolean(ok);
+                    const ok = await writeCharacterData(filePath, JSON.stringify(cardObj), charDirName, fakeReq, undefined, {
+                        requireExistingOutput: ext === '.png',
+                    });
+                    if (!ok) return false;
+                    if (ext !== '.png') {
+                        // 写产物恒为 <stem>.png —— 摘旧图档+迁侧车,同 PATCH 转换面。
+                        await fs.rm(filePath, { force: true }).catch(() => {});
+                        renameAllCharacterStateSidecars(filePath, path.join(directories.characters, `${charDirName}.png`));
+                    }
+                    return true;
                 }
-                const raw = await fs.readFile(jsonPath, 'utf8');
+                const raw = await fs.readFile(filePath, 'utf8');
                 const cardObj = JSON.parse(raw);
                 cardObj.data ??= {};
                 cardObj.data.extensions ??= {};
                 cardObj.data.extensions.world = worldName;
-                await fs.writeFile(jsonPath, JSON.stringify(cardObj, null, 2), 'utf8');
+                await fs.writeFile(filePath, JSON.stringify(cardObj, null, 2), 'utf8');
                 return true;
             } catch (error) {
                 console.warn('stscript setCharacterWorld failed:', error?.message ?? error);
@@ -519,18 +546,30 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
         // opts.renameChats=true 追加历史楼层 name 重写(上游确认弹窗选是)。
         renameCharacter: async (newName, { renameChats } = {}) => {
             if (!charDir) return false;
+            // 仅共享卡在场 → 先物化成私有 copy,改名只动私有档。
+            const mergedForRename = resolveCharacterFileMerged(directories, charDir);
+            if (!mergedForRename) return false;
+            if (mergedForRename.shared) {
+                try {
+                    await materializeSharedCharacter(directories, charDir);
+                } catch (error) {
+                    console.warn('stscript renameCharacter: materialize failed:', error?.message ?? error);
+                    return false;
+                }
+            }
             const oldInternalName = charDir;
             const oldAvatarPath = path.join(directories.characters, `${oldInternalName}.png`);
             if (!await fs.stat(oldAvatarPath).catch(() => null)) {
-                console.warn(`stscript renameCharacter: ${oldAvatarPath} not found (json-only cards unsupported)`);
+                console.warn(`stscript renameCharacter: ${oldAvatarPath} not found (json/webp cards unsupported)`);
                 return false;
             }
             const { readCharacterData, writeCharacterData } = await import('../endpoints/characters.js');
             const { invalidateRecentChatIndex } = await import('../endpoints/chats.js');
             const fakeReq = { user: { profile: { handle, name: name1 }, directories } };
-            // getPngName 等价:新内部名避让(自身除外)
+            // getPngName 等价:新内部名避让(自身除外)—— 查全部卡扩展,
+            // 多档卡(png 封面+json 数据)撞 webp/json 兄弟也算撞。
             let newInternalName = newName;
-            for (let i = 1; await fs.stat(path.join(directories.characters, `${newInternalName}.png`)).catch(() => null) || await fs.stat(path.join(directories.chats, newInternalName)).catch(() => null); i++) {
+            for (let i = 1; resolveCharacterFilePath(directories.characters, newInternalName) || await fs.stat(path.join(directories.chats, newInternalName)).catch(() => null); i++) {
                 newInternalName = `${newName}${i}`;
             }
             try {
@@ -550,6 +589,35 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
                 await invalidateRecentChatIndex(fakeReq);
                 renameAllCharacterStateSidecars(oldAvatarPath, path.join(directories.characters, `${newInternalName}.png`));
                 await fs.rm(oldAvatarPath, { force: true });
+                // 同干兄弟档随迁:物化可能搬来封面/数据分离的多档卡
+                // (Foo.png 封面+Foo.json 数据)—— 残档会照旧干名继续遮蔽
+                // 共享池同名卡,rename 成功后旧干不许留任何卡档。
+                for (const ext of ['.webp', '.json']) {
+                    const oldSib = path.join(directories.characters, `${oldInternalName}${ext}`);
+                    const newSib = path.join(directories.characters, `${newInternalName}${ext}`);
+                    if (!await fs.stat(oldSib).catch(() => null) || await fs.stat(newSib).catch(() => null)) continue;
+                    try {
+                        if (ext === '.json') {
+                            // JSON 兄弟若是卡档,名字同步改名;非卡(如侧车
+                            // 形状)原样搬运,反正不该被当卡读。
+                            try {
+                                const doc = JSON.parse(await fs.readFile(oldSib, 'utf8'));
+                                if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+                                    if (doc.data && typeof doc.data === 'object') doc.data.name = newName;
+                                    else doc.name = newName;
+                                }
+                                await fs.writeFile(newSib, JSON.stringify(doc, null, 2), 'utf8');
+                            } catch {
+                                await fs.copyFile(oldSib, newSib);
+                            }
+                        } else {
+                            await fs.copyFile(oldSib, newSib);
+                        }
+                        await fs.rm(oldSib, { force: true });
+                    } catch (sibErr) {
+                        console.warn(`stscript renameCharacter: sibling ${ext} migrate failed:`, sibErr?.message ?? sibErr);
+                    }
+                }
                 // renameChats:重写历史楼层 name(上游 renamePastMessages)。
                 // 逐会话 patch /body/<i>/name —— 与 PATCH 路由同写面。
                 if (renameChats === true && oldDisplayName) {

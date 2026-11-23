@@ -25,16 +25,36 @@ export interface LibraryCharacterItem {
     dateAdded: number;
     /** Max updatedAt across this char's chats (legacy date_last_chat). */
     dateLastChat: number;
+    /** true = 实例共享池(<dataRoot>/_library/characters)条目;
+     *  缺席 = 用户私有。同名 stem 私有遮蔽共享。 */
+    shared?: boolean;
 }
 export interface LibraryCharactersResponse {
     items: LibraryCharacterItem[];
     total: number;
 }
 
-/** GET /api/utopinn/characters/:charDir → card doc as stored (v1/v2/v3 原样). */
+/**
+ * POST /api/utopinn/characters/:charDir/install —— 共享卡显式物化:
+ * 整档拷进用户 characters 目录,返回新私有干名 + 卡文档。
+ * 私有同名卡在场 → 409;非共享卡 → 404。
+ */
+export interface CharacterInstallResponse {
+    /** 物化后的私有干名(撞名时比源多一位序号,如 Foo → Foo1)。 */
+    charDir: string;
+    fileName: string;
+    card: CharacterCardDocument | null;
+}
+
+/** GET /api/utopinn/characters/:charDir → card doc as stored (v1/v2/v3 原样).
+ *  共享池命中时顶层带 shared:true(线协议元字段,不落盘);
+ *  PATCH 对共享卡会先物化,响应带 __materialized:true + charDir(新干名)。 */
 export type CharacterCardDocument = Record<string, unknown> & {
     name?: string;
     data?: CharacterCardData | Record<string, unknown>;
+    shared?: boolean;
+    __materialized?: boolean;
+    charDir?: string;
 };
 
 /** GET /api/utopinn/characters/:charDir/chats → items[] */

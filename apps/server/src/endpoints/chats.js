@@ -31,7 +31,7 @@ import { ConflictError, InvalidArgumentError, NotFoundError } from '../storage/e
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { resolveMvuChatTarget, settlePersistedMvuMessage, resettleChatMvu } from '../services/mvu-settle.js';
-import { read as readCharacterCard } from '../character-card-parser.js';
+import { loadCharacterDocMerged } from '../services/shared-library.js';
 import {
     createFloorRegexRunner,
     projectChatFloorsForDisplay,
@@ -2821,20 +2821,10 @@ export function getChatData(chatFilePath) {
 // (mes_display/swipes_display/reasoning_display),存储字段原样。
 // ---------------------------------------------------------------------------
 
-/** 卡文件探测读:png/webp 走 tEXt 解析,json 直读;不存在/不可解析 → null。 */
+/** 卡文件探测读:png/webp 走 tEXt 解析,json 直读;不存在/不可解析 → null。
+ *  合并读面:私有在场即私有,否则回落 _library 共享池(展示投影只消费字段)。 */
 async function loadChatDisplayCard(directories, charDir) {
-    const dir = directories.characters;
-    for (const ext of ['.png', '.webp']) {
-        try {
-            const raw = await fs.promises.readFile(path.join(dir, `${charDir}${ext}`));
-            return JSON.parse(readCharacterCard(raw));
-        } catch { /* 无此文件或不含卡数据 → 下一个 */ }
-    }
-    try {
-        return JSON.parse(await fs.promises.readFile(path.join(dir, `${charDir}.json`), 'utf8'));
-    } catch {
-        return null;
-    }
+    return (await loadCharacterDocMerged(directories, charDir)).card;
 }
 
 /** 展示投影 substCtx:name1 = 默认人设名(无前顺位账号名),同 stscript-env 口径。 */

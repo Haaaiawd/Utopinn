@@ -24,6 +24,7 @@ import { getAdminSettings, getEffectiveUserQuotaBytes, getDirectorySizeBytes } f
 import { filterValidIpPatterns, getIpFromRequest } from './express-common.js';
 import { extensionsEnabledFeatureGuard } from './endpoints/extensions.js';
 import { getStorageEngine } from './storage/index.js';
+import { resolveSharedLibraryFilePath } from './services/shared-library.js';
 import { ENGINE_META_ENTRY, ENGINE_DUMP_ENTRY } from './storage/engine-backup-entries.js';
 
 export const KEY_PREFIX = 'user:';
@@ -1154,6 +1155,45 @@ function isQuotaEnforcedRequest(request) {
 }
 
 /**
+ * Core per-user storage quota check, shared by the HTTP middleware and
+ * server-side write paths that do not go through content-length
+ * accounting (e.g. shared-library materialization copies files into the
+ * user root without a request body).
+ * Admins always pass; a non-finite/<0 effective quota means unlimited.
+ * @param {import('./users.js').User} user request.user-shaped object
+ * @param {number} additionalBytes projected bytes this write will add
+ * @param {object} [options]
+ * @param {boolean} [options.fresh] bypass the 5s usage cache — required for
+ *   server-side copy writes (materialization) where back-to-back calls
+ *   within the cache window would otherwise see the pre-write usage and
+ *   let consecutive copies overshoot the quota.
+ * @returns {Promise<{usageBytes:number, quotaBytes:number, message:string}|null>}
+ *   violation descriptor, or null when the write fits / quota is unlimited
+ */
+export async function checkUserStorageQuota(user, additionalBytes = 0, options = {}) {
+    if (!user || user.profile?.admin) {
+        return null;
+    }
+    const settings = await getAdminSettings();
+    const quotaBytes = getEffectiveUserQuotaBytes(user.profile, settings);
+    if (!Number.isFinite(quotaBytes) || quotaBytes < 0) {
+        return null;
+    }
+    const handle = user.profile.handle;
+    let usageBytes = options.fresh ? undefined : STORAGE_USAGE_CACHE.get(handle);
+    if (!Number.isFinite(usageBytes)) {
+        usageBytes = await getDirectorySizeBytes(user.directories.root);
+        STORAGE_USAGE_CACHE.set(handle, usageBytes);
+    }
+    const add = Number.isFinite(additionalBytes) && additionalBytes > 0 ? additionalBytes : 0;
+    if (usageBytes + add <= quotaBytes) {
+        return null;
+    }
+    const message = 'Storage quota exceeded. Used ' + formatBytes(usageBytes) + ' of ' + formatBytes(quotaBytes) + '.';
+    return { usageBytes, quotaBytes, message };
+}
+
+/**
  * Enforces per-user storage quota on write-heavy endpoints.
  * @param {import('express').Request} request Request object
  * @param {import('express').Response} response Response object
@@ -1170,26 +1210,10 @@ export async function enforceUserQuotaMiddleware(request, response, next) {
     }
 
     try {
-        const settings = await getAdminSettings();
-        const quotaBytes = getEffectiveUserQuotaBytes(request.user.profile, settings);
-
-        if (!Number.isFinite(quotaBytes) || quotaBytes < 0) {
-            return next();
-        }
-
-        const handle = request.user.profile.handle;
-        let usageBytes = STORAGE_USAGE_CACHE.get(handle);
-        if (!Number.isFinite(usageBytes)) {
-            usageBytes = await getDirectorySizeBytes(request.user.directories.root);
-            STORAGE_USAGE_CACHE.set(handle, usageBytes);
-        }
-
         const requestLength = Number(request.headers['content-length'] || 0);
-        const projectedUsage = usageBytes + (Number.isFinite(requestLength) && requestLength > 0 ? requestLength : 0);
-
-        if (projectedUsage > quotaBytes) {
-            const message = 'Storage quota exceeded. Used ' + formatBytes(usageBytes) + ' of ' + formatBytes(quotaBytes) + '.';
-            return response.status(413).json({ error: message, usedBytes: usageBytes, quotaBytes: quotaBytes });
+        const violation = await checkUserStorageQuota(request.user, requestLength);
+        if (violation) {
+            return response.status(413).json({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
         }
 
         return next();
@@ -1602,7 +1626,30 @@ export async function getAllEnabledUsers() {
  */
 export const router = express.Router();
 router.use('/backgrounds/*', createRouteHandler(req => req.user.directories.backgrounds));
-router.use('/characters/*', createRouteHandler(req => req.user.directories.characters));
+// /characters/* —— 私有目录先中;不在场时安全回落 <dataRoot>/_library/characters
+// (resolveSharedLibraryFilePath 监禁池根 + 拒 _library 干名,绝不出界)。
+router.use('/characters/*', async (req, res) => {
+    try {
+        const directory = req.user.directories.characters;
+        const filePath = decodeURIComponent(req.params[0]);
+        const fullPath = path.join(directory, filePath);
+        if (!isPathUnderParent(directory, path.resolve(fullPath))) {
+            return res.sendStatus(403);
+        }
+        if (fs.existsSync(fullPath)) {
+            invalidateFirefoxCache(filePath, req, res);
+            return res.sendFile(filePath, { root: directory });
+        }
+        const sharedPath = resolveSharedLibraryFilePath(req.user.directories, filePath);
+        if (sharedPath) {
+            invalidateFirefoxCache(filePath, req, res);
+            return res.sendFile(path.basename(sharedPath), { root: path.dirname(sharedPath) });
+        }
+        return res.sendStatus(404);
+    } catch (error) {
+        return res.sendStatus(500);
+    }
+});
 router.use('/User%20Avatars/*', createRouteHandler(req => req.user.directories.avatars));
 router.use('/assets/*', createRouteHandler(req => req.user.directories.assets));
 router.use('/user/images/*', createRouteHandler(req => req.user.directories.userImages));

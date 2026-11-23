@@ -57,6 +57,15 @@ export function CardTile({ card, sub, onOpen, onEdit }: {
                     className="absolute inset-0"
                     style={{ background: 'linear-gradient(180deg, rgba(8,9,10,0.02) 0%, rgba(8,9,10,0.14) 55%, rgba(8,9,10,0.92) 100%)' }}
                 />
+                {card.shared && (
+                    <span
+                        className="absolute left-2.5 top-2.5 rounded-md px-1.5 py-0.5 text-[10px] font-medium"
+                        style={{ background: 'rgba(14,15,18,0.72)', color: '#fff', backdropFilter: 'blur(6px)' }}
+                        title={t('studio.cards.shared.hint')}
+                    >
+                        {t('studio.cards.shared')}
+                    </span>
+                )}
                 <span className="absolute bottom-3 left-3.5 right-3.5">
                     <span className="heading-tight block truncate text-[14.5px] font-semibold text-white">{card.name || card.charDir}</span>
                     <span className="mt-0.5 block truncate text-[11.5px] text-white/70">

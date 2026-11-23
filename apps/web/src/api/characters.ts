@@ -17,6 +17,8 @@ export interface CardItem {
     tags: string[];
     /** 卡文件存在但解析失败时仍列出(false → 名字退化 charDir)。 */
     readable: boolean;
+    /** true = 实例共享池条目(只读源;编辑/装卡即物化成私有 copy)。 */
+    shared?: boolean;
 }
 
 /**
@@ -88,7 +90,8 @@ export function invalidateCharDocs(charDir?: string): void {
     else cardDocCache.delete(charDir);
 }
 
-/** PATCH /api/utopinn/characters/:charDir —— 字段级 Merge Patch(写回 PNG/JSON 原卡)。 */
+/** PATCH /api/utopinn/characters/:charDir —— 字段级 Merge Patch(写回 PNG/JSON 原卡)。
+ *  共享卡会先被服务端物化:响应带 __materialized/charDir(可能不同干名)。 */
 export async function patchCharacter(charDir: string, patch: CharacterPatchRequest): Promise<CardDoc> {
     const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}`, {
         method: 'PATCH',
@@ -97,5 +100,25 @@ export async function patchCharacter(charDir: string, patch: CharacterPatchReque
     });
     await assertOk(res);
     invalidateCharDocs(charDir);
-    return (await res.json()) as CardDoc;
+    const doc = (await res.json()) as CardDoc;
+    if (doc.__materialized && typeof doc.charDir === 'string') {
+        invalidateCharDocs(doc.charDir);
+    }
+    return doc;
+}
+
+/** POST /api/utopinn/characters/:charDir/install —— 共享卡显式物化。
+ *  返回 {charDir,fileName,card};私有同名在场 → 409,非共享卡 → 404。 */
+export interface InstallCharacterResponse {
+    charDir: string;
+    fileName: string;
+    card: CardDoc | null;
+}
+export async function installCharacter(charDir: string): Promise<InstallCharacterResponse> {
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/install`, {
+        method: 'POST',
+    });
+    await assertOk(res);
+    invalidateCharDocs();
+    return (await res.json()) as InstallCharacterResponse;
 }

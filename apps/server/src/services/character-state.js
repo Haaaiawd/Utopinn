@@ -20,6 +20,15 @@ import { tryParse, tryReadFileSync } from '../util.js';
 export const CHARACTER_STATE_FILE_PREFIX = '.state.';
 export const CHARACTER_STATE_FILE_SUFFIX = '.json';
 
+/**
+ * 文件名是否是 state 侧车(`<stem>.state.<ns>.json`,ns 非空可含点)。
+ * `.state.` 是保留中缀 —— 命中此形的 .json 文件一律不是卡,任何
+ * 「卡文件枚举/寻址」面都必须排除,否则侧车会被当卡列出/物化。
+ */
+export function isCharacterStateSidecarFileName(fileName) {
+    return /\.state\..+\.json$/i.test(String(fileName ?? ''));
+}
+
 /** 卡文件探测扩展名序(与 utopinn-library loadCharacterDocDetailed 同序)。 */
 export const CHARACTER_FILE_EXTS = ['.png', '.webp', '.json'];
 
@@ -81,7 +90,11 @@ export function resolveCharacterFilePath(charactersDir, charDir) {
     const stem = String(charDir ?? '').trim();
     if (!stem || stem === '.' || stem === '..' || /[/\\\x00]/.test(stem)) return null;
     for (const ext of CHARACTER_FILE_EXTS) {
-        const filePath = path.join(charactersDir, `${stem}${ext}`);
+        const fileName = `${stem}${ext}`;
+        // `.state.*.json` is a sidecar, never a card — a charDir that would
+        // resolve to one must not be addressed as a card file.
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const filePath = path.join(charactersDir, fileName);
         if (fs.existsSync(filePath)) return filePath;
     }
     return null;

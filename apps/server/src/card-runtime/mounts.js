@@ -23,7 +23,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
-import { read as readCharacterCard } from '../character-card-parser.js';
+import { loadCharacterDocMerged, resolveCharacterFileMerged } from '../services/shared-library.js';
 import { resolvePathWithinParent } from '../util.js';
 import { getRawCardApp, parseCardAppManifest, isSafeRelativePath } from './manifest.js';
 
@@ -72,29 +72,45 @@ export class CardRuntimeError extends Error {
  * @returns {Promise<object|null>} parsed card JSON or null
  */
 export async function loadCardData(directories, charId) {
-    const dir = directories.characters;
-    const pngPath = path.join(dir, `${charId}.png`);
-    const jsonPath = path.join(dir, `${charId}.json`);
-    try {
-        const raw = await fs.promises.readFile(pngPath);
-        return JSON.parse(readCharacterCard(raw));
-    } catch {
-        try {
-            const raw = await fs.promises.readFile(jsonPath, 'utf8');
-            return JSON.parse(raw);
-        } catch {
-            return null;
-        }
-    }
+    // 合并读面:私有在场即私有,否则回落 _library 共享池。
+    // CardApp 资产/运行时态仍 per-user(ensureCardAppAssets 落
+    // directories.cardApps)—— 池只借卡定义,不借状态。
+    return (await loadCharacterDocMerged(directories, charId)).card;
+}
+
+/**
+ * Shared-pool extraction cache root — a sibling of `cardApps`, physically
+ * outside the private charId namespace so extraction GC can never touch a
+ * private card's panel assets (a private card literally named
+ * `Atlas@lib-x` must be untouchable by shared Atlas cache sweeps).
+ * Contents are pure derived cache; per-user like cardApps.
+ */
+export function sharedCardAppsRoot(directories) {
+    const base = directories.root ?? path.dirname(directories.cardApps);
+    return path.join(base, '_cardapps_shared');
 }
 
 /**
  * Per-card asset directory — where card_app.files were extracted at import.
  * @param {object} directories
  * @param {string} charId sanitized
+ * @param {string} [assetKey] extraction key — defaults to charId. Shared-pool
+ *   mounts pass a source-fingerprinted key (`<mtime>-<size>`); a fingerprinted
+ *   key lands under the dedicated shared cache root
+ *   `<root>/_cardapps_shared/<charId>/<fingerprint>/`, fully outside the
+ *   private `cardApps/<charId>` namespace.
  */
-export function cardAppAssetDir(directories, charId) {
+export function cardAppAssetDir(directories, charId, assetKey = charId) {
+    const key = assetKey || charId;
+    if (key !== charId) {
+        return path.join(sharedCardAppsRoot(directories), sanitize(charId), sanitize(key));
+    }
     return path.join(directories.cardApps, sanitize(charId));
+}
+
+/** Shared-pool extraction key: source file fingerprint (`<mtime>-<size>`). */
+export function sharedAssetKey(source) {
+    return `${Math.round(Number(source?.mtimeMs) || 0)}-${Number(source?.size) || 0}`;
 }
 
 /**
@@ -105,12 +121,29 @@ export function cardAppAssetDir(directories, charId) {
  * @param {object} card parsed card JSON
  * @param {object} directories
  * @param {string} charId
+ * @param {string} [assetKey] extraction key (shared mounts: fingerprinted)
  * @returns {boolean} whether assets are present afterwards
  */
-export function ensureCardAppAssets(card, directories, charId) {
-    const assetDir = cardAppAssetDir(directories, charId);
+export function ensureCardAppAssets(card, directories, charId, assetKey = charId) {
+    const assetDir = cardAppAssetDir(directories, charId, assetKey);
     if (fs.existsSync(assetDir) && fs.readdirSync(assetDir).some(e => e !== '.git')) {
         return true;
+    }
+    // Shared extractions are pure cache (pool cards are read-only — no user
+    // edits to preserve). A new fingerprint means the pool card changed:
+    // drop stale same-stem extractions — GC is scoped to this stem's own
+    // subdirectory inside the dedicated shared root, so nothing outside it
+    // (private assets included) can ever be swept.
+    const key = assetKey || charId;
+    if (key !== charId) {
+        const stemRoot = path.join(sharedCardAppsRoot(directories), sanitize(charId));
+        try {
+            for (const entry of fs.readdirSync(stemRoot)) {
+                if (entry !== sanitize(key)) {
+                    fs.rmSync(path.join(stemRoot, entry), { recursive: true, force: true });
+                }
+            }
+        } catch { /* missing stemRoot / GC failure must not block extraction */ }
     }
     const files = getRawCardApp(card)?.files;
     if (!files || typeof files !== 'object') {
@@ -142,7 +175,7 @@ export function ensureCardAppAssets(card, directories, charId) {
  * @returns {string|null} absolute path or null
  */
 export function resolveAssetPath(mount, relPath) {
-    const assetDir = cardAppAssetDir(mount.directories, mount.charId);
+    const assetDir = cardAppAssetDir(mount.directories, mount.charId, mount.assetKey ?? mount.charId);
     const normalized = String(relPath || '').replace(/\\/g, '/');
     if (normalized.split('/').some(seg => seg === '.git')) return null;
     return resolvePathWithinParent(assetDir, normalized);
@@ -173,13 +206,19 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
 
     // Constrain to the characters dir (same confinement as characters.js).
     const avatarPath = path.join(directories.characters, `${cleanId}.png`);
-    const jsonPath = path.join(directories.characters, `${cleanId}.json`);
     if (path.dirname(avatarPath) !== directories.characters) {
         throw new CardRuntimeError(400, 'bad_char_id', 'charId must be a character filename');
     }
-    if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+    // 合并存在性:私有在场即私有;仅 _library 池卡也可挂载(运行时态
+    // 与资产抽取恒 per-user,池只出卡定义)。
+    const merged = resolveCharacterFileMerged(directories, cleanId);
+    if (!merged) {
         throw new CardRuntimeError(404, 'character_not_found', `Character not found: ${cleanId}`);
     }
+    // 池源解包 key 带源档指纹:池更新(mtime/size 变)→ 全新解包目录,
+    // 不会拿旧资产对上新 manifest(entry_not_found);物化成的私有 copy
+    // 走 plain charId key,与池解包天然隔离。
+    const assetKey = merged.shared ? sharedAssetKey(merged) : cleanId;
 
     const card = await loadCardData(directories, cleanId);
     if (!card) {
@@ -195,7 +234,7 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
     if (!manifest.enabled) {
         throw new CardRuntimeError(409, 'card_app_disabled', `card_app is disabled for ${cleanId}`);
     }
-    if (!ensureCardAppAssets(card, directories, cleanId)) {
+    if (!ensureCardAppAssets(card, directories, cleanId, assetKey)) {
         throw new CardRuntimeError(404, 'card_app_assets_missing', `No card_app assets on disk for ${cleanId} and the card embeds none`);
     }
 
@@ -204,6 +243,7 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
         handle: String(handle || ''),
         directories,
         charId: cleanId,
+        assetKey,
         // ctx face seeds: chat the host bound this mount to (no .jsonl) —
         // feeds PanelBootstrap.chatName → ctx.getChatId/lukerContext.chatId.
         chatName: typeof chatName === 'string' && chatName.trim() ? chatName.trim() : null,
@@ -246,11 +286,10 @@ export function createDocMount({ handle, directories, charId, chatName, doc, ttl
         throw new CardRuntimeError(413, 'doc_too_large', 'doc exceeds 1MiB');
     }
     const avatarPath = path.join(directories.characters, `${cleanId}.png`);
-    const jsonPath = path.join(directories.characters, `${cleanId}.json`);
     if (path.dirname(avatarPath) !== directories.characters) {
         throw new CardRuntimeError(400, 'bad_char_id', 'charId must be a character filename');
     }
-    if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+    if (!resolveCharacterFileMerged(directories, cleanId)) {
         throw new CardRuntimeError(404, 'character_not_found', `Character not found: ${cleanId}`);
     }
 

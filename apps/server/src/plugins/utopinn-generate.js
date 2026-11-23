@@ -35,31 +35,20 @@ import { TEXTGEN_TYPES } from '../constants.js';
 import { substituteParams } from '@utopinn/core';
 import { runLukerDispatch } from '../luker-dispatch/runner.js';
 import { listGenerationJobsForRequest, getGenerationJobForRequest, getTaskByRequestId, failGenerationJob, getPersistChatKey } from '../endpoints/backends/luker-generation.js';
-import { read as readCharacterCard } from '../character-card-parser.js';
 import { getPromptNames, postProcessPrompt } from '../prompt-converters.js';
 import { flattenSchema } from '../util.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
-import path from 'node:path';
-import fs from 'node:fs/promises';
+import { loadCharacterDocMerged } from '../services/shared-library.js';
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
 
 export const inject = ['webServer'];
 
-/** 角色卡加载:avatar 目录名 → 卡数据(data.* + name)。read() 返回 JSON 字符串 */
+/** 角色卡加载:avatar 目录名 → 卡数据(data.* + name)。
+ *  合并读面:私有在场即私有,否则回落 _library 共享池(生成只消费卡字段)。 */
 async function loadCharacterCard(directories, charDir) {
-    const dir = directories.characters;
-    const pngPath = path.join(dir, `${charDir}.png`);
-    const jsonPath = path.join(dir, `${charDir}.json`);
-    try {
-        const raw = await fs.readFile(pngPath);
-        const dataString = readCharacterCard(raw);
-        return JSON.parse(dataString);
-    } catch {
-        const raw = await fs.readFile(jsonPath, 'utf8').catch(() => null);
-        return raw ? JSON.parse(raw) : null;
-    }
+    return (await loadCharacterDocMerged(directories, charDir)).card;
 }
 
 // —— TASK-037 group 生成编排(第一刀:每请求一成员一楼)——

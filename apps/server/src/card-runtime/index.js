@@ -30,6 +30,7 @@
 
 import express from 'express';
 import { resolveMount, createMount, createDocMount, revokeMount, listMounts, publicMount, loadCardData, CardRuntimeError } from './mounts.js';
+import { resolveCharacterFileMerged } from '../services/shared-library.js';
 import { getRawCardApp, parseCardAppManifest } from './manifest.js';
 import { buildCardRuntimeCsp } from './csp.js';
 import { cdnProxyHandler } from './cdn-proxy.js';
@@ -153,11 +154,11 @@ cardRuntimeApiRouter.get('/cards/:charId/manifest', async (request, response) =>
     try {
         const charId = sanitize(String(request.params.charId ?? '').trim());
         const avatarPath = path.join(request.user.directories.characters, `${charId}.png`);
-        const jsonPath = path.join(request.user.directories.characters, `${charId}.json`);
         if (!charId || path.dirname(avatarPath) !== request.user.directories.characters) {
             return response.status(400).json({ error: 'bad_char_id' });
         }
-        if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+        // 合并存在性:仅 _library 池卡也可 dry-run manifest(只读)。
+        if (!resolveCharacterFileMerged(request.user.directories, charId)) {
             return response.status(404).json({ error: 'character_not_found' });
         }
         const card = await loadCardData(request.user.directories, charId);

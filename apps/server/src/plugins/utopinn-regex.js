@@ -43,6 +43,13 @@ import { regexFromString } from '@utopinn/core';
 
 import { readCharacterData, writeCharacterData } from '../endpoints/characters.js';
 import { createFileStatIndex } from '../services/file-stat-index.js';
+import {
+    getSharedCharactersDir,
+    isSafeSharedStem,
+    materializeSharedCharacter,
+    resolveCharacterFileMerged,
+} from '../services/shared-library.js';
+import { isCharacterStateSidecarFileName } from '../services/character-state.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { REGEX_PRESET_API_IDS, resolvePresetInUse } from '../services/extension-prompts.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
@@ -296,6 +303,8 @@ function withCardWriteLock(key, fn) {
 /** 探测 <charDir>.<png|webp|json> 在场文件,返回 {file,ext} 或 null。 */
 function resolveCharFile(directories, charDir) {
     for (const ext of ['.png', '.webp', '.json']) {
+        // `.state.*.json` 是侧车不是卡 —— 不许当卡写。
+        if (isCharacterStateSidecarFileName(`${charDir}${ext}`)) continue;
         const file = path.join(directories.characters, `${charDir}${ext}`);
         if (fs.existsSync(file)) return { file, ext };
     }
@@ -420,7 +429,17 @@ async function resolveIndexedCard(index, dir, charDir, candidates, stats) {
  */
 async function mutateCharScripts(request, charDir, mutator, index) {
     const directories = request.user.directories;
-    const target = resolveCharFile(directories, charDir);
+    let target = resolveCharFile(directories, charDir);
+    if (!target) {
+        // 仅共享卡在场 → 先物化(copy-on-write):脚本永远写私有 copy,
+        // 绝不落 _library。物化后卡恒同干名(私有无同干档才轮到共享)。
+        const merged = resolveCharacterFileMerged(directories, charDir);
+        if (merged?.shared) {
+            assertWritable();
+            await materializeSharedCharacter(directories, charDir);
+            target = resolveCharFile(directories, charDir);
+        }
+    }
     if (!target) throw new NotFoundError('character card', { charDir });
     if (target.ext === '.webp') {
         throw new InvalidArgumentError(`scoped regex write supports .png/.json cards only: ${charDir}.webp`);
@@ -486,19 +505,56 @@ async function readGlobalView(handle) {
     };
 }
 
+/** 一次 readdir 归组 charDir → 候选档(存在性零额外 I/O)。私有/池目录共用。 */
+async function scanCharCandidates(dir) {
+    const stems = new Map(); // charDir -> candidates[]
+    let files = [];
+    try { files = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { /* 空库 */ }
+    for (const f of files) {
+        if (!f.isFile()) continue;
+        const ext = path.extname(f.name).toLowerCase();
+        if (!CHAR_RESOLVE_EXT_SET.has(ext)) continue;
+        // `.state.*.json` 是 state 侧车,不是卡候选 —— 私有/池同排。
+        if (isCharacterStateSidecarFileName(f.name)) continue;
+        const stem = f.name.slice(0, -ext.length);
+        if (!stem) continue;
+        let rec = stems.get(stem);
+        if (!rec) { rec = []; stems.set(stem, rec); }
+        rec.push({ fileName: f.name, ext, absPath: path.join(dir, f.name) });
+    }
+    return stems;
+}
+
 async function scopedCharView(request, charDir, index) {
     const dir = request.user.directories.characters;
     // 候选 = 存在探测过的三扩展名文件(existsSync 同 resolveCharFile 语义),
     // avatar 在内存里定,消灭逐卡 fs.access 探测。
     const candidates = [];
     for (const ext of CHAR_RESOLVE_EXTS) {
-        const absPath = path.join(dir, `${charDir}${ext}`);
-        if (fs.existsSync(absPath)) candidates.push({ fileName: `${charDir}${ext}`, ext, absPath });
+        const fileName = `${charDir}${ext}`;
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const absPath = path.join(dir, fileName);
+        if (fs.existsSync(absPath)) candidates.push({ fileName, ext, absPath });
     }
-    if (!candidates.length) return null;
-    const resolved = await resolveIndexedCard(index, dir, charDir, candidates, null);
-    if (!resolved) return null;
-    return { file: resolved.file, avatar: avatarForCandidates(charDir, candidates), name: resolved.name, scripts: resolved.scripts };
+    if (candidates.length) {
+        const resolved = await resolveIndexedCard(index, dir, charDir, candidates, null);
+        if (!resolved) return null;
+        return { file: resolved.file, avatar: avatarForCandidates(charDir, candidates), name: resolved.name, scripts: resolved.scripts, shared: false };
+    }
+    // 仅共享卡在场 → 池目录探候选(读只,写面先物化才碰池)。
+    const libDir = getSharedCharactersDir(request.user.directories);
+    if (!libDir || !isSafeSharedStem(charDir)) return null;
+    const libCandidates = [];
+    for (const ext of CHAR_RESOLVE_EXTS) {
+        const fileName = `${charDir}${ext}`;
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const absPath = path.join(libDir, fileName);
+        if (fs.existsSync(absPath)) libCandidates.push({ fileName, ext, absPath });
+    }
+    if (!libCandidates.length) return null;
+    const libResolved = await resolveIndexedCard(index, libDir, charDir, libCandidates, null);
+    if (!libResolved) return null;
+    return { file: libResolved.file, avatar: avatarForCandidates(charDir, libCandidates), name: libResolved.name, scripts: libResolved.scripts, shared: true };
 }
 
 /** 全量视图:global + 有脚本/被放行的卡 + 有脚本/被放行的 LLM 预设。 */
@@ -507,20 +563,17 @@ async function fullView(request, index) {
     const g = await readGlobalView(handle);
     const dir = request.user.directories.characters;
 
-    // 卡枚举:一次 readdir 归组 charDir → 候选档(存在性零额外 I/O),
-    // 逐文件 stat 指纹走 slim index,只列有脚本或被放行的。
-    const stems = new Map(); // charDir -> candidates[]
-    let files = [];
-    try { files = await fs.promises.readdir(dir, { withFileTypes: true }); } catch { /* 空库 */ }
-    for (const f of files) {
-        if (!f.isFile()) continue;
-        const ext = path.extname(f.name).toLowerCase();
-        if (!CHAR_RESOLVE_EXT_SET.has(ext)) continue;
-        const stem = f.name.slice(0, -ext.length);
-        if (!stem) continue;
-        let rec = stems.get(stem);
-        if (!rec) { rec = []; stems.set(stem, rec); }
-        rec.push({ fileName: f.name, ext, absPath: path.join(dir, f.name) });
+    // 卡枚举:私有目录 ∪ _library 池,同干私有遮蔽;逐文件 stat 指纹走
+    // slim index,只列有脚本或被放行的。
+    const stems = await scanCharCandidates(dir);
+    const libDir = getSharedCharactersDir(request.user.directories);
+    // libAllStems = 池里仍存在的全量候选(sweep 存在性剪);libStems =
+    // 本用户可见(私有遮蔽 + _library 保留名过滤后)。两者分离:被本用户
+    // 遮蔽的池卡对其他用户仍可见,不能按可见集逐缓存(跨用户误逐)。
+    const libAllStems = libDir ? await scanCharCandidates(libDir) : new Map();
+    const libStems = new Map(libAllStems);
+    for (const stem of [...libStems.keys()]) {
+        if (stems.has(stem) || !isSafeSharedStem(stem)) libStems.delete(stem);
     }
 
     const alivePaths = new Set();
@@ -540,7 +593,24 @@ async function fullView(request, index) {
             count: resolved.scripts.length, scripts: resolved.scripts,
         });
     }
+    for (const charDir of [...libStems.keys()].sort()) {
+        const candidates = libStems.get(charDir).sort((a, b) => CHAR_EXT_RANK[a.ext] - CHAR_EXT_RANK[b.ext]);
+        for (const c of candidates) alivePaths.add(c.absPath);
+        const resolved = await resolveIndexedCard(index, libDir, charDir, candidates, stats).catch(() => null);
+        if (!resolved) continue;
+        const avatar = avatarForCandidates(charDir, candidates);
+        const allowed = g.allowedChars.includes(avatar);
+        if (!allowed && resolved.scripts.length === 0) continue;
+        chars.push({
+            charDir, avatar, name: resolved.name, allowed, shared: true,
+            autoAllowed: true, active: resolved.scripts.length > 0 && !g.disabled.includes('regex'),
+            count: resolved.scripts.length, scripts: resolved.scripts,
+        });
+    }
     index.sweep(dir, alivePaths);
+    // 池侧按存在性剪(libAllStems),不按本用户可见集 —— 遮蔽 stem 对
+    // 其他用户仍可见,可见集剪会跨用户误逐。
+    if (libDir) index.sweep(libDir, new Set([...libAllStems.values()].flat().map((c) => c.absPath)));
     diagEmit({
         lvl: 'debug', kind: 'plugin', code: 'regex_index_scan',
         msg: `regex full view: ${stems.size} stem(s), ${stats.hits} cached, ${stats.misses} parsed`,
@@ -613,6 +683,7 @@ export function apply(ctx) {
                 }
                 return response.send({
                     scope: 'char', charDir: scope.charDir, avatar: view.avatar, name: view.name,
+                    shared: view.shared === true,
                     allowed: g.allowedChars.includes(view.avatar),
                     // issue #3:本卡脚本恒进收集(卡作用域自动放行)——
                     // active 如实告知脚本对展示/出参/WI 车道生效;
@@ -687,12 +758,18 @@ export function apply(ctx) {
 
             if (hasAllow) {
                 // 幽灵放行拦截:卡文件不存在时拒绝写放行表(否则留下指向
-                // 不存在 avatar 的 character_allowed_regex 条目)。
-                if (scope.scope === 'char' && !resolveCharFile(request.user.directories, scope.charDir)) {
+                // 不存在 avatar 的 character_allowed_regex 条目)。共享卡在场
+                // 也算存在 —— 放行表是 per-user settings,允许直接放行池卡。
+                const mergedChar = scope.scope === 'char'
+                    ? resolveCharacterFileMerged(request.user.directories, scope.charDir)
+                    : null;
+                if (scope.scope === 'char' && !mergedChar) {
                     throw new NotFoundError('character card', { charDir: scope.charDir });
                 }
                 const avatar = scope.scope === 'char'
-                    ? await resolveAvatarFileName(request.user.directories, scope.charDir)
+                    ? (mergedChar?.shared
+                        ? mergedChar.fileName
+                        : await resolveAvatarFileName(request.user.directories, scope.charDir))
                     : undefined;
                 await patchAllowlist(handle, scope.scope, {
                     avatar, apiId: scope.apiId, presetName: scope.name, allow: body.allow,
