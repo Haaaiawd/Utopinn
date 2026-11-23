@@ -6348,12 +6348,12 @@
       "covers": [
         "实例级共享卡池:只读池+物化第一形态"
       ],
-      "status": "in_progress",
-      "progress": 0.9,
-      "evidence": "node --test tests/shared-library.test.mjs 13/13 过;回归 tests/utopinn-chat-regex.test.mjs 7/7 过;pnpm --filter @utopinn/web typecheck 0 错;pnpm -r build 全绿(含 protocol dist 重建);改动文件全过 node --check",
+      "status": "done",
+      "progress": 1,
+      "evidence": "node --test tests/shared-library.test.mjs 13/13 过;回归 tests/utopinn-chat-regex.test.mjs 7/7 过;pnpm --filter @utopinn/web typecheck 0 错;pnpm -r build 全绿(含 protocol dist 重建);改动文件全过 node --check;PR https://github.com/Haaaiawd/Utopinn/pull/35",
       "created_at": "2026-11-23T07:47:42.598Z",
-      "updated_at": "2026-11-23T07:47:42.598Z",
-      "completed_at": null
+      "updated_at": "2026-11-23T07:56:44.647Z",
+      "completed_at": "2026-11-23T07:56:44.647Z"
     }
   ],
   "milestones": [
