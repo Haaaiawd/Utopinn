@@ -70,7 +70,9 @@ import {
     getRecentChatSortTime,
     // issue #3 展示投影:楼层透出 regex 应用后展示文本(存储字段原样)。
     projectChatFloorsForDisplayResponse,
+    createChatFloorRegexRunner,
 } from '../endpoints/chats.js';
+import { regex_placement } from '@utopinn/core';
 import {
     getQueryCharacterAvatar,
     normalizeCharacterStateNamespace,
@@ -1631,6 +1633,40 @@ export function apply(ctx) {
     });
 
     /**
+     * Output-side regex on floor-bound reasoning fields (GH#3 residual).
+     * Reply text arrives already transformed (completeGenerationJobFromText
+     * runs the display chain on job.text); floor reasoning has no earlier
+     * seam — appended extra.reasoning / swipe_info[].extra.reasoning get the
+     * same persisted -> markdown chain at REASONING placement, at depth 0.
+     * Floors without reasoning short-circuit before the runner loads.
+     */
+    async function applyOutputReasoningRegex(request, charDir, chatName, chatHeader, chatBody, floors) {
+        const carriesReasoning = (m) => (typeof m?.extra?.reasoning === 'string' && m.extra.reasoning)
+            || (Array.isArray(m?.swipe_info) && m.swipe_info.some((si) => typeof si?.extra?.reasoning === 'string' && si.extra.reasoning));
+        if (!floors.some(carriesReasoning)) return;
+        try {
+            const runner = await createChatFloorRegexRunner(request, charDir, chatName, { header: chatHeader, body: chatBody });
+            if (!runner?.scriptCount) return;
+            for (const m of floors) {
+                if (!m || typeof m !== 'object') continue;
+                const opts = { depth: 0, characterOverride: m.name };
+                if (typeof m.extra?.reasoning === 'string' && m.extra.reasoning) {
+                    m.extra = { ...m.extra, reasoning: runner.displayText(m.extra.reasoning, regex_placement.REASONING, opts) };
+                }
+                if (Array.isArray(m.swipe_info)) {
+                    m.swipe_info = m.swipe_info.map((si) => {
+                        const raw = si?.extra?.reasoning;
+                        if (typeof raw !== 'string' || !raw) return si;
+                        return { ...si, extra: { ...si.extra, reasoning: runner.displayText(raw, regex_placement.REASONING, opts) } };
+                    });
+                }
+            }
+        } catch (error) {
+            console.warn(`output reasoning regex skipped for ${charDir}/${chatName}:`, error?.message ?? error);
+        }
+    }
+
+    /**
      * POST /characters/:charDir/chats/:chatName/messages —— 追加消息(legacy /append 逐义)。
      * body:{messages[]|message, integrity?, force?, chat_metadata?, luker_generation_id?}
      *   缺失即建(create + autoInit settle);双去重:队首内容等值 + body 级
@@ -1671,6 +1707,11 @@ export function apply(ctx) {
                 return sendRepoIntegrityConflict(response, createIntegrityMismatchError(chatFilePath, slugRaw));
             }
             const cleanedMessages = messages.map(m => stripLukerGenerationIdFromMessage(_.cloneDeep(m)));
+            // Output-side REASONING lane on floor-bound reasoning fields —
+            // before dedupe so retried appends still content-match the
+            // already-transformed stored floor.
+            await applyOutputReasoningRegex(request, charDir, chatName,
+                existing?.header, existing?.body, cleanedMessages);
 
             // legacy「缺失即建」:首写/吞楼层依赖——create + autoInit settle
             if (!existing) {

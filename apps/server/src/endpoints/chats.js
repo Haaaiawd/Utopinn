@@ -2855,6 +2855,30 @@ function chatDisplaySubstCtx({ request, settingsDoc, card, header, body, chatNam
 }
 
 /**
+ * Build the shared floor regex runner for a chat (same source range as the
+ * generation-time runner: settings regex + preset scripts + card scripts).
+ * Used by the read-side display projection and the write-side output lane.
+ * Load failures resolve to null inputs rather than throwing — callers gate
+ * on scriptCount.
+ */
+export async function createChatFloorRegexRunner(request, charDir, chatName, { header, body } = {}) {
+    const handle = request.user.profile.handle;
+    const settingsDoc = await getSettingsRepo().get(handle).catch(() => null);
+    const presetName = settingsDoc?.preset_settings_openai;
+    const [card, presetDoc] = await Promise.all([
+        loadChatDisplayCard(request.user.directories, charDir).catch(() => null),
+        presetName ? getPresetRepo().get(handle, 'openai', presetName).catch(() => null) : Promise.resolve(null),
+    ]);
+    const substCtx = chatDisplaySubstCtx({
+        request, settingsDoc, card,
+        header, body: Array.isArray(body) ? body : [], chatName,
+    });
+    return createFloorRegexRunner(settingsDoc ?? {}, substCtx, {
+        card, charDir, presetDoc, presetName,
+    });
+}
+
+/**
  * 楼层展示投影(issue #3 执行点):对 ChatRepo.get 产物应用输出正则 —
  * mes/swipes/swipe_info/extra 存储字段原样返回,另透出
  * mes_display/swipes_display/reasoning_display。
@@ -2870,19 +2894,8 @@ export async function projectChatFloorsForDisplayResponse(request, charDir, fetc
     const body = Array.isArray(fetched?.body) ? fetched.body : [];
     if (!body.length) return body;
     try {
-        const handle = request.user.profile.handle;
-        const settingsDoc = await getSettingsRepo().get(handle).catch(() => null);
-        const presetName = settingsDoc?.preset_settings_openai;
-        const [card, presetDoc] = await Promise.all([
-            loadChatDisplayCard(request.user.directories, charDir).catch(() => null),
-            presetName ? getPresetRepo().get(handle, 'openai', presetName).catch(() => null) : Promise.resolve(null),
-        ]);
-        const substCtx = chatDisplaySubstCtx({
-            request, settingsDoc, card,
-            header: fetched?.header, body, chatName,
-        });
-        const runner = createFloorRegexRunner(settingsDoc ?? {}, substCtx, {
-            card, charDir, presetDoc, presetName,
+        const runner = await createChatFloorRegexRunner(request, charDir, chatName, {
+            header: fetched?.header, body,
         });
         if (!runner.scriptCount) return body;
         return projectChatFloorsForDisplay(body, runner).floors;

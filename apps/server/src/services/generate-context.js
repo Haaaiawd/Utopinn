@@ -898,6 +898,10 @@ async function buildGenerationContextImpl({
     const floorRegexRunner = createFloorRegexRunner(extPromptSource, substCtx, {
         card, charDir, presetDoc, presetName: resolvedPresetName,
     });
+    // The same runner is reused for the output-side lane at job completion
+    // (luker-generation completeGenerationJobFromText), so every persist
+    // route stores the reply already processed without rebuilding scripts.
+    request.utopinnFloorRegexRunner = floorRegexRunner;
     let promptRegexApplied = 0;
     let chatPromptMessages = chatMessages;
     if (floorRegexRunner.scriptCount) {

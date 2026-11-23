@@ -11,6 +11,7 @@ import { stripJsonlExt } from '../../storage/name-validation.js';
 import { getChatRepo } from '../../storage/index.js';
 import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
 import { emit as diagEmit } from '../../services/diag-bus.js';
+import { regex_placement } from '@utopinn/core';
 
 const generationJobs = new Map();
 const LUKER_GENERATION_JOB_MAX_ITEMS = 128;
@@ -1231,6 +1232,56 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
         clearGenerationJobPersistenceTimer(job);
         notifyJobStatus(job);
         return false;
+    }
+
+    // GH#3 residual — output-side regex on the generated reply, once, before
+    // any persist route sees it. Upstream cleanUpMessage (script.js:11481)
+    // rewrote the reply before the floor landed; the stored form here is the
+    // display chain (persisted -> markdown at depth 0) so `mes` equals what
+    // clients render. Impersonate floors land as is_user -> USER_INPUT, all
+    // other verbs -> AI_OUTPUT, matching chatFloorRegexPlacement.
+    //
+    // Ordering vs MVU settle: this runs strictly before every settle call —
+    // client appends, PATCH swipe merges and the grace-timer fallback all
+    // consume job.text — preserving upstream order (regex -> floor lands ->
+    // settle folds). extractCommands scans _.cmd(/<json_patch> patterns, so
+    // wrapper-preserving rewrites (e.g. <UpdateVariable> fold-cards) still
+    // settle; scripts that strip the commands lose fold input exactly like
+    // upstream persisted-lane strips. A post-settle pass would need the same
+    // transform threaded through every settle call site plus a second write,
+    // and its only extra reach — rewriting <StatusPlaceHolderImpl/> — would
+    // destroy the mount anchor status panels expect in stored mes.
+    const outputRunner = request?.utopinnFloorRegexRunner;
+    if (outputRunner?.scriptCount) {
+        const placement = job.requestMeta?.verb === 'impersonate'
+            ? regex_placement.USER_INPUT
+            : regex_placement.AI_OUTPUT;
+        const processed = outputRunner.displayText(job.text, placement, {
+            depth: 0,
+            characterOverride: job.requestMeta?.char_name || undefined,
+        });
+        const applied = processed === job.text ? 0 : 1;
+        job.text = processed;
+        diagEmit({
+            lvl: 'info', kind: 'inject', code: 'regex_output',
+            msg: `regex_output ${job.chatKey || job.id} scripts=${outputRunner.scriptCount} applied=${applied}`,
+            ctx: {
+                jobId: job.id,
+                diagId: job.diagId ?? undefined,
+                charDir: job.persistTarget?.kind === 'character'
+                    ? normalizePersistAvatarDirectory(job.persistTarget.avatar_url)
+                    : undefined,
+                chatKey: job.chatKey || undefined,
+                verb: job.requestMeta?.verb,
+                stage: 'regex_output',
+            },
+            data: {
+                stage: 'regex_output',
+                scripts: outputRunner.scriptCount,
+                injected: applied,
+                applied,
+            },
+        });
     }
     // TASK-044 theater 快照:结构化产出此时定稿(流式 job.text 全量已到)。
     // jobs 详情面立即透出 choices/extra;兜底 persist 按同一份 lift 落楼,
