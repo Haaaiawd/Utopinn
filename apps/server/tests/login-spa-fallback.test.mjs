@@ -14,6 +14,13 @@
  * (tests/e2e/_lib/server.js), so it could never observe this. This suite spawns
  * a real server with that variable deliberately unset.
  *
+ * Hermeticity: the child is spawned with --configPath pointing at a minimal
+ * config this file writes into the scratch dir (enableUserAccounts: true;
+ * every other key is filled from default/config.yaml by addMissingConfigValues).
+ * Without it the child would resolve ./config.yaml from its cwd — a gitignored
+ * developer-local file — and the accounts-on assertions below would silently
+ * depend on whatever that machine happens to have.
+ *
  * Run: node --test apps/server/tests/login-spa-fallback.test.mjs
  */
 import test from 'node:test';
@@ -59,21 +66,45 @@ async function waitReady(base, child, timeoutMs = 60_000) {
     throw new Error('server did not become ready');
 }
 
-/** Boot a real server in default (SPA) mode against a throwaway dataRoot. */
+/** Extract the Cookie request-header value from a response's Set-Cookie headers. */
+function sessionCookieOf(res) {
+    const setCookies = res.headers.getSetCookie();
+    assert.ok(setCookies.length > 0, 'expected the auto-login response to set a session cookie');
+    return setCookies.map(c => c.split(';')[0]).join('; ');
+}
+
+/**
+ * Boot a real server in default (SPA) mode against a throwaway dataRoot and a
+ * throwaway --configPath (never the checkout's own ./config.yaml). The config
+ * pins enableUserAccounts: true — the accounts-on behaviour under test.
+ * fn receives (base, ctx); ctx.log() returns the child's combined output.
+ */
 async function withRealServer(fn) {
     if (!hasSpa) {
         console.warn('# web/dist not built — skipping (run the web build first)');
         return;
     }
     const port = await reservePort();
-    const dataRoot = path.join(scratchRoot, `data-${port}`);
+    const dir = path.join(scratchRoot, `run-${port}`);
+    const dataRoot = path.join(dir, 'data');
+    const configPath = path.join(dir, 'config.yaml');
     fs.mkdirSync(dataRoot, { recursive: true });
+    fs.writeFileSync(configPath, 'enableUserAccounts: true\n');
 
     // Deliberately NOT setting LUKER_SERVE_LEGACY — that is the whole point.
+    // SILLYTAVERN_/LUKER_* env vars would override config.yaml values
+    // (getConfigValue checks env first), so they are stripped for hermeticity
+    // except the ones this suite sets on purpose.
     const env = { ...process.env, LUKER_SKIP_WEBPACK: '1' };
-    delete env.LUKER_SERVE_LEGACY;
+    for (const key of Object.keys(env)) {
+        if (/^(SILLYTAVERN_|LUKER_)/.test(key) && key !== 'LUKER_SKIP_WEBPACK') {
+            delete env[key];
+        }
+    }
 
-    const child = spawn(process.execPath, ['server.js', '--dataRoot', dataRoot, '--port', String(port)], {
+    const child = spawn(process.execPath, [
+        'server.js', '--dataRoot', dataRoot, '--port', String(port), '--configPath', configPath,
+    ], {
         cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'],
     });
     let log = '';
@@ -83,7 +114,7 @@ async function withRealServer(fn) {
     const base = `http://127.0.0.1:${port}`;
     try {
         await waitReady(base, child);
-        await fn(base);
+        await fn(base, { log: () => log, configPath });
     } catch (err) {
         err.message += `\n--- server log ---\n${log.slice(-2000)}`;
         throw err;
@@ -96,10 +127,14 @@ async function withRealServer(fn) {
 
 const isHtml = r => /text\/html/.test(r.headers.get('content-type') || '');
 
-test('default mode: GET /login serves the SPA shell, not the legacy page', async () => {
+test('default mode: GET /login?noauto serves the SPA shell, not the legacy page', async () => {
     if (!hasLegacyLogin) return;
-    await withRealServer(async base => {
-        const res = await fetch(`${base}/login`);
+    await withRealServer(async (base) => {
+        // ?noauto=1 is required here: with accounts enabled and a fresh
+        // dataRoot the auto-created default-user is passwordless, so a bare
+        // GET /login now (correctly, like the legacy page did) auto-logs in
+        // and 302s to /. The noauto opt-out is the way to reach the page.
+        const res = await fetch(`${base}/login?noauto=1`);
         const body = await res.text();
         assert.equal(res.status, 200);
         assert.ok(isHtml(res));
@@ -238,14 +273,56 @@ test('default mode: the legacy 785KB index.html is not exposed', async () => {
     });
 });
 
-test('default mode: unauthenticated / redirects to the (working) /login', async () => {
-    await withRealServer(async base => {
+test('default mode: unauthenticated / redirects to /login', async () => {
+    await withRealServer(async (base, ctx) => {
         const res = await fetch(`${base}/`, { redirect: 'manual' });
         assert.equal(res.status, 302);
         assert.equal(res.headers.get('location'), '/login');
-        // and that target must now actually render
-        const login = await fetch(`${base}${res.headers.get('location')}`);
+        // The redirect only happens when the test-controlled config was actually
+        // read — enableUserAccounts: false (the default config, or an ignored
+        // --configPath) would have served the SPA directly with 200.
+        // Belt-and-suspenders: the child also announces the config path it used.
+        assert.match(ctx.log(), new RegExp(`Using config path:.*${ctx.configPath.replace(/[/\\]/g, '[\\\\/]')}`),
+            'child must report reading the test-controlled config');
+        // and that target must actually render when auto-login is suppressed
+        const login = await fetch(`${base}${res.headers.get('location')}?noauto=1`);
         const body = await login.text();
         assert.doesNotMatch(body, /Welcome to Luker/);
+    });
+});
+
+test('default mode: GET /login auto-logs in and the session cookie authenticates', async () => {
+    // Review comment #4: the SPA branch bypassed tryAutoLogin entirely, so a
+    // fresh dataRoot (single passwordless default-user) could not establish a
+    // session from /login the way the legacy page could.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/login`, { redirect: 'manual' });
+        assert.equal(res.status, 302, 'auto-login should redirect home');
+        assert.equal(res.headers.get('location'), '/');
+        const cookie = sessionCookieOf(res);
+
+        const home = await fetch(`${base}/`, { redirect: 'manual', headers: { cookie } });
+        assert.equal(home.status, 200, 'session from auto-login must authenticate /');
+        const body = await home.text();
+        assert.match(body, /assets\/index-/, 'authenticated / must serve the SPA shell');
+    });
+});
+
+test('default mode: POST /api/users/oauth/providers answers for anonymous clients', async () => {
+    // LoginGate renders OAuth buttons from this endpoint — it must be reachable
+    // pre-auth (it is mounted ahead of the login gate). Test config enables no
+    // provider, so both flags must be false and LoginGate renders no buttons.
+    await withRealServer(async base => {
+        const tokenRes = await fetch(`${base}/csrf-token`);
+        const { token } = await tokenRes.json();
+        const cookie = tokenRes.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+        const res = await fetch(`${base}/api/users/oauth/providers`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': token, cookie },
+            body: '{}',
+        });
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.deepEqual(body.providers, { github: false, discord: false });
     });
 });

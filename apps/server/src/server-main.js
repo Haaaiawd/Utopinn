@@ -111,6 +111,7 @@ import {
     getSessionCookieAge,
     verifySecuritySettings,
     loginPageMiddleware,
+    loginAutoLoginMiddleware,
     migratePublicOverrides,
     isRequestAdmin,
 } from './users.js';
@@ -398,8 +399,12 @@ app.get('/callback/:source?', (request, response) => {
 // the page's style.css / css/login.css / img/logo.png then fell through to the
 // SPA history fallback and were answered with index.html, leaving the page
 // completely unstyled (all form controls measured 0x0) — a blank grey screen.
+// Both branches sit behind the same loginAutoLoginMiddleware: the
+// auto-login check (single passwordless user, Authelia/Authentik headers,
+// per-user Basic auth, ?noauto opt-out) ran on the legacy page and must run
+// on the SPA path too — only the page sent afterwards differs.
 if (serveWebSpa) {
-    app.get('/login', (_req, res) => res.sendFile(WEB_INDEX));
+    app.get('/login', loginAutoLoginMiddleware, (_req, res) => res.sendFile(WEB_INDEX));
 } else {
     app.get('/login', loginPageMiddleware);
 }

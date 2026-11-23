@@ -1232,11 +1232,17 @@ export function requireLoginMiddleware(request, response, next) {
 }
 
 /**
- * Middleware to host the login page.
+ * Auto-login gate shared by both login pages (SPA shell and legacy HTML).
+ * Redirects to '/' when accounts are disabled or when an auto-login method
+ * (single passwordless user, Authelia, Authentik, per-user Basic auth)
+ * established a session. Only calls next() — i.e. lets the page handler
+ * choose which HTML to send — when no auto-login applied. The `noauto`
+ * opt-out is honoured inside tryAutoLogin.
  * @param {import('express').Request} request Request object
  * @param {import('express').Response} response Response object
+ * @param {import('express').NextFunction} next Next function
  */
-export async function loginPageMiddleware(request, response) {
+export async function loginAutoLoginMiddleware(request, response, next) {
     if (!ENABLE_ACCOUNTS) {
         console.log('User accounts are disabled. Redirecting to index page.');
         return response.redirect('/');
@@ -1253,7 +1259,18 @@ export async function loginPageMiddleware(request, response) {
         console.error('Error during auto-login:', error);
     }
 
-    return response.sendFile('login.html', { root: path.join(serverDirectory, 'public') });
+    return next();
+}
+
+/**
+ * Middleware to host the login page.
+ * @param {import('express').Request} request Request object
+ * @param {import('express').Response} response Response object
+ */
+export function loginPageMiddleware(request, response) {
+    return loginAutoLoginMiddleware(request, response, () => {
+        response.sendFile('login.html', { root: path.join(serverDirectory, 'public') });
+    });
 }
 
 /**
