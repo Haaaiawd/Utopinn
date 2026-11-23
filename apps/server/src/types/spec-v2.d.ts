@@ -13,6 +13,9 @@ type TavernCardV2 = {
         system_prompt: string;
         post_history_instructions: string;
         alternate_greetings: Array<string>;
+        /** CCv3 data 顶键(可选):群专属问候池,群聊首开问候优先于
+            first_mes/alternate 消费(greeting-seed groupOnlyGreetingPool)。 */
+        group_only_greetings?: Array<string>;
         character_book?: CharacterBook;
 
         tags: Array<string>;

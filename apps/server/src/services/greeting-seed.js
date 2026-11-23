@@ -120,12 +120,47 @@ export function buildGreetingFloor({
 }
 
 /**
- * 群聊开场问候播种(TASK-062):对齐上游 group-chats.js getGroupChat 空聊
- * 分支 + getFirstCharacterMessage —— 每个成员(含 disabled,上游不过滤)
- * 从 [first_mes, ...alternate_greetings] 随机挑一条,逐成员名跑宏
+ * 群问候挑选池(TASK-068,官方 Extension-GroupGreetings 语义):
+ * ContextUtil.js getListFromCharacterData 移植 —— spec v3
+ * data.group_only_greetings 优先;legacy data.extensions.group_greetings
+ * 兜底(两数组并存且 specV3 空、legacy 非空时才用 legacy)。清理同
+ * cleanUpArray:只收 trim 后非空的字符串(元素原文返回,不裁剪)。
+ * @param {object} card 角色卡(data.* 持有字段)
+ * @returns {string[]} 群专属问候池
+ */
+export function groupOnlyGreetingPool(card) {
+    const data = card?.data ?? card ?? {};
+    const specV3 = data?.group_only_greetings;
+    const legacy = data?.extensions?.group_greetings;
+    const clean = (arr) => arr.filter((g) => typeof g === 'string' && g.trim().length > 0);
+    if (Array.isArray(specV3) && Array.isArray(legacy)) {
+        if (legacy.length > 0 && specV3.length === 0) return clean(legacy);
+    }
+    if (Array.isArray(specV3)) return clean(specV3);
+    if (Array.isArray(legacy)) return clean(legacy);
+    return [];
+}
+
+/** group_greetings_mode(extensions 子键,官方扩展 ACTIVATION_MODE):0=RANDOM 1=PICK。 */
+const GROUP_GREETINGS_MODE_PICK = 1;
+
+/**
+ * 群聊开场问候播种(TASK-062 链路 + TASK-068 group_only_greetings):
+ * 对齐上游 group-chats.js getGroupChat 空聊分支 + getFirstCharacterMessage
+ * —— 每个成员(含 disabled,上游不过滤)从 [first_mes, ...alternate_greetings]
+ * 先滤空再随机挑一条(上游 .filter(x=>x) 同位),逐成员名跑宏
  * ({{char}}=该成员),产出带 original_avatar/force_avatar/extra.gen_id
  * 的群楼层;不建 swipe 组(上游群问候也不建)。
- * group_only_greetings 不进场 —— 上游 refs 无该字段,P2 差距项照实不播。
+ *
+ * group_only_greetings 消费 = 官方 Extension-GroupGreetings 挂
+ * CHARACTER_FIRST_MESSAGE_SELECTED 的等价物:池非空 → 整体覆盖
+ * first_mes/alternate 的挑选结果(不是并入池)。group_greetings_mode:
+ *   - 0 RANDOM(含缺省/假值,getModeFromCharacterData 的 ||RANDOM 兜底折 0)→ 随机挑;
+ *   - 1 PICK → 上游弹 picker 由人挑,服务端无交互 → 退化 random
+ *     (与扩展「未挑中即随机」兜底一致);
+ *   - 其他值 → 上游两个分支都不进,不覆盖,落回 base 挑选;
+ *   - 池空 → 不覆盖,落回 first_mes/alternate 普通问候路径
+ *     (group_only_greetings 缺失时退化与上游一致)。
  *
  * @param {object} args
  * @param {Array<{avatar:string,name:string,card:object}>} args.roster
@@ -154,11 +189,26 @@ export function buildGroupGreetingFloors({
         const firstMes = String(card?.data?.first_mes ?? card?.first_mes ?? '');
         const rawAlts = card?.data?.alternate_greetings ?? card?.alternate_greetings;
         const alternates = Array.isArray(rawAlts) ? rawAlts.filter((g) => typeof g === 'string') : [];
-        // 上游随机位:候选池 = first_mes + alternate_greetings 全表(含空串元素
-        // —— 上游不过滤空串再挑,空串挑中 = 该成员不发言,语义保留)。
-        const pool = [firstMes, ...alternates];
-        if (pool.length === 0) continue;
-        const picked = pool[Math.floor(Math.random() * pool.length)];
+        // 上游随机位(getFirstCharacterMessage):alternate_greetings 是数组
+        // 才进池(空数组也算),候选 = [first_mes, ...alternates].filter(x=>x)
+        // —— 先滤空再挑,空池 → messageText=undefined → 该成员不发言;
+        // 非数组 → first_mes 直取,不走随机。
+        let messageText = firstMes;
+        if (Array.isArray(rawAlts)) {
+            const pool = [firstMes, ...alternates].filter((x) => x);
+            messageText = pool[Math.floor(Math.random() * pool.length)];
+        }
+        // Extension-GroupGreetings 等价覆盖:池非空且 mode 进 RANDOM/PICK
+        // 两支才换稿(其他 mode 值上游不覆盖,忠实保留 base 挑选)。
+        // mode 解析 = getModeFromCharacterData 的 ||RANDOM 原样:
+        // 假值→0;严格 === 判定('1' 等非 number 两支不进 → 不覆盖)。
+        const groupPool = groupOnlyGreetingPool(card);
+        if (groupPool.length) {
+            const mode = (card?.data?.extensions?.group_greetings_mode ?? card?.extensions?.group_greetings_mode) || 0;
+            if (mode === 0 || mode === GROUP_GREETINGS_MODE_PICK) {
+                messageText = groupPool[Math.floor(Math.random() * groupPool.length)];
+            }
+        }
         const substCtx = {
             name1: String(name1 ?? 'User'),
             name2: memberName,
@@ -168,7 +218,7 @@ export function buildGroupGreetingFloors({
             currentChatId: String(chatName ?? ''),
             variableWrites: Array.isArray(variableWrites) ? variableWrites : [],
         };
-        const mes = substituteParams(String(picked ?? '').trim(), substCtx);
+        const mes = substituteParams(String(messageText ?? '').trim(), substCtx);
         if (!mes) continue; // 上游:无 first message → 该成员跳过
         const avatar = String(member.avatar ?? '');
         floors.push({

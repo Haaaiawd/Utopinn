@@ -764,6 +764,14 @@ const legacyCharacterStorageFieldSpecs = Object.freeze({
             ? value.map(item => String(item ?? ''))
             : (typeof value === 'string' ? [value] : []),
     },
+    // CCv3 data 顶键:群专属问候池(greeting-seed groupOnlyGreetingPool
+    // 读位)。flat PNG 卡 PATCH 写进根后靠这里提升进 data.*,canonical 优先。
+    group_only_greetings: {
+        path: 'data.group_only_greetings',
+        normalize: value => Array.isArray(value)
+            ? value.map(item => String(item ?? ''))
+            : (typeof value === 'string' ? [value] : []),
+    },
     talkativeness: {
         path: 'data.extensions.talkativeness',
         normalize: value => {
