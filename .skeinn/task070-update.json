@@ -1,0 +1,13 @@
+{
+  "progress": {
+    "completed": [
+      "验收1 证据:'in_use' TH 读写面实弹非400+指向正确——POST /api/utopinn/th/call getTavernRegexes{type:'preset',name:'in_use'}→200,resolved={apiId:'openai',name:'InUsePreset'}(源=oai_settings.preset_settings_openai);api_id:'novel'→novel/NaiPreset;replaceTavernRegexes 'in_use'→200 落库 openai/InUsePreset extensions.regex_scripts;无selected apiId→诚实400;REST ?preset=in_use 别名同解。旧两处硬400已移除。",
+      "验收2 证据:preset regex 写→投影——allowlist+in_use 预设 promptOnly 脚本命中 buildGenerationContext 组装(prompt 车道);GET chats display 车道 markdownOnly→mes_display;未放行/非in_use(allowlisted但非selected)不进;mainApi='novel' 消费 novel selected、openai allowlisted 不进(不硬套)。",
+      "回归:utopinn-th-regex-inuse.test.mjs 10/10、utopinn-chat-regex.test.mjs 7/7、generate-context-b6 4/4 绿;protocol tsc build 0错;apps/web tsc --noEmit 0错;未提交git。",
+      "旁证(非本任务):utopinn-th-events#16 '/trigger未绑定→显式错' 断言过期——在飞 TASK-066 已把 triggerGeneration 绑到 trigger-generation.js(stscript-env.js diff +200),测试仍断言旧 seam-缺席语义;TASK-070 diff 未触该链。",
+      "实现面:extension-prompts.js resolvePresetInUse/canonical→legacy/floorApiToPresetApiId/chatPresetApiId/REGEX_PRESET_API_IDS;utopinn-th.js in_use 实解+resolved回报+displayFloorRunner/formatAs preset域收集;generate-context.js prompt车道按mainApi in_use过滤;chats.js display车道楼层extra.api→in_use;utopinn-regex.js REST in_use别名+inUse/active/extensionDisabled;protocol RegexPresetGroup/FullView 增 inUse/active/count/extensionDisabled;studio.tsx RegexPage preset组头(in_use徽标+allow Switch)+i18n。"
+    ],
+    "current": "实现与测试证据已齐,TASK-070 实质完成;done 因 TASK-066 仍 active 被拒,记证留存待收格",
+    "next": "TASK-066 收格/done 后 skeinn task start TASK-070 → skeinn task done --json-file .skeinn/task070-done.json(证据已备好)"
+  }
+}

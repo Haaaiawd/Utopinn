@@ -5347,13 +5347,41 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "服务端群路由:/api/utopinn/groups CRUD + 群会话 get/create/append/patch/delete + roster 解析(loadable/disabled)— utopinn-library.js 群段",
+          "群问候播种:buildGroupGreetingFloors(greeting-seed.js)— 每成员一楼 name/original_avatar/force_avatar/extra.gen_id",
+          "web api/groups.ts:群 CRUD/群会话读写/patchGroupSwipe/postGroupGenerate(x-utopinn-group 回执 + skipped 空激活短路)/listGroupChatSummaries",
+          "建群 UI:GroupModal(成员多选 + activation_strategy 0-3 + generation_mode 0-2 + allow_self_responses + join 前后缀),overlayBus.groupOpen,侧栏新建群聊钮 + 群会话分区 + GroupCluster(群下新建群聊)",
+          "StageFrame 群分支:loadChatOf 群读面、send 群用户楼、runGroupGenerate(member 强指/queue 链队尾/skipped 诚实提示)、waitJobPersisted、writeBackGroupGeneration(swipe/continue/imp/quiet 客户端 PATCH + 中止补楼)、GroupPop(名册启停/点名发言/编排设置 PATCH)",
+          "CenterStage 群楼层头像(original_avatar/force_avatar)+ 成员名 + 成员 CardApp charDir 解析",
+          "mvuTarget 群形 {is_group:true,id:<chatId>};书签/导出/立绘/置顶/重命名对群行诚实隐藏",
+          "tsc --noEmit 绿(apps/web);node --check utopinn-library/greeting-seed/utopinn-generate SYNTAX_OK",
+          "实弹(scratch :18992 CSRF-off,/tmp data root):POST /groups 建群自动播种默认群会话(补漏:此前只落群文档→首开404,现建群即写 <gid>.jsonl + 双成员问候楼)",
+          "实弹:群会话 GET → header+2 问候楼(name/original_avatar/force_avatar 齐);POST /messages 用户楼 {appended:1,integrity 回执}",
+          "实弹:POST /generate {groupId,chatId} → 200 + x-luker-generation-id + x-utopinn-group(LIST 策略选中 Seraphina,queue=双成员),job 实产文本,群聊文件持久化楼层带 name/original_avatar(kind:group persist_target)",
+          "实弹:member 覆盖强指另一成员→speaker=人生模拟器;PATCH activation_strategy/disabled_members 200 即时生效;全禁→{ok,skipped:'no_activated_member',queue:[]} 诚实空响应(前端 {jobId:null,skipped:true})",
+          "修:x-utopinn-group 头 CJK 成员名 ERR_INVALID_CHAR 把生成打成 500 → 服务端 encodeURIComponent,web api/groups.ts decodeURIComponent(兼容裸 JSON 旧回执)"
+        ],
+        "current": "实现+服务端实弹全链通过(建群→播种→用户楼→编排生成→成员楼持久化→强指/启停/空激活诚实),tsc 绿",
+        "next": "done 判定留主控;浏览器侧 UI 冒烟(SPA 建群弹层→侧栏群行→名册点名)如需可视证据可再补"
       },
-      "evidence": [],
+      "evidence": [
+        "apps/server/src/plugins/utopinn-library.js TASK-062 群段(GET/POST/PATCH/DELETE /api/utopinn/groups + /chats/:chatId[/messages])",
+        "apps/server/src/services/greeting-seed.js buildGroupGreetingFloors",
+        "apps/web/src/api/groups.ts 全量群 API 面",
+        "apps/web/src/components/shell/Overlays.tsx GroupModal + overlayBus.ts groupOpen",
+        "apps/web/src/components/sidebar/trees.tsx 群会话分区 + GroupCluster",
+        "apps/web/src/components/stage/StageFrame.tsx runGroupGenerate/writeBackGroupGeneration/GroupPop/mvuTarget 群形",
+        "apps/web/src/components/stage/CenterStage.tsx StageAvatar 群楼层 original_avatar/force_avatar",
+        "apps/web/src/features/shell.ts group.*/ov.group.*/tree.newGroup/tree.groupSessions 中英键",
+        "apps/web/src/types.ts ChatSummary.groupId;App.tsx refreshChats 群合并 + deleteGroupChat 分发",
+        "tsc --noEmit apps/web → exit 0;node --check 服务端三件 SYNTAX_OK",
+        "utopinn-library.js POST /groups 建群即开默认群会话(问候播种落盘,recent index 刷新)",
+        "utopinn-generate.js:551 x-utopinn-group encodeURIComponent(CJK 安全);api/groups.ts decodeURIComponent",
+        "scratch 实弹:/tmp/uto-g62-data group 1795351947611 — create/roster/greetings/append/generate(member override)/persist/skip 全链通过"
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T21:20:16"
     },
     {
       "id": "TASK-063",
@@ -5411,13 +5439,25 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "active 槽被 TASK-066 占 → TASK-063 无法 task start,按用户指示直接实施并在此记证(TASK-063 status 仍 open)",
+          "服务端写面:apps/server/src/plugins/utopinn-library.js 增 PUT+DELETE /api/utopinn/named-docs/:bucket/:name(NamedDocRepo.save/delete,bucket 白名单复用,PUT 归一 doc.name=路由名)",
+          "protocol 契约:packages/protocol/src/api.ts 增 NamedDocSaveRequest/NamedDocSaveResponse/NamedDocDeleteResponse;dist 已重建(dist/api.d.ts:680-686)",
+          "web API:apps/web/src/api/quickreplies.ts(IO)+ quickreplies-model.ts(纯件)—— 册 CRUD 走 named-docs 写面;绑定面读/写 quickReplyV2(全局+卡)+ chat_metadata.quickReply(本会话)",
+          "composer QR 行升级(StageFrame.tsx):全册名录+册丸弹层(切换/启停/scope 徽/管理入口)+chip 列;chip 点击三分支原样(/continue→runGenerate、/→runScript、普通→send)",
+          "studio 第七域 quickreplies 页:册 CRUD(建/改名/删,改名+删册连带改写三域 link)+条目 label/message 编辑+条目 isHidden 启停+三 scope(全局/卡/本会话)绑绑摘摘",
+          "CLI 具名表 pin PUT/DELETE named-docs(utopinn-cli.mjs);shell.ts 仅增 i18n 键(stage.qr.*/studio.qr.*)",
+          "验收①册切换列全册+启停持久化:实弹 curl 名录列出 Alpha/Beta/Default 三册;PATCH settings 写 quickReplyV2(Beta isVisible:false 停)读回一致",
+          "验收②label/message 编辑落盘读回一致:PUT 'Gamma Live' {label:'Edited Label',message:'/echo edited-msg',isHidden} → GET named-doc 读面逐字段一致;customField 未知键透传;落盘文件 QuickReplies/Gamma Live.json 实证 ST 数据文件兼容",
+          "验收③写路由入 protocol 契约:web 全部写走 /api/utopinn/named-docs(protocol 类型化),不碰 legacy /api/quick-replies/*;chip 三分支代码原样保留;utopinn-library.test.mjs 19/19 绿(新增 PUT 建/改/400/DELETE strict 4 项);web quickreplies.test.mjs 8/8;tsc --noEmit 绿",
+          "QR 导入核实(诚实列):import-pipeline.js IMPORT_KINDS 无 quickReply → 拖 QR JSON 得 422;scan-st 只在 ST 迁移清单列 kind='quickReply'(纯清单无执行面)—— 与报告§7「可扫不可导」一致,实现属另案任务"
+        ],
+        "current": "TASK-063 全部验收项已实弹/测试证过;active 槽仍属 TASK-066,本任务无法走 start→done 流程",
+        "next": "TASK-066 交还 active 槽后可 task start TASK-063 并按此证据 task done(或人工确认直改 status)"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T12:39:03.528Z"
     },
     {
       "id": "TASK-064",
@@ -5494,10 +5534,21 @@
           "utopinn-script.js:/script/run 切 runStscript,回执结构化 error{code,line,column,hint,commandName}",
           "CLI:script run|trace|commands[--full]+-v,人类可读 op/error 渲染,错误 exit 1,兼容裸 script 调用",
           "测试:core chat-ops 31/31,engine 40/40,server 集成 17/17;web tsc 过;core tsc build 过",
-          "真实 CLI 验证(scratch :18997,/tmp dataRoot;:8000 未动):/sys /del /swipe 落盘持久化(swipe_id/mes/extra 同步)、/note 读写、/go、/bogus 结构化错误+exit1、commands 列 76 条"
+          "真实 CLI 验证(scratch :18997,/tmp dataRoot;:8000 未动):/sys /del /swipe 落盘持久化(swipe_id/mes/extra 同步)、/note 读写、/go、/bogus 结构化错误+exit1、commands 列 76 条",
+          "批次2(WI/会话/系统/弹窗)实现完毕:builtins/world-commands.ts(新)11 命令 —— /world /getchatbook /getglobalbooks /getpersonabook /getcharbook /findentry /getentryfield /createentry /setentryfield /wi-set-timed-effect /wi-get-timed-effect",
+          "builtins/session.ts(新):/renamechat /getchatname /forcesave /rename-char /impersonate /persona-set(别名 /persona /name)",
+          "builtins/system.ts(新):/?(别名 /help)帮助族 — SlashCommandBrowser 静态文本退化;builtins/dialogs.ts(新):/popup /buttons 阻塞弹窗",
+          "world-info/entries.ts(新):newWorldInfoEntryDefinition/originalWIDataKeyMap/setWIOriginalDataValue/getFreeWorldEntryUid/createWorldInfoEntry + utils parseStringArray/setValueByPath;findentry 用 fuse.js 模糊匹配(依赖已入 core package.json)",
+          "env.ts 批二 seams:worldInfoSettings/powerUser 活对象、listWorldBooks/getWorldBook/saveWorldBook/createWorldBook、loadCharacterCard/setCharacterWorld/listTags、renameChat/renameCharacter/generateImpersonate、setUserName/selectPersona、requestInput/requestPopup/requestButtons;resolveCharacter 放宽 Promise",
+          "server stscript-env.js:WI repo 同写面(settings.world_info_settings.world_info{globalSelect,charLore} 与 generate-context 同口径;chat_metadata.world_info;power_user.persona_description_lorebook);renameChat→ChatRepo.rename;renameCharacter→/api/characters/rename 同语义服务化(PNG 写面,json-only 显式 false);setUserName→settings.username;selectPersona→power_user.default_persona;generateImpersonate 刻意不绑(显式报错);requestInput 去静默 stub",
+          "交互挂起基建 script-runs.js(TASK-069 同期产物):/input /popup /buttons park awaiting 回执 + POST /api/utopinn/script/interact submit/cancel/abort 兑现,TTL/容量闸/超时取消语义",
+          "行为修正:/input 未绑 requestInput 由静默 null 改显式报错(GH#9 同路);/popup /buttons /impersonate /rename-char 未绑均显式报错",
+          "测试:core stscript-world 32 + stscript-session 28 = 60/60 过;server utopinn-stscript-wi 18/18 过(repo 重读断言:globalSelect 落档/entry CRUD/timedWorldInfo/renamechat 迁移/username+default_persona 落档);/interact submit|cancel 实弹兑现",
+          "真实 CLI 验证(scratch :18997,/tmp/uto-064b-data;:8000 未动):/world /getglobalbooks /getchatbook /getcharbook /getpersonabook /findentry /getentryfield /createentry /setentryfield /wi-*-timed-effect /getchatname /renamechat(双向往返) /forcesave /persona-set(temp+lookup+miss) /sendas /send /echo /input·popup·buttons(awaiting→interact submit/cancel 全链) /impersonate 显式报错 /? slash",
+          "连带修 kernel loader:profile.patch.yaml 增量行({id,disabled})被 applyPatch 整行替换吃掉 module → 全服 boot 崩('mod.inject' undefined);改 {id,disabled} 增量合并 + 无 module 行 failed 不整崩(与 kernel-boot mergedRows 同口径),e2e 服可起"
         ],
         "current": "complete",
-        "next": ""
+        "next": "批次3 候选:char CRUD(char-create/update/get/delete/duplicate/find 需 PNG 写面)、persona-* 族(persona-create/update/get/delete/duplicate/lock/sync)、QR 族、sendas avatar/force 变体"
       },
       "evidence": [
         "批一落地:core 31+engine 40+server 17 测试全绿;:18997 scratch 服实弹(/sys 落层、/del 删层、/swipe 切 swipe_id、/note-set 写 chat_metadata);CLI script run/trace/commands 三动词可用",
@@ -5518,10 +5569,29 @@
             }
           ],
           "at": "2026-11-22T08:58:28.785Z"
+        },
+        "批二落地:注册表 76→96(+20);core 60/60(stscript-world 32 + stscript-session 28);server utopinn-stscript-wi 18/18;实弹 :18997 scratch 全族过(WI 读写持久化、renamechat 往返、persona-set 三路径、input/popup/buttons awaiting→interact);连带修 kernel applyPatch boot 崩(e2e 单测 6/6 复验过)",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "T3+T6+T7+T8+T9+T11 各族命令按上游同形注册,名称层零分叉",
+              "evidence": "注册表 57→76→96;批二 WI 11+会话 6(含 persona-set 别名 persona/name)+系统 ?(别名 help)+弹窗 2,均按上游 world-info.js/slash-commands.js/personas.js 命名同形"
+            },
+            {
+              "criterion": "每族至少一条实弹脚本(POST /api/utopinn/script/run)验证端到端效果(如 /del 2 删楼层、/note-set 写 AN、/findentry 查 WI 条目)",
+              "evidence": ":18997 实弹:/findentry file=Eldoria shadowfang→uid 1;/createentry→uid 4;/setentryfield uid=4 comment 重读命中;/world Eldoria→globalSelect 持久化;/renamechat 双向;/name Alice→default_persona 落档;/wi-set-timed-effect sticky→timedWorldInfo"
+            },
+            {
+              "criterion": "host seam 未绑的命令显式报错不静默 no-op(/trigger 先例,GH#9)",
+              "evidence": "/input(改去静默 stub)/popup /buttons → awaiting 或显式 requestXxx seam 错误;/impersonate→generateImpersonate 显式报错;/rename-char json-only 卡→pipe 'false'+warn"
+            }
+          ],
+          "at": "2026-11-22T14:00:00.000Z"
         }
       ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T08:58:28.785Z",
+      "updated_at": "2026-11-22T14:03:09.000Z",
       "completed_at": "2026-11-22T08:58:28.785Z"
     },
     {
@@ -5569,17 +5639,26 @@
       ],
       "status": "blocked",
       "progress": {
-        "completed": [],
-        "current": "blocked: 决策项,等宿主拍板:分支/书签做(ST 语义 fork 新 chat + 回跳位)或钉死不做(design 显式声明放弃)。任务本身即收口这个决定,阻塞点是方向选择不在 agent 权限内。",
-        "next": "宿主明示「做」→ unblock 并把 acceptance 第二支落到 fork 实弹实现; 宿主明示「不做」→ unblock 后只交付 design/client-contract「分支不在产品面」声明 + skeinn decision 记录; 或宿主直接把该任务标 done/cancel 并口头立档"
+        "completed": [
+          "宿主拍板「做」(2026-11-23 明示,blocked→做);decision D-2026-11-22-yuwl 落档 DECISIONS.md",
+          "服务端:bookmarks list/create/delete + fork 四端点落 utopinn-library.js chats 区(chat_state 'bookmarks' 侧车;打点不轮会话 integrity)",
+          "fork 实弹:header+body[0..N] 前缀复制成新 chat,命名 原名·书签名(撞名 ·N),源不动,forked_from 溯源,书签≤岔点随迁",
+          "前端:chats.ts 书签/fork 客户端;StageFrame 楼层工具条书签钮+头部书签弹层(跳回/岔出/删)+跳层引擎;CenterStage data-floor 锚+jump 消费;ShellCtx +refreshChats;shell.ts zh/en 键",
+          "验收:tsc -p apps/web/tsconfig.json --noEmit 绿;node --test tests/utopinn-library.test.mjs 15/15 过(新增 bookmark CRUD+校验+integrity 不轮、fork 前缀/撞名/随迁/溯源断言)",
+          "测试抓出真 bug 已修:messageId null 经 Number() 强转偷渡成 0 → 改严格 isInteger 校验"
+        ],
+        "current": "实现+服务端测试+tsc 全绿;decision 与证据已记档",
+        "next": "宿主侧:tasks.json 里 TASK-065 仍 blocked(TASK-066 active 占用 start 位)——blocked→done 流转由主控走;证据与 decision 已备齐"
       },
       "evidence": [
-        ".skeinn/eval/st-parity-gap-2026-11-22.md §5:「分支/书签:没有(merge/split 仅 legacy)」",
-        "apps/server/src/endpoints/chats.js:1300 /group/merge /group/split post-write hook 仅服务群 chat 合并,非消息级分支",
-        "排期建议 P1⑦原文:「分支/书签决策(做或钉死不做)」"
+        "skeinn decision D-2026-11-22-yuwl(TASK-065 拍板「做」落档)",
+        "apps/server/src/plugins/utopinn-library.js:322-330 常量,2561-2716 四端点(GET/POST/DELETE bookmarks + POST fork)",
+        "apps/server/tests/utopinn-library.test.mjs:454-576 两测试块全绿",
+        "apps/web/src/api/chats.ts:357-415 typed list/create/delete/fork;components/stage/StageFrame.tsx BookmarkPop+bookmark state;CenterStage.tsx data-floor 锚+jump 消费",
+        "tsc -p apps/web/tsconfig.json --noEmit exit 0;node --test utopinn-library.test.mjs 15/15 pass"
       ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:04:19.991Z",
+      "updated_at": "2026-11-22T12:18:16.461Z",
       "block": {
         "reason": "决策项,等宿主拍板:分支/书签做(ST 语义 fork 新 chat + 回跳位)或钉死不做(design 显式声明放弃)。任务本身即收口这个决定,阻塞点是方向选择不在 agent 权限内。",
         "recovery_conditions": [
@@ -5642,15 +5721,23 @@
       "covers": [
         "DLV-010"
       ],
-      "status": "open",
+      "status": "active",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "OpenAI 族全字段编辑面落地:共享组件 apps/web/src/components/panels/presetEditor.tsx(temperature/top_p/top_k/min_p/top_a/tfs/typical_p/freq/pres/rep_pen + rep_pen_range/seed/n/openai_max_context/openai_max_tokens/stream_openai/custom_stop_strings)",
+          "prompt manager:prompts 序保持 + prompt_order 启停/上下移/多 order 档选择 + 单条 name/role/content 编辑 + 未排序组,未识别键全透传",
+          "模型绑定:chat_completion_source + <source>_model 写回整档,接既有 models 下拉(datalist)",
+          "统一写路:ctx mutatePresetDoc(fn)→改整档→防抖整档 PUT;setPresetParam/togglePresetBlock 收编同路;studio 双编辑面 reloadPresetDoc 收敛",
+          "预设 CRUD:新建/复制(深克隆保未知键)/删除两步确认 + 激活预设删除降级 pickPreset 兜底",
+          "PresetsPage 与 PresetPanel 共用 PresetDocEditor,无重复实现;离线态保留 demo 滑杆",
+          "apps/web tsc --noEmit 绿(含新文件)"
+        ],
+        "current": "openai apiId 切片完成并验证(typecheck);未做全 apiId 族/instruct·context·sysprompt·reasoning 目录编辑/导入导出 import-center 契约",
+        "next": "按验收逐 apiId 抽样写→GET diff;prompt 编排后组装 diff;导入导出回导验证"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T12:14:29.937Z"
     },
     {
       "id": "TASK-067",
@@ -5660,17 +5747,17 @@
         {
           "criterion": "emotes 面可视化 sprites 并绑定到卡/会话渲染面",
           "verify_by": "SPA 实弹 + 楼层/舞台渲染断言",
-          "evidence": ""
+          "evidence": "EmotesPop(StageFrame.tsx:~295)读 /characters/:charDir/assets sprites[];绑定槽 utopinn.emote.<chatId>(stage/emotes.ts);chip+楼层 StageAvatar(CenterStage.tsx:~49)渲 bound.url,未绑回落卡头像;群会话不画(无单卡绑定位)"
         },
         {
           "criterion": "persona 头像上传落盘并在 PersonaPop/消息头像生效",
           "verify_by": "上传→头像渲染实弹",
-          "evidence": ""
+          "evidence": "POST /personas/avatar 同 legacy avatars/upload 管线;PersonaRow 上传钮→overwrite=avatar 键→hasImage 翻真;personaAvatarSrc(key,true)=/User Avatars/<key> → PersonaPop/楼层头像同源生效;test 5/5 ok"
         },
         {
           "criterion": "四类导出产出文件与 formats 解码面互认(导出→回导不丢语义)",
           "verify_by": "逐类导出→import commit 回环断言",
-          "evidence": ""
+          "evidence": "四路 GET /export/* 实弹:chat→ST JSONL(parseChatJsonl 回解 metadata+2 楼齐);card→原字节(readCardFromPng 回解);world→{entries} JSON;preset→整档 JSON;全部与 import 嗅探面同构"
         }
       ],
       "done_when": [],
@@ -5708,13 +5795,27 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "server: POST /api/utopinn/personas/avatar(multer field 'avatar'→Jimp→applyAvatarCropResize→avatars dir,{path} 回键;overwrite_name 同键覆写)",
+          "server: GET /api/utopinn/export/{chat,card,world,preset} 四路(chat=ST JSONL 整 header 首行;card=盘上原字节;world/preset=整档 JSON;RFC5987 disposition)",
+          "web api: api/sprites.ts(listCharAssets 复用 TASK-044 assets 读面)+ api/export.ts(四 URL+downloadExport)+ personas.ts uploadPersonaImage",
+          "web emotes: stage/emotes.ts per-chat localStorage 绑定槽 + EmotesPop(sprite 格选/解绑)+ 舞台头立绘 chip + CenterStage StageAvatar 绑定渲染",
+          "web persona: studio PersonaRow 编辑面上传钮(file picker→upload→hasImage 翻真,?v= 戳缓存)",
+          "web 导出入口:舞台头会话导出 + charpage 卡导出/逐会话导出 + worldbook/preset 行级导出钮",
+          "i18n: shell.ts zh+en append-only 键块(stage.emotes.*/stage.export.chat/ov.export.*/studio.persona.av.*)"
+        ],
+        "current": "实现+测试已落地;skeinn start 未走通(TASK-066 active)——按用户指令照干记证",
+        "next": "SPA 实弹人工验收(立绘绑定/头像上传/四路下载)"
       },
-      "evidence": [],
+      "evidence": [
+        "START-BLOCKED:skeinn context 报 active=TASK-066,TASK-067 无法 start;按用户「start 不了就照干+update 记证」离线推进,本档即记证",
+        "server 实弹:node --test --test-name-pattern 'export|personas/avatar' tests/utopinn-library.test.mjs → 5/5 ok(chat JSONL 首行整 header+parseChatJsonl 回解;card=盘上字节 byte-equal+readCardFromPng 回解 name/first_mes;world entries 齐;preset 整档+apiId 400/404;avatar 上传落 User Avatars/ava.png+hasImage 翻真+坏字节 400)",
+        "tsc:apps/web tsc --noEmit 0 errors(TASK-066 群聊在飞代码落地后复测)",
+        "chat 导出修正:repo header=ST 首行整对象(user_name/character_name/create_date/chat_metadata),serializeChatJsonl 仅载 chat_metadata 键 → 首行 JSON.stringify(header) 逐字节,消息行走 formats 编码面;否则回导丢身份字段",
+        "边界守:emotes 仅绑定+展示无自动分类器;persona 头像走现有 avatars 通道同管线;导出无聊天图片内嵌打包;StageFrame 只加 chip/pop/导出钮小钩;shell.ts 只增键"
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T12:35:35.813156+00:00"
     },
     {
       "id": "TASK-068",
@@ -5835,13 +5936,21 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "/trigger 实弹链:stscript-env triggerGeneration→trigger-generation.js(buildGenerationContext→runLukerDispatch→job 终态→ack→persistJobReplyText 落楼层→macro.chat 同步→recordThEvent 生命周期),e2e mock 上游绿(utopinn-stscript-trigger.test.mjs 5/5)",
+          "/input /popup /buttons 挂起回执:script-runs 注册表 + /script/interact + StageFrame ScriptAwaitDialog 模态,submit/cancel/abort/迟到404 实测绿",
+          "theme kind 进 import 管线→named-doc themes 桶,preview/commit/409/overwrite/读回 测试绿(utopinn-import.test.mjs)"
+        ],
+        "current": "全部验收实弹通过;tsc(core+web)0 错;相关 server 测试 89+5 绿",
+        "next": "TASK-066 让位后 start→done 收口;遗留:群脚本宿主 member 语义、TH eventOn 端投递验证"
       },
-      "evidence": [],
+      "evidence": [
+        "apps/server/tests/utopinn-stscript-trigger.test.mjs:/trigger→job completed+persisted+JSONL 楼层+事件信箱;await/member/interact 5 子测全绿",
+        "packages/core tsc 0 err;apps/web tsc 0 err;quiet-generation+th-events+stscript-ops+import 89 pass 0 fail",
+        "utopinn-th-events triggerSlash 测试更新:seam 已绑 → 200+ops trigger,await 失败经 sinks 回执"
+      ],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T13:15:15.029Z"
     },
     {
       "id": "TASK-070",
@@ -5889,13 +5998,19 @@
       ],
       "status": "open",
       "progress": {
-        "completed": [],
-        "current": "",
-        "next": ""
+        "completed": [
+          "验收1 证据:'in_use' TH 读写面实弹非400+指向正确——POST /api/utopinn/th/call getTavernRegexes{type:'preset',name:'in_use'}→200,resolved={apiId:'openai',name:'InUsePreset'}(源=oai_settings.preset_settings_openai);api_id:'novel'→novel/NaiPreset;replaceTavernRegexes 'in_use'→200 落库 openai/InUsePreset extensions.regex_scripts;无selected apiId→诚实400;REST ?preset=in_use 别名同解。旧两处硬400已移除。",
+          "验收2 证据:preset regex 写→投影——allowlist+in_use 预设 promptOnly 脚本命中 buildGenerationContext 组装(prompt 车道);GET chats display 车道 markdownOnly→mes_display;未放行/非in_use(allowlisted但非selected)不进;mainApi='novel' 消费 novel selected、openai allowlisted 不进(不硬套)。",
+          "回归:utopinn-th-regex-inuse.test.mjs 10/10、utopinn-chat-regex.test.mjs 7/7、generate-context-b6 4/4 绿;protocol tsc build 0错;apps/web tsc --noEmit 0错;未提交git。",
+          "旁证(非本任务):utopinn-th-events#16 '/trigger未绑定→显式错' 断言过期——在飞 TASK-066 已把 triggerGeneration 绑到 trigger-generation.js(stscript-env.js diff +200),测试仍断言旧 seam-缺席语义;TASK-070 diff 未触该链。",
+          "实现面:extension-prompts.js resolvePresetInUse/canonical→legacy/floorApiToPresetApiId/chatPresetApiId/REGEX_PRESET_API_IDS;utopinn-th.js in_use 实解+resolved回报+displayFloorRunner/formatAs preset域收集;generate-context.js prompt车道按mainApi in_use过滤;chats.js display车道楼层extra.api→in_use;utopinn-regex.js REST in_use别名+inUse/active/extensionDisabled;protocol RegexPresetGroup/FullView 增 inUse/active/count/extensionDisabled;studio.tsx RegexPage preset组头(in_use徽标+allow Switch)+i18n。"
+        ],
+        "current": "实现与测试证据已齐,TASK-070 实质完成;done 因 TASK-066 仍 active 被拒,记证留存待收格",
+        "next": "TASK-066 收格/done 后 skeinn task start TASK-070 → skeinn task done --json-file .skeinn/task070-done.json(证据已备好)"
       },
       "evidence": [],
       "created_at": "2026-11-22T07:03:35.345Z",
-      "updated_at": "2026-11-22T07:03:35.345Z"
+      "updated_at": "2026-11-22T12:43:47.435Z"
     },
     {
       "id": "TASK-071",
