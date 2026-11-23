@@ -114,7 +114,7 @@ export function CharView() {
     }
 
     const name = data.name || card?.name || dir;
-    const goStudio = (nav: string) => { s.setStudioNav(nav); s.setView('studio'); };
+    const goStudio = (nav: string) => { s.setStudioNav(nav); s.setView('studio', true); };
 
     return (
         <section className="flex h-full min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-canvas)' }}>

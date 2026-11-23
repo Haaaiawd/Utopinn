@@ -2254,7 +2254,7 @@ export function MobileHubView() {
     const personas = useRemote('personas', listPersonas);
     const studioCnts = useStudioCounts();
     const { slices } = useSettingsSlices();
-    const goStudio = (nav: StudioNav) => { s.setStudioNav(nav); s.setView('studio'); };
+    const goStudio = (nav: StudioNav) => { s.setStudioNav(nav); s.setView('studio', true); };
     const glActive = slices.globalSelect.length;
     const glTotal = items.length;
     const entrySum = counts.data ? Object.values(counts.data).reduce((a: number, b) => a + (b ?? 0), 0) : null;

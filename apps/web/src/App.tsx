@@ -920,9 +920,11 @@ function Shell() {
     }, []);
 
     /* setView 统一入口:移动端域映射(plugins→settings / studio→hub / home→chat)
-       + 收 drawer;openChar 也走它,'char' 视图无映射直通。 */
-    const gotoView = useCallback((v: ViewId) => {
-        if (isMobile) {
+       + 收 drawer;openChar 也走它,'char' 视图无映射直通。
+       deep=深导航直通(hub bento/角色页 → studio 编辑页),不套域映射——
+       否则 studio→hub 无条件改写会把深导航弹回 hub,移动 studio 全页不可达。 */
+    const gotoView = useCallback((v: ViewId, deep = false) => {
+        if (isMobile && !deep) {
             if (v === 'plugins') { openSettings('plugins'); return; }
             if (v === 'studio') v = 'hub';
             else if (v === 'home') v = 'chat';
