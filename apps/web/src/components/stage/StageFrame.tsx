@@ -183,7 +183,7 @@ function ChatInfoPop({ chatBound, charDoc, onClose, slashOn, onToggleSlash }: {
     const presetName = s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : null;
     const goStudio = (nav: string, book?: string) => {
         if (book) wbStudioFocus.set = book;
-        s.setStudioNav(nav); s.setView('studio'); onClose();
+        s.setStudioNav(nav); s.setView('studio', true); onClose();
     };
     const bookChip = (name: string) => (
         <button
@@ -318,7 +318,7 @@ function PersonaPop({ onClose }: { onClose: () => void }) {
                     <span className="text-[11px] font-medium text-[color:var(--fg-muted)]">{t('ctx.persona')}</span>
                     <button
                         className="text-[11px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
-                        onClick={() => { onClose(); s.setView('studio'); s.setStudioNav('persona'); }}
+                        onClick={() => { onClose(); s.setView('studio', true); s.setStudioNav('persona'); }}
                     >
                         {t('tree.manage')}
                     </button>
@@ -1211,7 +1211,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     /* 管理入口:深链落点交 qrStudioFocus,studio 页读取后自清。 */
     const openQrStudio = () => {
         qrStudioFocus.set = qrSel || null;
-        s.setView('studio');
+        s.setView('studio', true);
         s.setStudioNav('quickreplies');
     };
 

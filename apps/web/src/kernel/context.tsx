@@ -90,7 +90,7 @@ export interface ShellCtx {
     registry: Registry;
 
     view: ViewId;
-    setView: (v: ViewId) => void;
+    setView: (v: ViewId, deep?: boolean) => void;
     /** 当前 railTab —— rail 域视图原值,非 rail 视图回落 'chat'。 */
     railTab: string;
 
