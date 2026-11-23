@@ -1,19 +1,20 @@
 // #107a — Login-page default avatar resolves to a real file.
 //
-// Background: getUserAvatar() falls back to PUBLIC_USER_AVATAR for
-// every user without a custom avatar (no avatar:<handle> datum, no
-// persona / user_avatar in settings). The constant pointed at
-// /img/default-user.png, but the shipped file is public/img/user-default.png
-// (user-default, not default-user) — the login page's /api/users/list
-// served a URL that 404'd, so every avatarless user rendered a broken
-// image.
+// Background: getUserAvatar() falls back to the bundled default for every
+// user without a custom avatar (no avatar:<handle> datum, no persona /
+// user_avatar in settings). It used to hand back a bare URL — first the
+// misspelled '/img/default-user.png', then '/img/user-default.png', which
+// only resolved while the legacy public/ tree was mounted; on the default
+// SPA/kernel surface /img is not mounted and the URL answered with
+// index.html or a 404. The fallback now ships the PNG inline as a data URL,
+// which resolves in every serving mode.
 //
 // The seed data's default-user carries a persona avatar, so this file
 // seeds a bare user (no settings.json, no avatar datum — exactly the
 // state a fresh OAuth or admin-created user is in) and proves:
-//   1. /api/users/list returns the fallback avatar URL for that user.
-//   2. The URL actually resolves (200 + image content type) on the
-//      live server.
+//   1. /api/users/list returns a usable avatar for that user.
+//   2. The value is a self-contained image payload (data URL of the
+//      shipped public/img/user-default.png).
 
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { createHash } from 'node:crypto';
@@ -70,7 +71,7 @@ async function seedDataRoot() {
 
     // Pre-existing settings with no persona / avatar fields: boot-time
     // content seeding leaves it alone, and getUserAvatar falls through
-    // to PUBLIC_USER_AVATAR.
+    // to the bundled default-avatar data URL.
     writeFileSync(resolve(dataRoot, 'bare-user/settings.json'), JSON.stringify({ username: 'Bare User' }));
 
     return dataRoot;
@@ -107,16 +108,17 @@ test('avatarless user in /api/users/list serves a default avatar URL that resolv
         const bareUser = users.find(u => u.handle === 'bare-user');
         expect(bareUser, 'bare-user missing from users list').toBeTruthy();
 
-        // The fallback path is the regression target: it must point at
-        // the file that actually ships in public/img.
-        expect(bareUser.avatar, 'expected the avatarless-user fallback avatar path').toBe('/img/user-default.png');
+        // The fallback is the regression target: an inline data URL of the
+        // bundled PNG — resolvable in every serving mode, no mount needed.
+        expect(
+            bareUser.avatar.startsWith('data:image/png;base64,'),
+            'expected the avatarless-user fallback to be a PNG data URL',
+        ).toBe(true);
 
-        // The URL must resolve on the live server — the old constant
-        // pointed at a nonexistent file (default-user.png) and 404'd.
-        const avatarRes = await s.ctx.get('/img/user-default.png');
-        expect(avatarRes.status(), '/img/user-default.png must resolve').toBe(200);
-        const contentType = avatarRes.headers()['content-type'] || '';
-        expect(contentType.startsWith('image/'), `expected image content-type, got "${contentType}"`).toBe(true);
+        // And the payload must be real image bytes, not an empty stub.
+        const payload = Buffer.from(bareUser.avatar.slice('data:image/png;base64,'.length), 'base64');
+        expect(payload.length, 'default avatar payload must not be empty').toBeGreaterThan(1000);
+        expect(payload.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'payload must be a PNG').toBe(true);
     } finally {
         await s.dispose();
     }

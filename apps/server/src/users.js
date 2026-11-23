@@ -70,7 +70,25 @@ const TRUSTED_PROXIES = filterValidIpPatterns(getConfigValue('sso.trustedProxies
  * @type {Map<string, UserDirectoryList>}
  */
 const DIRECTORIES_CACHE = new Map();
-const PUBLIC_USER_AVATAR = '/img/user-default.png';
+// Default persona avatar, returned to clients (login page user list, profile
+// views) as an inline data URL. The previous '/img/user-default.png' URL only
+// resolved where public/img is mounted — legacy mode, or SPA mode now that
+// legacy asset dirs are selectively re-mounted — but not in kernel-only
+// deployments, where the login list got a 404 instead of an image. An inline
+// payload resolves in every serving mode. The bundled PNG is the same neutral
+// silhouette the legacy UI served. Read once, cached.
+let defaultUserAvatarDataUrl = null;
+function getDefaultUserAvatar() {
+    if (defaultUserAvatarDataUrl === null) {
+        try {
+            const png = fs.readFileSync(path.join(serverDirectory, 'public', 'img', 'user-default.png'));
+            defaultUserAvatarDataUrl = `data:image/png;base64,${png.toString('base64')}`;
+        } catch {
+            defaultUserAvatarDataUrl = '';
+        }
+    }
+    return defaultUserAvatarDataUrl;
+}
 const COOKIE_SECRET_PATH = 'cookie-secret.txt';
 
 const STORAGE_KEYS = {
@@ -816,18 +834,18 @@ export async function getUserAvatar(handle) {
         const settings = fs.existsSync(pathToSettings) ? JSON.parse(fs.readFileSync(pathToSettings, 'utf8')) : {};
         const avatarFile = settings?.power_user?.default_persona || settings?.user_avatar;
         if (!avatarFile) {
-            return PUBLIC_USER_AVATAR;
+            return getDefaultUserAvatar();
         }
         const avatarPath = resolvePathWithinParent(directory.avatars, avatarFile);
         if (!avatarPath || !fs.existsSync(avatarPath)) {
-            return PUBLIC_USER_AVATAR;
+            return getDefaultUserAvatar();
         }
         const mimeType = mime.lookup(avatarPath);
         const base64Content = fs.readFileSync(avatarPath, 'base64');
         return `data:${mimeType};base64,${base64Content}`;
     } catch {
         // Ignore errors
-        return PUBLIC_USER_AVATAR;
+        return getDefaultUserAvatar();
     }
 }
 

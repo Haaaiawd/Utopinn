@@ -33,8 +33,8 @@ async function getIsomorphicGitAuthor(extensionPath) {
         path: 'user.email',
     }).catch(() => '');
 
-    const name = String(configuredName || '').trim() || 'Luker';
-    const email = String(configuredEmail || '').trim() || 'noreply@luker.local';
+    const name = String(configuredName || '').trim() || 'Utopinn';
+    const email = String(configuredEmail || '').trim() || 'noreply@utopinn.local';
     return { name, email };
 }
 

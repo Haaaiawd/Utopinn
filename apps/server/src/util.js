@@ -204,8 +204,8 @@ export async function getVersion() {
     }
 
     const stCompatVersion = String(process.env.LUKER_ST_COMPAT_VERSION || '1.19.0').trim() || '1.19.0';
-    const agent = `Luker:${pkgVersion}:Cohee#1207`;
-    const compatAgent = `Luker:${stCompatVersion}:Cohee#1207`;
+    const agent = `Utopinn:${pkgVersion}:https://github.com/Haaaiawd/Utopinn`;
+    const compatAgent = `Utopinn:${stCompatVersion}:https://github.com/Haaaiawd/Utopinn`;
     const isDockerRuntime = isDocker();
     return { agent, compatAgent, stCompatVersion, pkgVersion, gitRevision, gitBranch, commitDate: commitDate?.trim() ?? null, isDocker: isDockerRuntime };
 }

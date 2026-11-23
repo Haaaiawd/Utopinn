@@ -389,18 +389,18 @@ export const AVATAR_HEIGHT = 768;
 export const DEFAULT_AVATAR_PATH = path.join(serverDirectory, 'public', 'img', 'ai4.png');
 
 export const OPENROUTER_HEADERS = {
-    'HTTP-Referer': 'https://sillytavern.app',
-    'X-Title': 'Luker',
+    'HTTP-Referer': 'https://github.com/Haaaiawd/Utopinn',
+    'X-Title': 'Utopinn',
 };
 
 export const AIMLAPI_HEADERS = {
-    'HTTP-Referer': 'https://sillytavern.app',
-    'X-Title': 'Luker',
+    'HTTP-Referer': 'https://github.com/Haaaiawd/Utopinn',
+    'X-Title': 'Utopinn',
 };
 
 export const FEATHERLESS_HEADERS = {
-    'HTTP-Referer': 'https://sillytavern.app',
-    'X-Title': 'Luker',
+    'HTTP-Referer': 'https://github.com/Haaaiawd/Utopinn',
+    'X-Title': 'Utopinn',
 };
 
 export const OPENROUTER_KEYS = [

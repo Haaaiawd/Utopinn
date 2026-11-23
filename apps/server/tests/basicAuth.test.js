@@ -180,6 +180,6 @@ describe('basicAuthMiddleware', () => {
 
         expect(nextCalled).toBe(false);
         expect(response.statusCode).toBe(401);
-        expect(response.headers['WWW-Authenticate']).toBe('Basic realm="Luker", charset="UTF-8"');
+        expect(response.headers['WWW-Authenticate']).toBe('Basic realm="Utopinn", charset="UTF-8"');
     });
 });

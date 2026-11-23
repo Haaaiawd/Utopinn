@@ -377,7 +377,12 @@ app.get('/', cacheBuster.middleware, (request, response) => {
     if (serveWebSpa) {
         return response.sendFile(WEB_INDEX);
     }
-    return response.sendFile('index.html', { root: path.join(serverDirectory, 'public') });
+    if (process.env.LUKER_SERVE_LEGACY === '1') {
+        return response.sendFile('index.html', { root: path.join(serverDirectory, 'public') });
+    }
+    // Kernel-only deployment: the legacy index is brand chrome we don't ship
+    // by default — the status page at /_kernel is the canonical landing.
+    return response.redirect('/_kernel');
 });
 
 // Callback endpoint for OAuth PKCE flows (e.g. OpenRouter)
@@ -500,9 +505,9 @@ if (process.env.LUKER_SERVE_LEGACY === '1') {
             if (req.method !== 'GET' && req.method !== 'HEAD') return next();
             res.sendFile(WEB_INDEX);
         });
-    } else {
-        app.get('/', (_req, res) => res.type('html').send(kernelStatusPage));
     }
+    // No else-branch '/' handler: the index route above already covers every
+    // mode — SPA shell, legacy index, or a redirect here to /_kernel.
 }
 
 // Tokenizer libs and data — let the browser run tokenization directly instead

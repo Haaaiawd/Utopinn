@@ -453,7 +453,7 @@ export function createSyncRouter({ userStore = defaultUserStore, network } = {})
         if (!peerId) return response.status(400).json({ error: 'peerId required' });
         const protocol = Number(request.body?.protocol);
         if (!Number.isFinite(protocol) || protocol < LAN_PROTOCOL) {
-            return response.status(426).json({ error: 'This Luker version is too old for the other device', code: 'PEER_PROTOCOL_OUTDATED' });
+            return response.status(426).json({ error: 'This Utopinn version is too old for the other device', code: 'PEER_PROTOCOL_OUTDATED' });
         }
         const pairCode = String(request.get(PAIR_CODE_HEADER) || '').trim().toLowerCase();
         const presentedSecret = String(request.get(PEER_SECRET_HEADER) || '').trim().toLowerCase();
