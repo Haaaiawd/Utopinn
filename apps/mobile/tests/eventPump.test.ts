@@ -288,6 +288,29 @@ test('seed 未竟时 tick 整轮 no-op(信箱抢跑竞态闸,web 同修)', async
     assert.equal(gl[1]!.args.since, 7);
 });
 
+test('自源 refresh_message:onThEvent 收(宿主重铸恰好一次)但 emitTh 不回声', async () => {
+    const host: { name: string; args: unknown[] }[] = [];
+    const box = fakeMailbox();
+    const { deps, pushes } = makeDeps({
+        onThEvent: (name, args) => host.push({ name, args }),
+        thCall: box.thCall,
+    });
+    const pump = new PanelEventPump(deps);
+    pump.trackOutbound('th.eventOn', { event: 'refresh_message' });
+    await pump.seed();
+    // 帧脚本 refreshOneMessage(mid) 的真实产物:trackOutbound 给
+    // eventEmit 注 origin=hostId —— 信箱条目带本 mount 去重标
+    const emitted = pump.trackOutbound('th.eventEmit', { event: 'refresh_message', args: [3] });
+    box.log.push({ seq: 1, at: 0, event: 'refresh_message', args: [3], origin: emitted.origin as string });
+    await pump.tick();
+    // 宿主旁路收到自源条目 —— origin 去重不挡 host 重铸这半路
+    assert.deepEqual(host, [{ name: 'refresh_message', args: [3] }]);
+    // 卡侧无回声 —— 订阅了也不推(发起帧 dispatchLocal 已响过)
+    assert.deepEqual(pushes.filter((p) => p.event === 'th.event'), []);
+    await pump.tick();
+    assert.equal(host.length, 1);   // 游标已走,重铸恰好一次
+});
+
 test('dispose 后 tick 不再发请求', async () => {
     const { deps, thCalls } = makeDeps();
     const pump = new PanelEventPump(deps);

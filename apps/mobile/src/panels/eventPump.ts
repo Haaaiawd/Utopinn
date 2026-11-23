@@ -263,12 +263,15 @@ export class PanelEventPump {
                 if (typeof e?.event === 'string' && CHAT_MUTATING_EVENTS.has(e.event)) {
                     this.deps.onChatChanged?.();
                 }
+                if (typeof e?.event !== 'string' || !e.event) continue;
+                const args = Array.isArray(e.args) ? e.args : [];
+                /* 宿主旁路同此理:帧脚本 refreshOneMessage 经 eventEmit 写出的
+                   refresh_message(origin=本 hostId)也要触发本 mount 重铸
+                   (MessageFrame onThEvent → 重 mint);origin 去重只挡
+                   「推回帧脚本 listener」这半路,防回声双发。 */
+                this.deps.onThEvent?.(e.event, args);
                 if (e?.origin && e.origin === this.hostId) continue;
-                if (typeof e?.event === 'string' && e.event) {
-                    const args = Array.isArray(e.args) ? e.args : [];
-                    this.deps.onThEvent?.(e.event, args);
-                    this.emitTh(e.event, args);
-                }
+                this.emitTh(e.event, args);
             }
         } catch { /* 信箱面缺席/抖动不致命 —— 下轮泵再试 */ }
     }

@@ -164,6 +164,28 @@ test('seed 未竟时 pollChat 整轮 no-op(信箱抢跑竞态闸)', async () => 
     assert.equal(gl[1].args.since, 7);
 });
 
+test('自源 refresh_message:onThEvent 收(宿主重铸恰好一次)但 emitTh 不回声', async () => {
+    const host0 = [];
+    const box = fakeMailbox();
+    const { host, pushes, thCalls } = makeHost({ mailbox: box, onThEvent: (n, a) => host0.push({ n, a }) });
+    await host.dispatch('th.eventOn', { event: 'refresh_message' });
+    await host.seed();
+    // 帧脚本 refreshOneMessage(mid) 的真实产物:eventEmit 经 panelT0 →
+    // emitToPanels → recordThEvent 落信箱,origin=本 hostId(去重标记)
+    await host.dispatch('th.eventEmit', { event: 'refresh_message', args: [3] });
+    const origin = thCalls.find((c) => c.method === 'eventEmit').args.origin;
+    assert.ok(origin, 'eventEmit 应带 origin 落信箱');
+    box.log.push({ seq: 1, at: 1, event: 'refresh_message', args: [3], origin });
+    await host.pollChat();
+    // 宿主旁路收到自源条目 —— origin 去重不挡 host 重铸这半路
+    assert.deepEqual(host0, [{ n: 'refresh_message', a: [3] }]);
+    // 卡侧无回声 —— dispatchLocal 在 emit 时已响,再推就是双发
+    assert.deepEqual(pushes.filter((p) => p.event === 'th.event'), []);
+    // 游标已走 —— 再泵不重放(重铸恰好一次)
+    await host.pollChat();
+    assert.equal(host0.length, 1);
+});
+
 test('chatName 缺席 → diff 泵停摆,seed 仍钉信箱游标', async () => {
     let fetched = 0;
     const box = fakeMailbox([{ seq: 5, at: 0, event: 'refresh_message', args: [0] }]);

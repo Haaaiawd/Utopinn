@@ -232,8 +232,10 @@
                信箱信号(utopinn-th.js refreshOneMessage → recordThEvent
                'refresh_message'),eventEmit 在授权面内 —— 改走它语义等价:
                  本帧 refresh_message listener 本地立响(dispatchLocal);
-                 它楼 mount 的宿主泵拾到条目、坐标匹配 → 重铸该帧;
-                 本 mount 的泵因 origin 去重不回声(自楼重渲由本帧 listener 承)。 */
+                 宿主泵的 onThEvent 旁路 origin 去重之前就收 —— 自楼坐标
+                   匹配即重铸本帧(web ctxHost / mobile eventPump 同语义);
+                 它楼 mount 的泵也照常拾到条目 → 重铸该帧;
+                 origin 去重只挡「把事件回推给发起帧脚本」这半路(防回声)。 */
             if (IS_FLOOR_FRAME) return api.eventEmit('refresh_message', Number(messageId));
             return request('th.refreshOneMessage', { message_id: messageId });
         },

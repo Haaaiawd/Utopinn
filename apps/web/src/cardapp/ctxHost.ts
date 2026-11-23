@@ -227,11 +227,16 @@ export class CardAppHost {
             if (!result) return;
             if (typeof result.seq === 'number') this.lastEventSeq = Math.max(this.lastEventSeq, result.seq);
             for (const e of result.entries ?? []) {
+                if (typeof e?.event !== 'string' || !e.event) continue;
+                const args = Array.isArray(e.args) ? e.args : [];
+                /* 宿主旁路含自源条目 —— 帧脚本 refreshOneMessage 经 eventEmit
+                   写出的 refresh_message(origin=本 hostId)也要触发本 mount
+                   重铸(MessageIframe onThEvent → setAttempt);origin 去重只挡
+                   「推回帧脚本 listener」这半路 —— 卡侧 dispatchLocal 在 emit
+                   时已响过,再推一遍就是双发。 */
+                this.onThEvent?.(e.event, args);
                 if (e?.origin && e.origin === this.hostId) continue;
-                if (typeof e?.event === 'string' && e.event) {
-                    this.onThEvent?.(e.event, Array.isArray(e.args) ? e.args : []);
-                    this.emitTh(e.event, Array.isArray(e.args) ? e.args : []);
-                }
+                this.emitTh(e.event, args);
             }
         } catch { /* 信箱面缺席/抖动不致命 — 下轮泵再试 */ }
     }
