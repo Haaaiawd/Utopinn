@@ -1,0 +1,16 @@
+{
+  "evidence": [
+    "node --test tests/utopinn-th-regex-inuse.test.mjs → 10/10 pass(duration 129s,实弹 express+fetch TH call/REST);tests/utopinn-chat-regex.test.mjs 7/7 回归绿;tests/generate-context-b6.test.mjs 4/4 绿;packages/protocol tsc build 0 错;apps/web tsc --noEmit 0 错。未提交 git。",
+    "已知旁证失败(非本任务回归):utopinn-th-events.test.mjs#16 '/trigger 未绑定→显式错' 断言过期——工作区在飞 TASK-066 已把 triggerGeneration 绑到 trigger-generation.js(git diff stscript-env.js +200),测试仍断言旧「seam 缺席」语义;本任务 diff 未触 stscript-env/trigger 链。"
+  ],
+  "acceptance_results": [
+    {
+      "criterion": "'in_use' 在 TH regex 读写面解析为当前启用预设,不再 400",
+      "evidence": "utopinn-th-regex-inuse.test.mjs 实弹断言:POST /api/utopinn/th/call getTavernRegexes {type:'preset',name:'in_use'} → 200 + resolved={apiId:'openai',name:'InUsePreset'}(settings oai_settings.preset_settings_openai);api_id:'novel' → resolved novel/NaiPreset;replaceTavernRegexes 'in_use' → 200 且落库 openai/InUsePreset 的 extensions.regex_scripts;无 selected 的 apiId → 诚实 400。REST ?scope=preset&preset=in_use 同解。两处旧硬 400 已移除(git diff utopinn-th.js readRegexScope/writeRegexScope)。"
+    },
+    {
+      "criterion": "preset-scope regex 在生成链按 'in_use' 归属过滤命中(七放置位语义不破)",
+      "evidence": "测试断言:allowlist+in_use 的 preset promptOnly 脚本命中 buildGenerationContext 组装楼层(prompt 车道);GET /api/utopinn/characters/:dir/chats/:chat display 车道 markdownOnly 投影 mes_display;未放行/非 in_use(allowlisted 但非 selected)不进;mainApi='novel' 时消费 novel selected 预设、openai allowlisted 预设不进(不硬套);utopinn-chat-regex 7/7 绿证明七放置位语义未破。"
+    }
+  ]
+}

@@ -289,3 +289,9 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - `D-017`..`D-019`:2026-11-03 批次(D-017 自建薄内核不站 DSH / D-018 dsh-tavern 借用边界 / D-019 Pi 式极简 agent) vs 2026-11-10/16 批次(D-017 V1 收缩旧 UI 皮 / D-018/D-019 掌门卡独立 UI 重塑)。
 - `D-020`..`D-021`:2026-11-04 批次(D-020 移动端改判 fork IReader / D-021 产品形态持续研究线) vs 2026-11-19 批次(D-020 Cordis 迁移四步路线 / D-021 CLI 参考客户端以骨长肉)。
 后续新增决策一律使用 `skeinn decision` 生成不冲突的新编号或日期前缀 ID。
+
+## D-2026-11-22-yuwl: TASK-065 拍板「做」(宿主 2026-11-23 明示,原 blocked 解除):楼层书签/岔出按 ST 语义进产品面。书签=楼层存档点(body 楼号+打点时 activeSwipe 展示位,不与 swipe 分叉语义混),落 chat_state 'bookmarks' 侧车档——写不进 chat_metadata,免得打点轮会话 integrity、废客户端 CAS;rename 随迁、删会话级联。岔出=POST /characters/:charDir/chats/:chatName/fork,复制 header+body[0..N](swipe 组/变量快照原样随楼走)成新 chat 文件,命名 原名·书签名(撞名自动 ·N),源会话不动,header 记 forked_from 溯源、清旧 integrity slug(repo.save 重印新 slug),书签坐标≤岔点者随迁。群面 merge/split 语义不动;script/th 插件不动。
+
+- Changed: .skeinn/DECISIONS.md, apps/server/src/plugins/utopinn-library.js, apps/server/tests/utopinn-library.test.mjs, apps/web/src/api/chats.ts, apps/web/src/kernel/context.tsx, apps/web/src/App.tsx, apps/web/src/components/stage/StageFrame.tsx, apps/web/src/components/stage/CenterStage.tsx, apps/web/src/features/shell.ts, apps/web/src/styles/spec.css
+- Affected tasks: TASK-065
+- At: 2026-11-22T12:18:07.221Z

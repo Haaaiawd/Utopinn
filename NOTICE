@@ -1,0 +1,42 @@
+Utopinn (乌有馆)
+=================
+
+Copyright (C) 2026 YuFan Luo and contributors.
+
+This program is free software licensed under the GNU Affero General
+Public License, version 3 (AGPL-3.0). See the LICENSE file for the
+full license text.
+
+Portions of this software are derived from SillyTavern and its fork
+Luker (https://github.com/SillyTavern/SillyTavern), which are also
+licensed under AGPL-3.0. Credit to the SillyTavern contributors.
+
+--------------------------------------------------------------------
+Additional term under AGPL-3.0 section 7(b)
+--------------------------------------------------------------------
+
+Pursuant to section 7(b) of the GNU Affero General Public License,
+version 3, we add the following term:
+
+  You must preserve, in any user interface of a covered work (or a
+  work based on this program) that is offered to users over a network
+  or otherwise distributed, the following attribution in a reasonably
+  visible location (e.g., settings/about page, footer, or about
+  dialog):
+
+      "Powered by Utopinn — https://github.com/Haaaiawd/Utopinn"
+
+  Removing or obscuring this attribution is a violation of the
+  license.
+
+Notes
+-----
+
+- This attribution requirement concerns the project name and source
+  repository link only. The Utopinn name and logo are trademarks;
+  this license does not grant rights to use them in ways that suggest
+  endorsement or official status. Modified forks should use their own
+  branding while keeping the required attribution text.
+- Content created with this program (character cards, artwork,
+  conversations) belongs to its creators and is not covered by this
+  license.
