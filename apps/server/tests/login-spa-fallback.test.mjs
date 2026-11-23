@@ -111,7 +111,9 @@ test('default mode: GET /login serves the SPA shell, not the legacy page', async
 test('default mode: legacy login page assets resolve as real assets, not index.html', async () => {
     if (!hasLegacyLogin) return;
     await withRealServer(async base => {
-        // The exact set public/login.html references.
+        // The exact set public/login.html references. manifest.json is absent on
+        // purpose: only the legacy pages referenced it, the SPA declares
+        // /site.webmanifest, and in SPA mode nothing loads those pages.
         const cases = [
             ['/style.css', /text\/css/],
             ['/css/login.css', /text\/css/],
@@ -121,7 +123,6 @@ test('default mode: legacy login page assets resolve as real assets, not index.h
             ['/css/brands.min.css', /text\/css/],
             ['/webfonts/NotoSans/stylesheet.css', /text\/css/],
             ['/webfonts/NotoSansMono/stylesheet.css', /text\/css/],
-            ['/manifest.json', /json/],
             ['/img/logo.png', /image\/png/],
             ['/favicon.ico', /image/],
         ];
@@ -143,6 +144,74 @@ test('default mode: a missing asset is 404, never index.html', async () => {
             const res = await fetch(`${base}${url}`);
             assert.equal(res.status, 404, `${url} must 404`);
             assert.ok(!isHtml(res), `${url} must not be text/html`);
+        }
+    });
+});
+
+test('default mode: real file routes registered later are not shadowed by the guard', async () => {
+    // The asset-extension check must live INSIDE the fallback handler. Mounted as
+    // its own app.use() above these routes it answered 404 for every one of them,
+    // because /backgrounds/*, /characters/*, /thumbnail/* and /card-runtime/* are
+    // registered after this block (server-startup.js, further down server-main.js).
+    //
+    // What proves the route was reached: these handlers reject an unauthenticated
+    // request with 403 (and a missing file with 404 served by *their* handler,
+    // not our text/plain guard). The signature of the guard preempting them is
+    // 404 + `text/plain; charset=utf-8` — our exact body.
+    await withRealServer(async base => {
+        for (const url of [
+            '/backgrounds/does-not-exist.png',
+            '/characters/does-not-exist.png',
+            '/thumbnail/does-not-exist.png',
+            '/card-runtime/does-not-exist.js',
+        ]) {
+            const res = await fetch(`${base}${url}`, { redirect: 'manual' });
+            const body = await res.text();
+            assert.ok(!(res.status === 404 && body === 'Not found' && /text\/plain/.test(res.headers.get('content-type') || '')),
+                `${url} was short-circuited by the asset guard instead of reaching its handler`);
+        }
+    });
+});
+
+test('default mode: SPA icons and manifest are not shadowed by legacy public/ files', async () => {
+    // public/favicon.ico (25140B, Luker) and public/manifest.json ("name":"Luker")
+    // used to be served in preference to the SPA's own, so the browser tab showed
+    // Luker's icon on a Utopinn deployment. Legacy root files must yield whenever
+    // the SPA ships the same name.
+    const legacyFavicon = path.join(serverDir, 'public', 'favicon.ico');
+    const spaFavicon = path.join(serverDir, '..', 'web', 'dist', 'favicon.ico');
+    if (!fs.existsSync(spaFavicon) || !fs.existsSync(legacyFavicon)) return;
+
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/favicon.ico`);
+        assert.equal(res.status, 200);
+        const body = await res.arrayBuffer();
+        assert.equal(body.byteLength, fs.statSync(spaFavicon).size,
+            '/favicon.ico must be the SPA icon, not the 25140B legacy one');
+
+        const manifest = await fetch(`${base}/manifest.json`, { redirect: 'manual' });
+        // Not served at all in SPA mode: only the legacy pages referenced it and
+        // the SPA declares /site.webmanifest.
+        if (manifest.status === 200) {
+            const text = await manifest.text();
+            assert.doesNotMatch(text, /"name":\s*"Luker"/, 'legacy manifest must not be served');
+        }
+    });
+});
+
+test('default mode: legacy assets the SPA does not provide are still served', async () => {
+    // style.css / css/ / img/ / webfonts/ are referenced by cached pages, old
+    // bookmarks and the legacy shell, so they stay reachable in SPA mode.
+    await withRealServer(async base => {
+        for (const [url, expected] of [
+            ['/style.css', /text\/css/],
+            ['/css/login.css', /text\/css/],
+            ['/webfonts/NotoSans/stylesheet.css', /text\/css/],
+            ['/img/logo.png', /image\/png/],
+        ]) {
+            const res = await fetch(`${base}${url}`);
+            assert.equal(res.status, 200, `${url} should still be served`);
+            assert.match(res.headers.get('content-type') || '', expected);
         }
     });
 });
