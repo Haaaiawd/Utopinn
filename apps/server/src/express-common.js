@@ -40,7 +40,19 @@ export function getRealOrForwardedIp(req) {
     const cfConnectingIpEnabled = !!getConfigValue('forwardedHeaders.cfConnectingIp', false, 'boolean');
     const xForwardedForEnabled = !!getConfigValue('forwardedHeaders.xForwardedFor', true, 'boolean');
 
-    // Check if X-Real-IP is available
+    // Check for X-Forwarded-For and parse if available.
+    // 取最右一跳:XFF 链头是客户端自己声明的(可伪造),最右是直连我们的
+    // 可信代理追加的地址;正确配置的反代(Caddy 样例会重置该头)下即真实客户端。
+    if (req.headers['x-forwarded-for'] && xForwardedForEnabled) {
+        const ipList = req.headers['x-forwarded-for'].toString().split(',').map(ip => ip.trim()).filter(Boolean);
+        if (ipList.length > 0) {
+            return ipList[ipList.length - 1];
+        }
+    }
+
+    // Check if X-Real-IP is available.
+    // 注意:X-Real-IP 是裸声明值,只在反代会重写它的部署里才可采信
+    // (docker/Caddyfile.example 已 header_up 重置;nginx 需 proxy_set_header 覆盖)。
     if (req.headers['x-real-ip'] && xRealIpEnabled) {
         return req.headers['x-real-ip'].toString();
     }
@@ -48,12 +60,6 @@ export function getRealOrForwardedIp(req) {
     // Check for CF-Connecting-IP (Cloudflare) if available
     if (req.headers['cf-connecting-ip'] && cfConnectingIpEnabled) {
         return req.headers['cf-connecting-ip'].toString();
-    }
-
-    // Check for X-Forwarded-For and parse if available
-    if (req.headers['x-forwarded-for'] && xForwardedForEnabled) {
-        const ipList = req.headers['x-forwarded-for'].toString().split(',').map(ip => ip.trim());
-        return ipList[0];
     }
 
     // If none of the headers are available, return undefined

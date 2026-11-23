@@ -246,9 +246,10 @@ rateLimiting:
 # Set to true to enable support for real IPs in certain request headers for features like IP whitelisting, rate limiting and access logging.
 # Only change if you are sure that you use a correctly configured reverse proxy, otherwise this may lead to IP spoofing.
 forwardedHeaders:
-  # X-Real-IP header (common with Nginx and Caddy)
+  # X-Real-IP header (common with Nginx and Caddy). Bare claim value — only trustworthy when your proxy rewrites it
+  # (our Caddyfile example does; nginx: proxy_set_header X-Real-IP $remote_addr)
   xRealIp: true
-  # X-Forwarded-For header (common with many proxies, but may contain multiple IPs - only the first one will be used)
+  # X-Forwarded-For header (common with many proxies, but may contain multiple IPs - the LAST one, appended by your closest proxy, is used)
   xForwardedFor: true
   # CF-Connecting-IP header (used by Cloudflare Tunnels)
   cfConnectingIp: false

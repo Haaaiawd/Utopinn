@@ -59,27 +59,84 @@ Luker 底子自带多账号基建,开 `enableUserAccounts` 即可:
 - **群聊**:问候播种(talkativeness/group_only_greetings 挑选+原子落库)、队链、regen 剥批、CJK 头
 - **正则管线**:预设 display 正则真跑(渲染时投影,正典存原文,swipe 不失真)
 
-## 部署速查(云端/网站分发)
+## 部署速查
 
-开服 checklist(`apps/server/default/config.yaml` 或实例 `config.yaml`):
+### Docker(推荐路径)
+
+```bash
+docker compose up -d        # 构建 + 起服
+docker logs utopinn         # 拿一次性凭据:user: default-user / pass: <首启自动配的随机密码>
+# → http://127.0.0.1:8000 登录后立刻改密
+```
+
+- `./data` 单卷全状态:`config.yaml`/账号/卡/聊天/secrets/共享卡库——**备份此目录=备份一切**
+- 首启自动播种 `config.yaml`(容器友好默认:`dataRoot:/data`、`enableUserAccounts:true`、`whitelistMode:false`、`browserLaunch` 关);端口只绑 `127.0.0.1`,公网走前置 TLS
+- 账号默认即开:内核闸刀检测到无防护 listen 会拒起;账号体系是最小防护面。`default-user` 首启自动配随机密码打在日志里(**只在首次出现,改密后不再打印**)
+- compose 附注释掉的 Caddy 块 + `docker/Caddyfile.example`(`{$DOMAIN}` + `reverse_proxy app:8000`),取消注释即 `https://<域名>`
+- 账号恢复/设密:`docker exec -u node utopinn node /app/apps/server/recover.js <handle> <新密码>`
+
+### 裸机
+
+```bash
+pnpm install
+pnpm --filter "./packages/*" -r build    # packages 的 dist 是 gitignored 产物,首装必跑
+pnpm --filter @utopinn/web build          # SPA,内核按 apps/web/dist 同源挂载
+cd apps/server
+LUKER_SKIP_WEBPACK=1 node server.js --dataRoot <原生盘数据目录> --port 8000 --listen
+```
+
+配置文件与数据根是两件事:`config.yaml` 默认落在 `apps/server/config.yaml`(启动即 `process.chdir(serverDirectory)`;`--configPath` 可另指),`--dataRoot` 只定数据根(账号/卡/聊天/secrets/插件 patch)。裸机改配置就编辑 `apps/server/config.yaml`;docker 是 CMD 显式 `--configPath /data/config.yaml` 才把配置也收进数据卷。
+
+### config.yaml checklist(裸机:`apps/server/config.yaml`;docker:`/data/config.yaml`)
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| `enableUserAccounts` | `true` | **必须先开**——关掉时人人是 admin,无任何隔离 |
-| `listen` / `listenAddress` | `true` / `0.0.0.0` | 对外开放监听 |
-| `whitelistMode` | `true` | 建议开,只放自己人 IP/网段;公网裸奔勿关 |
+| `enableUserAccounts` | `true` | **对外开服必须先开**——关掉时人人是 admin,无任何隔离 |
+| `whitelistMode` | 见下 | 与反代组合有坑(#39),三种自洽形态选一,别混搭 |
 | `basicAuthMode`/`perUserBasicAuth` | 视部署面 | SSO/前置认证场景用 |
-| `dataRoot` | 云机原生盘 | **备份这个目录=备份一切**(卡/聊天/账号/secrets 全在里面) |
+| `dataRoot` | 云机原生盘 | docker 下固定 `/data`(种子配置已写好) |
 
-```bash
-cd apps/server
-LUKER_SKIP_WEBPACK=1 node server.js --dataRoot <原生盘数据目录> --port 18997
+### 反代 × whitelistMode(#39)
+
+`whitelistMode:true` 会同时校验 socket IP 和(`enableForwardedWhitelist:true` 时)`forwardedHeaders` 声明的真实 IP:反代后 socket IP=代理地址(能过),`X-Forwarded-For`=访客公网 IP(不在默认白名单)→ **全站 403,连 SPA 和登录页都渲染不出**。三种自洽形态:
+
+| 形态 | 配置 | 适用 |
+|---|---|---|
+| 直连 + 应用层白名单 | `whitelistMode:true`,白名单写访客真实 IP | 无反代;socket IP 即真实 IP |
+| 反代 + 边缘 ACL(**推荐**) | `whitelistMode:false`;IP 白名单在 Caddy/cloudflared 做 | docker 首启播种即此形态;过滤职责归边缘,应用层只看账号体系 |
+| 反代 + 应用层白名单 | `whitelistMode:true` + `forwardedHeaders.xForwardedFor:true` + 白名单写**访客真实 IP** | 要在应用层限流/日志记真实 IP 时;**必须保证应用端口只有代理可达**,否则伪造 XFF 即可绕过 |
+
+边缘 ACL 样例(`docker/Caddyfile.example` 已带注释版):
+
+```caddy
+{$DOMAIN} {
+    @blocked not remote_ip 203.0.113.7 10.0.0.0/8
+    respond @blocked 403
+    reverse_proxy app:8000
+}
 ```
 
-- web SPA 构建产物由服务端同源挂载,手机浏览器直接开 `https://<域名>` 即玩,无需装包
-- **TLS 必做**(secure cookie + 移动端都需要):Caddy 两行(`<域名>` + `reverse_proxy :18997`)或 `cloudflared` 免费隧道均可
+### 首次登录与建号(#40)
+
+`enableUserAccounts:true` 只开多账号隔离,**不开放注册**(`accountRegistration.enabled` 默认 false,admin 面板可开)。首个 admin 凭据按部署路径分两种:
+
+- **Docker**:种子配置已开账号。首启内核检测到 `default-user` 是「无密码 admin + 无其他防护」,**自动配随机密码打 stderr**(`docker logs utopinn` 拿,只出现一次)→ 登录 → 立刻改密。
+- **裸机**:手动开 `enableUserAccounts` 时同样触发自动配密;但若账号开着、白名单/basicAuth 也开着(闸刀跳过配密路径),`default-user` 保持出厂**空密码**——#38 修复落地前**任意密码都能登它**,必须手动设密:
+  - SPA/admin 面改密,或 `POST /api/users/change-password`
+  - `cd apps/server && node recover.js default-user <新密码>`(容器里:`docker exec -u node utopinn node /app/apps/server/recover.js default-user <新密码>`;recover.js 从 `./config.yaml` 读 dataRoot,容器 WORKDIR=/data + 种子 `dataRoot:/data` 已对齐)
+
+之后再给朋友建号,两条路:
+
+1. **admin 面板**:`default-user` 登录 → 管理面建号。一律 `admin:false`;`password` **必填**——漏掉会造出空密码账号(#38 同款坑)。
+2. **API**:admin 会话下 `POST /api/users/create`,body `{"handle","name","password","admin"}`。注意路径是 `/api/users/create`(不是 `/api/users/admin/create`);非 GET 走 CSRF——先 `GET /csrf-token` 拿 token,之后请求带 `X-CSRF-Token` 头 + 会话 cookie。
+
+### 运维备忘
+
+- **TLS 必做**(secure cookie + 移动端都要):Caddy 或 `cloudflared` 免费隧道均可
+- web SPA 由服务端同源挂载,手机浏览器直接开 `https://<域名>` 即玩,无需装包
 - 每人各管各的连接档案与 key(`secretId` 隔离);管理员可投共享 key 到 `_shared` 层
 - 共享卡往 `<dataRoot>/_library/characters/` 一丢全实例可见,编辑自动物化不污染池
+- 配置项也认 `LUKER_*`/`SILLYTAVERN_*` 环境变量(如 `LUKER_WHITELIST_MODE`),但 `config.yaml` 才是持久事实源
 - scratch/dataRoot 别放高延迟挂载盘(WSL `/mnt` 9P 会楔死,见 AGENTS.md)
 
 ## CLI 速览
