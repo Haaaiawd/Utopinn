@@ -111,6 +111,22 @@ async function resolveGroupGenerationPlan({ request, body }) {
     }
 
     const verb = String(body.type ?? 'normal');
+    // legacy regenerateGroup:先剥末尾 assistant 批(连续 !is_user 楼)再生成 ——
+    // 批出存储,组装/persist 两路都看不到旧回复,后续 append 即 replace。
+    // 对所有客户端生效(不依赖调用方预剥);CAS 冲突 = 有并发写方,抛错不静默剥。
+    if (verb === 'regenerate') {
+        const cur = Array.isArray(chatDoc.body) ? chatDoc.body : [];
+        const end = cur.length - 1;
+        if (end >= 0 && !cur[end]?.is_user) {
+            let start = end;
+            while (start > 0 && !cur[start - 1]?.is_user) start--;
+            await getChatRepo().save(
+                handle, '', chatId, chatDoc.header, cur.slice(0, start), chatDoc.integrity,
+                { isGroup: true, groupId: chatId },
+            );
+            chatDoc.body = cur.slice(0, start);
+        }
+    }
     const chatBody = Array.isArray(chatDoc.body) ? chatDoc.body : [];
     const { isUserInput, activationText } = deriveActivationInput(chatBody, Boolean(body.automatic_trigger));
 
