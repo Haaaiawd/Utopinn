@@ -30,12 +30,18 @@ export async function listSecrets(): Promise<SecretsResponse> {
 /**
  * PUT /api/utopinn/secrets/:key —— 写一条(value 是明文入参,应答不 echo)。
  * 回包 entries = 该 key 最新脱敏条目组(写后刷新直接用)。
+ * opts.activate:false → 不抢池 active 槽(profile 档存 key 专用 —
+ * 档引用走 secretId 显式槽,active 是别档/旧路的 fallback,不能挤)。
  */
-export async function putSecret(key: string, value: string, label?: string): Promise<SecretSetResponse> {
+export async function putSecret(key: string, value: string, label?: string, opts?: { activate?: boolean }): Promise<SecretSetResponse> {
     const res = await apiFetch(`/api/utopinn/secrets/${encodeURIComponent(key)}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ value, ...(label !== undefined ? { label } : {}) }),
+        body: JSON.stringify({
+            value,
+            ...(label !== undefined ? { label } : {}),
+            ...(opts?.activate === false ? { activate: false } : {}),
+        }),
     });
     await assertOk(res);
     return (await res.json()) as SecretSetResponse;

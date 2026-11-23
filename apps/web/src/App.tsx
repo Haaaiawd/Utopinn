@@ -12,7 +12,7 @@ import {
 } from './api/mock';
 import { getMe, type CurrentUser } from './api/account';
 import { invalidateCharDocs, listCharacters, type CardItem } from './api/characters';
-import { listModels } from './api/connection';
+import { listProfiles, type ActiveModelPointer, type ConnectionProfile } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import { listPersonas, type ActivePersona, type PersonaItem } from './api/personas';
 import { getPreset, listPresets, savePreset, type PresetDocument } from './api/presets';
@@ -268,9 +268,11 @@ function Shell() {
 
     /* ——— 连接/模型/预设/全局世界书(离线=MOCK 兜底;online 水合真数据) ——— */
     const [connSource, setConnSource] = useState('openai');
+    const [connProfiles, setConnProfiles] = useState<ConnectionProfile[]>([]);
     const [models, setModels] = useState<ModelItem[]>(MOCK_MODELS);
     const [modelsError, setModelsError] = useState<string | null>(null);
-    const [activeModel, setActiveModelState] = useState(MOCK_MODELS[0]!.id);
+    const [activeModel, setActiveModelState] = useState<ActiveModelPointer | null>(
+        { profileId: '', modelId: MOCK_MODELS[0]!.id });
     const [presets, setPresets] = useState<PresetItem[]>(MOCK_PRESETS);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
     const [presetDoc, setPresetDoc] = useState<PresetDocument | null>(null);
@@ -459,7 +461,7 @@ function Shell() {
     const refreshConnection = useCallback(async (opts?: { freshModels?: boolean }) => {
         const [stRes, mdRes, prRes, wlRes, bgRes] = await Promise.allSettled([
             getSettings(),
-            listModels({ fresh: opts?.freshModels }),
+            listProfiles(),
             listPresets('openai'),
             listWorlds(),
             listBackgrounds(),
@@ -529,25 +531,43 @@ function Shell() {
             setPinnedChats(pins.filter((p) => p && typeof p === 'object' && typeof (p as { file_name?: unknown }).file_name === 'string') as typeof pinnedChats);
         }
 
-        const cfgModel = str(oai[`${src}_model`]) || str(oai.openai_model);
+        /* 连接档案制:models = 全启用 profile checked∪manual 并集(每项带
+           {profileId,profileName} 属主);activeModel = connection.activeModel
+           指针 —— 模型身份 = {profileId,modelId} 二元组,同 id 跨档不撞。
+           指针空/悬 → 并集首项补位显示(不落盘,服务端派发链自身也有
+           checked[0]→manual[0] 兜底)。 */
         if (mdRes.status === 'fulfilled') {
-            const mr = mdRes.value;
-            const list: ModelItem[] = mr.items.map((m) => ({
-                id: m.id,
-                short: shortModelId(m.id),
-                provider: m.owned_by || mr.source || src,
-                ctx: '',
-            }));
-            if (cfgModel && !list.some((m) => m.id === cfgModel)) {
-                list.unshift({ id: cfgModel, short: shortModelId(cfgModel), provider: src, ctx: '' });
+            const pr = mdRes.value;
+            const profs = Array.isArray(pr.profiles) ? pr.profiles : [];
+            setConnProfiles(profs);
+            const list: ModelItem[] = [];
+            for (const p of profs) {
+                if (p.disabled) continue;
+                const union = [...(p.models?.checked ?? []), ...(p.models?.manual ?? [])];
+                for (const mid of union) {
+                    if (!mid || list.some((m) => m.id === mid && m.profileId === p.id)) continue;
+                    list.push({
+                        id: mid, short: shortModelId(mid), provider: p.name, ctx: '',
+                        profileId: p.id, profileName: p.name, profileFormat: p.format,
+                    });
+                }
             }
+            const am = pr.activeModel;
+            const activeProf = am ? profs.find((p) => p.id === am.profileId && !p.disabled) : null;
+            /* 指针只认「模型仍在该档 enabled 并集」—— 取勾后被移出的模型
+               不回显不复活(服务端 PUT 已清针,这里是悬指针的最后防线)。 */
+            const amValid = !!(am && activeProf
+                && list.some((m) => m.id === am.modelId && m.profileId === am.profileId));
             setModels(list);
-            setModelsError(mr.error ? (mr.detail || mr.error) : null);
-            setActiveModelState(cfgModel || list[0]?.id || '');
+            setModelsError(null);
+            setActiveModelState(amValid
+                ? { profileId: am!.profileId, modelId: am!.modelId }
+                : (list[0] ? { profileId: list[0].profileId ?? '', modelId: list[0].id } : null));
         } else {
-            setModels(cfgModel ? [{ id: cfgModel, short: shortModelId(cfgModel), provider: src, ctx: '' }] : []);
-            setModelsError(mdRes.reason instanceof Error ? mdRes.reason.message : 'models_error');
-            setActiveModelState(cfgModel);
+            setConnProfiles([]);
+            setModels([]);
+            setModelsError(mdRes.reason instanceof Error ? mdRes.reason.message : 'profiles_error');
+            setActiveModelState(null);
         }
 
         if (prRes.status === 'fulfilled') {
@@ -684,14 +704,13 @@ function Shell() {
         }).catch(() => undefined);
     }, [live]);
 
-    const setActiveModel = useCallback((id: string) => {
-        setActiveModelState(id);
-        if (!live || !id) return;
-        const src = connSource || 'openai';
-        void patchSettings({ oai_settings: { [`${src}_model`]: id } }).catch((e) => {
+    const setActiveModel = useCallback((sel: ActiveModelPointer) => {
+        setActiveModelState(sel);
+        if (!live || !sel?.modelId) return;
+        void patchSettings({ oai_settings: { connection: { activeModel: { profileId: sel.profileId, modelId: sel.modelId } } } }).catch((e) => {
             showHint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true);
         });
-    }, [live, connSource, showHint, t]);
+    }, [live, showHint, t]);
 
     const pickPreset = useCallback((id: string) => {
         const clean = id.replace(/\.json$/i, '');
@@ -1046,7 +1065,7 @@ function Shell() {
         adminNav,
         setAdminNav: (v: string) => { setAdminNav(v); setMobileDrawer(false); },
         selectedPlugin, setSelectedPlugin,
-        connSource,
+        connSource, connProfiles,
         models, modelsError, activeModel, setActiveModel,
         presets, activePresetId, pickPreset,
         presetDoc, mutatePresetDoc, reloadPresetDoc,
@@ -1072,7 +1091,7 @@ function Shell() {
         currentUser, refreshCurrentUser, personas, refreshPersonas, persona,
         openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
-        connSource, models, modelsError, activeModel, setActiveModel,
+        connSource, connProfiles, models, modelsError, activeModel, setActiveModel,
         presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, presetParams, setPresetParam, togglePresetBlock,
         globalLore, toggleGlobalLore, worldbook, refreshConnection,
         chatSettings, stageData, openSettings,

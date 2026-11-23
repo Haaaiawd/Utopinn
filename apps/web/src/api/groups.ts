@@ -280,6 +280,9 @@ export async function postGroupGenerate(body: {
     type?: GenerateVerb | string;
     member?: string;
     presetName?: string;
+    /** 连接档案制显式指档(与单聊 GenerateBody 同义)。 */
+    profile_id?: string;
+    model?: string;
     user?: { name: string; description?: string };
     /** 客户端写回动词(kind:'none' 挂 persist_target)。 */
     clientWriteBack?: boolean;
@@ -293,6 +296,7 @@ export async function postGroupGenerate(body: {
             type: body.type ?? 'normal',
             ...(body.member ? { member: body.member } : {}),
             ...(body.presetName ? { presetName: body.presetName } : {}),
+            ...(body.profile_id ? { profile_id: body.profile_id, model: body.model } : {}),
             ...(body.user ? { user: body.user } : {}),
             ...(body.clientWriteBack ? { luker_generation: { persist_target: { kind: 'none' } } } : {}),
             stream: true,

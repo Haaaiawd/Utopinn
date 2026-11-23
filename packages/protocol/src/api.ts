@@ -434,7 +434,7 @@ export interface UpstreamModelItem {
     owned_by?: string;
 }
 
-/** GET /api/utopinn/models(?fresh=1) */
+/** GET /api/utopinn/models(?fresh=1) / POST /api/utopinn/connection/models */
 export interface ModelsResponse {
     source: string;
     credential: ProviderCredentialSource;
@@ -444,6 +444,79 @@ export interface ModelsResponse {
     upstreamStatus?: number | null;
     detail?: string;
 }
+
+// =========================================================================
+// 连接配置档案(connection profiles)— oai_settings.connection_profiles
+// =========================================================================
+
+/** 派发格式:openai → custom 源(api_key_custom 池);anthropic → claude 源(api_key_claude 池)。 */
+export type ConnectionProfileFormat = 'openai' | 'anthropic';
+
+/** 最近一次模型探测回执(POST /connection/models 写回;草稿探测不写)。 */
+export interface ConnectionProfileLastProbe {
+    at: number;
+    ok: boolean;
+    items: { id: string }[];
+}
+
+export interface ConnectionProfileModels {
+    /** 勾选用模型的清单(生成选择器并集成员)。 */
+    checked: string[];
+    /** 手填追加(上游清单没列出来但要用)。 */
+    manual: string[];
+    lastProbe?: ConnectionProfileLastProbe;
+}
+
+export interface ConnectionProfile {
+    /** 'default' 保留给迁移合成的默认档;新增档服务端发 uuid。 */
+    id: string;
+    name: string;
+    format: ConnectionProfileFormat;
+    /** 用户面 base url:openai→custom_url(必填);anthropic→reverse_proxy(空=官方默认端点)。 */
+    baseUrl: string;
+    /** secrets 条目 id(只存引用不存值;池 = api_key_{custom|claude} 按 format)。 */
+    secretId: string | null;
+    models: ConnectionProfileModels;
+    disabled?: boolean;
+}
+
+/** 生效模型指针 — oai_settings.connection.activeModel。 */
+export interface ActiveModelPointer {
+    profileId: string;
+    modelId: string;
+}
+
+/** GET /api/utopinn/connection/profiles */
+export interface ConnectionProfilesResponse {
+    profiles: ConnectionProfile[];
+    activeModel: ActiveModelPointer | null;
+}
+
+/** PUT /api/utopinn/connection/profiles/:id 写面(id='new' 服务端发 uuid)。 */
+export interface ConnectionProfileInput {
+    name?: string;
+    format?: ConnectionProfileFormat;
+    baseUrl?: string;
+    secretId?: string | null;
+    models?: { checked?: string[]; manual?: string[] };
+    disabled?: boolean;
+}
+
+export interface ConnectionProfilePutResponse extends ConnectionProfilesResponse {
+    profile: ConnectionProfile | null;
+}
+
+/** POST /connection/test 与 /connection/models 的探测目标(profile 或内联草稿)。 */
+export type ConnectionProbeTarget =
+    | { profile_id: string }
+    | {
+        format: ConnectionProfileFormat;
+        baseUrl?: string;
+        secretId?: string | null;
+        /** 瞬时明文(未落盘草稿也能测);服务端探测后丢弃,不落盘。 */
+        key?: string;
+        fresh?: boolean | '1';
+    };
 
 /** RegexScriptData(utopinn-regex.js)。 */
 export interface RegexScriptData {

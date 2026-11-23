@@ -99,20 +99,29 @@ export function PresetPanel() {
                 <div className="relative">
                     <label className="mb-1 block text-[11px] text-[color:var(--fg-muted)]">{t('panel.preset.modelSel')}</label>
                     <button className="sh-select-trigger" onClick={() => s.setOpenDropdown(s.openDropdown === 'panel-model' ? null : 'panel-model')}>
-                        <span className="truncate font-mono-ui">{s.live ? (s.models.find((m) => m.id === s.activeModel)?.short || s.activeModel || t('st.conn.noModels')) : t('stage.demoData')}</span>
+                        <span className="truncate font-mono-ui">{s.live ? (s.models.find((m) => m.id === s.activeModel?.modelId && (m.profileId ?? '') === (s.activeModel?.profileId ?? ''))?.short || s.activeModel?.modelId || t('st.conn.noModels')) : t('stage.demoData')}</span>
                         <span className="text-[color:var(--fg-muted)]"><Icon name="chevronDown" size={12} /></span>
                     </button>
                     {s.openDropdown === 'panel-model' && (
                         <div className="sh-select-menu pop-in max-h-60 overflow-y-auto">
-                            {s.live && s.models.length > 0 ? s.models.map((m) => (
-                                <button key={m.id} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { s.setActiveModel(m.id); s.setOpenDropdown(null); }}>
-                                    <div className="min-w-0 pr-2">
-                                        <div className="truncate font-mono-ui text-[12px]">{m.id}</div>
-                                        <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{m.provider}</div>
+                            {s.live && s.models.length > 0 ? s.connProfiles.filter((p) => !p.disabled).map((p) => {
+                                const items = s.models.filter((m) => m.profileId === p.id);
+                                if (!items.length) return null;
+                                return (
+                                    <div key={p.id}>
+                                        <div className="px-2.5 pb-0.5 pt-2 text-[10px] font-medium text-[color:var(--fg-faint)]">{p.name}</div>
+                                        {items.map((m) => (
+                                            <button key={`${p.id}:${m.id}`} className="inset-row-btn flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left" onClick={() => { s.setActiveModel({ profileId: p.id, modelId: m.id }); s.setOpenDropdown(null); }}>
+                                                <div className="min-w-0 pr-2">
+                                                    <div className="truncate font-mono-ui text-[12px]">{m.id}</div>
+                                                    <div className="truncate text-[11px] text-[color:var(--fg-muted)]">{p.name}</div>
+                                                </div>
+                                                {m.id === s.activeModel?.modelId && p.id === s.activeModel?.profileId && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
+                                            </button>
+                                        ))}
                                     </div>
-                                    {m.id === s.activeModel && <Icon name="check" size={13} className="shrink-0 text-[color:var(--brand)]" />}
-                                </button>
-                            )) : (
+                                );
+                            }) : (
                                 <div className="space-y-2 p-2.5 text-[11.5px] text-[color:var(--fg-muted)]">
                                     <div>{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
                                     <button

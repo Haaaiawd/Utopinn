@@ -1844,8 +1844,11 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.value non-empty string' });
             }
             const label = typeof request.body?.label === 'string' ? request.body.label : 'Unlabeled';
+            /* activate:false → 新条不抢 active 槽 —— profile 编辑器存 key 走此,
+               池内既有 active 条目(别档/旧路 fallback 凭证)不动。 */
+            const activate = request.body?.activate !== false;
             const manager = new SecretManager(request.user.directories);
-            const id = manager.writeSecret(key, value, label);
+            const id = manager.writeSecret(key, value, label, { activate });
             const state = manager.getSecretState();
             return response.send({ ok: true, id, key, entries: state[key] ?? null });
         } catch (error) {

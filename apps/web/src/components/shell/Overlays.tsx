@@ -16,8 +16,12 @@ import { charImgFallback } from '../stage/StageFrame';
 import { useRemote, PanelEmpty, type Remote } from '../panels/panelShared';
 import { changeUserName } from '../../api/account';
 import { cardData, charImageUrl, getCharacter, patchCharacter } from '../../api/characters';
-import { testConnection, type ConnectionTestResponse } from '../../api/connection';
-import { getSettings, patchSettings, type SettingsResponse } from '../../api/settings';
+import {
+    listProfiles, putProfile, deleteProfile, testConnectionTarget, listModelsFor,
+    type ConnectionProbeTarget, type ConnectionProfile, type ConnectionProfileFormat,
+    type ConnectionTestResponse,
+} from '../../api/connection';
+import { patchSettings } from '../../api/settings';
 import { listBackgrounds, bgCssUrl, BUILTIN_WALLPAPERS, builtinBgCssUrl } from '../../api/backgrounds';
 import { patchChat, type ChatPatchOp } from '../../api/chats';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry, type SecretsResponse } from '../../api/secrets';
@@ -965,266 +969,347 @@ export function Cmdk() {
 /* api 页:连接段(PATCH /settings + POST /connection/test + /secrets 全真)。 */
 /* ------------------------------------------------------------------ */
 
-/* DSH 风格供应商配置卡(ref/deepseek-harness ui-settings-models → ModelsSection/
-   ProviderEditor:一供应商一卡,卡上凭证状态点 + 编辑面):一源一张卡 =
-   oai_settings per-source 字段组 + api_key_<src> secrets 槽。
-   写面:custom→custom_url;其余→reverse_proxy(生态里它是三家共享的一个
-   反代槽,卡上直标「共用」,不发明 per-source proxy 键);模型→<src>_model;
-   key→/secrets。激活语义 = chat_completion_source(一个源一组字段,
-   没有多 profile 层)。测试与模型清单只能打当前生效源(服务端
-   /connection/test 与 /models 只读生效档)——非生效卡的「测试」先写
-   source 再探测,探测后该卡翻成「生效中」。生效源不在四家 → 追加一张
-   异源兜底卡(api_key_<src> / <src>_model 键约定是全源统一的)。 */
-const PROVIDER_CARDS: { id: string; label: string; icon: IconName }[] = [
-    { id: 'openai', label: 'OpenAI', icon: 'cpu' },
-    { id: 'deepseek', label: 'DeepSeek', icon: 'brain' },
-    { id: 'claude', label: 'Anthropic', icon: 'feather' },
-    { id: 'custom', label: 'Custom', icon: 'plug' },
-];
+/* 连接配置档案制(推翻四源卡):干净 profile 列表 + 编辑器。
+   profile = {id,name,format,baseUrl,secretId,models:{checked,manual,lastProbe?},disabled?}
+   format → 派发面 + secrets 池:openai → custom 面 / api_key_custom;
+   anthropic → claude 面 / api_key_claude(baseUrl 空 = 官方默认端点)。
+   探测走目标制(POST /connection/test|models):profile_id 或内联草稿
+   {format,baseUrl,secretId,key} —— 编辑器未落盘草稿直测,瞬时 key 不落盘;
+   密钥只回显掩码,profile 只存 secretId 引用。'default' 档(迁移合成)置顶。 */
+const PROFILE_SECRET_POOL: Record<ConnectionProfileFormat, string> = {
+    openai: 'api_key_custom',
+    anthropic: 'api_key_claude',
+};
 
-function ProviderCard({ id, label, icon, active, oai, settings, secrets }: {
-    id: string;
-    label: string;
-    icon: IconName;
-    active: boolean;
-    oai: Record<string, unknown>;
-    settings: Remote<SettingsResponse>;
+/* 供应商预设:格式内可选端点 —— 选预设自动带出 baseUrl(仍可改)。 */
+const PROFILE_PRESETS: Record<ConnectionProfileFormat, { id: string; label: string; baseUrl: string }[]> = {
+    openai: [
+        { id: 'openai', label: 'OpenAI', baseUrl: 'https://api.openai.com/v1' },
+        { id: 'deepseek', label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1' },
+        { id: 'openrouter', label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1' },
+        { id: 'moonshot', label: 'Moonshot', baseUrl: 'https://api.moonshot.ai/v1' },
+        { id: 'groq', label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1' },
+        { id: 'custom', label: 'Custom', baseUrl: '' },
+    ],
+    anthropic: [
+        { id: 'anthropic', label: 'Anthropic', baseUrl: '' },
+        { id: 'custom', label: 'Custom', baseUrl: '' },
+    ],
+};
+
+const segBtn = (on: boolean): React.CSSProperties => ({
+    background: on ? 'var(--primary-bg)' : 'var(--bg-active)',
+    color: on ? 'var(--primary-fg)' : 'var(--fg-secondary)',
+});
+
+/** 探测目标袋:草稿 + 已存 secretId 引用;keyDraft 非空 → 瞬时明文优先。 */
+function draftTarget(format: ConnectionProfileFormat, baseUrl: string, secretId: string | null, keyDraft: string): ConnectionProbeTarget {
+    return {
+        format,
+        baseUrl: baseUrl.trim(),
+        secretId,
+        ...(keyDraft.trim() ? { key: keyDraft.trim() } : {}),
+        fresh: true,
+    };
+}
+
+function ProfileEditor({ profile, secrets, done }: {
+    profile: ConnectionProfile | null;
     secrets: Remote<SecretsResponse>;
+    done: () => void;
 }) {
     const { t } = useI18n();
     const s = useShell();
-    const str = (v: unknown) => (typeof v === 'string' ? v : '');
-    const custom = id === 'custom';
-    const baseUrl = custom ? str(oai.custom_url) : (str(oai.reverse_proxy) || str(oai.base_url));
-    const model = str(oai[`${id}_model`]);
-    /* 密钥槽约定:CHAT_COMPLETION_SOURCES 全源 → api_key_<source>。 */
-    const secretKey = `api_key_${id}`;
-    const entry = (secrets.data?.secrets?.[secretKey] ?? []).find((en) => en.active) ?? secrets.data?.secrets?.[secretKey]?.[0];
-    const hasSecret = !!entry;
-    /* TASK-072 共享档兜底:只在本人未配置时提示;本人有 key 恒优先。 */
-    const shared = !hasSecret ? (secrets.data?.shared?.[secretKey] ?? null) : null;
-
-    const [urlDraft, setUrlDraft] = useState(baseUrl);
+    const [name, setName] = useState(profile?.name ?? '');
+    const [format, setFormat] = useState<ConnectionProfileFormat>(profile?.format ?? 'openai');
+    const [baseUrl, setBaseUrl] = useState(profile?.baseUrl ?? '');
     const [keyDraft, setKeyDraft] = useState('');
-    const [modelDraft, setModelDraft] = useState(model);
+    /* checked 用 Set 管勾选态;manual 是手填补充(恒算入并集,不挂勾)。 */
+    const [checked, setChecked] = useState<Set<string>>(() => new Set(profile?.models.checked ?? []));
+    const [manual, setManual] = useState<string[]>(profile?.models.manual ?? []);
+    const [manualDraft, setManualDraft] = useState('');
+    const [disabled, setDisabled] = useState(!!profile?.disabled);
+    /* fetched = 最近一次上游清单(编辑器内新探 或 profile.lastProbe 回显)。 */
+    const [fetched, setFetched] = useState<{ id: string }[] | null>(profile?.models.lastProbe?.items ?? null);
+    const [fetchStale, setFetchStale] = useState(false);
+    const [probeRes, setProbeRes] = useState<ConnectionTestResponse | null>(null);
     const [busy, setBusy] = useState(false);
     const [probing, setProbing] = useState(false);
-    const [probeRes, setProbeRes] = useState<ConnectionTestResponse | null>(null);
 
-    /* 服务端值回流 → 草稿对齐(写后 reload;输到一半的草稿被真值盖掉,
-       与旧单表单同策略)。 */
-    useEffect(() => { setUrlDraft(baseUrl); }, [baseUrl]);
-    useEffect(() => { setModelDraft(model); }, [model]);
+    const pool = PROFILE_SECRET_POOL[format];
+    const presets = PROFILE_PRESETS[format];
+    const presetId = presets.find((p) => p.id !== 'custom' && p.baseUrl && p.baseUrl === baseUrl.trim())?.id ?? 'custom';
+    /* 格式换了 → 旧 secretId 是别池引用,不能带(跨池 id 解不到)。 */
+    const effSecretId = profile && profile.format === format ? profile.secretId : null;
+    const entry = effSecretId
+        ? (secrets.data?.secrets?.[pool] ?? []).find((en) => en.id === effSecretId) ?? null
+        : null;
+    const shared = !entry ? (secrets.data?.shared?.[pool] ?? null) : null;
 
-    const runPatch = (oaiPatch: Record<string, unknown>) => {
-        if (busy) return;
-        setBusy(true);
-        setProbeRes(null);
-        void patchSettings({ oai_settings: oaiPatch })
-            .then(() => Promise.all([settings.reload(), s.refreshConnection({ freshModels: true })]))
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setBusy(false));
+    /* 清单行 = 上游清单 ∪ 已选但不在清单里的(防旧选无声丢勾选)。 */
+    const fetchedIds = (fetched ?? []).map((m) => m.id);
+    const extraChecked = [...checked].filter((id) => !fetchedIds.includes(id) && !manual.includes(id));
+    const rows = [...fetchedIds, ...extraChecked];
+
+    const toggleCheck = (id: string) => setChecked((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+    });
+    const addManual = () => {
+        const id = manualDraft.trim();
+        if (!id || manual.includes(id)) { setManualDraft(''); return; }
+        setManual((prev) => [...prev, id]);
+        setManualDraft('');
     };
 
-    const actSecret = (fn: () => Promise<unknown>, done?: () => void) => {
-        if (busy) return;
-        setBusy(true);
-        setProbeRes(null);
-        void fn()
-            .then(() => { secrets.reload(); void s.refreshConnection({ freshModels: true }); done?.(); })
-            .catch((e) => s.hint(`${t('st.secrets.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setBusy(false));
-    };
-
-    const saveBaseUrl = () => {
-        const trimmed = urlDraft.trim();
-        if (trimmed === baseUrl) return;
-        runPatch(custom ? { custom_url: trimmed } : { reverse_proxy: trimmed });
-    };
-    const saveModel = () => {
-        const trimmed = modelDraft.trim();
-        if (trimmed === model) return;
-        runPatch({ [`${id}_model`]: trimmed });
-    };
-    const activate = () => { if (!active) runPatch({ chat_completion_source: id }); };
-
-    /* 非生效卡「测试」= 先切源(写 chat_completion_source)再探测 —— 服务端
-       探测只读生效档,没有第二通道;测通后卡自然翻生效徽标。 */
+    /* 测试配置 → 拉模型:草稿直测(不存档不切源);ok 后取上游清单进勾选面。 */
     const runProbe = () => {
         if (probing || busy) return;
         setProbing(true);
         setProbeRes(null);
-        void (active
-            ? Promise.resolve()
-            : patchSettings({ oai_settings: { chat_completion_source: id } }).then(() => settings.reload()))
-            .then(() => testConnection())
-            .then((r) => {
+        const target = draftTarget(format, baseUrl, effSecretId, keyDraft);
+        void testConnectionTarget(target)
+            .then(async (r) => {
                 setProbeRes(r);
-                if (r.ok || !active) void s.refreshConnection({ freshModels: true });
+                if (r.ok) {
+                    const m = await listModelsFor(target);
+                    setFetched(m.items.map((it) => ({ id: it.id })));
+                    setFetchStale(!!m.stale || !!m.error);
+                } else {
+                    setFetched(null);
+                }
             })
-            .catch((e) => s.hint(`${t('st.conn.probeFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => setProbeRes({
+                ok: false, source: format, credential: 'none', latencyMs: 0,
+                upstreamStatus: null, error: 'unreachable',
+                detail: e instanceof Error ? e.message : String(e),
+            }))
             .finally(() => setProbing(false));
     };
 
-    const urlDirty = urlDraft.trim() !== baseUrl;
-    const modelDirty = modelDraft.trim() !== model;
-    /* 上游模型清单只有生效源的面(/models 读生效档)——datalist 只挂生效卡。 */
-    const datalistId = `conn-models-${id}`;
+    /* openai 面(custom 源)baseUrl 必填;anthropic 面空 = 官方默认端点。 */
+    const canSave = !!name.trim() && (format === 'anthropic' || !!baseUrl.trim());
+    const save = () => {
+        if (busy || !canSave) return;
+        setBusy(true);
+        void (async () => {
+            /* 新 key 先落 secrets 池拿 id —— profile 只存引用不存值。
+               activate:false:不抢池 active 槽 —— active 是别档/旧路的
+               fallback 凭证,档内显式 secretId 引用不依赖它。 */
+            let secretId = effSecretId;
+            if (keyDraft.trim()) {
+                const r = await putSecret(pool, keyDraft.trim(), name.trim() || undefined, { activate: false });
+                secretId = r.id;
+            }
+            await putProfile(profile?.id ?? 'new', {
+                name: name.trim(), format, baseUrl: baseUrl.trim(), secretId,
+                models: { checked: [...checked], manual },
+                ...(disabled ? { disabled: true } : { disabled: false }),
+            });
+            secrets.reload();
+            await s.refreshConnection();
+            done();
+        })().catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setBusy(false));
+    };
+
     return (
-        <div className="inset-group" style={active ? { borderColor: 'var(--primary-bg)' } : undefined}>
-            {/* 卡头:图标 + 名 + 补全源值 + 生效徽标;非生效卡右侧「启用」。 */}
-            <div className="inset-row">
-                <div className="flex min-w-0 items-center gap-2">
-                    <Icon name={icon} size={15} className="shrink-0 text-[color:var(--fg-muted)]" />
-                    <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{label}</span>
-                    <span className={`shrink-0 text-[10px] text-[color:var(--fg-faint)] ${mono}`}>{id}</span>
-                    {active && (
-                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
-                            {t('st.conn.activeBadge')}
-                        </span>
-                    )}
-                </div>
-                {!active && (
-                    <button
-                        className="h-7 shrink-0 rounded-lg px-2.5 text-[11.5px] font-medium transition-opacity"
-                        style={{ background: 'var(--bg-active)', color: 'var(--fg-primary)', opacity: busy || probing ? 0.5 : 1 }}
-                        disabled={busy || probing}
-                        onClick={activate}
-                    >
-                        {t('st.conn.enable')}
+        <div className="space-y-4">
+            <div className="inset-group">
+                {/* 头:返回 + 名(就地当标题)。 */}
+                <div className="inset-row">
+                    <button type="button" className="ghost-btn h-7 w-7 shrink-0" disabled={busy} title={t('stage.edit.cancel')} onClick={done}>
+                        <Icon name="arrowLeft" size={14} />
                     </button>
-                )}
-            </div>
-            {/* Base URL 行:custom→custom_url(必填),其余→reverse_proxy(三家共用槽)。 */}
-            <div className="inset-row flex-col !items-stretch gap-1.5">
-                <div className="flex items-center justify-between">
-                    <label className="text-[11px] text-[color:var(--fg-muted)]">
-                        {custom ? t('st.conn.customUrlLabel') : t('st.conn.baseLabel')}
-                    </label>
-                    <span className={`text-[10px] text-[color:var(--fg-faint)] ${mono}`}>
-                        {custom ? 'oai_settings.custom_url' : 'oai_settings.reverse_proxy'}
-                        {!custom && ` · ${t('st.conn.sharedUrl')}`}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1.5">
                     <input
-                        value={urlDraft}
-                        onChange={(e) => setUrlDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveBaseUrl(); }}
-                        onBlur={saveBaseUrl}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                         disabled={busy}
-                        placeholder={custom ? 'https://api.example.com/v1' : t('st.conn.basePh')}
+                        placeholder={t('st.conn.namePh')}
+                        className="h-8 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 text-[13px] font-medium text-[color:var(--fg-primary)] outline-none focus:border-[color:var(--border-hairline)] focus:bg-[color:var(--bg-canvas)]"
+                    />
+                </div>
+                {/* 格式分段:openai 面 / anthropic 面(决定派发源与密钥池)。 */}
+                <div className="inset-row">
+                    <span className="text-[12px] text-[color:var(--fg-muted)]">{t('st.conn.formatLabel')}</span>
+                    <div className="flex shrink-0 gap-1">
+                        {(['openai', 'anthropic'] as const).map((f) => (
+                            <button
+                                key={f}
+                                type="button"
+                                className="h-7 rounded-lg px-2.5 text-[11.5px] font-medium transition-colors"
+                                style={segBtn(format === f)}
+                                disabled={busy}
+                                onClick={() => setFormat(f)}
+                            >
+                                {f === 'openai' ? 'OpenAI' : 'Anthropic'}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {/* 供应商预设:点选自动带 baseUrl(custom 档=手填)。 */}
+                <div className="inset-row">
+                    <span className="shrink-0 text-[12px] text-[color:var(--fg-muted)]">{t('st.conn.presetLabel')}</span>
+                    <div className="flex min-w-0 flex-wrap justify-end gap-1">
+                        {presets.map((p) => (
+                            <button
+                                key={p.id}
+                                type="button"
+                                className="h-6 rounded-md px-2 text-[10.5px] font-medium transition-colors"
+                                style={segBtn(presetId === p.id)}
+                                disabled={busy}
+                                onClick={() => { if (p.baseUrl || p.id === 'custom') setBaseUrl(p.baseUrl); }}
+                            >
+                                {p.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+                {/* Base URL:openai 面必填;anthropic 面留空走官方默认端点。 */}
+                <div className="inset-row flex-col !items-stretch gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">Base URL</label>
+                        <span className={`text-[10px] text-[color:var(--fg-faint)] ${mono}`}>
+                            {format === 'anthropic' ? t('st.conn.baseOptional') : t('st.conn.baseRequired')}
+                        </span>
+                    </div>
+                    <input
+                        value={baseUrl}
+                        onChange={(e) => setBaseUrl(e.target.value)}
+                        disabled={busy}
+                        placeholder={format === 'anthropic' ? t('st.conn.basePh') : 'https://api.example.com/v1'}
                         className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
                     />
-                    {urlDirty && (
-                        <button
-                            className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
-                            style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy ? 0.5 : 1 }}
-                            disabled={busy}
-                            onClick={saveBaseUrl}
-                        >
-                            {t('st.secrets.save')}
-                        </button>
-                    )}
                 </div>
-            </div>
-            {/* API Key 行:掩码状态 + 覆盖写入/清除(走 secrets,明文不落 oai_settings)。 */}
-            <div className="inset-row flex-col !items-stretch gap-1.5">
-                <div className="flex items-center justify-between">
-                    <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')}</label>
-                    <span className={`text-[10.5px] ${mono}`} style={{ color: hasSecret ? 'var(--status-ok)' : shared ? 'var(--status-info, var(--fg-secondary))' : 'var(--status-warn)' }}
-                        title={shared ? t('st.secrets.sharedHint') : `${secretKey}`}>
-                        {hasSecret
-                            ? `${t('st.secrets.managed')} · ${entry!.value}`
-                            : shared
-                                ? `${t('st.secrets.shared')}${shared.label ? ` · ${shared.label}` : ''}`
-                                : t('st.secrets.none2')}
-                    </span>
-                </div>
-                <div className="flex items-center gap-1.5">
+                {/* API Key:掩码状态 + 新值(保存时先写 secrets 池再存引用)。 */}
+                <div className="inset-row flex-col !items-stretch gap-1.5">
+                    <div className="flex items-center justify-between">
+                        <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.secretLabel')}</label>
+                        <span className={`text-[10.5px] ${mono}`} style={{ color: entry ? 'var(--status-ok)' : shared ? 'var(--status-info, var(--fg-secondary))' : 'var(--status-warn)' }}
+                            title={shared ? t('st.secrets.sharedHint') : pool}>
+                            {entry
+                                ? `${t('st.secrets.managed')} · ${entry.value}`
+                                : shared
+                                    ? `${t('st.secrets.shared')}${shared.label ? ` · ${shared.label}` : ''}`
+                                    : t('st.secrets.none2')}
+                        </span>
+                    </div>
                     <input
                         value={keyDraft}
                         onChange={(e) => setKeyDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' && keyDraft.trim()) actSecret(() => putSecret(secretKey, keyDraft.trim()), () => setKeyDraft('')); }}
-                        type="password"
-                        placeholder={t('st.conn.secretPh')}
-                        className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
-                    />
-                    <button
-                        className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
-                        style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy || !keyDraft.trim() ? 0.5 : 1 }}
-                        disabled={busy || !keyDraft.trim()}
-                        onClick={() => actSecret(() => putSecret(secretKey, keyDraft.trim()), () => setKeyDraft(''))}
-                    >
-                        {t('st.secrets.save')}
-                    </button>
-                    {hasSecret && (
-                        <button className="h-8 shrink-0 rounded-lg px-2.5 text-[11.5px]" style={{ background: 'var(--bg-active)', color: 'var(--status-danger)' }} disabled={busy}
-                            onClick={() => actSecret(() => deleteSecret(secretKey, entry!.id))}>
-                            {t('st.secrets.clear')}
-                        </button>
-                    )}
-                </div>
-            </div>
-            {/* 模型行:<src>_model;生效卡挂上游清单 datalist(非生效源服务端拉不到)。 */}
-            <div className="inset-row flex-col !items-stretch gap-1.5">
-                <div className="flex items-center justify-between">
-                    <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.modelLabel')}</label>
-                    <span className={`text-[10px] text-[color:var(--fg-faint)] ${mono}`}>oai_settings.{id}_model</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                    <input
-                        value={modelDraft}
-                        onChange={(e) => setModelDraft(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveModel(); }}
-                        onBlur={saveModel}
                         disabled={busy}
-                        list={active ? datalistId : undefined}
-                        placeholder={t('st.conn.modelPh')}
+                        type="password"
+                        placeholder={entry || shared ? t('st.conn.secretKeepPh') : t('st.conn.secretPh')}
                         className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
                     />
-                    {active && s.models.length > 0 && (
-                        <datalist id={datalistId}>
-                            {s.models.map((m) => <option key={m.id} value={m.id} />)}
-                        </datalist>
-                    )}
-                    {modelDirty && (
-                        <button
-                            className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium"
-                            style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy ? 0.5 : 1 }}
-                            disabled={busy}
-                            onClick={saveModel}
-                        >
-                            {t('st.secrets.save')}
-                        </button>
-                    )}
                 </div>
-            </div>
-            {/* 连通性探测行:非生效卡先切源再探(结果即该家连通性)。 */}
-            <div className="inset-row">
-                <div className="min-w-0">
-                    <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('st.conn.probe')}</div>
-                    <div className={`mt-0.5 truncate text-[11px] ${mono}`} style={{
-                        color: probeRes
-                            ? (probeRes.ok ? 'var(--status-ok)' : 'var(--status-danger)')
-                            : 'var(--fg-muted)',
-                    }}>
-                        {probeRes
-                            ? (probeRes.ok
-                                ? `✓ ${probeRes.source} · ${probeRes.latencyMs}ms · ${probeRes.modelCount ?? 0} models${probeRes.credential && probeRes.credential !== 'none' ? ` · ${t(`st.cred.${probeRes.credential}`)}` : ''}`
-                                : `✗ ${probeRes.error ?? 'error'}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`)
-                            : active ? t('st.conn.probeHint') : t('st.conn.probeActivateHint')}
+                {/* 探测行:草稿直测;ok 后上游清单灌进下方勾选面。 */}
+                <div className="inset-row">
+                    <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('st.conn.probe')}</div>
+                        <div className={`mt-0.5 truncate text-[11px] ${mono}`} style={{
+                            color: probeRes
+                                ? (probeRes.ok ? 'var(--status-ok)' : 'var(--status-danger)')
+                                : 'var(--fg-muted)',
+                        }}>
+                            {probeRes
+                                ? (probeRes.ok
+                                    ? `✓ ${probeRes.latencyMs}ms · ${probeRes.modelCount ?? 0} models${probeRes.credential && probeRes.credential !== 'none' ? ` · ${t(`st.cred.${probeRes.credential}`)}` : ''}`
+                                    : `✗ ${probeRes.error ?? 'error'}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`)
+                                : t('st.conn.probeDraftHint')}
+                        </div>
                     </div>
+                    <button
+                        type="button"
+                        disabled={probing || busy}
+                        onClick={runProbe}
+                        className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium transition-opacity"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: probing || busy ? 0.55 : 1 }}
+                    >
+                        {probing ? t('st.conn.testing') : t('st.conn.test')}
+                    </button>
                 </div>
-                <button
-                    disabled={probing || busy}
-                    onClick={runProbe}
-                    className="h-8 shrink-0 rounded-lg px-3 text-[11.5px] font-medium transition-opacity"
-                    style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: probing || busy ? 0.55 : 1 }}
-                >
-                    {probing ? t('st.conn.testing') : t('st.conn.test')}
-                </button>
+                {/* 勾选面:探测出的上游清单(默认不勾;已选保留勾)。 */}
+                {(fetched !== null || extraChecked.length > 0) && (
+                    <div className="inset-row flex-col !items-stretch gap-1">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.modelsLabel')}</label>
+                            <span className={`text-[10px] text-[color:var(--fg-faint)] ${mono}`}>
+                                {checked.size}{fetchStale ? ` · ${t('st.conn.staleModels')}` : ''}
+                            </span>
+                        </div>
+                        <div className="max-h-52 space-y-0.5 overflow-y-auto rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-1">
+                            {rows.map((id) => {
+                                const on = checked.has(id);
+                                return (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        className="inset-row-btn flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left"
+                                        onClick={() => toggleCheck(id)}
+                                    >
+                                        <span
+                                            className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border"
+                                            style={{
+                                                borderColor: on ? 'var(--brand)' : 'var(--border-hairline)',
+                                                background: on ? 'var(--brand)' : 'transparent',
+                                                color: 'var(--brand-fg)',
+                                            }}
+                                        >
+                                            {on && <Icon name="check" size={10} />}
+                                        </span>
+                                        <span className={`truncate text-[11.5px] ${mono}`} style={{ color: on ? 'var(--fg-primary)' : 'var(--fg-muted)' }}>{id}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+                {/* 手填模型:上游清单没列的 id 直接进并集。 */}
+                <div className="inset-row flex-col !items-stretch gap-1.5">
+                    <label className="text-[11px] text-[color:var(--fg-muted)]">{t('st.conn.manualLabel')}</label>
+                    {manual.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                            {manual.map((id) => (
+                                <span key={id} className={`flex h-6 items-center gap-1 rounded-md px-1.5 text-[10.5px] ${mono}`} style={{ background: 'var(--bg-active)', color: 'var(--fg-secondary)' }}>
+                                    {id}
+                                    <button type="button" className="text-[color:var(--fg-faint)] hover:text-[color:var(--status-danger)]" disabled={busy} onClick={() => setManual((prev) => prev.filter((x) => x !== id))}>
+                                        <Icon name="x" size={10} />
+                                    </button>
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    <input
+                        value={manualDraft}
+                        onChange={(e) => setManualDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') addManual(); }}
+                        onBlur={addManual}
+                        disabled={busy}
+                        placeholder={t('st.conn.manualPh')}
+                        className={`h-8 min-w-0 flex-1 rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] px-2.5 text-xs text-[color:var(--fg-primary)] outline-none ${mono}`}
+                    />
+                </div>
+                {/* 停用开关:停用档不进派发、不进模型并集。 */}
+                <div className="inset-row">
+                    <div className="min-w-0">
+                        <div className="text-[12px] font-medium text-[color:var(--fg-primary)]">{t('st.conn.disableLabel')}</div>
+                    </div>
+                    <button type="button" className="sh-switch" data-checked={disabled || undefined} disabled={busy} onClick={() => setDisabled(!disabled)}>
+                        <span className="sh-switch-thumb" />
+                    </button>
+                </div>
             </div>
+            <button
+                type="button"
+                className="h-9 w-full rounded-xl text-[12.5px] font-medium transition-opacity"
+                style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: busy || !canSave ? 0.5 : 1 }}
+                disabled={busy || !canSave}
+                onClick={save}
+            >
+                {t('st.secrets.save')}
+            </button>
         </div>
     );
 }
@@ -1233,21 +1318,40 @@ function ConnectionSection() {
     const { t } = useI18n();
     const s = useShell();
     const open = s.settingsOpen;
-    const settings = useRemote(open ? 'st:settings' : null, () => getSettings());
+    const profiles = useRemote(open ? 'st:conn-profiles' : null, listProfiles);
     const secrets = useRemote(open ? 'st:secrets' : null, listSecrets);
-    const oai = (settings.data?.settings?.oai_settings ?? {}) as Record<string, unknown>;
-    const str = (v: unknown) => (typeof v === 'string' ? v : '');
-    const source = str(oai.chat_completion_source) || 'openai';
-    /* 生效源不在四家内(openrouter/moonshot 等生态源)→ 追加兜底卡:
-       api_key_<src> / <src>_model 键约定全源统一,同构字段照样可配。 */
-    const cards = PROVIDER_CARDS.some((c) => c.id === source)
-        ? PROVIDER_CARDS
-        : [...PROVIDER_CARDS, { id: source, label: source, icon: 'plug' as IconName }];
-
+    /* editing:null=列表;'new'=新建;其余=profile id。 */
+    const [editing, setEditing] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [delArm, setDelArm] = useState<string | null>(null);
+
+    const list = profiles.data?.profiles ?? [];
+    /* 'default' 档(迁移合成)恒置顶,其余按存储序。 */
+    const sorted = [...list].sort((a, b) => (a.id === 'default' ? 0 : 1) - (b.id === 'default' ? 0 : 1));
+    const activePid = s.activeModel?.profileId || profiles.data?.activeModel?.profileId || '';
+    const editingProfile = editing && editing !== 'new' ? (list.find((p) => p.id === editing) ?? null) : null;
+
+    const actDelete = (id: string) => {
+        if (busy) return;
+        setBusy(true);
+        void deleteProfile(id)
+            .then(() => { profiles.reload(); void s.refreshConnection(); })
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => { setBusy(false); setDelArm(null); });
+    };
+
+    if (editing !== null) {
+        return (
+            <ProfileEditor
+                profile={editingProfile}
+                secrets={secrets}
+                done={() => { setEditing(null); profiles.reload(); }}
+            />
+        );
+    }
+
     const secretKeys = Object.keys(secrets.data?.secrets ?? {});
     const groups = secretKeys.filter((k) => secrets.data!.secrets[k]?.length);
-    /* secrets 清单面内删除条目的独立 busy(与卡内 actSecret 各自隔离)。 */
     const actListSecret = (fn: () => Promise<unknown>) => {
         if (busy) return;
         setBusy(true);
@@ -1259,18 +1363,69 @@ function ConnectionSection() {
 
     return (
         <div className="space-y-4">
-            {cards.map((def) => (
-                <ProviderCard
-                    key={def.id}
-                    id={def.id}
-                    label={def.label}
-                    icon={def.icon}
-                    active={source === def.id}
-                    oai={oai}
-                    settings={settings}
-                    secrets={secrets}
-                />
-            ))}
+            <div className="inset-group">
+                {sorted.map((p) => {
+                    const nModels = p.models.checked.length + p.models.manual.length;
+                    return (
+                        <div key={p.id} className="inset-row">
+                            <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-1.5">
+                                    <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]" style={{ opacity: p.disabled ? 0.5 : 1 }}>{p.name}</span>
+                                    <span className={`shrink-0 rounded px-1 py-px text-[9.5px] font-medium ${mono}`} style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>
+                                        {p.format === 'anthropic' ? 'Anthropic' : 'OpenAI'}
+                                    </span>
+                                    {p.id === 'default' && (
+                                        <span className="shrink-0 text-[9.5px] text-[color:var(--fg-faint)]">{t('st.conn.defaultBadge')}</span>
+                                    )}
+                                    {p.disabled && (
+                                        <span className="shrink-0 text-[9.5px] text-[color:var(--status-warn)]">{t('st.conn.disabledBadge')}</span>
+                                    )}
+                                    {activePid === p.id && !p.disabled && (
+                                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
+                                            {t('st.conn.activeBadge')}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className={`mt-0.5 truncate text-[10.5px] text-[color:var(--fg-muted)] ${mono}`}>
+                                    {p.baseUrl || (p.format === 'anthropic' ? 'api.anthropic.com' : '—')}
+                                    {` · ${nModels} ${t('st.conn.modelLabel')}`}
+                                </div>
+                            </div>
+                            <button type="button" className="ghost-btn h-7 w-7 shrink-0" disabled={busy} title={t('st.conn.edit')} onClick={() => setEditing(p.id)}>
+                                <Icon name="pencil" size={12} />
+                            </button>
+                            <button
+                                type="button"
+                                className="ghost-btn h-7 shrink-0 px-1.5 text-[10.5px]"
+                                style={{ color: delArm === p.id ? 'var(--brand-fg)' : 'var(--status-danger)', background: delArm === p.id ? 'var(--status-danger)' : undefined }}
+                                disabled={busy}
+                                title={t('st.conn.delete')}
+                                onClick={() => { if (delArm === p.id) actDelete(p.id); else { setDelArm(p.id); setTimeout(() => setDelArm((cur) => (cur === p.id ? null : cur)), 2500); } }}
+                            >
+                                {delArm === p.id ? t('st.conn.delConfirm') : <Icon name="trash" size={12} />}
+                            </button>
+                        </div>
+                    );
+                })}
+                {sorted.length === 0 && (
+                    <div className="inset-row">
+                        <span className="text-[11.5px] text-[color:var(--fg-muted)]">
+                            {profiles.loading ? '…' : (profiles.error ?? t('st.conn.empty'))}
+                        </span>
+                    </div>
+                )}
+                <div className="inset-row">
+                    <button
+                        type="button"
+                        className="inset-row-btn flex w-full items-center justify-center gap-1.5 rounded-lg py-1 text-[12px] font-medium text-[color:var(--fg-secondary)]"
+                        disabled={busy}
+                        onClick={() => setEditing('new')}
+                    >
+                        <Icon name="plus" size={13} />
+                        {t('st.conn.addProfile')}
+                    </button>
+                </div>
+            </div>
             {/* 真 secrets 脱敏面(全键清单,含四家以外的槽)。 */}
             {(groups.length > 0 || secrets.error) && (
                 <div className="inset-group">

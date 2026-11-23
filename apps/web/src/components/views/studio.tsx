@@ -204,9 +204,9 @@ interface SettingsSlices {
     globalSelect: string[];
     /** 当前启用预设名(preset_settings_openai;oai_settings 内嵌形兼容)。 */
     activePreset: string | null;
-    /** 上游源(oai_settings.chat_completion_source)。 */
+    /** 生效连接名 —— 档案制:命中 profile 名;未迁移库 → 旧 source 值。 */
     connSource: string | null;
-    /** 上游 Base URL(oai_settings.reverse_proxy 优先,custom_url 兜底)。 */
+    /** 生效端点 —— 命中 profile.baseUrl;未迁移库 → legacy 槽。 */
     connBaseUrl: string | null;
     raw: Record<string, unknown> | null;
 }
@@ -217,11 +217,17 @@ function sliceSettings(settings: Record<string, unknown> | null | undefined): Se
         Record<string, unknown> | undefined;
     const oai = s.oai_settings as Record<string, unknown> | undefined;
     const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v : null);
+    /* 档案制读面:activeModel.profileId → profile;未迁移 → legacy 单槽兜底。 */
+    const profs = (Array.isArray(oai?.connection_profiles) ? oai!.connection_profiles : [])
+        .filter((p): p is Record<string, unknown> => !!p && typeof p === 'object' && !Array.isArray(p));
+    const am = ((oai?.connection as Record<string, unknown> | undefined)?.activeModel ?? null) as Record<string, unknown> | null;
+    const activeProf = (am && profs.find((p) => str(p.id) === str(am.profileId) && !p.disabled))
+        ?? profs.find((p) => !p.disabled) ?? null;
     return {
         globalSelect: Array.isArray(wi?.globalSelect) ? wi!.globalSelect.filter((x): x is string => typeof x === 'string') : [],
         activePreset: str(s.preset_settings_openai) ?? str(oai?.preset_settings_openai),
-        connSource: str(oai?.chat_completion_source),
-        connBaseUrl: str(oai?.reverse_proxy) ?? str(oai?.custom_url),
+        connSource: activeProf ? str(activeProf.name) : str(oai?.chat_completion_source),
+        connBaseUrl: activeProf ? str(activeProf.baseUrl) : (str(oai?.reverse_proxy) ?? str(oai?.custom_url)),
         raw: settings ?? null,
     };
 }
