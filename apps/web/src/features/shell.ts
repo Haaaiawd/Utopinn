@@ -138,6 +138,7 @@ const zh: Record<string, string> = {
     'mob.sheet.half': '半屏', 'mob.sheet.full': '全屏', 'mob.sheet.collapse': '收起', 'mob.hub.assetSub': '卡库 · 世界书',
     'mob.view.noMobile': '该视图还没有移动端形态 —— 先回到对话,或换桌面视口查看',
     'mob.view.back': '返回对话',
+    'mob.floats.archived': '{n} 个浮窗已收回面板',
 
     // diag/stats surface —— 观测面词条(diag 四子页 / stats 汇总与 WI 命中 /
     // top-job-slot / launcher 三桶 / 拆出钮)。append-only 块,勿并入上文。
@@ -147,7 +148,7 @@ const zh: Record<string, string> = {
     'wb.dockPanel': '收档回右栏', 'wb.floatGrip': '拖拽调整大小',
     'wb.expand': '占满聊天区', 'wb.restore': '还原工作区',
     'wb.launcher.cardapp': '卡绑面板(CardApp 宿主)', 'wb.launcher.system': '系统面板', 'wb.launcher.iframe': 'iframe 宿主',
-    'wb.launcher.nocardapp': '该卡无 CardApp',
+    'wb.launcher.nocardapp': '该卡无 CardApp', 'wb.launcher.open': '已开',
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
     'msgframe.dock': '收至右栏', 'msgframe.docked': '卡面板已收至右栏', 'msgframe.expand': '展开',
     'panel.type.messageframe': '楼层卡面板', 'msgframe.idle': '从楼层卡面板右上角收至此处',
@@ -551,6 +552,7 @@ const en: Record<string, string> = {
     'mob.sheet.half': 'Half', 'mob.sheet.full': 'Full', 'mob.sheet.collapse': 'Collapse', 'mob.hub.assetSub': 'Cards · Lorebooks',
     'mob.view.noMobile': 'This view has no mobile form yet — return to chat or switch to a desktop viewport',
     'mob.view.back': 'Back to chat',
+    'mob.floats.archived': '{n} floating panels docked',
 
     // diag/stats surface —— 观测面词条(diag 四子页 / stats 汇总与 WI 命中 /
     // top-job-slot / launcher 三桶 / 拆出钮)。append-only 块,勿并入上文。
@@ -560,7 +562,7 @@ const en: Record<string, string> = {
     'wb.dockPanel': 'Dock back to workbench', 'wb.floatGrip': 'Drag to resize',
     'wb.expand': 'Fill chat area', 'wb.restore': 'Restore layout',
     'wb.launcher.cardapp': 'Card-bound panels (CardApp host)', 'wb.launcher.system': 'System panels', 'wb.launcher.iframe': 'iframe host',
-    'wb.launcher.nocardapp': 'No CardApp on this card',
+    'wb.launcher.nocardapp': 'No CardApp on this card', 'wb.launcher.open': 'Open',
     /* 楼层嵌帧「收至右栏」(TASK displayed_message 嵌帧 dock) */
     'msgframe.dock': 'Dock to panel', 'msgframe.docked': 'Card panel docked to workbench', 'msgframe.expand': 'Expand',
     'panel.type.messageframe': 'Floor panel', 'msgframe.idle': 'Dock a floor card panel here',

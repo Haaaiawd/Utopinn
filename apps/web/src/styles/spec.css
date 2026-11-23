@@ -34,11 +34,15 @@
     background: var(--bg-chrome);
     backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
     -webkit-backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
-    width: 64px;
+    /* 横屏刘海:viewport-fit=cover 全局生效后,宽横屏手机走 desktop 布局时
+       rail/brand/dock 整列会贴左缘进 notch 区 —— 让位 env(safe-area-inset-left);
+       宽等量补 padding,内容盒不缩水(rail 钮不被裁)。竖屏 env=0 无感。 */
+    padding-left: env(safe-area-inset-left, 0px);
+    width: calc(64px + env(safe-area-inset-left, 0px));
     transition: width 280ms cubic-bezier(0.22, 1, 0.36, 1);
     display: flex; flex-direction: column; overflow: hidden;
 }
-.left-chrome[data-open="true"] { width: 292px; }
+.left-chrome[data-open="true"] { width: calc(292px + env(safe-area-inset-left, 0px)); }
 
 /* Unified Top Brand Row: Single cohesive Logo+Utopinn button + right paired action icons */
 .brand-header-row {
@@ -392,10 +396,14 @@
 
 /* =========================================================================
    MOBILE SHELL(hub + drawer + vaul sheet)
+   高基准:100dvh —— iOS URL 栏收放不再砸 composer(老内核 fallback 100%);
+   键盘:--vv-kbd(useViewportInset 写根变量)= 键盘遮挡高,sheet/composer/
+   弹层锚位经 var() 抬升;Android resizes-content 下该值≈0 由 dvh 链自收,
+   不二次垫。safe-area 刘海/home 条经 env() 让位(viewport-fit=cover 生效)。
    ========================================================================= */
 .mobile-wrap {
     display: flex; align-items: center; justify-content: center;
-    height: 100%; width: 100%; padding: 14px; background: var(--bg-tray);
+    height: 100%; height: 100dvh; width: 100%; padding: 14px; background: var(--bg-tray);
 }
 .mobile-shell {
     position: relative; width: 390px; max-width: 100%; height: 100%; max-height: 844px;
@@ -404,6 +412,8 @@
     backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
     -webkit-backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
     overflow: hidden; display: flex; flex-direction: column;
+    /* standalone(PWA/全屏)时状态栏/灵动岛让位;浏览器内 env=0 无副作用。 */
+    padding-top: env(safe-area-inset-top, 0px);
 }
 @media (max-width: 520px) {
     .mobile-wrap { padding: 0; }
@@ -411,7 +421,14 @@
 }
 
 .vaul-sheet {
-    position: absolute; left: 0; right: 0; bottom: 0;
+    position: absolute; left: 0; right: 0;
+    /* 键盘弹出整片上抬贴键盘上缘;max-h 收敛保手柄行不被顶出壳上沿。 */
+    bottom: var(--vv-kbd, 0px);
+    max-height: calc(100% - var(--vv-kbd, 0px));
+    /* 面板内滚动到边不再链穿到下方 stage 楼层列。 */
+    overscroll-behavior: contain;
+    /* home 条让位:sheet 内容底不被手势区压住。 */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     /* overflow:hidden:closed(0%)态里子内容外溢 40px 滚动区,
        autoFocus 输入会把 overflow:hidden 壳滚走 stage-header。 */
     overflow: hidden;
@@ -426,11 +443,23 @@
 }
 .vaul-sheet.dragging { transition: none !important; }
 .vaul-sheet[data-snap="closed"] { height: 0%; transform: translateY(100%); opacity: 0; pointer-events: none; }
-.vaul-sheet[data-snap="half"] { height: 54%; transform: translateY(0); opacity: 1; }
-.vaul-sheet[data-snap="full"] { height: 92%; transform: translateY(0); opacity: 1; }
+/* snap 档高 = 可用舞台高(shell 高 − --vv-kbd)的 54%/92% —— 与拖拽归一化/
+   resolveSheetSnap 阈值(mobileShell.SHEET_SNAP_*)同一把尺。
+   键盘期若仍按包含块算,54% 壳高已 >72% avail,下拖松手会假弹 full。 */
+.vaul-sheet[data-snap="half"] { height: calc((100% - var(--vv-kbd, 0px)) * 0.54); transform: translateY(0); opacity: 1; }
+.vaul-sheet[data-snap="full"] { height: calc((100% - var(--vv-kbd, 0px)) * 0.92); transform: translateY(0); opacity: 1; }
+
+/* composer 停靠条(QR 条 + 输入壳的公共外包,StageFrame 单挂点):
+   底内边距 = 常规 1rem + home 条让位 + 键盘遮挡抬升。
+   iOS 键盘期 composer 贴键盘上缘;无键盘/桌面两 var 归 0,等价原 pb-4。 */
+.composer-dock {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px) + var(--vv-kbd, 0px));
+}
 
 .mob-drawer {
-    position: absolute; top: 0; bottom: 0; left: 0; width: 288px; max-width: 84%;
+    position: absolute; top: 0; bottom: var(--vv-kbd, 0px); left: 0; width: 288px; max-width: 84%;
+    overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     background: var(--bg-sidebar);
     backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
     -webkit-backdrop-filter: blur(var(--amb-glass-blur)) saturate(1.15);
@@ -543,9 +572,11 @@ input[type="range"] { accent-color: var(--brand); }
     box-shadow: var(--shadow-pop);
 }
 
-/* 浮动提示胶囊(规范稿 toast:fixed bottom center z 60)。 */
+/* 浮动提示胶囊(规范稿 toast:fixed bottom center z 60)。
+   底距抬键盘遮挡(--vv-kbd)与 home 条 —— iOS fixed 锚 layout 视口,
+   键盘期不抬会被整块盖住。 */
 .hint-pill {
-    position: fixed; bottom: 22px; left: 50%; translate: -50% 0; z-index: 60;
+    position: fixed; bottom: calc(22px + env(safe-area-inset-bottom, 0px) + var(--vv-kbd, 0px)); left: 50%; translate: -50% 0; z-index: 60;
     border-radius: 999px; padding: 8px 18px;
     font-size: var(--fs-ui); color: var(--fg-primary);
     animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);

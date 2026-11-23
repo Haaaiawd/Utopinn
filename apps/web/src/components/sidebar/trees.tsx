@@ -231,7 +231,7 @@ export function ChatTree() {
                     </button>
                 )}
             </div>
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2.5 pb-4">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-2.5 pb-4">
                 {pinned.length > 0 && (
                     <div className="space-y-0.5">
                         <div className={sect}><span>{t('tree.pinned')}</span></div>
@@ -390,7 +390,7 @@ export function StudioTree() {
                     <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.studio')}</span>
                 </div>
             )}
-            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
+            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2 pb-4">
                 {STUDIO_NAV_META.map(({ id, icon }) => {
                     const act = nav === id;
                     return (
@@ -433,7 +433,7 @@ export function PluginsTree() {
                     <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.plugins')}</span>
                 </div>
             )}
-            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-2 pb-4">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-2 pb-4">
                 <div className="space-y-0.5">
                     {(['installed', 'market'] as const).map((id) => {
                         const act = shell.pluginsNav === id;
