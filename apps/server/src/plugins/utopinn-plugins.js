@@ -18,16 +18,17 @@
  *   declare-merge 可扩 —— 服务端不钉死校验,未知 slot 原样透传,词表随响应
  *   slots 字段带出当参照。
  *   内核件声明写在 BUILTIN_CONTRIB 常量(面板宿主是前端本地组件,服务端只补
- *   「谁供了这块板」的归属映射);CORE_PLUGINS 的贡献项带 core:true —— 对照
- *   前端要锁定的件(library/generate/delivery/diag)。disabled 行只回 BUILTIN
+ *   「谁供了这块板」的归属映射);profile 行 core:true 的贡献项带 core:true
+ *   —— 对照前端要锁定的件。disabled 行只回 BUILTIN
  *   声明 + disabled 位,不 import 模块 —— 关掉的插件不跑它顶层代码。
  *
  * 自锁 + core 闸:本插件的 disable/reload 会拆了自己的路由面(或把自己关进
- * disabled 而无路可开)—— 一律 400 拒绝。CORE_PLUGINS 成员的 disable
- * 同样在路由侧拒绝(core = 关掉产品就死/管理面失联,见 domain-map §6.1);
- * reload 对 core 成员仍放行(dispose+重载是恢复性操作)。kernel 侧
- * pluginManager.disable() 目前不查这张表 —— 最终闸应落在
- * kernel-boot.js 的 disable() 里读同一份 CORE_PLUGINS(已 export)。
+ * disabled 而无路可开)—— 一律 400 拒绝。core 件(profile.yaml 行
+ * core:true)的 disable 同样在路由侧拒绝(core = 关掉产品就死/管理面失联);
+ * reload 对 core 成员仍放行(dispose+重载是恢复性操作)。锁表唯一真相源是
+ * profile.yaml 的 core 旗标 —— 内核闸在 kernel-boot.js disable() 读 row.core,
+ * 本面经 pm.row()/pm.list() 读同一份,不再另存 id 集(domain-map §6.1 /
+ * cordis-next §2.1:core 旗标替 CORE_PLUGINS 常量)。
  */
 import { statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -49,17 +50,6 @@ const KNOWN_SLOTS = [
     'nav.rail', 'view', 'sidebar.tree', 'stage.form',
     'panel.type', 'renderer', 'ctbar.chat', 'locale',
 ];
-
-/**
- * 内核锁定件(core = 关掉它产品就死/管理面失联,domain-map §6.1):
- *   - 贡献项带 core:true(前端不可卸的面)
- *   - disable 路由侧 400 拒绝(act 闸;kernel pluginManager 待接同一份表)
- * utopinn-plugins 自身在列:disable 它之后连「再 enable」的 API 都没了。
- */
-export const CORE_PLUGINS = new Set([
-    'utopinn-library', 'utopinn-generate', 'utopinn-delivery', 'utopinn-diag',
-    'utopinn-plugins',
-]);
 
 /**
  * 内核件贡献声明 —— 面板 Body 是前端本地组件,这里登记的是「服务端插件 →
@@ -211,7 +201,7 @@ export function apply(ctx) {
                         plugin: row.id,
                         slot: e.slot,
                         contribution,
-                        ...(CORE_PLUGINS.has(row.id) ? { core: true } : {}),
+                        ...(row.core === true ? { core: true } : {}),
                         ...(row.disabled ? { disabled: true } : {}),
                     });
                 }
@@ -228,9 +218,10 @@ export function apply(ctx) {
         if (id === SELF && verb !== 'enable') {
             return response.status(400).send({ error: `cannot ${verb} the plugin manager itself` });
         }
-        // core 闸:关掉即产品死/管理面失联的件不可经 API 停用(改
-        // profile.patch.yaml 是绕过本面的显式操作,不算破坏)。reload 放行。
-        if (verb === 'disable' && CORE_PLUGINS.has(id)) {
+        // core 闸:关掉即产品死/管理面失联的件不可经 API 停用(手改
+        // profile.yaml 去 core 位是绕过本面的显式操作,不算破坏)。reload 放行。
+        // pm.disable() 读同一 row.core 双保险 —— 这里先查只为回更准的 400 文案。
+        if (verb === 'disable' && (await pm.row(id))?.core === true) {
             return response.status(400).send({ error: `${id} is a core plugin; refusing disable` });
         }
         const r = await pm[verb](id);

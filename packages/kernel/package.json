@@ -1,29 +1,30 @@
 {
-    "name": "@utopinn/kernel",
-    "version": "0.0.0",
-    "private": true,
-    "type": "module",
-    "main": "./dist/index.js",
-    "types": "./dist/src/index.d.ts",
-    "exports": {
-        ".": {
-            "types": "./dist/src/index.d.ts",
-            "import": "./dist/src/index.js"
-        }
-    },
-    "scripts": {
-        "build": "tsc -p tsconfig.json",
-        "typecheck": "tsc -p tsconfig.json --noEmit",
-        "test": "node --test dist/test/"
-    },
-    "dependencies": {
-        "cordis": "4.0.0-rc.12",
-        "js-yaml": "^5.5.0",
-        "schemastery": "^3.18.0"
-    },
-    "devDependencies": {
-        "@types/js-yaml": "^4.0.9",
-        "@types/node": "^18.19.130",
-        "typescript": "^5.9.3"
+  "name": "@utopinn/kernel",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
     }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test dist/test/"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.12",
+    "js-yaml": "^5.5.0",
+    "schemastery": "^3.18.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^18.19.130",
+    "typescript": "^5.9.3"
+  },
+  "license": "AGPL-3.0-only"
 }

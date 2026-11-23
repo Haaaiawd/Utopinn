@@ -136,7 +136,7 @@ export async function deleteMessagesByNameCallback(args: NamedArguments, name: U
         console.warn('WARN: No name provided for /delname command');
         return '';
     }
-    const character = env.host.resolveCharacter?.(nameStr) ?? null;
+    const character = await env.host.resolveCharacter?.(nameStr) ?? null;
     nameStr = character?.name || nameStr;
     const preImage = [...chat];
     const victims = preImage.filter(m => m.name === nameStr);
@@ -505,7 +505,7 @@ export async function messageNameCallback(args: NamedArguments, name: UnnamedArg
             message.original_avatar = defaultAvatar;
         }
     } else {
-        const character = env.host.resolveCharacter?.(nameStr) ?? null;
+        const character = await env.host.resolveCharacter?.(nameStr) ?? null;
         if (character) {
             const info = getNameAndAvatarForMessage(env, character, nameStr);
             message.name = info.name ?? nameStr;

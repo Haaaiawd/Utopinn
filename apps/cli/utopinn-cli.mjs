@@ -1333,9 +1333,11 @@ const NAMED_UTOPINN_ROUTES = new Set([
     // —— TASK-044:novel 章目录聚合 + theater 三件套资产清单 ——
     'GET|pattern|/api/utopinn/characters/:charDir/chats/:chatName/chapters',
     'GET|pattern|/api/utopinn/characters/:charDir/assets',
-    // —— named-docs 只读面(TASK-058;buckets=quick-replies|themes|moving-ui)——
+    // —— named-docs 读面(TASK-058)+ 写面(TASK-063;buckets=quick-replies|themes|moving-ui)——
     'GET|pattern|/api/utopinn/named-docs/:bucket',
     'GET|pattern|/api/utopinn/named-docs/:bucket/:name',
+    'PUT|pattern|/api/utopinn/named-docs/:bucket/:name',
+    'DELETE|pattern|/api/utopinn/named-docs/:bucket/:name',
     // —— library 写面 + chat 生命周期(chat-new 是懒建坐标,chat-create 立即建文件)——
     'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName',
     'PUT|pattern|/api/utopinn/characters/:charDir/chats/:chatName/document',
@@ -1433,10 +1435,13 @@ const MVU_POST_SUBS = Object.keys(MVU_SUB_ROUTES)
 const OBSERVED_NAMED = [
     // diag-bus 聚合统计口:logs/errors/trace 已覆盖读面,此 GET 留观测命名(raw 可达)。
     'GET|pattern|/api/utopinn/diag/stats',
-    // named-docs 只读面(TASK-058):StageFrame QR 条/web 消费;CLI 无动词,
+    // named-docs 读面(TASK-058):StageFrame QR 条/web 消费;CLI 无动词,
     // raw 可达(需 ?account=<handle>,sendJsonResource 私有 ETag 读)。
     'GET|pattern|/api/utopinn/named-docs/:bucket',
     'GET|pattern|/api/utopinn/named-docs/:bucket/:name',
+    // named-docs 写面(TASK-063):web QR 管理页/studio 消费;CLI 无动词,raw 可达。
+    'PUT|pattern|/api/utopinn/named-docs/:bucket/:name',
+    'DELETE|pattern|/api/utopinn/named-docs/:bucket/:name',
 ];
 
 /** 词表 → 具名串展开(程序化构造族 + OBSERVED)。字面族单例不参与 —— 只在钉样里。 */

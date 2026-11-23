@@ -129,9 +129,9 @@ export async function sendMessageAs(args: NamedArguments, text: unknown): Promis
     const isSystem = bias && !removeMacros(mesText).length;
     const compact = isTrueBoolean(args['compact']);
 
-    const character = env.host.resolveCharacter?.(name) ?? null;
+    const character = await env.host.resolveCharacter?.(name) ?? null;
 
-    const avatarCharacter = args['avatar'] ? env.host.resolveCharacter?.(String(args['avatar'])) ?? null : character;
+    const avatarCharacter = args['avatar'] ? await env.host.resolveCharacter?.(String(args['avatar'])) ?? null : character;
     if (args['avatar'] && !avatarCharacter) {
         await env.host.notify?.('warning', undefined, `Character for avatar ${args['avatar']} not found`);
         return '';
@@ -341,7 +341,11 @@ export async function inputCallback(args: NamedArguments, prompt: unknown): Prom
     // Do not remove this delay, otherwise the prompt will not show up
     await delay(1);
     env.ops.push({ type: 'input', prompt: safeValue });
-    const result = env.host.requestInput ? await env.host.requestInput(safeValue, defaultInput, popupOptions) : null;
+    // TASK-064 批二规约:宿主无输入通道 → 显式报错,不静默当空输入(GH#9 同路)
+    if (typeof env.host.requestInput !== 'function') {
+        throw new Error('/input requires host.requestInput seam — not bound on this host (no interactive input channel)');
+    }
+    const result = await env.host.requestInput(safeValue, defaultInput, popupOptions);
     await delay(1);
 
     // Input will return null on nothing entered, and false on cancel clicked
@@ -406,7 +410,7 @@ export async function generateCallback(args: NamedArguments, value: unknown): Pr
 
     try {
         const name = args?.['name'];
-        const char = name ? env.host.resolveCharacter?.(String(name)) ?? null : null;
+        const char = name ? await env.host.resolveCharacter?.(String(name)) ?? null : null;
         const params = {
             quietToLoud: quietToLoud,
             quietName: char?.name ?? (name !== undefined ? String(name) : undefined),

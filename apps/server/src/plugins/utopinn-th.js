@@ -44,7 +44,12 @@ import { stripJsonlExt } from '../storage/name-validation.js';
 import { safeName, sendError } from './_shared/http-utils.js';
 import { buildStscriptEnv, loadCard } from '../services/stscript-env.js';
 import { primaryWorldName } from '../services/embedded-world.js';
-import { createFloorRegexRunner, chatFloorRegexPlacement } from '../services/extension-prompts.js';
+import {
+    createFloorRegexRunner,
+    chatFloorRegexPlacement,
+    resolvePresetInUse,
+    chatPresetApiId,
+} from '../services/extension-prompts.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 
 export const inject = ['webServer'];
@@ -198,8 +203,13 @@ function pushMailboxEntry(doc, event, args, origin) {
     // once 影子:emit 即消费(卡侧 once 由 shim 自销,影子同步摘)
     doc.listeners = doc.listeners.filter((l) => !(l.event === event && l.once));
 }
-/** 服务端自身事件(生成生命周期等)进信箱——origin 标 'server' 防宿主误判自发。 */
-async function recordThEvent(ctx2, event, args) {
+/**
+ * 服务端自身事件(生成生命周期等)进信箱——origin 标 'server' 防宿主误判自发。
+ * TASK-069 export:services/trigger-generation.js(/trigger /swipe 实弹链)
+ * 借它把 generation_started/ended/stopped/message_* 写进信箱,卡内
+ * eventOn 订阅经宿主 getEventLog 泵收到。
+ */
+export async function recordThEvent(ctx2, event, args) {
     try {
         await withEventDoc(ctx2, (doc) => {
             pushMailboxEntry(doc, event, args, 'server');
@@ -491,6 +501,38 @@ function fromTavernRegexView(r) {
         promptOnly: !!dest.prompt,
     };
 }
+/**
+ * preset 域目标解析:name==='in_use' → 当前生成 apiId 的 selected 预设。
+ * apiId 取径:显式 api_id/apiId > 本会话最近生成楼 extra.api(服务端
+ * 簿记真值)>'openai'(产品默认生成面)。settings.main_api 是死字段
+ * (utopinn 无 API 切换写面、恒默认 koboldhorde),不作解析源。
+ * selected 名走 resolvePresetInUse(openai 顶层指针优先,oai_settings
+ * canonical 兜底;koboldhorde→kobold 同上游 getPresetManager)。
+ */
+async function resolvePresetRegexTarget(ctx2, a) {
+    const name = a?.name;
+    let apiId = a?.api_id ?? a?.apiId;
+    if (name !== 'in_use') {
+        if (!name) return { error: "preset scope requires name (or 'in_use')", status: 400 };
+        return { apiId: apiId ?? 'openai', name };
+    }
+    if (!apiId) {
+        apiId = 'openai';
+        if (ctx2.charDir && ctx2.chatName) {
+            try {
+                const chatDoc = await getChatRepo().get(ctx2.handle, ctx2.charDir, ctx2.chatName);
+                apiId = chatPresetApiId(chatDoc?.body);
+            } catch { /* 无会话档案 → openai 默认面 */ }
+        }
+    }
+    const settings = (await getSettingsRepo().get(ctx2.handle)) ?? {};
+    const inUse = resolvePresetInUse(settings, apiId);
+    if (!inUse) {
+        return { error: `preset 'in_use' 无选中预设(apiId '${apiId}')`, status: 400 };
+    }
+    return inUse;
+}
+
 /** regex 三域读:global(settings)/character(卡)/preset(preset repo)。 */
 async function readRegexScope(ctx2, a) {
     const type = a?.type ?? 'global';
@@ -509,14 +551,12 @@ async function readRegexScope(ctx2, a) {
         } catch (e) { return { error: String(e?.message ?? e), status: 404 }; }
     }
     if (type === 'preset') {
-        const apiId = a?.api_id ?? a?.apiId ?? 'openai';
-        const presetName = a?.name === 'in_use' ? a?.preset_in_use ?? a?.name : a?.name;
-        if (!presetName || presetName === 'in_use') {
-            return { error: "preset scope requires name('in_use' 解析未实——传具体预设名)", status: 400 };
-        }
+        const target = await resolvePresetRegexTarget(ctx2, a);
+        if (target.error) return target;
+        const { apiId, name: presetName } = target;
         const doc = await getPresetRepo().get(ctx2.handle, apiId, safeName(String(presetName), 'args.name'));
         if (!doc) return { error: `preset not found: ${apiId}/${presetName}`, status: 404 };
-        return { scripts: Array.isArray(doc?.extensions?.regex_scripts) ? doc.extensions.regex_scripts : [] };
+        return { apiId, name: presetName, scripts: Array.isArray(doc?.extensions?.regex_scripts) ? doc.extensions.regex_scripts : [] };
     }
     return { error: `type must be global|character|preset`, status: 400 };
 }
@@ -604,8 +644,9 @@ function resolveFloorId(mid, body) {
     const n = normMessageId(mid, body.length);
     return (n !== null && n >= 0 && n < body.length) ? n : null;
 }
-/** 展示车道 runner:settings+substCtx+卡作用域脚本(collectRegexScripts
- *  卡域恒放行口径,与 chats 读面 mes_display 同链)。 */
+/** 展示车道 runner:settings+substCtx+卡作用域脚本+preset 域 in_use 预设
+ *  (collectRegexScripts 卡域恒放行、preset 域 in_use+allowlist 闸,
+ *  与 chats 读面 mes_display 同链)。 */
 async function displayFloorRunner(ctx2) {
     const settings = (await getSettingsRepo().get(ctx2.handle)) ?? {};
     const substCtx = await buildSubstCtx(ctx2, settings);
@@ -613,7 +654,18 @@ async function displayFloorRunner(ctx2) {
     if (ctx2.charDir) {
         try { card = await loadCard(ctx2.directories, ctx2.charDir); } catch { card = null; }
     }
-    return { runner: createFloorRegexRunner(settings, substCtx, { card, charDir: ctx2.charDir }), substCtx };
+    const apiId = chatPresetApiId(substCtx.chat);
+    const inUse = resolvePresetInUse(settings, apiId);
+    const presetDoc = inUse
+        ? await getPresetRepo().get(ctx2.handle, inUse.apiId, inUse.name).catch(() => null)
+        : null;
+    return {
+        runner: createFloorRegexRunner(settings, substCtx, {
+            card, charDir: ctx2.charDir,
+            apiId: inUse?.apiId ?? apiId, presetName: inUse?.name ?? null, presetDoc,
+        }),
+        substCtx,
+    };
 }
 /** 楼层展示深度:非系统楼从尾数(与 projectChatFloorsForDisplay 同口径)。 */
 function floorDisplayDepth(body, idx) {
@@ -643,11 +695,9 @@ async function writeRegexScope(ctx2, a, scripts) {
         return writeCardRegexScripts(ctx2, charDir, scripts);
     }
     if (type === 'preset') {
-        const apiId = a?.api_id ?? a?.apiId ?? 'openai';
-        const presetName = a?.name === 'in_use' ? a?.preset_in_use ?? a?.name : a?.name;
-        if (!presetName || presetName === 'in_use') {
-            return { error: "preset scope requires name('in_use' 解析未实——传具体预设名)", status: 400 };
-        }
+        const target = await resolvePresetRegexTarget(ctx2, a);
+        if (target.error) return target;
+        const { apiId, name: presetName } = target;
         const safe = safeName(String(presetName), 'args.name');
         const doc = await getPresetRepo().get(ctx2.handle, apiId, safe);
         if (!doc) return { error: `preset not found: ${apiId}/${presetName}`, status: 404 };
@@ -1288,7 +1338,10 @@ const METHODS = {
     async getTavernRegexes(a, _scope, ctx2) {
         const r = await readRegexScope(ctx2, a);
         if (r.error) return { ok: false, status: r.status ?? 500, error: r.error };
-        return { ok: true, result: (r.scripts ?? []).map(toTavernRegexView) };
+        const out = { ok: true, result: (r.scripts ?? []).map(toTavernRegexView) };
+        // preset 域回报实解 {apiId,name}——'in_use' 调方据此确证指向(TH 无此面,属观测扩展)。
+        if (r.apiId && r.name) out.resolved = { apiId: r.apiId, name: r.name };
+        return out;
     },
     /** {regexes|TavernRegex[], type, name?} 全量替换(TH:会触发 CHAT_CHANGED)。 */
     async replaceTavernRegexes(a, _scope, ctx2) {
@@ -1320,7 +1373,8 @@ const METHODS = {
      *  source: 'user_input'|'ai_output'|'slash_command'|'world_info'|'reasoning'(单值字符串;
      *          宽松兼容 flags 对象形)。destination: 'display'|'prompt'(兼容对象形)。
      *  脚本集=上游 getRegexScripts({allowedOnly:true}) 口径:global 恒入;
-     *  character 仅 character_allowed_regex 放行;preset 因 in_use 解析未实不入(见对照表)。
+     *  character 仅 character_allowed_regex 放行;preset 域 = in_use 预设
+     *  (本会话最近生成 apiId → settings selected)+ preset_allowed_regex 闸。
      *  后段对齐 TH:结果再过一遍 substituteParams(正文里的 {{}} 宏)。 */
     async formatAsTavernRegexedString(a, _scope, ctx2) {
         const text = String(a?.text ?? '');
@@ -1351,6 +1405,18 @@ const METHODS = {
                     const scoped = card?.data?.extensions?.regex_scripts ?? card?.extensions?.regex_scripts;
                     if (Array.isArray(scoped)) scripts.push(...scoped);
                 } catch { /* 卡缺省只过全局 */ }
+            }
+        }
+        // preset 域(in_use+allowlist,上游 allowedOnly 口径);in_use 不可解 → 不入。
+        const presetTarget = await resolvePresetRegexTarget(ctx2, { type: 'preset', name: 'in_use', api_id: a?.api_id ?? a?.apiId });
+        if (!presetTarget.error) {
+            const allowedList = settings?.extension_settings?.preset_allowed_regex?.[presetTarget.apiId];
+            if (Array.isArray(allowedList) && allowedList.includes(presetTarget.name)) {
+                const doc = await getPresetRepo()
+                    .get(ctx2.handle, presetTarget.apiId, safeName(presetTarget.name, 'args.name'))
+                    .catch(() => null);
+                const presetScripts = doc?.extensions?.regex_scripts;
+                if (Array.isArray(presetScripts)) scripts.push(...presetScripts);
             }
         }
         const substCtx = await buildSubstCtx(ctx2, settings);

@@ -7,6 +7,12 @@
 #
 # 内建面(webServer 路由/升级位贡献者)排最前 —— 它们 inject webServer,
 # 服务由 kernel-boot 在 loadProfileFile 之前提供。
+# core: true = 锁死不可经 API 停用(kernel pluginManager.disable 闸 +
+# 管理面锁态透出)。判据:关掉即破坏产品闭环 —— 数据层(library)、
+# 生成(generate/delivery)、CardApp 桥(th)、数据进出(data)、
+# 上游配置(connection)、管理面自身(plugins,自锁)。
+# 可拆件(diag/mvu/script/regex)只供观测/管理 REST,闭环引擎在
+# services/@utopinn/core 直调,不经插件路由。
 name: utopinn-server
 plugins:
   - id: utopinn-library
@@ -14,7 +20,6 @@ plugins:
     core: true
   - id: utopinn-diag
     module: ./plugins/utopinn-diag.js
-    core: true
   - id: utopinn-generate
     module: ./plugins/utopinn-generate.js
     core: true
@@ -30,9 +35,12 @@ plugins:
     module: ./plugins/utopinn-script.js
   - id: utopinn-th
     module: ./plugins/utopinn-th.js
+    core: true
   - id: utopinn-data
     module: ./plugins/utopinn-data.js
+    core: true
   - id: utopinn-connection
     module: ./plugins/utopinn-connection.js
+    core: true
   - id: utopinn-regex
     module: ./plugins/utopinn-regex.js

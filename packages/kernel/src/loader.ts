@@ -30,15 +30,19 @@ export interface Profile {
     plugins: PluginEntry[];
 }
 
-/** patch 层应用:按 id 整行替换;新 id 追加;disabled 行保留位但不装载 */
+/**
+ * patch 层应用:{id,disabled} 增量合并 —— 只取 patch 行的 disabled 覆写
+ * base 同名行;base 缺失 id 的 patch 行忽略(增量 patch 不可复活已从
+ * base 删除的插件,亦不会以无 module 的裸行进入装载 —— kernel-boot
+ * mergedRows 同一口径)。旧部署遗留的整行 patch 同样只取 .disabled,
+ * module/config 以 base 为准,避免快照永久遮蔽 base 后续变更。
+ */
 export function applyPatch(base: PluginEntry[], patch: PluginEntry[]): PluginEntry[] {
-    const rows = [...base];
-    for (const p of patch) {
-        const i = rows.findIndex((r) => r.id === p.id);
-        if (i >= 0) rows[i] = p;
-        else rows.push(p);
-    }
-    return rows;
+    const disabledById = new Map(patch.map((p) => [p.id, p.disabled]));
+    return (base ?? []).map((row) => {
+        const disabled = disabledById.get(row.id);
+        return disabled === undefined ? row : { ...row, disabled: !!disabled };
+    });
 }
 
 async function resolveModule(
@@ -104,6 +108,12 @@ export async function loadProfile(
             mod = normalize(await resolveModule(row, baseDir));
         } catch (e) {
             results.push({ id: row.id, status: 'failed', reason: `import: ${(e as Error).message}` });
+            continue;
+        }
+        // 行级防御:无 module 的行/无法归一化的模块 → failed 记录原因,
+        // 不整棵打死(与其余行的 import 失败同径)
+        if (!mod || typeof mod !== 'object') {
+            results.push({ id: row.id, status: 'failed', reason: 'module unresolved (no module spec or empty export)' });
             continue;
         }
 

@@ -548,7 +548,10 @@ export function apply(ctx) {
                     member: { avatar: groupPlan.speaker.avatar, name: groupPlan.speaker.name },
                     queue: groupPlan.activated,
                 };
-                response.setHeader('x-utopinn-group', JSON.stringify(sources.group));
+                // 头值须 Latin-1 安全:成员名可含 CJK/全角符(如「人生模拟器，…」),
+                // 裸 JSON.stringify 会 ERR_INVALID_CHAR 把生成打成 500 ——
+                // encodeURIComponent 全 ASCII,客户端 decodeURIComponent 后 JSON.parse。
+                response.setHeader('x-utopinn-group', encodeURIComponent(JSON.stringify(sources.group)));
             } else {
                 persistTargetDefault = {
                     kind: 'character',

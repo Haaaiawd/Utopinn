@@ -657,7 +657,7 @@ test('th.generate lorebookEntries:选择性 WI 注入;全未命中 → 400;部�
     }
 });
 
-test('triggerSlash:/gen → generateQuiet→runQuietGeneration 钉;/trigger 未绑定 → 显式错(GH#9)', async () => {
+test('triggerSlash:/gen → generateQuiet→runQuietGeneration 钉;/trigger 已绑 → 真派发(GH#9/TASK-069)', async () => {
     // /gen:host.generateQuiet 已绑 → 走真 quiet 链(组装/派发失败也诚实
     // 经 sinks.notification 回执)——seam 缺失的旧行为是无声 ''。
     let r = await call('triggerSlash', { script: '/gen hello' });
@@ -665,10 +665,16 @@ test('triggerSlash:/gen → generateQuiet→runQuietGeneration 钉;/trigger 未�
     assert.ok((r.body.ops ?? []).some((o) => o.type === 'gen'), `ops 含 gen: ${JSON.stringify(r.body.ops)}`);
     assert.ok((r.body.notifications ?? []).some((n) => String(n.text).includes('/gen failed')),
         `generateQuiet→runQuietGeneration 链真走(失败面经 sinks): ${JSON.stringify(r.body.notifications)}`);
-    // /trigger:seam 缺席 → 引擎显式抛错(不再静默假成功)
+    // /trigger:host.triggerGeneration 已绑(TASK-069)→ 真派发链。
+    // 无 await → 浮动派发,命令先回 ''(上游语义);await=true → 阻塞
+    // 到终态,上游失败(本测试无 API key)如实经 sinks 回执,不冒 500。
     r = await call('triggerSlash', { script: '/trigger' });
-    assert.equal(r.status, 500, JSON.stringify(r.body));
-    assert.match(String(r.body.error), /triggerGeneration/);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok((r.body.ops ?? []).some((o) => o.type === 'trigger'), `ops 含 trigger: ${JSON.stringify(r.body.ops)}`);
+    r = await call('triggerSlash', { script: '/trigger await=true' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.ok((r.body.notifications ?? []).some((n) => String(n.text).includes('/trigger failed')),
+        `await 后上游失败经 sinks 回执: ${JSON.stringify(r.body.notifications)}`);
 });
 
 // ── E. 消息写家族(TH 字段名,楼层一致 + 信箱事件) ──────────────────────

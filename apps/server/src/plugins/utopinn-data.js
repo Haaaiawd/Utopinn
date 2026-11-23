@@ -41,7 +41,7 @@ import { createBackupArchive, normalizeUserBackupSelection } from '../users.js';
 import { createLanMigrationOffer, LAN_MIGRATION_PATH_PREFIX } from '../lan-migration.js';
 import { getRequestBaseUrl } from '../express-common.js';
 import { getConfigValue } from '../util.js';
-import { getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
+import { getNamedDocRepo, getPresetRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { InvalidArgumentError, NotFoundError, StorageReadOnlyError } from '../storage/errors.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
 import { persistCharXAssets } from '../charx.js';
@@ -195,6 +195,8 @@ async function targetExists(request, target) {
             return (await getPresetRepo().get(handle, target.apiId, target.targetName)) != null;
         case 'persona':
             return personaExists(handle, target.avatarKey);
+        case 'theme':
+            return (await getNamedDocRepo().get(handle, 'themes', target.targetName)) != null;
         default:
             return false;
     }
@@ -649,6 +651,9 @@ export function apply(ctx) {
             case 'world':
             case 'preset':
                 return { kind: detected.kind, targetName: repoTargetName(requested, detected.name), apiId };
+            case 'theme':
+                // named-doc themes 桶(同 world/preset 命名推导,apiId 无关)
+                return { kind: 'theme', targetName: repoTargetName(requested, detected.name) };
             case 'persona': {
                 const displayName = stripImportExt(requested) || detected.name;
                 return {
@@ -765,6 +770,12 @@ export function apply(ctx) {
                 return { ok: true };
             case 'persona':
                 return commitPersona(handle, detected.prepared.doc, target);
+            case 'theme':
+                // 落 named-doc themes 桶 —— 与 legacy /api/themes/save
+                // 同一写面(NamedDocRepo),主题读面(named-docs/themes、
+                // settings themes 清单)即刻可见。
+                await getNamedDocRepo().save(handle, 'themes', target.targetName, detected.prepared.doc);
+                return { ok: true };
             default:
                 throw new ImportParseError(`Unsupported import kind: ${detected.kind}`);
         }
