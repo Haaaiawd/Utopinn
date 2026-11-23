@@ -4,6 +4,7 @@
 import { useShell, useContribs } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { useTheme } from '../../theme';
+import { createPortal } from 'react-dom';
 import { personaAvatarSrc } from '../../api/personas';
 import { Icon } from '../Icon';
 import { LogoU } from '../LogoU';
@@ -134,16 +135,19 @@ export function AccountPopCard() {
     );
 }
 
-/** 账户锚点弹层(规范稿 account pop:左下 64px 锚定,字号/主题/语言/设置四行)。 */
+/** 账户锚点弹层(规范稿 account pop:左下 64px 锚定,字号/主题/语言/设置四行)。
+ *  portal 出 body —— left-chrome 带 backdrop-filter + overflow:hidden,
+ *  fixed 后代会被锁进 chrome 裁掉(弹层被 chat 框盖),portal 逃这个包含块。 */
 function AccountPop() {
     const shell = useShell();
-    return (
+    return createPortal(
         <>
             <div className="fixed inset-0 z-[75]" onClick={() => shell.setAccountPopOpen(false)} />
             <div className="pop-in fixed bottom-2.5 left-[64px] z-[75] w-[248px]">
                 <AccountPopCard />
             </div>
-        </>
+        </>,
+        document.body,
     );
 }
 
@@ -167,7 +171,7 @@ export function LeftChrome() {
                     aria-label="Utopinn"
                 >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={26} /></span>
-                    <span className="brand-wordmark pr-1.5">{t('app.name')}</span>
+                    <span className="brand-wordmark">{t('app.name')}</span>
                 </button>
                 <div className="brand-actions">
                     <button className="ghost-btn h-8 w-8 rounded-[8px]" onClick={() => shell.setCmdkOpen(true)} title={t('chrome.search')}>

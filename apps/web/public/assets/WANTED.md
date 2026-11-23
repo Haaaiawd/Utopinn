@@ -1,5 +1,8 @@
 # 素材清单(已交付 AIRP 包 2025-11;生成后按路径投放)
 
+> 审计 2026-11:本目录全部为自家生成资产(AIRP 交付 / 掌门卡工作区抽取),
+> 无 ST/SillyTavern stock 素材(无 __transparent / user-default / stock 壁纸)。
+
 命名即契约——文件名/路径不动,前端按这些键引用,PNG 优先。
 
 - 主题色:**珊瑚星火 #FF6B5B**;深色底基调 #141414→#1c1c20
@@ -121,6 +124,32 @@ pool in lower-center area, faint coral warmth (#FF6B5B) in the light,
 heavy bokeh, out-of-focus interior depth, no recognizable objects,
 no text, 1920x1080
 ```
+
+### `backgrounds/stage-hall.jpg` · 960×535(已交付)
+
+galgame 形态的实场景底图兜底(stagepack scene.bg 无钩位时的默认):
+云栖宗正殿内景,自掌门卡工作区抽为静态资产 —— 与 stage-galgame 的
+虚化幕布不同,这张是具象场景,只在形态会话(scene 壳)里出现。
+
+### `backgrounds/star-cat.png` · 1568×882(已交付)
+
+星愿魔法猫娘卧室 —— 紫调星星主题,魔法棒+星星发饰猫娘坐地毯,
+窗外星夜。聊天壁纸「星愿猫娘」。
+
+### `backgrounds/claude-study.png` · 1568×882(已交付)
+
+温馨书房时光 —— 暖橙调,橙发蝴蝶结娘捧茶杯伏案,书架/羽毛笔/
+橘猫陪读。聊天壁纸「书房时光」。
+
+### `backgrounds/trio-room.png` · 1568×882(已交付)
+
+三家梦幻主题房三联 —— Gemini 星愿猫 / DeepSeek 鲸海女仆 /
+Claude 书房娘竖三格。聊天壁纸「三人行」。
+
+### `backgrounds/whale-maid.png` · 1568×882(已交付)
+
+鲸鱼主题海底女仆房 —— 蓝调,鲸鱼女仆娘+海底舷窗+鲸鱼玩偶。
+聊天壁纸「鲸海女仆」。
 
 ---
 

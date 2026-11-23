@@ -14,6 +14,7 @@ import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
 import { getSettings } from '../../api/settings';
 import { PanelEmpty, PanelError, useRemote } from '../panels/panelShared';
+import { downloadExport, exportCardUrl, exportChatUrl } from '../../api/export';
 import { charImgFallback } from '../stage/StageFrame';
 import { renderInline } from '../stage/prose';
 import { openCharEditor } from '../shell/overlayBus';
@@ -137,6 +138,14 @@ export function CharView() {
                     <span className="heading-tight truncate text-[13.5px] font-medium text-[color:var(--fg-primary)]">{name}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                    {/* 卡导出(TASK-067):GET /export/card → 盘上原卡文件(PNG tEXt 原字节)。 */}
+                    <button
+                        className="ghost-btn h-8 w-8 shrink-0"
+                        onClick={() => downloadExport(exportCardUrl(dir))}
+                        title={t('ov.export.card')}
+                    >
+                        <Icon name="upload" size={14} />
+                    </button>
                     <button
                         className="ghost-btn h-8 gap-1.5 border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-2.5 text-[12px] text-[color:var(--fg-secondary)]"
                         style={{ borderRadius: 10 }}
@@ -249,26 +258,38 @@ export function CharView() {
                                 {rows.map((r) => {
                                     const last = typeof r.lastMessage?.mes === 'string' ? r.lastMessage.mes.trim() : '';
                                     return (
-                                        <button
-                                            key={r.name}
-                                            type="button"
-                                            className="inset-row inset-row-btn flex w-full items-center gap-3 text-left"
-                                            onClick={() => s.selectChat(`${dir}/${r.name}`)}
-                                        >
-                                            <div className="min-w-0 flex-1">
-                                                <div className="flex items-baseline gap-2">
-                                                    <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{r.name}</span>
-                                                    {r.demo && <span className="shrink-0 font-mono-ui text-[10px] uppercase text-[color:var(--fg-faint)]">{t('chat.demo')}</span>}
+                                        <div key={r.name} className="inset-row flex items-center">
+                                            <button
+                                                type="button"
+                                                className="inset-row-btn flex min-w-0 flex-1 items-center gap-3 rounded-[10px] pr-2 text-left"
+                                                onClick={() => s.selectChat(`${dir}/${r.name}`)}
+                                            >
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-baseline gap-2">
+                                                        <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{r.name}</span>
+                                                        {r.demo && <span className="shrink-0 font-mono-ui text-[10px] uppercase text-[color:var(--fg-faint)]">{t('chat.demo')}</span>}
+                                                    </div>
+                                                    {last && <div className="mt-0.5 truncate text-[11.5px] text-[color:var(--fg-muted)]">{last}</div>}
                                                 </div>
-                                                {last && <div className="mt-0.5 truncate text-[11.5px] text-[color:var(--fg-muted)]">{last}</div>}
-                                            </div>
-                                            <div className="flex shrink-0 flex-col items-end gap-0.5">
-                                                <span className="font-mono-ui text-[11px] text-[color:var(--fg-faint)]">
-                                                    {relTime(typeof r.updatedAt === 'number' ? new Date(r.updatedAt).toISOString() : r.updatedAt)}
-                                                </span>
-                                                {r.messageCount > 0 && <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{r.messageCount} {t('charpage.floors')}</span>}
-                                            </div>
-                                        </button>
+                                                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-faint)]">
+                                                        {relTime(typeof r.updatedAt === 'number' ? new Date(r.updatedAt).toISOString() : r.updatedAt)}
+                                                    </span>
+                                                    {r.messageCount > 0 && <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{r.messageCount} {t('charpage.floors')}</span>}
+                                                </div>
+                                            </button>
+                                            {/* 单会话导出(TASK-067):demo 行无服务端档,钮不出。 */}
+                                            {!r.demo && (
+                                                <button
+                                                    type="button"
+                                                    className="ghost-btn mr-1.5 h-7 w-7 shrink-0"
+                                                    title={t('ov.export.chat')}
+                                                    onClick={() => downloadExport(exportChatUrl(dir, r.name))}
+                                                >
+                                                    <Icon name="upload" size={12} />
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
                             </div>

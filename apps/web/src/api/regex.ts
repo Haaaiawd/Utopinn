@@ -39,6 +39,18 @@ export async function getRegexFullView(): Promise<RegexFullViewResponse> {
     return apiGet<RegexFullViewResponse>('/api/utopinn/regex');
 }
 
+/** GET /api/utopinn/regex?scope=preset 的响应 = RegexPresetGroup + scope 回显。 */
+export interface RegexPresetScopeView extends RegexPresetGroup {
+    scope: 'preset';
+}
+
+/** GET /api/utopinn/regex?scope=preset —— 单预设域视图
+ *  (allow 放行闸 / in_use 位 / 档内 regex_scripts;脚本本体在预设 doc,
+ *   此处只为 settings 侧放行态取数)。 */
+export async function getRegexPresetScope(apiId: string, name: string): Promise<RegexPresetScopeView> {
+    return apiGet<RegexPresetScopeView>(`/api/utopinn/regex${scopeQuery({ scope: 'preset', apiId, preset: name })}`);
+}
+
 /** PUT /api/utopinn/regex —— 整组替换或更新 preset/char 放行开关。 */
 export async function putRegexScope(
     target: RegexScopeTarget,

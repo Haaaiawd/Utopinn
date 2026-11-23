@@ -25,6 +25,9 @@ export interface ChatSummary {
     /** Chat file name without .jsonl. */
     chatName: string;
     group?: string;
+    /** 群会话标志(TASK-062):群文档 id;存在 → charDir=''、
+     *  chatName=群聊天文件名,读写走 /api/utopinn/groups 域。 */
+    groupId?: string;
     updatedAt?: string;
     unread?: boolean;
     /** 规范稿 s.pinned —— 侧栏「置顶」分区的会话。 */

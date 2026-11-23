@@ -3,12 +3,12 @@
 //   「这是什么 / 给界面贡献了什么」);settings 插件签 = 批量开关面
 //   (PluginsSections full 三段全出,扫一遍启停)。
 // 数据全部走 /api/utopinn/plugins(TASK-021 管理面):
-//   · 内核锁定段 = 服务端 CORE_PLUGINS ∪ 自锁件(utopinn-plugins 拒自己的
-//     disable/reload),清单来自真 list,锁定身份与后端同一集合;
+//   · 内核锁定段 = list 行 core:true(profile.yaml 旗标透出,与内核
+//     disable 闸同源)∪ 自锁件(utopinn-plugins 拒自己的 disable/reload);
 //   · 可停用段 = enable/disable/reload 真写面,status/patch 原样透显;
 //   · 市场段 = ui.contrib 读面有、安装面未备(C12)—— 目录行渲染「已内置 /
 //     计划中」徽标,不做假安装钮。
-// PluginsSections 与 settings 的「Cordis 插件」页签共享(规范稿同一函数两处用)。
+// PluginsSections 与 settings 的「内核插件」页签共享(规范稿同一函数两处用)。
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
@@ -24,27 +24,75 @@ import { MOCK_MARKET_PLUGINS } from '../../api/mock';
 /* 集合判定看真 list;这里只管图标/中文名/描述 —— 未登记的 id 原样显示。    */
 /* ------------------------------------------------------------------ */
 
-interface PluginMeta { icon: IconName; label?: string; desc?: string }
+interface PluginMeta {
+    icon: IconName;
+    label?: string;
+    desc?: string;
+    /** core 件:为什么不能关(锁定行的提示文案)。 */
+    lockReason?: string;
+    /** 可拆件:关掉之后明确会失去什么(停用确认 + 详情卡警示)。 */
+    consequence?: string;
+}
 
 const PLUGIN_META: Record<string, PluginMeta> = {
-    'utopinn-library': { icon: 'bookOpen', desc: '角色卡、世界书、预设与人设核心读写域' },
-    'utopinn-generate': { icon: 'cpu', desc: 'Prompt 组装、流式生成与 Jobs 调度中枢' },
-    'utopinn-diag': { icon: 'code', desc: 'diag-bus 事件、报错与 Trace 时序采集' },
-    'utopinn-delivery': { icon: 'radio', desc: '手机切后台缓冲生成流,重连无缝补齐楼层' },
-    'utopinn-plugins': { icon: 'plugins', desc: '插件启停与热重载执行面 —— 自锁保护' },
-    'utopinn-mvu': { icon: 'database', label: 'MVU 状态引擎', desc: '服务端原子化楼层变量补丁与快照回滚树' },
-    'utopinn-th': { icon: 'shield', label: 'CardApp 沙箱桥', desc: '卡面 HTML 应用的受控宿主与 ctx 桥' },
+    'utopinn-library': {
+        icon: 'bookOpen', label: '内容库', desc: '角色卡、世界书、预设与人设核心读写域',
+        lockReason: '角色卡 / 聊天读写 / 世界书 / 预设 / 人设的全部数据面 —— 关掉等于拔掉数据层',
+    },
+    'utopinn-generate': {
+        icon: 'cpu', label: '生成引擎', desc: 'Prompt 组装、流式生成与 Jobs 调度中枢',
+        lockReason: '生成与组装主入口 —— 关掉产品没有输出',
+    },
+    'utopinn-diag': {
+        icon: 'code', label: '诊断总线', desc: 'diag-bus 事件、报错与 Trace 时序采集',
+        consequence: '诊断/统计面板与 CLI logs·stats 全灭;前端与 CardApp 的错误上报(POST /diag/client)404;mobile 用 GET /_kernel 做连通探测 —— 关掉后手机端连不上服务器',
+    },
+    'utopinn-delivery': {
+        icon: 'radio', label: '断线续传', desc: '手机切后台缓冲生成流,重连无缝补齐楼层',
+        lockReason: '生成结果的 WS 交付通道 —— 关掉流式回执到不了客户端',
+    },
+    'utopinn-plugins': {
+        icon: 'plugins', label: '插件管理', desc: '插件启停与热重载执行面 —— 自锁保护',
+        lockReason: '插件管理面本体 —— 关掉它连「再打开」的 API 都没了(自锁)',
+    },
+    'utopinn-mvu': {
+        icon: 'database', label: 'MVU 状态引擎', desc: '服务端原子化楼层变量补丁与快照回滚树',
+        consequence: '生成管线的自动 settle 不受影响(持久化层直调 services/mvu-settle);关掉的是手动 settle/resettle、/state 读面与 MVU 状态板渲染 —— MVU 面板与 mvu CLI 动词失效',
+    },
+    'utopinn-th': {
+        icon: 'shield', label: 'CardApp 沙箱桥', desc: '卡面 HTML 应用的受控宿主与 ctx 桥',
+        lockReason: 'CardApp / TavernHelper 桥 —— 卡面应用的变量与消息读写全断',
+    },
     'utopinn-stats': { icon: 'compass', label: '统计与 WI 命中', desc: '生成延迟、Token 与世界书命中率汇总' },
     'utopinn-import': { icon: 'import', label: '导入管线', desc: 'PNG / JSON / CHARX 导入与 ST 迁移扫描' },
-    'utopinn-script': { icon: 'slash', label: 'STscript 指令面', desc: '斜杠指令与宏执行' },
-    'utopinn-data': { icon: 'folder', label: '数据辅助', desc: '数据目录扫描与迁移辅助' },
-    'utopinn-connection': { icon: 'plug', label: '上游连接', desc: '上游端点与连接管理' },
-    'utopinn-regex': { icon: 'wand', label: '正则管线', desc: '服务端正则替换管线' },
+    'utopinn-script': {
+        icon: 'slash', label: 'STscript 指令面', desc: '斜杠指令与宏执行',
+        consequence: 'Web 端斜杠指令执行与 `/` 补全注册表失效;经 CardApp 桥的 triggerSlash 不受影响(直调 @utopinn/core)',
+    },
+    'utopinn-data': {
+        icon: 'folder', label: '数据辅助', desc: '数据目录扫描与迁移辅助',
+        lockReason: '备份 / 导入 / LAN 迁移 —— 数据进出实例边界的唯一通路',
+    },
+    'utopinn-connection': {
+        icon: 'plug', label: '上游连接', desc: '上游端点与连接管理',
+        lockReason: '上游连接探测与模型清单 —— 关掉无法验证/选择生成上游',
+    },
+    'utopinn-regex': {
+        icon: 'wand', label: '正则管线', desc: '服务端正则替换管线',
+        consequence: '正则脚本的读写管理面失效(studio 正则编辑、CLI regex 动词);生成管线的正则引擎在 core,已存脚本照常生效',
+    },
 };
 
-/** 内核锁定集合 —— utopinn-plugins.js CORE_PLUGINS(library/generate/
- *  delivery/diag)∪ SELF(管理面拒绝对自己 disable/reload)。 */
-const CORE_LOCKED = new Set(['utopinn-library', 'utopinn-generate', 'utopinn-delivery', 'utopinn-diag', 'utopinn-plugins']);
+/** 内核锁定回退集合 —— 正常以 PluginItem.core(服务端 profile.yaml
+ *  core 旗标透出)为准;旧服务端不回该字段时按本表置锁。
+ *  与 profile.yaml core:true 行同集(library/generate/delivery/plugins/
+ *  th/data/connection);utopinn-plugins 另有自锁闸。 */
+const CORE_LOCKED = new Set([
+    'utopinn-library', 'utopinn-generate', 'utopinn-delivery', 'utopinn-plugins',
+    'utopinn-th', 'utopinn-data', 'utopinn-connection',
+]);
+
+const isCorePlugin = (p: PluginItem): boolean => p.core ?? CORE_LOCKED.has(p.id);
 
 export const pluginIcon = (id: string): IconName => PLUGIN_META[id]?.icon ?? 'puzzle';
 export const pluginLabel = (id: string): string => PLUGIN_META[id]?.label ?? id;
@@ -109,8 +157,8 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
     const s = useShell();
     const { busy, act } = usePluginAct(plugins);
     const items = plugins.data?.items ?? [];
-    const core = items.filter((p) => CORE_LOCKED.has(p.id));
-    const rest = items.filter((p) => !CORE_LOCKED.has(p.id));
+    const core = items.filter(isCorePlugin);
+    const rest = items.filter((p) => !isCorePlugin(p));
     const showSys = full || s.pluginsNav === 'installed';
 
     return (
@@ -133,7 +181,7 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
                                             right={
                                                 <>
                                                     <span className="rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>{t('plugins.locked')}</span>
-                                                    <span className="sh-switch cursor-not-allowed opacity-45" data-checked title={t('plugins.lockedHint')}><span className="sh-switch-thumb" /></span>
+                                                    <span className="sh-switch cursor-not-allowed opacity-45" data-checked title={PLUGIN_META[p.id]?.lockReason ?? t('plugins.lockedHint')}><span className="sh-switch-thumb" /></span>
                                                 </>
                                             }
                                         />
@@ -175,7 +223,15 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
                                                             data-checked={enabled || undefined}
                                                             disabled={busy === p.id}
                                                             style={busy === p.id ? { opacity: 0.5 } : undefined}
-                                                            onClick={() => act(p.id, () => (enabled ? disablePlugin(p.id) : enablePlugin(p.id)))}
+                                                            title={enabled ? (PLUGIN_META[p.id]?.consequence ?? undefined) : undefined}
+                                                            onClick={() => {
+                                                                // 停用前明示后果:可拆件都有真实代价,不静默关。
+                                                                if (enabled) {
+                                                                    const warn = PLUGIN_META[p.id]?.consequence;
+                                                                    if (warn && !window.confirm(`${t('plugins.disableConfirm')}\n${pluginLabel(p.id)}\n\n${warn}`)) return;
+                                                                }
+                                                                act(p.id, () => (enabled ? disablePlugin(p.id) : enablePlugin(p.id)));
+                                                            }}
                                                         >
                                                             <span className="sh-switch-thumb" />
                                                         </button>
@@ -299,41 +355,60 @@ function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugin
                 </button>
             </div>
 
-            {/* 服务端件:徽标行 + module + 动作(非 CORE_LOCKED 才给写面) */}
+            {/* 服务端件:徽标行 + module + 动作(core 件不给写面,改给锁因;
+                可拆件给写面 + 停用后果警示 —— 两处文案都在 PLUGIN_META)。 */}
             {item && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                    <DetailBadge
-                        text={item.status}
-                        color={item.status === 'failed' ? 'var(--status-danger)' : item.status === 'active' ? 'var(--status-ok)' : 'var(--fg-muted)'}
-                    />
-                    {item.patch && <DetailBadge text="patch" />}
-                    {CORE_LOCKED.has(item.id) && <DetailBadge text={t('plugins.locked')} />}
-                    {item.disabled && <DetailBadge text="disabled" />}
-                    <span className="min-w-0 flex-1 truncate text-right font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]" title={item.module}>
-                        {item.module}
-                    </span>
-                    {!CORE_LOCKED.has(item.id) && (
-                        <span className="flex shrink-0 items-center gap-1.5">
-                            <button
-                                className="ghost-btn h-7 w-7"
-                                title={t('plugins.reload')}
-                                disabled={busy === item.id}
-                                onClick={() => act(item.id, () => reloadPlugin(item.id), `${t('plugins.reloadDone')}:${pluginLabel(item.id)}`)}
-                            >
-                                <Icon name="refresh" size={14} />
-                            </button>
-                            <button
-                                className="sh-switch"
-                                data-checked={!item.disabled || undefined}
-                                disabled={busy === item.id}
-                                style={busy === item.id ? { opacity: 0.5 } : undefined}
-                                onClick={() => act(item.id, () => (item.disabled ? enablePlugin(item.id) : disablePlugin(item.id)))}
-                            >
-                                <span className="sh-switch-thumb" />
-                            </button>
+                <>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <DetailBadge
+                            text={item.status}
+                            color={item.status === 'failed' ? 'var(--status-danger)' : item.status === 'active' ? 'var(--status-ok)' : 'var(--fg-muted)'}
+                        />
+                        {item.patch && <DetailBadge text="patch" />}
+                        {isCorePlugin(item) && <DetailBadge text={t('plugins.locked')} />}
+                        {item.disabled && <DetailBadge text="disabled" />}
+                        <span className="min-w-0 flex-1 truncate text-right font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]" title={item.module}>
+                            {item.module}
                         </span>
+                        {!isCorePlugin(item) && (
+                            <span className="flex shrink-0 items-center gap-1.5">
+                                <button
+                                    className="ghost-btn h-7 w-7"
+                                    title={t('plugins.reload')}
+                                    disabled={busy === item.id}
+                                    onClick={() => act(item.id, () => reloadPlugin(item.id), `${t('plugins.reloadDone')}:${pluginLabel(item.id)}`)}
+                                >
+                                    <Icon name="refresh" size={14} />
+                                </button>
+                                <button
+                                    className="sh-switch"
+                                    data-checked={!item.disabled || undefined}
+                                    disabled={busy === item.id}
+                                    style={busy === item.id ? { opacity: 0.5 } : undefined}
+                                    onClick={() => {
+                                        if (!item.disabled) {
+                                            const warn = PLUGIN_META[item.id]?.consequence;
+                                            if (warn && !window.confirm(`${t('plugins.disableConfirm')}\n${pluginLabel(item.id)}\n\n${warn}`)) return;
+                                        }
+                                        act(item.id, () => (item.disabled ? enablePlugin(item.id) : disablePlugin(item.id)));
+                                    }}
+                                >
+                                    <span className="sh-switch-thumb" />
+                                </button>
+                            </span>
+                        )}
+                    </div>
+                    {isCorePlugin(item) && PLUGIN_META[item.id]?.lockReason && (
+                        <div className="rounded-lg px-3 py-2 text-[11.5px] leading-relaxed text-[color:var(--fg-muted)]" style={{ background: 'var(--bg-active)' }}>
+                            {PLUGIN_META[item.id]?.lockReason}
+                        </div>
                     )}
-                </div>
+                    {!isCorePlugin(item) && PLUGIN_META[item.id]?.consequence && (
+                        <div className="rounded-lg px-3 py-2 text-[11.5px] leading-relaxed" style={{ background: 'var(--bg-active)', color: 'var(--status-warn)' }}>
+                            {t('plugins.consequence')}{PLUGIN_META[item.id]?.consequence}
+                        </div>
+                    )}
+                </>
             )}
             {missing && (
                 <div className="inset-group">

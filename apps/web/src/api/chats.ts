@@ -15,7 +15,7 @@ import type { MessageViewModel, SwipeView } from '@utopinn/protocol';
 const stripStatusPlaceholder = (s: string) =>
     s.includes(MVU_STATUS_PLACEHOLDER) ? s.replaceAll(MVU_STATUS_PLACEHOLDER, '').trimEnd() : s;
 
-interface StChatMessage {
+export interface StChatMessage {
     name?: string;
     is_user?: boolean;
     is_system?: boolean;
@@ -32,6 +32,10 @@ interface StChatMessage {
     /** 与 swipes 平行的生成簿记({send_date,gen_started,gen_finished,extra};
      *  swipe_info[i].extra.reasoning_display 为各版本推理的展示投影)。 */
     swipe_info?: Record<string, unknown>[];
+    /** 群楼层:发言成员 avatar 文件名('X.png' —— 群成员 roster 键)。 */
+    original_avatar?: string;
+    /** 群楼层:发言成员头像直链(服务端播种/persist 已写 /thumbnail 链)。 */
+    force_avatar?: string;
     /** MVU 楼层快照:{[swipe_id]: stat_data 投影} —— 存在即可回滚。 */
     variables?: Record<string, unknown>;
     extra?: Record<string, unknown>;
@@ -352,5 +356,65 @@ export async function deleteChat(charDir: string, chatName: string): Promise<voi
         { method: 'DELETE' },
     );
     await assertOk(res);
+}
+
+/* ——— 楼层书签与岔出(ST bookmark 语义,TASK-065)———
+   书签 = chat_state 'bookmarks' 侧车档里的存档点(楼层坐标 + 当时
+   activeSwipe —— 记坐标不记 swipe 版本);岔出 = POST fork 把
+   0..messageId 楼层复制成新会话文件(原名·书签名),原会话不动。 */
+export interface ChatBookmark {
+    id: string;
+    /** body 楼号(0 基)。 */
+    messageId: number;
+    name: string;
+    /** 打点时间(ms)。 */
+    ts: number;
+    /** 打点时该楼的 activeSwipe(展示用,不约束岔出语义)。 */
+    swipeId?: number;
+}
+
+const chatBookmarksUrl = (charDir: string, chatName: string) =>
+    `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}/bookmarks`;
+
+/** 书签列表 + 会话楼数(越界书签客户端标失效)。 */
+export async function listBookmarks(charDir: string, chatName: string): Promise<{ items: ChatBookmark[]; floors: number }> {
+    const d = await apiGet<{ items?: ChatBookmark[]; floors?: number }>(chatBookmarksUrl(charDir, chatName));
+    return { items: Array.isArray(d.items) ? d.items : [], floors: Number(d.floors ?? 0) };
+}
+
+/** 打书签:name 缺省服务端落「第N楼」;swipeId = 当前 activeSwipe。 */
+export async function createBookmark(
+    charDir: string,
+    chatName: string,
+    body: { messageId: number; name?: string; swipeId?: number },
+): Promise<ChatBookmark> {
+    const d = await apiPost<{ item: ChatBookmark }>(chatBookmarksUrl(charDir, chatName), body);
+    return d.item;
+}
+
+/** 删书签(204;404 bubbles as ApiError)。 */
+export async function deleteBookmark(charDir: string, chatName: string, bookmarkId: string): Promise<void> {
+    const res = await apiFetch(`${chatBookmarksUrl(charDir, chatName)}/${encodeURIComponent(bookmarkId)}`, { method: 'DELETE' });
+    await assertOk(res);
+}
+
+export interface ForkChatResult {
+    name: string;
+    fileName: string;
+    messageCount: number;
+    integrity?: string | null;
+    fork?: { from: string; messageId: number };
+}
+
+/** 岔出新会话:0..messageId 复制成 `原名·书签名`,返回新会话描述。 */
+export async function forkChat(
+    charDir: string,
+    chatName: string,
+    body: { messageId: number; name?: string },
+): Promise<ForkChatResult> {
+    return apiPost<ForkChatResult>(
+        `/api/utopinn/characters/${encodeURIComponent(charDir)}/chats/${encodeURIComponent(chatName)}/fork`,
+        body,
+    );
 }
 

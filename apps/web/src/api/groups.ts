@@ -306,7 +306,14 @@ export async function postGroupGenerate(body: {
     let group: GroupGenerateReport | null = null;
     const groupHeader = res.headers.get('x-utopinn-group');
     if (groupHeader) {
-        try { group = JSON.parse(groupHeader) as GroupGenerateReport; } catch { /* 头不可解析 → null */ }
+        /* 服务端 encodeURIComponent 过(成员名可含 CJK,裸 JSON 进头会
+           ERR_INVALID_CHAR)——先 decode 再 parse;旧服务端直出 JSON 时也兼容
+           (decodeURIComponent 对纯 ASCII JSON 幂等,% 序列不合法才落原串)。 */
+        try {
+            group = JSON.parse(decodeURIComponent(groupHeader)) as GroupGenerateReport;
+        } catch {
+            try { group = JSON.parse(groupHeader) as GroupGenerateReport; } catch { /* 头不可解析 → null */ }
+        }
     }
     const jobId = res.headers.get('x-luker-generation-id');
     if (!jobId) {
