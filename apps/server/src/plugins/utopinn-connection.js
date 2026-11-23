@@ -498,10 +498,14 @@ async function loadConnection(request) {
     }
     const probeReq = { ...request, body };
     const conn = resolveConnection(probeReq, body);
-    if (transientKey) {
-        // 编辑器未落盘草稿直打 —— 与 secret 槽同位,凭据归属记 user。
+    if (transientKey && draftFormat) {
+        /* 草稿瞬时 key 后注入:resolveConnection 已按空钥把 api_key 计入
+           missing —— 剥掉它,否则 anthropic 草稿(空 url 走官方端点)
+           恒被 not_configured 拦在门前。仅草稿路径;profile/legacy 的
+           missing 如实保留。 */
         conn.apiKey = transientKey;
         conn.credential = 'user';
+        conn.missing = conn.missing.filter((m) => m !== 'api_key');
     }
     return { body, probeReq, conn, marker, profileId };
 }
@@ -726,6 +730,16 @@ export function apply(ctx) {
                 const merged = sanitizeProfileInput(request.body, { existing: idx >= 0 ? list[idx] : null, id });
                 if (idx >= 0) list[idx] = merged; else list.push(merged);
                 o.connection_profiles = list;
+                /* 勾选面写面:指针模型被移出 checked∪manual → 清 activeModel
+                   (不清则已取选项在派发链里复活;删档清针同语义)。 */
+                const conn = (o.connection && typeof o.connection === 'object' && !Array.isArray(o.connection))
+                    ? { ...o.connection } : {};
+                const am = readActiveModel(o);
+                if (am?.profileId === id
+                    && ![...merged.models.checked, ...merged.models.manual].includes(am.modelId)) {
+                    conn.activeModel = null;
+                    o.connection = conn;
+                }
                 d.oai_settings = o;
                 return d;
             });

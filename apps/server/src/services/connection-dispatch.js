@@ -21,7 +21,7 @@
  * 共用 resolveConnectionDispatch:命中 profile → 覆盖袋;未命中(旧客户端/
  * CLI 无 profile_id)→ 完全走旧单槽路径,存量行为不变。
  */
-import { SecretManager, SECRET_KEYS } from '../endpoints/secrets.js';
+import { SecretManager, SECRET_KEYS, resolveProviderSecretDetailed } from '../endpoints/secrets.js';
 
 /**
  * 连接层字段:URL/密钥代理/模型名/自定义进出体 + source。
@@ -127,15 +127,23 @@ export function readActiveModel(oaiSettings) {
 }
 
 /**
- * 本次请求生效的 profile:body.profile_id 显式指 > connection.activeModel.profileId;
- * 只命中未 disabled 档。返 null = 走旧单槽路径。
+ * 本次请求生效的 profile:
+ *   body.profile_id 显式指档(必须命中未停用档,点名落空 → null 不猜别档)
+ *   > connection.activeModel.profileId 指针(悬/停用 → 顺延首个未停用档)
+ *   > 无指针 → 首个未停用档(有档才兜底 —— quiet/trigger/CLI 无 profile_id
+ *     调用与 web 兜底选择同语义;全停用/无档 → null 走旧单槽)。
  */
 export function resolveActiveProfile(oaiSettings, body = {}) {
     const profiles = readConnectionProfiles(oaiSettings);
     if (!profiles.length) return null;
-    const wanted = str(body.profile_id) || str(readActiveModel(oaiSettings)?.profileId);
-    if (!wanted) return null;
-    return profiles.find((p) => p.id === wanted && !p.disabled) ?? null;
+    const explicit = str(body.profile_id);
+    if (explicit) return profiles.find((p) => p.id === explicit && !p.disabled) ?? null;
+    const wanted = str(readActiveModel(oaiSettings)?.profileId);
+    if (wanted) {
+        const hit = profiles.find((p) => p.id === wanted && !p.disabled);
+        if (hit) return hit;
+    }
+    return profiles.find((p) => !p.disabled) ?? null;
 }
 
 /** profile → oai 形覆盖袋(anti-bleed:另一格式不用的键恒写空串)。 */
@@ -215,24 +223,52 @@ const LEGACY_SOURCE_LABEL = Object.freeze({
     openai: 'OpenAI', deepseek: 'DeepSeek', openrouter: 'OpenRouter',
     moonshot: 'Moonshot', groq: 'Groq', mistralai: 'Mistral', xai: 'xAI',
     siliconflow: 'SiliconFlow', aimlapi: 'AIMLAPI', chutes: 'Chutes',
-    electronhub: 'ElectronHub', nanogpt: 'NanoGPT', cometapi: 'CometAPI',
+    electronhub: 'ElectronHub', nanogpt: 'NanoGPT',
     claude: 'Anthropic', custom: 'Custom',
 });
 
 /**
- * 从旧单槽 oai_settings 合成 id='default' 的 profile。
- * secret:api_key_<src> active 条 —— 目标池同池(claude/custom)直接引 id;
- * 跨池(openai/deepseek/…→api_key_custom)复制明文一条**非 active**新条目
- * (readSecret 按 id 读不查 active;不抢目标池 active 槽,旧路径兜底不变)。
- * 旧键一律不删,作 fallback。
- * @param {object} oai oai_settings(可为空)
- * @param {import('../users.js').UserDirectoryList} [directories] 缺省无 secrets 面
+ * 可干净映射到 profile 两格式面的 legacy 源:
+ *   openai 格式(custom 派发面)= 纯 OpenAI-chat-completions 线形 +
+ *   官方端点可物化的生态源;
+ *   anthropic 格式(claude 派发面)= claude。
+ * 特殊派发源(上游派发器自备端点/异构线形/禁用中上游)不在列:
+ *   fireworks/makersuite/vertexai/azure_openai/workers_ai/pollinations/
+ *   cohere/openai_responses/cometapi —— 合成档会直接断链或改线形,
+ *   这些源恒走 legacy 路,不合成不激活。
  */
-export function synthesizeLegacyProfile(oai, directories = null) {
+const LEGACY_MAPPABLE_SOURCES = new Set([
+    'openai', 'deepseek', 'mistralai', 'openrouter', 'moonshot', 'groq',
+    'xai', 'aimlapi', 'siliconflow', 'chutes', 'electronhub', 'nanogpt',
+    'custom', 'claude',
+]);
+
+/**
+ * 从旧单槽 oai_settings 合成 id='default' 的 profile;不可干净迁移 → null。
+ * 不迁移判据(任一命中 → 留 legacy,不合成不激活):
+ *   - src 不在 LEGACY_MAPPABLE_SOURCES(特殊派发源/禁用中上游);
+ *   - proxy_password 非空 —— 凭据在字段层不在 secrets 池,profile 模型无对应槽;
+ *   - 凭证解析落在 shared 层 —— 共享档是公共资源,绝不拷进个人档。
+ * secret:个人池 api_key_<src> 的解析值 —— 目标池同池(claude/custom)直接引
+ * active 条目 id;跨池(openai/deepseek/…→api_key_custom)复制明文一条
+ * **非 active** 新条目(readSecret 按 id 读不查 active;不抢目标池 active 槽,
+ * 旧路径与其它档的 fallback 凭证不变)。旧键一律不删,作 fallback。
+ * @param {object} oai oai_settings(可为空)
+ * @param {{ directories?: object, request?: object }} [ctx]
+ *          request 供 resolveProviderSecretDetailed 分层判据(shared → 不迁移);
+ *          缺省只查个人池,shared 判据降级跳过(保守 = 仍迁移但 secretId 空)。
+ */
+export function synthesizeLegacyProfile(oai, { directories = null, request = null } = {}) {
     const src = str(oai?.chat_completion_source);
     const isClaude = src === 'claude';
     const format = isClaude ? 'anthropic' : 'openai';
     const targetPool = FORMAT_TO_SECRET_KEY[format];
+    const srcSecretKey = src ? `api_key_${src}` : '';
+
+    /* 特殊派发源(fireworks/vertexai/azure/…)无干净线形映射 —— 留 legacy。 */
+    if (src && !LEGACY_MAPPABLE_SOURCES.has(src)) return null;
+    /* 字段层凭据(profile 无 proxy_password 槽)→ 不迁移。 */
+    if (str(oai?.proxy_password)) return null;
 
     let baseUrl = '';
     if (isClaude) {
@@ -244,17 +280,30 @@ export function synthesizeLegacyProfile(oai, directories = null) {
     }
 
     const legacyModel = str(oai?.[`${src || 'openai'}_model`]);
-    const srcSecretKey = src ? `api_key_${src}` : '';
     let secretId = null;
-    if (directories && srcSecretKey && Object.values(SECRET_KEYS).includes(srcSecretKey)) {
+    if (srcSecretKey && Object.values(SECRET_KEYS).includes(srcSecretKey)) {
         try {
-            const mgr = new SecretManager(directories);
-            const entries = mgr.getAllSecrets()[srcSecretKey] ?? [];
-            const active = entries.find((e) => e.active) ?? entries[0];
-            if (active?.value) {
-                secretId = (srcSecretKey === targetPool)
-                    ? active.id
-                    : mgr.writeSecret(targetPool, active.value, `migrated:${src}`, { activate: false });
+            if (request) {
+                /* 分层判据:shared 层生效 → 共享凭证不拷进个人档,不迁移。 */
+                const det = resolveProviderSecretDetailed(request, srcSecretKey);
+                if (det.source === 'shared') return null;
+                if (det.source === 'user' && det.value && directories) {
+                    const mgr = new SecretManager(directories);
+                    const entries = mgr.getAllSecrets()[srcSecretKey] ?? [];
+                    const active = entries.find((e) => e.active) ?? entries[0];
+                    secretId = (srcSecretKey === targetPool && active?.value === det.value)
+                        ? active.id
+                        : mgr.writeSecret(targetPool, det.value, `migrated:${src}`, { activate: false });
+                }
+            } else if (directories) {
+                const mgr = new SecretManager(directories);
+                const entries = mgr.getAllSecrets()[srcSecretKey] ?? [];
+                const active = entries.find((e) => e.active) ?? entries[0];
+                if (active?.value) {
+                    secretId = (srcSecretKey === targetPool)
+                        ? active.id
+                        : mgr.writeSecret(targetPool, active.value, `migrated:${src}`, { activate: false });
+                }
             }
         } catch { /* secrets 面不可达 → secretId=null,档占位照常出 */ }
     }
@@ -270,26 +319,34 @@ export function synthesizeLegacyProfile(oai, directories = null) {
 }
 
 /**
- * GET profiles 的惰性迁移入口:connection_profiles 缺失/空 → 合成 default
+ * GET profiles 的惰性迁移入口:connection_profiles 键缺失 → 合成 default
  * 并整档落盘(旧键不动);同时补 connection.activeModel 指针(仅当为空且
- * 能解析出模型)。返 { profiles, activeModel, migrated }。
+ * 能解析出模型)。**键在值为 [] 是显式空态**(用户删光了档),不重合成 —
+ * 与「不可迁移源合成 null 不落盘」区分:后者键保持缺失,每次 GET 重估
+ * (换到可映射源后即迁)。
+ * 返 { profiles, activeModel, migrated }。
  */
 export async function ensureConnectionProfiles(request, settingsRepo) {
     const handle = request.user.profile.handle;
     const doc = await settingsRepo.get(handle) ?? {};
     const oai = (doc.oai_settings && typeof doc.oai_settings === 'object' && !Array.isArray(doc.oai_settings))
         ? doc.oai_settings : {};
-    let profiles = readConnectionProfiles(oai);
-    if (profiles.length) {
-        return { profiles, activeModel: readActiveModel(oai), migrated: false };
+    // 显式空数组/已有档 → 如实回;只有键缺失才走迁移。
+    if (Array.isArray(oai.connection_profiles)) {
+        return { profiles: readConnectionProfiles(oai), activeModel: readActiveModel(oai), migrated: false };
     }
 
-    const synth = synthesizeLegacyProfile(oai, request.user?.directories);
+    const synth = synthesizeLegacyProfile(oai, { directories: request.user?.directories, request });
+    if (!synth) {
+        // 不可干净迁移(特殊源/字段层凭据/shared 层凭证)—— 键不落,下次重估。
+        return { profiles: [], activeModel: readActiveModel(oai), migrated: false };
+    }
     const next = await settingsRepo.update(handle, (base) => {
         const d = { ...(base && typeof base === 'object' && !Array.isArray(base) ? base : {}) };
         const o = (d.oai_settings && typeof d.oai_settings === 'object' && !Array.isArray(d.oai_settings))
             ? { ...d.oai_settings } : {};
-        if (!Array.isArray(o.connection_profiles) || !o.connection_profiles.length) {
+        // 并发竞态:期间被删成显式 [] → 不写回(尊重删光语义)。
+        if (!Array.isArray(o.connection_profiles)) {
             o.connection_profiles = [synth];
             // activeModel 只在空槽时补针 —— 不覆盖用户显式选择。
             const conn = (o.connection && typeof o.connection === 'object' && !Array.isArray(o.connection)) ? { ...o.connection } : {};
@@ -304,7 +361,7 @@ export async function ensureConnectionProfiles(request, settingsRepo) {
     });
     const nextOai = (next.oai_settings && typeof next.oai_settings === 'object' && !Array.isArray(next.oai_settings))
         ? next.oai_settings : {};
-    profiles = readConnectionProfiles(nextOai);
+    const profiles = readConnectionProfiles(nextOai);
     return { profiles, activeModel: readActiveModel(nextOai), migrated: true };
 }
 

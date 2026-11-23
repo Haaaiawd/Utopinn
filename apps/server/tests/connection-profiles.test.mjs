@@ -8,6 +8,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import express from 'express';
 import { fileURLToPath } from 'node:url';
 import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/util.js';
 
@@ -23,6 +26,21 @@ let resolveConnectionDispatch;
 let presetToDispatchParams;
 let synthesizeLegacyProfile;
 let sanitizeProfileInput;
+let ensureConnectionProfiles;
+
+/* —— 路由级面(initStorage + 真 express 挂 connection/library 插件)—— */
+let DATA_ROOT;
+let server;
+let BASE;
+let getSettingsRepoFn;
+let getSharedSecretManagerFn;
+const HANDLE = 'u1';
+
+function dirsFor(handle) {
+    const root = path.join(DATA_ROOT, handle);
+    fs.mkdirSync(root, { recursive: true });
+    return { root, chats: path.join(root, 'chats'), characters: path.join(root, 'characters'), settings: path.join(root, 'settings') };
+}
 
 // secrets.js 链模块级读 config —— 先 setConfigFilePath 再动态 import。
 test.before(async () => {
@@ -30,6 +48,12 @@ test.before(async () => {
         setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
     }
     reloadConfigCache();
+    process.env.LUKER_PERFORMANCE_USEDISKCACHE = 'false';
+    process.env.LUKER_PERFORMANCE_USE_DISK_CACHE = 'false';
+
+    DATA_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-prof-'));
+    globalThis.DATA_ROOT = DATA_ROOT;
+
     const mod = await import('../src/services/connection-dispatch.js');
     ({
         CONNECTION_KEYS,
@@ -42,8 +66,54 @@ test.before(async () => {
         presetToDispatchParams,
         synthesizeLegacyProfile,
         sanitizeProfileInput,
+        ensureConnectionProfiles,
     } = mod);
+
+    const storage = await import('../src/storage/index.js');
+    getSettingsRepoFn = storage.getSettingsRepo;
+    const dirsCache = new Map();
+    const memoDirs = (h) => {
+        if (!dirsCache.has(h)) dirsCache.set(h, dirsFor(h));
+        return dirsCache.get(h);
+    };
+    await storage.initStorage({ mode: 'fs', directoriesByHandle: memoDirs });
+    getSharedSecretManagerFn = (await import('../src/endpoints/secrets.js')).getSharedSecretManager;
+
+    const { apply: applyConnection } = await import('../src/plugins/utopinn-connection.js');
+    const { apply: applyLibrary } = await import('../src/plugins/utopinn-library.js');
+    const pluginRouter = express.Router();
+    const ws = { register: (spec) => { pluginRouter[String(spec.method || 'GET').toLowerCase()](spec.path, spec.handler); return () => {}; } };
+    const ctx = { webServer: ws, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) };
+    applyConnection(ctx);
+    applyLibrary(ctx);
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+        req.user = { profile: { handle: HANDLE, name: HANDLE, admin: true }, directories: memoDirs(HANDLE) };
+        next();
+    });
+    app.use(pluginRouter);
+    await new Promise((resolve) => { server = app.listen(0, '127.0.0.1', resolve); });
+    BASE = `http://127.0.0.1:${server.address().port}`;
 });
+
+test.after(() => {
+    server?.close();
+    fs.rmSync(DATA_ROOT, { recursive: true, force: true });
+    delete globalThis.DATA_ROOT;
+});
+
+async function api(method, p, body) {
+    const r = await fetch(`${BASE}${p}`, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const text = await r.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* 204/纯文本 */ }
+    return { status: r.status, json };
+}
 
 const PROF_DS = {
     id: 'p-ds', name: 'DeepSeek', format: 'openai',
@@ -195,7 +265,34 @@ test('readActiveModel / resolveActiveProfile 边界', () => {
         { profileId: 'p', modelId: 'm' },
     );
     assert.equal(resolveActiveProfile(oaiWith([], null), {}), null);
-    assert.equal(resolveActiveProfile(oaiWith([PROF_DS], { profileId: 'ghost', modelId: 'm' }), {}), null);
+});
+
+test('resolveActiveProfile:显式指档须命中;指针悬空/缺失 → 首个未停用档兜底', () => {
+    // 显式 profile_id 点名落空 → null 不猜别档(防 key 打错端点)
+    assert.equal(resolveActiveProfile(oaiWith([PROF_DS]), { profile_id: 'ghost' }), null);
+    // 指针悬(指向不存在档)→ 顺延首个未停用档
+    assert.equal(
+        resolveActiveProfile(oaiWith([PROF_DS], { profileId: 'ghost', modelId: 'm' }), {})?.id,
+        'p-ds',
+    );
+    // 无指针 → 首个未停用档(quiet/trigger/CLI 无 profile_id 与 web 兜底同语义)
+    assert.equal(
+        resolveActiveProfile(oaiWith([PROF_DS, PROF_CL], null), {})?.id,
+        'p-ds',
+    );
+    // 指针档被停用 → 顺延到未停用的
+    assert.equal(
+        resolveActiveProfile(
+            oaiWith([{ ...PROF_DS, disabled: true }, PROF_CL], { profileId: 'p-ds', modelId: 'x' }),
+            {},
+        )?.id,
+        'p-cl',
+    );
+    // 全停用 → null(回 legacy)
+    assert.equal(
+        resolveActiveProfile(oaiWith([{ ...PROF_DS, disabled: true }], null), {}),
+        null,
+    );
 });
 
 test('profileDispatchBag:格式映射 + 袋内 profile_id/model', () => {
@@ -264,4 +361,163 @@ test('sanitizeProfileInput:upsert 归一化(保留 lastProbe/models 当未给)',
     assert.deepEqual(r2.models.checked, ['a']);
     assert.equal(r2.models.manual.length, 0);
     assert.deepEqual(r2.models.lastProbe, existing.models.lastProbe);
+});
+
+/* ------------------------------------------------------------------ */
+/* review 返修用例                                                      */
+/* ------------------------------------------------------------------ */
+
+test('迁移:特殊派发源不合成(fireworks/makersuite/vertexai/azure/cometapi/…)', () => {
+    for (const src of ['fireworks', 'makersuite', 'vertexai', 'azure_openai', 'workers_ai', 'pollinations', 'cohere', 'openai_responses', 'cometapi']) {
+        assert.equal(
+            synthesizeLegacyProfile({ chat_completion_source: src, [`${src}_model`]: 'm' }),
+            null,
+            `${src} should not migrate`,
+        );
+    }
+});
+
+test('迁移:proxy_password 非空 → 不合成(字段层凭据 profile 无槽)', () => {
+    assert.equal(
+        synthesizeLegacyProfile({ chat_completion_source: 'deepseek', proxy_password: 'px', deepseek_model: 'm' }),
+        null,
+    );
+    // 空串/缺省 → 照常迁移
+    assert.ok(synthesizeLegacyProfile({ chat_completion_source: 'deepseek', proxy_password: '', deepseek_model: 'm' }));
+    assert.ok(synthesizeLegacyProfile({ chat_completion_source: 'deepseek', deepseek_model: 'm' }));
+});
+
+test('ensureConnectionProfiles:键缺失才迁移;显式 [] 不重合成', async () => {
+    // fake repo(内存版;getDoc 读 update 后的新对象)
+    const mkRepo = (initial) => {
+        let doc = initial;
+        return {
+            get: async () => doc,
+            update: async (_h, fn) => { doc = fn(structuredClone(doc)); return doc; },
+            getDoc: () => doc,
+        };
+    };
+    const mkReq = () => ({ user: { profile: { handle: 'h' }, directories: null } });
+
+    // 1) 键缺失 + 可映射源 → 迁移落盘
+    const r1 = mkRepo({ oai_settings: { chat_completion_source: 'deepseek', deepseek_model: 'ds' } });
+    const out1 = await ensureConnectionProfiles(mkReq(), r1);
+    assert.equal(out1.migrated, true);
+    assert.equal(out1.profiles[0]?.id, 'default');
+    assert.equal(r1.getDoc().oai_settings.connection_profiles.length, 1);
+
+    // 2) 显式 [] → 不重合成(用户删光档语义)
+    const r2 = mkRepo({ oai_settings: { chat_completion_source: 'deepseek', connection_profiles: [] } });
+    const out2 = await ensureConnectionProfiles(mkReq(), r2);
+    assert.equal(out2.migrated, false);
+    assert.deepEqual(out2.profiles, []);
+    assert.deepEqual(r2.getDoc().oai_settings.connection_profiles, []);
+
+    // 3) 不可映射源 → profiles=[] 且键不落盘(下次重估)
+    const r3 = mkRepo({ oai_settings: { chat_completion_source: 'fireworks', fireworks_model: 'f' } });
+    const out3 = await ensureConnectionProfiles(mkReq(), r3);
+    assert.equal(out3.migrated, false);
+    assert.deepEqual(out3.profiles, []);
+    assert.equal('connection_profiles' in r3.getDoc().oai_settings, false);
+
+    // 4) 无连接配置 → 合成空 default 档
+    const r4 = mkRepo({ oai_settings: { temperature: 0.7 } });
+    const out4 = await ensureConnectionProfiles(mkReq(), r4);
+    assert.equal(out4.profiles[0]?.id, 'default');
+    assert.deepEqual(out4.profiles[0]?.models.checked, []);
+});
+
+test('迁移:shared 层凭证 → 不合成(共享档不拷进个人档)', async () => {
+    // _shared 面种一条 mode:all 的 api_key_deepseek → resolver 落到 shared 层
+    fs.mkdirSync(path.join(DATA_ROOT, '_shared'), { recursive: true });
+    const mgr = getSharedSecretManagerFn();
+    const id = mgr.writeSecret('api_key_deepseek', 'shared-key', 'host');
+    mgr.updateSecretShare('api_key_deepseek', id, { mode: 'all' });
+    const request = {
+        user: { profile: { handle: 'shared-guy' }, directories: dirsFor('shared-guy') },
+    };
+    assert.equal(
+        synthesizeLegacyProfile(
+            { chat_completion_source: 'deepseek', deepseek_model: 'ds' },
+            { directories: request.user.directories, request },
+        ),
+        null,
+    );
+});
+
+test('路由:PUT profile 移出指针模型 → activeModel 清针', async () => {
+    await getSettingsRepoFn().save(HANDLE, {
+        oai_settings: {
+            connection_profiles: [{
+                id: 'p1', name: 'P1', format: 'openai', baseUrl: 'https://x.example.com',
+                secretId: null, models: { checked: ['m1'], manual: [] },
+            }],
+            connection: { activeModel: { profileId: 'p1', modelId: 'm1' } },
+        },
+    });
+    // 勾选面把 m1 换成 m2 → 指针失效 → 服务端清针
+    const r = await api('PUT', '/api/utopinn/connection/profiles/p1', {
+        models: { checked: ['m2'], manual: [] },
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.json.activeModel, null);
+    // 指向别档的指针不受影响
+    await getSettingsRepoFn().save(HANDLE, {
+        oai_settings: {
+            connection_profiles: [
+                { id: 'p1', name: 'P1', format: 'openai', baseUrl: 'u', secretId: null, models: { checked: ['m2'], manual: [] } },
+                { id: 'p2', name: 'P2', format: 'openai', baseUrl: 'u', secretId: null, models: { checked: ['k'], manual: [] } },
+            ],
+            connection: { activeModel: { profileId: 'p2', modelId: 'k' } },
+        },
+    });
+    const r2 = await api('PUT', '/api/utopinn/connection/profiles/p1', { models: { checked: [], manual: [] } });
+    assert.deepEqual(r2.json.activeModel, { profileId: 'p2', modelId: 'k' });
+});
+
+test('路由:DELETE 最后一档 → GET 回 [](显式空态不复活)', async () => {
+    await getSettingsRepoFn().save(HANDLE, {
+        oai_settings: {
+            chat_completion_source: 'deepseek',
+            deepseek_model: 'ds',
+            connection_profiles: [{ id: 'only', name: 'O', format: 'openai', baseUrl: 'u', secretId: null, models: { checked: [], manual: [] } }],
+        },
+    });
+    await api('DELETE', '/api/utopinn/connection/profiles/only');
+    const r = await api('GET', '/api/utopinn/connection/profiles');
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.profiles, []); // 不被惰性迁移复活
+});
+
+test('路由:草稿瞬时 key 剥 missing —— anthropic 空 url 草稿不再 not_configured', async () => {
+    /* 复现 review #3:anthropic 空 baseUrl(= 官方默认端点)+ 无 key
+       → genericMissingCheck 补 api_key → not_configured 拦门前。 */
+    const noKey = await api('POST', '/api/utopinn/connection/test', { format: 'anthropic', baseUrl: '' });
+    assert.equal(noKey.json.error, 'not_configured');
+    assert.ok((noKey.json.detail ?? '').includes('api_key'));
+    /* 同样空 url + 瞬时 key → 剥 missing 进上游探测(真 api.anthropic.com;
+       401/unreachable/timeout 都可能,只要不是 not_configured 就证明过闸)。 */
+    const withKey = await api('POST', '/api/utopinn/connection/test', { format: 'anthropic', baseUrl: '', key: 'sk-test' });
+    assert.equal(withKey.status, 200);
+    assert.notEqual(withKey.json.error, 'not_configured');
+    assert.equal(withKey.json.credential, 'user');
+    /* 死端口草稿有 key → 确定性 unreachable(不过 missing 闸就发不出请求)。 */
+    const dead = await api('POST', '/api/utopinn/connection/test', { format: 'anthropic', baseUrl: 'http://127.0.0.1:9/', key: 'x' });
+    assert.equal(dead.json.error, 'unreachable');
+});
+
+test('路由:PUT /secrets activate:false 不挤池 active 槽', async () => {
+    const r1 = await api('PUT', '/api/utopinn/secrets/api_key_custom', { value: 'k-one', label: 'a' });
+    assert.equal(r1.status, 200);
+    const r2 = await api('PUT', '/api/utopinn/secrets/api_key_custom', { value: 'k-two', label: 'b', activate: false });
+    assert.equal(r2.status, 200);
+    const entries = r2.json.entries ?? [];
+    const e1 = entries.find((e) => e.id === r1.json.id);
+    const e2 = entries.find((e) => e.id === r2.json.id);
+    assert.equal(e1?.active, true);  // k-one 仍 active(档 B 存 key 不抢)
+    assert.equal(e2?.active, false);
+    // 显式 activate:true 依旧抢占(旧行为)
+    const r3 = await api('PUT', '/api/utopinn/secrets/api_key_custom', { value: 'k-three', activate: true });
+    const e3 = (r3.json.entries ?? []).find((e) => e.id === r3.json.id);
+    assert.equal(e3?.active, true);
 });

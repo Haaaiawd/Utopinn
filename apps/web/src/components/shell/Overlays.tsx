@@ -1094,10 +1094,12 @@ function ProfileEditor({ profile, secrets, done }: {
         if (busy || !canSave) return;
         setBusy(true);
         void (async () => {
-            /* 新 key 先落 secrets 池拿 id —— profile 只存引用不存值。 */
+            /* 新 key 先落 secrets 池拿 id —— profile 只存引用不存值。
+               activate:false:不抢池 active 槽 —— active 是别档/旧路的
+               fallback 凭证,档内显式 secretId 引用不依赖它。 */
             let secretId = effSecretId;
             if (keyDraft.trim()) {
-                const r = await putSecret(pool, keyDraft.trim(), name.trim() || undefined);
+                const r = await putSecret(pool, keyDraft.trim(), name.trim() || undefined, { activate: false });
                 secretId = r.id;
             }
             await putProfile(profile?.id ?? 'new', {

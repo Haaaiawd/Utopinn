@@ -554,16 +554,14 @@ function Shell() {
             }
             const am = pr.activeModel;
             const activeProf = am ? profs.find((p) => p.id === am.profileId && !p.disabled) : null;
-            if (am && activeProf && !list.some((m) => m.id === am.modelId && m.profileId === am.profileId)) {
-                list.unshift({
-                    id: am.modelId, short: shortModelId(am.modelId), provider: activeProf.name, ctx: '',
-                    profileId: activeProf.id, profileName: activeProf.name, profileFormat: activeProf.format,
-                });
-            }
+            /* 指针只认「模型仍在该档 enabled 并集」—— 取勾后被移出的模型
+               不回显不复活(服务端 PUT 已清针,这里是悬指针的最后防线)。 */
+            const amValid = !!(am && activeProf
+                && list.some((m) => m.id === am.modelId && m.profileId === am.profileId));
             setModels(list);
             setModelsError(null);
-            setActiveModelState(am && activeProf
-                ? { profileId: am.profileId, modelId: am.modelId }
+            setActiveModelState(amValid
+                ? { profileId: am!.profileId, modelId: am!.modelId }
                 : (list[0] ? { profileId: list[0].profileId ?? '', modelId: list[0].id } : null));
         } else {
             setConnProfiles([]);
