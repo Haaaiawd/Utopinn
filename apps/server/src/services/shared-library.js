@@ -34,6 +34,7 @@ import { read as readCharacterCard } from '../character-card-parser.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import {
     CHARACTER_FILE_EXTS,
+    getCharacterStateSidecarPath,
     isCharacterStateSidecarFileName,
     readCharacterStateSidecar,
     resolveCharacterFilePath,
@@ -96,29 +97,37 @@ function confineRealPath(dir, candidate) {
 
 /**
  * Address a card file inside the shared pool: stem guard +
- * .png/.webp/.json probe order (same as the private face), symlink
- * confinement, and `.state.*.json` exclusion (handled inside
- * resolveCharacterFilePath — sidecars are never cards).
- * filePath is the canonical realpath; fileName/ext stay lexical so the
- * reported stem matches what the user sees.
+ * .png/.webp/.json probe order (same as the private face) evaluated
+ * per-candidate — a rejected candidate (escaping symlink / sidecar name)
+ * falls through to the next extension instead of voiding the stem, so a
+ * bad `Atlas.png` cannot hide a valid `Atlas.json`. filePath is the
+ * canonical realpath; fileName/ext stay lexical so the reported stem
+ * matches what the user sees.
  * @returns {{filePath:string, fileName:string, ext:string, size:number, mtimeMs:number}|null}
  */
 export function resolveSharedCharacterFile(directories, charDir) {
     const dir = getSharedCharactersDir(directories);
     if (!dir || !isSafeSharedStem(charDir)) return null;
-    const lexical = resolveCharacterFilePath(dir, charDir);
-    if (!lexical) return null;
-    const filePath = confineRealPath(dir, lexical);
-    if (!filePath) return null;
-    let stat;
-    try { stat = fs.statSync(filePath); } catch { stat = null; }
-    return {
-        filePath,
-        fileName: path.basename(lexical),
-        ext: path.extname(lexical).toLowerCase(),
-        size: stat?.size ?? 0,
-        mtimeMs: stat?.mtimeMs ?? 0,
-    };
+    for (const ext of CHARACTER_FILE_EXTS) {
+        const fileName = `${charDir}${ext}`;
+        // `.state.*.json` is a sidecar, never a card.
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const lexical = path.join(dir, fileName);
+        if (!fs.existsSync(lexical)) continue;
+        // Out-of-pool symlink → skip this candidate, keep probing.
+        const filePath = confineRealPath(dir, lexical);
+        if (!filePath) continue;
+        let stat;
+        try { stat = fs.statSync(filePath); } catch { stat = null; }
+        return {
+            filePath,
+            fileName,
+            ext,
+            size: stat?.size ?? 0,
+            mtimeMs: stat?.mtimeMs ?? 0,
+        };
+    }
+    return null;
 }
 
 /**
@@ -263,27 +272,49 @@ function isCharacterCardLike(card) {
 }
 
 /**
- * Estimated byte footprint of materializing `charDir`: all stem-sibling
- * card files + matching `.state.*.json` publish sidecars. Callers run this
- * before copy so quota enforcement sees the true projected growth.
+ * Estimated byte footprint of materializing `charDir` — mirrors the
+ * materialize copy plan exactly so quota enforcement never over- or
+ * under-counts:
+ *   - stem-sibling card files: every confined candidate that will be copied;
+ *   - `.state.*.json` publish sidecars: only when the landing stem stays
+ *     `charDir` (the migration gate) AND the user does not already have a
+ *     same-named sidecar (COPYFILE_EXCL means it would be skipped anyway).
  * @returns {number} bytes (0 when nothing would be copied)
  */
 export function estimateSharedMaterializeBytes(directories, charDir) {
     const libDir = getSharedCharactersDir(directories);
     if (!libDir || !isSafeSharedStem(charDir)) return 0;
+    const userDir = directories?.characters;
     let total = 0;
-    const addIfPresent = (fileName) => {
-        const lexical = path.join(libDir, fileName);
-        try { total += fs.statSync(lexical).size || 0; } catch { /* absent */ }
+    const addFile = (filePath) => {
+        try { total += fs.statSync(filePath).size || 0; } catch { /* race/absent → 0 */ }
     };
     for (const ext of CHARACTER_FILE_EXTS) {
-        addIfPresent(`${charDir}${ext}`);
+        const name = `${charDir}${ext}`;
+        if (isCharacterStateSidecarFileName(name)) continue;
+        const lexical = path.join(libDir, name);
+        if (!fs.existsSync(lexical)) continue;
+        const real = confineRealPath(libDir, lexical);
+        if (!real) continue; // escaping symlink is never copied
+        addFile(real);
     }
+    // Same landing-stem deconfliction as materializeSharedCharacter.
+    let stem = charDir;
+    for (let i = 1; userDir && resolveCharacterFilePath(userDir, stem); i++) {
+        stem = `${charDir}${i}`;
+    }
+    if (stem !== charDir || !userDir) return total;
     const prefix = `${charDir}.state.`;
     let entries = [];
     try { entries = fs.readdirSync(libDir); } catch { entries = []; }
     for (const name of entries) {
-        if (name.startsWith(prefix) && name.endsWith('.json')) addIfPresent(name);
+        if (!name.startsWith(prefix) || !name.endsWith('.json')) continue;
+        // COPYFILE_EXCL — an existing user sidecar is never overwritten,
+        // so it must not inflate the estimate.
+        if (fs.existsSync(path.join(userDir, name))) continue;
+        const real = confineRealPath(libDir, path.join(libDir, name));
+        if (!real) continue;
+        addFile(real);
     }
     return total;
 }
@@ -415,5 +446,14 @@ export function readCharacterStateMerged(directories, charDir, namespace) {
     if (own != null) return own;
     const merged = resolveCharacterFileMerged(directories, stem);
     if (!merged?.shared) return null;
-    return readCharacterStateSidecar(merged.filePath, namespace);
+    // Published sidecar identity = the *request stem*, not the resolved
+    // realpath — an in-pool alias (Alias.png → Original.png) must read
+    // `Alias.state.<ns>.json`, the same stem materialization migrates.
+    const libDir = getSharedCharactersDir(directories);
+    if (!libDir) return null;
+    const poolAnchor = path.join(libDir, `${stem}.png`);
+    const sidecarPath = getCharacterStateSidecarPath(poolAnchor, namespace);
+    // Sidecar file itself must stay inside the pool (symlink guard).
+    if (!sidecarPath || !confineRealPath(libDir, sidecarPath)) return null;
+    return readCharacterStateSidecar(poolAnchor, namespace);
 }

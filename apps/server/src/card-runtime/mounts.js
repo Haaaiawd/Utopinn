@@ -79,22 +79,38 @@ export async function loadCardData(directories, charId) {
 }
 
 /**
+ * Shared-pool extraction cache root — a sibling of `cardApps`, physically
+ * outside the private charId namespace so extraction GC can never touch a
+ * private card's panel assets (a private card literally named
+ * `Atlas@lib-x` must be untouchable by shared Atlas cache sweeps).
+ * Contents are pure derived cache; per-user like cardApps.
+ */
+export function sharedCardAppsRoot(directories) {
+    const base = directories.root ?? path.dirname(directories.cardApps);
+    return path.join(base, '_cardapps_shared');
+}
+
+/**
  * Per-card asset directory — where card_app.files were extracted at import.
  * @param {object} directories
  * @param {string} charId sanitized
  * @param {string} [assetKey] extraction key — defaults to charId. Shared-pool
- *   mounts pass a source-fingerprinted key (`<charId>@lib-<mtime>-<size>`) so
- *   a pool update re-extracts instead of serving the stale dir, and so the
- *   private materialized copy (plain charId key) stays isolated from pool
- *   extractions.
+ *   mounts pass a source-fingerprinted key (`<mtime>-<size>`); a fingerprinted
+ *   key lands under the dedicated shared cache root
+ *   `<root>/_cardapps_shared/<charId>/<fingerprint>/`, fully outside the
+ *   private `cardApps/<charId>` namespace.
  */
 export function cardAppAssetDir(directories, charId, assetKey = charId) {
-    return path.join(directories.cardApps, sanitize(assetKey || charId));
+    const key = assetKey || charId;
+    if (key !== charId) {
+        return path.join(sharedCardAppsRoot(directories), sanitize(charId), sanitize(key));
+    }
+    return path.join(directories.cardApps, sanitize(charId));
 }
 
-/** Shared-pool extraction key: stem + source file fingerprint. */
-export function sharedAssetKey(charId, source) {
-    return `${charId}@lib-${Math.round(Number(source?.mtimeMs) || 0)}-${Number(source?.size) || 0}`;
+/** Shared-pool extraction key: source file fingerprint (`<mtime>-<size>`). */
+export function sharedAssetKey(source) {
+    return `${Math.round(Number(source?.mtimeMs) || 0)}-${Number(source?.size) || 0}`;
 }
 
 /**
@@ -115,16 +131,19 @@ export function ensureCardAppAssets(card, directories, charId, assetKey = charId
     }
     // Shared extractions are pure cache (pool cards are read-only — no user
     // edits to preserve). A new fingerprint means the pool card changed:
-    // drop stale same-stem extractions so they cannot leak old assets.
-    const sanitized = sanitize(assetKey || charId);
-    if (sanitized !== sanitize(charId) && sanitized.startsWith(`${sanitize(charId)}@lib-`)) {
+    // drop stale same-stem extractions — GC is scoped to this stem's own
+    // subdirectory inside the dedicated shared root, so nothing outside it
+    // (private assets included) can ever be swept.
+    const key = assetKey || charId;
+    if (key !== charId) {
+        const stemRoot = path.join(sharedCardAppsRoot(directories), sanitize(charId));
         try {
-            for (const entry of fs.readdirSync(directories.cardApps)) {
-                if (entry.startsWith(`${sanitize(charId)}@lib-`) && entry !== sanitized) {
-                    fs.rmSync(path.join(directories.cardApps, entry), { recursive: true, force: true });
+            for (const entry of fs.readdirSync(stemRoot)) {
+                if (entry !== sanitize(key)) {
+                    fs.rmSync(path.join(stemRoot, entry), { recursive: true, force: true });
                 }
             }
-        } catch { /* GC failure must not block extraction */ }
+        } catch { /* missing stemRoot / GC failure must not block extraction */ }
     }
     const files = getRawCardApp(card)?.files;
     if (!files || typeof files !== 'object') {
@@ -199,7 +218,7 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
     // 池源解包 key 带源档指纹:池更新(mtime/size 变)→ 全新解包目录,
     // 不会拿旧资产对上新 manifest(entry_not_found);物化成的私有 copy
     // 走 plain charId key,与池解包天然隔离。
-    const assetKey = merged.shared ? sharedAssetKey(cleanId, merged) : cleanId;
+    const assetKey = merged.shared ? sharedAssetKey(merged) : cleanId;
 
     const card = await loadCardData(directories, cleanId);
     if (!card) {

@@ -32,7 +32,8 @@ let chatsRouter, applyUtopinnLibrary, applyUtopinnRegex, applyUtopinnTh;
 let getSharedCharactersDir, isSafeSharedStem, resolveSharedLibraryFilePath,
     materializeSharedCharacter, resolveCharacterFileMerged, readCharacterStateMerged,
     loadCharacterDocFromDir;
-let saveAdminSettings, cardAppAssetDir, sharedAssetKey, ensureCardAppAssets;
+let saveAdminSettings, getDirectorySizeBytes, cardAppAssetDir, sharedAssetKey, ensureCardAppAssets;
+let buildStscriptEnv, estimateSharedMaterializeBytes;
 
 test.before(async () => {
     if (!getConfigFilePath()) {
@@ -60,12 +61,14 @@ test.before(async () => {
         readCharacterStateMerged,
         loadCharacterDocFromDir,
     } = await import('../src/services/shared-library.js'));
-    ({ saveAdminSettings } = await import('../src/admin-settings.js'));
+    ({ saveAdminSettings, getDirectorySizeBytes } = await import('../src/admin-settings.js'));
     ({
         cardAppAssetDir,
         sharedAssetKey,
         ensureCardAppAssets,
     } = await import('../src/card-runtime/mounts.js'));
+    ({ buildStscriptEnv } = await import('../src/services/stscript-env.js'));
+    ({ estimateSharedMaterializeBytes } = await import('../src/services/shared-library.js'));
 });
 
 const HANDLE = 'u';
@@ -544,7 +547,7 @@ test('TH regex 写共享 PNG:replaceTavernRegexes → 私有 copy 承接脚本,�
     });
 });
 
-test('CardApp 资产指纹:共享源 @lib- 分目录;新指纹重新解包并 GC 旧目录', () => {
+test('CardApp 资产指纹:共享源独立缓存根分目录;新指纹重解包+GC,私有面板资产零误伤', () => {
     const { dirs } = makeTmpDirs();
     const mkCard = (html) => ({
         data: {
@@ -552,23 +555,29 @@ test('CardApp 资产指纹:共享源 @lib- 分目录;新指纹重新解包并 GC
             extensions: { card_app: { entry: 'index.html', files: { 'index.html': html } } },
         },
     });
-    const k1 = sharedAssetKey('Foo', { mtimeMs: 1000, size: 10 });
-    const k2 = sharedAssetKey('Foo', { mtimeMs: 2000, size: 20 });
+    const k1 = sharedAssetKey({ mtimeMs: 1000, size: 10 });
+    const k2 = sharedAssetKey({ mtimeMs: 2000, size: 20 });
     assert.notEqual(k1, k2, 'fingerprint participates in key');
-    assert.ok(k1.startsWith('Foo@lib-'));
 
     const dir1 = cardAppAssetDir(dirs, 'Foo', k1);
-    assert.equal(path.basename(dir1), 'Foo@lib-1000-10');
-    // 私有/物化副本恒走 plain charId 目录 —— 与池解包天然隔离。
+    // 共享解包落 _cardapps_shared/<stem>/<fp>,物理隔离 cardApps 命名空间。
+    assert.equal(dir1, path.join(dirs.root, '_cardapps_shared', 'Foo', '1000-10'), dir1);
     assert.equal(path.basename(cardAppAssetDir(dirs, 'Foo')), 'Foo');
 
-    assert.equal(ensureCardAppAssets(mkCard('<html>v1</html>'), dirs, 'Foo', k1), true);
-    assert.ok(fs.existsSync(path.join(dir1, 'index.html')));
+    // 私有卡 stem 形如 @lib- 前缀的命名空间碰撞场景:私有面板资产在场,
+    // 共享解包 GC 不许碰它一根毛。
+    const privDir = path.join(dirs.cardApps, 'Atlas@lib-notes');
+    fs.mkdirSync(privDir, { recursive: true });
+    fs.writeFileSync(path.join(privDir, 'panel.html'), 'private panel');
+    const before = fs.readdirSync(dirs.cardApps);
 
-    const dir2 = cardAppAssetDir(dirs, 'Foo', k2);
-    assert.equal(ensureCardAppAssets(mkCard('<html>v2</html>'), dirs, 'Foo', k2), true);
+    assert.equal(ensureCardAppAssets(mkCard('<html>v1</html>'), dirs, 'Atlas', k1), true);
+    assert.equal(ensureCardAppAssets(mkCard('<html>v2</html>'), dirs, 'Atlas', k2), true);
+    const dir2 = cardAppAssetDir(dirs, 'Atlas', k2);
     assert.equal(fs.readFileSync(path.join(dir2, 'index.html'), 'utf8'), '<html>v2</html>');
-    assert.equal(fs.existsSync(dir1), false, 'stale fingerprint dir GC-ed');
+    assert.equal(fs.existsSync(dir1), false, 'stale shared fingerprint dir GC-ed');
+    assert.ok(fs.existsSync(path.join(privDir, 'panel.html')), 'private @lib- asset dir untouched');
+    assert.deepEqual(fs.readdirSync(dirs.cardApps), before, 'cardApps namespace untouched by shared GC');
 });
 
 test('state 回落防泄漏:私有遮蔽永不回落池侧车;删已拷侧车仍不回落', async () => {
@@ -613,5 +622,128 @@ test('侧车不入卡:列表排除 *.state.*.json;install/详情对侧车干名 
         assert.equal(inst.status, 404, 'sidecar stem not installable');
         const detail = await getJson(app, '/api/utopinn/characters/Foo.state.chat');
         assert.equal(detail.status, 404, 'sidecar stem not addressable as card');
+    });
+});
+
+// ── 二轮 review 返修回归 ─────────────────────────────────────────────────
+
+test('被拒候选挡路:Atlas.png 出界 symlink + Atlas.json 有效 → 解析到 JSON,install 只迁 JSON', async () => {
+    await withEnv(async ({ dirs, libDir, dataRoot, app }) => {
+        const outside = path.join(dataRoot, 'escape-target.png');
+        fs.writeFileSync(outside, PNG_1PX);
+        try {
+            fs.symlinkSync(outside, path.join(libDir, 'Atlas.png'));
+        } catch {
+            return; // 平台不允 symlink → 跳过
+        }
+        writeJsonCard(libDir, 'Atlas', CARD_SHARED);
+
+        // 出界 PNG 不再整体否决干名 —— 落到有效 JSON 候选。
+        const resolved = resolveCharacterFileMerged(dirs, 'Atlas');
+        assert.equal(resolved?.shared, true);
+        assert.equal(resolved.fileName, 'Atlas.json');
+
+        const res = await callJson(app, 'POST', '/api/utopinn/characters/Atlas/install');
+        assert.equal(res.status, 200, JSON.stringify(res.json));
+        assert.ok(fs.existsSync(path.join(dirs.characters, 'Atlas.json')), 'json migrated');
+        assert.equal(fs.existsSync(path.join(dirs.characters, 'Atlas.png')), false, 'escaping cover never copied');
+        const detail = await getJson(app, '/api/utopinn/characters/Atlas');
+        assert.equal(detail.json.data.name, 'Shared');
+    });
+});
+
+test('配额估算按 copy plan:已拷侧车不计 → 预算贴边也能装;rename 干名变侧车也不计', async () => {
+    await withEnv(async ({ dirs, libDir, app }) => {
+        writeJsonCard(libDir, 'Q', CARD_SHARED);
+        // 池发布侧车 + 用户同干侧车已在场 —— COPYFILE_EXCL 不会拷,不许入估算。
+        const poolSidecar = 'Q.state.hp.json';
+        fs.writeFileSync(path.join(libDir, poolSidecar), JSON.stringify({ hp: 9 }));
+        fs.writeFileSync(path.join(dirs.characters, poolSidecar), JSON.stringify({ hp: 1 }));
+
+        const cardBytes = fs.statSync(path.join(libDir, 'Q.json')).size;
+        const est = estimateSharedMaterializeBytes(dirs, 'Q');
+        assert.equal(est, cardBytes, 'existing user sidecar excluded from estimate');
+
+        // 配额 = usage + cardBytes 贴边放行(若把侧车算进来就会被 413 误杀)。
+        const usage = await getDirectorySizeBytes(dirs.root);
+        await saveAdminSettings({ storage: { defaultUserQuotaBytes: usage + cardBytes + 1 } });
+        try {
+            const res = await callJson(app, 'POST', '/api/utopinn/characters/Q/install');
+            assert.equal(res.status, 200, JSON.stringify(res.json));
+        } finally {
+            await saveAdminSettings({ storage: { defaultUserQuotaBytes: -1 } });
+        }
+    });
+});
+
+test('池内别名:Alias.png→Original.png 读发布侧车按请求 stem(Alias.state),物化随迁同 stem', async () => {
+    await withEnv(async ({ dirs, libDir }) => {
+        writeJsonCard(libDir, 'Original', CARD_SHARED);
+        try {
+            fs.symlinkSync(path.join(libDir, 'Original.json'), path.join(libDir, 'Alias.json'));
+        } catch {
+            return; // 平台不允 symlink → 跳过
+        }
+        fs.writeFileSync(path.join(libDir, 'Alias.state.hp.json'), JSON.stringify({ hp: 9 }));
+        fs.writeFileSync(path.join(libDir, 'Original.state.hp.json'), JSON.stringify({ hp: 3 }));
+
+        // 请求 stem = Alias → 读 Alias.state.hp(9),不是 realpath 目标的 Original.state(3)。
+        assert.equal(readCharacterStateMerged(dirs, 'Alias', 'hp')?.hp, 9, 'alias reads request-stem sidecar');
+        assert.equal(readCharacterStateMerged(dirs, 'Original', 'hp')?.hp, 3, 'original reads its own');
+
+        const m = await materializeSharedCharacter(dirs, 'Alias');
+        assert.equal(m.charDir, 'Alias');
+        assert.ok(fs.existsSync(path.join(dirs.characters, 'Alias.state.hp.json')), 'sidecar migrated under request stem');
+        assert.equal(JSON.parse(fs.readFileSync(path.join(dirs.characters, 'Alias.state.hp.json'), 'utf8')).hp, 9);
+        assert.equal(fs.existsSync(path.join(dirs.characters, 'Original.state.hp.json')), false, 'no original-identity leak');
+    });
+});
+
+test('stscript rename:物化多档卡改名 → 全兄弟档随迁,旧干零残留不遮蔽池卡', async () => {
+    await withEnv(async ({ dirs, libDir }) => {
+        // 池卡 = 内嵌卡 PNG 封面 + JSON 数据 —— 物化后干名两份档。
+        writePngCard(libDir, 'Old', { ...CARD_SHARED, data: { ...CARD_SHARED.data, name: 'OldName' } });
+        writeJsonCard(libDir, 'Old', { ...CARD_SHARED, data: { ...CARD_SHARED.data, name: 'OldName' } });
+        fs.writeFileSync(path.join(libDir, 'Old.state.hp.json'), JSON.stringify({ hp: 7 }));
+        await materializeSharedCharacter(dirs, 'Old');
+        assert.ok(fs.existsSync(path.join(dirs.characters, 'Old.json')) && fs.existsSync(path.join(dirs.characters, 'Old.png')));
+
+        const built = await buildStscriptEnv({ handle: HANDLE, directories: dirs, charDir: 'Old', chatName: null, userName: 'User' });
+        assert.ok(built.env?.host?.renameCharacter, JSON.stringify(built));
+        const ok = await built.env.host.renameCharacter('NewName');
+        assert.equal(ok, true);
+
+        // 旧干零残留:png/json/侧车全搬走。
+        assert.equal(fs.existsSync(path.join(dirs.characters, 'Old.png')), false, 'old png gone');
+        assert.equal(fs.existsSync(path.join(dirs.characters, 'Old.json')), false, 'old json gone');
+        assert.equal(fs.existsSync(path.join(dirs.characters, 'Old.state.hp.json')), false, 'old sidecar gone');
+        assert.ok(fs.existsSync(path.join(dirs.characters, 'NewName.png')));
+        // JSON 兄弟随迁并同步改名。
+        const jsonDoc = JSON.parse(fs.readFileSync(path.join(dirs.characters, 'NewName.json'), 'utf8'));
+        assert.equal(jsonDoc.data.name, 'NewName');
+        // 池卡旧干回归可见(不再被残档遮蔽)。
+        const merged = resolveCharacterFileMerged(dirs, 'Old');
+        assert.equal(merged?.shared, true, 'pool card un-shadowed after rename');
+    });
+});
+
+test('配额缓存窗:fresh 计量 → 连装两卡第二发 413,窗口期不超卖', async () => {
+    await withEnv(async ({ dirs, libDir, app }) => {
+        writeJsonCard(libDir, 'A', CARD_SHARED);
+        writeJsonCard(libDir, 'B', { ...CARD_SHARED, data: { ...CARD_SHARED.data, name: 'B' } });
+        const sizeA = fs.statSync(path.join(libDir, 'A.json')).size;
+        const usage = await getDirectorySizeBytes(dirs.root);
+
+        // 配额恰好放行 A(usage+A+1),B 必超 —— 若走 5s 旧值 B 会被误放。
+        await saveAdminSettings({ storage: { defaultUserQuotaBytes: usage + sizeA + 1 } });
+        try {
+            const ra = await callJson(app, 'POST', '/api/utopinn/characters/A/install');
+            assert.equal(ra.status, 200, JSON.stringify(ra.json));
+            const rb = await callJson(app, 'POST', '/api/utopinn/characters/B/install');
+            assert.equal(rb.status, 413, 'fresh usage sees A landing → B rejected');
+            assert.equal(fs.existsSync(path.join(dirs.characters, 'B.json')), false);
+        } finally {
+            await saveAdminSettings({ storage: { defaultUserQuotaBytes: -1 } });
+        }
     });
 });

@@ -1450,6 +1450,9 @@ export function apply(ctx) {
                 const violation = await checkUserStorageQuota(
                     request.user,
                     estimateSharedMaterializeBytes(request.user.directories, charDir),
+                    // 物化无 body 可计 —— 实时测量,连续装在缓存窗内也
+                    // 看到最新占用,防窗口期超限。
+                    { fresh: true },
                 );
                 if (violation) {
                     return response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
@@ -1583,6 +1586,7 @@ export function apply(ctx) {
             const violation = await checkUserStorageQuota(
                 request.user,
                 estimateSharedMaterializeBytes(request.user.directories, charDir),
+                { fresh: true },
             );
             if (violation) {
                 return response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });

@@ -1162,10 +1162,15 @@ function isQuotaEnforcedRequest(request) {
  * Admins always pass; a non-finite/<0 effective quota means unlimited.
  * @param {import('./users.js').User} user request.user-shaped object
  * @param {number} additionalBytes projected bytes this write will add
+ * @param {object} [options]
+ * @param {boolean} [options.fresh] bypass the 5s usage cache — required for
+ *   server-side copy writes (materialization) where back-to-back calls
+ *   within the cache window would otherwise see the pre-write usage and
+ *   let consecutive copies overshoot the quota.
  * @returns {Promise<{usageBytes:number, quotaBytes:number, message:string}|null>}
  *   violation descriptor, or null when the write fits / quota is unlimited
  */
-export async function checkUserStorageQuota(user, additionalBytes = 0) {
+export async function checkUserStorageQuota(user, additionalBytes = 0, options = {}) {
     if (!user || user.profile?.admin) {
         return null;
     }
@@ -1175,7 +1180,7 @@ export async function checkUserStorageQuota(user, additionalBytes = 0) {
         return null;
     }
     const handle = user.profile.handle;
-    let usageBytes = STORAGE_USAGE_CACHE.get(handle);
+    let usageBytes = options.fresh ? undefined : STORAGE_USAGE_CACHE.get(handle);
     if (!Number.isFinite(usageBytes)) {
         usageBytes = await getDirectorySizeBytes(user.directories.root);
         STORAGE_USAGE_CACHE.set(handle, usageBytes);

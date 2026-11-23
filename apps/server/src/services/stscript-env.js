@@ -566,9 +566,10 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             const { readCharacterData, writeCharacterData } = await import('../endpoints/characters.js');
             const { invalidateRecentChatIndex } = await import('../endpoints/chats.js');
             const fakeReq = { user: { profile: { handle, name: name1 }, directories } };
-            // getPngName 等价:新内部名避让(自身除外)
+            // getPngName 等价:新内部名避让(自身除外)—— 查全部卡扩展,
+            // 多档卡(png 封面+json 数据)撞 webp/json 兄弟也算撞。
             let newInternalName = newName;
-            for (let i = 1; await fs.stat(path.join(directories.characters, `${newInternalName}.png`)).catch(() => null) || await fs.stat(path.join(directories.chats, newInternalName)).catch(() => null); i++) {
+            for (let i = 1; resolveCharacterFilePath(directories.characters, newInternalName) || await fs.stat(path.join(directories.chats, newInternalName)).catch(() => null); i++) {
                 newInternalName = `${newName}${i}`;
             }
             try {
@@ -588,6 +589,35 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
                 await invalidateRecentChatIndex(fakeReq);
                 renameAllCharacterStateSidecars(oldAvatarPath, path.join(directories.characters, `${newInternalName}.png`));
                 await fs.rm(oldAvatarPath, { force: true });
+                // 同干兄弟档随迁:物化可能搬来封面/数据分离的多档卡
+                // (Foo.png 封面+Foo.json 数据)—— 残档会照旧干名继续遮蔽
+                // 共享池同名卡,rename 成功后旧干不许留任何卡档。
+                for (const ext of ['.webp', '.json']) {
+                    const oldSib = path.join(directories.characters, `${oldInternalName}${ext}`);
+                    const newSib = path.join(directories.characters, `${newInternalName}${ext}`);
+                    if (!await fs.stat(oldSib).catch(() => null) || await fs.stat(newSib).catch(() => null)) continue;
+                    try {
+                        if (ext === '.json') {
+                            // JSON 兄弟若是卡档,名字同步改名;非卡(如侧车
+                            // 形状)原样搬运,反正不该被当卡读。
+                            try {
+                                const doc = JSON.parse(await fs.readFile(oldSib, 'utf8'));
+                                if (doc && typeof doc === 'object' && !Array.isArray(doc)) {
+                                    if (doc.data && typeof doc.data === 'object') doc.data.name = newName;
+                                    else doc.name = newName;
+                                }
+                                await fs.writeFile(newSib, JSON.stringify(doc, null, 2), 'utf8');
+                            } catch {
+                                await fs.copyFile(oldSib, newSib);
+                            }
+                        } else {
+                            await fs.copyFile(oldSib, newSib);
+                        }
+                        await fs.rm(oldSib, { force: true });
+                    } catch (sibErr) {
+                        console.warn(`stscript renameCharacter: sibling ${ext} migrate failed:`, sibErr?.message ?? sibErr);
+                    }
+                }
                 // renameChats:重写历史楼层 name(上游 renamePastMessages)。
                 // 逐会话 patch /body/<i>/name —— 与 PATCH 路由同写面。
                 if (renameChats === true && oldDisplayName) {
