@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
-import { PanelBridge } from './bridge';
+import { PanelBridge } from '@utopinn/api-client';
 import { CardAppHost } from './ctxHost';
 import { PANEL_METHODS_TH } from '@utopinn/protocol';
 import { useShell } from '../kernel/context';
@@ -88,7 +88,9 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
         const bridge = new PanelBridge({
             nonce: mount.bridgeNonce ?? '',
             allowed: new Set<string>(PANEL_METHODS_TH),
-            getWindow: () => frameRef.current?.contentWindow ?? null,
+            verifySource: (ev) => (ev as MessageEvent).source === frameRef.current?.contentWindow,
+            normalize: (ev) => (ev as MessageEvent).data,
+            send: (msg) => frameRef.current?.contentWindow?.postMessage(msg, '*'),
             dispatch: (method, args) => dispatchPanelCall(method, args, { charDir, chatName }, host),
         });
         const host = new CardAppHost({

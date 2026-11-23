@@ -23,7 +23,7 @@ import { useEffect, useMemo, useState, type FC, type ReactElement, type Ref } fr
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type PanelContext } from './ctxApi';
-import { expandApiGrants } from './bridge';
+import { expandApiGrants } from '@utopinn/protocol';
 import { mountCardApp, mountErrorCode, revokeMount, type MountBundle } from './mounts';
 import { usePanelHost, type WebViewHandle } from './host';
 import { useSession } from '../state/session';
@@ -68,7 +68,7 @@ const WView = WebView as unknown as FC<PanelWebViewElementProps>;
 
 export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext & {
     /** 卡「表面可见性」close 语义的壳回调(屏幕侧接 navigation.goBack 等;
-     *  未接 → surfaceClose 如实 no_shell_nav 降级)。 */
+     *  未接 → surfaceClose 如实 PANEL_SURFACE_UNAVAILABLE 降级)。 */
     onSurfaceClose?: () => void;
 }) {
     const conn = useSession();
@@ -93,7 +93,9 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
                 }
                 mintedId = m.mountId ?? null;
                 setMount(m);
-                const grants = expandApiGrants(m.manifest?.permissions?.api);
+                // surfaceOnlyCtx:'ctx' 档只放 surface 两法 —— RN 宿主无
+                // 全 ctxDispatch,open/close 由 usePanelHost dispatch 拦截应答。
+                const grants = expandApiGrants(m.manifest?.permissions?.api, { surfaceOnlyCtx: true });
                 // ctx-only manifest: nothing the t0 shim can lawfully call —
                 // still render the frame (static UI survives) under a badge.
                 setPhase(grants.ctxFace && !grants.thFace
@@ -115,11 +117,11 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
         };
     }, [charDir, chatName, conn.baseUrl, attempt]);
 
-    const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api), [mount]);
+    const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api, { surfaceOnlyCtx: true }), [mount]);
 
     // ── bridge + 事件泵(usePanelHost 共享接线)─────────────────────────────
     // surface 语义:面板页本身就是卡的可视表面 —— open 即达意(delivered:
-    // panel_page);close → 壳回调回上一页,未接如实 no_shell_nav 降级。
+    // panel_page);close → 壳回调回上一页,未接如实 PANEL_SURFACE_UNAVAILABLE 降级。
     // surface 对象要稳定身份(effect deps)——useMemo 钉在 onSurfaceClose 上。
     const surface = useMemo(
         () => ({ deliveredAs: 'panel_page', onClose: onSurfaceClose }),

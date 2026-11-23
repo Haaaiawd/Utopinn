@@ -1058,14 +1058,15 @@ test('ctx surface:headless 无壳如实降级;opts.surface 注壳两跳 openPane
         },
     }));
     // ① headless 无 opts.surface → 如实降级(不假装成了)+ console 留痕
+    //    (reason = PANEL_SURFACE_UNAVAILABLE — 三端统一码,见 protocol panel-wire)
     const plain = await mountCardApp({ server: BASE, charDir: CHAR, chatName: CHAT, card: cardPath, settleMs: 400 });
     try {
         let r = await plain.callDispatch('ctx.surfaceOpen', {});
         assert.equal(r.ok, false);
-        assert.equal(r.reason, 'headless_no_shell');
+        assert.equal(r.reason, 'panel_surface_unavailable');
         assert.equal(r.surface, 'open');
         r = await plain.callDispatch('ctx.surfaceClose', {});
-        assert.equal(r.reason, 'headless_no_shell');
+        assert.equal(r.reason, 'panel_surface_unavailable');
         assert.equal(r.surface, 'close');
         assert.ok(plain.consoleLog.some((e) => /surface(Open|Close)|无壳可收/.test(String(e.msg))),
             `console 留痕: ${JSON.stringify(plain.consoleLog.slice(-4))}`);

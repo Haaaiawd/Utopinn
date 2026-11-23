@@ -120,7 +120,7 @@ export function MessageFrame({ charDir, chatName, html, messageId }: {
        同隐患未修,移动端先收)。 */
     const allowed = useMemo(() => new Set<string>(PANEL_METHODS_TH_MSGFRAME), []);
     // 楼层帧本身即可视表面:open → delivered:'floor_frame';close → 无壳可收,
-    // 如实 no_shell_nav(ctx.* 在 PANEL_METHODS_TH 闸下根本到不了 dispatch,
+    // 如实 PANEL_SURFACE_UNAVAILABLE(ctx.* 在 PANEL_METHODS_TH 闸下根本到不了 dispatch,
     // 这是防御性应答,与桥 allowlist 分层不冲突)。
     const surface = useMemo(() => ({ deliveredAs: 'floor_frame' }), []);
     const { webRef, onMessage } = usePanelHost({

@@ -16,7 +16,7 @@ import {
     UtopinnClient,
     type JsonPatchOp,
 } from '@utopinn/api-client';
-import { PANEL_METHODS_TH_T0 } from '@utopinn/protocol';
+import { PANEL_METHODS_TH_T0, PANEL_SURFACE_UNAVAILABLE } from '@utopinn/protocol';
 
 export interface CtxHostOpts {
     charDir: string;
@@ -29,7 +29,7 @@ export interface CtxHostOpts {
      *  open → 展开承载本帧的工作台板块(panelType 随挂载形态:'cardapp'/'messageframe'),
      *  close → 收叠面板组。接线方=挂载组件 { panelType, openPanel:s.openPanel,
      *  collapsePanels:s.collapsePanels }(collapsePanels 由 web 格 kernel context 实现,
-     *  名字已锁定)。未接 → 如实 no_shell_surface 降级,不假装成了。 */
+     *  名字已锁定)。未接 → 如实 PANEL_SURFACE_UNAVAILABLE 降级,不假装成了。 */
     surface?: {
         panelType?: string;
         openPanel?: (type?: string, params?: unknown) => void;
@@ -510,7 +510,7 @@ export class CardAppHost {
                 const s = this.surface;
                 if (typeof s?.openPanel !== 'function') {
                     this.log('ctx.surfaceOpen: 宿主未接 openPanel(surface 面缺席)→ degraded');
-                    return { ok: false, reason: 'no_shell_surface', surface: 'open' };
+                    return { ok: false, reason: PANEL_SURFACE_UNAVAILABLE, surface: 'open' };
                 }
                 const panelType = s.panelType ?? 'cardapp';
                 s.openPanel(panelType);
@@ -520,7 +520,7 @@ export class CardAppHost {
                 const s = this.surface;
                 if (typeof s?.collapsePanels !== 'function') {
                     this.log('ctx.surfaceClose: 宿主未接 collapsePanels(surface 面缺席)→ degraded');
-                    return { ok: false, reason: 'no_shell_surface', surface: 'close' };
+                    return { ok: false, reason: PANEL_SURFACE_UNAVAILABLE, surface: 'close' };
                 }
                 s.collapsePanels();
                 return { ok: true };
