@@ -240,9 +240,28 @@ export class CardAppHost {
         await this.pollEventLog();
     }
 
-    /** 初次快照——bridge 就位后调一次,让 ctx.getChat/varCache 有真值。 */
+    /**
+     * 初次快照——bridge 就位后调一次,让 ctx.getChat/varCache 有真值,
+     * diff 基线也在此建立(不回放历史楼层)。
+     * 信箱游标同钉到当前头:帧重挂后新宿主若从 0 拉,滞留 refresh_message
+     * 会被当新事件再走 onThEvent → 触发重铸 → 再 seed → 再回放,无限环
+     * (mobile eventPump.seed 同修,见 apps/mobile/tests/eventPump.test.ts)。
+     * since=MAX_SAFE_INTEGER 语义 = 只要头位不取条目(服务端 filter
+     * seq>since → 空 entries + 回当前 seq);新事件 seq>头位,照常送达。
+     * 头位拉取失败时游标留 0 —— 下轮 tick 至多回放一轮有界历史,可接受。
+     */
     async seed(): Promise<void> {
         await this.syncChat();
+        if (this.eventLogUnsupported) return;
+        try {
+            const res = loose(await this.client.th.call('getEventLog', {
+                target: { charDir: this.charDir, chatName: this.chatName },
+                args: { since: Number.MAX_SAFE_INTEGER },
+            }));
+            if (res?.unsupported) { this.eventLogUnsupported = true; return; }
+            const seq = (res?.result as { seq?: number } | undefined)?.seq;
+            if (typeof seq === 'number') this.lastEventSeq = seq;
+        } catch { /* 头位拉不到 → 下轮回放有界历史,可接受 */ }
     }
 
     // ── 生成面(ctx.sendMessage 非 silent + ctx.generate + lukerContext.generate)

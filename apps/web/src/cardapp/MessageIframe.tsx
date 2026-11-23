@@ -8,7 +8,8 @@
 //   POST /api/card-runtime/mounts {kind:'message', html} → mountId + entryUrl
 //   + bridgeNonce → <iframe sandbox> GET /card-runtime/m/<id>/?shim=t0
 //   → 服务端出 mount.doc(壳+块内容+autoheight)+ splice t0 shim(nonce bootstrap)
-//   → 'utopinn-panel' 桥 = 全 TH 面(PANEL_METHODS_TH;T0 本地+th/call 转发)。
+//   → 'utopinn-panel' 桥 = 楼层帧只读子集(PANEL_METHODS_TH_MSGFRAME;
+//     块是模型产出,不给写面 —— 见 protocol panels.ts 注释,与移动端同闸)。
 //
 // 事件:挂自己的 CardAppHost 轮询泵 —— 楼层 diff 事件 + 信箱事件照常推给
 // 卡内 eventOn 订阅(TH 一致);refresh_message(mid=本楼) → 自助重新 mint。
@@ -17,7 +18,7 @@ import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { PanelBridge } from '@utopinn/api-client';
 import { CardAppHost } from './ctxHost';
-import { PANEL_METHODS_TH } from '@utopinn/protocol';
+import { PANEL_METHODS_TH_MSGFRAME } from '@utopinn/protocol';
 import { useShell } from '../kernel/context';
 import { useI18n } from '../i18n';
 import { Icon } from '../components/Icon';
@@ -84,10 +85,14 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
 
     useEffect(() => {
         if (!mount) return;
-        // TH 楼层 iframe = 全 TH 面(桥 T0 本地 + th/call 转发,与 CardApp 'th' 档同级)
+        /* 楼层 iframe 授权子集 = 只读 + 订阅 + UI 动词(protocol
+           PANEL_METHODS_TH_MSGFRAME)。块 HTML 是模型产出 —— 把全 TH 面
+           给它等于让生成内容不经确认调 deleteChatMessages/变量写/
+           generate/triggerSlash;TH 合法的「状态栏按钮写变量」走显式
+           确认门,未实现前一律拒(桥 allowlist 闸,过不了 dispatch)。 */
         const bridge = new PanelBridge({
             nonce: mount.bridgeNonce ?? '',
-            allowed: new Set<string>(PANEL_METHODS_TH),
+            allowed: new Set<string>(PANEL_METHODS_TH_MSGFRAME),
             verifySource: (ev) => (ev as MessageEvent).source === frameRef.current?.contentWindow,
             normalize: (ev) => (ev as MessageEvent).data,
             send: (msg) => frameRef.current?.contentWindow?.postMessage(msg, '*'),
