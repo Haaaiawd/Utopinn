@@ -5,7 +5,7 @@
  * 吐 {kind, name, targetName, summary, warnings, prepared};endpoint
  * 只负责 IO、冲突裁决与落库。
  *
- * kind ∈ 'char' | 'world' | 'preset' | 'persona'。
+ * kind ∈ 'char' | 'world' | 'preset' | 'persona' | 'theme'。
  * prepared 是 commit 所需的全部载荷(commit 不重新探测):
  *   char:    {format:'png'|'json'|'charx'|'byaf', card, imageBuffer,
  *             auxAssets, extractedBuffers, byaf}
@@ -34,7 +34,7 @@ import { assertSafeRepoName } from '../storage/name-validation.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { embeddedWorldName } from './embedded-world.js';
 
-export const IMPORT_KINDS = Object.freeze(['char', 'world', 'preset', 'persona']);
+export const IMPORT_KINDS = Object.freeze(['char', 'world', 'preset', 'persona', 'theme']);
 
 /** 探测失败:格式不可识别或解析坏了。endpoint 映射成 422。 */
 export class ImportParseError extends Error {
@@ -362,6 +362,41 @@ function sniffJsonDocument(obj, fileName) {
             prepared: { doc: obj },
         };
     }
+    // ST theme:settings 导出形 {name, main_text_color, ..., custom_css?}
+    // —— name 字符串 + 主题特征键 ≥3(对齐 default/content/themes/*.json
+    // 键面;不设 description 校验,theme 本来就没有)。
+    if (typeof obj.name === 'string' && obj.name) {
+        const THEME_MARKER_KEYS = [
+            'main_text_color', 'italics_text_color', 'underline_text_color',
+            'quote_text_color', 'blur_tint_color', 'chat_tint_color',
+            'user_mes_blur_tint_color', 'bot_mes_blur_tint_color',
+            'shadow_color', 'shadow_width', 'border_color', 'font_scale',
+            'blur_strength', 'custom_css', 'chat_width', 'chat_display',
+            'avatar_style', 'fast_ui_mode', 'waifuMode', 'noShadows',
+            'timer_enabled', 'timestamps_enabled', 'mesIDDisplay_enabled',
+            'hideChatAvatars_enabled', 'message_token_count_enabled',
+            'expand_message_actions', 'enableZenSliders', 'enableLabMode',
+            'hotswap_enabled', 'bogus_folders', 'reduced_motion',
+            'compact_input_area', 'movingUI',
+        ];
+        const markers = THEME_MARKER_KEYS.filter((k) => k in obj);
+        if (markers.length >= 3) {
+            const name = obj.name;
+            return {
+                kind: 'theme',
+                name,
+                targetName: name,
+                summary: {
+                    name,
+                    keys: Object.keys(obj).length,
+                    markers: markers.length,
+                    customCss: typeof obj.custom_css === 'string' && obj.custom_css.trim() !== '',
+                },
+                warnings: [],
+                prepared: { doc: obj },
+            };
+        }
+    }
     return null;
 }
 
@@ -424,10 +459,10 @@ export function detectImportPayload({ fileName, buffer } = {}) {
     if (sniffed) {
         return sniffed;
     }
-    throw new ImportParseError('JSON document does not look like a card, worldbook, preset, or persona', {
+    throw new ImportParseError('JSON document does not look like a card, worldbook, preset, persona, or theme', {
         topLevelKeys: Object.keys(obj).slice(0, MAX_HINT_KEYS),
         spec: typeof obj.spec === 'string' ? obj.spec : null,
-        hint: 'Card needs spec="chara_card_*" or v1 fields; worldbook needs an "entries" object; preset needs a "prompts" array; persona needs a "description" string.',
+        hint: 'Card needs spec="chara_card_*" or v1 fields; worldbook needs an "entries" object; preset needs a "prompts" array; persona needs a "description" string; theme needs a "name" + theme keys (e.g. main_text_color).',
     });
 }
 

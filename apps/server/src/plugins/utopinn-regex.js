@@ -11,15 +11,18 @@
  *           → card.data.extensions.regex_scripts            本卡脚本=作者意图;character_allowed_regex
  *                                                         仅作留档回报,不再当本卡闸门)
  *   preset  <apiId Settings>/<name>.json                    extension_settings.preset_allowed_regex
- *           → doc.extensions.regex_scripts                  [apiId] 含预设名
+ *           → doc.extensions.regex_scripts                  [apiId] 含预设名;且预设须为
+ *                                                         该 apiId 的 in_use(=settings
+ *                                                         selected,TASK-070)
  *
  *   UI 集(extension_settings.regex_presets,导入导出桶)与
  *   regex_perf_detection/regex_section_collapsed 是前端编辑器态,本面不管。
  *
- *   GET    /api/utopinn/regex                     全量视图 {global,allowed,disabled,chars,presets}
+ *   GET    /api/utopinn/regex                     全量视图 {global,allowed,inUse,disabled,chars,presets}
  *   GET    /api/utopinn/regex?scope=global        {scope,scripts}
  *   GET    /api/utopinn/regex?scope=char&char=d   {scope,charDir,avatar,name,allowed,scripts}
  *   GET    /api/utopinn/regex?scope=preset&apiId=a&preset=n
+ *          (preset=in_use → 该 apiId selected 预设;响应带 inUse/active)
  *   PUT    /api/utopinn/regex                     {scope,…,scripts? 整组替换,allow? 放行开关}
  *   PATCH  /api/utopinn/regex/:id                 {scope,…,set:{字段补丁}}——按 id 精确命中,
  *                                                  否则 :id 为非负整数时按数组下标兜底
@@ -41,6 +44,7 @@ import { regexFromString } from '@utopinn/core';
 import { readCharacterData, writeCharacterData } from '../endpoints/characters.js';
 import { createFileStatIndex } from '../services/file-stat-index.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
+import { REGEX_PRESET_API_IDS, resolvePresetInUse } from '../services/extension-prompts.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
 import { assertWritable } from '../storage/read-only-mode.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
@@ -49,9 +53,6 @@ import { safeName, sendError } from './_shared/http-utils.js';
 export const inject = ['webServer'];
 
 const P = '/api/utopinn/regex';
-
-/** regex 放行生效的 preset 域 = LLM 预设族(engine.js getCurrentPresetAPI 语义)。 */
-const REGEX_PRESET_API_IDS = Object.freeze(['openai', 'textgenerationwebui', 'novel', 'kobold', 'koboldhorde']);
 /** PATCH set 补丁禁写字段(防 __proto__ 类键)。 */
 const FORBIDDEN_PATCH_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_SCRIPTS = 500;
@@ -128,7 +129,8 @@ function validateScriptArray(scripts) {
     return null;
 }
 
-/** 从请求(query+body 合并)解 scope。charDir/preset 名过 safeName。 */
+/** 从请求(query+body 合并)解 scope。charDir/preset 名过 safeName;
+ *  preset 名 'in_use' 保留原样,由 resolveInUseAlias 实解。 */
 function resolveScope(request) {
     const src = { ...(request.query ?? {}), ...(request.body ?? {}) };
     const scope = String(src.scope ?? 'global').trim().toLowerCase();
@@ -144,6 +146,18 @@ function resolveScope(request) {
         return { scope: 'preset', apiId, name: safeName(src.preset ?? src.name, 'preset') };
     }
     throw new InvalidArgumentError(`scope must be global|char|preset, got "${scope}"`);
+}
+
+/** scope preset 名 'in_use' → 该 apiId 的 selected 预设(TH/生成链同解析源);
+ *  不可解 → 400(apiId 无预设概念或 selected 空)。其余 scope 原样透传。 */
+async function resolveInUseAlias(handle, scope) {
+    if (scope.scope !== 'preset' || scope.name !== 'in_use') return scope;
+    const settings = (await getSettingsRepo().get(handle)) ?? {};
+    const inUse = resolvePresetInUse(settings, scope.apiId);
+    if (!inUse) {
+        throw new InvalidArgumentError(`preset 'in_use' unresolvable: no selected preset for apiId '${scope.apiId}'`);
+    }
+    return { ...scope, apiId: inUse.apiId, name: inUse.name, wasInUse: true };
 }
 
 /** 从卡对象取生效 regex 数组:V2 canonical 槽 data.extensions 优先,根 extensions 兜底。 */
@@ -456,12 +470,19 @@ async function readGlobalView(handle) {
     const settings = (await getSettingsRepo().get(handle)) ?? {};
     const ext = (settings.extension_settings && typeof settings.extension_settings === 'object')
         ? settings.extension_settings : {};
+    // 各 apiId 的 in_use 预设名(settings selected;无 selected → 缺席键)。
+    const inUseNames = {};
+    for (const apiId of REGEX_PRESET_API_IDS) {
+        const r = resolvePresetInUse(settings, apiId);
+        if (r) inUseNames[r.apiId] = r.name;
+    }
     return {
         scripts: Array.isArray(ext.regex) ? ext.regex : [],
         allowedChars: Array.isArray(ext.character_allowed_regex) ? ext.character_allowed_regex : [],
         allowedPresets: (ext.preset_allowed_regex && typeof ext.preset_allowed_regex === 'object' && !Array.isArray(ext.preset_allowed_regex))
             ? ext.preset_allowed_regex : {},
         disabled: Array.isArray(ext.disabledExtensions) ? ext.disabledExtensions : [],
+        inUseNames,
     };
 }
 
@@ -527,7 +548,9 @@ async function fullView(request, index) {
         data: { stems: stems.size, gets: stats.hits + stats.misses, hits: stats.hits, misses: stats.misses, loads: stats.loads ?? 0 },
     });
 
-    // 预设枚举:LLM 族全扫(listWithDocs 60s 缓存),只列有脚本或被放行的。
+    // 预设枚举:LLM 族全扫(listWithDocs 60s 缓存),只列有脚本/被放行/in_use 的。
+    // in_use = 该 apiId settings selected 预设——生成链只消费 in_use 预设的
+    // 脚本(再叠 allowed 闸);active = 如实报「本会进生成链」。
     const presets = [];
     const presetRepo = getPresetRepo();
     for (const apiId of REGEX_PRESET_API_IDS) {
@@ -535,15 +558,24 @@ async function fullView(request, index) {
         for (const { name, doc } of docs) {
             const scripts = Array.isArray(doc?.extensions?.regex_scripts) ? doc.extensions.regex_scripts : [];
             const allowed = Array.isArray(g.allowedPresets?.[apiId]) && g.allowedPresets[apiId].includes(name);
-            if (!allowed && scripts.length === 0) continue;
-            presets.push({ apiId, name, allowed, count: scripts.length, scripts });
+            const inUse = g.inUseNames[apiId] === name;
+            if (!allowed && !inUse && scripts.length === 0) continue;
+            presets.push({
+                apiId, name, allowed, inUse,
+                active: allowed && inUse && scripts.length > 0 && !g.disabled.includes('regex'),
+                count: scripts.length, scripts,
+            });
         }
     }
 
     return {
         global: g.scripts,
         allowed: { characters: g.allowedChars, presets: g.allowedPresets },
+        inUse: g.inUseNames,
+        // extensionDisabled = 实键(disabledExtensions 含 'regex');
+        // disabled 为旧面同值别名(protocol RegexFullViewResponse.required)。
         extensionDisabled: g.disabled.includes('regex'),
+        disabled: g.disabled.includes('regex'),
         chars,
         presets,
     };
@@ -590,16 +622,23 @@ export function apply(ctx) {
                     scripts: view.scripts,
                 });
             }
+            const presetScope = await resolveInUseAlias(handle, scope);
             const [g, doc] = await Promise.all([
                 readGlobalView(handle),
-                getPresetRepo().get(handle, scope.apiId, scope.name),
+                getPresetRepo().get(handle, presetScope.apiId, presetScope.name),
             ]);
             if (!doc) {
-                return response.status(404).send({ error: `Preset not found: ${scope.apiId}/${scope.name}` });
+                return response.status(404).send({ error: `Preset not found: ${presetScope.apiId}/${presetScope.name}` });
             }
             const scripts = Array.isArray(doc?.extensions?.regex_scripts) ? doc.extensions.regex_scripts : [];
-            const allowed = Array.isArray(g.allowedPresets?.[scope.apiId]) && g.allowedPresets[scope.apiId].includes(scope.name);
-            return response.send({ scope: 'preset', apiId: scope.apiId, name: scope.name, allowed, scripts });
+            const allowed = Array.isArray(g.allowedPresets?.[presetScope.apiId]) && g.allowedPresets[presetScope.apiId].includes(presetScope.name);
+            const inUse = g.inUseNames[presetScope.apiId] === presetScope.name;
+            return response.send({
+                scope: 'preset', apiId: presetScope.apiId, name: presetScope.name,
+                allowed, inUse,
+                active: allowed && inUse && scripts.length > 0 && !g.disabled.includes('regex'),
+                scripts,
+            });
         } catch (error) {
             return sendError(response, error, 'utopinn/regex get');
         }
@@ -613,7 +652,7 @@ export function apply(ctx) {
     reg('PUT', P, async function (request, response) {
         try {
             const handle = request.user.profile.handle;
-            const scope = resolveScope(request);
+            const scope = await resolveInUseAlias(handle, resolveScope(request));
             const body = request.body ?? {};
             const hasScripts = Object.prototype.hasOwnProperty.call(body, 'scripts');
             const hasAllow = typeof body.allow === 'boolean';
@@ -678,7 +717,7 @@ export function apply(ctx) {
      */
     reg('PATCH', `${P}/:id`, async function (request, response) {
         try {
-            const scope = resolveScope(request);
+            const scope = await resolveInUseAlias(request.user.profile.handle, resolveScope(request));
             const id = String(request.params.id ?? '');
             const set = request.body?.set;
             if (!set || typeof set !== 'object' || Array.isArray(set)) {
@@ -711,7 +750,7 @@ export function apply(ctx) {
     /** DELETE /regex/:id —— scope 走 query(或 body),按 id/下标删一条。 */
     reg('DELETE', `${P}/:id`, async function (request, response) {
         try {
-            const scope = resolveScope(request);
+            const scope = await resolveInUseAlias(request.user.profile.handle, resolveScope(request));
             const id = String(request.params.id ?? '');
             const mutate = (scripts) => {
                 const hit = findScript(scripts, id);

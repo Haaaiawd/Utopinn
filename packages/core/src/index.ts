@@ -4,6 +4,7 @@
 export * from './utils.js';
 export * from './variables.js';
 export * from './world-info/types.js';
+export * from './world-info/entries.js';
 export * from './world-info/regex.js';
 export * from './world-info/decorators.js';
 export * from './world-info/buffer.js';

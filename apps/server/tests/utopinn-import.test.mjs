@@ -905,7 +905,7 @@ test('commit — 声明 kind 与探测不符 → 422;非法 kind → 400', async
 
     const badKind = await api('/api/utopinn/import/commit', {
         method: 'POST',
-        body: { kind: 'theme', dataBase64: pngCardB64(CARD_ALICE) },
+        body: { kind: 'galaxy', dataBase64: pngCardB64(CARD_ALICE) },
     });
     assert.equal(badKind.status, 400);
 });
@@ -914,4 +914,71 @@ test('无载荷 → 400', async () => {
     const res = await api('/api/utopinn/import/preview', { method: 'POST', body: {} });
     assert.equal(res.status, 400);
     assert.ok(res.body.error);
+});
+
+// ---------- TASK-069:ST theme JSON → named-doc themes 桶 ----------
+
+const THEME = JSON.stringify({
+    name: 'BrynNight',
+    main_text_color: '#d8e2ee', italics_text_color: '#9fb3cc',
+    underline_text_color: '#7fa8d9', quote_text_color: '#a8c9a1',
+    blur_tint_color: 'rgba(12,24,40,0.6)', chat_tint_color: 'rgba(10,20,36,0.5)',
+    user_mes_blur_tint_color: 'rgba(20,40,66,0.5)', bot_mes_blur_tint_color: 'rgba(16,32,54,0.5)',
+    shadow_color: '#05090f', shadow_width: 2, border_color: '#24405e',
+    font_scale: 1, blur_strength: 10, chat_width: 50,
+    custom_css: '.mes_text { letter-spacing: 0.01em; }',
+});
+
+test('preview theme JSON → kind theme + 特征键摘要', async () => {
+    const { status, body } = await api('/api/utopinn/import/preview', {
+        method: 'POST',
+        body: { name: 'BrynNight.json', dataBase64: Buffer.from(THEME).toString('base64') },
+    });
+    assert.equal(status, 200);
+    assert.equal(body.kind, 'theme');
+    assert.equal(body.name, 'BrynNight');
+    assert.equal(body.targetName, 'BrynNight');
+    assert.ok(body.summary.markers >= 3, JSON.stringify(body.summary));
+    assert.equal(body.summary.customCss, true);
+});
+
+test('commit theme → named-doc themes 桶可读回(repo + 读面同源)', async () => {
+    const commit = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { name: 'BrynNight.json', dataBase64: Buffer.from(THEME).toString('base64') },
+    });
+    assert.equal(commit.status, 200);
+    assert.equal(commit.body.ok, true);
+    assert.equal(commit.body.kind, 'theme');
+    assert.equal(commit.body.targetName, 'BrynNight');
+
+    // named-doc 读面同源实读 —— 主题 JSON 原样回来
+    const { getNamedDocRepo } = await import('../src/storage/index.js');
+    const doc = await getNamedDocRepo().get(HANDLE, 'themes', 'BrynNight');
+    assert.ok(doc, 'themes bucket doc readable');
+    assert.equal(doc.name, 'BrynNight');
+    assert.equal(doc.main_text_color, '#d8e2ee');
+    assert.match(String(doc.custom_css), /letter-spacing/);
+});
+
+test('commit theme 撞名 → 409 + conflict=overwrite 覆盖语义', async () => {
+    const again = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: { name: 'BrynNight.json', dataBase64: Buffer.from(THEME).toString('base64') },
+    });
+    assert.equal(again.status, 409);
+    assert.equal(again.body.conflicts?.existingSameName, true);
+
+    const ow = await api('/api/utopinn/import/commit', {
+        method: 'POST',
+        body: {
+            name: 'BrynNight.json', conflict: 'overwrite',
+            dataBase64: Buffer.from(THEME.replace('letter-spacing: 0.01em', 'letter-spacing: 0.02em')).toString('base64'),
+        },
+    });
+    assert.equal(ow.status, 200);
+    assert.equal(ow.body.ok, true);
+    const { getNamedDocRepo } = await import('../src/storage/index.js');
+    const doc = await getNamedDocRepo().get(HANDLE, 'themes', 'BrynNight');
+    assert.match(String(doc.custom_css), /0\.02em/, 'overwrite 真刷新文档');
 });

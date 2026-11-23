@@ -19,7 +19,9 @@ import { emit as diagEmit } from './diag-bus.js';
 // 端点侧模块(chat-completions/luker-generation/runner/utopinn-generate)顶层
 // 会触 secrets.js 的 getConfigValue —— 任何 import stscript-env 的进程(含
 // 单测)都被拖进 config 依赖。延迟到真正跑生成时再动态载入。
-async function loadDispatchLayer() {
+// export:trigger-generation(/trigger /swipe 实弹派发)复用同一装载面 ——
+// 合成 req/res 与派发器选择在两个服务间必须同源,不复制第二份。
+export async function loadDispatchLayer() {
     const [gen, cc, runner, jobs, conv] = await Promise.all([
         import('../plugins/utopinn-generate.js'),
         import('../endpoints/backends/chat-completions.js'),
@@ -35,12 +37,14 @@ async function loadDispatchLayer() {
         acknowledgeGenerationJobsForRequest: jobs.acknowledgeGenerationJobsForRequest,
         createGenerationJob: jobs.createGenerationJob,
         failGenerationJob: jobs.failGenerationJob,
+        persistJobReplyText: jobs.persistJobReplyText,
         getPromptNames: conv.getPromptNames,
         postProcessPrompt: conv.postProcessPrompt,
     };
 }
 
-const TERMINAL = new Set(['awaiting_ack', 'completed', 'failed', 'cancelled']);
+/** job 终态面(轮询出口)。export 供 trigger-generation 复用同口径。 */
+export const TERMINAL = new Set(['awaiting_ack', 'completed', 'failed', 'cancelled']);
 
 /** /gen params.trimToSentence / params.stop 的本地后裁剪(上游同款)。 */
 function trimGenerated(text, { trimToSentence = false, stop } = {}) {
@@ -57,7 +61,8 @@ function trimGenerated(text, { trimToSentence = false, stop } = {}) {
     return out.trim();
 }
 
-function makeSyntheticResponse() {
+/** runLukerDispatch 的最小 response 桩。export 供 trigger-generation 复用。 */
+export function makeSyntheticResponse() {
     return {
         statusCode: 200,
         headers: {},

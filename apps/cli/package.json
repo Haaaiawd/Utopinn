@@ -1,16 +1,17 @@
 {
-    "name": "@utopinn/cli",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "bin": {
-        "utopinn": "./utopinn-cli.mjs"
-    },
-    "dependencies": {
-        "@utopinn/api-client": "workspace:*",
-        "@utopinn/formats": "workspace:*",
-        "@utopinn/protocol": "workspace:*",
-        "esbuild": "0.25.12",
-        "jsdom": "31.0.0"
-    }
+  "name": "@utopinn/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "utopinn": "./utopinn-cli.mjs"
+  },
+  "dependencies": {
+    "@utopinn/api-client": "workspace:*",
+    "@utopinn/formats": "workspace:*",
+    "@utopinn/protocol": "workspace:*",
+    "esbuild": "0.25.12",
+    "jsdom": "31.0.0"
+  },
+  "license": "AGPL-3.0-only"
 }

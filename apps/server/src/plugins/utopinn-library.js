@@ -10,14 +10,18 @@
  * pattern 形。插件 inject webServer:服务未提供时整个插件等待,
  * 不会出现半挂状态。
  */
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import _ from 'lodash';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
+import { serializeChatJsonl } from '@utopinn/formats';
+import { Jimp } from '../jimp.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { getChatRepo, getNamedDocRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
+import { tryParse } from '../util.js';
+import { getChatRepo, getGroupRepo, getNamedDocRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
 import { applyJsonPatch } from '../storage/repositories/json-patch.js';
 import { assertWritable } from '../storage/read-only-mode.js';
@@ -34,7 +38,8 @@ import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { createCardListCache } from '../services/card-list-cache.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
-import { buildGreetingFloor, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
+import { buildGreetingFloor, buildGroupGreetingFloors, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
+import { avatarToCharDir } from '../services/group-orchestration.js';
 import validateAvatarUrlMiddleware from '../middleware/validateFileName.js';
 import { SecretManager, VALID_SECRET_KEYS, getSharedSecretState } from '../endpoints/secrets.js';
 // TASK-032 写盘面统一:ack/integrity/gen-id/settle 机制与 legacy /api/chats 同源。
@@ -70,6 +75,10 @@ import {
     getRecentChatSortTime,
     // issue #3 展示投影:楼层透出 regex 应用后展示文本(存储字段原样)。
     projectChatFloorsForDisplayResponse,
+    // 群聊写盘(TASK-062):repo 化 append 帮手,双去重/integrity/ack 与
+    // legacy /api/chats/group/append 同一实现。
+    appendMessagesToChatFile,
+    invalidateRecentChatIndex,
 } from '../endpoints/chats.js';
 import {
     getQueryCharacterAvatar,
@@ -79,7 +88,10 @@ import {
     mapCharacterStatePatchError,
     // 角色写面(C-3):原子 PNG 重写 + ccv3/chara 双 chunk + 缓存失效,与 legacy /edit 同管线。
     writeCharacterData,
+    // 人设头像上传(TASK-067):与 legacy /api/avatars/upload 同一裁剪/落盘管线。
+    applyAvatarCropResize,
 } from '../endpoints/characters.js';
+import { invalidateThumbnail } from '../endpoints/thumbnails.js';
 import {
     isValidApiId,
     normalizePresetStateNamespace,
@@ -306,6 +318,16 @@ function cardFields(card) {
 
 const NOVEL_SEGMENT_FLOORS = 4;
 const NOVEL_CHAPTERS_NS = 'chapters';
+/**
+ * 楼层书签(TASK-065 ST 语义):存档点落 chat_state 'bookmarks' 侧车档,
+ * doc = {items:[{id,messageId,name,ts,swipeId?}]}。
+ * 选侧车不选 chat_metadata —— 书签写不轮会话 integrity(客户端 CAS slug
+ * 不因打个存档点过期)、rename 随档迁移(captureChatMove)、删会话级联。
+ */
+const CHAT_BOOKMARKS_NS = 'bookmarks';
+/** 书签名展示上限(字节);fork 复合名预算留 ·NN 后缀余量。 */
+const BOOKMARK_NAME_MAX_BYTES = 80;
+const FORK_NAME_MAX_BYTES = 120;
 const CHAPTER_HEAD_RE = /^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷回部篇]|序[章言]|楔子|尾声|Prologue\b|Chapter\s+\d+)\s*[:：·\-—、 ]*\s*(.*)$/i;
 const ASSET_IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.apng', '.avif', '.bmp', '.jfif']);
 const ASSET_AUDIO_EXTS = new Set(['.ogg', '.mp3', '.wav', '.m4a', '.flac', '.opus', '.aac']);
@@ -318,6 +340,46 @@ function chapterSnippet(text, n) {
 
 /** 楼层正文首段(stagepack parasOf 同规则:空行切段取首段)。 */
 const firstParaText = (mes) => String(mes ?? '').split(/\n{2,}/)[0]?.trim() ?? '';
+
+/**
+ * 书签 doc 规整:非 {items:[]} 形 → 空清单;条目逐字段收编
+ * (messageId 非负 int / name 字符串 / ts 数 / swipeId 非负 int 可选),
+ * 缺 id 的旧档当场补 —— 脏数据不炸列表面。
+ */
+function normalizeBookmarkDoc(doc) {
+    if (!doc || typeof doc !== 'object' || Array.isArray(doc) || !Array.isArray(doc.items)) return [];
+    const out = [];
+    for (const e of doc.items) {
+        const messageId = Number(e?.messageId);
+        if (!Number.isInteger(messageId) || messageId < 0) continue;
+        out.push({
+            id: typeof e?.id === 'string' && e.id ? e.id : `bm_${randomUUID().slice(0, 8)}`,
+            messageId,
+            name: typeof e?.name === 'string' && e.name ? e.name : `第${messageId + 1}楼`,
+            ts: Number.isFinite(Number(e?.ts)) ? Number(e.ts) : 0,
+            ...(Number.isInteger(Number(e?.swipeId)) && Number(e.swipeId) >= 0 ? { swipeId: Number(e.swipeId) } : {}),
+        });
+    }
+    return out;
+}
+
+/** UTF-8 安全字节截断:按 code point 走,不劈代理对;截完 trim 尾。 */
+function clampUtf8(str, maxBytes) {
+    let bytes = 0;
+    let out = '';
+    for (const ch of String(str ?? '')) {
+        bytes += Buffer.byteLength(ch, 'utf8');
+        if (bytes > maxBytes) break;
+        out += ch;
+    }
+    return out.trimEnd();
+}
+
+/** 书签名收编:trim + 字节截断;空 → 楼层默认名。 */
+function bookmarkName(raw, messageId) {
+    const v = clampUtf8(String(raw ?? '').trim(), BOOKMARK_NAME_MAX_BYTES);
+    return v || `第${messageId + 1}楼`;
+}
 
 /**
  * 楼 → 章推导,与 apps/web/src/features/stagepack.tsx deriveChapters 同构。
@@ -448,12 +510,12 @@ async function listAssetFiles(dir, extSet, sub) {
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
-// 具名文档桶(TASK-058 只读面)
+// 具名文档桶(TASK-058 读面;TASK-063 补 PUT/DELETE 写面)
 // ---------------------------------------------------------------------------
 
 /**
  * URL 桶名 → NamedDocRepo 桶名。白名单三桶与 legacy named-doc-routes
- * 同源(themes/movingUI/quickReplies);read-only,不设写面。
+ * 同源(themes/movingUI/quickReplies);读写同闸(GET + PUT/DELETE)。
  */
 const NAMED_DOC_BUCKETS = Object.freeze({
     'quick-replies': 'quickReplies',
@@ -956,9 +1018,9 @@ export function apply(ctx) {
     });
 
     /**
-     * GET /named-docs/:bucket —— 具名文档桶名单(TASK-058 只读面)。
+     * GET /named-docs/:bucket —— 具名文档桶名单。
      * bucket ∈ quick-replies|themes|moving-ui(NAMED_DOC_BUCKETS 白名单映射
-     * 到 repo camelCase 桶);只读,不设写面。
+     * 到 repo camelCase 桶);写面在同名 PUT/DELETE(TASK-063)。
      *
      * 与 legacy /api/quick-replies|themes|moving-ui/list 同源同形:
      *   {names:[…]};走 sendJsonResource(ETag 私有缓存,需 ?account=<handle>)
@@ -1020,6 +1082,47 @@ export function apply(ctx) {
                 detail: `Could not read named document: ${bucket}/${name}`,
                 status: 500,
             });
+        }
+    });
+
+    /**
+     * PUT /named-docs/:bucket/:name —— 具名文档整档写回(TASK-063 写面)。
+     * body 即文档本体(自由 JSON 对象);name 键归一到路由名 —— legacy
+     * /save 拿 body.name 当落点名,REST 面收敛成「URL 是唯一权威名」,
+     * 写回 doc.name 对齐路由名(ST 三桶文档都自带 name 键,保持自名一致)。
+     * 其余字段原样透传 —— QR 册的 qrList 扩展位/主题字段不在线协议里枚举。
+     * 404 不存在场景不存在(PUT 语义=创建/覆写);读仓闸由 repo.assertWritable。
+     */
+    regPost(`${P}/named-docs/:bucket/:name`, 'PUT', async function (request, response) {
+        try {
+            const handle = request.user.profile.handle;
+            const bucket = namedDocBucket(request.params.bucket);
+            const name = safeName(request.params.name, 'name');
+            const doc = request.body;
+            if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+                return response.status(400).send({ error: 'Request body must be a JSON object' });
+            }
+            await getNamedDocRepo().save(handle, bucket, name, { ...doc, name });
+            return response.send({ ok: true, name });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/named-docs save');
+        }
+    });
+
+    /**
+     * DELETE /named-docs/:bucket/:name —— 具名文档删除;missing → 404
+     * (strict 删除,themes legacy /delete 同口径;quick-replies legacy 的
+     * 宽松 200 不沿用 —— REST 面 404 是诚实语义,无旧消费方要兼容)。
+     */
+    regPost(`${P}/named-docs/:bucket/:name`, 'DELETE', async function (request, response) {
+        try {
+            const handle = request.user.profile.handle;
+            const bucket = namedDocBucket(request.params.bucket);
+            const name = safeName(request.params.name, 'name');
+            await getNamedDocRepo().delete(handle, bucket, name, { strict: true });
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/named-docs delete');
         }
     });
 
@@ -1511,6 +1614,148 @@ export function apply(ctx) {
         }
     });
 
+    /**
+     * POST /personas/avatar —— 自定义人设头像上传(TASK-067)。
+     * 与 legacy /api/avatars/upload 同一条管线与同一落点(avatars 目录):
+     *   全局 multer field 'avatar' → Jimp 读图 → applyAvatarCropResize
+     *   (?crop= JSON 透传)→ 原子写到 directories.avatars → 缩略图失效。
+     * body.overwrite_name 指定落盘文件名(sanitize);缺省 <ts>.png。
+     * 响应 {path} —— 文件名即 persona 主键,PUT /personas/:avatar 直引。
+     */
+    regPost(`${P}/personas/avatar`, 'POST', async function (request, response) {
+        try {
+            if (!request.file?.path) {
+                return response.status(400).send({ error: 'Multipart field "avatar" required' });
+            }
+            const uploadPath = request.file.path;
+            try {
+                const crop = tryParse(request.query.crop);
+                const rawImg = await Jimp.read(uploadPath);
+                const image = await applyAvatarCropResize(rawImg, crop);
+                const requested = request.body?.overwrite_name ?? request.query?.overwrite_name;
+                const filename = requested ? sanitize(String(requested)) : `${Date.now()}.png`;
+                if (!filename) {
+                    return response.status(400).send({ error: 'Invalid overwrite_name' });
+                }
+                invalidateThumbnail(request.user.directories, 'persona', filename);
+                writeFileAtomicSync(path.join(request.user.directories.avatars, filename), image);
+                return response.send({ path: filename });
+            } finally {
+                await fs.promises.unlink(uploadPath).catch(() => { /* best-effort */ });
+            }
+        } catch (error) {
+            console.error('utopinn/personas avatar upload failed:', error);
+            return response.status(400).send({ error: 'Is not a valid image' });
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // 导出中心(TASK-067 刀2):chat/card/world/preset 四类资源原始格式回出,
+    // 与 import-pipeline 的探测面对称 —— 导出文件直接能回导不丢语义。
+    //   chat   → ST JSONL(header chat_metadata + body,formats serializeChatJsonl)
+    //   card   → 盘上原卡文件直出(PNG 的 tEXt/chara 即持久化面)
+    //   world  → {entries:{}} JSON(import 'world' 嗅探形)
+    //   preset → 预设整档 JSON(import 'preset' 嗅探形)
+    // -----------------------------------------------------------------------
+
+    /** RFC 5987 Content-Disposition:非 ASCII 名走 filename*;ASCII 兜底给老客户端。 */
+    const exportDisposition = (fileName) => {
+        const ascii = fileName.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+        return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
+    };
+
+    /** GET /export/chat/:charDir/:chatName —— 会话 JSONL(ST 兼容形)。 */
+    reg(`${P}/export/chat/:charDir/:chatName`, async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const chat = await getChatRepo().get(request.user.profile.handle, charDir, chatName);
+            if (!chat) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            /* ST 首行是整 header 对象(user_name/character_name/create_date/chat_metadata),
+               repo 落盘即 JSON.stringify(header) —— 逐字节回出才不丢语义。
+               serializeChatJsonl 只承载 chat_metadata 键,故首行自序、消息行仍走 formats 编码面。 */
+            const hasHeader = chat.header && typeof chat.header === 'object' && !Array.isArray(chat.header)
+                && Object.keys(chat.header).length > 0;
+            const body = Array.isArray(chat.body) ? chat.body : [];
+            const jsonl = [
+                hasHeader ? JSON.stringify(chat.header) : null,
+                serializeChatJsonl(null, body),
+            ].filter(Boolean).join('\n');
+            response.setHeader('content-type', 'application/x-ndjson; charset=utf-8');
+            response.setHeader('content-disposition', exportDisposition(`${chatName}.jsonl`));
+            return response.send(jsonl);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/export chat');
+        }
+    });
+
+    /**
+     * GET /export/card/:charDir —— 角色卡原始文件直出。
+     * PNG/webp 卡的 tEXt 块即盘上持久化面(PATCH 写回同一文件),
+     * 回出原字节 = 导出即回导,不重新编码不丢位。
+     * .json 卡(少见,手工落盘)回 JSON 文档;webp 兜底 JSON 化。
+     */
+    reg(`${P}/export/card/:charDir`, async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const { card, source } = await loadCharacterDocDetailed(request.user.directories, charDir);
+            if (!card || !source) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            const fileName = path.basename(source.filePath);
+            const buffer = await fs.promises.readFile(source.filePath);
+            const contentType = source.kind === 'json'
+                ? 'application/json; charset=utf-8'
+                : (source.ext === '.webp' ? 'image/webp' : 'image/png');
+            response.setHeader('content-type', contentType);
+            response.setHeader('content-disposition', exportDisposition(fileName));
+            return response.send(buffer);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/export card');
+        }
+    });
+
+    /** GET /export/world/:name —— 世界书整档 {entries:{}} JSON。 */
+    reg(`${P}/export/world/:name`, async function (request, response) {
+        try {
+            const requested = safeName(request.params.name, 'name');
+            const repo = getWorldInfoRepo();
+            const handle = request.user.profile.handle;
+            const doc = await repo.get(handle, requested);
+            if (doc == null) {
+                return response.status(404).send({ error: `World book not found: ${requested}` });
+            }
+            const canonical = await repo.resolveName(handle, requested);
+            response.setHeader('content-type', 'application/json; charset=utf-8');
+            response.setHeader('content-disposition', exportDisposition(`${canonical ?? requested}.json`));
+            return response.send(JSON.stringify(doc, null, 2));
+        } catch (error) {
+            return sendError(response, error, 'utopinn/export world');
+        }
+    });
+
+    /** GET /export/preset/:name?apiId= —— 预设整档 JSON(缺省 openai 家族)。 */
+    reg(`${P}/export/preset/:name`, async function (request, response) {
+        try {
+            const name = safeName(request.params.name, 'name');
+            const apiId = isValidApiId(String(request.query?.apiId ?? 'openai')) ? String(request.query?.apiId ?? 'openai') : null;
+            if (!apiId) {
+                return response.status(400).send({ error: `Invalid apiId: ${request.query?.apiId}` });
+            }
+            const doc = await getPresetRepo().get(request.user.profile.handle, apiId, name);
+            if (doc == null) {
+                return response.status(404).send({ error: `Preset not found: ${apiId}/${name}` });
+            }
+            response.setHeader('content-type', 'application/json; charset=utf-8');
+            response.setHeader('content-disposition', exportDisposition(`${name}.json`));
+            return response.send(JSON.stringify(doc, null, 2));
+        } catch (error) {
+            return sendError(response, error, 'utopinn/export preset');
+        }
+    });
+
     // -----------------------------------------------------------------------
     // masked-secret:脱敏读(SecretManager.getSecretState 原生脱敏)+ 受限写
     //   + shared 面(TASK-072 §2.4):实例共享档对本 handle 的可用性视图 —
@@ -1657,7 +1902,7 @@ export function apply(ctx) {
             // settle/ack 机制读 body.avatar_url|file_name —— 合成写盘上下文
             const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
             const repo = getChatRepo();
-            const existing = await repo.get(handle, charDir, chatName);
+            let existing = await repo.get(handle, charDir, chatName);
             const hasAiFloor = messages.some(m => m && m.is_user === false);
             const backup = (header, floors, integrity) => {
                 try {
@@ -1685,7 +1930,32 @@ export function apply(ctx) {
                 const floors = seed.floors.length
                     ? seed.floors.concat(cleanedMessages.filter((m) => !isEmptySystemSeedFloor(m)))
                     : cleanedMessages;
-                const { integrity: newIntegrity } = await repo.save(handle, charDir, chatName, header, floors, null);
+                // createIfAbsent 原子查+写:并发首写不再互踩(PR#18 review:
+                // 旧 save(null) 无条件覆盖,后到者整段换先到者的楼层)。
+                // 撞车 → 重读后落 append 路径,楼层不丢。
+                let newIntegrity;
+                try {
+                    ({ integrity: newIntegrity } = await repo.createIfAbsent(handle, charDir, chatName, header, floors));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err;
+                    existing = await repo.get(handle, charDir, chatName);
+                }
+                if (!newIntegrity) {
+                    // 并发已建 → 落到下方 append 路径(existing 已重读)。
+                    const appended = await appendMessagesToChatFile({
+                        filePath: chatFilePath, messages,
+                        chatMetadata: _.isObjectLike(body.chat_metadata) ? body.chat_metadata : {},
+                        integritySlug: slugRaw || undefined, force,
+                        incomingGenerationId: incomingId, handle, charDir, name: chatName,
+                    });
+                    await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+                    acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
+                    await settleMvuAfterAppend(writeReq, { autoInit: true });
+                    return response.send({
+                        ok: true, appended: appended?.appended ?? 0, created: false,
+                        integrity: appended?.integrity ?? existing?.integrity ?? null,
+                    });
+                }
                 writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
                 if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
                 backup(header, floors, newIntegrity);
@@ -1828,6 +2098,736 @@ export function apply(ctx) {
             return response.send({ ok: true, applied: sanitizedOps.length, total_messages: post?.body?.length ?? null, integrity: result.integrity });
         } catch (error) {
             return sendError(response, error, 'utopinn/chats patch');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // 群聊(TASK-062):群文档 CRUD + 群会话读写。
+    //
+    //   语义锚点 = 上游 group-chats.js + legacy /api/groups:/api/chats/group/*;
+    //   群编排本体仍在 utopinn-generate(groupId 入参 → 纯函数层选员/组卡),
+    //   这里只管群文档与群会话文件,不复制任何编排逻辑。
+    //
+    //   群会话 repo 键:{isGroup:true, groupId:<chatId>} —— chatId 是群聊天
+    //   文件名(id 串),与 legacy group/get 同键;群文档 id 与默认 chatId
+    //   相同(legacy create 约定)。
+    //   楼层写面 ack/settle 机制读 body.id 认群 → writeReq 合成 id=chatId。
+    // -----------------------------------------------------------------------
+
+    /**
+     * 群文档加载:repo.get(handle, groupId);不存在 → null(调用方回 404)。
+     * @param {object} request
+     * @param {string} groupId
+     * @returns {Promise<object|null>}
+     */
+    async function loadGroupDoc(request, groupId) {
+        try {
+            return await getGroupRepo().get(request.user.profile.handle, groupId);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * 成员表解析(只读读面):avatar → 卡(charDir=头像文件干名) →
+     * {avatar,charDir,name,disabled,loadable}。卡缺失成员保留占位
+     * (loadable:false) —— 编排层会跳过它,UI 诚实显示不可载。
+     */
+    async function resolveGroupRoster(request, group) {
+        const members = Array.isArray(group?.members) ? group.members : [];
+        const disabled = new Set(Array.isArray(group?.disabled_members) ? group.disabled_members : []);
+        const roster = [];
+        for (const avatar of members) {
+            const avatarStr = String(avatar ?? '');
+            const charDir = avatarToCharDir(avatarStr);
+            const card = charDir ? await loadCharacterDoc(request.user.directories, charDir).catch(() => null) : null;
+            roster.push({
+                avatar: avatarStr,
+                charDir,
+                name: String(card?.data?.name ?? card?.name ?? charDir ?? '').trim() || charDir,
+                disabled: disabled.has(avatarStr),
+                loadable: Boolean(card),
+            });
+        }
+        return roster;
+    }
+
+    /**
+     * 群新会话问候播种(上游 getGroupChat 空聊分支同义):全部成员各掷一
+     * 条问候(含 disabled —— 上游不过滤),带 original_avatar/force_avatar。
+     * 失败不阻塞建会话,诚实空。
+     */
+    async function groupGreetingFloorsForNewChat(request, group, chatName, chatMetadata) {
+        try {
+            const members = Array.isArray(group?.members) ? group.members : [];
+            const roster = [];
+            for (const avatar of members) {
+                const avatarStr = String(avatar ?? '');
+                const charDir = avatarToCharDir(avatarStr);
+                if (!charDir) continue;
+                const card = await loadCharacterDoc(request.user.directories, charDir).catch(() => null);
+                if (!card) continue;
+                roster.push({
+                    avatar: avatarStr,
+                    name: String(card?.data?.name ?? card?.name ?? charDir).trim() || charDir,
+                    card,
+                });
+            }
+            const settingsDoc = await getSettingsRepo().get(request.user.profile.handle).catch(() => null);
+            const variableWrites = [];
+            const floors = buildGroupGreetingFloors({
+                roster,
+                name1: resolveGreetingName1(request, settingsDoc),
+                chatMetadata,
+                chatName,
+                globalVariables: structuredClone(settingsDoc?.extension_settings?.variables?.global ?? {}),
+                variableWrites,
+            });
+            warnVolatileGreetingWrites(variableWrites, `group:${group?.id ?? '?'}`, chatName);
+            return floors;
+        } catch (error) {
+            console.warn(`group greeting seed skipped for ${group?.id ?? '?'}/${chatName}:`, error?.message ?? error);
+            return [];
+        }
+    }
+
+    const GROUP_CHAT_OPTS = (chatId) => ({ isGroup: true, groupId: chatId });
+
+    /** GET /groups —— 群列表(listWithChatStats,含 chat_size/date_last_chat)。 */
+    reg(`${P}/groups`, async function (request, response) {
+        try {
+            const items = await getGroupRepo().listWithChatStats(request.user.profile.handle);
+            return response.send({ items: items ?? [], total: (items ?? []).length });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/groups list');
+        }
+    });
+
+    /**
+     * POST /groups —— 建群。body 字段与 legacy /api/groups/create 同名同
+     * 默认(名/members/activation_strategy/generation_mode/disabled_members
+     * /allow_self_responses/join 前后缀/auto_mode_delay/avatar_url/fav);
+     * id=chat_id=Date.now() 串,chats=[id]。落盘成功 → 201 回群文档。
+     */
+    regPost(`${P}/groups`, 'POST', async function (request, response) {
+        try {
+            const body = request.body ?? {};
+            const id = String(Date.now());
+            const groupDoc = {
+                id,
+                name: typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'New Group',
+                members: Array.isArray(body.members) ? body.members.map(String) : [],
+                avatar_url: body.avatar_url,
+                allow_self_responses: Boolean(body.allow_self_responses),
+                activation_strategy: body.activation_strategy ?? 0,
+                generation_mode: body.generation_mode ?? 0,
+                disabled_members: Array.isArray(body.disabled_members) ? body.disabled_members.map(String) : [],
+                fav: body.fav,
+                chat_id: body.chat_id ?? id,
+                chats: Array.isArray(body.chats) ? body.chats.map(String) : [id],
+                auto_mode_delay: body.auto_mode_delay ?? 5,
+                generation_mode_join_prefix: body.generation_mode_join_prefix ?? '',
+                generation_mode_join_suffix: body.generation_mode_join_suffix ?? '',
+            };
+            await getGroupRepo().save(request.user.profile.handle, id, groupDoc);
+            /* ST 同义:建群即开好默认群会话(chat_id=id —— 群文档先落,
+               问候播种要用完整 members 表),否则首开 404 把 SPA 兜底弹走。 */
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            const defaultChatId = String(groupDoc.chat_id ?? id);
+            if (!(await repo.exists(handle, '', defaultChatId, GROUP_CHAT_OPTS(defaultChatId)))) {
+                const headerDoc = { chat_metadata: {} };
+                const floors = await groupGreetingFloorsForNewChat(request, groupDoc, defaultChatId, headerDoc.chat_metadata);
+                try {
+                    await repo.createIfAbsent(handle, '', defaultChatId, headerDoc, floors, GROUP_CHAT_OPTS(defaultChatId));
+                    await refreshRecentChatIndexEntry(request, path.join(request.user.directories.groupChats, `${defaultChatId}.jsonl`));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err; // 并发已建 → 问候不补,不覆盖
+                }
+            }
+            return response.status(201).send(groupDoc);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/groups create');
+        }
+    });
+
+    /** GET /groups/:gid —— 群文档 + roster 解析(启停/可载标记)+ chats 元信息。 */
+    reg(`${P}/groups/:gid`, async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const roster = await resolveGroupRoster(request, group);
+            const chats = [];
+            for (const chatId of Array.isArray(group.chats) ? group.chats : []) {
+                const cid = stripJsonlExt(String(chatId));
+                const info = await getChatRepo().getInfo(request.user.profile.handle, '', cid, GROUP_CHAT_OPTS(cid)).catch(() => null);
+                chats.push({
+                    id: cid,
+                    messageCount: info?.messageCount ?? 0,
+                    lastMessage: info?.lastMessage ?? null,
+                    updatedAt: info?.updatedAt ?? null,
+                    current: String(group.chat_id ?? '') === cid,
+                });
+            }
+            return response.send({ ...group, roster, chats });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/groups get');
+        }
+    });
+
+    /**
+     * PATCH /groups/:gid —— 群设置编辑(白名单浅合并):name/members/
+     * activation_strategy/generation_mode/disabled_members/allow_self_responses
+     * /join 前后缀/auto_mode_delay/chat_id/chats/avatar_url/fav。
+     * 编辑即时生效:下次 generate 服务端重新读文档跑编排。
+     */
+    const PATCHABLE_GROUP_FIELDS = new Set([
+        'name', 'members', 'activation_strategy', 'generation_mode', 'disabled_members',
+        'allow_self_responses', 'generation_mode_join_prefix', 'generation_mode_join_suffix',
+        'auto_mode_delay', 'chat_id', 'chats', 'avatar_url', 'fav',
+    ]);
+    regPost(`${P}/groups/:gid`, 'PATCH', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const patch = request.body && typeof request.body === 'object' && !Array.isArray(request.body) ? request.body : {};
+            const rejected = Object.keys(patch).filter((k) => !PATCHABLE_GROUP_FIELDS.has(k));
+            if (rejected.length) {
+                return response.status(400).send({ error: `Group fields not patchable: ${rejected.join(', ')}` });
+            }
+            for (const arrKey of ['members', 'disabled_members', 'chats']) {
+                if (arrKey in patch && !Array.isArray(patch[arrKey])) {
+                    return response.status(400).send({ error: `${arrKey} must be an array` });
+                }
+            }
+            const merged = { ...group };
+            for (const [k, v] of Object.entries(patch)) {
+                merged[k] = Array.isArray(v) ? v.map(String) : v;
+            }
+            merged.id = groupId;
+            await getGroupRepo().save(request.user.profile.handle, groupId, merged);
+            const roster = await resolveGroupRoster(request, merged);
+            return response.send({ ...merged, roster });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/groups patch');
+        }
+    });
+
+    /** DELETE /groups/:gid —— 删群(级联群聊天文件,repo.delete 语义)。 */
+    regPost(`${P}/groups/:gid`, 'DELETE', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const result = await getGroupRepo().delete(request.user.profile.handle, groupId);
+            if (result.chatsDeleted > 0) {
+                await invalidateRecentChatIndex(request);
+            }
+            return response.send({ ok: true });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/groups delete');
+        }
+    });
+
+    /**
+     * GET /groups/:gid/chats/:chatId —— 群会话(header+messages,展示投影)。
+     * 首开空聊 → 成员问候播种(上游 openGroupChat 同义)并回写落盘;
+     * 文件在盘但 repo 读不出 → {corrupted:true}。
+     */
+    reg(`${P}/groups/:gid/chats/:chatId`, async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const chatId = safeName(stripJsonlExt(request.params.chatId), 'chatId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            let chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+            if (!chat) {
+                const chatFilePath = path.join(request.user.directories.groupChats, `${chatId}.jsonl`);
+                if (fs.existsSync(chatFilePath)) {
+                    console.warn(`Group chat file exists but is unreadable (corrupted): ${chatFilePath}`);
+                    return response.send({ corrupted: true });
+                }
+                return response.status(404).send({ error: `Chat not found: ${groupId}/${chatId}` });
+            }
+            // 首开空聊播种:问候只落一次(body 非空即不再重播)。
+            let seeded = false;
+            if (!Array.isArray(chat.body) || chat.body.length === 0) {
+                const headerDoc = chat.header && typeof chat.header === 'object' ? chat.header : {};
+                if (typeof headerDoc.chat_metadata !== 'object' || headerDoc.chat_metadata === null || Array.isArray(headerDoc.chat_metadata)) {
+                    headerDoc.chat_metadata = {};
+                }
+                const floors = await groupGreetingFloorsForNewChat(request, group, chatId, headerDoc.chat_metadata);
+                if (floors.length) {
+                    // CAS 写:integrity 用空快照的 —— 种子窗口里若有真楼到,
+                    // 冲突即弃种重读,不覆盖(PR#18 review)。
+                    try {
+                        await repo.save(handle, '', chatId, headerDoc, floors, chat?.integrity ?? null, GROUP_CHAT_OPTS(chatId));
+                        chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+                        seeded = true;
+                    } catch (err) {
+                        if (!(err instanceof ConflictError)) throw err;
+                        chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+                    }
+                }
+            }
+            const messages = await projectChatFloorsForDisplayResponse(request, '', chat, chatId);
+            return response.send({
+                name: chatId,
+                fileName: `${chatId}.jsonl`,
+                header: chat?.header ?? {},
+                messages,
+                integrity: chat?.integrity ?? null,
+                updatedAt: chat?.updatedAt ?? null,
+                createdAt: chat?.createdAt ?? null,
+                ...(seeded ? { greeting_seeded: true } : {}),
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/group-chats get');
+        }
+    });
+
+    /**
+     * POST /groups/:gid/chats/:chatId —— 建群会话(body:{name?} 缺省
+     * Date.now 串;成员问候播种;chatId 注册进 group.chats 并把
+     * group.chat_id 指到它 —— 上游 openGroupChat 新建即选)。
+     */
+    regPost(`${P}/groups/:gid/chats/:chatId`, 'POST', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const chatId = safeName(stripJsonlExt(request.params.chatId), 'chatId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            if (await repo.exists(handle, '', chatId, GROUP_CHAT_OPTS(chatId))) {
+                return response.status(409).send({ error: `Chat already exists: ${groupId}/${chatId}` });
+            }
+            const headerDoc = { chat_metadata: {} };
+            const floors = await groupGreetingFloorsForNewChat(request, group, chatId, headerDoc.chat_metadata);
+            // createIfAbsent:exists→save 的窗口里并发建会静默覆盖(PR#18);
+            // 冲突由 sendError 统一映 409「Chat already exists」。
+            const { integrity } = await repo.createIfAbsent(handle, '', chatId, headerDoc, floors, GROUP_CHAT_OPTS(chatId));
+            const chatFilePath = path.join(request.user.directories.groupChats, `${chatId}.jsonl`);
+            await refreshRecentChatIndexEntry(request, chatFilePath);
+            // 注册群↔会话绑定(group doc 持有 chats[] + chat_id)。
+            const chats = Array.isArray(group.chats) ? group.chats.slice() : [];
+            if (!chats.map(String).includes(chatId)) chats.push(chatId);
+            await getGroupRepo().save(handle, groupId, { ...group, chats, chat_id: chatId });
+            return response.status(201).send({
+                ok: true, name: chatId, fileName: `${chatId}.jsonl`, integrity,
+                ...(floors.length ? { greeting_seeded: true } : {}),
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/group-chats create');
+        }
+    });
+
+    /**
+     * POST /groups/:gid/chats/:chatId/messages —— 群会话追加(legacy
+     * /api/chats/group/append 逐义:appendMessagesToChatFile repo 面双去重
+     * +「缺失即建」含成员问候播种 + ack + MVU settle {group:true})。
+     * body:{messages[]|message, integrity?, force?, chat_metadata?, luker_generation_id?}
+     */
+    regPost(`${P}/groups/:gid/chats/:chatId/messages`, 'POST', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const chatId = safeName(stripJsonlExt(request.params.chatId), 'chatId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const handle = request.user.profile.handle;
+            const body = request.body ?? {};
+            const integritySlug = typeof body.integrity === 'string' ? body.integrity : undefined;
+            const force = Boolean(body.force);
+            const messages = Array.isArray(body.messages) ? body.messages
+                : (body.message && typeof body.message === 'object' ? [body.message] : []);
+            if (messages.length === 0) {
+                return response.status(400).send({ error: 'No message payload found. Expected body.messages or body.message.' });
+            }
+            const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${chatId}.jsonl`));
+            const repo = getChatRepo();
+            const existing = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+            let result;
+            if (!existing) {
+                // 「缺失即建」+ 问候播种(与单聊 append 同语义):先落 header
+                // + 问候 + 客户端楼层,再走 appendMessagesToChatFile 的 repo 面
+                // 会造成问候丢失,因此直接 repo.save。
+                const header = createChatHeader(
+                    body.chat_metadata && typeof body.chat_metadata === 'object' && !Array.isArray(body.chat_metadata)
+                        ? body.chat_metadata : {});
+                const seed = await groupGreetingFloorsForNewChat(request, group, chatId, header.chat_metadata);
+                const cleaned = messages.map(m => stripLukerGenerationIdFromMessage(_.cloneDeep(m)))
+                    .filter((m) => !(seed.length && isEmptySystemSeedFloor(m)));
+                const floors = seed.concat(cleaned);
+                // createIfAbsent 原子查+写:并发首写撞车 → 重读后落 append
+                // 路径,不再无条件覆盖(PR#18 review)。
+                let newIntegrity;
+                try {
+                    ({ integrity: newIntegrity } = await repo.createIfAbsent(handle, '', chatId, header, floors, GROUP_CHAT_OPTS(chatId)));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err;
+                    result = await appendMessagesToChatFile({
+                        filePath: chatFilePath,
+                        messages,
+                        chatMetadata: _.isObjectLike(body.chat_metadata) ? body.chat_metadata : {},
+                        integritySlug,
+                        force,
+                        incomingGenerationId: typeof body.luker_generation_id === 'string' ? body.luker_generation_id : '',
+                        handle,
+                        charDir: '',
+                        name: chatId,
+                        isGroup: true,
+                        groupId: chatId,
+                    });
+                }
+                if (newIntegrity) {
+                    writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
+                    if (typeof body.luker_generation_id === 'string' && body.luker_generation_id.trim()) {
+                        writeLastChatGenerationId(chatFilePath, body.luker_generation_id.trim());
+                    }
+                    try {
+                        const headerWithIntegrity = { ...header, chat_metadata: applyIntegrityToMetadata(header.chat_metadata, newIntegrity) };
+                        getBackupFunction(handle, chatId)(request.user.directories.backups, chatId,
+                            [headerWithIntegrity, ...floors].map(m => JSON.stringify(m)).join('\n'));
+                    } catch (backupErr) {
+                        console.error('Chat backup after group-chat create-append failed', backupErr);
+                    }
+                    result = { appended: cleaned.length, created: true, integrity: newIntegrity, ...(seed.length ? { greeting_seeded: true } : {}) };
+                }
+            } else {
+                result = await appendMessagesToChatFile({
+                    filePath: chatFilePath,
+                    messages,
+                    chatMetadata: _.isObjectLike(body.chat_metadata) ? body.chat_metadata : {},
+                    integritySlug,
+                    force,
+                    incomingGenerationId: typeof body.luker_generation_id === 'string' ? body.luker_generation_id : '',
+                    handle,
+                    charDir: '',
+                    name: chatId,
+                    isGroup: true,
+                    groupId: chatId,
+                });
+                if (result?.appended > 0) {
+                    try {
+                        const chatDoc = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+                        if (chatDoc) {
+                            const headerWithIntegrity = {
+                                ...(chatDoc.header ?? {}),
+                                chat_metadata: applyIntegrityToMetadata(chatDoc.header?.chat_metadata, chatDoc.integrity),
+                            };
+                            getBackupFunction(handle, chatId)(request.user.directories.backups, chatId,
+                                [headerWithIntegrity, ...(chatDoc.body ?? [])].map(m => JSON.stringify(m)).join('\n'));
+                        }
+                    } catch (backupErr) {
+                        console.error('Chat backup after group-chat append failed', backupErr);
+                    }
+                }
+            }
+            await refreshRecentChatIndexEntry(request, chatFilePath);
+            // ack/settle 认 body.id 为群聊天 id(buildGroupPersistTargetHint 同口径)。
+            const writeReq = { ...request, body: { ...body, id: chatId } };
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, { kind: 'group', id: chatId });
+            await settleMvuAfterAppend(writeReq, { group: true });
+            return response.send({ ok: true, ...result });
+        } catch (error) {
+            if (error && typeof error === 'object' && 'currentIntegrity' in error && 'expectedIntegrity' in error) {
+                console.warn(error.message);
+                return response.status(409).send({ error: 'integrity', current_integrity: error.currentIntegrity ?? '' });
+            }
+            return sendError(response, error, 'utopinn/group-chats append');
+        }
+    });
+
+    /**
+     * PATCH /groups/:gid/chats/:chatId —— JSON-Patch 局部改(与单聊 PATCH
+     * 同契约:ops 地址 /body/<i>/…|/header/…,chat_metadata 顶键展开合并,
+     * integrity 冲突 → 409 {current_integrity};swipe 切 = /body/<i>/swipe_id)。
+     * 写后 ack + resettleMvuAfterWrite({group:true})。
+     */
+    regPost(`${P}/groups/:gid/chats/:chatId`, 'PATCH', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const chatId = safeName(stripJsonlExt(request.params.chatId), 'chatId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const ops = request.body?.ops;
+            if (!Array.isArray(ops) || ops.length === 0) {
+                return response.status(400).send({ error: 'Expected body.ops non-empty array' });
+            }
+            const handle = request.user.profile.handle;
+            const body = request.body ?? {};
+            const slugRaw = typeof body.integrity === 'string' ? body.integrity.trim() : '';
+            const incomingId = typeof body.luker_generation_id === 'string' ? body.luker_generation_id.trim() : '';
+            const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${chatId}.jsonl`));
+            const repo = getChatRepo();
+            for (const op of ops) {
+                if (!op || typeof op !== 'object' || typeof op.path !== 'string' || !op.path.startsWith('/')) {
+                    return response.status(400).send({ error: 'Invalid patch op: expected {op,path:"/..."}' });
+                }
+                if (/^\/\d+(\/|$)/.test(op.path)) {
+                    return response.status(400).send({ error: `Patch path must address /body/<i>/… or /header/…, got "${op.path}"` });
+                }
+            }
+            const sanitizedOps = sanitizeOperationsAgainstLukerGenerationId(ops);
+            let existing = null;
+            try { existing = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId)); }
+            catch (e) { if (!(e instanceof NotFoundError)) throw e; }
+            if (existing == null) {
+                return response.status(404).send({ error: `Chat not found: ${groupId}/${chatId}` });
+            }
+            const lastIdx = Math.max(0, (existing?.body?.length ?? 0) - 1);
+            const hitsLast = ops.some(op => typeof op?.path === 'string'
+                && (op.path === `/body/${lastIdx}` || op.path.startsWith(`/body/${lastIdx}/`)));
+
+            if (sanitizedOps.length === 0) {
+                if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+                const writeReq = { ...request, body: { ...body, id: chatId } };
+                acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? { kind: 'group', id: chatId } : null);
+                return response.send({ ok: true, applied: 0, total_messages: existing?.body?.length ?? 0, integrity: existing?.integrity ?? null });
+            }
+
+            if (body.chat_metadata && typeof body.chat_metadata === 'object' && !Array.isArray(body.chat_metadata)) {
+                for (const [k, v] of Object.entries(body.chat_metadata)) {
+                    sanitizedOps.push({ op: 'add', path: `/header/chat_metadata/${k.replace(/~/g, '~0').replace(/\//g, '~1')}`, value: v });
+                }
+            }
+
+            let result;
+            try {
+                result = await repo.patch(handle, '', chatId, sanitizedOps, slugRaw || undefined, GROUP_CHAT_OPTS(chatId));
+            } catch (err) {
+                if (err instanceof ConflictError) return sendRepoIntegrityConflict(response, err);
+                if (err instanceof PatchTestFailedError || err instanceof PatchMissingParentError) {
+                    const current = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId)).catch(() => null);
+                    console.warn(err.message);
+                    return response.status(409).send({ error: 'integrity', current_integrity: current?.integrity ?? '' });
+                }
+                throw err;
+            }
+            if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
+            writeChatSyncState(chatFilePath, { integrity: result.integrity, updated_at: Date.now() });
+            const post = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId)).catch(() => null);
+            try {
+                const headerWithIntegrity = { ...(post?.header ?? {}), chat_metadata: applyIntegrityToMetadata(post?.header?.chat_metadata, result.integrity) };
+                getBackupFunction(handle, chatId)(request.user.directories.backups, chatId,
+                    [headerWithIntegrity, ...(post?.body ?? [])].map(m => JSON.stringify(m)).join('\n'));
+            } catch (e) { console.error('Chat backup after group-chat patch failed', e); }
+            await refreshRecentChatIndexEntry(request, chatFilePath);
+            const writeReq = { ...request, body: { ...body, id: chatId } };
+            acknowledgeGenerationFromValueOrPersistTarget(writeReq, ops, hitsLast ? { kind: 'group', id: chatId } : null);
+            await resettleMvuAfterWrite(writeReq, { group: true });
+            return response.send({ ok: true, applied: sanitizedOps.length, total_messages: post?.body?.length ?? null, integrity: result.integrity });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/group-chats patch');
+        }
+    });
+
+    /**
+     * DELETE /groups/:gid/chats/:chatId —— 删群会话(文件 + 群文档
+     * chats[] 解绑;chat_id 指到被删项时回指首个残留会话)。
+     */
+    regPost(`${P}/groups/:gid/chats/:chatId`, 'DELETE', async function (request, response) {
+        try {
+            const groupId = safeName(request.params.gid, 'groupId');
+            const chatId = safeName(stripJsonlExt(request.params.chatId), 'chatId');
+            const group = await loadGroupDoc(request, groupId);
+            if (!group) {
+                return response.status(404).send({ error: `Group not found: ${groupId}` });
+            }
+            const handle = request.user.profile.handle;
+            const chatFilePath = path.join(request.user.directories.groupChats, sanitize(`${chatId}.jsonl`));
+            await getChatRepo().delete(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+            await deleteRecentChatIndexEntry(request, chatFilePath);
+            await deleteAllChatStateSidecars(chatFilePath);
+            const chats = (Array.isArray(group.chats) ? group.chats : []).map(String).filter((c) => c !== chatId);
+            const next = { ...group, chats };
+            if (String(group.chat_id ?? '') === chatId) next.chat_id = chats[0] ?? '';
+            await getGroupRepo().save(handle, groupId, next);
+            return response.send({ ok: true });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/group-chats delete');
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // 楼层书签与岔出(TASK-065 ST bookmark 语义):
+    //   打书签 = 存档点(楼层坐标 + 当时 activeSwipe,不写 swipe 版本语义);
+    //   岔出   = 0..messageId 楼层复制成新会话文件,原会话不动(ST branch);
+    //   存储   = chat_state 'bookmarks' 侧车(不轮会话 integrity,rename 随迁,
+    //            删会话级联;读写经 Repo.setState/getState,双引擎同语义)。
+    // -----------------------------------------------------------------------
+
+    /**
+     * GET /characters/:charDir/chats/:chatName/bookmarks —— 书签列表。
+     * {chat,charDir,floors,items:[{id,messageId,name,ts,swipeId?}],total}
+     * floors 随行:客户端据此把越界书签标失效(楼层已被删/截断)。
+     */
+    reg(`${P}/characters/:charDir/chats/:chatName/bookmarks`, async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            const chat = await repo.get(handle, charDir, chatName);
+            if (!chat) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            const doc = await repo.getState(handle, charDir, chatName, CHAT_BOOKMARKS_NS).catch(() => null);
+            const items = normalizeBookmarkDoc(doc);
+            return response.send({ chat: chatName, charDir, floors: (chat.body ?? []).length, items, total: items.length });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/chats bookmarks list');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/chats/:chatName/bookmarks —— 打书签。
+     * body:{messageId:int, name?, swipeId?} → 201 {ok,item,items,total}。
+     * messageId 是 body 楼号(0 基),越界 → 400;name 缺省 `第N楼`。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/bookmarks`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            const chat = await repo.get(handle, charDir, chatName);
+            if (!chat) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            const floors = (chat.body ?? []).length;
+            // 严格 int —— 不做 Number() 兜底强转(null→0 会偷渡成首楼)
+            const messageId = request.body?.messageId;
+            if (!Number.isInteger(messageId) || messageId < 0 || messageId >= floors) {
+                return response.status(400).send({ error: `messageId must be an integer in [0, ${Math.max(0, floors - 1)}]` });
+            }
+            const swipeId = request.body?.swipeId;
+            const item = {
+                id: `bm_${randomUUID().slice(0, 8)}`,
+                messageId,
+                name: bookmarkName(request.body?.name, messageId),
+                ts: Date.now(),
+                ...(Number.isInteger(swipeId) && swipeId >= 0 ? { swipeId } : {}),
+            };
+            const doc = await repo.getState(handle, charDir, chatName, CHAT_BOOKMARKS_NS).catch(() => null);
+            const items = normalizeBookmarkDoc(doc);
+            items.push(item);
+            items.sort((a, b) => a.messageId - b.messageId || a.ts - b.ts);
+            await repo.setState(handle, charDir, chatName, CHAT_BOOKMARKS_NS, { items });
+            return response.status(201).send({ ok: true, item, items, total: items.length });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/chats bookmark create');
+        }
+    });
+
+    /**
+     * DELETE /characters/:charDir/chats/:chatName/bookmarks/:bookmarkId —— 删书签。
+     * 204;书签或会话不在 → 404(读-改-写:漏 id 即 404,不整档回写)。
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/bookmarks/:bookmarkId`, 'DELETE', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const bookmarkId = safeName(request.params.bookmarkId, 'bookmarkId');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            if (!await repo.exists(handle, charDir, chatName)) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            const doc = await repo.getState(handle, charDir, chatName, CHAT_BOOKMARKS_NS).catch(() => null);
+            const items = normalizeBookmarkDoc(doc);
+            const next = items.filter((b) => b.id !== bookmarkId);
+            if (next.length === items.length) {
+                return response.status(404).send({ error: `Bookmark not found: ${bookmarkId}` });
+            }
+            await repo.setState(handle, charDir, chatName, CHAT_BOOKMARKS_NS, { items: next });
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/chats bookmark delete');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/chats/:chatName/fork —— 从存档点岔出新会话。
+     * body:{messageId:int, name?} → 复制 header + body[0..messageId](含端点,
+     * swipe 组/swipe_id/variables 快照原样随楼走 —— 书签记坐标,不与
+     * swipe 分叉语义混)成新 chat 文件,命名 `原名·书签名`(sanitize +
+     * 128B 预算内截断 + 撞名自动 ·N)。原会话不动。
+     * header 深拷贝后剔 chat_metadata.integrity(旧 CAS slug,留着会让
+     * 新会话 document-PUT 空手 CAS 撞墙)并记 forked_from 溯源;
+     * 书签侧车档过滤 ≤messageId 随迁 —— 其余 state ns(chapters/scene/
+     * MVU)是新会话自己的运行态,不随迁。
+     * 响应 201:{ok,name,fileName,messageCount,integrity,fork:{from,messageId}}
+     */
+    regPost(`${P}/characters/:charDir/chats/:chatName/fork`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const chatName = safeName(stripJsonlExt(request.params.chatName), 'chatName');
+            const handle = request.user.profile.handle;
+            const repo = getChatRepo();
+            const chat = await repo.get(handle, charDir, chatName);
+            if (!chat) {
+                return response.status(404).send({ error: `Chat not found: ${charDir}/${chatName}` });
+            }
+            const bodyLen = (chat.body ?? []).length;
+            // 严格 int —— 同上,null→0 的强转偷渡会把整段会话岔在首楼
+            const messageId = request.body?.messageId;
+            if (!Number.isInteger(messageId) || messageId < 0 || messageId >= bodyLen) {
+                return response.status(400).send({ error: `messageId must be an integer in [0, ${Math.max(0, bodyLen - 1)}]` });
+            }
+            // 复合名:`原名·书签名`;书签名 sanitize 空 → 楼层默认名,
+            // 整体再过 sanitize(原名也可能带 FS 不允字符)+ 字节截断。
+            const tag = sanitize(String(request.body?.name ?? '').trim()).trim() || `第${messageId + 1}楼`;
+            const base = clampUtf8(sanitize(`${chatName}·${tag}`).trim() || `${chatName}-fork`, FORK_NAME_MAX_BYTES);
+            let newName = null;
+            for (let i = 0; i < 100; i++) {
+                const candidate = i === 0 ? base : `${base}·${i + 1}`;
+                if (!await repo.exists(handle, charDir, candidate)) { newName = candidate; break; }
+            }
+            if (!newName) {
+                return response.status(409).send({ error: `No free fork name under ${charDir} (base: ${base})` });
+            }
+            const header = _.cloneDeep(chat.header && typeof chat.header === 'object' ? chat.header : {});
+            if (header.chat_metadata && typeof header.chat_metadata === 'object' && !Array.isArray(header.chat_metadata)) {
+                delete header.chat_metadata.integrity;
+                header.chat_metadata.forked_from = { chat: chatName, messageId };
+            } else {
+                header.chat_metadata = { forked_from: { chat: chatName, messageId } };
+            }
+            const floors = _.cloneDeep((chat.body ?? []).slice(0, messageId + 1));
+            const { integrity } = await repo.save(handle, charDir, newName, header, floors, null);
+            const newChatFilePath = path.join(request.user.directories.chats, charDir, `${newName}.jsonl`);
+            writeChatSyncState(newChatFilePath, { integrity, updated_at: Date.now() });
+            // 书签随迁:坐标 ≤ 岔点者仍是新会话里的有效存档点。
+            const doc = await repo.getState(handle, charDir, chatName, CHAT_BOOKMARKS_NS).catch(() => null);
+            const carried = normalizeBookmarkDoc(doc).filter((b) => b.messageId <= messageId);
+            if (carried.length) {
+                await repo.setState(handle, charDir, newName, CHAT_BOOKMARKS_NS, { items: carried })
+                    .catch((e) => console.warn(`fork bookmark carry failed for ${charDir}/${newName}:`, e?.message ?? e));
+            }
+            const avatar = await resolveAvatarFileName(request.user.directories, charDir);
+            await refreshRecentChatIndexEntry(request, newChatFilePath, { avatar });
+            return response.status(201).send({
+                ok: true, name: newName, fileName: `${newName}.jsonl`,
+                messageCount: floors.length, integrity,
+                fork: { from: chatName, messageId },
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/chats fork');
         }
     });
 

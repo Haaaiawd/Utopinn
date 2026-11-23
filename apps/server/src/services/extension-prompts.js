@@ -35,6 +35,80 @@ const ROLE_BY_NAME = {
 
 const toFinite = (v) => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
 
+// —— preset 域 regex 的 'in_use' 解析(TASK-070)———————————————————————
+// 上游:preset 作用域恒=「当前 API 选中预设」(engine.js getScriptsByType
+// PRESET → getPresetManager().getSelectedPresetName()),再叠
+// preset_allowed_regex[apiId] 放行闸。服务端无 UI 选中态,解析源 =
+// settings 文档各 apiId 的 selected 槽(koboldhorde→kobold 同上游
+// getPresetManager:322-325)。
+//
+// openai 的 selected 指针 = 顶层 preset_settings_openai——产品侧唯一可写
+// 标量(utopinn-library PATCH 白名单,写时镜像 oai_settings 内嵌槽),前端
+// activePreset(App.tsx/studio.tsx)与 generate-context 预设回退都以它为先;
+// oai_settings.preset_settings_openai 是上游 canonical 槽(上游文档只有它)
+// → 兜底。两槽镜像在场时分叉只可能来自非 PATCH 写(旧版本/导入/手改)——
+// 顶层是产品面一致认的「当前启用」,canonical 先行会让 regex 车道静默解到
+// 用户从未选过的预设(实测:顶层=Izumi/canonical=Default → 投影全灭)。
+//   apiId                 指针(首选)                          兜底
+//   openai                preset_settings_openai(顶层)        oai_settings.preset_settings_openai
+//   kobold/koboldhorde    kai_settings.preset_settings         preset_settings(顶层)
+//   novel                 nai_settings.preset_settings_novel   preset_settings_novel(顶层)
+//   textgenerationwebui   textgenerationwebui_settings.preset  —
+//
+// settings.main_api 不可作 apiId 源:utopinn 无 API 切换写面,该字段
+// 恒为默认值(koboldhorde)。TH/展示车道的「当前生成 apiId」取会话楼层
+// extra.api(生成侧簿记真值,非前端本地态);生成链直接用 mainApi 入参。
+
+/** regex preset 族 apiId(engine.js getCurrentPresetAPI 语义;REST scope 校验同表)。 */
+export const REGEX_PRESET_API_IDS = Object.freeze(['openai', 'textgenerationwebui', 'novel', 'kobold', 'koboldhorde']);
+
+const PRESET_SELECTED_READERS = Object.freeze({
+    openai: (s) => s?.preset_settings_openai ?? s?.oai_settings?.preset_settings_openai,
+    kobold: (s) => s?.kai_settings?.preset_settings ?? s?.preset_settings,
+    novel: (s) => s?.nai_settings?.preset_settings_novel ?? s?.preset_settings_novel,
+    textgenerationwebui: (s) => s?.textgenerationwebui_settings?.preset,
+});
+
+/**
+ * settings → apiId 的 in_use 预设解析。
+ * @param {object} settingsDoc 整份 settings 文档
+ * @param {string} apiId 生成/查询 apiId('koboldhorde' 归一为 'kobold',上游同)
+ * @returns {{apiId:string, name:string}|null} apiId 无预设概念或 selected 为空 → null
+ */
+export function resolvePresetInUse(settingsDoc, apiId) {
+    const id = apiId === 'koboldhorde' ? 'kobold' : String(apiId ?? '').trim();
+    const read = PRESET_SELECTED_READERS[id];
+    if (!read) return null;
+    const name = read(settingsDoc ?? {});
+    return (typeof name === 'string' && name.trim()) ? { apiId: id, name: name.trim() } : null;
+}
+
+/** 楼层 extra.api 簿记值 → regex preset 族 apiId。
+ *  utopinn 生成楼层记 'chat'|'text'|'kobold'|'novel';legacy 楼层记
+ *  chat_completion_source/openai 系(全归 openai 预设族)或 kobold/novel/
+ *  textgenerationwebui/koboldhorde。 */
+const FLOOR_API_TO_PRESET_API_ID = Object.freeze({
+    text: 'textgenerationwebui',
+    textgenerationwebui: 'textgenerationwebui',
+    kobold: 'kobold',
+    koboldhorde: 'kobold',
+    novel: 'novel',
+});
+
+export function floorApiToPresetApiId(api) {
+    return FLOOR_API_TO_PRESET_API_ID[String(api ?? '').trim()] ?? 'openai';
+}
+
+/** chat body → 「本会话最近生成 apiId」的 preset 域 apiId(无生成记录 → 'openai')。 */
+export function chatPresetApiId(body) {
+    const list = Array.isArray(body) ? body : [];
+    for (let i = list.length - 1; i >= 0; i--) {
+        const api = list[i]?.extra?.api;
+        if (api) return floorApiToPresetApiId(api);
+    }
+    return 'openai';
+}
+
 /**
  * settingsDoc → 规整后的 {key:{value,position,depth,order,role,scan}}(position 为 ST 原值)。
  * 缺省字段保留 undefined:getExtensionPrompt 对 depth/role 的 undefined 是通配匹配;

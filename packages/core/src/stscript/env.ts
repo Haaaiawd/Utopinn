@@ -95,6 +95,55 @@ export interface StscriptGenerateParams {
     stop?: string | string[];
 }
 
+/** /popup → Popup.show.text options 的可序列化子集。 */
+export interface StscriptPopupOptions {
+    /** 弹窗正文(未 sanitize —— sanitize 属宿主职责,与 /input 注释一致)。 */
+    text: string;
+    header?: string | null;
+    allowVerticalScrolling?: boolean;
+    large?: boolean;
+    wide?: boolean;
+    wider?: boolean;
+    transparent?: boolean;
+    okButton?: string;
+    cancelButton?: string | null;
+    tooltip?: string | null;
+}
+
+/** /buttons 单枚按钮(label 可为 {text,tooltip,icon} 对象)。 */
+export interface StscriptButtonLabel {
+    text: string;
+    tooltip?: string;
+    icon?: string;
+}
+
+/** /buttons → 阻塞按钮组参数。 */
+export interface StscriptButtonsOptions {
+    text: string;
+    buttons: StscriptButtonLabel[];
+    /** true=多选(确认后返回全部被点 result code);false=单选(点中即返回)。 */
+    multiple: boolean;
+}
+
+/**
+ * WI 书 doc 形态 — `{entries:{uid: entry}}`,与磁盘/线格式同构。
+ * entry 字段细节由调用方(world-commands)按上游 definition 校验,
+ * 本类型只承载仓库边界。
+ */
+export interface StscriptWorldBook {
+    entries: Record<string | number, Record<string, unknown>>;
+    [key: string]: unknown;
+}
+
+/** settings.world_info 活对象切片(/world 与 /getcharbook 的写面)。 */
+export interface StscriptWorldInfoSettings {
+    /** selected_world_info 持久位(/world 写)。 */
+    globalSelect?: string[];
+    /** 角色辅助书绑表:[{name: charDir, extraBooks: []}](charUpdateAddAuxWorld)。 */
+    charLore?: { name: string; extraBooks?: string[] }[];
+    [key: string]: unknown;
+}
+
 /**
  * 宿主 seams — 全部为可选;缺失的 seam 对应命令走"温和降级"
  * (warn + 空返回)或直接报错,与 Luker 中 UI 不存在时行为对齐。
@@ -126,8 +175,9 @@ export interface StscriptHost {
      * 角色解析(/sendas name/avatar → findChar)。返回 null=未找到。
      * avatar 为原始 avatar key;force_avatar 由 host 按 getNameAndAvatarForMessage
      * 语义折算(currentCharAvatar/defaultAvatar/avatarUrl 共同决定)。
+     * 允许 async(服务端扫卡目录实现),调用点一律 await。
      */
-    resolveCharacter?: (name: string) => { name: string; avatar?: string } | null;
+    resolveCharacter?: (name: string) => { name: string; avatar?: string } | null | Promise<{ name: string; avatar?: string } | null>;
     /** persona 查找(findPersona({name});/send name= 的 avatar 解析)。 */
     findPersona?: (name: string) => { name: string; avatar?: string } | null;
     /** 常量:user_avatar(当前用户头像 key)。 */
@@ -185,6 +235,78 @@ export interface StscriptHost {
     regexDisabled?: boolean;
     /** regex_perf_detection 开关。 */
     regexPerfDetection?: boolean;
+
+    // -------------------------------------------------------------------
+    // WI 族 seams(TASK-064 批二)— settings 活对象直接改 + persist* 落盘。
+    // -------------------------------------------------------------------
+
+    /** settings.world_info 活对象(/world 写 globalSelect、/getcharbook 写 charLore)。 */
+    worldInfoSettings?: StscriptWorldInfoSettings;
+    /** settings.power_user 活对象(/getpersonabook 写 persona_description_lorebook)。 */
+    powerUser?: Record<string, unknown>;
+    /** world_names 等价物 — WI 书 canonical 名清单。 */
+    listWorldBooks?: () => string[] | Promise<string[]>;
+    /** loadWorldInfo:canonical 名读整 doc;不存在/坏档 → null。 */
+    getWorldBook?: (name: string) => Promise<StscriptWorldBook | null> | StscriptWorldBook | null;
+    /** saveWorldInfo:整 doc 回写(与服务端 /api/worldinfo/edit 同写面)。 */
+    saveWorldBook?: (name: string, doc: StscriptWorldBook) => void | Promise<void>;
+    /** createNewWorldInfo:空书 {entries:{}} 落盘;返回可寻址的 canonical 名,失败 null。 */
+    createWorldBook?: (name: string) => Promise<string | null> | string | null;
+    /**
+     * 卡文件读面(/getcharbook primary 取 data.extensions.world)。
+     * avatar 为 'Foo.png' 形态 avatar key;不存在 → null。
+     */
+    loadCharacterCard?: (avatar: string) => Promise<{ name?: string; data?: { extensions?: Record<string, unknown>; world?: string } } | null>;
+    /** writeExtensionField('world') 等价:把 extensions.world 写进卡文件。 */
+    setCharacterWorld?: (avatar: string, worldName: string) => Promise<boolean> | boolean;
+    /** settings.tags 等价物 — characterFilterTags 的 id↔name 对表。 */
+    listTags?: () => { id: string; name: string }[] | Promise<{ id: string; name: string }[]>;
+
+    // -------------------------------------------------------------------
+    // 会话/角色族 seams(TASK-064 批二)
+    // -------------------------------------------------------------------
+
+    /**
+     * /renamechat → renameChat(currentChatName, newName) 写面
+     * (服务端 = ChatRepo.rename)。返回是否成功;命令层负责 notify。
+     */
+    renameChat?: (oldName: string, newName: string) => Promise<boolean> | boolean;
+    /**
+     * /rename-char → script.js renameCharacter 服务端面:卡文件重命名 +
+     * charDir 迁移;opts.renameChats=true 时重写历史聊天中的消息 name。
+     * 未绑 → 命令显式报错(重副作用不静默降级)。
+     */
+    renameCharacter?: (newName: string, opts: { silent: boolean; renameChats: boolean | null }) => Promise<boolean>;
+    /** /impersonate → Generate('impersonate', {quiet_prompt, quietToLoud})。 */
+    generateImpersonate?: (prompt?: string) => Promise<unknown>;
+    /**
+     * /persona-set(temp / all 未命中兜底)→ setUserName:
+     * 用户名持久化(服务端 = settings.username + settings 落档)。
+     * 命令层同步 env.macro.name1;未绑 → 显式报错(GH#9 同路)。
+     */
+    setUserName?: (name: string) => void;
+    /**
+     * /persona-set(lookup/all 命中 persona)→ autoSelectPersona:
+     * 切换当前 persona avatar(服务端 = power_user.default_persona 落档)。
+     * 未绑时命令层 warn 后退化 setUserName(persona.name) —— 同用户名、
+     * 仅缺 avatar 切换,不静默(notify 有痕)。
+     */
+    selectPersona?: (avatarKey: string) => void;
+
+    // -------------------------------------------------------------------
+    // 阻塞式弹窗 seams(TASK-064 批二)— 未绑 → 命令显式报错。
+    // -------------------------------------------------------------------
+
+    /**
+     * /popup → Popup.show.text 阻塞结果;返回 POPUP_RESULT 语义数值
+     * (确认=1 取消=0,dismiss=undefined)。仅交互宿主可绑。
+     */
+    requestPopup?: (options: StscriptPopupOptions) => Promise<number | undefined>;
+    /**
+     * /buttons → 自定义按钮阻塞选择;返回被点中的 result code 数组
+     * (labels 下标 +2;取消/dismiss/多选空选 = [])。
+     */
+    requestButtons?: (options: StscriptButtonsOptions) => Promise<number[]>;
 }
 
 /** 每次脚本执行的注入环境;closures 经 args._env / parser.env 传递。 */

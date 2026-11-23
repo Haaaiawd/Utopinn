@@ -343,3 +343,88 @@ test('script registry endpoint lists the new commands', async () => {
     const note = r.body.commands.find(c => c.name === 'note');
     assert.ok(note.aliases.includes('note-set') && note.aliases.includes('note-get'));
 });
+
+// ── TASK-069 挂起回执:/input /popup /buttons → awaiting → interact ─────
+
+const interact = (body) => api('/api/utopinn/script/interact', { method: 'POST', body });
+
+test('/input 挂起 → awaiting(input) → interact submit 兑现进 pipe', async () => {
+    await seedChat(CHAT, [mkFloor('x')]);
+    const r = await run('/input name the reef');
+    assert.equal(r.status, 200);
+    assert.equal(r.body.ok, true);
+    const aw = r.body.awaiting;
+    assert.ok(aw, `awaiting 回执: ${JSON.stringify(r.body)}`);
+    assert.equal(aw.kind, 'input');
+    assert.equal(aw.prompt, 'name the reef');
+    assert.ok(aw.runId);
+
+    const done = await interact({ runId: aw.runId, action: 'submit', value: 'bryn' });
+    assert.equal(done.status, 200);
+    assert.equal(done.body.ok, true);
+    assert.equal(done.body.awaiting ?? null, null);
+    assert.match(String(done.body.pipe ?? ''), /bryn/);
+});
+
+test('/input cancel → false → onCancel 闭包;/popup submit → 结果码;/buttons submit → label', async () => {
+    await seedChat(CHAT, [mkFloor('x')]);
+
+    // cancel 语义:result=false → onCancel 闭包执行(闭包 echo 会被 /input
+    // 末位 return '' 盖掉,改用 /setvar 落可观测副作用;onSuccess 不跑)。
+    // 语法钉:named args 必须先于 unnamed(否则整串吃进 prompt)。
+    const r1 = await run('/input onCancel={: | /setvar key=branch cancelled :} onSuccess={: | /setvar key=branch ok :} Pick?');
+    const aw1 = r1.body.awaiting;
+    assert.ok(aw1 && aw1.kind === 'input', JSON.stringify(r1.body));
+    const d1 = await interact({ runId: aw1.runId, action: 'cancel' });
+    assert.equal(d1.body.ok, true);
+    const gv = await run('/getvar branch');
+    assert.equal(String(gv.body.pipe ?? ''), 'cancelled', 'onCancel 闭包执行、onSuccess 未跑');
+
+    // /popup result=true → submit 1 → pipe '1';文本回执 text 入 awaiting
+    const r2 = await run('/popup result=true show me');
+    const aw2 = r2.body.awaiting;
+    assert.ok(aw2 && aw2.kind === 'popup', JSON.stringify(r2.body));
+    assert.equal(aw2.text, 'show me');
+    const d2 = await interact({ runId: aw2.runId, action: 'submit', value: 1 });
+    assert.equal(d2.body.ok, true);
+    assert.equal(String(d2.body.pipe ?? ''), '1');
+
+    // /buttons → labels JSON;submit code(idx+2)→ label 文本进 pipe
+    const r3 = await run('/buttons labels=["reef","gull"] pick one');
+    const aw3 = r3.body.awaiting;
+    assert.ok(aw3 && aw3.kind === 'buttons', JSON.stringify(r3.body));
+    assert.deepEqual((aw3.buttons ?? []).map((b) => b.text), ['reef', 'gull']);
+    const d3 = await interact({ runId: aw3.runId, action: 'submit', value: [3] });
+    assert.equal(d3.body.ok, true);
+    assert.equal(String(d3.body.pipe ?? ''), 'gull');
+});
+
+test('/input 多轮:awaiting → interact 后又 awaiting(脚本续跑到下一交互)', async () => {
+    await seedChat(CHAT, [mkFloor('x')]);
+    const r = await run('/input first | /input second');
+    const aw1 = r.body.awaiting;
+    assert.equal(aw1?.kind, 'input');
+    const mid = await interact({ runId: aw1.runId, action: 'submit', value: 'one' });
+    assert.equal(mid.body.ok, true);
+    const aw2 = mid.body.awaiting;
+    assert.ok(aw2, `第二轮 awaiting: ${JSON.stringify(mid.body)}`);
+    assert.equal(aw2.kind, 'input');
+    assert.equal(aw2.runId, aw1.runId, '同 run 续挂');
+    const done = await interact({ runId: aw2.runId, action: 'submit', value: 'two' });
+    assert.equal(done.body.ok, true);
+    assert.match(String(done.body.pipe ?? ''), /two/);
+});
+
+test('interact 边界:runId 不存在 → 404;无挂起 submit → 409', async () => {
+    const ghost = await interact({ runId: 'no-such-run', action: 'submit', value: 'x' });
+    assert.equal(ghost.status, 404);
+
+    // 完成态 run(无挂起)再 submit → 409(不装还在等)
+    await seedChat(CHAT, [mkFloor('x')]);
+    const r = await run('/input p2');
+    const aw = r.body.awaiting;
+    const d = await interact({ runId: aw.runId, action: 'submit', value: 'v' });
+    assert.equal(d.body.ok, true);
+    const late = await interact({ runId: aw.runId, action: 'submit', value: 'late' });
+    assert.ok(late.status === 404 || late.status === 409, `late: ${late.status} ${JSON.stringify(late.body)}`);
+});

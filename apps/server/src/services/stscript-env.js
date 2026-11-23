@@ -9,8 +9,9 @@
  *   runQuickReply → QuickReplies/*.json qrList 按 label 递归
  *   UI seam(notify/popup/input)收敛进 sinks(调用方决定回执形态)
  *   generateQuiet → services/quiet-generation.js(真 job 链 + diag)
- *   triggerGeneration 仍未绑定 —— GH#9 起引擎显式报错(messages.ts
- *     triggerGenerationCallback 抛错,不再静默假装触发成功)
+ *   triggerGeneration/generateSwipe → services/trigger-generation.js
+ *     (TASK-069:Generate('normal'|'swipe') 实弹派发 + 服务端 persist
+ *     + TH 生命周期事件信箱;member 参数单聊忽略,上游同语义)
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -20,8 +21,22 @@ import {
     executeSlashCommandsWithOptions,
 } from '@utopinn/core';
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { getChatRepo, getSettingsRepo } from '../storage/index.js';
+import { getChatRepo, getSettingsRepo, getWorldInfoRepo } from '../storage/index.js';
 import { runQuietGeneration } from './quiet-generation.js';
+import { renameAllCharacterStateSidecars } from './character-state.js';
+import { runTriggerGeneration } from './trigger-generation.js';
+
+/** 'Foo.png'/'Foo.webp'/'Foo.json' → 'Foo'(avatar key → charDir)。 */
+export function avatarToCharDir(avatar) {
+    return String(avatar ?? '').replace(/\.(png|webp|json)$/i, '');
+}
+
+/** avatar/charDir 穿越闸:含路径分隔或 .. 的 id 直接判死 —
+ *  STscript 入参可达此面,不洗就 join 出 characters 目录(PR#18 review)。 */
+export function safeCharDirName(avatar) {
+    const d = avatarToCharDir(avatar);
+    return (d && !d.includes('..') && !d.includes('/') && !d.includes('\\')) ? d : null;
+}
 
 export async function loadCard(directories, charDir) {
     const pngPath = path.join(directories.characters, `${charDir}.png`);
@@ -70,7 +85,11 @@ export async function findQuickReplyScript(directories, label) {
  */
 export async function buildStscriptEnv({ handle, directories, charDir, chatName, userName }) {
     const settings = (await getSettingsRepo().get(handle)) ?? {};
-    const powerUser = settings?.power_user ?? {};
+    // 活对象:/getpersonabook 写 persona_description_lorebook 经它落 settings 档
+    const powerUser = settings.power_user ??= {};
+    // WI 书目状态 —— 与 generate-context resolveWorldInfoSettings 同一口径:
+    // settings.world_info_settings.world_info{globalSelect,charLore}。
+    const worldInfoState = (settings.world_info_settings ??= {}).world_info ??= {};
     const card = charDir ? await loadCard(directories, charDir) : null;
     if (charDir && !card) {
         return { error: `Character not found: ${charDir}`, status: 404 };
@@ -219,7 +238,8 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
                 await getChatRepo().append(handle, charDir, chatName, [msg]);
             }
         },
-        requestInput: async () => null,
+        // requestInput 不绑 —— /input 是无回执通道的交互命令,静默回 null 会被
+        // 当「空输入」继续执行(GH#9 禁止静默成功);引擎层对未绑 seam 显式报错。
         setInput: (text) => { sinks.inputs.push(text); },
         resolveCharacter: (name) => resolveCharacterByName(directories, name),
         findPersona: (name) => {
@@ -257,6 +277,203 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
                 sinks.notifications.push({ severity: 'error', text: `/gen failed: ${error?.message ?? error}` });
                 return '';
             }
+        },
+        // /trigger → Generate('normal'):真派发 + 服务端落楼层 + TH 事件信箱。
+        //   seam 不向外抛 —— 非 await 调用是浮动 promise,拒绝会成
+        //   unhandledRejection;失败如实进 sinks + diag,返回 ''(与
+        //   generateQuiet 的「错误 toast 化回空串」同语义)。
+        //   member:上游 selected_group && value —— 单聊忽略(见
+        //   trigger-generation.js trigger_member_ignored diag)。
+        triggerGeneration: async (member) => {
+            if (!charDir || !chatName) {
+                sinks.notifications.push({ severity: 'warning', text: '/trigger: no character/chat bound — skipped' });
+                return '';
+            }
+            try {
+                const r = await runTriggerGeneration({
+                    handle, directories, charDir, chatName, card,
+                    member,
+                    type: 'normal',
+                    userName: name1,
+                    chat,
+                });
+                return r.text;
+            } catch (error) {
+                sinks.notifications.push({ severity: 'error', text: `/trigger failed: ${error?.message ?? error}` });
+                return '';
+            }
+        },
+        // /swipe 越界(OVERSWIPE_REGENERATE)→ Generate('swipe'):与
+        // /trigger 同链,verb='swipe' 走 persistGeneratedSwipe 并末楼。
+        generateSwipe: async (messageIndex) => {
+            if (!charDir || !chatName) {
+                sinks.notifications.push({ severity: 'warning', text: '/swipe regen: no character/chat bound — skipped' });
+                return false;
+            }
+            try {
+                const r = await runTriggerGeneration({
+                    handle, directories, charDir, chatName, card,
+                    type: 'swipe',
+                    userName: name1,
+                    chat,
+                });
+                return Boolean(r?.persisted);
+            } catch (error) {
+                sinks.notifications.push({ severity: 'error', text: `/swipe regen failed: ${error?.message ?? error}` });
+                return false;
+            }
+        },
+        // ── WI 族 seams(TASK-064 批二)────────────────────────────────
+        // settings 活对象:命令改字段后 persistSettings 落整档(与
+        // resolveWorldInfoSettings/generate-context 同一 settings 文档)。
+        worldInfoSettings: worldInfoState,
+        powerUser,
+        listWorldBooks: () => getWorldInfoRepo().listNames(handle),
+        // loadWorldInfo:canonical 解析 + get —— repo.resolveName 兜住
+        // 大小写/别名差异,与引擎 canonical 位一致。
+        getWorldBook: async (name) => {
+            const repo = getWorldInfoRepo();
+            const canonical = await repo.resolveName(handle, String(name));
+            return repo.get(handle, canonical ?? String(name));
+        },
+        saveWorldBook: async (name, doc) => {
+            const repo = getWorldInfoRepo();
+            const canonical = await repo.resolveName(handle, String(name));
+            await repo.save(handle, canonical ?? String(name), doc);
+        },
+        // createNewWorldInfo:createIfAbsent 单事务落 {entries:{}},返回
+        // canonical 名(repo 返回 .name 已是存储位)。
+        createWorldBook: async (name) => {
+            const r = await getWorldInfoRepo().createIfAbsent(handle, String(name), { entries: {} });
+            return r?.name ?? null;
+        },
+        // /getcharbook primary/characterFilterNames 的卡读面:avatar key → charDir。
+        loadCharacterCard: (avatar) => {
+            const d = safeCharDirName(avatar);
+            return d ? loadCard(directories, d) : null;
+        },
+        // writeExtensionField('world'):extensions.world 写回卡文件。
+        // png → writeCharacterData 同端点写面(重嵌 chunk);json → 直写。
+        setCharacterWorld: async (avatar, worldName) => {
+            const charDirName = safeCharDirName(avatar);
+            if (!charDirName) return false;
+            const pngPath = path.join(directories.characters, `${charDirName}.png`);
+            const jsonPath = path.join(directories.characters, `${charDirName}.json`);
+            const fakeReq = { user: { profile: { handle, name: name1 }, directories } };
+            try {
+                const pngBuf = await fs.readFile(pngPath).catch(() => null);
+                if (pngBuf) {
+                    const { readCharacterData, writeCharacterData } = await import('../endpoints/characters.js');
+                    const cardObj = JSON.parse(await readCharacterData(pngPath));
+                    cardObj.data ??= {};
+                    cardObj.data.extensions ??= {};
+                    cardObj.data.extensions.world = worldName;
+                    const ok = await writeCharacterData(pngPath, JSON.stringify(cardObj), charDirName, fakeReq);
+                    return Boolean(ok);
+                }
+                const raw = await fs.readFile(jsonPath, 'utf8');
+                const cardObj = JSON.parse(raw);
+                cardObj.data ??= {};
+                cardObj.data.extensions ??= {};
+                cardObj.data.extensions.world = worldName;
+                await fs.writeFile(jsonPath, JSON.stringify(cardObj, null, 2), 'utf8');
+                return true;
+            } catch (error) {
+                console.warn('stscript setCharacterWorld failed:', error?.message ?? error);
+                return false;
+            }
+        },
+        // settings.tags 活数组([{id,name}])— characterFilterTags 的
+        // id↔name 对表;服务端无独立 tags 仓,settings 档即事实源。
+        listTags: () => (Array.isArray(settings.tags) ? settings.tags : []),
+        // ── 会话/角色 seams(TASK-064 批二)────────────────────────────
+        // /renamechat → ChatRepo.rename(与 PATCH 路由同写面;CAS 内部处理)。
+        renameChat: async (oldName, newName) => {
+            if (!charDir) return false;
+            try {
+                await getChatRepo().rename(handle, charDir, String(oldName), String(newName));
+                return true;
+            } catch (error) {
+                console.warn('stscript renameChat failed:', error?.message ?? error);
+                return false;
+            }
+        },
+        // /rename-char → /api/characters/rename 同语义服务化:卡名写回 +
+        // 新文件名落盘 + charDir 聊天迁移 + state sidecar 随迁。
+        // 重 import 走 lazy(stscript-env ↔ mvu-settle ↔ chats 静态环)。
+        // opts.renameChats=true 追加历史楼层 name 重写(上游确认弹窗选是)。
+        renameCharacter: async (newName, { renameChats } = {}) => {
+            if (!charDir) return false;
+            const oldInternalName = charDir;
+            const oldAvatarPath = path.join(directories.characters, `${oldInternalName}.png`);
+            if (!await fs.stat(oldAvatarPath).catch(() => null)) {
+                console.warn(`stscript renameCharacter: ${oldAvatarPath} not found (json-only cards unsupported)`);
+                return false;
+            }
+            const { readCharacterData, writeCharacterData } = await import('../endpoints/characters.js');
+            const { invalidateRecentChatIndex } = await import('../endpoints/chats.js');
+            const fakeReq = { user: { profile: { handle, name: name1 }, directories } };
+            // getPngName 等价:新内部名避让(自身除外)
+            let newInternalName = newName;
+            for (let i = 1; await fs.stat(path.join(directories.characters, `${newInternalName}.png`)).catch(() => null) || await fs.stat(path.join(directories.chats, newInternalName)).catch(() => null); i++) {
+                newInternalName = `${newName}${i}`;
+            }
+            try {
+                const oldData = JSON.parse(await readCharacterData(oldAvatarPath));
+                oldData.data ??= {};
+                const oldDisplayName = oldData.data.name ?? oldData.name;
+                oldData.data.name = newName;
+                const ok = await writeCharacterData(oldAvatarPath, JSON.stringify(oldData), newInternalName, fakeReq);
+                if (!ok) return false;
+                await getChatRepo().renameCharDir(handle, oldInternalName, newInternalName);
+                const oldChatsPath = path.join(directories.chats, oldInternalName);
+                const newChatsPath = path.join(directories.chats, newInternalName);
+                if (await fs.stat(oldChatsPath).catch(() => null) && !await fs.stat(newChatsPath).catch(() => null)) {
+                    await fs.cp(oldChatsPath, newChatsPath, { recursive: true });
+                    await fs.rm(oldChatsPath, { recursive: true, force: true });
+                }
+                await invalidateRecentChatIndex(fakeReq);
+                renameAllCharacterStateSidecars(oldAvatarPath, path.join(directories.characters, `${newInternalName}.png`));
+                await fs.rm(oldAvatarPath, { force: true });
+                // renameChats:重写历史楼层 name(上游 renamePastMessages)。
+                // 逐会话 patch /body/<i>/name —— 与 PATCH 路由同写面。
+                if (renameChats === true && oldDisplayName) {
+                    const repo = getChatRepo();
+                    const chats = await repo.listForCharacter(handle, newInternalName, { limit: 2000 });
+                    for (const entry of chats ?? []) {
+                        const chatKey = entry?.key?.name;
+                        if (!chatKey) continue;
+                        const doc = await repo.get(handle, newInternalName, chatKey);
+                        const ops = (doc?.body ?? [])
+                            .map((m, i) => (m?.name === oldDisplayName ? { op: 'replace', path: `/body/${i}/name`, value: newName } : null))
+                            .filter(Boolean);
+                        if (ops.length) await repo.patch(handle, newInternalName, chatKey, ops, doc.integrity);
+                    }
+                }
+                return true;
+            } catch (error) {
+                console.warn('stscript renameCharacter failed:', error?.message ?? error);
+                return false;
+            }
+        },
+        // generateImpersonate 不绑 —— trigger-generation 目前只载
+        // normal|swipe 动词;impersonate 的 user 侧落楼路径未通,与其
+        // 挂错语义不如引擎显式报错(GH#9 同路)。
+        // /persona-set(=上游 setUserName)→ settings.username 落档。
+        // 注意 name1 派生序 personas[default_persona] > settings.username —
+        // temp 改名只在未选 persona 时影响后续 run,与上游加载语义一致。
+        setUserName: (name) => {
+            settings.username = String(name ?? '');
+            void getSettingsRepo().save(handle, settings)
+                .catch((e) => console.warn('stscript setUserName failed:', e?.message));
+        },
+        // /persona-set lookup/all 命中 → power_user.default_persona 落档
+        // (服务端 persona 选中口径与 users.js:816 / chats.js:2845 一致:
+        // default_persona 优先,settings.user_avatar 兜底)。
+        selectPersona: (avatarKey) => {
+            powerUser.default_persona = String(avatarKey ?? '');
+            void getSettingsRepo().save(handle, settings)
+                .catch((e) => console.warn('stscript selectPersona failed:', e?.message));
         },
         avatarUrl: (kind, id) => (kind === 'avatar' ? `characters/${id}` : `personas/${id}`),
         defaultAvatar: 'user-default.png',

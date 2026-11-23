@@ -33,6 +33,7 @@ import {
     NOTE_MODULE_NAME,
     PERSONA_DESCRIPTION_KEY,
     resolveAuthorsNote,
+    resolvePresetInUse,
     roleByName,
     scannableExtensionPrompts,
     SCRIPT_INJECT_KEY_PREFIX,
@@ -492,7 +493,9 @@ async function buildGenerationContextImpl({
 
     const powerUser = settingsDoc?.power_user ?? {};
     const { engine: worldInfoSettings, state: worldInfoState, raw: wiRaw } = resolveWorldInfoSettings(settingsDoc);
-    const resolvedPresetName = presetName ?? settingsDoc?.preset_settings_openai ?? 'Default';
+    // 顶层指针 → canonical 兜底同 resolvePresetInUse(顶层 preset_settings_openai
+    // 是产品指针,oai_settings 内嵌槽兜底);body.presetName 显式位恒优先。
+    const resolvedPresetName = presetName ?? resolvePresetInUse(settingsDoc, 'openai')?.name ?? 'Default';
     seg = performance.now();
     let presetDoc = await presetRepo.get(handle, 'openai', resolvedPresetName);
     perf.presetMs += performance.now() - seg;
@@ -514,6 +517,23 @@ async function buildGenerationContextImpl({
         responseTokens: presetDoc.openai_max_tokens ?? null,
         ms: ms(perf.presetMs),
     });
+
+    // preset 域 regex 的 in_use 归属(TASK-070):只消费「当前生成 apiId
+    // (mainApi)的 selected 预设」的脚本,再叠 preset_allowed_regex 闸
+    // (collectRegexScripts)。openai = 组装用 presetDoc 本体;非 openai
+    // 派发(text/kobold/novel)各解各的 selected——不拿 openai 预设硬套
+    // (koboldhorde→kobold 归一在 resolvePresetInUse 内)。
+    let regexPresetApiId = 'openai';
+    let regexPresetName = resolvedPresetName;
+    let regexPresetDoc = presetDoc;
+    if (mainApi !== 'openai') {
+        const inUse = resolvePresetInUse(settingsDoc, mainApi);
+        regexPresetApiId = inUse?.apiId ?? mainApi;
+        regexPresetName = inUse?.name ?? null;
+        regexPresetDoc = inUse
+            ? await presetRepo.get(handle, inUse.apiId, inUse.name).catch(() => null)
+            : null;
+    }
 
     const chatMessages = chatBodyToInput(chatDoc.body);
     // 上游 script.js:8000-8002:type==='swipe' 时弹出末层(swipe 槽
@@ -836,7 +856,7 @@ async function buildGenerationContextImpl({
     // WI 正则钩子 + 观测计数:scriptCount 由 createWorldInfoRegexHook 暴露,
     // applied = 实际改写内容的次数(hook 幂等时原样返回不计)。
     const wiRegexHookRaw = createWorldInfoRegexHook(extPromptSource, substCtx, {
-        card, charDir, presetDoc, presetName: resolvedPresetName,
+        card, charDir, presetDoc: regexPresetDoc, presetName: regexPresetName, apiId: regexPresetApiId,
     });
     let regexApplied = 0;
     const wiRegexHook = (content, regexOpts = {}) => {
@@ -896,7 +916,7 @@ async function buildGenerationContextImpl({
     // depth 同上游 coreChat 口径(continue 末层 = -1)。落盘原文不动,
     // chatPromptMessages 只喂组装面 —— WI 扫描与 substCtx.chat 仍持原文。
     const floorRegexRunner = createFloorRegexRunner(extPromptSource, substCtx, {
-        card, charDir, presetDoc, presetName: resolvedPresetName,
+        card, charDir, presetDoc: regexPresetDoc, presetName: regexPresetName, apiId: regexPresetApiId,
     });
     let promptRegexApplied = 0;
     let chatPromptMessages = chatMessages;

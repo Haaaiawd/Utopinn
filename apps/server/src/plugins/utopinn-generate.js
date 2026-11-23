@@ -111,6 +111,22 @@ async function resolveGroupGenerationPlan({ request, body }) {
     }
 
     const verb = String(body.type ?? 'normal');
+    // legacy regenerateGroup:先剥末尾 assistant 批(连续 !is_user 楼)再生成 ——
+    // 批出存储,组装/persist 两路都看不到旧回复,后续 append 即 replace。
+    // 对所有客户端生效(不依赖调用方预剥);CAS 冲突 = 有并发写方,抛错不静默剥。
+    if (verb === 'regenerate') {
+        const cur = Array.isArray(chatDoc.body) ? chatDoc.body : [];
+        const end = cur.length - 1;
+        if (end >= 0 && !cur[end]?.is_user) {
+            let start = end;
+            while (start > 0 && !cur[start - 1]?.is_user) start--;
+            await getChatRepo().save(
+                handle, '', chatId, chatDoc.header, cur.slice(0, start), chatDoc.integrity,
+                { isGroup: true, groupId: chatId },
+            );
+            chatDoc.body = cur.slice(0, start);
+        }
+    }
     const chatBody = Array.isArray(chatDoc.body) ? chatDoc.body : [];
     const { isUserInput, activationText } = deriveActivationInput(chatBody, Boolean(body.automatic_trigger));
 
@@ -548,7 +564,10 @@ export function apply(ctx) {
                     member: { avatar: groupPlan.speaker.avatar, name: groupPlan.speaker.name },
                     queue: groupPlan.activated,
                 };
-                response.setHeader('x-utopinn-group', JSON.stringify(sources.group));
+                // 头值须 Latin-1 安全:成员名可含 CJK/全角符(如「人生模拟器，…」),
+                // 裸 JSON.stringify 会 ERR_INVALID_CHAR 把生成打成 500 ——
+                // encodeURIComponent 全 ASCII,客户端 decodeURIComponent 后 JSON.parse。
+                response.setHeader('x-utopinn-group', encodeURIComponent(JSON.stringify(sources.group)));
             } else {
                 persistTargetDefault = {
                     kind: 'character',

@@ -150,6 +150,9 @@ export const pluginManager = {
                 status: row.disabled ? 'disabled' : liveStatus,
                 reason: rt?.reason,
                 patch: patchRows.some((p) => p.id === row.id),
+                // profile 行 core:true —— 锁定的唯一真相源(disable() 闸也读它);
+                // 透出给管理面/UI 贡献标记,不再由消费侧各养一份 id 表。
+                core: row.core === true,
             };
         });
     },

@@ -463,6 +463,11 @@ export interface RegexPresetGroup {
     apiId: string;
     name: string;
     allowed: boolean;
+    /** 该预设当前是其 apiId 的 in_use(settings selected)预设 —— 生成链只消费 in_use 预设脚本(TASK-070)。 */
+    inUse?: boolean;
+    /** 如实报「本会进生成链」:allowed && inUse && 有脚本 && 扩展未全灭。 */
+    active?: boolean;
+    count?: number;
     scripts: RegexScriptData[];
 }
 
@@ -473,6 +478,10 @@ export interface RegexFullViewResponse {
         characters: string[];
         presets: Record<string, string[]>;
     };
+    /** apiId → 当前 in_use 预设名(settings selected)。 */
+    inUse?: Record<string, string>;
+    /** 服务端实键(extension_settings.disabledExtensions 含 'regex')。 */
+    extensionDisabled?: boolean;
     disabled: boolean;
     chars: RegexCharGroup[];
     presets: RegexPresetGroup[];
@@ -711,7 +720,8 @@ export type ThCallResponse =
     | { ok: false; error: string; status?: number };
 
 // =========================================================================
-// named-docs —— GET /named-docs/*(TASK-058 只读面,sendJsonResource ETag 私有读)
+// named-docs —— /named-docs/*(TASK-058 读面 + TASK-063 写面;
+//                GET 走 sendJsonResource ETag 私有读,PUT/DELETE 为孪生写面)
 // =========================================================================
 
 /** 白名单桶名(URL 形);服务端映射到 repo camelCase 桶。 */
@@ -736,6 +746,22 @@ export interface NamedDocErrorResponse {
     resource: string;
     detail?: string;
 }
+
+/**
+ * PUT /named-docs/:bucket/:name —— 整档写回(TASK-063 写面)。
+ * body = 文档本体(自由 JSON 对象,QR 册 = {version?,name?,qrList:[…],…});
+ * 服务端把 doc.name 归一到路由名(URL 是唯一权威名,legacy /save 的
+ * body.name 落点名语义在 REST 面收敛)。其余键原样透传。
+ * 非对象 body → 400。
+ */
+export type NamedDocSaveRequest = Record<string, unknown>;
+export interface NamedDocSaveResponse {
+    ok: true;
+    name: string;
+}
+
+/** DELETE /named-docs/:bucket/:name → 204;missing → 404 {error}(strict 删除)。 */
+export type NamedDocDeleteResponse = void;
 
 // =========================================================================
 // data —— import / backup / lan

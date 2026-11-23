@@ -1,24 +1,25 @@
 {
-    "name": "@utopinn/panel-shim",
-    "version": "0.1.0",
-    "private": true,
-    "type": "module",
-    "exports": {
-        ".": "./src/index.ts",
-        "./runtime": "./src/runtime.js",
-        "./package.json": "./package.json"
-    },
-    "files": [
-        "src"
-    ],
-    "scripts": {
-        "test": "node --test tests/*.test.mjs",
-        "typecheck": "tsc --noEmit"
-    },
-    "dependencies": {
-        "@utopinn/protocol": "workspace:*"
-    },
-    "devDependencies": {
-        "typescript": "^5.9.0"
-    }
+  "name": "@utopinn/panel-shim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./runtime": "./src/runtime.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@utopinn/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "license": "AGPL-3.0-only"
 }

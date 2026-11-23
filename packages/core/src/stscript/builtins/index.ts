@@ -8,6 +8,10 @@ import { registerMessageCommands } from './messages.js';
 import { registerVariableCommands } from './variables.js';
 import { registerChatOpsCommands } from './chat-ops.js';
 import { registerNoteCommands } from './notes.js';
+import { registerDialogCommands } from './dialogs.js';
+import { registerWorldCommands } from './world-commands.js';
+import { registerSessionCommands } from './session.js';
+import { registerSystemCommands } from './system.js';
 
 let registered = false;
 
@@ -18,6 +22,11 @@ export function registerBuiltinCommands(): void {
     registerVariableCommands();
     registerChatOpsCommands();
     registerNoteCommands();
+    registerDialogCommands();
+    // TASK-064 批二:WI/会话/帮助
+    registerWorldCommands();
+    registerSessionCommands();
+    registerSystemCommands();
 }
 
 /** 已注册的 builtin 名清单(测试/白名单审计用)。 */

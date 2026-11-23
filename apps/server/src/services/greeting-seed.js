@@ -118,3 +118,69 @@ export function buildGreetingFloor({
     message.swipe_info = swipes.map(() => ({ send_date: now, extra: {} }));
     return message;
 }
+
+/**
+ * 群聊开场问候播种(TASK-062):对齐上游 group-chats.js getGroupChat 空聊
+ * 分支 + getFirstCharacterMessage —— 每个成员(含 disabled,上游不过滤)
+ * 从 [first_mes, ...alternate_greetings] 随机挑一条,逐成员名跑宏
+ * ({{char}}=该成员),产出带 original_avatar/force_avatar/extra.gen_id
+ * 的群楼层;不建 swipe 组(上游群问候也不建)。
+ * group_only_greetings 不进场 —— 上游 refs 无该字段,P2 差距项照实不播。
+ *
+ * @param {object} args
+ * @param {Array<{avatar:string,name:string,card:object}>} args.roster
+ *   成员表(group-orchestration buildRosterEntry 产物;卡缺失的成员不入列)
+ * @param {string} args.name1 {{user}} 展开值(resolveGreetingName1 产物)
+ * @param {object} [args.chatMetadata] 随 header 落盘的 chat_metadata
+ *   ({{setvar}} 家族写落点,活引用)
+ * @param {string} [args.chatName] 会话名 → currentChatId 种子
+ * @param {object} [args.globalVariables] {{getglobalvar}} 读面(调用方传克隆)
+ * @param {object[]} [args.variableWrites] 变量宏写收集槽
+ * @returns {object[]} 问候楼层数组(无 first_mes 的成员不产生楼层)
+ */
+export function buildGroupGreetingFloors({
+    roster,
+    name1,
+    chatMetadata = {},
+    chatName = '',
+    globalVariables,
+    variableWrites,
+}) {
+    const floors = [];
+    for (const member of Array.isArray(roster) ? roster : []) {
+        const card = member?.card;
+        if (!card) continue;
+        const memberName = String(member.name ?? card?.data?.name ?? card?.name ?? '').trim() || 'Assistant';
+        const firstMes = String(card?.data?.first_mes ?? card?.first_mes ?? '');
+        const rawAlts = card?.data?.alternate_greetings ?? card?.alternate_greetings;
+        const alternates = Array.isArray(rawAlts) ? rawAlts.filter((g) => typeof g === 'string') : [];
+        // 上游随机位:候选池 = first_mes + alternate_greetings 全表(含空串元素
+        // —— 上游不过滤空串再挑,空串挑中 = 该成员不发言,语义保留)。
+        const pool = [firstMes, ...alternates];
+        if (pool.length === 0) continue;
+        const picked = pool[Math.floor(Math.random() * pool.length)];
+        const substCtx = {
+            name1: String(name1 ?? 'User'),
+            name2: memberName,
+            chat: [],
+            chatMetadata,
+            globalVariables: globalVariables ?? {},
+            currentChatId: String(chatName ?? ''),
+            variableWrites: Array.isArray(variableWrites) ? variableWrites : [],
+        };
+        const mes = substituteParams(String(picked ?? '').trim(), substCtx);
+        if (!mes) continue; // 上游:无 first message → 该成员跳过
+        const avatar = String(member.avatar ?? '');
+        floors.push({
+            name: memberName,
+            is_user: false,
+            is_system: false,
+            send_date: new Date().toISOString(),
+            mes,
+            original_avatar: avatar,
+            force_avatar: `/thumbnail?type=avatar&file=${encodeURIComponent(avatar)}`,
+            extra: { gen_id: Date.now() * Math.random() * 1000000 },
+        });
+    }
+    return floors;
+}

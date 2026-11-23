@@ -262,7 +262,7 @@ test('GH#9 lorebookEntries:选择性 WI 注入——只点名条目激活;全未
     }
 });
 
-test('GH#9 STscript seam 钉:/gen → generateQuiet→runQuietGeneration;/trigger 未绑定 → 显式 execution_error', async () => {
+test('GH#9 STscript seam 钉:/gen → generateQuiet→runQuietGeneration;/trigger → runTriggerGeneration(失败面 sinks)', async () => {
     const fixture = await makeTempFsEngine();
     try {
         await initStorage({ mode: 'fs', directoriesByHandle: () => fixture.dirs });
@@ -285,11 +285,14 @@ test('GH#9 STscript seam 钉:/gen → generateQuiet→runQuietGeneration;/trigge
         assert.ok(built.sinks.notifications.some((n) => String(n.text).includes('/gen failed')),
             `/gen → runQuietGeneration 链真走: ${JSON.stringify(built.sinks.notifications)}`);
 
-        // /trigger:seam 缺席 → 引擎显式抛错(不再 `?? Promise.resolve('')` 装成功)
-        const trigOut = await runStscript(built.env, '/trigger');
-        assert.equal(trigOut.isError, true, JSON.stringify(trigOut));
-        assert.equal(trigOut.error?.code, 'execution_error');
-        assert.match(String(trigOut.error?.message ?? ''), /triggerGeneration/);
+        // /trigger:TASK-069 已绑 runTriggerGeneration 真链 —— 无预设时
+        // 组装/派发段失败如实进 sinks.notification(seam 不外抛,与 /gen
+        // 同语义);seam 缺席 → 显式 execution_error 的旧断言已过时。
+        assert.equal(typeof built.env.host.triggerGeneration, 'function', 'triggerGeneration seam 已绑');
+        const trigOut = await runStscript(built.env, '/trigger await=true');
+        assert.equal(trigOut.isError, false, JSON.stringify(trigOut));
+        assert.ok(built.sinks.notifications.some((n) => String(n.text).includes('/trigger failed')),
+            `/trigger → runTriggerGeneration 链真走: ${JSON.stringify(built.sinks.notifications)}`);
     } finally {
         fixture.cleanup();
     }

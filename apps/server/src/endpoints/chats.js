@@ -32,7 +32,12 @@ import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { resolveMvuChatTarget, settlePersistedMvuMessage, resettleChatMvu } from '../services/mvu-settle.js';
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { createFloorRegexRunner, projectChatFloorsForDisplay } from '../services/extension-prompts.js';
+import {
+    createFloorRegexRunner,
+    projectChatFloorsForDisplay,
+    chatPresetApiId,
+    resolvePresetInUse,
+} from '../services/extension-prompts.js';
 
 const isBackupEnabled = !!getConfigValue('backups.chat.enabled', true, 'boolean');
 const maxTotalChatBackups = Number(getConfigValue('backups.chat.maxTotalBackups', -1, 'number'));
@@ -2872,17 +2877,21 @@ export async function projectChatFloorsForDisplayResponse(request, charDir, fetc
     try {
         const handle = request.user.profile.handle;
         const settingsDoc = await getSettingsRepo().get(handle).catch(() => null);
-        const presetName = settingsDoc?.preset_settings_openai;
+        // preset 域 in_use(TASK-070):本会话最近生成 apiId → 该 apiId
+        // selected 预设(settings canonical→legacy;无生成记录 → openai)。
+        const presetApiId = chatPresetApiId(body);
+        const inUse = resolvePresetInUse(settingsDoc ?? {}, presetApiId);
         const [card, presetDoc] = await Promise.all([
             loadChatDisplayCard(request.user.directories, charDir).catch(() => null),
-            presetName ? getPresetRepo().get(handle, 'openai', presetName).catch(() => null) : Promise.resolve(null),
+            inUse ? getPresetRepo().get(handle, inUse.apiId, inUse.name).catch(() => null) : Promise.resolve(null),
         ]);
         const substCtx = chatDisplaySubstCtx({
             request, settingsDoc, card,
             header: fetched?.header, body, chatName,
         });
         const runner = createFloorRegexRunner(settingsDoc ?? {}, substCtx, {
-            card, charDir, presetDoc, presetName,
+            card, charDir,
+            presetDoc, presetName: inUse?.name ?? null, apiId: inUse?.apiId ?? presetApiId,
         });
         if (!runner.scriptCount) return body;
         return projectChatFloorsForDisplay(body, runner).floors;

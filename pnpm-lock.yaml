@@ -702,6 +702,9 @@ importers:
       droll:
         specifier: ^0.2.1
         version: 0.2.1
+      fuse.js:
+        specifier: ^7.1.0
+        version: 7.5.0
       json5:
         specifier: ^2.2.3
         version: 2.2.3
