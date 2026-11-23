@@ -85,7 +85,11 @@ export class PanelBridge {
         const requestId = data.requestId;
         const encode = this.opts.encodeResult;
         this.pending.add(requestId);
-        Promise.resolve(this.opts.dispatch(data.method, data.args ?? {}))
+        // dispatch 同步 throw 与 reject 同路:Promise.resolve().then() 把调用
+        // 本身也异步化 —— 同步异常不能让请求挂在 pending 里且无应答
+        // (适配器不保证是 async fn;CLI/web 的 dispatch 恰好都是)。
+        Promise.resolve()
+            .then(() => this.opts.dispatch(data.method, data.args ?? {}))
             .then((result) => this.respond(requestId, { ok: true, result: encode ? encode(result) : result }))
             .catch((e) => this.respond(requestId, { ok: false, error: toWireError(e) }))
             .finally(() => this.pending.delete(requestId));
@@ -102,6 +106,15 @@ export class PanelBridge {
 
     private deny(requestId: string, code: string, message: string): void {
         this.respond(requestId, { ok: false, error: { code, message } });
+    }
+
+    /**
+     * 在飞请求数 —— idle 探针公共面(CLI waitForIdle/宿主调试)。
+     * 别让消费方直读 .pending:TS private 只是编译期约定,哪天换 #private
+     * 字段,直读者静默拿到 undefined 而无报错。
+     */
+    pendingCount(): number {
+        return this.pending.size;
     }
 
     /** Host → card unsolicited push('th.event'/'host.event'/'chat.updated' 等)。 */

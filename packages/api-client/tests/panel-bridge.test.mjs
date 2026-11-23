@@ -138,6 +138,28 @@ test('dispatch may return non-promise values', async () => {
     assert.equal(sent[0].result, 42);
 });
 
+test('sync-throwing dispatch adapter → error reply + pending cleared', async () => {
+    let mode = 'throw';
+    const { bridge, sent } = makeBridge({
+        // 同步 throw(非 rejected promise):与异步失败走同一 wire 路,
+        // 且不得让 requestId 烂在 pending 台账里。
+        dispatch: (m, a) => { if (mode === 'throw') throw new Error('sync boom'); return 'recovered'; },
+    });
+    bridge.onMessage(req());
+    await flush();
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].ok, false);
+    assert.equal(sent[0].error.code, 'call_failed');
+    assert.equal(sent[0].error.message, 'sync boom');
+    assert.equal(bridge.pendingCount(), 0);
+    // 后续请求正常收敛 —— 台账没被泄漏的请求卡死。
+    mode = 'ok';
+    bridge.onMessage(req({ requestId: 'r2' }));
+    await flush();
+    assert.equal(sent.length, 2);
+    assert.equal(sent[1].result, 'recovered');
+});
+
 // ─── push / dispose ──────────────────────────────────────────────────────
 
 test('push emits host→card frame with nonce', () => {
@@ -165,8 +187,10 @@ test('dispose mid-flight suppresses the late response', async () => {
         dispatch: () => new Promise((r) => { release = r; }),
     });
     bridge.onMessage(req());
+    await flush();          // dispatch 是异步启动的 —— 先让它真的挂上进 pending
     bridge.dispose();
     release({ late: true });
     await flush();
     assert.equal(sent.length, 0);
+    assert.equal(bridge.pendingCount(), 0);
 });

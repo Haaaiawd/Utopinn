@@ -637,12 +637,12 @@ export async function mountCardApp(opts) {
         } finally { activeGenerations--; }
     };
 
-    // GH#13 click/push 归闲探针:三门桥在途 bridge.pending(卡→宿主调用未回)、
+    // GH#13 click/push 归闲探针:三门桥在途 bridge.pendingCount()(卡→宿主调用未回)、
     // 宿主侧生成 job activeGenerations(is_send_press 真值源)。grace 窗内
     // 无条件等待——点击处理链的 setTimeout/微任务尾巴里才发桥调,过早
     // 判闲会把异步链掐死在摇篮里;过了 grace 才按快照判闲。
     const idleSnapshot = () => ({
-        bridgePending: bridge?.pending?.size ?? 0,
+        bridgePending: bridge?.pendingCount?.() ?? 0,
         activeGenerations,
         isSendPress: activeGenerations > 0,
     });
