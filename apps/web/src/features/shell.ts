@@ -198,7 +198,7 @@ const zh: Record<string, string> = {
     'stage.patch.failed': '写入失败',
     'stage.rewind.done': '已回滚并重结算 MVU', 'stage.rewind.failed': '回滚失败',
     'stage.mvu.synced': 'MVU 已重结算', 'stage.mvu.failed': 'MVU 重结算失败',
-    'stage.offline.banner': '服务端连接已断开 —— 离线演示,改动不落库', 'stage.offline.reconnect': '重新连接',
+    'stage.offline.banner': '服务端连接已断开 —— 改动不会保存', 'stage.offline.reconnect': '重新连接',
     'stage.token.title': '上轮组装 Token(来自最近 job trace)· 点击查看诊断',
     'stage.qr.collapse': '收起快捷回复', 'stage.abort.title': '中止生成',
     'stage.script.failed': '指令执行失败',
@@ -595,7 +595,7 @@ const en: Record<string, string> = {
     'stage.patch.failed': 'Write failed',
     'stage.rewind.done': 'Rewound and MVU re-settled', 'stage.rewind.failed': 'Rewind failed',
     'stage.mvu.synced': 'MVU re-settled', 'stage.mvu.failed': 'MVU re-settle failed',
-    'stage.offline.banner': 'Server connection lost — offline demo, changes are not saved', 'stage.offline.reconnect': 'Reconnect',
+    'stage.offline.banner': 'Server connection lost — changes won't be saved', 'stage.offline.reconnect': 'Reconnect',
     'stage.token.title': 'Tokens assembled last round (from latest job trace) · click for diagnostics',
     'stage.qr.collapse': 'Collapse quick replies', 'stage.abort.title': 'Abort generation',
     /* composer QR row (TASK-063 two-way surface) */
