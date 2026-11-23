@@ -270,6 +270,48 @@ test('card-runtime mounts: mint/list/revoke are owner-scoped', async () => {
     assert.ok([200, 204].includes(delA.status), `A revoke own mount: ${delA.status}`);
 });
 
+test('login rate limit: a wrong password burns exactly one attempt', async () => {
+    // loginLimiter: 5/min per IP, consumed BEFORE credentials are checked
+    // (users-public.js:654-664). If the client replays a failed login POST
+    // (e.g. the apiFetch CSRF-rotate retry treating credential-403 as a stale
+    // token), each wrong try burns two slots and the THIRD wrong attempt
+    // would already answer 429 instead of 403 — and the real password would
+    // be locked out within the same window.
+    const s = await new Session(srv.baseURL).init();
+    for (let i = 0; i < 4; i++) {
+        const res = await s.post('/api/users/login', { handle: 'peer-a', password: 'wrong' });
+        assert.equal(res.status, 403,
+            `wrong-password attempt ${i + 1} must be 403, not 429 — replayed logins double-burn the 5/min budget`);
+    }
+    // 5th slot: the correct password still fits and its success resets the bucket.
+    const ok = await s.login('peer-a', 'pw-peer-a');
+    assert.equal(ok.status, 200, 'correct password after 4 wrong attempts must not be rate-limited');
+});
+
+test('web client: login path cannot double-fire; gate links /login', async () => {
+    // Source-pinned assertions for the SPA fix — the web bundle has no
+    // browser test harness here, so pin the two code points that caused the
+    // review findings:
+    const webRoot = resolve(import.meta.dirname, '../../web/src');
+    const accountSrc = readFileSync(join(webRoot, 'api/account.ts'), 'utf8');
+    const clientSrc = readFileSync(join(webRoot, 'api/client.ts'), 'utf8');
+    const gateSrc = readFileSync(join(webRoot, 'components/shell/LoginGate.tsx'), 'utf8');
+    const i18nSrc = readFileSync(join(webRoot, 'features/shell.ts'), 'utf8');
+
+    // 1) loginAccount must opt OUT of apiFetch's 403 replay — that retry is
+    //    for stale CSRF tokens; on /api/users/login a 403 IS the answer.
+    assert.match(accountSrc, /apiFetch\('\/api\/users\/login'[\s\S]*?retryOn403:\s*false/,
+        'loginAccount must pass retryOn403:false so a wrong password issues exactly one POST');
+    assert.match(clientSrc, /retryOn403 !== false/,
+        'apiFetch must honor the retryOn403 opt-out');
+
+    // 2) OAuth accounts have no password (users-public.js:684) — the gate
+    //    must link back to legacy /login where provider buttons + recover live.
+    assert.match(gateSrc, /href="\/login"/, 'LoginGate must link to /login for OAuth/recovery');
+    assert.match(gateSrc, /t\('login\.alt'\)/, 'LoginGate link must be localized');
+    assert.ok(i18nSrc.includes("'login.alt'"), "i18n 'login.alt' must exist");
+});
+
 test('logout invalidates the session; other user unaffected', async () => {
     const out = await userB.post('/api/users/logout');
     assert.ok([200, 204].includes(out.status), `logout: ${out.status}`);

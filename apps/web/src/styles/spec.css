@@ -607,6 +607,13 @@ input[type="range"] { accent-color: var(--brand); }
 }
 .login-card button[type="submit"]:hover:not(:disabled) { background: var(--brand-hover); }
 .login-card button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+/* OAuth/找回逃生口 —— 密码表单管不了 OAuth 账户(users-public.js:684),链回
+   legacy /login(provider 按钮+recover 流程都在那边)。弱一级,不抢主按钮。 */
+.login-alt {
+    align-self: center; font-size: var(--fs-ui-sm, var(--fs-ui));
+    color: var(--fg-secondary); text-decoration: none;
+}
+.login-alt:hover { color: var(--fg-primary); text-decoration: underline; }
 
 /* 全局导入幕帘 —— 事件穿透,enter/leave 计数归 App。 */
 .drop-veil {

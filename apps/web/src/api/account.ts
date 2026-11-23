@@ -38,13 +38,15 @@ export async function getMe(): Promise<CurrentUser> {
  * 现有 cookie 上,无需换发。CSRF:登录也是 mutation,apiFetch 会先取
  * /csrf-token(匿名会话即有 token 槽),401/403 时壳层已判死广播。
  * 失败的 403 语义服务端统一为 'Incorrect credentials',不区分未知 handle。
+ * retryOn403=false:403 在这里是凭证答案而非 CSRF 过期——重放会让
+ * loginLimiter(校凭证前计 IP,5/min)把一次错登记成两次。
  */
 export async function loginAccount(handle: string, password: string): Promise<void> {
     const res = await apiFetch('/api/users/login', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle, password }),
-    });
+    }, { retryOn403: false });
     if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
 }
 

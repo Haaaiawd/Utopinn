@@ -65,6 +65,10 @@ export function LoginGate() {
                 <button type="submit" disabled={busy || !handle.trim()}>
                     {busy ? t('login.working') : t('login.submit')}
                 </button>
+                {/* OAuth 账户无密码(users-public.js:684-687 拒密码登录),
+                    找回码也在 legacy 页 —— 给一条回到 /login 的逃生口,
+                    configureOAuthButtons 会自动列启用的 provider。 */}
+                <a className="login-alt" href="/login">{t('login.alt')}</a>
             </form>
         </div>
     );

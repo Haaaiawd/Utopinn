@@ -123,6 +123,7 @@ const zh: Record<string, string> = {
     'auth.expired': '登录会话已失效', 'auth.relogin': '重新登录',
     'login.title': '登录乌有馆', 'login.handle': '账号 handle', 'login.password': '密码',
     'login.submit': '登录', 'login.working': '登录中…',
+    'login.alt': '其它登录方式 / 找回密码',
     'chat.demo': '演示', 'stage.demoData': '离线演示数据 · 不落库',
     /* cmdk + 设置 */
     'cmdk.placeholder': '搜索卡、世界书、插件…', 'cmdk.empty': '没有匹配项', 'cmdk.views': '视图', 'cmdk.panels': '板块',
@@ -537,6 +538,7 @@ const en: Record<string, string> = {
     'auth.expired': 'Session expired', 'auth.relogin': 'Sign in again',
     'login.title': 'Sign in to Utopinn', 'login.handle': 'Account handle', 'login.password': 'Password',
     'login.submit': 'Sign in', 'login.working': 'Signing in…',
+    'login.alt': 'Other sign-in options / password recovery',
     'chat.demo': 'Demo', 'stage.demoData': 'Offline demo data · not persisted',
     /* cmdk + 设置 */
     'cmdk.placeholder': 'Search cards, lorebooks, plugins…', 'cmdk.empty': 'No matches', 'cmdk.views': 'Views', 'cmdk.panels': 'Panels',
