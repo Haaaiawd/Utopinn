@@ -23,7 +23,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import sanitize from 'sanitize-filename';
-import { read as readCharacterCard } from '../character-card-parser.js';
+import { loadCharacterDocMerged, resolveCharacterFileMerged } from '../services/shared-library.js';
 import { resolvePathWithinParent } from '../util.js';
 import { getRawCardApp, parseCardAppManifest, isSafeRelativePath } from './manifest.js';
 
@@ -72,20 +72,10 @@ export class CardRuntimeError extends Error {
  * @returns {Promise<object|null>} parsed card JSON or null
  */
 export async function loadCardData(directories, charId) {
-    const dir = directories.characters;
-    const pngPath = path.join(dir, `${charId}.png`);
-    const jsonPath = path.join(dir, `${charId}.json`);
-    try {
-        const raw = await fs.promises.readFile(pngPath);
-        return JSON.parse(readCharacterCard(raw));
-    } catch {
-        try {
-            const raw = await fs.promises.readFile(jsonPath, 'utf8');
-            return JSON.parse(raw);
-        } catch {
-            return null;
-        }
-    }
+    // 合并读面:私有在场即私有,否则回落 _library 共享池。
+    // CardApp 资产/运行时态仍 per-user(ensureCardAppAssets 落
+    // directories.cardApps)—— 池只借卡定义,不借状态。
+    return (await loadCharacterDocMerged(directories, charId)).card;
 }
 
 /**
@@ -173,11 +163,12 @@ export async function createMount({ handle, directories, charId, ttlMs, chatName
 
     // Constrain to the characters dir (same confinement as characters.js).
     const avatarPath = path.join(directories.characters, `${cleanId}.png`);
-    const jsonPath = path.join(directories.characters, `${cleanId}.json`);
     if (path.dirname(avatarPath) !== directories.characters) {
         throw new CardRuntimeError(400, 'bad_char_id', 'charId must be a character filename');
     }
-    if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+    // 合并存在性:私有在场即私有;仅 _library 池卡也可挂载(运行时态
+    // 与资产抽取恒 per-user,池只出卡定义)。
+    if (!resolveCharacterFileMerged(directories, cleanId)) {
         throw new CardRuntimeError(404, 'character_not_found', `Character not found: ${cleanId}`);
     }
 
@@ -246,11 +237,10 @@ export function createDocMount({ handle, directories, charId, chatName, doc, ttl
         throw new CardRuntimeError(413, 'doc_too_large', 'doc exceeds 1MiB');
     }
     const avatarPath = path.join(directories.characters, `${cleanId}.png`);
-    const jsonPath = path.join(directories.characters, `${cleanId}.json`);
     if (path.dirname(avatarPath) !== directories.characters) {
         throw new CardRuntimeError(400, 'bad_char_id', 'charId must be a character filename');
     }
-    if (!fs.existsSync(avatarPath) && !fs.existsSync(jsonPath)) {
+    if (!resolveCharacterFileMerged(directories, cleanId)) {
         throw new CardRuntimeError(404, 'character_not_found', `Character not found: ${cleanId}`);
     }
 

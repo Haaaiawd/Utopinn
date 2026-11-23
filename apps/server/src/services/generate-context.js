@@ -50,10 +50,12 @@ import {
     renderKonataExtraInformation,
 } from './izumi.js';
 import {
-    readCharacterStateSidecar,
-    resolveCharacterFilePath,
     writeCharacterStateSidecar,
 } from './character-state.js';
+import {
+    readCharacterStateMerged,
+    resolveCharacterWriteAnchor,
+} from './shared-library.js';
 import { performance } from 'node:perf_hooks';
 import { randomUUID } from 'node:crypto';
 import _ from 'lodash';
@@ -175,9 +177,10 @@ function resolveCharVariableBase(request, charDir, card) {
         ?? card?.data?.extensions?.TavernHelper_characterScriptVariables
         ?? card?.extensions?.tavern_helper?.variables;
     const seedObj = (seed !== null && typeof seed === 'object' && !Array.isArray(seed)) ? seed : {};
-    const filePath = resolveCharacterFilePath(request?.user?.directories?.characters, charDir);
-    if (!filePath) return seedObj;
-    const overlay = readCharacterStateSidecar(filePath, TH_CHAR_STATE_NS)?.variables;
+    // 合并侧车读:用户侧车优先,仅共享卡在场回落发布侧车(变量种子读)。
+    const directories = request?.user?.directories;
+    if (!directories?.characters) return seedObj;
+    const overlay = readCharacterStateMerged(directories, charDir, TH_CHAR_STATE_NS)?.variables;
     if (overlay === null || typeof overlay !== 'object' || Array.isArray(overlay)) return seedObj;
     return mergeVariableOverlay(seedObj, overlay);
 }
@@ -1389,13 +1392,16 @@ export async function persistMacroVariableWrites({
     //    请求内生效仍成立,但如实 volatile,不冒充持久。
     if (domains.includes('char')) {
         const charWrites = list.filter((w) => w?.domain === 'char' && typeof w?.path === 'string' && w.path);
-        const charFilePath = resolveCharacterFilePath(directories?.characters, charDir);
+        // 写锚恒 per-user:仅共享卡在场 → 锚到用户目录同名干(文件不必
+        // 在),侧车写永不落 _library。
+        const charFilePath = directories?.characters ? resolveCharacterWriteAnchor(directories, charDir) : null;
         if (!charFilePath) {
             summary.volatile.push('char');
             warn('macro_vars_volatile', 'char domain writes are request-scoped (character file not resolvable); not durable across generations');
         } else {
             try {
-                const sidecar = readCharacterStateSidecar(charFilePath, TH_CHAR_STATE_NS) ?? {};
+                // 合并读做 RMW 基底:共享卡的发布态也进 overlay 种子。
+                const sidecar = readCharacterStateMerged(directories, charDir, TH_CHAR_STATE_NS) ?? {};
                 const vars = (sidecar.variables && typeof sidecar.variables === 'object' && !Array.isArray(sidecar.variables))
                     ? sidecar.variables : {};
                 for (const w of charWrites) {

@@ -24,6 +24,7 @@ import { getAdminSettings, getEffectiveUserQuotaBytes, getDirectorySizeBytes } f
 import { filterValidIpPatterns, getIpFromRequest } from './express-common.js';
 import { extensionsEnabledFeatureGuard } from './endpoints/extensions.js';
 import { getStorageEngine } from './storage/index.js';
+import { resolveSharedLibraryFilePath } from './services/shared-library.js';
 import { ENGINE_META_ENTRY, ENGINE_DUMP_ENTRY } from './storage/engine-backup-entries.js';
 
 export const KEY_PREFIX = 'user:';
@@ -1602,7 +1603,30 @@ export async function getAllEnabledUsers() {
  */
 export const router = express.Router();
 router.use('/backgrounds/*', createRouteHandler(req => req.user.directories.backgrounds));
-router.use('/characters/*', createRouteHandler(req => req.user.directories.characters));
+// /characters/* —— 私有目录先中;不在场时安全回落 <dataRoot>/_library/characters
+// (resolveSharedLibraryFilePath 监禁池根 + 拒 _library 干名,绝不出界)。
+router.use('/characters/*', async (req, res) => {
+    try {
+        const directory = req.user.directories.characters;
+        const filePath = decodeURIComponent(req.params[0]);
+        const fullPath = path.join(directory, filePath);
+        if (!isPathUnderParent(directory, path.resolve(fullPath))) {
+            return res.sendStatus(403);
+        }
+        if (fs.existsSync(fullPath)) {
+            invalidateFirefoxCache(filePath, req, res);
+            return res.sendFile(filePath, { root: directory });
+        }
+        const sharedPath = resolveSharedLibraryFilePath(req.user.directories, filePath);
+        if (sharedPath) {
+            invalidateFirefoxCache(filePath, req, res);
+            return res.sendFile(path.basename(sharedPath), { root: path.dirname(sharedPath) });
+        }
+        return res.sendStatus(404);
+    } catch (error) {
+        return res.sendStatus(500);
+    }
+});
 router.use('/User%20Avatars/*', createRouteHandler(req => req.user.directories.avatars));
 router.use('/assets/*', createRouteHandler(req => req.user.directories.assets));
 router.use('/user/images/*', createRouteHandler(req => req.user.directories.userImages));

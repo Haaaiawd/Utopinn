@@ -19,7 +19,6 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
 import { serializeChatJsonl } from '@utopinn/formats';
 import { Jimp } from '../jimp.js';
-import { read as readCharacterCard } from '../character-card-parser.js';
 import { tryParse } from '../util.js';
 import { getChatRepo, getGroupRepo, getNamedDocRepo, getPresetRepo, getSettingsRepo, getStorageEngine, getWorldInfoRepo } from '../storage/index.js';
 import { PRESET_FOLDER_BY_API_ID } from '../storage/repositories/preset-repo.js';
@@ -37,6 +36,15 @@ import {
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { createCardListCache } from '../services/card-list-cache.js';
+import {
+    getSharedCharactersDir,
+    isSafeSharedStem,
+    loadCharacterDocFromDir,
+    loadCharacterDocMerged,
+    materializeSharedCharacter,
+    readCharacterStateMerged,
+    resolveCharacterFileMerged,
+} from '../services/shared-library.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { buildGreetingFloor, buildGroupGreetingFloors, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
 import { avatarToCharDir } from '../services/group-orchestration.js';
@@ -84,7 +92,6 @@ import {
     getQueryCharacterAvatar,
     normalizeCharacterStateNamespace,
     getCharacterStateSidecarPath,
-    readCharacterStateSidecar,
     mapCharacterStatePatchError,
     // 角色写面(C-3):原子 PNG 重写 + ccv3/chara 双 chunk + 缓存失效,与 legacy /edit 同管线。
     writeCharacterData,
@@ -120,6 +127,10 @@ export function safeName(raw, field) {
         // 参数侧给宽一点的上限(兼容旧数据的长文件名),写路径仍由 Repo 层收 128
         throw new InvalidArgumentError(`${field} is too long`);
     }
+    // charDir 专用闸:`_library` 保留名(大小写不敏感)—— 池目录不可被当卡寻址。
+    if (field === 'charDir' && name.toLowerCase() === '_library') {
+        throw new InvalidArgumentError('charDir is a reserved name');
+    }
     return name;
 }
 
@@ -145,46 +156,20 @@ export function sendError(response, error, logPrefix) {
 }
 
 // ---------------------------------------------------------------------------
-// 角色卡(无 Repo 层,直接读 characters/ 下的 PNG/JSON)
+// 角色卡(无 Repo 层,直接读 characters/ 下的 PNG/JSON;_library 池读面合并)
 // ---------------------------------------------------------------------------
 
 const CHARACTER_IMAGE_EXTS = new Set(['.png', '.webp']);
 
 /**
- * 读取一张角色卡并报告承载文件:<charDir>.png(或 .webp)优先,退回 <charDir>.json。
- * 探测顺序即 PATCH 写回的落点判据 —— 同一个文件读出来就写回同一个面。
- * @param {import('../users.js').UserDirectoryList} directories
- * @param {string} charDir 不含扩展名的角色目录名
- * @returns {Promise<{card: object|null, source: {kind:'image', filePath:string, ext:string}|{kind:'json', filePath:string}|null}>}
- */
-async function loadCharacterDocDetailed(directories, charDir) {
-    const dir = directories.characters;
-    for (const ext of ['.png', '.webp']) {
-        const filePath = path.join(dir, `${charDir}${ext}`);
-        try {
-            const raw = await fs.promises.readFile(filePath);
-            return { card: JSON.parse(readCharacterCard(raw)), source: { kind: 'image', filePath, ext } };
-        } catch {
-            // 该扩展名不存在或不含卡数据 → 继续尝试下一个
-        }
-    }
-    try {
-        const filePath = path.join(dir, `${charDir}.json`);
-        const raw = await fs.promises.readFile(filePath, 'utf8');
-        return { card: JSON.parse(raw), source: { kind: 'json', filePath } };
-    } catch {
-        return { card: null, source: null };
-    }
-}
-
-/**
  * 读取一张角色卡:<charDir>.png(或 .webp)优先,退回 <charDir>.json。
+ * 合并读面:私有目录在场即私有(同名遮蔽),否则回落 <dataRoot>/_library/characters。
  * @param {import('../users.js').UserDirectoryList} directories
  * @param {string} charDir 不含扩展名的角色目录名
  * @returns {Promise<object|null>} 解析后的卡对象(CCv2 形状,data.* 持有字段);找不到返回 null
  */
 async function loadCharacterDoc(directories, charDir) {
-    return (await loadCharacterDocDetailed(directories, charDir)).card;
+    return (await loadCharacterDocMerged(directories, charDir)).card;
 }
 
 /**
@@ -236,6 +221,7 @@ function warnVolatileGreetingWrites(variableWrites, charDir, chatName) {
 /**
  * persist-target hint 用的真实头像文件名:<charDir>.png/.webp 顺序探测,
  * 都不存在回退 .png。硬编码 .png 会让 webp 卡的 ack/settle chatKey 漂移(M8)。
+ * 共享卡在池目录继续同序探测 —— hint 文件名对得上 /thumbnail 合并回落。
  */
 async function resolveAvatarFileName(directories, charDir) {
     for (const ext of ['.png', '.webp']) {
@@ -243,6 +229,15 @@ async function resolveAvatarFileName(directories, charDir) {
             await fs.promises.access(path.join(directories.characters, `${charDir}${ext}`));
             return `${charDir}${ext}`;
         } catch { /* 下一个扩展名 */ }
+    }
+    const libDir = getSharedCharactersDir(directories);
+    if (libDir && isSafeSharedStem(charDir)) {
+        for (const ext of ['.png', '.webp']) {
+            try {
+                await fs.promises.access(path.join(libDir, `${charDir}${ext}`));
+                return `${charDir}${ext}`;
+            } catch { /* 下一个扩展名 */ }
+        }
     }
     return `${charDir}.png`;
 }
@@ -626,8 +621,54 @@ export function apply(ctx) {
     const cardListCache = createCardListCache();
 
     /**
+     * 收集一个卡目录的候选 charDir:每个 stem 把 png/webp/json 候选档全部记入
+     * 指纹(loadCharacterDoc 坏档 fallthrough,只看承载档会漏失效);
+     * 列表展示档 = 图档(.png 优先于 .webp,同解析探测序),无图退 .json。
+     * 私有目录与 _library 池共用同一扫描。
+     * @param {string} dir 卡目录绝对路径
+     * @returns {Promise<Map<string, {listed:{fileName:string,fileSize:number,ctimeMs:number}|null, isImage:boolean, files:object[]}>>}
+     */
+    async function collectCardStems(dir) {
+        const stems = new Map();
+        let entries;
+        try {
+            entries = await fs.promises.readdir(dir, { withFileTypes: true });
+        } catch {
+            return stems;
+        }
+        for (const entry of entries) {
+            if (!entry.isFile()) continue;
+            const ext = path.extname(entry.name).toLowerCase();
+            const stem = entry.name.slice(0, -ext.length);
+            if (!stem) continue;
+            const isImage = CHARACTER_IMAGE_EXTS.has(ext);
+            const isJson = ext === '.json';
+            if (!isImage && !isJson) continue;
+            const stat = await fs.promises.stat(path.join(dir, entry.name)).catch(() => null);
+            const rec = stems.get(stem) ?? { listed: null, isImage: false, files: [] };
+            rec.files.push({
+                fileName: entry.name,
+                size: stat?.size ?? 0,
+                mtimeMs: stat?.mtimeMs ?? 0,
+                ctimeMs: stat?.ctimeMs ?? 0,
+            });
+            if (isImage && (!rec.isImage || ext === '.png')) {
+                rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
+                rec.isImage = true;
+            } else if (isJson && !rec.isImage && !rec.listed) {
+                rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
+            }
+            stems.set(stem, rec);
+        }
+        return stems;
+    }
+
+    /**
      * GET /characters —— 角色库列表。
-     * {items:[{charDir,name,avatar,fileName,fileSize,tags}],total}
+     * {items:[{charDir,name,avatar,fileName,fileSize,tags,shared?}],total}
+     *
+     * 双源合并:用户私有目录 ∪ <dataRoot>/_library/characters;
+     *   同名 stem 私有优先(遮蔽),池独有的项带 shared:true 徽标。
      *
      * 浅字段走 cardListCache:每次列表 readdir+stat(便宜)出指纹,
      * {fileName,size,mtimeMs,ctimeMs} 一致就复用上次的 name/tags/readable,
@@ -637,50 +678,30 @@ export function apply(ctx) {
     reg(`${P}/characters`, async function (request, response) {
         try {
             const dir = request.user.directories.characters;
-            let entries;
-            try {
-                entries = await fs.promises.readdir(dir, { withFileTypes: true });
-            } catch {
-                entries = [];
-            }
+            const stems = await collectCardStems(dir);
 
-            // 收集候选 charDir:每个 stem 把 png/webp/json 候选档全部记入
-            // 指纹(loadCharacterDoc 坏档 fallthrough,只看承载档会漏失效);
-            // 列表展示档 = 图档(.png 优先于 .webp,同解析探测序),无图退 .json。
-            const stems = new Map(); // charDir -> {listed, isImage, files}
-            for (const entry of entries) {
-                if (!entry.isFile()) continue;
-                const ext = path.extname(entry.name).toLowerCase();
-                const stem = entry.name.slice(0, -ext.length);
-                if (!stem) continue;
-                const isImage = CHARACTER_IMAGE_EXTS.has(ext);
-                const isJson = ext === '.json';
-                if (!isImage && !isJson) continue;
-                const stat = await fs.promises.stat(path.join(dir, entry.name)).catch(() => null);
-                const rec = stems.get(stem) ?? { listed: null, isImage: false, files: [] };
-                rec.files.push({
-                    fileName: entry.name,
-                    size: stat?.size ?? 0,
-                    mtimeMs: stat?.mtimeMs ?? 0,
-                    ctimeMs: stat?.ctimeMs ?? 0,
-                });
-                if (isImage && (!rec.isImage || ext === '.png')) {
-                    rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
-                    rec.isImage = true;
-                } else if (isJson && !rec.isImage && !rec.listed) {
-                    rec.listed = { fileName: entry.name, fileSize: stat?.size ?? 0, ctimeMs: stat?.ctimeMs ?? 0 };
-                }
-                stems.set(stem, rec);
-            }
+            // _library 池:私有 stem 遮蔽;`_library` 保留名不可作为卡寻址。
+            const libDir = getSharedCharactersDir(request.user.directories);
+            const libStems = libDir ? await collectCardStems(libDir) : new Map();
+            const visibleLibStems = new Map(
+                [...libStems].filter(([stem]) => !stems.has(stem) && isSafeSharedStem(stem)),
+            );
+
+            // 合并扫描集:每条目带自己的真实目录 —— 私有条目 dir 读私有,
+            // 池条目 dir 读 _library(stem 唯一归属,不存在「池 loader 读私有」)。
+            const scans = [
+                ...[...stems].map(([charDir, info]) => ({ charDir, info, dir, shared: false })),
+                ...[...visibleLibStems].map(([charDir, info]) => ({ charDir, info, dir: libDir, shared: true })),
+            ];
 
             const handle = request.user.profile.handle;
             const repo = getChatRepo();
             const items = [];
             let cacheHits = 0;
-            for (const [charDir, info] of stems) {
+            for (const { charDir, info, dir: cardDir, shared } of scans) {
                 if (!info.listed) continue; // 构造上不可能,防御跳过防空响应 500
-                const fields = await cardListCache.get(dir, charDir, info.files, async () => {
-                    const card = await loadCharacterDoc(request.user.directories, charDir);
+                const fields = await cardListCache.get(cardDir, charDir, info.files, async () => {
+                    const { card } = await loadCharacterDocFromDir(cardDir, charDir);
                     const parsed = card ? cardFields(card) : { name: '', tags: [], chat: '' };
                     return { name: parsed.name, tags: parsed.tags, chat: parsed.chat, readable: card != null };
                 });
@@ -708,14 +729,17 @@ export function apply(ctx) {
                     // legacy:date_added = 卡文件 ctime;date_last_chat = 最近会话活跃
                     dateAdded: info.listed.ctimeMs ?? 0,
                     dateLastChat,
+                    // 实例共享池条目徽标 —— 私有项不带此键(缺省即私有)。
+                    ...(shared ? { shared: true } : {}),
                 });
             }
             cardListCache.prune(dir, stems);
+            if (libDir) cardListCache.prune(libDir, visibleLibStems);
             diagEmit({
                 lvl: 'debug', kind: 'plugin', code: 'card_list_scan',
-                msg: `characters list: ${items.length} card(s), ${cacheHits} cached, ${items.length - cacheHits} parsed`,
+                msg: `characters list: ${items.length} card(s) (${visibleLibStems.size} shared), ${cacheHits} cached, ${items.length - cacheHits} parsed`,
                 ctx: { route: `${P}/characters`, handle },
-                data: { total: items.length, hits: cacheHits, misses: items.length - cacheHits },
+                data: { total: items.length, shared: visibleLibStems.size, hits: cacheHits, misses: items.length - cacheHits },
             });
             items.sort((a, b) => a.name.localeCompare(b.name));
             return response.send({ items, total: items.length });
@@ -724,15 +748,18 @@ export function apply(ctx) {
         }
     });
 
-    /** GET /characters/:charDir —— 完整角色卡 JSON。 */
+    /**
+     * GET /characters/:charDir —— 完整角色卡 JSON。
+     * 共享池命中时响应顶层带 shared:true 徽标(线协议元字段,不是卡字段)。
+     */
     reg(`${P}/characters/:charDir`, async function (request, response) {
         try {
             const charDir = safeName(request.params.charDir, 'charDir');
-            const card = await loadCharacterDoc(request.user.directories, charDir);
+            const { card, shared } = await loadCharacterDocMerged(request.user.directories, charDir);
             if (!card) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
-            return response.send(card);
+            return response.send(shared ? { ...card, shared: true } : card);
         } catch (error) {
             return sendError(response, error, 'utopinn/characters get');
         }
@@ -1395,9 +1422,23 @@ export function apply(ctx) {
                 extensionsPatch = patch.extensions;
             }
 
-            const { card, source } = await loadCharacterDocDetailed(request.user.directories, charDir);
+            // 合并读寻址:私有在场即私有;仅共享池命中 → 先物化(copy-on-write),
+            // 之后按私有卡走 —— 共享档绝不在原地被改。
+            let { card, source, shared } = await loadCharacterDocMerged(request.user.directories, charDir);
             if (!card || typeof card !== 'object' || Array.isArray(card) || !source) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            let effectiveCharDir = charDir;
+            let materialized = null;
+            if (shared) {
+                assertWritable();
+                materialized = await materializeSharedCharacter(request.user.directories, charDir);
+                effectiveCharDir = materialized.charDir;
+                const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, effectiveCharDir);
+                if (!reloaded.card || !reloaded.source) {
+                    return response.status(500).send({ error: `Shared character materialized but unreadable: ${materialized.fileName}` });
+                }
+                ({ card, source } = reloaded);
             }
 
             // 合并:v2/v3 → data.*;v1/无 data → 根层(PNG 写出时升格提升)。
@@ -1468,7 +1509,7 @@ export function apply(ctx) {
                     next.spec = 'chara_card_v2';
                     next.spec_version = '2.0';
                 }
-                const writeOk = await writeCharacterData(source.filePath, JSON.stringify(next), charDir, request, undefined, {
+                const writeOk = await writeCharacterData(source.filePath, JSON.stringify(next), effectiveCharDir, request, undefined, {
                     allowMissingInputFallback: false,
                     // .webp → .png 转换面输出档本来不存在,不能要求它在
                     requireExistingOutput: source.ext === '.png',
@@ -1486,14 +1527,45 @@ export function apply(ctx) {
                     } catch (unlinkError) {
                         console.warn(`Failed to remove superseded character file ${source.filePath}:`, unlinkError);
                     }
-                    migrateCharacterStateSidecars(request.user.directories.characters, path.basename(source.filePath), `${charDir}.png`);
+                    migrateCharacterStateSidecars(request.user.directories.characters, path.basename(source.filePath), `${effectiveCharDir}.png`);
                 }
             }
 
-            const written = await loadCharacterDoc(request.user.directories, charDir);
-            return response.send(written ?? next);
+            const written = await loadCharacterDoc(request.user.directories, effectiveCharDir);
+            const body = written ?? next;
+            if (materialized) {
+                // 物化 PATCH:告诉调用方写到的实际干名 —— 共享卡仍挂原 stem,
+                // 之后的编辑/会话都应改指私有新档。
+                return response.send({ ...body, __materialized: true, charDir: effectiveCharDir });
+            }
+            return response.send(body);
         } catch (error) {
             return sendError(response, error, 'utopinn/characters patch');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/install —— 显式物化:把共享池卡整档拷进
+     * 用户 characters 目录。私有同名卡在场 → 409(同 PATCH 会先走私有);
+     * 非共享卡 → 404;装完返回 {charDir,fileName,card}。
+     */
+    regPost(`${P}/characters/:charDir/install`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            assertWritable();
+            const resolved = resolveCharacterFileMerged(request.user.directories, charDir);
+            if (resolved && !resolved.shared) {
+                return response.status(409).send({ error: `Character already installed privately: ${charDir}` });
+            }
+            const materialized = await materializeSharedCharacter(request.user.directories, charDir);
+            const { card } = await loadCharacterDocFromDir(request.user.directories.characters, materialized.charDir);
+            return response.send({
+                charDir: materialized.charDir,
+                fileName: materialized.fileName,
+                card: card ?? null,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters install');
         }
     });
 
@@ -1755,7 +1827,8 @@ export function apply(ctx) {
     reg(`${P}/export/card/:charDir`, async function (request, response) {
         try {
             const charDir = safeName(request.params.charDir, 'charDir');
-            const { card, source } = await loadCharacterDocDetailed(request.user.directories, charDir);
+            // 合并读:共享卡也可整档导出(只读流 _library 源文件,不写)。
+            const { card, source } = await loadCharacterDocMerged(request.user.directories, charDir);
             if (!card || !source) {
                 return response.status(404).send({ error: `Character not found: ${charDir}` });
             }
@@ -3271,7 +3344,8 @@ export function apply(ctx) {
         }
         const resource = `character-state:${target.avatar}:${namespace}`;
         try {
-            const data = readCharacterStateSidecar(target.imagePath, namespace);
+            // 合并读:用户侧车优先,仅共享卡在场回落发布侧车(只读,不写 _library)。
+            const data = readCharacterStateMerged(request.user.directories, path.parse(target.avatar).name, namespace);
             return sendJsonResource(request, response, { resource, value: { ok: true, data } });
         } catch (error) {
             console.error('Error reading character state sidecar:', error);
@@ -3296,8 +3370,8 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.namespace string.' });
             }
 
-            const characterPath = path.join(request.user.directories.characters, avatarUrl);
-            return response.send({ ok: true, data: readCharacterStateSidecar(characterPath, namespace) });
+            const data = readCharacterStateMerged(request.user.directories, path.parse(avatarUrl).name, namespace);
+            return response.send({ ok: true, data });
         } catch (error) {
             console.error('Error reading character state sidecar:', error);
             return response.status(500).send({ error: true });
@@ -3324,10 +3398,10 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.namespaces to be a non-empty array of strings.' });
             }
 
-            const characterPath = path.join(request.user.directories.characters, avatarUrl);
+            const stem = path.parse(avatarUrl).name;
             const data = {};
             for (const ns of normalized) {
-                data[ns] = readCharacterStateSidecar(characterPath, ns);
+                data[ns] = readCharacterStateMerged(request.user.directories, stem, ns);
             }
             return response.send({ ok: true, data });
         } catch (error) {
@@ -3355,8 +3429,10 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Expected body.data object.' });
             }
 
+            // 合并存在性:仅共享卡在场也可写 —— 锚点(user dir 同名侧车
+            // 路径)恒 per-user,写不落到 _library。
             const characterPath = path.join(request.user.directories.characters, avatarUrl);
-            if (!fs.existsSync(characterPath)) {
+            if (!resolveCharacterFileMerged(request.user.directories, path.parse(avatarUrl).name)) {
                 return response.status(404).send({ error: 'Character not found.' });
             }
             const stateFilePath = getCharacterStateSidecarPath(characterPath, namespace);
@@ -3397,8 +3473,11 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'No character state patch operations found. Expected body.operations or body.operation.' });
             }
 
+            // 合并存在性 + 合并 seed:共享卡的发布态做 patch 基底,
+            // 结果仍写用户目录侧车(per-user 覆盖,不动 _library)。
             const characterPath = path.join(request.user.directories.characters, avatarUrl);
-            if (!fs.existsSync(characterPath)) {
+            const stem = path.parse(avatarUrl).name;
+            if (!resolveCharacterFileMerged(request.user.directories, stem)) {
                 return response.status(404).send({ error: 'Character not found.' });
             }
             const stateFilePath = getCharacterStateSidecarPath(characterPath, namespace);
@@ -3406,7 +3485,7 @@ export function apply(ctx) {
                 return response.status(400).send({ error: 'Invalid namespace for state sidecar path.' });
             }
 
-            const existing = readCharacterStateSidecar(characterPath, namespace);
+            const existing = readCharacterStateMerged(request.user.directories, stem, namespace);
             const seed = existing ?? {};
 
             let next;

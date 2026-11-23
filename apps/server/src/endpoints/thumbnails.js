@@ -8,6 +8,7 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import { imageSize as sizeOf } from 'image-size';
 
 import { getConfigValue, invalidateFirefoxCache, resolvePathWithinParent } from '../util.js';
+import { resolveSharedLibraryFilePath } from '../services/shared-library.js';
 import { stripCharacterMetadata } from '../character-card-parser.js';
 import { getThumbnailResolution, isAnimatedWebP, isAnimatedApng, thumbnailDimensions as dimensions } from './image-metadata.js';
 import { ResizeStrategy } from '@jimp/plugin-resize';
@@ -114,7 +115,13 @@ export async function generateThumbnail(directories, type, file, forceGenerate =
     const pathToCachedFile = path.join(thumbnailFolder, file);
 
     try {
-        const pathToOriginalFile = path.join(originalFolder, file);
+        // avatar 原图合并寻址:私有不在场回落 _library 池(监禁解析);
+        // 缩略图产物仍落 per-user thumbnailFolder。
+        let pathToOriginalFile = path.join(originalFolder, file);
+        if (!fs.existsSync(pathToOriginalFile) && type === 'avatar') {
+            const sharedPath = resolveSharedLibraryFilePath(directories, file);
+            if (sharedPath) pathToOriginalFile = sharedPath;
+        }
 
         // Check if thumbnail already exists and return it if not forcing regeneration
         if (!forceGenerate && fs.existsSync(pathToCachedFile)) {
@@ -262,8 +269,12 @@ publicRouter.get('/', async function (request, response) {
 
         const serveOriginal = () => {
             const folder = getOriginalFolder(request.user.directories, type);
-            const pathToOriginalFile = resolvePathWithinParent(folder, rawFile);
+            let pathToOriginalFile = resolvePathWithinParent(folder, rawFile);
             if (!pathToOriginalFile) return response.sendStatus(403);
+            // avatar 原图私有不在场 → _library 池监禁回落(共享卡缩略图可见)。
+            if (!fs.existsSync(pathToOriginalFile) && type === 'avatar') {
+                pathToOriginalFile = resolveSharedLibraryFilePath(request.user.directories, rawFile) ?? pathToOriginalFile;
+            }
             if (!fs.existsSync(pathToOriginalFile)) return response.sendStatus(404);
             if (type === 'avatar' && path.extname(pathToOriginalFile).toLowerCase() === '.png') {
                 const image = stripCharacterMetadata(fs.readFileSync(pathToOriginalFile));

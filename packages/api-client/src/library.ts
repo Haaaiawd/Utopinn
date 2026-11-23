@@ -18,6 +18,7 @@ import type {
     ChatPatchResponse,
     ChatRenameResponse,
     CharacterCardDocument,
+    CharacterInstallResponse,
     JsonPatchOp,
     LibraryCharactersResponse,
     LibraryChatsResponse,
@@ -60,9 +61,19 @@ export class LibraryApi {
         return this.client.request(`${P}/characters`);
     }
 
-    /** CLI `char`:卡文档全文(v1/v2/v3 原样返回;404 → ApiError not_found)。 */
+    /** CLI `char`:卡文档全文(v1/v2/v3 原样返回;404 → ApiError not_found)。
+     *  共享池命中时文档顶层带 shared:true 元字段。 */
     char(charDir: string): Promise<CharacterCardDocument> {
         return this.client.request(`${P}/characters/${enc(charDirOf(charDir))}`);
+    }
+
+    /**
+     * 共享卡显式物化(copy-on-write):整档拷进用户 characters 目录,
+     * 返回 {charDir,fileName,card} —— charDir 可能带避让序号(Foo → Foo1)。
+     * 私有同名卡在场 → 409;非共享卡 → 404。
+     */
+    installCharacter(charDir: string): Promise<CharacterInstallResponse> {
+        return this.client.request(`${P}/characters/${enc(charDirOf(charDir))}/install`, { method: 'POST' });
     }
 
     // ── chats ────────────────────────────────────────────────────────────

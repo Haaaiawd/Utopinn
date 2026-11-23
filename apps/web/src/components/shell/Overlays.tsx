@@ -607,7 +607,18 @@ function CharEditorModal({ mobile }: { mobile?: boolean }) {
             first_mes: firstDraft,
             extensions: { world: worldDraft },
         })
-            .then(() => Promise.all([docR.reload(), s.refreshCards(), s.refreshConnection()]))
+            .then(async (doc) => {
+                // 共享卡 PATCH = 先物化:响应 __materialized + charDir(新私有
+                // 干名)。弹层仍挂在旧(共享)干名上会再命中池卡 —— 收层后跳
+                // 私有 copy 的角色页,编辑面指向真实写盘结果。
+                if (doc.__materialized && typeof doc.charDir === 'string') {
+                    closeCharEditor();
+                    await s.refreshCards();
+                    s.openChar(doc.charDir);
+                    return;
+                }
+                await Promise.all([docR.reload(), s.refreshCards(), s.refreshConnection()]);
+            })
             .then(() => s.hint(t('ov.char.saved')))
             .catch((e) => s.hint(`${t('ov.char.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setSaving(false));

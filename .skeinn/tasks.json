@@ -6260,6 +6260,100 @@
           "evidence": "§3.1 部署基线 yaml+§3.2 开户流程+§3.5.1 隔离洞清单"
         }
       ]
+    },
+    {
+      "id": "TASK-074",
+      "title": "[共享卡池形态A] 实例级只读卡池 <dataRoot>/_library/characters:合并读面+copy-on-write物化+web 徽标/装入",
+      "outcome": "形态 A(实例级只读池 + copy-on-write)落地:services/shared-library.js 单点提供池根(<dataRoot>/_library/characters,平铺)、isSafeSharedStem(拒 _library 保留名/穿越)、resolveCharacterFileMerged/loadCharacterDocMerged(私有遮蔽优先)、materializeSharedCharacter(COPYFILE_EXCL+干名避让)、resolveCharacterWriteAnchor(写锚恒 per-user)、readCharacterStateMerged(用户侧车优先回落发布侧车)。utopinn-library:列表/详情合并+shared:true 徽标、PATCH 先物化再写(__materialized+charDir 回执)、POST /characters/:dir/install、state/char 四端点合并读+per-user 写锚、/export/card 合并读、safeName(charDir) 拒 _library、resolveAvatarFileName 池探测。旁路读面全接:utopinn-generate 群 roster、stscript-env(loadCard/resolveCharacterByName/safeCharDirName/setCharacterWorld/renameCharacter 物化)、generate-context(变量种子合并读+char 域写锚)、chats.js 展示投影、utopinn-regex(scoped/full 读面标 shared,mutateCharScripts 物化,放行闸合并寻址)、utopinn-th(writeCardRegexScripts 物化、resolveAvatarName 池探测)、card-runtime(mounts/index 合并存在性,资产/运行时态恒 per-user)、users.js /characters/* 池回落、thumbnails avatar 池回落。protocol:LibraryCharacterItem.shared+CharacterInstallResponse;api-client installCharacter();web CardItem.shared、CardTile 徽标、charpage 徽标+装入钮、Overlays PATCH 物化跳新干名、zh/en 词条。",
+      "acceptance": [
+        {
+          "criterion": "列表/详情双源合并,shared:true 徽标,同干名私有遮蔽共享",
+          "verify_by": "tests/shared-library.test.mjs「列表双源合并」「详情合并读」",
+          "evidence": "tests/shared-library.test.mjs:列表 3 项含 1 池卡(shared:true)、Dup 同干名私有赢;详情 GET 池卡顶层 shared:true"
+        },
+        {
+          "criterion": "共享卡任何写路径物化到私有 copy,池档字节永不变;干名撞车避让;写锚/侧车恒 per-user",
+          "verify_by": "PATCH/install/regex/state 写面实测+池档字节断言",
+          "evidence": "tests/shared-library.test.mjs:PATCH JSON+PNG 物化池档 deepEqual 原字节、install 409/404、Foo/Foo1 双占跳 Foo2、char_state set 落用户目录池内零写入、regex PUT 物化"
+        },
+        {
+          "criterion": "穿越闸:charDir 拒 _library 保留名(大小写不敏感)/../分隔段;池文件监禁解析不出根",
+          "verify_by": "安全闸单测+HTTP 400 断言",
+          "evidence": "tests/shared-library.test.mjs:isSafeSharedStem/resolveSharedLibraryFilePath 边界全拒;GET /characters/_library → 400;池内存 _library.json 也不可寻址"
+        },
+        {
+          "criterion": "最小管理面:web 列表徽标+角色页装入钮;install 后跳新私有干名",
+          "verify_by": "tsc typecheck + 组件断言",
+          "evidence": "apps/web:CardItem.shared、CardTile 左上徽标、charpage 头装入钮+元信息行徽标、Overlays PATCH __materialized→openChar(新干名)、shell.ts zh/en 词条;pnpm --filter @utopinn/web typecheck 0 错"
+        }
+      ],
+      "done_when": [],
+      "boundaries": [
+        "v1 不做 CAS/内容寻址、publish/fork/版本钉、ACL 变体(池=实例全可读)、sprites 支持",
+        "共享档绝不原地写:一切写面(PATCH/regex/STscript/state)先物化或只落 per-user 锚",
+        "聊天/变量/secrets/jobs/CardApp 运行时态恒 per-user,不随池共享",
+        "物化目标干名只在私有卡文件层避让;chats/<stem> 不挡同干名(那些会话本就属这张卡)"
+      ],
+      "guardrails": [
+        "resolveCharacterWriteAnchor 绝不回 _library 路径",
+        "_library 不许作为 charDir 被寻址(列表/详情/物化/静态面统一 isSafeSharedStem 闸)",
+        "池目录不被当私有目录写:任何『先查私有再回落』的写面必须走 resolveCharacterFileMerged 或显式物化,不许裸拼 _library 路径",
+        "packages/protocol/dist 是构建产物:协议变更后必须 tsc 重建(已跑 pnpm -r build)"
+      ],
+      "depends_on": [
+        "TASK-072"
+      ],
+      "reads": [
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/services/character-state.js",
+        "apps/server/src/endpoints/characters.js",
+        "apps/server/src/services/stscript-env.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/src/plugins/utopinn-regex.js",
+        "apps/server/src/card-runtime/mounts.js",
+        "apps/server/src/users.js",
+        "apps/server/src/endpoints/thumbnails.js",
+        "packages/api-client/src/library.ts"
+      ],
+      "touches": [
+        "apps/server/src/services/shared-library.js",
+        "apps/server/src/plugins/utopinn-library.js",
+        "apps/server/src/plugins/utopinn-generate.js",
+        "apps/server/src/plugins/utopinn-regex.js",
+        "apps/server/src/plugins/utopinn-th.js",
+        "apps/server/src/services/stscript-env.js",
+        "apps/server/src/services/generate-context.js",
+        "apps/server/src/endpoints/chats.js",
+        "apps/server/src/endpoints/thumbnails.js",
+        "apps/server/src/card-runtime/mounts.js",
+        "apps/server/src/card-runtime/index.js",
+        "apps/server/src/users.js",
+        "apps/server/tests/shared-library.test.mjs",
+        "packages/protocol/src/api.ts",
+        "packages/api-client/src/library.ts",
+        "apps/web/src/api/characters.ts",
+        "apps/web/src/components/CardTile.tsx",
+        "apps/web/src/components/views/charpage.tsx",
+        "apps/web/src/components/shell/Overlays.tsx",
+        "apps/web/src/features/shell.ts"
+      ],
+      "implements": [
+        "shared-library.md 形态A 调研定案"
+      ],
+      "design_exemption": null,
+      "capability_hooks": [],
+      "capability_exemption": null,
+      "integrity_version": 1,
+      "covers": [
+        "实例级共享卡池:只读池+物化第一形态"
+      ],
+      "status": "in_progress",
+      "progress": 0.9,
+      "evidence": "node --test tests/shared-library.test.mjs 13/13 过;回归 tests/utopinn-chat-regex.test.mjs 7/7 过;pnpm --filter @utopinn/web typecheck 0 错;pnpm -r build 全绿(含 protocol dist 重建);改动文件全过 node --check",
+      "created_at": "2026-11-23T07:47:42.598Z",
+      "updated_at": "2026-11-23T07:47:42.598Z",
+      "completed_at": null
     }
   ],
   "milestones": [
