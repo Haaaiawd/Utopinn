@@ -638,13 +638,27 @@ input[type="range"] { accent-color: var(--brand); }
 }
 .login-card button[type="submit"]:hover:not(:disabled) { background: var(--brand-hover); }
 .login-card button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
-/* OAuth/找回逃生口 —— 密码表单管不了 OAuth 账户(users-public.js:684),链回
-   legacy /login(provider 按钮+recover 流程都在那边)。弱一级,不抢主按钮。 */
+/* OAuth provider entry — OAuth-bound accounts carry no local password
+   (users-public.js:684-687 rejects the password path), so these buttons are
+   their only way in. Secondary styling; must not outshine the submit button. */
+.login-oauth { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.login-oauth > span { font-size: var(--fs-ui-sm, var(--fs-ui)); color: var(--fg-secondary); }
+.login-oauth-btns { display: flex; gap: 8px; width: 100%; }
+.login-oauth-btn {
+    flex: 1; text-align: center; padding: 8px 10px;
+    border: 1px solid var(--stroke-strong, var(--border)); border-radius: 8px;
+    color: var(--fg-primary); text-decoration: none; font-size: var(--fs-ui);
+}
+.login-oauth-btn:hover { border-color: var(--brand); }
+.login-note { font-size: var(--fs-ui); color: var(--fg-secondary); }
+/* Recovery/back toggle — text-level button, deliberately weaker than submit. */
 .login-alt {
     align-self: center; font-size: var(--fs-ui-sm, var(--fs-ui));
     color: var(--fg-secondary); text-decoration: none;
+    background: none; border: none; padding: 0; cursor: pointer;
 }
-.login-alt:hover { color: var(--fg-primary); text-decoration: underline; }
+.login-alt:hover:not(:disabled) { color: var(--fg-primary); text-decoration: underline; }
+.login-alt:disabled { opacity: 0.55; cursor: default; }
 
 /* 全局导入幕帘 —— 事件穿透,enter/leave 计数归 App。 */
 .drop-veil {

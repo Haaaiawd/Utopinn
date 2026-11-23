@@ -3,6 +3,7 @@
 // 同样被 admin 跨 handle 复用(服务端判据:self || request.user.profile.admin)。
 // 全部走 apiFetch(CSRF token + 403 轮换已内建)。
 import { ApiError, apiFetch, assertOk } from './client';
+import type { OAuthProviderMap } from './oauth';
 
 export interface CurrentUser {
     handle: string;
@@ -53,6 +54,42 @@ export async function loginAccount(handle: string, password: string): Promise<vo
 /** POST /api/users/logout —— 清 session.handle/csrfToken/version。 */
 export async function logoutAccount(): Promise<void> {
     const res = await apiFetch('/api/users/logout', { method: 'POST' });
+    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+}
+
+/** POST /api/users/oauth/providers — anonymous-reachable; failure/unconfigured → null (LoginGate hides the OAuth row). */
+export async function getOAuthProviders(): Promise<OAuthProviderMap | null> {
+    try {
+        const res = await apiFetch('/api/users/oauth/providers', { method: 'POST' });
+        if (!res.ok) return null;
+        const body = (await res.json()) as { providers?: OAuthProviderMap };
+        return body.providers ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * POST /api/users/recover-step1 — the recovery code is printed to the server
+ * console (204); only the host/admin can retrieve it. 403/404 are domain
+ * answers, not CSRF expiry — retryOn403=false.
+ */
+export async function requestRecoveryCode(handle: string): Promise<void> {
+    const res = await apiFetch('/api/users/recover-step1', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle }),
+    }, { retryOn403: false });
+    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+}
+
+/** POST /api/users/recover-step2 — code + newPassword; empty newPassword clears the password (403 = wrong code). */
+export async function resetPasswordWithCode(handle: string, code: string, newPassword: string): Promise<void> {
+    const res = await apiFetch('/api/users/recover-step2', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle, code, newPassword }),
+    }, { retryOn403: false });
     if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
 }
 

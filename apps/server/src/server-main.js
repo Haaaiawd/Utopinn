@@ -111,6 +111,7 @@ import {
     getSessionCookieAge,
     verifySecuritySettings,
     loginPageMiddleware,
+    loginAutoLoginMiddleware,
     migratePublicOverrides,
     isRequestAdmin,
 } from './users.js';
@@ -390,8 +391,23 @@ app.get('/callback/:source?', (request, response) => {
     return response.redirect(307, path);
 });
 
-// Host login page
-app.get('/login', loginPageMiddleware);
+// Host login page.
+// SPA mode: the new front end owns /login (LoginGate renders handle+password
+// against POST /api/users/login). Only the legacy shell keeps its own page,
+// and in that mode public/ is mounted below, so its assets resolve.
+// Serving public/login.html here while public/ is NOT mounted was the bug:
+// the page's style.css / css/login.css / img/logo.png then fell through to the
+// SPA history fallback and were answered with index.html, leaving the page
+// completely unstyled (all form controls measured 0x0) — a blank grey screen.
+// Both branches sit behind the same loginAutoLoginMiddleware: the
+// auto-login check (single passwordless user, Authelia/Authentik headers,
+// per-user Basic auth, ?noauto opt-out) ran on the legacy page and must run
+// on the SPA path too — only the page sent afterwards differs.
+if (serveWebSpa) {
+    app.get('/login', loginAutoLoginMiddleware, (_req, res) => res.sendFile(WEB_INDEX));
+} else {
+    app.get('/login', loginPageMiddleware);
+}
 
 // Host frontend assets.
 // LUKER_SERVE_LEGACY=1 keeps serving the bundled jQuery UI from public/
@@ -416,10 +432,72 @@ if (process.env.LUKER_SERVE_LEGACY === '1') {
 </ul></body>`;
     app.get('/_kernel', (_req, res) => res.type('html').send(kernelStatusPage));
     if (serveWebSpa) {
+        // Legacy shell assets stay reachable even when the SPA is the front end:
+        // style.css, css/, img/, webfonts/, sound/ … are referenced by cached
+        // pages, old bookmarks and the legacy login page.
+        //
+        // Deliberately mounted per-subdirectory rather than as the whole public/
+        // root: public/ also contains the 785KB legacy index.html, and exposing it
+        // at /index.html would let a stale page shadow the SPA shell. Mounting only
+        // the asset directories keeps exactly what the old markup needs and nothing
+        // that can hijack a route.
+        // login.html also references root-level legacy files. Serve them only
+        // when the SPA does not already provide that name, otherwise a legacy
+        // file shadows the SPA's own asset: /favicon.ico would resolve to
+        // public/favicon.ico (Luker's, 25140B) instead of the SPA's 15086B icon,
+        // and the browser tab would show Luker's icon on a Utopinn deployment.
+        // Express resolves routes in registration order, so the guard has to be
+        // here, before the mounts below.
+        //
+        // manifest.json is deliberately excluded: only the legacy pages reference
+        // it, the SPA declares /site.webmanifest, and in SPA mode /login no longer
+        // serves those pages — so there is no consumer left, and serving it just
+        // leaked Luker's web manifest ("name": "Luker") into a Utopinn install.
+        //
+        // Serving the whole public/ root would additionally expose the 785KB
+        // legacy index.html at /index.html.
+        for (const rootFile of ['style.css', 'favicon.ico']) {
+            const file = path.join(serverDirectory, 'public', rootFile);
+            const spaFile = path.join(WEB_DIST, rootFile);
+            if (fs.existsSync(file) && !fs.existsSync(spaFile)) {
+                app.get(`/${rootFile}`, (_req, res) => res.sendFile(file));
+            }
+        }
+        // Directory name is 'sounds' (plural) — that is what
+        // public/scripts/luker-keep-alive.js requests for its silent keep-alive
+        // media. Guarded by existsSync so a trimmed checkout still boots.
+        for (const assetDir of ['css', 'img', 'webfonts', 'sounds', 'lib', 'locales', 'presets']) {
+            const dir = path.join(serverDirectory, 'public', assetDir);
+            if (fs.existsSync(dir)) {
+                app.use(`/${assetDir}`, express.static(dir, { index: false }));
+            }
+        }
         app.use(express.static(WEB_DIST, { index: false }));
-        // SPA history fallback:非 API/静态根的 GET → index.html。
-        // 静态根已在上方挂载,落到这里的就是壳路由(chat/hub/studio…)。
-        app.get(/^\/(?!api(\/|-extension)|card-runtime\/|characters\/|csrf-token|login|callback|lib\/|tokenizers|thumbnail|backgrounds\/|user\/|User%20Avatars|_kernel|assets\/|version|favicon).*$/, (_req, res) => {
+        // SPA history fallback: non-API/static-root GETs → index.html.
+        // Static roots are mounted above, so what lands here is a shell route
+        // (chat/hub/studio…).
+        //
+        // The asset-extension guard lives INSIDE the fallback handler, not in a
+        // preceding middleware, and that placement is load-bearing. Real file
+        // routes are registered after this block — /backgrounds/* and
+        // /characters/* come from the userDataRouter in server-startup.js,
+        // /thumbnail/*, /card-runtime/*, /tokenizers/* from further down. A
+        // guard mounted as its own app.use() here would answer those with 404
+        // before they ever ran, breaking chat backgrounds, character avatars and
+        // CardApp bridge scripts. Scoping the check to "this request was about to
+        // receive index.html" keeps every real handler reachable.
+        //
+        // Why the check exists at all: a request that looks like a real file
+        // (.css/.js/.png/…) must never be answered with index.html. The browser
+        // accepts it as Content-Type text/html, the stylesheet silently fails to
+        // parse, and the page renders unstyled — which is exactly how the login
+        // page went blank grey. A 404 shows up in devtools instead of silence.
+        const STATIC_ASSET_RE = /\.(css|js|mjs|map|json|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|eot|mp3|wav|ogg|mp4|webm|txt|xml)$/i;
+        app.get(/^\/(?!api(\/|-extension)|card-runtime\/|characters\/|csrf-token|login|callback|lib\/|tokenizers|thumbnail|backgrounds\/|user\/|User%20Avatars|_kernel|assets\/|version|favicon).*$/, (req, res, next) => {
+            if (STATIC_ASSET_RE.test(req.path)) {
+                return res.status(404).type('text/plain').send('Not found');
+            }
+            if (req.method !== 'GET' && req.method !== 'HEAD') return next();
             res.sendFile(WEB_INDEX);
         });
     } else {

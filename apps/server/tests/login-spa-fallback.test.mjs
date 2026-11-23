@@ -1,0 +1,327 @@
+/**
+ * Login entry point + SPA fallback asset guard — real server, default mode (node:test).
+ *
+ * Regression cover for the blank grey login screen.
+ *
+ * With the SPA deployed (the default production mode, LUKER_SERVE_LEGACY unset),
+ * GET /login used to be answered with the legacy public/login.html while public/
+ * was NOT mounted. The style.css / css/login.css / img/logo.png / webfonts/…
+ * that markup references then fell through to the SPA history fallback and were
+ * answered with index.html (200 + text/html). Every form control rendered 0x0 —
+ * a blank grey screen with nothing to tap, worst on mobile.
+ *
+ * Note the existing e2e harness sets LUKER_SERVE_LEGACY=1 by default
+ * (tests/e2e/_lib/server.js), so it could never observe this. This suite spawns
+ * a real server with that variable deliberately unset.
+ *
+ * Hermeticity: the child is spawned with --configPath pointing at a minimal
+ * config this file writes into the scratch dir (enableUserAccounts: true;
+ * every other key is filled from default/config.yaml by addMissingConfigValues).
+ * Without it the child would resolve ./config.yaml from its cwd — a gitignored
+ * developer-local file — and the accounts-on assertions below would silently
+ * depend on whatever that machine happens to have.
+ *
+ * Run: node --test apps/server/tests/login-spa-fallback.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { spawn } from 'node:child_process';
+
+const serverDir = path.resolve(import.meta.dirname, '..');
+const WEB_INDEX = path.join(serverDir, '..', 'web', 'dist', 'index.html');
+const LEGACY_LOGIN = path.join(serverDir, 'public', 'login.html');
+
+const hasSpa = fs.existsSync(WEB_INDEX);
+const hasLegacyLogin = fs.existsSync(LEGACY_LOGIN);
+
+/** Reported as a real skip (not a silent pass) when the SPA build is absent. */
+const SKIP_NO_SPA = hasSpa ? false : 'apps/web/dist not built — run pnpm --filter @utopinn/web build first';
+
+const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-login-real-'));
+
+async function reservePort() {
+    const net = await import('node:net');
+    return new Promise((resolve, reject) => {
+        const srv = net.createServer();
+        srv.on('error', reject);
+        srv.listen(0, '127.0.0.1', () => {
+            const { port } = srv.address();
+            srv.close(() => resolve(port));
+        });
+    });
+}
+
+async function waitReady(base, child, timeoutMs = 60_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (child.exitCode !== null) {
+            throw new Error(`server exited early with code ${child.exitCode}`);
+        }
+        try {
+            const res = await fetch(`${base}/csrf-token`);
+            if (res.ok) return;
+        } catch { /* not up yet */ }
+        await new Promise(r => setTimeout(r, 300));
+    }
+    throw new Error('server did not become ready');
+}
+
+/** Extract the Cookie request-header value from a response's Set-Cookie headers. */
+function sessionCookieOf(res) {
+    const setCookies = res.headers.getSetCookie();
+    assert.ok(setCookies.length > 0, 'expected the auto-login response to set a session cookie');
+    return setCookies.map(c => c.split(';')[0]).join('; ');
+}
+
+/**
+ * Boot a real server in default (SPA) mode against a throwaway dataRoot and a
+ * throwaway --configPath (never the checkout's own ./config.yaml). The config
+ * pins enableUserAccounts: true — the accounts-on behaviour under test.
+ * fn receives (base, ctx); ctx.log() returns the child's combined output.
+ */
+async function withRealServer(fn) {
+    const port = await reservePort();
+    const dir = path.join(scratchRoot, `run-${port}`);
+    const dataRoot = path.join(dir, 'data');
+    const configPath = path.join(dir, 'config.yaml');
+    fs.mkdirSync(dataRoot, { recursive: true });
+    fs.writeFileSync(configPath, 'enableUserAccounts: true\n');
+
+    // Deliberately NOT setting LUKER_SERVE_LEGACY — that is the whole point.
+    // SILLYTAVERN_/LUKER_* env vars would override config.yaml values
+    // (getConfigValue checks env first), so they are stripped for hermeticity
+    // except the ones this suite sets on purpose.
+    const env = { ...process.env, LUKER_SKIP_WEBPACK: '1' };
+    for (const key of Object.keys(env)) {
+        if (/^(SILLYTAVERN_|LUKER_)/.test(key) && key !== 'LUKER_SKIP_WEBPACK') {
+            delete env[key];
+        }
+    }
+
+    const child = spawn(process.execPath, [
+        'server.js', '--dataRoot', dataRoot, '--port', String(port), '--configPath', configPath,
+    ], {
+        cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let log = '';
+    child.stdout.on('data', d => { log += d.toString(); });
+    child.stderr.on('data', d => { log += d.toString(); });
+
+    const base = `http://127.0.0.1:${port}`;
+    try {
+        await waitReady(base, child);
+        await fn(base, { log: () => log, configPath });
+    } catch (err) {
+        err.message += `\n--- server log ---\n${log.slice(-2000)}`;
+        throw err;
+    } finally {
+        child.kill('SIGTERM');
+        await new Promise(r => setTimeout(r, 500));
+        if (child.exitCode === null) child.kill('SIGKILL');
+    }
+}
+
+const isHtml = r => /text\/html/.test(r.headers.get('content-type') || '');
+
+test('default mode: GET /login?noauto serves the SPA shell, not the legacy page', { skip: SKIP_NO_SPA }, async () => {
+    if (!hasLegacyLogin) return;
+    await withRealServer(async (base) => {
+        // ?noauto=1 is required here: with accounts enabled and a fresh
+        // dataRoot the auto-created default-user is passwordless, so a bare
+        // GET /login now (correctly, like the legacy page did) auto-logs in
+        // and 302s to /. The noauto opt-out is the way to reach the page.
+        const res = await fetch(`${base}/login?noauto=1`);
+        const body = await res.text();
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        assert.doesNotMatch(body, /Welcome to Luker/, 'legacy login page must not be served in default mode');
+        assert.match(body, /assets\/index-/, 'must be the SPA shell with a bundled entry');
+    });
+});
+
+test('default mode: legacy login page assets resolve as real assets, not index.html', { skip: SKIP_NO_SPA }, async () => {
+    if (!hasLegacyLogin) return;
+    await withRealServer(async base => {
+        // The exact set public/login.html references. manifest.json is absent on
+        // purpose: only the legacy pages referenced it, the SPA declares
+        // /site.webmanifest, and in SPA mode nothing loads those pages.
+        const cases = [
+            ['/style.css', /text\/css/],
+            ['/css/login.css', /text\/css/],
+            ['/css/st-tailwind.css', /text\/css/],
+            ['/css/fontawesome.min.css', /text\/css/],
+            ['/css/solid.min.css', /text\/css/],
+            ['/css/brands.min.css', /text\/css/],
+            ['/webfonts/NotoSans/stylesheet.css', /text\/css/],
+            ['/webfonts/NotoSansMono/stylesheet.css', /text\/css/],
+            ['/img/logo.png', /image\/png/],
+            ['/favicon.ico', /image/],
+        ];
+        for (const [url, expected] of cases) {
+            const res = await fetch(`${base}${url}`);
+            assert.equal(res.status, 200, `${url} should be served`);
+            assert.match(res.headers.get('content-type') || '', expected, `${url} wrong content-type`);
+            const body = await res.text();
+            assert.doesNotMatch(body.slice(0, 200), /<!DOCTYPE html>/i,
+                `${url} must not return the SPA shell — this is the blank-page bug`);
+        }
+    });
+});
+
+test('default mode: a missing asset is 404, never index.html', { skip: SKIP_NO_SPA }, async () => {
+    await withRealServer(async base => {
+        // The bug was silent precisely because these came back 200 + text/html.
+        for (const url of ['/nope.css', '/missing/thing.js', '/img/gone.png', '/fonts/x.woff2']) {
+            const res = await fetch(`${base}${url}`);
+            assert.equal(res.status, 404, `${url} must 404`);
+            assert.ok(!isHtml(res), `${url} must not be text/html`);
+        }
+    });
+});
+
+test('default mode: real file routes registered later are not shadowed by the guard', { skip: SKIP_NO_SPA }, async () => {
+    // The asset-extension check must live INSIDE the fallback handler. Mounted as
+    // its own app.use() above these routes it answered 404 for every one of them,
+    // because /backgrounds/*, /characters/*, /thumbnail/* and /card-runtime/* are
+    // registered after this block (server-startup.js, further down server-main.js).
+    //
+    // What proves the route was reached: these handlers reject an unauthenticated
+    // request with 403 (and a missing file with 404 served by *their* handler,
+    // not our text/plain guard). The signature of the guard preempting them is
+    // 404 + `text/plain; charset=utf-8` — our exact body.
+    await withRealServer(async base => {
+        for (const url of [
+            '/backgrounds/does-not-exist.png',
+            '/characters/does-not-exist.png',
+            '/thumbnail/does-not-exist.png',
+            '/card-runtime/does-not-exist.js',
+        ]) {
+            const res = await fetch(`${base}${url}`, { redirect: 'manual' });
+            const body = await res.text();
+            assert.ok(!(res.status === 404 && body === 'Not found' && /text\/plain/.test(res.headers.get('content-type') || '')),
+                `${url} was short-circuited by the asset guard instead of reaching its handler`);
+        }
+    });
+});
+
+test('default mode: SPA icons and manifest are not shadowed by legacy public/ files', { skip: SKIP_NO_SPA }, async () => {
+    // public/favicon.ico (25140B, Luker) and public/manifest.json ("name":"Luker")
+    // used to be served in preference to the SPA's own, so the browser tab showed
+    // Luker's icon on a Utopinn deployment. Legacy root files must yield whenever
+    // the SPA ships the same name.
+    const legacyFavicon = path.join(serverDir, 'public', 'favicon.ico');
+    const spaFavicon = path.join(serverDir, '..', 'web', 'dist', 'favicon.ico');
+    if (!fs.existsSync(spaFavicon) || !fs.existsSync(legacyFavicon)) return;
+
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/favicon.ico`);
+        assert.equal(res.status, 200);
+        const body = await res.arrayBuffer();
+        assert.equal(body.byteLength, fs.statSync(spaFavicon).size,
+            '/favicon.ico must be the SPA icon, not the 25140B legacy one');
+
+        const manifest = await fetch(`${base}/manifest.json`, { redirect: 'manual' });
+        // Not served at all in SPA mode: only the legacy pages referenced it and
+        // the SPA declares /site.webmanifest.
+        if (manifest.status === 200) {
+            const text = await manifest.text();
+            assert.doesNotMatch(text, /"name":\s*"Luker"/, 'legacy manifest must not be served');
+        }
+    });
+});
+
+test('default mode: legacy assets the SPA does not provide are still served', { skip: SKIP_NO_SPA }, async () => {
+    // style.css / css/ / img/ / webfonts/ are referenced by cached pages, old
+    // bookmarks and the legacy shell, so they stay reachable in SPA mode.
+    await withRealServer(async base => {
+        for (const [url, expected] of [
+            ['/style.css', /text\/css/],
+            ['/css/login.css', /text\/css/],
+            ['/webfonts/NotoSans/stylesheet.css', /text\/css/],
+            ['/img/logo.png', /image\/png/],
+        ]) {
+            const res = await fetch(`${base}${url}`);
+            assert.equal(res.status, 200, `${url} should still be served`);
+            assert.match(res.headers.get('content-type') || '', expected);
+        }
+    });
+});
+
+test('default mode: shell routes still fall back to the SPA', { skip: SKIP_NO_SPA }, async () => {
+    await withRealServer(async base => {
+        for (const url of ['/hub', '/chat', '/studio', '/some/deep/route']) {
+            const res = await fetch(`${base}${url}`);
+            assert.equal(res.status, 200, `${url} should fall back to the SPA`);
+            assert.ok(isHtml(res));
+        }
+    });
+});
+
+test('default mode: the legacy 785KB index.html is not exposed', { skip: SKIP_NO_SPA }, async () => {
+    const legacyIndex = path.join(serverDir, 'public', 'index.html');
+    if (!fs.existsSync(legacyIndex)) return;
+    const legacySize = fs.statSync(legacyIndex).size;
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/index.html`);
+        const body = await res.text();
+        assert.notEqual(body.length, legacySize, 'must not expose the legacy index.html');
+        assert.doesNotMatch(body, /Welcome to Luker/);
+    });
+});
+
+test('default mode: unauthenticated / redirects to /login', { skip: SKIP_NO_SPA }, async () => {
+    await withRealServer(async (base, ctx) => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 302);
+        assert.equal(res.headers.get('location'), '/login');
+        // The redirect only happens when the test-controlled config was actually
+        // read — enableUserAccounts: false (the default config, or an ignored
+        // --configPath) would have served the SPA directly with 200.
+        // Belt-and-suspenders: the child also announces the config path it used.
+        assert.match(ctx.log(), new RegExp(`Using config path:.*${ctx.configPath.replace(/[/\\]/g, '[\\\\/]')}`),
+            'child must report reading the test-controlled config');
+        // and that target must actually render when auto-login is suppressed
+        const login = await fetch(`${base}${res.headers.get('location')}?noauto=1`);
+        const body = await login.text();
+        assert.doesNotMatch(body, /Welcome to Luker/);
+    });
+});
+
+test('default mode: GET /login auto-logs in and the session cookie authenticates', { skip: SKIP_NO_SPA }, async () => {
+    // Review comment #4: the SPA branch bypassed tryAutoLogin entirely, so a
+    // fresh dataRoot (single passwordless default-user) could not establish a
+    // session from /login the way the legacy page could.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/login`, { redirect: 'manual' });
+        assert.equal(res.status, 302, 'auto-login should redirect home');
+        assert.equal(res.headers.get('location'), '/');
+        const cookie = sessionCookieOf(res);
+
+        const home = await fetch(`${base}/`, { redirect: 'manual', headers: { cookie } });
+        assert.equal(home.status, 200, 'session from auto-login must authenticate /');
+        const body = await home.text();
+        assert.match(body, /assets\/index-/, 'authenticated / must serve the SPA shell');
+    });
+});
+
+test('default mode: POST /api/users/oauth/providers answers for anonymous clients', { skip: SKIP_NO_SPA }, async () => {
+    // LoginGate renders OAuth buttons from this endpoint — it must be reachable
+    // pre-auth (it is mounted ahead of the login gate). Test config enables no
+    // provider, so both flags must be false and LoginGate renders no buttons.
+    await withRealServer(async base => {
+        const tokenRes = await fetch(`${base}/csrf-token`);
+        const { token } = await tokenRes.json();
+        const cookie = tokenRes.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+        const res = await fetch(`${base}/api/users/oauth/providers`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': token, cookie },
+            body: '{}',
+        });
+        assert.equal(res.status, 200);
+        const body = await res.json();
+        assert.deepEqual(body.providers, { github: false, discord: false });
+    });
+});
