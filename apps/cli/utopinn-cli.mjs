@@ -2684,6 +2684,43 @@ function printScriptError(error) {
     if (error.hint) console.error(`\x1b[2m${String(error.hint).trim()}\x1b[0m`);
 }
 
+/** 挂起回执 → CLI 兑现值(/input /popup /buttons 三态,服务端 script-runs
+ *  语义:input→string,popup→1/0,buttons→code[](显示下标+1=code-1)。
+ *  逃生口:`!c` 取消 / `!a` 杀 run;非 TTY 吃管道行,EOF/无效输入=取消。 */
+async function cliAwaitingReply(a) {
+    const kind = a?.kind;
+    if (kind === 'input') {
+        const line = await promptLine(`\x1b[36m[input]\x1b[0m ${a.prompt ?? ''} (!c 取消/!a 中止): `);
+        const v = line.trim();
+        if (v === '!a') return { action: 'abort' };
+        if (v === '!c') return { action: 'cancel' };
+        return { action: 'submit', value: line };
+    }
+    if (kind === 'popup') {
+        const line = await promptLine(`\x1b[36m[popup]\x1b[0m ${a.text ?? ''} [y 确认/n 取消/!a 中止]: `);
+        const v = line.trim().toLowerCase();
+        if (v === '!a') return { action: 'abort' };
+        if (v === '!c' || v === 'n' || v === 'no') return { action: 'submit', value: 0 };
+        return { action: 'submit', value: 1 };
+    }
+    if (kind === 'buttons') {
+        const btns = Array.isArray(a.buttons) ? a.buttons : [];
+        btns.forEach((b, i) => console.log(`  ${i + 1}) ${b.text}${b.tooltip ? ` — ${b.tooltip}` : ''}`));
+        const line = await promptLine(`\x1b[36m[buttons]\x1b[0m ${a.text ?? ''} 选号${a.multiple ? '(逗号多选)' : ''}/!c 取消/!a 中止: `);
+        const v = line.trim().toLowerCase();
+        if (v === '!a') return { action: 'abort' };
+        if (v === '!c') return { action: 'cancel' };
+        const codes = (a.multiple ? v.split(/[,\s]+/) : [v])
+            .map((x) => parseInt(x, 10))
+            .filter((n) => Number.isInteger(n) && n >= 1 && n <= btns.length)
+            .map((n) => n + 1); // 显示 1-based → code(0/1 留给取消/确认位)
+        if (!codes.length) return { action: 'cancel' };
+        return { action: 'submit', value: codes };
+    }
+    /* 未知 kind —— 不编造答案,cancel 让脚本走取消支。 */
+    return { action: 'cancel' };
+}
+
 async function cmdScript() {
     const sub = String(positional[1] ?? '');
     // ── script commands:注册表读面(GET /script/commands)──
@@ -2717,13 +2754,29 @@ async function cmdScript() {
         });
     }
     const c = needCtx() ?? {};
-    const { data, status } = await req('POST', '/api/utopinn/script/run', {
+    let { data, status } = await req('POST', '/api/utopinn/script/run', {
         script,
         ...(c.charDir ? { charDir: c.charDir } : {}),
         ...(c.chatName ? { chatName: c.chatName } : {}),
     }, { allowFail: true });
-    if (status >= 400 && !data?.pipe && data?.ops === undefined) {
+    if (status >= 400 && !data?.pipe && data?.ops === undefined && !data?.awaiting) {
         return void fail('server', `script run 失败:${data?.error ?? status}`, { status });
+    }
+    /* 阻塞交互回执环(/input /popup /buttons 挂起 → awaiting):
+       逐题问 → /script/interact 兑现 → 可能再 awaiting 直至终态。
+       旧版把它当终态打印 → 服务端计时器按取消兑现,用户永不可见。
+       --json 直透 awaiting 回执(机器调用方自决),不进交互环。 */
+    while (!JSON_MODE && data?.awaiting) {
+        const a = data.awaiting;
+        const reply = await cliAwaitingReply(a);
+        ({ data, status } = await req('POST', '/api/utopinn/script/interact', {
+            runId: a.runId, action: reply.action, value: reply.value,
+        }, { allowFail: true }));
+        if (status === 404) {
+            console.log(`\x1b[31mscript run ${a.runId} 已过期/不存在 —— 交互链中断\x1b[0m`);
+            exitCode = Math.max(exitCode, 1);
+            break;
+        }
     }
     if (JSON_MODE) {
         out(data);
