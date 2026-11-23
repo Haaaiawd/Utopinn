@@ -44,3 +44,5 @@ plugins:
     core: true
   - id: utopinn-regex
     module: ./plugins/utopinn-regex.js
+  - id: utopinn-izumi
+    module: ./plugins/utopinn-izumi.js

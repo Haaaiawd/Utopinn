@@ -76,6 +76,10 @@ const BUILTIN_CONTRIB = {
         { slot: 'panel.type', contribution: { type: 'notes', icon: 'note', wired: true, category: 'system', desc: 'panel.desc.notes' } },
         { slot: 'panel.type', contribution: { type: 'preset', icon: 'sliders', wired: true, category: 'system', desc: 'panel.desc.preset' } },
     ],
+    // izumi=utopinn-izumi /state|/put 面(IzumiEdit 信息库查看/开关)。
+    'utopinn-izumi': [
+        { slot: 'panel.type', contribution: { type: 'izumi', icon: 'brain', wired: true, category: 'system', desc: 'panel.desc.izumi' } },
+    ],
 };
 
 /** contribution 必须能上线:JSON round-trip 掉函数/undefined/循环引用。 */

@@ -6,9 +6,23 @@ import { applyJsonPatch } from './json-patch.js';
 
 export class ChatRepo {
     // Milliseconds, matching FsEngine's stat.mtimeMs reads and the SQL engines' Date.now() writes.
-    constructor({ engine, now = () => Date.now() }) {
+    // afterWrite: [(tx, key, body, {method}) => Promise] —— 楼层面写后观察缝,
+    // 在同一事务内随 putResource 之后跑(装配权在 storage/index.js;IzumiEdit
+    // 解释器是首个消费方)。观察项异常不外抛 —— 旁路增强不许连坐持久化。
+    constructor({ engine, now = () => Date.now(), afterWrite = [] }) {
         this._engine = engine;
         this._now = now;
+        this._afterWrite = Array.isArray(afterWrite) ? afterWrite : [];
+    }
+
+    async _runAfterWrite(tx, key, body, method) {
+        for (const hook of this._afterWrite) {
+            try {
+                await hook(tx, key, body, { method });
+            } catch (error) {
+                console.warn(`[chat-repo] afterWrite hook (${method}) failed:`, error?.message ?? error);
+            }
+        }
     }
 
     async get(handle, charDir, name, { isGroup = false, groupId } = {}) {
@@ -45,6 +59,7 @@ export class ChatRepo {
                 updatedAt: now,
                 createdAt: existing?.createdAt ?? now,
             });
+            await this._runAfterWrite(tx, key, messages, 'save');
             return { integrity: newIntegrity };
         });
     }
@@ -72,6 +87,7 @@ export class ChatRepo {
                 updatedAt: now,
                 createdAt: now,
             });
+            await this._runAfterWrite(tx, key, messages, 'createIfAbsent');
             return { integrity: newIntegrity };
         });
     }
@@ -120,13 +136,15 @@ export class ChatRepo {
                 if (typeof gid === 'string' && gid.length > 0) seenGenIds.add(gid);
                 accepted.push(m);
             }
+            const nextBody = existing.body.concat(accepted);
             await tx.putResource(key, {
                 header: existing.header,
-                body: existing.body.concat(accepted),
+                body: nextBody,
                 integrity: newIntegrity,
                 updatedAt: now,
                 createdAt: existing.createdAt,
             });
+            await this._runAfterWrite(tx, key, nextBody, 'append');
             return { integrity: newIntegrity, accepted: accepted.length, dedupedGenIds };
         });
     }
@@ -157,6 +175,7 @@ export class ChatRepo {
                 updatedAt: now,
                 createdAt: existing.createdAt,
             });
+            await this._runAfterWrite(tx, key, docAfter.body, 'patch');
             return { integrity: newIntegrity };
         });
     }
