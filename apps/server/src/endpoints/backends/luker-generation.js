@@ -10,6 +10,7 @@ import { getConfigValue } from '../../util.js';
 import { stripJsonlExt } from '../../storage/name-validation.js';
 import { getChatRepo } from '../../storage/index.js';
 import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
+import { consumeEphemeralScriptInjectsForJob } from '../../services/script-injects.js';
 import { emit as diagEmit } from '../../services/diag-bus.js';
 
 const generationJobs = new Map();
@@ -726,6 +727,10 @@ export function failGenerationJob(job, errorMessage = 'Unknown error occurred') 
     job.updatedAt = Date.now();
     job.finishedAt = Date.now();
     job.abortController = null;
+    // 失败终态同样消费 ephemeral inject —— 上游 hideStopButton 在
+    // 生成失败时照走;runner dispatch 错/client abort 都经本漏斗,
+    // 漏挂 = ephemeral 渗进下一次生成的 prompt。幂等,重复调用为 0。
+    consumeEphemeralScriptInjectsForJob(job);
     notifyJobStatus(job);
 }
 
@@ -1229,6 +1234,8 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
         job.persistenceInFlight = false;
         job.abortController = null;
         clearGenerationJobPersistenceTimer(job);
+        // Luker hideStopButton 同点:非 quiet 生成终态消费 ephemeral inject。
+        consumeEphemeralScriptInjectsForJob(job);
         notifyJobStatus(job);
         return false;
     }
@@ -1262,6 +1269,10 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
     job.persistenceInFlight = false;
     job.abortController = null;
     clearGenerationJobPersistenceTimer(job);
+    // Luker consumeEphemeralScriptInjectsForMainGeneration(script.js
+    // hideStopButton):生成产出已定稿 —— 上游的「生成结束」消费点,
+    // 与服务端 ack/persist 解耦;先于落楼删除与上游同序。
+    consumeEphemeralScriptInjectsForJob(job);
     job.persistenceTimer = setTimeout(() => {
         void persistGenerationJobIfUnacked(job);
     }, LUKER_GENERATION_ACK_GRACE_MS);
@@ -1317,6 +1328,7 @@ export function abortGenerationJobForInspector(job, reason = 'Aborted from reque
         try { job.abortController.abort(job.error); } catch { /* already aborted */ }
     }
     job.abortController = null;
+    consumeEphemeralScriptInjectsForJob(job);
     notifyJobStatus(job);
     return true;
 }
@@ -1354,6 +1366,7 @@ export function cancelGenerationJobForRequest(request, jobId, reason = 'Cancelle
         }
     }
     job.abortController = null;
+    consumeEphemeralScriptInjectsForJob(job);
     notifyJobStatus(job);
 
     return { ok: true, status: 200, cancelled: true, job };

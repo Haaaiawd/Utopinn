@@ -23,7 +23,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import { consumeEphemeralScriptInjects } from '@utopinn/core';
+import { consumeEphemeralScriptInjectsForChat } from './script-injects.js';
 import { getChatRepo } from '../storage/index.js';
 import { emit as diagEmit } from './diag-bus.js';
 import {
@@ -83,18 +83,17 @@ export async function runTriggerGeneration({
     const jobId = randomUUID();
     const thCtx = { handle, charDir, chatName };
     /**
-     * Luker consumeEphemeralScriptInjectsForMainGeneration(script.js
-     * hideStopButton 同点):非 quiet 生成生命周期结束 —— 终态/失败/停止
-     * 同口径 —— 清除 ephemeral inject。chatMetadata 为 buildGenerationContext
-     * 读到的活对象;assemble 早夭时回落新取。失败仅告警不掩生成结果。
+     * Luker consumeEphemeralScriptInjectsForMainGeneration:非 quiet 生成
+     * 生命周期终态清 ephemeral inject。
+     * - job 终态(awaiting_ack/failed/cancelled)由 luker-generation 的
+     *   consumeEphemeralScriptInjectsForJob 挂点统一消费,CAS 读-改-写,
+     *   不拿 assemble 时快照整图回写(并发写不丢/不复活)。
+     * - assemble 早夭发生在 job 派发前,挂点够不到 —— 这里直接清,
+     *   与上游「生成出错也走 hideStopButton」同口径。
      */
     const consumeEphemerals = async () => {
         try {
-            const md = chatMetadata
-                ?? await getChatRepo().get(handle, charDir, chatName).then(d => d?.header?.chat_metadata).catch(() => null);
-            if (md && consumeEphemeralScriptInjects(md) > 0) {
-                await getChatRepo().updateChatMetadata(handle, charDir, chatName, { script_injects: md.script_injects });
-            }
+            await consumeEphemeralScriptInjectsForChat({ handle, charDir, chatName });
         } catch (e) {
             console.warn('trigger-generate ephemeral injects cleanup failed:', e?.message);
         }
@@ -283,7 +282,6 @@ export async function runTriggerGeneration({
 
         const text = String(job.text ?? '');
         await emitTh(thCtx, 'generation_ended', [text]);
-        await consumeEphemerals();
         if (floorIndex !== null) {
             await emitTh(thCtx, type === 'swipe' ? 'message_swiped' : 'message_received', [floorIndex]);
             await emitTh(thCtx, 'chat_changed', [{ chat: chatName }]);
@@ -302,7 +300,6 @@ export async function runTriggerGeneration({
             ctx: { charDir, chatId: chatName, verb: type, diagId },
             data: { jobId },
         });
-        await consumeEphemerals();
         throw error;
     }
 }

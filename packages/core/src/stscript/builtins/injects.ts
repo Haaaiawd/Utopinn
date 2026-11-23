@@ -61,8 +61,11 @@ function injectsStore(env: StscriptEnv): Record<string, ScriptInjectRecord> {
     return md['script_injects'] as Record<string, ScriptInjectRecord>;
 }
 
-/** Luker injectCallback:value 非空 → upsert;空 → 删除。返回注入 id。 */
-export function injectCallback(args: NamedArguments, value: UnnamedArguments): string {
+/** Luker injectCallback:value 非空 → upsert;空 → 删除。返回注入 id。
+ *  persistMetadata 失败(CAS 撞档重试仍失败等)真抛 —— 上游
+ *  saveMetadataDebounced 是异步 fire-and-forget,但服务端 await 面
+ *  若吞掉写失败,后续脚本会按「已写入」的错觉继续走。 */
+export async function injectCallback(args: NamedArguments, value: UnnamedArguments): Promise<string> {
     const env = envOf(args);
     const id = String(args?.id ?? '') || Math.random().toString(36).substring(2);
     const ephemeral = isTrueBoolean(String(args?.ephemeral ?? ''));
@@ -93,7 +96,7 @@ export function injectCallback(args: NamedArguments, value: UnnamedArguments): s
         delete store[id];
         env.ops.push({ type: 'inject', id, inject: null });
     }
-    env.host.persistMetadata?.();
+    await env.host.persistMetadata?.();
 
     return id;
 }
@@ -118,7 +121,7 @@ export async function listInjectsCallback(args: NamedArguments): Promise<unknown
 }
 
 /** Luker flushInjectsCallback:id → 删单条;无参 → 全清。返回空串。 */
-export function flushInjectsCallback(args: NamedArguments, value: UnnamedArguments): string {
+export async function flushInjectsCallback(args: NamedArguments, value: UnnamedArguments): Promise<string> {
     const env = envOf(args);
     const md = env.macro.chatMetadata as Record<string, unknown>;
     if (!md['script_injects'] || typeof md['script_injects'] !== 'object') {
@@ -134,7 +137,7 @@ export function flushInjectsCallback(args: NamedArguments, value: UnnamedArgumen
         env.ops.push({ type: 'inject', id, inject: null });
         touched = true;
     }
-    if (touched) env.host.persistMetadata?.();
+    if (touched) await env.host.persistMetadata?.();
     return '';
 }
 

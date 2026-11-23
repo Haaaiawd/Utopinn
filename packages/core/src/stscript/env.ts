@@ -237,8 +237,12 @@ export interface StscriptHost {
      * 缺席时 /swipe 在越界位 revert + warn(不静默假装生成)。
      */
     generateSwipe?: (messageIndex: number) => Promise<boolean | void>;
-    /** saveMetadataDebounced(局部变量写库)。 */
-    persistMetadata?: () => void;
+    /**
+     * saveMetadataDebounced(局部变量写库)。
+     * 返回 Promise 时命令层可 await 拿真实成败(/inject 族写失败必须
+     * 向上抛成非零 receipt,不谎报成功);fire-and-forget 调用照旧。
+     */
+    persistMetadata?: () => void | Promise<void>;
     /** saveSettingsDebounced(全局变量写库)。 */
     persistSettings?: () => void;
     /** 常量:当前聊天角色 avatar(getNameAndAvatarForMessage 用)。 */

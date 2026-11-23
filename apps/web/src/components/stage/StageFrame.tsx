@@ -1734,7 +1734,40 @@ export function StageFrame({ children }: { children: ReactNode }) {
                    `/<cmd> <填充文本>` 怪串,顺手清掉。 */
                 if (text) { setDraft(text); setPendingCmd(null); }
             }
-            await reload();
+            /* 会话生命周期回执(/newchat 的 go、/delchat /closechat 的
+               close-chat):服务端只发 op 不导航 —— StageFrame 换位。
+               go:刷新列表后选中目标;/go 命令同复用(带 charDir/chatName
+               时选中,缺字段按上游语义忽略)。
+               close-chat:当前会话可能已被服务端删掉(/delchat)——先进
+               missing 名单防 404 兜底又选回,再落下一可用会话或空态,
+               绝不 reload 已删目标。
+               sRef 读最新壳态(与 404 兜底同法);导航后跳过尾部
+               reload —— 它闭包钉的是旧 s.chat,会把已删/旧会话楼层
+               灌进新选中视图;会话切换 effect 自己拉新楼层。 */
+            let navigated = false;
+            for (const raw of res.ops ?? []) {
+                const op = (raw && typeof raw === 'object') ? raw as { type?: string; kind?: string; charDir?: string; chatName?: string } : null;
+                if (!op) continue;
+                const sh = sRef.current;
+                if (op.type === 'go') {
+                    if (typeof op.charDir === 'string' && op.charDir && typeof op.chatName === 'string' && op.chatName) {
+                        await sh.refreshChats();
+                        sh.selectChat(`${op.charDir}/${op.chatName}`);
+                        navigated = true;
+                    }
+                } else if (op.type === 'custom' && op.kind === 'close-chat' && !chat.groupId) {
+                    const curKey = `${chat.charDir}/${chat.chatName}`;
+                    missingChatsRef.current.add(curKey);
+                    await sh.refreshChats();
+                    const next = sh.chats.find((c) => {
+                        const k = chatKeyOf(c);
+                        return k !== curKey && !k.startsWith('group/') && !missingChatsRef.current.has(k);
+                    });
+                    sh.selectChat(next?.id ?? '');
+                    navigated = true;
+                }
+            }
+            if (!navigated) await reload();
             void refreshMvu();
         } catch (e) {
             /* 挂起中被打断(interact 404/网络)→ 卸弹层,resolve 已随
@@ -2602,6 +2635,8 @@ interface ScriptRunRes {
     notifications?: { severity?: string; text?: string }[];
     popups?: unknown[]; inputs?: unknown[];
     awaiting?: ScriptAwaiting | null;
+    /** 命令副作用回执(go/close-chat 等导航类也在此)。 */
+    ops?: unknown[];
 }
 
 /** 服务端 awaiting 回执(script-runs.awaitingOf 展开 payload)。 */

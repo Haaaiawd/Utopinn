@@ -402,3 +402,58 @@ test('/closechat emits close-chat op without seam', async () => {
     assert.equal(out.isError, false);
     assert.deepEqual(out.ops.at(-1), { type: 'custom', kind: 'close-chat' });
 });
+
+// ---------------------------------------------------------------------------
+// PR#28 返修回归 — 写失败真回执 / trimToStartSentence 修正 / ReDoS 护栏
+// ---------------------------------------------------------------------------
+
+test('/inject persistMetadata 拒绝 → isError 如实回执(不谎报成功)', async () => {
+    const { env } = makeEnv({ host: { persistMetadata: () => Promise.reject(new Error('disk full')) } });
+    const out = await runStscript(env, '/inject id=x hi');
+    assert.equal(out.isError, true);
+    assert.match(out.errorMessage, /disk full/);
+    // inject op 回执仍在(命令语义本身),失败由 isError 通道如实上报
+    assert.ok(out.ops.some((o) => o.type === 'inject' && o.id === 'x'));
+});
+
+test('/trimstart 句号后无空格不再吃首字母(one.two → two)', async () => {
+    const { env } = makeEnv();
+    assert.equal((await runStscript(env, '/trimstart one.two')).result, 'two');
+    assert.equal((await runStscript(env, '/trimstart one. two')).result, 'two');
+    assert.equal((await runStscript(env, '/trimstart hi')).result, 'hi');
+    // 上游口径:首个句界 index>0 才截 —— '.lead' 原样返回
+    assert.equal((await runStscript(env, '/trimstart .lead')).result, '.lead');
+});
+
+test('regex safety:嵌套量词组与叠量词跨 /test /match /replace 全拒', async () => {
+    const { env } = makeEnv();
+    for (const script of [
+        '/test pattern=/(\\d+)+x/ 123',
+        '/match pattern=/(a+)*/ abc',
+        '/replace mode=regex pattern=/(x?)*y/ replacer=z abc',
+        '/test pattern=/a++b/ aab',
+    ]) {
+        const out = await runStscript(env, script);
+        assert.equal(out.isError, true, script);
+        assert.match(out.errorMessage, /regular expression/i);
+    }
+});
+
+test('regex safety:合法形态不误伤(懒量词/字符类/转义/交替组/范围量词)', async () => {
+    const { env } = makeEnv();
+    assert.equal((await runStscript(env, '/test pattern=/a+?/ aaa')).result, 'true');
+    assert.equal((await runStscript(env, '/test pattern=/[\\d+*]+/ 1+')).result, 'true');
+    assert.equal((await runStscript(env, '/test pattern=/a\\+b/ a+b')).result, 'true');
+    assert.equal((await runStscript(env, '/test pattern=/x{2,4}/ axxb')).result, 'true');
+    // 组内无量词的 (ab)+ 合法;(| 本身是管道符,参数里不可表达,不是护栏的活)
+    const m = await runStscript(env, '/match pattern=/(ab)+/ xabab');
+    assert.equal(m.isError, false);
+    assert.equal(JSON.parse(m.result)[0], 'abab');
+});
+
+test('regex safety:pattern 长度超上限被拒', async () => {
+    const { env } = makeEnv();
+    const out = await runStscript(env, '/test pattern=/' + 'a'.repeat(1001) + '/ x');
+    assert.equal(out.isError, true);
+    assert.match(out.errorMessage, /safety limit/);
+});

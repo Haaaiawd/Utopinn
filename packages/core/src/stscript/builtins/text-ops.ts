@@ -65,7 +65,9 @@ export function trimToEndSentence(input: string): string {
     return characters.slice(0, last + 1).join('').trimEnd();
 }
 
-/** trimToStartSentence:截到第一个完整句之后(.!?\n 首个句界)。 */
+/** trimToStartSentence:截到第一个完整句之后(.!?\n 首个句界)。
+ *  标点分支收 substring(first+1).trimStart() —— 上游 first+2 在
+ *  句号后无空格时('one.two')会多吃掉首字母('wo'),有意修正。 */
 export function trimToStartSentence(input: string): string {
     if (!input) return '';
     const p1 = input.indexOf('.');
@@ -79,9 +81,52 @@ export function trimToStartSentence(input: string): string {
     if (p4 > 0 && (first < 0 || p4 < first)) { first = p4; skip1 = true; }
     if (first > 0) {
         if (skip1) return input.substring(first + 1);
-        return input.substring(first + 2);
+        return input.substring(first + 1).trimStart();
     }
     return input;
+}
+
+// ---------------------------------------------------------------------------
+// ReDoS 缓解 — /test /match /replace mode=regex 的 pattern+source 全部来自
+// 请求体,同步执行卡死事件环。仓内 redos.ts 是脚本事后暂停器(慢执行后
+// 暂停后续 run),挡不住首次灾难;这里做预防面:长度上限 + 嵌套量词
+// 启发式拒绝。是缓解不是完备防护(overlap 交替、超长回溯串等仍可漏)。
+// ---------------------------------------------------------------------------
+
+/** pattern 与 source 文本上限(字符)。 */
+export const STSCRIPT_REGEX_MAX_PATTERN_LEN = 1_000;
+export const STSCRIPT_REGEX_MAX_SOURCE_LEN = 512 * 1024;
+
+/**
+ * 嵌套量词启发式:(X量词)量词 — (a+)+、(a*)*、(a?){2}、(foo+)+ 等
+ * 经典灾难回溯形状。先看 pattern 的转义对/字符类,防 `\*`、`[+*]` 误报。
+ */
+const NESTED_QUANTIFIED_GROUP = /\([^)]*[*+?{][^)]*\)\s*[*+{]/;
+/** 量词直接叠量词:a++、a*+、a+{2}。懒量词 a+?/a*?/a?? 不算。 */
+const STACKED_QUANTIFIER = /[*+][*+{]/;
+
+function maskRegexForAnalysis(pattern: string): string {
+    return pattern
+        .replace(/\\[\s\S]/g, '')      // 转义对(\* \+ \d \[ \] …)
+        .replace(/\[[^\]]*\]/g, '');   // 字符类字面量
+}
+
+/**
+ * 用户可控正则输入护栏。throw = 命令失败回执(isError)。
+ * @param pattern pattern= 参数原文(含 /flags 包裹)
+ * @param source 被匹配的文本
+ */
+export function assertSafeRegexArgs(pattern: string, source: string): void {
+    if (pattern.length > STSCRIPT_REGEX_MAX_PATTERN_LEN) {
+        throw new Error(`Regular expression pattern exceeds the ${STSCRIPT_REGEX_MAX_PATTERN_LEN}-character safety limit.`);
+    }
+    if (source.length > STSCRIPT_REGEX_MAX_SOURCE_LEN) {
+        throw new Error(`Text exceeds the ${STSCRIPT_REGEX_MAX_SOURCE_LEN}-character safety limit for regular expression operations.`);
+    }
+    const masked = maskRegexForAnalysis(pattern);
+    if (NESTED_QUANTIFIED_GROUP.test(masked) || STACKED_QUANTIFIER.test(masked)) {
+        throw new Error('Potentially dangerous regular expression rejected (nested/stacked quantifiers — ReDoS mitigation, not a complete protection).');
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -131,6 +176,7 @@ export function replaceCallback(args: NamedArguments, text: UnnamedArguments): s
         case 'literal':
             return src.replaceAll(String(pattern), replacer);
         case 'regex': {
+            assertSafeRegexArgs(String(pattern), src);
             const re = regexFromString(String(pattern));
             if (!re) throw new Error(`The value of 'pattern' argument is not a valid regular expression.`);
             return src.replace(re, replacer);
@@ -145,9 +191,11 @@ export function testCallback(args: NamedArguments, text: UnnamedArguments): stri
     if (pattern === undefined || pattern === null || String(pattern) === '') {
         throw new Error(`Argument of 'pattern=' cannot be empty`);
     }
+    const src = unnamed(text);
+    assertSafeRegexArgs(String(pattern), src);
     const re = regexFromString(String(pattern));
     if (!re) throw new Error(`The value of 'pattern' argument is not a valid regular expression.`);
-    return JSON.stringify(re.test(unnamed(text)));
+    return JSON.stringify(re.test(src));
 }
 
 export function matchCallback(args: NamedArguments, text: UnnamedArguments): string {
@@ -155,9 +203,10 @@ export function matchCallback(args: NamedArguments, text: UnnamedArguments): str
     if (pattern === undefined || pattern === null || String(pattern) === '') {
         throw new Error(`Argument of 'pattern=' cannot be empty`);
     }
+    const src = unnamed(text);
+    assertSafeRegexArgs(String(pattern), src);
     const re = regexFromString(String(pattern));
     if (!re) throw new Error(`The value of 'pattern' argument is not a valid regular expression.`);
-    const src = unnamed(text);
     if (re.flags.includes('g')) {
         return JSON.stringify([...src.matchAll(re)]);
     }
