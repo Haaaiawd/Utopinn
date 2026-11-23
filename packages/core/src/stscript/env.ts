@@ -44,7 +44,29 @@ export type StscriptOp =
     | { type: 'note'; key: string; value: unknown }
     /** /go 会话跳转请求(客户端导航类 op receipt;服务端自身不切 ctx)。 */
     | { type: 'go'; target: string; charDir?: string; chatName?: string }
+    /** /inject 写面回执:chat_metadata.script_injects 条目 upsert/删除(inject=null)。 */
+    | { type: 'inject'; id: string; inject: ScriptInjectRecord | null }
     | { type: 'custom'; kind: string; data?: unknown };
+
+/**
+ * chat_metadata.script_injects 条目 —— ref/Luker injectCallback 落档形
+ * ({value,position,depth,scan,role,filter,ephemeral})。generate-context
+ * 读侧原样并入 extension_prompts(script_inject_* 键);filter 是闭包原文,
+ * 服务端组装不求值,仅持久化留档(shim 端预过滤)。
+ */
+export interface ScriptInjectRecord {
+    value: string;
+    /** extension_prompt_types 原值:NONE=-1 IN_PROMPT=0 IN_CHAT=1 BEFORE_PROMPT=2。 */
+    position: number;
+    depth: number;
+    scan: boolean;
+    /** extension_prompt_roles 原值:SYSTEM=0 USER=1 ASSISTANT=2。 */
+    role: number;
+    /** /inject filter= 闭包 rawText(无闭包 → null)。 */
+    filter: string | null;
+    /** Luker:非 quiet 生成终态后由 consumeEphemeralScriptInjects 清除。 */
+    ephemeral?: boolean;
+}
 
 /** /send /sendas /sys /comment 构造的消息形状(与 Luker message 对象一致)。 */
 export interface StscriptMessage {
@@ -215,8 +237,12 @@ export interface StscriptHost {
      * 缺席时 /swipe 在越界位 revert + warn(不静默假装生成)。
      */
     generateSwipe?: (messageIndex: number) => Promise<boolean | void>;
-    /** saveMetadataDebounced(局部变量写库)。 */
-    persistMetadata?: () => void;
+    /**
+     * saveMetadataDebounced(局部变量写库)。
+     * 返回 Promise 时命令层可 await 拿真实成败(/inject 族写失败必须
+     * 向上抛成非零 receipt,不谎报成功);fire-and-forget 调用照旧。
+     */
+    persistMetadata?: () => void | Promise<void>;
     /** saveSettingsDebounced(全局变量写库)。 */
     persistSettings?: () => void;
     /** 常量:当前聊天角色 avatar(getNameAndAvatarForMessage 用)。 */
@@ -307,6 +333,29 @@ export interface StscriptHost {
      * (labels 下标 +2;取消/dismiss/多选空选 = [])。
      */
     requestButtons?: (options: StscriptButtonsOptions) => Promise<number[]>;
+
+    // -------------------------------------------------------------------
+    // 会话生命周期 / 设备面 seams(TASK-064 批三)
+    // -------------------------------------------------------------------
+
+    /**
+     * /newchat → doNewChat 服务端面:为当前角色建空会话
+     * (`<name2> - <humanizedDateTime>` 命名),deleteCurrent=true 时
+     * 先删当前会话(上游同语义)。返回新会话定位(命令层发 go op)。
+     * 未绑 → 命令显式报错。
+     */
+    newChat?: (opts: { deleteCurrent: boolean }) => Promise<{ name: string; charDir?: string; chatName?: string } | null> | { name: string; charDir?: string; chatName?: string } | null;
+    /**
+     * /delchat → 删除当前会话文件(上游 UI 删除路径的服务端面)。
+     * 未绑 → 命令显式报错;返回 false → 命令 error notify。
+     */
+    deleteChat?: () => Promise<boolean> | boolean;
+    /**
+     * isMobile() 等价物 —— 引擎执行环境的移动设备判定。服务端宿主缺省
+     * 不绑 → /is-mobile 恒 'false'(服务端非移动设备;薄客户端判定应在
+     * 客户端侧求值,移动端宿主可绑 true)。
+     */
+    isMobile?: boolean;
 }
 
 /** 每次脚本执行的注入环境;closures 经 args._env / parser.env 传递。 */

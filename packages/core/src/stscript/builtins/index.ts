@@ -12,6 +12,9 @@ import { registerDialogCommands } from './dialogs.js';
 import { registerWorldCommands } from './world-commands.js';
 import { registerSessionCommands } from './session.js';
 import { registerSystemCommands } from './system.js';
+import { registerInjectCommands } from './injects.js';
+import { registerTextOpsCommands } from './text-ops.js';
+import { registerPowerUserCommands } from './power-user.js';
 
 let registered = false;
 
@@ -27,6 +30,11 @@ export function registerBuiltinCommands(): void {
     registerWorldCommands();
     registerSessionCommands();
     registerSystemCommands();
+    // TASK-064 批三:inject×3(CardApp 耦合读侧的写侧)、文本/匹配工具、
+    // power_user 写面(/newchat /delchat /closechat 挂在 session.ts)
+    registerInjectCommands();
+    registerTextOpsCommands();
+    registerPowerUserCommands();
 }
 
 /** 已注册的 builtin 名清单(测试/白名单审计用)。 */
@@ -36,4 +44,6 @@ export function builtinCommandNames(): string[] {
 
 export { registerMessageCommands } from './messages.js';
 export { registerVariableCommands } from './variables.js';
+export { registerInjectCommands, consumeEphemeralScriptInjects } from './injects.js';
+export { trimToStartSentence, trimToEndSentence } from './text-ops.js';
 export { doReturn, returnEnumList } from './common.js';

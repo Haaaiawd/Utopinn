@@ -81,7 +81,7 @@ export async function findQuickReplyScript(directories, label) {
 
 /**
  * 组装服务端 STscript env。
- * @returns {Promise<{env, macro, settings, chat, chatMetadata, card, sinks:{notifications,popups,inputs}}|{error,status}>}
+ * @returns {Promise<{env, macro, settings, chat, chatMetadata, card, sinks:{notifications,popups,inputs}, refreshChatState:()=>Promise<void>}|{error,status}>}
  */
 export async function buildStscriptEnv({ handle, directories, charDir, chatName, userName }) {
     const settings = (await getSettingsRepo().get(handle)) ?? {};
@@ -103,6 +103,10 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
     let chatIntegrity;
     /** persistMetadata(void seam)的在飞写串行链 —— patchChat 先 drain。 */
     let metadataFlush = Promise.resolve();
+    /** 最近已知已持久化的 chat_metadata 快照 —— CAS 撞档时的 3-way 合并基线
+     *  (脚本改动 vs 外部改动 key 级并)。env 生命周期内由本文件全部
+     *  metadata 写路维护,初始 = 装载时的盘上状态。 */
+    let metadataBase = {};
     if (charDir && chatName) {
         const doc = await getChatRepo().get(handle, charDir, chatName);
         if (!doc) {
@@ -111,6 +115,7 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
         chat = Array.isArray(doc.body) ? doc.body : [];
         chatMetadata = doc.header?.chat_metadata ?? {};
         chatIntegrity = doc.integrity;
+        metadataBase = structuredClone(chatMetadata);
     }
 
     const personas = powerUser.personas ?? {};
@@ -131,6 +136,31 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
         instruct: powerUser.instruct,
         contextTemplate: powerUser.context,
         mainApi: settings?.main_api,
+    };
+
+    /**
+     * 生成 commit 后把 env 活态对齐到盘上最新 revision:
+     * - chatIntegrity / metadataBase / chatMetadata(ephemeral 清理、
+     *   生成期 setvar、WI timed effects 等外部写都已在盘上)
+     * - chat 楼层数组(落库回复楼 + 外部追加;保数组引用原地替换)
+     * 不调它,生成后写面(/inject /setvar /del)会拿生成前的 CAS 游标
+     * 与陈旧视图 —— 撞档误报 + 读不到已删条目。drain metadataFlush
+     * 先行,在飞写不丢;生成自身落库失败也不妨碍 resync。
+     */
+    const refreshChatState = async () => {
+        if (!charDir || !chatName) return;
+        await metadataFlush.catch(() => {});
+        const doc = await getChatRepo().get(handle, charDir, chatName);
+        if (!doc) return;
+        chatIntegrity = doc.integrity;
+        const live = doc.header?.chat_metadata ?? {};
+        for (const k of Object.keys(chatMetadata)) {
+            if (!(k in live)) delete chatMetadata[k];
+        }
+        Object.assign(chatMetadata, live);
+        metadataBase = structuredClone(live);
+        const body = Array.isArray(doc.body) ? doc.body : [];
+        chat.splice(0, chat.length, ...body);
     };
 
     const env = createStscriptEnv(macro, {
@@ -164,15 +194,48 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             const r = await getChatRepo().updateChatMetadata(handle, charDir, chatName, chatMetadata, chatIntegrity);
             chatIntegrity = r?.integrity ?? chatIntegrity;
         },
+        // updateChatMetadata CAS 撞档 → 3-way 合并重试:base=最近已持久化
+        // 快照,live=盘上现状,ours=env 活对象。脚本改过/新增/删除的键
+        // 覆盖 live;脚本没动的键取 live(外部写不丢、脚本删不复活)。
+        // 键级粒度:同键内并发子字段改动不并(inject 场景由生成终态的
+        // refreshChatState 预同步兜底)。仍撞 → 抛给命令层,不谎报成功。
         persistMetadata: () => {
-            if (!charDir || !chatName) return;
-            // seam 类型是 fire-and-forget(void),但写必须串行:note/setvar 的
-            // 落库在飞时 patchChat 的 CAS 游标会拿到旧 integrity,把自己
-            // 误判成并发撞档。挂进 metadataFlush 链,patchChat 先 drain。
-            metadataFlush = metadataFlush.then(async () => {
-                const r = await getChatRepo().updateChatMetadata(handle, charDir, chatName, chatMetadata, chatIntegrity);
-                chatIntegrity = r?.integrity ?? chatIntegrity;
-            }).catch((e) => console.warn('stscript persistMetadata failed:', e?.message));
+            if (!charDir || !chatName) return Promise.resolve();
+            const write = metadataFlush.then(async () => {
+                const sameJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+                try {
+                    const r = await getChatRepo().updateChatMetadata(handle, charDir, chatName, chatMetadata, chatIntegrity);
+                    chatIntegrity = r?.integrity ?? chatIntegrity;
+                    metadataBase = structuredClone(chatMetadata);
+                } catch (e) {
+                    if (e?.name !== 'ConflictError') throw e;
+                    const doc = await getChatRepo().get(handle, charDir, chatName);
+                    if (!doc) throw e;
+                    const live = doc.header?.chat_metadata ?? {};
+                    const merged = { ...live };
+                    for (const k of Object.keys(chatMetadata)) {
+                        if (!sameJson(chatMetadata[k], metadataBase?.[k])) {
+                            merged[k] = chatMetadata[k];
+                        }
+                    }
+                    for (const k of Object.keys(metadataBase ?? {})) {
+                        if (!(k in chatMetadata)) delete merged[k];
+                    }
+                    const r2 = await getChatRepo().updateChatMetadata(handle, charDir, chatName, merged, doc.integrity);
+                    chatIntegrity = r2?.integrity ?? chatIntegrity;
+                    for (const k of Object.keys(chatMetadata)) {
+                        if (!(k in merged)) delete chatMetadata[k];
+                    }
+                    Object.assign(chatMetadata, merged);
+                    metadataBase = structuredClone(merged);
+                }
+            });
+            // 链不断(一次失败不毒化后续 persist/patchChat),但把真错误经
+            // 返回值交给调用命令 —— await persistMetadata?.() 的写面
+            // (/inject 族)才能收到非零 receipt;fire-and-forget 调用
+            // 依旧靠链上 catch 落 warn。
+            metadataFlush = write.catch((e) => console.warn('stscript persistMetadata failed:', e?.message));
+            return write;
         },
         // TASK-064 楼层写面:/del /cut /swipe /delswipe /addswipe /hide
         // /unhide /swap /message-* 的 JSON-Patch 落点 —— 与 PATCH
@@ -222,6 +285,51 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
                 return { charDir: targetCharDir, chatName: chatKey, name: character.name };
             }
             return null;
+        },
+        // /newchat → doNewChat 服务端面:`<name2> - <humanizedDateTime>` 命名
+        // + buildGreetingFloor 开场播种(上游新会话自带卡 first_mes 楼,
+        // 空 body 会让客户端开进无问候会话 —— 不合上游)。
+        // deleteCurrent=true → 新会话落成后删当前(上游 deleteCurrentChat 同语义)。
+        newChat: async ({ deleteCurrent }) => {
+            if (!charDir) return null;
+            const { humanizedDateTime } = await import('../util.js');
+            const { buildGreetingFloor } = await import('./greeting-seed.js');
+            const newName = `${name2} - ${humanizedDateTime()}`;
+            const newMetadata = {};
+            const greeting = buildGreetingFloor({
+                card,
+                name1,
+                chatMetadata: newMetadata,
+                chatName: newName,
+                globalVariables: extVars.global,
+            });
+            const body = greeting ? [greeting] : [];
+            // header 惯例对齐 Luker chats.js/本文件 appendMessage 写面:
+            // user_name/character_name 是 ST 遗留 vestigial 字段,一律 'unused'。
+            const header = { user_name: 'unused', character_name: 'unused', chat_metadata: newMetadata };
+            try {
+                await getChatRepo().createIfAbsent(handle, charDir, newName, header, body);
+                if (deleteCurrent && chatName) {
+                    await getChatRepo().delete(handle, charDir, chatName).catch((e) => {
+                        console.warn('stscript newChat deleteCurrent failed:', e?.message);
+                    });
+                }
+                return { name: newName, charDir, chatName: newName };
+            } catch (error) {
+                console.warn('stscript newChat failed:', error?.message ?? error);
+                return null;
+            }
+        },
+        // /delchat → 上游 UI 删除路径的服务端面:删当前绑定会话文件。
+        deleteChat: async () => {
+            if (!charDir || !chatName) return false;
+            try {
+                await getChatRepo().delete(handle, charDir, chatName);
+                return true;
+            } catch (error) {
+                console.warn('stscript deleteChat failed:', error?.message ?? error);
+                return false;
+            }
         },
         persistSettings: () => {
             void getSettingsRepo().save(handle, settings)
@@ -276,6 +384,9 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             } catch (error) {
                 sinks.notifications.push({ severity: 'error', text: `/gen failed: ${error?.message ?? error}` });
                 return '';
+            } finally {
+                // quiet 组装期 setvar 宏也可写 metadata —— CAS 游标同步照做。
+                await refreshChatState().catch(() => {});
             }
         },
         // /trigger → Generate('normal'):真派发 + 服务端落楼层 + TH 事件信箱。
@@ -301,6 +412,8 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             } catch (error) {
                 sinks.notifications.push({ severity: 'error', text: `/trigger failed: ${error?.message ?? error}` });
                 return '';
+            } finally {
+                await refreshChatState().catch(() => {});
             }
         },
         // /swipe 越界(OVERSWIPE_REGENERATE)→ Generate('swipe'):与
@@ -321,6 +434,8 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             } catch (error) {
                 sinks.notifications.push({ severity: 'error', text: `/swipe regen failed: ${error?.message ?? error}` });
                 return false;
+            } finally {
+                await refreshChatState().catch(() => {});
             }
         },
         // ── WI 族 seams(TASK-064 批二)────────────────────────────────
@@ -485,5 +600,8 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
         },
     });
 
-    return { env, macro, settings, chat, chatMetadata, card, sinks };
+    // refreshChatState 一并透出:生成 commit 后对齐 env 活态与盘上
+    // 最新 revision 的原语 —— 生成链 finally 调,调用方在自定义
+    // commit 路径(如测试/外部生成写面)后同样可显式 resync。
+    return { env, macro, settings, chat, chatMetadata, card, sinks, refreshChatState };
 }
