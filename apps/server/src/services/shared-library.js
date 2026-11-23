@@ -1,40 +1,54 @@
 /**
- * shared-library —— 实例级共享卡池(形态 A:只读池 + copy-on-write)。
+ * shared-library — instance-level shared character pool (form A:
+ * read-only pool + copy-on-write).
  *
- * `<dataRoot>/_library/characters/` 放共享卡(PNG/webp/JSON,单文件卡片,
- * 平铺不递归)。定位与 `_shared/secrets.json` 同风格 —— 在任何 user root
- * 之外,天然不进 per-user backup / settings doc / sync 面。
+ * `<dataRoot>/_library/characters/` holds shared cards (PNG/webp/JSON,
+ * single-file cards, flat layout — no recursion). Same placement style as
+ * `_shared/secrets.json`: outside every user root, so it can never leak
+ * into per-user backup / settings doc / sync surfaces.
  *
- * 语义(调研定案):
- *   - 读面合并:卡列表/详情/生成/状态侧车读「用户私有目录 ∪ _library」,
- *     同名(同 charDir stem)冲突时私有优先 —— 私有卡天然遮蔽共享卡。
- *   - 编辑即物化:对共享卡的写(PATCH/regex 写/显式 install)先把整卡
- *     拷进用户 characters 目录,之后按私有卡走;绝不原地改共享档。
- *   - 红线:聊天/变量/secrets/jobs/CardApp 运行时永远 per-user;写锚
- *     (resolveCharacterWriteAnchor)对共享卡返回用户目录合成路径,任何
- *     侧车/状态写都落不到 _library。
+ * Semantics (decided in the research writeup):
+ *   - Merged reads: card list/detail/generation/state-sidecar reads see
+ *     "user-private dir ∪ _library"; on same-stem conflicts the private
+ *     card wins — private cards naturally shadow shared ones.
+ *   - Edit-to-materialize: any write against a shared card (PATCH /
+ *     scoped regex write / explicit install) first copies the whole card
+ *     into the user's characters dir, then proceeds as a private card;
+ *     shared files are never modified in place.
+ *   - Red lines: chats/variables/secrets/jobs/CardApp runtime state stay
+ *     per-user forever; the write anchor (resolveCharacterWriteAnchor)
+ *     returns a synthesized user-dir path for shared cards so no sidecar
+ *     or state write can ever land inside _library.
  *
- * 守卫:charDir 穿越校验(./../路径分隔/NUL)与 _library 保留名 —
- *   `_library` 不许作为 charDir 被寻址(大小写不敏感,池内同名卡文件也
- *   不可见)。
+ * Guards: charDir traversal checks ('.', '..', separators, NUL), the
+ * `_library` reserved stem (case-insensitive — a pool file named
+ * `_library.*` is not addressable either), symlink confinement
+ * (realpath must stay inside the pool root), and `.state.*.json`
+ * sidecar-name exclusion (sidecars are never cards).
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { read as readCharacterCard } from '../character-card-parser.js';
-import { NotFoundError } from '../storage/errors.js';
-import { readCharacterStateSidecar, resolveCharacterFilePath } from './character-state.js';
+import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
+import {
+    CHARACTER_FILE_EXTS,
+    isCharacterStateSidecarFileName,
+    readCharacterStateSidecar,
+    resolveCharacterFilePath,
+} from './character-state.js';
 
-/** 共享池根目录名(实例级,非 per-user)。 */
+/** Shared pool root directory name (instance-level, not per-user). */
 export const SHARED_LIBRARY_DIRNAME = '_library';
-/** 共享卡子目录(预留未来 worlds/presets 同形池)。 */
+/** Shared card subdirectory (leaves room for worlds/presets pools later). */
 export const SHARED_CHARACTERS_SUBDIR = 'characters';
 
 /**
- * `<dataRoot>/_library/characters`。
- * DATA_ROOT 未就绪(纯单测)时由 directories.root(<dataRoot>/<handle>)
- * 反推 dataRoot;两者皆无 → null,共享层恒 miss(与 getSharedSecretsRoot 同策略)。
+ * `<dataRoot>/_library/characters`.
+ * When DATA_ROOT is unset (pure unit tests) it is derived from
+ * `directories.root` (`<dataRoot>/<handle>`); if neither exists → null and
+ * the shared layer always misses (same strategy as getSharedSecretsRoot).
  * @param {import('../users.js').UserDirectoryList} [directories]
  * @returns {string|null}
  */
@@ -45,9 +59,10 @@ export function getSharedCharactersDir(directories) {
 }
 
 /**
- * 共享池可用干名:基本形(非空/非 . ../无分隔 NUL)+ 保留名闸。
- * `_library` 作为 charDir 寻址恒拒 —— 防把池目录本身当卡读;大小写不敏感
- * 收住大小写异写绕闸(case-insensitive FS 上同文件)。
+ * Valid pool stem: basic shape (non-empty, not '.', '..', no separators or
+ * NUL) + reserved-name gate. `_library` can never be addressed as a
+ * charDir — that would address the pool dir itself; case-insensitive to
+ * catch case-variant bypasses on case-insensitive filesystems.
  */
 export function isSafeSharedStem(charDir) {
     const stem = String(charDir ?? '').trim();
@@ -56,55 +71,108 @@ export function isSafeSharedStem(charDir) {
 }
 
 /**
- * 共享池内卡文件寻址:stem 守卫 + .png/.webp/.json 探测序(与私有面同序)。
- * @returns {{filePath:string, fileName:string, ext:string}|null}
+ * Symlink confinement: resolve both paths through realpath and require the
+ * target to stay inside the base dir. Returns the canonical target path or
+ * null (missing file, escape attempt, or broken link). A symlink in the
+ * pool pointing outside would otherwise let read surfaces (static route,
+ * thumbnails, doc loaders) serve arbitrary filesystem content — CWE-59.
+ * Windows junctions resolve through realpath the same way.
+ * @param {string} dir base directory the target must stay under
+ * @param {string} candidate already-existence-checked absolute path
+ * @returns {string|null} canonical absolute path inside dir
+ */
+function confineRealPath(dir, candidate) {
+    try {
+        const realRoot = fs.realpathSync(dir);
+        const realTarget = fs.realpathSync(candidate);
+        if (realTarget === realRoot || realTarget.startsWith(realRoot + path.sep)) {
+            return realTarget;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Address a card file inside the shared pool: stem guard +
+ * .png/.webp/.json probe order (same as the private face), symlink
+ * confinement, and `.state.*.json` exclusion (handled inside
+ * resolveCharacterFilePath — sidecars are never cards).
+ * filePath is the canonical realpath; fileName/ext stay lexical so the
+ * reported stem matches what the user sees.
+ * @returns {{filePath:string, fileName:string, ext:string, size:number, mtimeMs:number}|null}
  */
 export function resolveSharedCharacterFile(directories, charDir) {
     const dir = getSharedCharactersDir(directories);
     if (!dir || !isSafeSharedStem(charDir)) return null;
-    const filePath = resolveCharacterFilePath(dir, charDir);
+    const lexical = resolveCharacterFilePath(dir, charDir);
+    if (!lexical) return null;
+    const filePath = confineRealPath(dir, lexical);
     if (!filePath) return null;
-    return { filePath, fileName: path.basename(filePath), ext: path.extname(filePath).toLowerCase() };
+    let stat;
+    try { stat = fs.statSync(filePath); } catch { stat = null; }
+    return {
+        filePath,
+        fileName: path.basename(lexical),
+        ext: path.extname(lexical).toLowerCase(),
+        size: stat?.size ?? 0,
+        mtimeMs: stat?.mtimeMs ?? 0,
+    };
 }
 
 /**
- * 合并寻址:私有 characters 优先(同名遮蔽),再共享池。
- * @returns {{filePath:string, fileName:string, ext:string, shared:boolean}|null}
+ * Merged addressing: private characters first (same-stem shadow), then the
+ * shared pool.
+ * @returns {{filePath:string, fileName:string, ext:string, size:number, mtimeMs:number, shared:boolean}|null}
  */
 export function resolveCharacterFileMerged(directories, charDir) {
     const privatePath = resolveCharacterFilePath(directories?.characters, charDir);
     if (privatePath) {
-        return { filePath: privatePath, fileName: path.basename(privatePath), ext: path.extname(privatePath).toLowerCase(), shared: false };
+        let stat;
+        try { stat = fs.statSync(privatePath); } catch { stat = null; }
+        return {
+            filePath: privatePath,
+            fileName: path.basename(privatePath),
+            ext: path.extname(privatePath).toLowerCase(),
+            size: stat?.size ?? 0,
+            mtimeMs: stat?.mtimeMs ?? 0,
+            shared: false,
+        };
     }
     const shared = resolveSharedCharacterFile(directories, charDir);
     return shared ? { ...shared, shared: true } : null;
 }
 
 /**
- * 共享池内任意文件的安全路径(thumbnail / 静态面兜底用)。
- * 文件名守卫同 resolveCharacterFilePath 的穿越闸:拒分隔/NUL/./..;
- * `_library` 干名同样拒(与 isSafeSharedStem 一致)。
- * @param {string} fileName 文件名(可带子目录,如 sprites 场景;v1 池平铺只喂单文件名)
- * @returns {string|null} 存在即绝对路径,否则 null
+ * Safe path for an arbitrary file inside the shared pool (fallback for
+ * thumbnails / the static characters route). Same traversal guards as
+ * resolveCharacterFilePath plus realpath confinement, so pool symlinks can
+ * never serve content outside the pool. `_library` stems are rejected the
+ * same as isSafeSharedStem.
+ * @param {string} fileName file name (may contain subdirs for future
+ *   layouts; v1 pool is flat so callers pass single file names)
+ * @returns {string|null} canonical absolute path if it exists in-pool
  */
 export function resolveSharedLibraryFilePath(directories, fileName) {
     const dir = getSharedCharactersDir(directories);
     if (!dir) return null;
     const name = String(fileName ?? '').trim();
     if (!name || name === '.' || name === '..' || /[\x00]/.test(name)) return null;
-    const filePath = path.join(dir, name);
-    const resolved = path.resolve(filePath);
-    if (resolved !== path.resolve(dir) && !resolved.startsWith(path.resolve(dir) + path.sep)) return null;
+    const resolved = path.resolve(path.join(dir, name));
+    const resolvedRoot = path.resolve(dir);
+    if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) return null;
     const stem = path.parse(name).name;
     if (stem.toLowerCase() === SHARED_LIBRARY_DIRNAME) return null;
-    return fs.existsSync(resolved) ? resolved : null;
+    if (!fs.existsSync(resolved)) return null;
+    return confineRealPath(dir, resolved);
 }
 
 /**
- * 单目录卡解析:<charDir>.png(或 .webp)优先,退回 <charDir>.json。
- * 与 utopinn-library loadCharacterDocDetailed 同一探测序 —— 那是本函数
- * 的私有目录特化。
- * @param {string} dir 卡目录绝对路径
+ * Single-directory card parse: `<charDir>.png` (or .webp) first, then
+ * `<charDir>.json`. Same probe order as utopinn-library's original
+ * loadCharacterDocDetailed — this is that logic parameterized by dir.
+ * @param {string} dir card directory absolute path
  * @param {string} charDir
  * @returns {Promise<{card: object|null, source: {kind:'image', filePath:string, ext:string}|{kind:'json', filePath:string}|null}>}
  */
@@ -116,7 +184,7 @@ export async function loadCharacterDocFromDir(dir, charDir) {
             const raw = await fs.promises.readFile(filePath);
             return { card: JSON.parse(readCharacterCard(raw)), source: { kind: 'image', filePath, ext } };
         } catch {
-            // 该扩展名不存在或不含卡数据 → 继续尝试下一个
+            // ext missing or file carries no card data → next candidate
         }
     }
     try {
@@ -129,8 +197,41 @@ export async function loadCharacterDocFromDir(dir, charDir) {
 }
 
 /**
- * 合并读卡:私有目录在场(任一卡扩展名文件)即私有源 —— 私有不可解析时
- * 也不落共享(同名遮蔽是文件级,不是「私有坏了借共享」)。
+ * Confined pool-dir card parse: same probe order as loadCharacterDocFromDir
+ * but every candidate must realpath inside the pool root — a pool symlink
+ * pointing outside must not be parsed and served as card content.
+ * @returns {Promise<{card: object|null, source: object|null}>}
+ */
+export async function loadSharedCharacterDoc(directories, charDir) {
+    const dir = getSharedCharactersDir(directories);
+    if (!dir || !isSafeSharedStem(charDir)) return { card: null, source: null };
+    for (const ext of ['.png', '.webp']) {
+        const lexical = path.join(dir, `${charDir}${ext}`);
+        const filePath = fs.existsSync(lexical) ? confineRealPath(dir, lexical) : null;
+        if (!filePath) continue;
+        try {
+            const raw = await fs.promises.readFile(filePath);
+            return { card: JSON.parse(readCharacterCard(raw)), source: { kind: 'image', filePath, ext } };
+        } catch {
+            // no card data → next candidate
+        }
+    }
+    const lexicalJson = path.join(dir, `${charDir}.json`);
+    const jsonPath = fs.existsSync(lexicalJson) ? confineRealPath(dir, lexicalJson) : null;
+    if (!jsonPath) return { card: null, source: null };
+    try {
+        const raw = await fs.promises.readFile(jsonPath, 'utf8');
+        return { card: JSON.parse(raw), source: { kind: 'json', filePath: jsonPath } };
+    } catch {
+        return { card: null, source: null };
+    }
+}
+
+/**
+ * Merged card read: any private card file present → private source (a
+ * private file that fails to parse does NOT fall back to shared — same-stem
+ * shadowing is file-level, not "borrow the shared copy when private is
+ * broken").
  * @returns {Promise<{card: object|null, source: object|null, shared: boolean}>}
  */
 export async function loadCharacterDocMerged(directories, charDir) {
@@ -140,62 +241,150 @@ export async function loadCharacterDocMerged(directories, charDir) {
     }
     if (!isSafeSharedStem(charDir)) return { card: null, source: null, shared: false };
     const libDir = getSharedCharactersDir(directories);
-    if (!libDir || !resolveCharacterFilePath(libDir, charDir)) {
+    if (!libDir || !resolveSharedCharacterFile(directories, charDir)) {
         return { card: null, source: null, shared: false };
     }
-    const doc = await loadCharacterDocFromDir(libDir, charDir);
+    const doc = await loadSharedCharacterDoc(directories, charDir);
     return { ...doc, shared: true };
 }
 
 /**
- * 物化:共享卡整档拷进用户 characters 目录(copy-on-write 落点)。
- *   - 目标干名只在「私有卡文件」层面避让(.png/.webp/.json 任一在场即撞);
- *     chats/<stem> 目录不挡 —— 那些会话本来就是这张卡聊出来的,物化后
- *     应继续挂在同 stem 下。
- *   - `<stem>.state.*.json` 发布侧车随迁(目标已存在不覆盖):物化后卡转
- *     私有,读面不再回落 _library,不迁会丢发布者随卡的初始态。
- *   - 扩展名保持源档(.webp 原样拷,不转码)。
- * @returns {Promise<{charDir:string, fileName:string, filePath:string, source:{filePath:string,fileName:string,ext:string}}>}
- * @throws {NotFoundError} 共享卡不存在
+ * Does the parsed object look like a character card? Materialization uses
+ * this as a publishable gate — a `.state.*.json` sidecar body, an empty
+ * object, or a bare cover PNG must never be materialized into the user's
+ * library as a "card".
+ */
+function isCharacterCardLike(card) {
+    if (!card || typeof card !== 'object' || Array.isArray(card)) return false;
+    if (card.data && typeof card.data === 'object' && !Array.isArray(card.data)) return true;
+    return typeof card.name === 'string'
+        || typeof card.description === 'string'
+        || typeof card.first_mes === 'string';
+}
+
+/**
+ * Estimated byte footprint of materializing `charDir`: all stem-sibling
+ * card files + matching `.state.*.json` publish sidecars. Callers run this
+ * before copy so quota enforcement sees the true projected growth.
+ * @returns {number} bytes (0 when nothing would be copied)
+ */
+export function estimateSharedMaterializeBytes(directories, charDir) {
+    const libDir = getSharedCharactersDir(directories);
+    if (!libDir || !isSafeSharedStem(charDir)) return 0;
+    let total = 0;
+    const addIfPresent = (fileName) => {
+        const lexical = path.join(libDir, fileName);
+        try { total += fs.statSync(lexical).size || 0; } catch { /* absent */ }
+    };
+    for (const ext of CHARACTER_FILE_EXTS) {
+        addIfPresent(`${charDir}${ext}`);
+    }
+    const prefix = `${charDir}.state.`;
+    let entries = [];
+    try { entries = fs.readdirSync(libDir); } catch { entries = []; }
+    for (const name of entries) {
+        if (name.startsWith(prefix) && name.endsWith('.json')) addIfPresent(name);
+    }
+    return total;
+}
+
+/**
+ * Materialize: copy the whole shared card into the user's characters dir
+ * (the copy-on-write landing point).
+ *   - All stem-sibling card files are copied (`Foo.png` may be a pure cover
+ *     image while `Foo.json` carries the card — copying only the resolved
+ *     .png would shadow the readable .json and produce an unreadable card).
+ *   - The target stem is only deconflicted at the *private card file*
+ *     level (any of .png/.webp/.json present = collision); chats/<stem>
+ *     does not block — those conversations already belong to this card
+ *     and should stay attached to the same stem after materialization.
+ *   - Every copied source must realpath inside the pool (symlink
+ *     confinement); after copying, the materialized set must parse back as
+ *     a card — otherwise the copies are rolled back and the call fails.
+ *   - `<stem>.state.*.json` publish sidecars migrate alongside (never
+ *     overwriting existing user sidecars): after materialization the card
+ *     is private and merged reads no longer fall back to the pool, so the
+ *     publisher's initial state would otherwise be lost.
+ *   - Extension is preserved (.webp stays .webp — no transcode).
+ * @returns {Promise<{charDir:string, fileName:string, filePath:string, source:object}>}
+ * @throws {NotFoundError} shared card does not exist
+ * @throws {InvalidArgumentError} materialized copy would not be a readable card
  */
 export async function materializeSharedCharacter(directories, charDir) {
+    const libDir = getSharedCharactersDir(directories);
     const shared = resolveSharedCharacterFile(directories, charDir);
-    if (!shared) {
+    if (!shared || !libDir) {
         throw new NotFoundError(`Shared character not found: ${charDir}`);
     }
     await fs.promises.mkdir(directories.characters, { recursive: true });
+
+    // Collect every pool file participating in this stem's card view —
+    // cover-only images and the data-carrying file all migrate together so
+    // the private mirror reads exactly like the shared source did.
+    const sources = [];
+    for (const ext of CHARACTER_FILE_EXTS) {
+        const name = `${charDir}${ext}`;
+        const lexical = path.join(libDir, name);
+        if (!fs.existsSync(lexical)) continue;
+        const real = confineRealPath(libDir, lexical);
+        if (!real) continue; // out-of-pool symlink → never readable, never copied
+        sources.push({ ext, fileName: name, filePath: real });
+    }
 
     let stem = charDir;
     for (let i = 1; resolveCharacterFilePath(directories.characters, stem); i++) {
         stem = `${charDir}${i}`;
     }
-    const fileName = `${stem}${shared.ext}`;
-    const filePath = path.join(directories.characters, fileName);
-    await fs.promises.copyFile(shared.filePath, filePath, fs.constants.COPYFILE_EXCL);
 
-    // 发布侧车随迁:<stem>.state.<ns>.json;撞名(用户已有同干名侧车)不覆盖。
+    const copied = [];
+    try {
+        for (const src of sources) {
+            const dest = path.join(directories.characters, `${stem}${src.ext}`);
+            await fs.promises.copyFile(src.filePath, dest, fs.constants.COPYFILE_EXCL);
+            copied.push(dest);
+        }
+        // Publishable gate: the private copy must parse back as a card.
+        // A cover-only PNG or a non-card JSON must not ship a broken copy.
+        const { card } = await loadCharacterDocFromDir(directories.characters, stem);
+        if (!isCharacterCardLike(card)) {
+            throw new InvalidArgumentError(`Shared character is not a readable card: ${charDir}`);
+        }
+    } catch (error) {
+        for (const dest of copied) {
+            await fs.promises.rm(dest, { force: true }).catch(() => {});
+        }
+        throw error;
+    }
+
+    // Publish sidecar migration: `<stem>.state.<ns>.json`; on name collision
+    // (user already has a same-stem sidecar) the user file wins — no overwrite.
     if (stem === charDir) {
-        const libDir = path.dirname(shared.filePath);
         const prefix = `${charDir}.state.`;
         let entries = [];
-        try { entries = await fs.promises.readdir(libDir, { withFileTypes: true }); } catch { /* 池不可读 → 跳过随迁 */ }
+        try { entries = await fs.promises.readdir(libDir, { withFileTypes: true }); } catch { /* pool unreadable → skip */ }
         for (const entry of entries) {
             if (!entry.isFile() || !entry.name.startsWith(prefix) || !entry.name.endsWith('.json')) continue;
+            const sourcePath = path.join(libDir, entry.name);
             const targetPath = path.join(directories.characters, entry.name);
             try {
-                await fs.promises.copyFile(path.join(libDir, entry.name), targetPath, fs.constants.COPYFILE_EXCL);
-            } catch { /* 已存在/失败不阻塞物化 —— 卡档已是事实源 */ }
+                const real = confineRealPath(libDir, sourcePath);
+                if (!real) continue;
+                await fs.promises.copyFile(real, targetPath, fs.constants.COPYFILE_EXCL);
+            } catch { /* exists/failed does not block materialization — the card file is the source of truth */ }
         }
     }
-    return { charDir: stem, fileName, filePath, source: shared };
+    return { charDir: stem, fileName: `${stem}${shared.ext}`, filePath: path.join(directories.characters, `${stem}${shared.ext}`), source: shared };
 }
 
 /**
- * 写锚:char_state 侧车这类「按 stem 命名、落点必须 per-user」的写面用。
- * 返回的 filePath 只供 getCharacterStateSidecarPath 取 dir+stem ——
- *   私有卡在场 → 实档;仅共享卡在场 → 用户目录同名合成锚(文件不必存在,
- *   侧车名只取干名);都不在 → null(调用方按「卡不存在」语义处理)。
- * 绝不返回 _library 路径 —— 共享档不可写。
+ * Write anchor for surfaces like char_state sidecars that are named by
+ * stem and must land per-user. The returned filePath only feeds
+ * getCharacterStateSidecarPath's dir+stem extraction —
+ *   private card present → real file;
+ *   shared-only → synthesized user-dir path (file need not exist; the
+ *   sidecar name only takes the stem);
+ *   neither → null (callers treat as "card not found").
+ * NEVER returns a _library path — shared files are not writable.
  */
 export function resolveCharacterWriteAnchor(directories, charDir) {
     const privatePath = resolveCharacterFilePath(directories?.characters, charDir);
@@ -206,20 +395,25 @@ export function resolveCharacterWriteAnchor(directories, charDir) {
 }
 
 /**
- * char_state 侧车合并读:用户目录同名侧车优先(用户自己的状态压倒一切),
- * 共享卡在场时再回落发布侧车(<lib>/<stem>.state.<ns>.json)。
- * @param {string} charDir 卡干名(调用方有 avatar 文件名时先剥扩展名)
- * @param {string} namespace 已 normalize 的 ns
+ * Merged char_state sidecar read: the user-dir sidecar always wins (the
+ * user's own state trumps everything). The shared/published sidecar is
+ * only consulted when the resolved card itself is shared — a private card
+ * that shadows the pool stem must never inherit pool state, even when no
+ * user sidecar exists for the namespace.
+ * @param {string} charDir card stem (callers with an avatar file name strip
+ *   the extension first)
+ * @param {string} namespace already-normalized ns
  * @returns {object|null}
  */
 export function readCharacterStateMerged(directories, charDir, namespace) {
     const stem = String(charDir ?? '').trim();
     if (!stem) return null;
-    // 干名锚定即可 —— 侧车名只取 stem,合成 .png 锚与实档等价。
+    // Stem anchor is enough — the sidecar name only takes the stem, so a
+    // synthesized .png anchor is equivalent to the real file.
     const userAnchor = path.join(directories.characters, `${stem}.png`);
     const own = readCharacterStateSidecar(userAnchor, namespace);
     if (own != null) return own;
-    const shared = resolveSharedCharacterFile(directories, stem);
-    if (!shared) return null;
-    return readCharacterStateSidecar(shared.filePath, namespace);
+    const merged = resolveCharacterFileMerged(directories, stem);
+    if (!merged?.shared) return null;
+    return readCharacterStateSidecar(merged.filePath, namespace);
 }

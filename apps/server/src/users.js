@@ -1155,6 +1155,40 @@ function isQuotaEnforcedRequest(request) {
 }
 
 /**
+ * Core per-user storage quota check, shared by the HTTP middleware and
+ * server-side write paths that do not go through content-length
+ * accounting (e.g. shared-library materialization copies files into the
+ * user root without a request body).
+ * Admins always pass; a non-finite/<0 effective quota means unlimited.
+ * @param {import('./users.js').User} user request.user-shaped object
+ * @param {number} additionalBytes projected bytes this write will add
+ * @returns {Promise<{usageBytes:number, quotaBytes:number, message:string}|null>}
+ *   violation descriptor, or null when the write fits / quota is unlimited
+ */
+export async function checkUserStorageQuota(user, additionalBytes = 0) {
+    if (!user || user.profile?.admin) {
+        return null;
+    }
+    const settings = await getAdminSettings();
+    const quotaBytes = getEffectiveUserQuotaBytes(user.profile, settings);
+    if (!Number.isFinite(quotaBytes) || quotaBytes < 0) {
+        return null;
+    }
+    const handle = user.profile.handle;
+    let usageBytes = STORAGE_USAGE_CACHE.get(handle);
+    if (!Number.isFinite(usageBytes)) {
+        usageBytes = await getDirectorySizeBytes(user.directories.root);
+        STORAGE_USAGE_CACHE.set(handle, usageBytes);
+    }
+    const add = Number.isFinite(additionalBytes) && additionalBytes > 0 ? additionalBytes : 0;
+    if (usageBytes + add <= quotaBytes) {
+        return null;
+    }
+    const message = 'Storage quota exceeded. Used ' + formatBytes(usageBytes) + ' of ' + formatBytes(quotaBytes) + '.';
+    return { usageBytes, quotaBytes, message };
+}
+
+/**
  * Enforces per-user storage quota on write-heavy endpoints.
  * @param {import('express').Request} request Request object
  * @param {import('express').Response} response Response object
@@ -1171,26 +1205,10 @@ export async function enforceUserQuotaMiddleware(request, response, next) {
     }
 
     try {
-        const settings = await getAdminSettings();
-        const quotaBytes = getEffectiveUserQuotaBytes(request.user.profile, settings);
-
-        if (!Number.isFinite(quotaBytes) || quotaBytes < 0) {
-            return next();
-        }
-
-        const handle = request.user.profile.handle;
-        let usageBytes = STORAGE_USAGE_CACHE.get(handle);
-        if (!Number.isFinite(usageBytes)) {
-            usageBytes = await getDirectorySizeBytes(request.user.directories.root);
-            STORAGE_USAGE_CACHE.set(handle, usageBytes);
-        }
-
         const requestLength = Number(request.headers['content-length'] || 0);
-        const projectedUsage = usageBytes + (Number.isFinite(requestLength) && requestLength > 0 ? requestLength : 0);
-
-        if (projectedUsage > quotaBytes) {
-            const message = 'Storage quota exceeded. Used ' + formatBytes(usageBytes) + ' of ' + formatBytes(quotaBytes) + '.';
-            return response.status(413).json({ error: message, usedBytes: usageBytes, quotaBytes: quotaBytes });
+        const violation = await checkUserStorageQuota(request.user, requestLength);
+        if (violation) {
+            return response.status(413).json({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
         }
 
         return next();

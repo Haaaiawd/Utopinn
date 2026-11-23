@@ -49,6 +49,7 @@ import {
     materializeSharedCharacter,
     resolveCharacterFileMerged,
 } from '../services/shared-library.js';
+import { isCharacterStateSidecarFileName } from '../services/character-state.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { REGEX_PRESET_API_IDS, resolvePresetInUse } from '../services/extension-prompts.js';
 import { getPresetRepo, getSettingsRepo } from '../storage/index.js';
@@ -302,6 +303,8 @@ function withCardWriteLock(key, fn) {
 /** 探测 <charDir>.<png|webp|json> 在场文件,返回 {file,ext} 或 null。 */
 function resolveCharFile(directories, charDir) {
     for (const ext of ['.png', '.webp', '.json']) {
+        // `.state.*.json` 是侧车不是卡 —— 不许当卡写。
+        if (isCharacterStateSidecarFileName(`${charDir}${ext}`)) continue;
         const file = path.join(directories.characters, `${charDir}${ext}`);
         if (fs.existsSync(file)) return { file, ext };
     }
@@ -511,6 +514,8 @@ async function scanCharCandidates(dir) {
         if (!f.isFile()) continue;
         const ext = path.extname(f.name).toLowerCase();
         if (!CHAR_RESOLVE_EXT_SET.has(ext)) continue;
+        // `.state.*.json` 是 state 侧车,不是卡候选 —— 私有/池同排。
+        if (isCharacterStateSidecarFileName(f.name)) continue;
         const stem = f.name.slice(0, -ext.length);
         if (!stem) continue;
         let rec = stems.get(stem);
@@ -526,8 +531,10 @@ async function scopedCharView(request, charDir, index) {
     // avatar 在内存里定,消灭逐卡 fs.access 探测。
     const candidates = [];
     for (const ext of CHAR_RESOLVE_EXTS) {
-        const absPath = path.join(dir, `${charDir}${ext}`);
-        if (fs.existsSync(absPath)) candidates.push({ fileName: `${charDir}${ext}`, ext, absPath });
+        const fileName = `${charDir}${ext}`;
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const absPath = path.join(dir, fileName);
+        if (fs.existsSync(absPath)) candidates.push({ fileName, ext, absPath });
     }
     if (candidates.length) {
         const resolved = await resolveIndexedCard(index, dir, charDir, candidates, null);
@@ -539,8 +546,10 @@ async function scopedCharView(request, charDir, index) {
     if (!libDir || !isSafeSharedStem(charDir)) return null;
     const libCandidates = [];
     for (const ext of CHAR_RESOLVE_EXTS) {
-        const absPath = path.join(libDir, `${charDir}${ext}`);
-        if (fs.existsSync(absPath)) libCandidates.push({ fileName: `${charDir}${ext}`, ext, absPath });
+        const fileName = `${charDir}${ext}`;
+        if (isCharacterStateSidecarFileName(fileName)) continue;
+        const absPath = path.join(libDir, fileName);
+        if (fs.existsSync(absPath)) libCandidates.push({ fileName, ext, absPath });
     }
     if (!libCandidates.length) return null;
     const libResolved = await resolveIndexedCard(index, libDir, charDir, libCandidates, null);
@@ -558,7 +567,11 @@ async function fullView(request, index) {
     // slim index,只列有脚本或被放行的。
     const stems = await scanCharCandidates(dir);
     const libDir = getSharedCharactersDir(request.user.directories);
-    const libStems = libDir ? await scanCharCandidates(libDir) : new Map();
+    // libAllStems = 池里仍存在的全量候选(sweep 存在性剪);libStems =
+    // 本用户可见(私有遮蔽 + _library 保留名过滤后)。两者分离:被本用户
+    // 遮蔽的池卡对其他用户仍可见,不能按可见集逐缓存(跨用户误逐)。
+    const libAllStems = libDir ? await scanCharCandidates(libDir) : new Map();
+    const libStems = new Map(libAllStems);
     for (const stem of [...libStems.keys()]) {
         if (stems.has(stem) || !isSafeSharedStem(stem)) libStems.delete(stem);
     }
@@ -595,7 +608,9 @@ async function fullView(request, index) {
         });
     }
     index.sweep(dir, alivePaths);
-    if (libDir) index.sweep(libDir, new Set([...libStems.values()].flat().map((c) => c.absPath)));
+    // 池侧按存在性剪(libAllStems),不按本用户可见集 —— 遮蔽 stem 对
+    // 其他用户仍可见,可见集剪会跨用户误逐。
+    if (libDir) index.sweep(libDir, new Set([...libAllStems.values()].flat().map((c) => c.absPath)));
     diagEmit({
         lvl: 'debug', kind: 'plugin', code: 'regex_index_scan',
         msg: `regex full view: ${stems.size} stem(s), ${stats.hits} cached, ${stats.misses} parsed`,

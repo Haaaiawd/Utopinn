@@ -567,7 +567,9 @@ async function writeCardRegexScripts(ctx2, charDir, scripts) {
     const fs = await import('node:fs');
     const path = await import('node:path');
     const candidates = ['.png', '.webp', '.json'].map((ext) => ({ file: path.join(dir, `${charDir}${ext}`), ext }));
-    let target = candidates.find((c) => fs.existsSync(c.file));
+    // `.state.*.json` 是侧车不是卡 —— 同名探测不许命中它。
+    const { isCharacterStateSidecarFileName } = await import('../services/character-state.js');
+    let target = candidates.find((c) => !isCharacterStateSidecarFileName(path.basename(c.file)) && fs.existsSync(c.file));
     if (!target) {
         const { resolveCharacterFileMerged, materializeSharedCharacter } = await import('../services/shared-library.js');
         if (resolveCharacterFileMerged(ctx2.directories, charDir)?.shared) {
@@ -600,7 +602,9 @@ async function writeCardRegexScripts(ctx2, charDir, scripts) {
         writeFileAtomicSync(target.file, JSON.stringify(card, null, 2), 'utf8');
     } else {
         const { writeCharacterData } = await import('../endpoints/characters.js');
-        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName } }, lastWriteCharacterDataError: undefined };
+        // directories 必带 —— writeCharacterData 按 request.user.directories
+        // .characters 定位输出档(STscript writer 同款 fakeReq 形)。
+        const fakeReq = { user: { profile: { handle: ctx2.handle, name: ctx2.userName }, directories: ctx2.directories }, lastWriteCharacterDataError: undefined };
         const ok = await writeCharacterData(target.file, JSON.stringify(card), charDir, fakeReq, undefined,
             { allowMissingInputFallback: false, requireExistingOutput: true });
         if (!ok) return { error: fakeReq.lastWriteCharacterDataError ?? 'character card write failed', status: 500 };

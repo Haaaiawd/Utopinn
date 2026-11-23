@@ -37,14 +37,18 @@ import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { createCardListCache } from '../services/card-list-cache.js';
 import {
+    estimateSharedMaterializeBytes,
     getSharedCharactersDir,
     isSafeSharedStem,
     loadCharacterDocFromDir,
     loadCharacterDocMerged,
+    loadSharedCharacterDoc,
     materializeSharedCharacter,
     readCharacterStateMerged,
     resolveCharacterFileMerged,
 } from '../services/shared-library.js';
+import { isCharacterStateSidecarFileName } from '../services/character-state.js';
+import { checkUserStorageQuota } from '../users.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { buildGreetingFloor, buildGroupGreetingFloors, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
 import { avatarToCharDir } from '../services/group-orchestration.js';
@@ -644,6 +648,9 @@ export function apply(ctx) {
             const isImage = CHARACTER_IMAGE_EXTS.has(ext);
             const isJson = ext === '.json';
             if (!isImage && !isJson) continue;
+            // `.state.*.json` 是 state 侧车,不是卡 —— 收进列表会变成
+            // 可安装/可 PATCH 的伪卡(共享池与私有目录同构,两处同排)。
+            if (isCharacterStateSidecarFileName(entry.name)) continue;
             const stat = await fs.promises.stat(path.join(dir, entry.name)).catch(() => null);
             const rec = stems.get(stem) ?? { listed: null, isImage: false, files: [] };
             rec.files.push({
@@ -701,7 +708,11 @@ export function apply(ctx) {
             for (const { charDir, info, dir: cardDir, shared } of scans) {
                 if (!info.listed) continue; // 构造上不可能,防御跳过防空响应 500
                 const fields = await cardListCache.get(cardDir, charDir, info.files, async () => {
-                    const { card } = await loadCharacterDocFromDir(cardDir, charDir);
+                    // 池条目走监禁 loader(realpath 必须留在池根内)——池内
+                    // 符号链接出界的文件既不可列也不可解析出卡内容。
+                    const { card } = shared
+                        ? await loadSharedCharacterDoc(request.user.directories, charDir)
+                        : await loadCharacterDocFromDir(cardDir, charDir);
                     const parsed = card ? cardFields(card) : { name: '', tags: [], chat: '' };
                     return { name: parsed.name, tags: parsed.tags, chat: parsed.chat, readable: card != null };
                 });
@@ -734,7 +745,9 @@ export function apply(ctx) {
                 });
             }
             cardListCache.prune(dir, stems);
-            if (libDir) cardListCache.prune(libDir, visibleLibStems);
+            // 池侧按「文件仍在池里」剪,不按「本用户可见」剪 —— 被本用户
+            // 私有遮蔽的 stem 对其他用户仍可见,误逐会清掉他们的缓存。
+            if (libDir) cardListCache.prune(libDir, libStems);
             diagEmit({
                 lvl: 'debug', kind: 'plugin', code: 'card_list_scan',
                 msg: `characters list: ${items.length} card(s) (${visibleLibStems.size} shared), ${cacheHits} cached, ${items.length - cacheHits} parsed`,
@@ -1432,6 +1445,15 @@ export function apply(ctx) {
             let materialized = null;
             if (shared) {
                 assertWritable();
+                // 物化往 user root 写私有副本 —— 与上传同口径过配额,
+                // 超额账号不能借共享卡绕过存储上限(CWE-770)。
+                const violation = await checkUserStorageQuota(
+                    request.user,
+                    estimateSharedMaterializeBytes(request.user.directories, charDir),
+                );
+                if (violation) {
+                    return response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
+                }
                 materialized = await materializeSharedCharacter(request.user.directories, charDir);
                 effectiveCharDir = materialized.charDir;
                 const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, effectiveCharDir);
@@ -1556,6 +1578,14 @@ export function apply(ctx) {
             const resolved = resolveCharacterFileMerged(request.user.directories, charDir);
             if (resolved && !resolved.shared) {
                 return response.status(409).send({ error: `Character already installed privately: ${charDir}` });
+            }
+            // 同 PATCH 物化面:私有副本计 user 配额,超额拒绝(CWE-770)。
+            const violation = await checkUserStorageQuota(
+                request.user,
+                estimateSharedMaterializeBytes(request.user.directories, charDir),
+            );
+            if (violation) {
+                return response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
             }
             const materialized = await materializeSharedCharacter(request.user.directories, charDir);
             const { card } = await loadCharacterDocFromDir(request.user.directories.characters, materialized.charDir);
