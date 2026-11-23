@@ -784,7 +784,7 @@ function PresetPop({ onClose }: { onClose: () => void }) {
             <div
                 className={
                     s.isMobile
-                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[72vh] flex-col overflow-hidden rounded-2xl'
+                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[72dvh] flex-col overflow-hidden rounded-2xl'
                         : 'pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-6 z-40 flex max-h-[72vh] w-[352px] flex-col overflow-hidden rounded-2xl'
                 }
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom right' }}
@@ -920,7 +920,7 @@ function QrSetPop({ names, sel, enabled, qr, chatCfg, charKey, onPick, onToggle,
             <div
                 className={
                     s.isMobile
-                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[56vh] flex-col overflow-hidden rounded-2xl'
+                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[56dvh] flex-col overflow-hidden rounded-2xl'
                         : 'pop-in absolute bottom-[var(--composer-pop-bottom,92px)] left-1/2 z-40 flex max-h-[56vh] w-[360px] -translate-x-1/2 flex-col overflow-hidden rounded-2xl'
                 }
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom center' }}
@@ -2198,8 +2198,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 className="relative flex min-h-0 min-w-0 flex-1 flex-col"
                 style={{
                     background: 'var(--bg-canvas)',
-                    ['--composer-pop-bottom' as never]: qrSpace ? (s.isMobile ? '122px' : '126px') : (s.isMobile ? '88px' : '92px'),
-                    ['--slash-pop-bottom' as never]: qrSpace ? '128px' : '94px',
+                    /* 弹层锚位:基准距 + --vv-kbd 键盘遮挡 —— 键盘开着时
+                       弹层跟 composer 一起贴键盘上缘,不被盖。 */
+                    ['--composer-pop-bottom' as never]: `calc(${qrSpace ? (s.isMobile ? 122 : 126) : (s.isMobile ? 88 : 92)}px + var(--vv-kbd, 0px))`,
+                    ['--slash-pop-bottom' as never]: `calc(${qrSpace ? 128 : 94}px + var(--vv-kbd, 0px))`,
                 }}
             >
                 {/* 规范稿 stage-header h-12 px-4:左 ctx 钮(卡环+名·题+⌄)→ ctx 弹层;右 wb/移动 sheet 钮 */}
@@ -2401,8 +2403,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 )}
                 {/* 形态体插槽:chat 楼层列 / novel 章节 / messenger 频道 / theater 场景 */}
                 {children}
-                {/* composer-shell:QR 条 + form p-3(textarea + 底行 /·token | 预设⌄·send) */}
-                <div className="shrink-0 px-4 pb-4 pt-1 sm:px-6">
+                {/* composer-shell:QR 条 + form p-3(textarea + 底行 /·token | 预设⌄·send)
+                    composer-dock = 底距决策(safe-area + --vv-kbd 键盘抬升),spec.css 单类收。 */}
+                <div className="composer-dock shrink-0 px-4 pb-4 pt-1 sm:px-6">
                     {/* QR 条(TASK-063):册丸(切换/启停弹层)+ 当前册 chip 列;
                         册本会话未启用 → chip 区换成行内启用 CTA;点击三分支
                         (/continue 快路径、/ 前缀 runScript、普通 send)不动。 */}

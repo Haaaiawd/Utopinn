@@ -37,6 +37,8 @@ import { closeCharEditor, closeGroupModal, closeImportModal, closeNewChatModal, 
 import { createGroup, patchGroupChat } from '../../api/groups';
 import { CardMasonry, CardTile } from '../CardTile';
 import { PluginsSections, useServerPlugins } from '../views/plugins';
+import { useViewportInset } from '../../lib/useViewportInset';
+import { resolveSheetSnap } from '../../lib/mobileShell';
 
 const mono = 'font-mono-ui';
 const inputCls = 'w-full rounded-lg px-2.5 text-[12px] outline-none';
@@ -59,9 +61,13 @@ export function MobileFrame() {
     const domainTrees = trees.filter((tr) => tr.rail === drawerDomain);
     const shellRef = useRef<HTMLDivElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
+    /* 软键盘遮挡 → --vv-kbd:composer/sheet/弹层锚位经 var() 消费;
+       只在移动壳挂(桌面形态不渲染本帧,卸载即复位)。 */
+    useViewportInset();
 
     /* 规范稿 wireMobileSheetDrag:手柄行按下(钮除外)→ 百分比跟手;
-     * 松手 >72% full / >24% half / 否则 closed。 */
+     * 松手落点 = resolveSheetSnap(高阈 + 甩动):尾部窗口速度 |v|≥0.5px/ms
+     * 的快速滑动越档 —— 下甩直收(flick-to-dismiss),上甩直全。 */
     const onHandleDown = (e: React.PointerEvent) => {
         if ((e.target as HTMLElement).closest('button')) return;
         e.preventDefault();
@@ -71,19 +77,31 @@ export function MobileFrame() {
         const startY = e.clientY;
         const startH = sheet.getBoundingClientRect().height;
         sheet.classList.add('dragging');
+        /* 速度采样环:松手取 ~60–200ms 窗口内的最早样本算均速,
+           末段停手(dt>200ms)视为无速度回落高阈 —— 不冤枉慢放。 */
+        const trail: { t: number; y: number }[] = [{ t: e.timeStamp, y: e.clientY }];
         const onMove = (ev: PointerEvent) => {
+            trail.push({ t: ev.timeStamp, y: ev.clientY });
+            if (trail.length > 8) trail.shift();
             sheet.style.height = `${Math.max(0, Math.min(94, ((startH + (startY - ev.clientY)) / shellH) * 100))}%`;
         };
-        const onUp = () => {
+        const onUp = (ev: PointerEvent) => {
             sheet.classList.remove('dragging');
             const finalPct = (sheet.getBoundingClientRect().height / shellH) * 100;
             sheet.style.height = '';
-            s.setSheetSnap(finalPct > 72 ? 'full' : finalPct > 24 ? 'half' : 'closed');
+            let ref = trail[0]!;
+            for (const p of trail) { if (ev.timeStamp - p.t >= 60) ref = p; else break; }
+            const dt = ev.timeStamp - ref.t;
+            const vy = dt > 0 && dt <= 200 ? (ev.clientY - ref.y) / dt : 0;
+            s.setSheetSnap(resolveSheetSnap(finalPct, vy));
             window.removeEventListener('pointermove', onMove);
             window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
+        /* 系统手势抢指针(来电/多指)→ 同收档清理,不留 dragging 冻结态。 */
+        window.addEventListener('pointercancel', onUp);
     };
 
     return (

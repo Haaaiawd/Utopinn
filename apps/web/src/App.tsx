@@ -374,13 +374,21 @@ function Shell() {
         if (wbKeyRef.current) saveWbLayout(wbKeyRef.current, { openTabs, activeTab, floatOrder, floatRects, expanded: wbExpand });
     }, [openTabs, activeTab, floatOrder, floatRects, wbExpand]);
 
+    const showHint = useCallback((msg: string, err?: boolean) => {
+        setHint({ msg, err });
+        if (hintTimer.current) clearTimeout(hintTimer.current);
+        hintTimer.current = setTimeout(() => setHint(null), 3200);
+    }, []);
+
     /* 移动端无浮窗(屏小浮窗没意义,面板留工作台)——
-       isMobile 翻转时存量浮窗全数收档回 openTabs。 */
+       isMobile 翻转时存量浮窗全数收档回 openTabs;
+       收档带一次性 hint —— 无声回收用户会以为面板丢了。 */
     useEffect(() => {
         if (!isMobile || floatOrder.length === 0) return;
         setOpenTabs((prev) => [...prev, ...floatOrder.filter((tp) => !prev.includes(tp))]);
         setFloatOrder([]);
-    }, [isMobile, floatOrder]);
+        showHint(t('mob.floats.archived').replace('{n}', String(floatOrder.length)));
+    }, [isMobile, floatOrder, showHint, t]);
 
     /* 视口收缩 → 活浮窗矩形钳回视口内(防存档出屏/拖没)。 */
     useEffect(() => {
@@ -401,12 +409,6 @@ function Shell() {
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
     }, [floatOrder]);
-
-    const showHint = useCallback((msg: string, err?: boolean) => {
-        setHint({ msg, err });
-        if (hintTimer.current) clearTimeout(hintTimer.current);
-        hintTimer.current = setTimeout(() => setHint(null), 3200);
-    }, []);
 
     const refreshChats = useCallback(async () => {
         try {
@@ -918,7 +920,9 @@ function Shell() {
             } else {
                 setOpenTabs((prev) => (prev.includes(type) ? prev : [...prev, type]));
                 setActiveTab(type);
-                if (isMobile) setSheetSnap('half');
+                /* 移动端 sheet:cardapp 桶板块直接 full(嵌卡 iframe 要真视面,
+                   half 净高连它的 min 盒都摆不平);其余仍 half。 */
+                if (isMobile) setSheetSnap(registry.find('panel.type', (c) => c.type === type)?.category === 'cardapp' ? 'full' : 'half');
                 else setWorkbenchOpen(true);
             }
         }

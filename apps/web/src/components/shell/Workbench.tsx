@@ -78,8 +78,16 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
        不空顶(群会话无卡头像 → 只列会话名)。 */
     const chat = shell.chat;
     const card = chat?.charDir ? shell.cards.get(chat.charDir) : undefined;
+    /* 本会话已开板块(openTabs ∪ floatOrder)—— launcher 行给「已开」
+       尾标,重开=回到该页而非误以为没开成。 */
+    const isOpen = (type: string) => shell.openTabs.includes(type) || shell.floatOrder.includes(type);
+    const openTag = (
+        <span className="ml-auto shrink-0 rounded-full bg-[color:var(--bg-active)] px-1.5 py-px text-[9.5px] text-[color:var(--fg-muted)]">
+            {t('wb.launcher.open')}
+        </span>
+    );
     return (
-        <div className="flex min-h-0 flex-1 flex-col justify-start overflow-y-auto px-5 pb-8 pt-5">
+        <div className="flex min-h-0 flex-1 flex-col justify-start overflow-y-auto overscroll-contain px-5 pb-8 pt-5">
             <div className="mx-auto w-full max-w-[440px] space-y-7">
                 {chat && (
                     <div className="flex items-center gap-3 px-0.5">
@@ -131,7 +139,10 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
                                         <span className="text-[color:var(--fg-primary)]"><Icon name={c.icon} size={18} /></span>
                                         <span className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{appInfo.name ?? panelTitle(t, c)}</span>
                                     </span>
-                                    <span className="shrink-0 font-mono-ui text-[10.5px] text-[color:var(--brand)]">{t('wb.launcher.iframe')}</span>
+                                    <span className="flex shrink-0 items-center gap-2">
+                                        {isOpen(c.type) && openTag}
+                                        <span className="font-mono-ui text-[10.5px] text-[color:var(--brand)]">{t('wb.launcher.iframe')}</span>
+                                    </span>
                                 </button>
                             ))}
                         </div>
@@ -158,7 +169,8 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
                                     onClick={() => shell.openPanel(c.type)}
                                 >
                                     <span className="shrink-0 text-[color:var(--fg-secondary)]"><Icon name={c.icon} size={17} /></span>
-                                    <span className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
+                                    <span className="min-w-0 truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
+                                    {isOpen(c.type) && openTag}
                                 </button>
                             ))}
                         </div>
@@ -175,7 +187,7 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
                                         <span className="truncate text-[12px] text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
                                         {c.badge && <span className="rounded-full bg-[color:var(--bg-active)] px-1.5 py-px text-[9px] text-[color:var(--fg-muted)]">{t(c.badge)}</span>}
                                     </span>
-                                    <Icon name="plus" size={13} className="text-[color:var(--fg-faint)]" />
+                                    {isOpen(c.type) ? openTag : <Icon name="plus" size={13} className="text-[color:var(--fg-faint)]" />}
                                 </button>
                             ))}
                         </div>
@@ -219,7 +231,9 @@ function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
                             role="button" tabIndex={0}
                             onKeyDown={(e) => { if (e.key === 'Enter') shell.selectTab(tb.id); }}
                         >
-                            <span className="max-w-[110px] truncate">{tb.label}</span>
+                            {/* 移动 tab 密度:未激活窄截断(60px≈2-3 字)给激活让位,
+                                激活页放全名槽(140px);桌面保持 110 原稿。 */}
+                            <span className={`${isMobile ? (active ? 'max-w-[140px]' : 'max-w-[60px]') : 'max-w-[110px]'} truncate`}>{tb.label}</span>
                             <button
                                 className="wb-tab-close flex h-4 w-4 items-center justify-center rounded transition-colors hover:bg-[color:var(--bg-active)]"
                                 onClick={(e) => { e.stopPropagation(); shell.closeTab(tb.id); }}
@@ -375,7 +389,7 @@ function PoolSlot({ type, isMobile, docked }: { type: PanelType; isMobile: boole
         >
             {/* body 槽:恒定子位[0] —— docked↔floating 只换 class,
                 不搬 DOM 节点,PanelBody/嵌卡 iframe 全程不死。 */}
-            <div className={floating ? 'min-h-0 flex-1 overflow-y-auto' : 'h-full overflow-y-auto'}>
+            <div className={floating ? 'min-h-0 flex-1 overflow-y-auto overscroll-contain' : 'h-full overflow-y-auto overscroll-contain'}>
                 <PanelBody type={type} />
             </div>
             {floating && (
