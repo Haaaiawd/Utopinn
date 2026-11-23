@@ -37,6 +37,9 @@ const LEGACY_LOGIN = path.join(serverDir, 'public', 'login.html');
 const hasSpa = fs.existsSync(WEB_INDEX);
 const hasLegacyLogin = fs.existsSync(LEGACY_LOGIN);
 
+/** Reported as a real skip (not a silent pass) when the SPA build is absent. */
+const SKIP_NO_SPA = hasSpa ? false : 'apps/web/dist not built — run pnpm --filter @utopinn/web build first';
+
 const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-login-real-'));
 
 async function reservePort() {
@@ -80,10 +83,6 @@ function sessionCookieOf(res) {
  * fn receives (base, ctx); ctx.log() returns the child's combined output.
  */
 async function withRealServer(fn) {
-    if (!hasSpa) {
-        console.warn('# web/dist not built — skipping (run the web build first)');
-        return;
-    }
     const port = await reservePort();
     const dir = path.join(scratchRoot, `run-${port}`);
     const dataRoot = path.join(dir, 'data');
@@ -127,7 +126,7 @@ async function withRealServer(fn) {
 
 const isHtml = r => /text\/html/.test(r.headers.get('content-type') || '');
 
-test('default mode: GET /login?noauto serves the SPA shell, not the legacy page', async () => {
+test('default mode: GET /login?noauto serves the SPA shell, not the legacy page', { skip: SKIP_NO_SPA }, async () => {
     if (!hasLegacyLogin) return;
     await withRealServer(async (base) => {
         // ?noauto=1 is required here: with accounts enabled and a fresh
@@ -143,7 +142,7 @@ test('default mode: GET /login?noauto serves the SPA shell, not the legacy page'
     });
 });
 
-test('default mode: legacy login page assets resolve as real assets, not index.html', async () => {
+test('default mode: legacy login page assets resolve as real assets, not index.html', { skip: SKIP_NO_SPA }, async () => {
     if (!hasLegacyLogin) return;
     await withRealServer(async base => {
         // The exact set public/login.html references. manifest.json is absent on
@@ -172,7 +171,7 @@ test('default mode: legacy login page assets resolve as real assets, not index.h
     });
 });
 
-test('default mode: a missing asset is 404, never index.html', async () => {
+test('default mode: a missing asset is 404, never index.html', { skip: SKIP_NO_SPA }, async () => {
     await withRealServer(async base => {
         // The bug was silent precisely because these came back 200 + text/html.
         for (const url of ['/nope.css', '/missing/thing.js', '/img/gone.png', '/fonts/x.woff2']) {
@@ -183,7 +182,7 @@ test('default mode: a missing asset is 404, never index.html', async () => {
     });
 });
 
-test('default mode: real file routes registered later are not shadowed by the guard', async () => {
+test('default mode: real file routes registered later are not shadowed by the guard', { skip: SKIP_NO_SPA }, async () => {
     // The asset-extension check must live INSIDE the fallback handler. Mounted as
     // its own app.use() above these routes it answered 404 for every one of them,
     // because /backgrounds/*, /characters/*, /thumbnail/* and /card-runtime/* are
@@ -208,7 +207,7 @@ test('default mode: real file routes registered later are not shadowed by the gu
     });
 });
 
-test('default mode: SPA icons and manifest are not shadowed by legacy public/ files', async () => {
+test('default mode: SPA icons and manifest are not shadowed by legacy public/ files', { skip: SKIP_NO_SPA }, async () => {
     // public/favicon.ico (25140B, Luker) and public/manifest.json ("name":"Luker")
     // used to be served in preference to the SPA's own, so the browser tab showed
     // Luker's icon on a Utopinn deployment. Legacy root files must yield whenever
@@ -234,7 +233,7 @@ test('default mode: SPA icons and manifest are not shadowed by legacy public/ fi
     });
 });
 
-test('default mode: legacy assets the SPA does not provide are still served', async () => {
+test('default mode: legacy assets the SPA does not provide are still served', { skip: SKIP_NO_SPA }, async () => {
     // style.css / css/ / img/ / webfonts/ are referenced by cached pages, old
     // bookmarks and the legacy shell, so they stay reachable in SPA mode.
     await withRealServer(async base => {
@@ -251,7 +250,7 @@ test('default mode: legacy assets the SPA does not provide are still served', as
     });
 });
 
-test('default mode: shell routes still fall back to the SPA', async () => {
+test('default mode: shell routes still fall back to the SPA', { skip: SKIP_NO_SPA }, async () => {
     await withRealServer(async base => {
         for (const url of ['/hub', '/chat', '/studio', '/some/deep/route']) {
             const res = await fetch(`${base}${url}`);
@@ -261,7 +260,7 @@ test('default mode: shell routes still fall back to the SPA', async () => {
     });
 });
 
-test('default mode: the legacy 785KB index.html is not exposed', async () => {
+test('default mode: the legacy 785KB index.html is not exposed', { skip: SKIP_NO_SPA }, async () => {
     const legacyIndex = path.join(serverDir, 'public', 'index.html');
     if (!fs.existsSync(legacyIndex)) return;
     const legacySize = fs.statSync(legacyIndex).size;
@@ -273,7 +272,7 @@ test('default mode: the legacy 785KB index.html is not exposed', async () => {
     });
 });
 
-test('default mode: unauthenticated / redirects to /login', async () => {
+test('default mode: unauthenticated / redirects to /login', { skip: SKIP_NO_SPA }, async () => {
     await withRealServer(async (base, ctx) => {
         const res = await fetch(`${base}/`, { redirect: 'manual' });
         assert.equal(res.status, 302);
@@ -291,7 +290,7 @@ test('default mode: unauthenticated / redirects to /login', async () => {
     });
 });
 
-test('default mode: GET /login auto-logs in and the session cookie authenticates', async () => {
+test('default mode: GET /login auto-logs in and the session cookie authenticates', { skip: SKIP_NO_SPA }, async () => {
     // Review comment #4: the SPA branch bypassed tryAutoLogin entirely, so a
     // fresh dataRoot (single passwordless default-user) could not establish a
     // session from /login the way the legacy page could.
@@ -308,7 +307,7 @@ test('default mode: GET /login auto-logs in and the session cookie authenticates
     });
 });
 
-test('default mode: POST /api/users/oauth/providers answers for anonymous clients', async () => {
+test('default mode: POST /api/users/oauth/providers answers for anonymous clients', { skip: SKIP_NO_SPA }, async () => {
     // LoginGate renders OAuth buttons from this endpoint — it must be reachable
     // pre-auth (it is mounted ahead of the login gate). Test config enables no
     // provider, so both flags must be false and LoginGate renders no buttons.
