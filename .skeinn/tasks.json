@@ -6232,6 +6232,34 @@
       "created_at": "2026-11-22T07:03:35.345Z",
       "updated_at": "2026-11-22T07:55:29.679Z",
       "completed_at": "2026-11-22T07:55:29.679Z"
+    },
+    {
+      "id": "TASK-073",
+      "title": "[多账号] 一台 Utopinn 开多账号:开关核验+端到端隔离测试+job_id 越权修复+SPA 第一方登录面(multi-user.md 收口)",
+      "status": "done",
+      "outcome": "Luker 多用户栈本就完整(enableUserAccounts 默认关),本任务做收口而非重造:① 修 createGenerationJob 跨 owner 回收洞(异主 job_id 复用会 abort 受害者上游并清事件流,fail-closed 拒收);② 新增 tests/multi-account-isolation.test.mjs 真服 12 子测试钉死两 handle 的 characters/chats/settings/secrets/izumi/chat_state/card-runtime mounts/session 互不可见,registration 默认关+shared-secrets ACL+logout 作用域同测;③ apps/web 长出 LoginGate(auth-expired 广播→handle+password→POST /api/users/login→整页重载),api/account.ts 加 loginAccount/logoutAccount,i18n zh/en,spec.css .login-gate/.login-card;④ multi-user.md G2 收口+§3.5.1 隔离洞审计清单(已修/确认隔离/残余注意);⑤ 顺手修 origin/main #23 留下的 shell.ts:614 won't 撇号语法错(挡 tsc)。",
+      "acceptance": [
+        {
+          "criterion": "两账号 HTTP 级隔离:characters/chats/settings/secrets/izumi state/card-runtime mounts 互相不可读不可写;logout 只踢自己;anonymous 403;register 403",
+          "verify_by": "node --test tests/multi-account-isolation.test.mjs",
+          "evidence": "12/12 子测试全过(真 spawn server,/tmp dataRoot,LUKER_SKIP_WEBPACK=1)"
+        },
+        {
+          "criterion": "job_id 跨 owner 复用被拒,本人重试语义不变",
+          "verify_by": "同文件 in-process 子测试(createGenerationJob 异主→null,owner 重试→同 job 回收)",
+          "evidence": "luker-generation.js:508-521 守卫+回归测试过"
+        },
+        {
+          "criterion": "SPA 有第一方登录面且不破坏现状",
+          "verify_by": "apps/web tsc --noEmit",
+          "evidence": "tsc 0 错;LoginGate 仅在 auth-expired 时接管,前门 302 legacy /login 不变"
+        },
+        {
+          "criterion": "多账号部署拓扑有据可查",
+          "verify_by": ".skeinn/design/multi-user.md",
+          "evidence": "§3.1 部署基线 yaml+§3.2 开户流程+§3.5.1 隔离洞清单"
+        }
+      ]
     }
   ],
   "milestones": [

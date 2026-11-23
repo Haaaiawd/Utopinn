@@ -1,9 +1,9 @@
 # 多用户(私有部署):现状证据 + 差距 + 推荐方案
 
 - Kind: design / system
-- Status: draft v1(调研完成,未实现)
+- Status: implemented(2026-11-23,TASK-073 实测收口;G3/G4/G6 为已知部署注意项)
 - 缘起:宿主想把服务开给同学用(LAN/私网部署,非公网 SaaS)。需要多账户 + 数据隔离。
-- 结论先行:**服务端多用户栈已完整继承 Luker/ST,不需要造。要补的是薄客户端登录动词、SPA 登录页、以及「开关怎么翻」的操作路径。**
+- 结论先行:**服务端多用户栈已完整继承 Luker/ST,不需要造。要补的是薄客户端登录动词、SPA 登录页、以及「开关怎么翻」的操作路径。**(全部已补;端到端隔离由 `apps/server/tests/multi-account-isolation.test.mjs` 12 项子测试钉死。)
 
 ## 1. 现状证据(文件:行)
 
@@ -86,7 +86,7 @@ Web SPA 已接:`apps/web/src/api/admin.ts`(285-373 全动词)+ `account.ts`(getM
 | # | 缺口 | 影响 | 证据 |
 |---|---|---|---|
 | G1 | ~~**薄客户端无 login 动词**~~ **已补(TASK-071)**:api-client 长出 `account` 域 + 真 cookie 罐;mobile session.ts login/logout/me + SecureStore jar;CLI `login/logout/whoami` + 0600 session 档 | 剩余:mobile 登录屏 UI(api 层已通) | `packages/api-client/src/account.ts`;`apps/mobile/src/api/session.ts:260-311`;`apps/cli/utopinn-cli.mjs:1205-1287` |
-| G2 | **SPA 无登录页**:依赖 `shouldRedirectToLogin` → 旧 `public/login.html`(jQuery) | 短期接受:auth-expired 条引导去 /login(TASK-071);第一方页仍待另案 | `server-main.js:394`;`public/login.html`;`apps/web/src/App.tsx`(auth-expired bar) |
+| G2 | ~~**SPA 无登录页**~~ **已补(TASK-073)**:在途会话失效(auth-expired 广播)→ 第一方 `LoginGate` 全屏面 POST /api/users/login,成功整页重载;前门未登录 `GET /` 仍由服务端 302 去 legacy /login(恒可服务) | 收口 | `apps/web/src/components/shell/LoginGate.tsx`;`api/account.ts:loginAccount`;`App.tsx` 接线 |
 | G3 | **default-user 仍是 admin 且无密码**;listen+accounts 首次启动会自动铸随机密码打 stderr(安全闸已有),但宿主体验是"密码在日志里" | 首次开放部署的操作摩擦 | `users.js:200-263` |
 | G4 | **新 handle 从空目录开始**:朋友的账户看不到宿主的卡/书/预设 | 体验缺口(不是 bug):要么接受(各自导入卡),要么做"播种" | `users-admin.js:924-928` 只播 SETTINGS |
 | G5 | 账户开关是**模块加载期常量**,config/save 热更后必须重启进程 | admin UI 改 enableUserAccounts 需重启 | `users.js:31`;users-admin.js:500-504 已标 restartRecommended |
@@ -135,7 +135,7 @@ ssl: 或交给 frp/cloudflared/Caddy 终结
    要点:login 是 CSRF 保护的 POST —— `fetchCsrfToken` 必须先跑(index.ts:140-152 已有);login 成功后**同一 cookie jar 直接可用**,无需额外动作。403 时 autoReauth 重试逻辑已就位。
 2. **mobile**:session.ts 已有 jar + CSRF 轮换;补 login 屏(server URL 已有 SecureStore 持久化,加 handle+password 字段;cookie 也落 SecureStore 免重登)。403→重登录。
 3. **CLI**:`utopinn-cli.mjs` 同款握手,加 `--login/--handle/--password` 或交互式 login 子命令。
-4. **Web SPA**(中期):`/login` 路由做第一方登录页(POST /api/users/login + 错误态);短期接受 legacy login.html 即可,不阻塞。
+4. **Web SPA**(中期):`/login` 路由做第一方登录页(POST /api/users/login + 错误态);短期接受 legacy login.html 即可,不阻塞。**→ TASK-073 已落地**:`LoginGate` 蒙层组件(auth-expired → handle+password → login → 整页重载),i18n zh/en;前门 302 仍走 legacy。
 
 ### 3.4 数据播种(可选,建议做轻量版)
 
@@ -149,6 +149,23 @@ POST /api/users/seed {handle, fromHandle, sections:['characters','worlds','prese
 - 不做也行:朋友各自导入卡更符合"各自的小酒馆"语义。
 
 ### 3.5 安全边界提醒
+
+#### 3.5.1 隔离洞审计(TASK-073,已修/残余清单)
+
+**已修**:
+- `luker-generation.js createGenerationJob`:`job_id` 由客户端供且全局键控,回收旧 job 前**未校 owner**——B 重发 A 的 job_id 会 abort A 的在途上游、清掉 A 的事件缓冲并嫁接 persistTarget。现为 fail-closed:异主 job_id → `null`(runner 报 500),本人重试语义不变。回归:`multi-account-isolation.test.mjs` 子测试 12。
+
+**审计过、确认隔离(无需修)**:
+- job 读面/abort:`getTaskByRequestId(requestId, expectedOwner)` 异主 throw forbidden;WS 订阅绑 `ws.userHandle`。
+- chat_state/izumi/mvu:repo key 含 handle,B 打 A 的 `{avatar_url,file_name}` → 404。
+- card-runtime mounts:mint/list/revoke 按 `request.user.profile.handle`;public `/card-runtime/m/:id` 是**能力制**(不可猜 mountId),匿名可读为刻意设计——mountId 不经 API 向异主泄露。
+- shared secrets:`<dataRoot>/_shared/secrets.json`,`share.mode` 缺省 none(不落共享档);`handles` 名单逐条放行;admin 六动词 `requireAdminMiddleware` 挡普通用户;promote 是**复制**非转移。
+- script runs/TH/诊断:`meta.handle` 归属校验,diag admin-only。
+
+**残余注意项(文档级,非代码洞)**:
+- 生成 job 事件流里若客户端猜中他人 `requestId`,subscribe 面已由 `getTaskByRequestId` 挡;create 面本任务已挡 —— 两层都在,无残余。
+- `GET /login` 的 `perUserBasicAuth`/SSO 头路径未在本测试覆盖(部署可选功能,默认关)。
+- 账户目录若先手工落盘再 admin create 同名 handle,旧数据归新账户(§3.6,已记)。
 
 - **accounts-off 时人人 admin**(`isRequestAdmin` users.js:1324)——listen 开给同学前 `enableUserAccounts` 必须 true,否则朋友能读 config.yaml、管插件、看任意 handle 存储。
 - recover 流程把 6 位码打到**服务端 console**——私有部署下只有宿主能看到,等于"找宿主要重置码",可接受。

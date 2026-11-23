@@ -33,6 +33,29 @@ export async function getMe(): Promise<CurrentUser> {
     return (await res.json()) as CurrentUser;
 }
 
+/**
+ * POST /api/users/login —— cookie-session 登录;成功后 session.handle 落在
+ * 现有 cookie 上,无需换发。CSRF:登录也是 mutation,apiFetch 会先取
+ * /csrf-token(匿名会话即有 token 槽),401/403 时壳层已判死广播。
+ * 失败的 403 语义服务端统一为 'Incorrect credentials',不区分未知 handle。
+ * retryOn403=false:403 在这里是凭证答案而非 CSRF 过期——重放会让
+ * loginLimiter(校凭证前计 IP,5/min)把一次错登记成两次。
+ */
+export async function loginAccount(handle: string, password: string): Promise<void> {
+    const res = await apiFetch('/api/users/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ handle, password }),
+    }, { retryOn403: false });
+    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+}
+
+/** POST /api/users/logout —— 清 session.handle/csrfToken/version。 */
+export async function logoutAccount(): Promise<void> {
+    const res = await apiFetch('/api/users/logout', { method: 'POST' });
+    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+}
+
 /** POST /api/users/change-name —— 改显示名(204 No Content)。 */
 export async function changeUserName(handle: string, name: string): Promise<void> {
     const res = await apiFetch('/api/users/change-name', {

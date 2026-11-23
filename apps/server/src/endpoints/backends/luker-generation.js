@@ -512,6 +512,19 @@ export function createGenerationJob(request, options) {
         : null;
     const chatKey = getPersistChatKey(persistTarget);
     const existing = generationJobs.get(jobId);
+    const requestHandle = String(request.user?.profile?.handle || '');
+    // Multi-account guard: job ids are client-supplied and globally keyed.
+    // Recycling a job owned by a *different* handle would abort that user's
+    // in-flight upstream request ('superseded by retry' below), wipe the
+    // buffered event stream, and graft this request's persistTarget onto the
+    // victim's job record — a cross-user DoS/tamper via a guessable id.
+    // Fail closed instead: the owner keeps their job; the colliding request
+    // gets a 500 from the runner (legit ids are uuids — a foreign collision
+    // is adversarial, not accidental).
+    if (existing && String(existing.owner ?? existing.handle ?? '') !== requestHandle) {
+        console.warn(`[LukerGeneration] refusing to recycle job_id "${jobId}": owned by another handle`);
+        return null;
+    }
     const job = existing || {
         id: jobId,
         handle: request.user.profile.handle,

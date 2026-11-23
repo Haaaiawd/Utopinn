@@ -58,8 +58,13 @@ async function reportIfSessionDead(): Promise<void> {
 /**
  * fetch() with CSRF header attached. Retries once on 403 by rotating the
  * token — the session cookie may have been refreshed server-side.
+ *
+ * `opts.retryOn403 === false` skips that replay: callers whose 403 is a
+ * *domain* answer (e.g. /api/users/login 'Incorrect credentials') must not
+ * re-POST — the server rate limiter counts before checking credentials, so
+ * a replayed wrong-password attempt burns two of the 5/min budget.
  */
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(path: string, init: RequestInit = {}, opts: { retryOn403?: boolean } = {}): Promise<Response> {
     if (csrfToken === null) {
         try { await fetchCsrfToken(); } catch { /* server may be down; let fetch fail */ }
     }
@@ -69,7 +74,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
         return h;
     };
     let res = await fetch(path, { ...init, headers: makeHeaders() });
-    if (res.status === 403) {
+    if (res.status === 403 && opts.retryOn403 !== false) {
         csrfToken = null;
         try { await fetchCsrfToken(); } catch { /* ignore */ }
         res = await fetch(path, { ...init, headers: makeHeaders() });
