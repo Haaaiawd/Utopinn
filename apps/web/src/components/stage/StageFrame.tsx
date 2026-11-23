@@ -635,13 +635,19 @@ function SlashMenu({ onPick, onPickCommand, nav, cmdCount, hi, setHi, filter, in
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
                 className="pop-in absolute left-4 flex w-[300px] max-w-[calc(100%-32px)] flex-col rounded-2xl p-1.5 sm:left-6"
-                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--slash-pop-bottom, 94px)' }}
+                style={{
+                    background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', bottom: 'var(--slash-pop-bottom, 94px)',
+                    /* 卡高上限 = 舞台高 − 锚位(含 --vv-kbd)− 12px 顶安全距,
+                       叠 46vh 保桌面观感;键盘顶起 composer 时 cap 逐帧收紧,
+                       首行不被壳裁。公式与 mobileShell.capMenuAbove 同一把尺。 */
+                    maxHeight: 'min(46vh, calc(100% - var(--slash-pop-bottom, 94px) - 12px))',
+                }}
                 onClick={(e) => e.stopPropagation()}
             >
-                <div className="flex items-center justify-between px-2.5 py-1.5 text-[10.5px] font-medium text-[color:var(--fg-muted)]">
+                <div className="flex shrink-0 items-center justify-between px-2.5 py-1.5 text-[10.5px] font-medium text-[color:var(--fg-muted)]">
                     <span>{t('slash.menu.title')}</span><span className="font-mono-ui">/ {cmdCount}</span>
                 </div>
-                <div ref={scrollRef} className="max-h-[46vh] space-y-0.5 overflow-y-auto">
+                <div ref={scrollRef} className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
                     {quick.map((c) => (
                         <button
                             key={c.key}
@@ -750,7 +756,7 @@ function SlashMenu({ onPick, onPickCommand, nav, cmdCount, hi, setHi, filter, in
                     ))}
                 </div>
                 {/* footer:总闸 + 键位提示。总闸关掉后本菜单仅 `/` 钮可达 —— 开关留在现场。 */}
-                <div className="mt-1 flex items-center justify-between gap-2 border-t border-[color:var(--border-hairline)] px-2.5 pb-0.5 pt-1.5">
+                <div className="mt-1 flex shrink-0 items-center justify-between gap-2 border-t border-[color:var(--border-hairline)] px-2.5 pb-0.5 pt-1.5">
                     <button
                         type="button"
                         className="flex items-center gap-2 text-[10.5px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
@@ -2180,6 +2186,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
     /* 弹层抬升量看「QR 开关态」而非可见态 —— 规范稿弹层打开时 QR 条隐藏,
        但弹层锚位仍按 quickRepliesOpen 抬(126/92 桌面,122/88 移动)。 */
     const qrSpace = qrOpen && qrNames.length > 0 && stageKind === 'chat';
+    /* 面板钮重开档位:激活页是 cardapp 桶 → full(同 openPanel 规则,
+       half 净高摆不平嵌卡);其余页/launcher 页 → half。 */
+    const sheetOpenSnap = s.registry.find('panel.type', (c) => c.type === s.activeTab)?.category === 'cardapp' ? 'full' : 'half';
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const headerAvatar = card?.avatar ? charImageUrl(card.avatar) : builtinCoverSrc(s.chat?.charDir ?? '');
     /* 群会话(TASK-062):roster 可载成员数(禁/缺卡照实显示在 GroupPop)。 */
@@ -2313,7 +2322,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                     background: s.sheetSnap !== 'closed' ? 'var(--bg-active)' : 'var(--bg-surface)',
                                     borderColor: s.sheetSnap !== 'closed' ? 'var(--border-bold)' : 'var(--border-hairline)',
                                 }}
-                                onClick={() => s.setSheetSnap(s.sheetSnap === 'closed' ? 'half' : 'closed')}
+                                onClick={() => s.setSheetSnap(s.sheetSnap === 'closed' ? sheetOpenSnap : 'closed')}
                             >
                                 <Icon name="panelRight" size={15} active={s.sheetSnap !== 'closed'} /><span>{t('mob.panel')}</span>
                             </button>

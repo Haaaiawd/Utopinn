@@ -29,11 +29,30 @@ export function computeKeyboardInset(
     return inset >= KEYBOARD_MIN_INSET ? Math.round(inset) : 0;
 }
 
+/** 拖拽中的 sheet 高(px):跟手位移 dy = startY − clientY(正 = 向上拖),
+ *  下穿 0、上不过「可用舞台高」availH(shell 高 − 键盘遮挡)。
+ *  坐标系统一:CSS max-height、drag 归一化、松手阈值吃同一把尺 ——
+ *  键盘期 sheet 被 cap 到 availH 仍能拖到 full 档,不再卡 half。 */
+export function sheetDragHeight(startH: number, dy: number, availH: number): number {
+    return Math.max(0, Math.min(Math.max(0, availH), startH + dy));
+}
+
 /** sheet 松手落点:快速下甩(clientY 正增速)直接 closed,快速上甩直接
- *  full;无甩动按高阈收档(>72 full / >24 half / else closed,
- *  与旧 wireMobileSheetDrag 阈值一致)。velocityY 单位 px/ms,向下为正。 */
-export function resolveSheetSnap(heightPct: number, velocityY: number): SheetSnapTarget {
+ *  full;无甩动按「sheet 高 / 可用舞台高」高阈收档(>72 full / >24 half,
+ *  与旧 wireMobileSheetDrag 阈值一致)。velocityY 单位 px/ms,向下为正。
+ *  sheetH/availH 同为 px —— 键盘期 availH = shell 高 − --vv-kbd,
+ *  与 .vaul-sheet 的 max-height: calc(100% - var(--vv-kbd)) 同坐标系。 */
+export function resolveSheetSnap(sheetH: number, availH: number, velocityY: number): SheetSnapTarget {
     if (velocityY >= SHEET_FLICK_V) return 'closed';
     if (velocityY <= -SHEET_FLICK_V) return 'full';
-    return heightPct > 72 ? 'full' : heightPct > 24 ? 'half' : 'closed';
+    const pct = availH > 0 ? (sheetH / availH) * 100 : 0;
+    return pct > 72 ? 'full' : pct > 24 ? 'half' : 'closed';
+}
+
+/** 向上展开弹层的卡高上限(px)= 可用舞台高 − 锚点下偏移 − 顶部安全距。
+ *  CSS 侧同款:SlashMenu 卡 max-height calc(100% - var(--slash-pop-bottom) - 12px)
+ *  —— 锚位 var 已含 --vv-kbd,键盘期 cap 自动收紧,首行不被壳裁。
+ *  公式两端保持同步,改一处记得改另一处。 */
+export function capMenuAbove(stageH: number, anchorBottom: number, topMargin = 12): number {
+    return Math.max(0, stageH - anchorBottom - topMargin);
 }

@@ -37,8 +37,8 @@ import { closeCharEditor, closeGroupModal, closeImportModal, closeNewChatModal, 
 import { createGroup, patchGroupChat } from '../../api/groups';
 import { CardMasonry, CardTile } from '../CardTile';
 import { PluginsSections, useServerPlugins } from '../views/plugins';
-import { useViewportInset } from '../../lib/useViewportInset';
-import { resolveSheetSnap } from '../../lib/mobileShell';
+import { useViewportInset, readVvKbdPx } from '../../lib/useViewportInset';
+import { resolveSheetSnap, sheetDragHeight } from '../../lib/mobileShell';
 
 const mono = 'font-mono-ui';
 const inputCls = 'w-full rounded-lg px-2.5 text-[12px] outline-none';
@@ -61,42 +61,60 @@ export function MobileFrame() {
     const domainTrees = trees.filter((tr) => tr.rail === drawerDomain);
     const shellRef = useRef<HTMLDivElement>(null);
     const sheetRef = useRef<HTMLDivElement>(null);
+    /* 进行中的拖拽 pointerId —— 第二根手指的 down/move/up 全部忽略,
+       不然它的 pointerup 会被当成本次收尾,提前收档还算一次假 flick。 */
+    const dragPidRef = useRef<number | null>(null);
     /* 软键盘遮挡 → --vv-kbd:composer/sheet/弹层锚位经 var() 消费;
        只在移动壳挂(桌面形态不渲染本帧,卸载即复位)。 */
     useViewportInset();
 
-    /* 规范稿 wireMobileSheetDrag:手柄行按下(钮除外)→ 百分比跟手;
-     * 松手落点 = resolveSheetSnap(高阈 + 甩动):尾部窗口速度 |v|≥0.5px/ms
-     * 的快速滑动越档 —— 下甩直收(flick-to-dismiss),上甩直全。 */
+    /* 规范稿 wireMobileSheetDrag:手柄行按下(钮除外)→ 跟手;
+     * 坐标系统一:可用舞台高 availH = shell 高 − --vv-kbd 键盘遮挡,
+     * 拖拽 clamp(sheetDragHeight)与松手阈值(resolveSheetSnap)都按它
+     * 归一化 —— 键盘期 sheet 被 CSS max-height cap 到 availH 仍能拖 full。
+     * 松手落点 = 尾部窗口速度 |v|≥0.5px/ms 越档 —— 下甩直收,上甩直全。 */
     const onHandleDown = (e: React.PointerEvent) => {
         if ((e.target as HTMLElement).closest('button')) return;
+        if (dragPidRef.current !== null) return; // 多指:只认第一根的拖拽
         e.preventDefault();
         const sheet = sheetRef.current, shellEl = shellRef.current;
         if (!sheet || !shellEl) return;
+        const pid = e.pointerId;
+        dragPidRef.current = pid;
+        /* 指针捕获到手柄行:移出壳/扫过嵌卡 iframe 也不断拖;
+           无此 API 的环境(jsdom/老内核)静默回落到 window 事件。 */
+        try { (e.currentTarget as HTMLElement).setPointerCapture(pid); } catch { /* noop */ }
         const shellH = shellEl.getBoundingClientRect().height;
+        const availH = Math.max(0, shellH - readVvKbdPx());
         const startY = e.clientY;
         const startH = sheet.getBoundingClientRect().height;
         sheet.classList.add('dragging');
         /* 速度采样环:松手取 ~60–200ms 窗口内的最早样本算均速,
            末段停手(dt>200ms)视为无速度回落高阈 —— 不冤枉慢放。 */
         const trail: { t: number; y: number }[] = [{ t: e.timeStamp, y: e.clientY }];
+        const cleanup = () => {
+            dragPidRef.current = null;
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+        };
         const onMove = (ev: PointerEvent) => {
+            if (ev.pointerId !== pid) return;
             trail.push({ t: ev.timeStamp, y: ev.clientY });
             if (trail.length > 8) trail.shift();
-            sheet.style.height = `${Math.max(0, Math.min(94, ((startH + (startY - ev.clientY)) / shellH) * 100))}%`;
+            sheet.style.height = `${sheetDragHeight(startH, startY - ev.clientY, availH)}px`;
         };
         const onUp = (ev: PointerEvent) => {
+            if (ev.pointerId !== pid) return;
             sheet.classList.remove('dragging');
-            const finalPct = (sheet.getBoundingClientRect().height / shellH) * 100;
+            const finalH = sheet.getBoundingClientRect().height;
             sheet.style.height = '';
             let ref = trail[0]!;
             for (const p of trail) { if (ev.timeStamp - p.t >= 60) ref = p; else break; }
             const dt = ev.timeStamp - ref.t;
             const vy = dt > 0 && dt <= 200 ? (ev.clientY - ref.y) / dt : 0;
-            s.setSheetSnap(resolveSheetSnap(finalPct, vy));
-            window.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
-            window.removeEventListener('pointercancel', onUp);
+            s.setSheetSnap(resolveSheetSnap(finalH, availH, vy));
+            cleanup();
         };
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);

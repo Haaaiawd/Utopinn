@@ -988,7 +988,12 @@ function Shell() {
         workbenchOpen,
         toggleWorkbench: () => setWorkbenchOpen((v) => !v),
         openTabs, activeTab,
-        selectTab: (id) => setActiveTab(id),
+        selectTab: (id) => {
+            setActiveTab(id);
+            /* 移动端:选 cardapp 桶 tab 顺带升 full —— 与 openPanel 同规则
+               (嵌卡 half 净高摆不平);其它页不动 snap,别把拖好的位置顶飞。 */
+            if (isMobile && registry.find('panel.type', (c) => c.type === id)?.category === 'cardapp') setSheetSnap('full');
+        },
         openNewTab: () => { setActiveTab('newtab'); setWorkbenchOpen(true); },
         closeTab: (id) => {
             if (id === 'newtab') { setActiveTab((a) => (a === 'newtab' ? (openTabs[openTabs.length - 1] ?? '') : a)); return; }

@@ -4,6 +4,14 @@
 import { useEffect } from 'react';
 import { computeKeyboardInset } from './mobileShell';
 
+/** --vv-kbd 现值(px):写侧是本 hook;读侧给 sheet 拖拽的
+ *  「可用舞台高」归一化用 —— 键盘期 availH = shell 高 − 本值。
+ *  var 未写/解析失败归 0(无 visualViewport 环境 = 无遮挡)。 */
+export function readVvKbdPx(): number {
+    const n = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--vv-kbd'));
+    return Number.isFinite(n) ? n : 0;
+}
+
 export function useViewportInset(): void {
     useEffect(() => {
         const vv = window.visualViewport;
