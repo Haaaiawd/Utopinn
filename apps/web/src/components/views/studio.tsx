@@ -70,6 +70,15 @@ export function normStudioNav(v: string): StudioNav {
 }
 
 /* ------------------------------------------------------------------ */
+/* 离开守卫注册位                                                        */
+/* ------------------------------------------------------------------ */
+
+/** studio 页级离开守卫:持草稿的页挂载时挂 check(返回 true=放行,
+ *  false=拦下);壳层导航(移动返回键等)先问再走。未挂时行为与旧一致。
+ *  通用注册位 —— 任何 studio 页有未存草稿都可挂,不只服务世界书。 */
+const studioLeaveGuard: { check: (() => boolean) | null } = { check: null };
+
+/* ------------------------------------------------------------------ */
 /* 共享小件                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -291,7 +300,7 @@ function StudioShell({ nav, fill, children }: { nav: StudioNav; fill?: boolean; 
             {s.isMobile && (
                 <header className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-3">
                     <div className="flex min-w-0 items-center gap-1.5">
-                        <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => s.setView('hub')}>
+                        <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { if (studioLeaveGuard.check?.() ?? true) s.setView('hub'); }}>
                             <Icon name="arrowLeft" size={16} />
                         </button>
                         <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</span>
@@ -588,6 +597,14 @@ function WorldbookPage() {
         setDraftBox({ uid: selId, d: { ...curDraft, ...p } });
     };
     const guardDirty = (): boolean => !dirty || window.confirm(t('studio.world.discardConfirm'));
+    /* 挂上离开守卫:移动壳返回键先经 studioLeaveGuard 问一句 —— guardDirty
+       闭包随 dirty 变,latest-ref 防陈旧;卸载清位,不挡后来的页另挂。 */
+    const guardRef = useRef(guardDirty);
+    guardRef.current = guardDirty;
+    useEffect(() => {
+        studioLeaveGuard.check = () => guardRef.current();
+        return () => { studioLeaveGuard.check = null; };
+    }, []);
     const pickEntry = (uid: string) => {
         if (!guardDirty()) return;
         setSelUid(uid);

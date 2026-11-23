@@ -13,6 +13,7 @@ import { builtinCoverSrc } from '../../api/personas';
 import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
 import { getSettings } from '../../api/settings';
+import { wbStudioFocus } from '../../api/worlds';
 import { PanelEmpty, PanelError, useRemote } from '../panels/panelShared';
 import { downloadExport, exportCardUrl, exportChatUrl } from '../../api/export';
 import { charImgFallback } from '../stage/StageFrame';
@@ -114,7 +115,12 @@ export function CharView() {
     }
 
     const name = data.name || card?.name || dir;
-    const goStudio = (nav: string) => { s.setStudioNav(nav); s.setView('studio', true); };
+    /* 带书名跳 studio:本页看的卡 ≠ 活跃会话卡,必须显式带书,
+       否则 WorldbookPage 回落到活跃 chat 的绑书(StageFrame ChatInfoPop 同款)。 */
+    const goStudio = (nav: string, book?: string) => {
+        if (book) wbStudioFocus.set = book;
+        s.setStudioNav(nav); s.setView('studio', true);
+    };
 
     return (
         <section className="flex h-full min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-canvas)' }}>
@@ -196,9 +202,9 @@ export function CharView() {
                             {/* 绑定资产 —— 全真读数:主绑书/内嵌书/辅书/卡级正则 */}
                             {(boundWorld || bookEntries > 0 || extraBooks.length > 0 || regexChar) && (
                                 <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                                    {boundWorld && <AssetChip icon="bookOpen" label={boundWorld} title={t('charpage.chip.world')} onClick={() => goStudio('worldbook')} />}
+                                    {boundWorld && <AssetChip icon="bookOpen" label={boundWorld} title={t('charpage.chip.world')} onClick={() => goStudio('worldbook', boundWorld)} />}
                                     {bookEntries > 0 && <AssetChip icon="book" label={`${t('charpage.chip.embedded')} ×${bookEntries}`} title={t('charpage.chip.embedded.t')} onClick={() => openCharEditor(dir)} />}
-                                    {extraBooks.length > 0 && <AssetChip icon="layers" label={`${t('charpage.chip.extraBooks')} ×${extraBooks.length}`} title={extraBooks.join(' · ')} onClick={() => goStudio('worldbook')} />}
+                                    {extraBooks.length > 0 && <AssetChip icon="layers" label={`${t('charpage.chip.extraBooks')} ×${extraBooks.length}`} title={extraBooks.join(' · ')} onClick={() => goStudio('worldbook', extraBooks[0])} />}
                                     {regexChar && (
                                         <AssetChip
                                             icon="code"

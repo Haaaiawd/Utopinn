@@ -711,7 +711,7 @@ export function LorePanel() {
                 <div className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('panel.lore.title')}</div>
                 <button
                     className="text-[11.5px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
-                    onClick={() => { s.setView('studio', true); s.setStudioNav(bound?.worldName ? 'worldbook' : 'global'); }}
+                    onClick={() => { if (s.isMobile) s.setSheetSnap('closed'); s.setView('studio', true); s.setStudioNav(bound?.worldName ? 'worldbook' : 'global'); }}
                 >
                     {t('tree.manage')}
                 </button>
