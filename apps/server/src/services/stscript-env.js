@@ -31,6 +31,13 @@ export function avatarToCharDir(avatar) {
     return String(avatar ?? '').replace(/\.(png|webp|json)$/i, '');
 }
 
+/** avatar/charDir 穿越闸:含路径分隔或 .. 的 id 直接判死 —
+ *  STscript 入参可达此面,不洗就 join 出 characters 目录(PR#18 review)。 */
+export function safeCharDirName(avatar) {
+    const d = avatarToCharDir(avatar);
+    return (d && !d.includes('..') && !d.includes('/') && !d.includes('\\')) ? d : null;
+}
+
 export async function loadCard(directories, charDir) {
     const pngPath = path.join(directories.characters, `${charDir}.png`);
     const jsonPath = path.join(directories.characters, `${charDir}.json`);
@@ -341,11 +348,15 @@ export async function buildStscriptEnv({ handle, directories, charDir, chatName,
             return r?.name ?? null;
         },
         // /getcharbook primary/characterFilterNames 的卡读面:avatar key → charDir。
-        loadCharacterCard: (avatar) => loadCard(directories, avatarToCharDir(avatar)),
+        loadCharacterCard: (avatar) => {
+            const d = safeCharDirName(avatar);
+            return d ? loadCard(directories, d) : null;
+        },
         // writeExtensionField('world'):extensions.world 写回卡文件。
         // png → writeCharacterData 同端点写面(重嵌 chunk);json → 直写。
         setCharacterWorld: async (avatar, worldName) => {
-            const charDirName = avatarToCharDir(avatar);
+            const charDirName = safeCharDirName(avatar);
+            if (!charDirName) return false;
             const pngPath = path.join(directories.characters, `${charDirName}.png`);
             const jsonPath = path.join(directories.characters, `${charDirName}.json`);
             const fakeReq = { user: { profile: { handle, name: name1 }, directories } };

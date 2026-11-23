@@ -49,6 +49,33 @@ export class ChatRepo {
         });
     }
 
+    /** 原子「缺失即建」:单事务内查+写 —— 闭合「repo.get 缺 → repo.save 无条件
+     *  覆盖」的 TOCTOU(并发首写互踩,后到者把先到者的楼层整段换掉)。
+     *  已存在 → ConflictError('chat_exists'),调用方按 append/读取路径续走。 */
+    async createIfAbsent(handle, charDir, name, header, messages, { isGroup = false, groupId } = {}) {
+        assertWritable();
+        const key = this._key(handle, charDir, name, { isGroup, groupId });
+        const newIntegrity = randomUUID();
+        const now = this._now();
+        return this._engine.withTransaction(handle, async (tx) => {
+            const existing = await tx.getResource(key);
+            if (existing) {
+                throw new ConflictError('chat_exists', {
+                    handle, charDir, name,
+                    actual: existing.integrity,
+                });
+            }
+            await tx.putResource(key, {
+                header,
+                body: messages,
+                integrity: newIntegrity,
+                updatedAt: now,
+                createdAt: now,
+            });
+            return { integrity: newIntegrity };
+        });
+    }
+
     // Direct write that preserves the caller-supplied integrity / timestamps.
     // Use this only for migration: regular writes go through save() so the
     // engine rotates integrity and bumps updatedAt on every edit. The

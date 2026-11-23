@@ -998,7 +998,14 @@ async function runGroupGeneration(verb, { promptText = null } = {}) {
         if (postData?.skipped === 'no_activated_member') {
             return { jobId, text: '', skipped: true, groupReport: postData?.group ?? null, streamed: '' };
         }
-        const groupReport = (() => { try { return JSON.parse(headers.get('x-utopinn-group') ?? 'null'); } catch { return null; } })();
+        // 服务端 PR#18 起 encodeURIComponent 编码(CJK 名防 ERR_INVALID_CHAR);
+        // 旧实例裸 JSON 回执仍能兜底解析。
+        const groupReport = (() => {
+            const raw = headers.get('x-utopinn-group');
+            if (!raw) return null;
+            try { return JSON.parse(decodeURIComponent(raw)); } catch { }
+            try { return JSON.parse(raw); } catch { return null; }
+        })();
         const stream = await streamJob(jobId, {
             onDelta: (d) => {
                 if (JSON_MODE) { if (flags.stream) ndjson({ type: 'delta', text: d }); }

@@ -1902,7 +1902,7 @@ export function apply(ctx) {
             // settle/ack 机制读 body.avatar_url|file_name —— 合成写盘上下文
             const writeReq = { ...request, body: { ...body, avatar_url: hint.avatar_url, file_name: hint.file_name } };
             const repo = getChatRepo();
-            const existing = await repo.get(handle, charDir, chatName);
+            let existing = await repo.get(handle, charDir, chatName);
             const hasAiFloor = messages.some(m => m && m.is_user === false);
             const backup = (header, floors, integrity) => {
                 try {
@@ -1930,7 +1930,32 @@ export function apply(ctx) {
                 const floors = seed.floors.length
                     ? seed.floors.concat(cleanedMessages.filter((m) => !isEmptySystemSeedFloor(m)))
                     : cleanedMessages;
-                const { integrity: newIntegrity } = await repo.save(handle, charDir, chatName, header, floors, null);
+                // createIfAbsent 原子查+写:并发首写不再互踩(PR#18 review:
+                // 旧 save(null) 无条件覆盖,后到者整段换先到者的楼层)。
+                // 撞车 → 重读后落 append 路径,楼层不丢。
+                let newIntegrity;
+                try {
+                    ({ integrity: newIntegrity } = await repo.createIfAbsent(handle, charDir, chatName, header, floors));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err;
+                    existing = await repo.get(handle, charDir, chatName);
+                }
+                if (!newIntegrity) {
+                    // 并发已建 → 落到下方 append 路径(existing 已重读)。
+                    const appended = await appendMessagesToChatFile({
+                        filePath: chatFilePath, messages,
+                        chatMetadata: _.isObjectLike(body.chat_metadata) ? body.chat_metadata : {},
+                        integritySlug: slugRaw || undefined, force,
+                        incomingGenerationId: incomingId, handle, charDir, name: chatName,
+                    });
+                    await refreshRecentChatIndexEntry(request, chatFilePath, { avatar: hint.avatar_url });
+                    acknowledgeGenerationFromValueOrPersistTarget(writeReq, messages, hasAiFloor ? hint : null);
+                    await settleMvuAfterAppend(writeReq, { autoInit: true });
+                    return response.send({
+                        ok: true, appended: appended?.appended ?? 0, created: false,
+                        integrity: appended?.integrity ?? existing?.integrity ?? null,
+                    });
+                }
                 writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
                 if (incomingId) writeLastChatGenerationId(chatFilePath, incomingId);
                 backup(header, floors, newIntegrity);
@@ -2213,8 +2238,12 @@ export function apply(ctx) {
             if (!(await repo.exists(handle, '', defaultChatId, GROUP_CHAT_OPTS(defaultChatId)))) {
                 const headerDoc = { chat_metadata: {} };
                 const floors = await groupGreetingFloorsForNewChat(request, groupDoc, defaultChatId, headerDoc.chat_metadata);
-                await repo.save(handle, '', defaultChatId, headerDoc, floors, null, GROUP_CHAT_OPTS(defaultChatId));
-                await refreshRecentChatIndexEntry(request, path.join(request.user.directories.groupChats, `${defaultChatId}.jsonl`));
+                try {
+                    await repo.createIfAbsent(handle, '', defaultChatId, headerDoc, floors, GROUP_CHAT_OPTS(defaultChatId));
+                    await refreshRecentChatIndexEntry(request, path.join(request.user.directories.groupChats, `${defaultChatId}.jsonl`));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err; // 并发已建 → 问候不补,不覆盖
+                }
             }
             return response.status(201).send(groupDoc);
         } catch (error) {
@@ -2337,9 +2366,16 @@ export function apply(ctx) {
                 }
                 const floors = await groupGreetingFloorsForNewChat(request, group, chatId, headerDoc.chat_metadata);
                 if (floors.length) {
-                    await repo.save(handle, '', chatId, headerDoc, floors, null, GROUP_CHAT_OPTS(chatId));
-                    chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
-                    seeded = true;
+                    // CAS 写:integrity 用空快照的 —— 种子窗口里若有真楼到,
+                    // 冲突即弃种重读,不覆盖(PR#18 review)。
+                    try {
+                        await repo.save(handle, '', chatId, headerDoc, floors, chat?.integrity ?? null, GROUP_CHAT_OPTS(chatId));
+                        chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+                        seeded = true;
+                    } catch (err) {
+                        if (!(err instanceof ConflictError)) throw err;
+                        chat = await repo.get(handle, '', chatId, GROUP_CHAT_OPTS(chatId));
+                    }
                 }
             }
             const messages = await projectChatFloorsForDisplayResponse(request, '', chat, chatId);
@@ -2378,7 +2414,9 @@ export function apply(ctx) {
             }
             const headerDoc = { chat_metadata: {} };
             const floors = await groupGreetingFloorsForNewChat(request, group, chatId, headerDoc.chat_metadata);
-            const { integrity } = await repo.save(handle, '', chatId, headerDoc, floors, null, GROUP_CHAT_OPTS(chatId));
+            // createIfAbsent:exists→save 的窗口里并发建会静默覆盖(PR#18);
+            // 冲突由 sendError 统一映 409「Chat already exists」。
+            const { integrity } = await repo.createIfAbsent(handle, '', chatId, headerDoc, floors, GROUP_CHAT_OPTS(chatId));
             const chatFilePath = path.join(request.user.directories.groupChats, `${chatId}.jsonl`);
             await refreshRecentChatIndexEntry(request, chatFilePath);
             // 注册群↔会话绑定(group doc 持有 chats[] + chat_id)。
@@ -2432,19 +2470,41 @@ export function apply(ctx) {
                 const cleaned = messages.map(m => stripLukerGenerationIdFromMessage(_.cloneDeep(m)))
                     .filter((m) => !(seed.length && isEmptySystemSeedFloor(m)));
                 const floors = seed.concat(cleaned);
-                const { integrity: newIntegrity } = await repo.save(handle, '', chatId, header, floors, null, GROUP_CHAT_OPTS(chatId));
-                writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
-                if (typeof body.luker_generation_id === 'string' && body.luker_generation_id.trim()) {
-                    writeLastChatGenerationId(chatFilePath, body.luker_generation_id.trim());
-                }
+                // createIfAbsent 原子查+写:并发首写撞车 → 重读后落 append
+                // 路径,不再无条件覆盖(PR#18 review)。
+                let newIntegrity;
                 try {
-                    const headerWithIntegrity = { ...header, chat_metadata: applyIntegrityToMetadata(header.chat_metadata, newIntegrity) };
-                    getBackupFunction(handle, chatId)(request.user.directories.backups, chatId,
-                        [headerWithIntegrity, ...floors].map(m => JSON.stringify(m)).join('\n'));
-                } catch (backupErr) {
-                    console.error('Chat backup after group-chat create-append failed', backupErr);
+                    ({ integrity: newIntegrity } = await repo.createIfAbsent(handle, '', chatId, header, floors, GROUP_CHAT_OPTS(chatId)));
+                } catch (err) {
+                    if (!(err instanceof ConflictError)) throw err;
+                    result = await appendMessagesToChatFile({
+                        filePath: chatFilePath,
+                        messages,
+                        chatMetadata: _.isObjectLike(body.chat_metadata) ? body.chat_metadata : {},
+                        integritySlug,
+                        force,
+                        incomingGenerationId: typeof body.luker_generation_id === 'string' ? body.luker_generation_id : '',
+                        handle,
+                        charDir: '',
+                        name: chatId,
+                        isGroup: true,
+                        groupId: chatId,
+                    });
                 }
-                result = { appended: cleaned.length, created: true, integrity: newIntegrity, ...(seed.length ? { greeting_seeded: true } : {}) };
+                if (newIntegrity) {
+                    writeChatSyncState(chatFilePath, { integrity: newIntegrity, updated_at: Date.now() });
+                    if (typeof body.luker_generation_id === 'string' && body.luker_generation_id.trim()) {
+                        writeLastChatGenerationId(chatFilePath, body.luker_generation_id.trim());
+                    }
+                    try {
+                        const headerWithIntegrity = { ...header, chat_metadata: applyIntegrityToMetadata(header.chat_metadata, newIntegrity) };
+                        getBackupFunction(handle, chatId)(request.user.directories.backups, chatId,
+                            [headerWithIntegrity, ...floors].map(m => JSON.stringify(m)).join('\n'));
+                    } catch (backupErr) {
+                        console.error('Chat backup after group-chat create-append failed', backupErr);
+                    }
+                    result = { appended: cleaned.length, created: true, integrity: newIntegrity, ...(seed.length ? { greeting_seeded: true } : {}) };
+                }
             } else {
                 result = await appendMessagesToChatFile({
                     filePath: chatFilePath,
