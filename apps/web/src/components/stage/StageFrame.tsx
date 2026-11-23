@@ -1308,24 +1308,18 @@ export function StageFrame({ children }: { children: ReactNode }) {
 
     /* ——— 群生成(TASK-062)———
      *   选员恒在服务端(groupId 入参 → 纯函数编排);本层只透传 member 强指、
-     *   读 x-utopinn-group 回执链队尾。写回分工:
-     *     normal/regenerate → 服务端 persist_target(kind:group)自动落盘,
-     *                         客户端 waitJobPersisted 后 reload;
-     *     swipe/continue    → persist_target none + 客户端 PATCH(单聊同构);
-     *     impersonate/quiet → persist_target none + gen-id 记账 patch;
-     *     中止(aborted)     → cancelled job 无服务端 persist → 客户端补落
-     *                         带 extra.aborted 的成员楼(单路同款)。 */
-    const waitJobPersisted = useCallback(async (jobId: string, timeoutMs = 20000) => {
-        const start = Date.now();
-        for (;;) {
-            const j = await getJob(jobId).catch(() => null);
-            if (!j) return; /* job 面缺席 → 交 reload 兜底,不吊链 */
-            if (j.persisted || j.status === 'awaiting_ack' || j.status === 'completed') return;
-            if (j.status === 'failed' || j.status === 'cancelled') return; /* 失败不阻塞链,错误面已在楼层 */
-            if (Date.now() - start > timeoutMs) return;
-            await new Promise((r) => setTimeout(r, 320));
-        }
-    }, []);
+     *   读 x-utopinn-group 回执链队尾。写回分工(全动词客户端写盘,
+     *   单聊同构 —— PATCH 带 luker_generation_id 即时 ack,服务端 15s
+     *   兜底 persist 只兜 tab 丢失):
+     *     normal/regenerate → 追加成员楼(regen 旧批由服务端在组装前
+     *                         剥除,prompt/存储双干净,append 即 replace);
+     *     swipe/continue    → 末楼 PATCH(swipes 组/续写);
+     *     impersonate/quiet → gen-id 记账 patch;
+     *     中止(aborted)     → cancelled job 无兜底 → 客户端补落
+     *                         带 extra.aborted 的成员楼(单路同款)。
+     *   旧版 normal/regen 走服务端 persist + waitJobPersisted —— job 停在
+     *   awaiting_ack 只武装了 15s 兜底计时器,当 persisted 读会空 reload
+     *   掉楼 + 队列下一成员吃不到上一条回复,已废。 */
 
     /* 群楼层写回(clientWriteBack 动词 + 中止补楼)。`member` = x-utopinn-group
        回执发言者;缺席(异常路径)→ roster 首成员兜底名,不编造发言人。 */
@@ -1343,9 +1337,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
             avatar: groupDoc?.roster?.[0]?.avatar ?? '',
             name: groupDoc?.roster?.[0]?.name ?? chat.group ?? 'Member',
         };
-        /* normal/regenerate 未中止 = 服务端已 persist,客户端不写。 */
-        if ((type === 'normal' || type === 'regenerate') && !aborted) return;
-        if (type === 'normal' && aborted) {
+        /* normal/regenerate 一律追加:regen 旧批已被服务端在组装前剥除
+           (append 即 replace);aborted 半截文同样落楼。 */
+        if (type === 'normal' || type === 'regenerate') {
             if (text.trim()) await appendGroupChatMessages(gid, chatId, { message: mkGroupAssistantFloor(mem, text, { jobId, aborted }), lukerGenerationId: jobId });
             return;
         }
@@ -1353,13 +1347,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
         const lastIdx = raw.length - 1;
         const floor = lastIdx >= 0 ? raw[lastIdx]! : null;
         if (type === 'impersonate' || type === 'quiet') {
+            if (lastIdx < 0) return;
             await patchGroupChat(gid, chatId,
-                [{ op: 'replace', path: `/body/${Math.max(0, lastIdx)}/extra/luker_generation_id`, value: jobId }],
+                [{ op: 'replace', path: `/body/${lastIdx}/extra/luker_generation_id`, value: jobId }],
                 { lukerGenerationId: jobId });
             return;
         }
         if (!floor || floor.is_user) {
-            /* swipe/continue/regenerate(aborted)在末楼 user/空聊时 → 追加新楼 */
+            /* swipe/continue 在末楼 user/空聊时 → 追加新楼 */
             if (text.trim()) await appendGroupChatMessages(gid, chatId, { message: mkGroupAssistantFloor(mem, text, { jobId, aborted }), lukerGenerationId: jobId });
             return;
         }
@@ -1369,10 +1364,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             if (floor.extra && typeof floor.extra === 'object') ops.push({ op: 'add', path: `/body/${lastIdx}/extra/aborted`, value: true });
             else ops.push({ op: 'add', path: `/body/${lastIdx}/extra`, value: { aborted: true } });
         };
-        if (type === 'regenerate') {
-            /* 中止的 regen 覆盖末楼 = 单路同款(整楼换,swipe 组弃置)。 */
-            ops.push({ op: 'replace', path: `/body/${lastIdx}`, value: mkGroupAssistantFloor(mem, text, { jobId, aborted }) });
-        } else if (type === 'swipe') {
+        if (type === 'swipe') {
             const info = { send_date: new Date().toISOString(), gen_started: null, gen_finished: null, extra: {} };
             if (Array.isArray(floor.swipes)) {
                 ops.push({ op: 'add', path: `/body/${lastIdx}/swipes/-`, value: text });
@@ -1403,8 +1395,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
         const gid = chat?.groupId;
         if (!chat || !gid || busy) return;
         const imp = type === 'impersonate';
-        /* 服务端 persist 只覆盖追加型动词;swipe/continue/imp/quiet 客户端写回。 */
-        const clientWrite = type !== 'normal' && type !== 'regenerate';
+        /* 全动词客户端写回:persist_target none,PATCH 落楼带 gen-id ack。
+           服务端 persist 只在 15s 兜底兜 tab 丢失时出现。 */
         const presetClean = s.activePresetId ? s.activePresetId.replace(/\.json$/i, '') : undefined;
         const userBody = s.persona
             ? { name: s.persona.name, description: s.persona.description }
@@ -1426,7 +1418,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     ...(member ? { member } : {}),
                     ...(presetClean ? { presetName: presetClean } : {}),
                     user: userBody,
-                    clientWriteBack: clientWrite,
+                    clientWriteBack: true,
                 });
                 report = post;
                 if (post.skipped || !post.jobId) {
@@ -1472,13 +1464,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     else patchFloor(floorId, { streaming: false, error: { code: 'job_error', message: res.error, jobId, retry: { type } } });
                 } else {
                     if (!imp) setMsgs((prev) => prev.filter((m) => m.id !== floorId));
-                    if (clientWrite) {
-                        try { await writeBackGroupGeneration(type, res.text, jobId, false, report?.group?.member ?? null); }
-                        catch (e) { s.hint(t('stage.patch.failed') + ': ' + errText(e), true); }
-                    } else {
-                        /* 服务端 persist —— 等落盘,queue 链下一位组装要吃上新楼层 */
-                        await waitJobPersisted(jobId);
-                    }
+                    /* 客户端落楼带 gen-id → 服务端即时 ack job;queue 链
+                       下一位组装时楼层已在存储里(不再需要等服务端兜底)。 */
+                    try { await writeBackGroupGeneration(type, res.text, jobId, false, report?.group?.member ?? null); }
+                    catch (e) { s.hint(t('stage.patch.failed') + ': ' + errText(e), true); }
                 }
                 void refreshTokens(jobId);
                 void refreshMvu();
@@ -1510,7 +1499,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setJob(null);
             setBusy(false);
         }
-    }, [s, busy, groupDoc, patchFloor, reload, writeBackGroupGeneration, refreshTokens, refreshMvu, t, waitJobPersisted]);
+    }, [s, busy, groupDoc, patchFloor, reload, writeBackGroupGeneration, refreshTokens, refreshMvu, t]);
 
     /* ——— 生成写回(legacy save_decision 同构:除 impersonate/quiet 外,
      *     客户端写盘是常路,gen-id/命中末楼 ack 掉 awaiting_ack job,
