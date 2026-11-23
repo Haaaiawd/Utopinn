@@ -72,6 +72,13 @@ import {
     projectChatFloorsForDisplayResponse,
     createChatFloorRegexRunner,
 } from '../endpoints/chats.js';
+import {
+    REGEX_PERSISTED_MARK,
+    markCanonicalMes,
+    markCanonicalSwipe,
+    markCanonicalReasoning,
+} from '../services/extension-prompts.js';
+import { getGenerationJobForRequest } from '../endpoints/backends/luker-generation.js';
 import { regex_placement } from '@utopinn/core';
 import {
     getQueryCharacterAvatar,
@@ -1634,10 +1641,12 @@ export function apply(ctx) {
 
     /**
      * Output-side regex on floor-bound reasoning fields (GH#3 residual).
-     * Reply text arrives already transformed (completeGenerationJobFromText
-     * runs the display chain on job.text); floor reasoning has no earlier
+     * Reply text arrives already canonical (completeGenerationJobFromText
+     * runs the persisted lane on job.text); floor reasoning has no earlier
      * seam — appended extra.reasoning / swipe_info[].extra.reasoning get the
-     * same persisted -> markdown chain at REASONING placement, at depth 0.
+     * same persisted-lane pass at REASONING placement (upstream reasoning.js
+     * flagless call before store). Transformed fields are stamped
+     * reasoning_persisted so read/prompt projections run only their own lane.
      * Floors without reasoning short-circuit before the runner loads.
      */
     async function applyOutputReasoningRegex(request, charDir, chatName, chatHeader, chatBody, floors) {
@@ -1649,21 +1658,198 @@ export function apply(ctx) {
             if (!runner?.scriptCount) return;
             for (const m of floors) {
                 if (!m || typeof m !== 'object') continue;
-                const opts = { depth: 0, characterOverride: m.name };
                 if (typeof m.extra?.reasoning === 'string' && m.extra.reasoning) {
-                    m.extra = { ...m.extra, reasoning: runner.displayText(m.extra.reasoning, regex_placement.REASONING, opts) };
+                    m.extra = { ...m.extra, reasoning: runner.persisted(m.extra.reasoning, regex_placement.REASONING) };
+                    markCanonicalReasoning(m.extra);
                 }
                 if (Array.isArray(m.swipe_info)) {
                     m.swipe_info = m.swipe_info.map((si) => {
                         const raw = si?.extra?.reasoning;
                         if (typeof raw !== 'string' || !raw) return si;
-                        return { ...si, extra: { ...si.extra, reasoning: runner.displayText(raw, regex_placement.REASONING, opts) } };
+                        const extra = { ...si.extra, reasoning: runner.persisted(raw, regex_placement.REASONING) };
+                        markCanonicalReasoning(extra);
+                        return { ...si, extra };
                     });
                 }
             }
         } catch (error) {
             console.warn(`output reasoning regex skipped for ${charDir}/${chatName}:`, error?.message ?? error);
         }
+    }
+
+    /**
+     * Canonical marking for client write-backs (GH#3). A floor whose stored
+     * text equals the job's authoritative job.text already ran the persisted
+     * regex lane at completion — stamp regex_persisted so projections skip a
+     * second pass. Compare-and-mark only: client text that differs from
+     * job.text stays unmarked and keeps the legacy persisted → lane chain.
+     */
+    function markCanonicalFloorsFromJob(job, floors) {
+        const canonical = typeof job?.text === 'string' ? job.text : '';
+        if (!canonical) return;
+        for (const m of floors) {
+            if (!m || typeof m !== 'object') continue;
+            if (m.mes === canonical) markCanonicalMes(m);
+            if (Array.isArray(m.swipes)) {
+                m.swipes.forEach((s, i) => {
+                    const t = typeof s === 'string' ? s : s?.mes;
+                    if (t === canonical) markCanonicalSwipe(m, i);
+                });
+            }
+        }
+    }
+
+    /**
+     * Synthesize canonical-mark ops for a generation write-back PATCH.
+     * Client ops that store the job's authoritative text — /mes writes,
+     * /swipes writes and whole-floor replacements — get regex_persisted
+     * stamped; ops writing other text clear the mark so stale flags cannot
+     * survive a rewrite. Mark ops are appended AFTER the client ops and only
+     * where the parent extra object provably exists post-patch, keeping the
+     * patch valid — unprovable slots simply stay unmarked (legacy chain).
+     *
+     * @param {object[]} ops sanitized client patch ops
+     * @param {object[]|null} body existing chat body
+     * @param {string} jobText job's authoritative canonical text
+     * @returns {object[]} additional patch ops to append after `ops`
+     */
+    function canonicalMarkOpsForGenerationPatch(ops, body, jobText) {
+        const floorAt = (i) => (Array.isArray(body) ? body[i] : null);
+        // floor.extra post-ops state: 'object' (extra bag exists) | 'absent'
+        // (no extra key — safe to create) | 'other' (non-object value — never
+        // touch; a mark op would clobber or fail).
+        const floorExtraState = new Map();
+        const slotExtraOk = new Set();        // 'i:k' → swipe_info[k].extra is an object post-ops
+        const swipeLen = new Map();           // i → virtual swipes length
+        const infoLen = new Map();            // i → virtual swipe_info length
+        const candidates = [];                // {kind:'floor'|'slot', i, k?, match}
+
+        const seedFloor = (i, f) => {
+            const hasKey = f && typeof f === 'object' && 'extra' in f;
+            if (hasKey && f.extra && typeof f.extra === 'object' && !Array.isArray(f.extra)) floorExtraState.set(i, 'object');
+            else if (hasKey) floorExtraState.set(i, 'other');
+            else floorExtraState.set(i, 'absent');
+            if (Array.isArray(f?.swipe_info)) {
+                f.swipe_info.forEach((si, k) => {
+                    if (si?.extra && typeof si.extra === 'object' && !Array.isArray(si.extra)) slotExtraOk.add(`${i}:${k}`);
+                    else slotExtraOk.delete(`${i}:${k}`);
+                });
+            } else {
+                for (const key of [...slotExtraOk]) if (key.startsWith(`${i}:`)) slotExtraOk.delete(key);
+            }
+        };
+        if (Array.isArray(body)) body.forEach((f, i) => seedFloor(i, f));
+
+        const takeLen = (map, i, base) => { const v = map.has(i) ? map.get(i) : base; map.set(i, v + 1); return v; };
+        const textOf = (v) => (typeof v === 'string' ? v : v?.mes);
+
+        for (const op of ops) {
+            const seg = /^\/body\/(\d+)(?:\/(.*))?$/.exec(op?.path ?? '');
+            if (!seg) continue;
+            const i = Number(seg[1]);
+            const rest = seg[2] ?? '';
+            const name = String(op.op || '');
+
+            if (rest === 'mes' && (name === 'add' || name === 'replace')) {
+                candidates.push({ kind: 'floor', i, match: op.value === jobText });
+                continue;
+            }
+            if (rest === 'swipes/-' && name === 'add') {
+                const k = takeLen(swipeLen, i, Array.isArray(floorAt(i)?.swipes) ? floorAt(i).swipes.length : 0);
+                candidates.push({ kind: 'slot', i, k, match: op.value === jobText });
+                continue;
+            }
+            const swIdx = /^swipes\/(\d+)$/.exec(rest);
+            if (swIdx && (name === 'add' || name === 'replace')) {
+                candidates.push({ kind: 'slot', i, k: Number(swIdx[1]), match: op.value === jobText });
+                continue;
+            }
+            if (rest === 'swipes' && (name === 'add' || name === 'replace') && Array.isArray(op.value)) {
+                op.value.forEach((s, k) => candidates.push({ kind: 'slot', i, k, match: textOf(s) === jobText }));
+                swipeLen.set(i, op.value.length);
+                continue;
+            }
+            if (rest === 'swipe_info/-' && name === 'add') {
+                const k = takeLen(infoLen, i, Array.isArray(floorAt(i)?.swipe_info) ? floorAt(i).swipe_info.length : 0);
+                const ok = op.value && typeof op.value === 'object' && op.value.extra && typeof op.value.extra === 'object' && !Array.isArray(op.value.extra);
+                if (ok) slotExtraOk.add(`${i}:${k}`); else slotExtraOk.delete(`${i}:${k}`);
+                continue;
+            }
+            const siIdx = /^swipe_info\/(\d+)$/.exec(rest);
+            if (siIdx && (name === 'add' || name === 'replace')) {
+                const k = Number(siIdx[1]);
+                const ok = op.value && typeof op.value === 'object' && !Array.isArray(op.value)
+                    && op.value.extra && typeof op.value.extra === 'object' && !Array.isArray(op.value.extra);
+                if (ok) slotExtraOk.add(`${i}:${k}`); else slotExtraOk.delete(`${i}:${k}`);
+                continue;
+            }
+            if (rest === 'swipe_info' && (name === 'add' || name === 'replace')) {
+                for (const key of [...slotExtraOk]) if (key.startsWith(`${i}:`)) slotExtraOk.delete(key);
+                if (Array.isArray(op.value)) {
+                    op.value.forEach((si, k) => {
+                        if (si?.extra && typeof si.extra === 'object' && !Array.isArray(si.extra)) slotExtraOk.add(`${i}:${k}`);
+                    });
+                    infoLen.set(i, op.value.length);
+                }
+                continue;
+            }
+            if (rest === 'extra' && (name === 'add' || name === 'replace')) {
+                if (op.value && typeof op.value === 'object' && !Array.isArray(op.value)) floorExtraState.set(i, 'object');
+                else floorExtraState.set(i, 'other');
+                continue;
+            }
+            if (rest === '' && (name === 'add' || name === 'replace') && op.value && typeof op.value === 'object' && !Array.isArray(op.value)) {
+                // Whole-floor replace/add carrying canonical text → stamp
+                // marks inside the cloned value (atomic — no parent lookup).
+                const v = op.value;
+                if (v.mes === jobText) {
+                    const extra = v.extra && typeof v.extra === 'object' && !Array.isArray(v.extra) ? v.extra : {};
+                    const swipeInfo = Array.isArray(v.swipe_info)
+                        ? v.swipe_info.map((si, k) => {
+                            if (textOf(v.swipes?.[k]) !== jobText || !si || typeof si !== 'object' || Array.isArray(si)) return si;
+                            const se = si.extra && typeof si.extra === 'object' && !Array.isArray(si.extra) ? si.extra : {};
+                            return { ...si, extra: { ...se, [REGEX_PERSISTED_MARK]: true } };
+                        })
+                        : v.swipe_info;
+                    op.value = { ...v, extra: { ...extra, [REGEX_PERSISTED_MARK]: true }, ...(swipeInfo ? { swipe_info: swipeInfo } : {}) };
+                }
+                seedFloor(i, op.value);
+                continue;
+            }
+            if (name === 'remove') {
+                if (rest === 'extra') floorExtraState.set(i, 'absent');
+                if (rest === 'swipe_info' || /^swipe_info\/\d+$/.test(rest)) {
+                    for (const key of [...slotExtraOk]) if (key.startsWith(`${i}:`)) slotExtraOk.delete(key);
+                }
+                if (rest === '') {
+                    floorExtraState.set(i, 'absent');
+                    for (const key of [...slotExtraOk]) if (key.startsWith(`${i}:`)) slotExtraOk.delete(key);
+                }
+            }
+        }
+
+        // Marks apply after every client op — the proven state is final.
+        // 'other' floor-extra state stays unmarked (never clobber a
+        // non-object extra; legacy chain still projects correctly).
+        const marks = [];
+        for (const c of candidates) {
+            if (c.kind === 'floor') {
+                const state = floorExtraState.get(c.i) ?? 'absent';
+                if (state === 'object') {
+                    marks.push({ op: 'add', path: `/body/${c.i}/extra/${REGEX_PERSISTED_MARK}`, value: c.match });
+                } else if (state === 'absent' && c.match) {
+                    // Create the extra bag carrying only the mark — the floor
+                    // itself provably exists (a /mes write targeted it).
+                    marks.push({ op: 'add', path: `/body/${c.i}/extra`, value: { [REGEX_PERSISTED_MARK]: true } });
+                    floorExtraState.set(c.i, 'object');
+                }
+                continue;
+            }
+            if (slotExtraOk.has(`${c.i}:${c.k}`)) {
+                marks.push({ op: 'add', path: `/body/${c.i}/swipe_info/${c.k}/extra/${REGEX_PERSISTED_MARK}`, value: c.match });
+            }
+        }
+        return marks;
     }
 
     /**
@@ -1712,6 +1898,16 @@ export function apply(ctx) {
             // already-transformed stored floor.
             await applyOutputReasoningRegex(request, charDir, chatName,
                 existing?.header, existing?.body, cleanedMessages);
+
+            // Canonical marks: floors carrying the finalized job's
+            // authoritative text already ran the persisted lane at
+            // completion. Stamp before dedupe — a retried append marks the
+            // same client payload identically, so content-equality dedupe
+            // is unaffected.
+            const ackJob = incomingId ? getGenerationJobForRequest(writeReq, incomingId) : null;
+            if (ackJob?.outputRegexApplied) {
+                markCanonicalFloorsFromJob(ackJob, cleanedMessages);
+            }
 
             // legacy「缺失即建」:首写/吞楼层依赖——create + autoInit settle
             if (!existing) {
@@ -1839,6 +2035,14 @@ export function apply(ctx) {
                 for (const [k, v] of Object.entries(body.chat_metadata)) {
                     sanitizedOps.push({ op: 'add', path: `/header/chat_metadata/${k.replace(/~/g, '~0').replace(/\//g, '~1')}`, value: v });
                 }
+            }
+
+            // Canonical marks: ops storing the job's authoritative text get
+            // regex_persisted stamped so projections skip a second persisted
+            // pass; mark ops are synthesized last so their parents exist.
+            const patchJob = incomingId ? getGenerationJobForRequest(writeReq, incomingId) : null;
+            if (patchJob?.outputRegexApplied && typeof patchJob.text === 'string' && patchJob.text) {
+                sanitizedOps.push(...canonicalMarkOpsForGenerationPatch(sanitizedOps, existing?.body, patchJob.text));
             }
 
             let result;

@@ -862,7 +862,10 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     // 轮询上限 4s:通常 dispatch 收尾后 status.text 立即可得;
     // awaiting_ack 一到就返回立刻写盘(grace 只剩 ~11s)。
     const status = await pollStatus(jobId, { waitMs: 4_000, breakOn: ['awaiting_ack'] }) ?? {};
-    const text = String(status?.text ?? '') || stream.streamed;
+    // Finalized status text is authoritative — including the finalized-empty
+    // (outputFiltered) ''. Only a missing status falls back to the raw stream,
+    // so provider chunks can never re-fill a reply the regex fully consumed.
+    const text = status?.status ? String(status?.text ?? '') : stream.streamed;
     const genFinished = isoNow();
     if (!status?.status && !stream.frames.end) {
         // 完全失联:既没 end 帧又没终态——写盘可能与服务端兜底撞出双层
@@ -887,7 +890,7 @@ async function runGeneration(verb, { promptText = null, writeMode = 'auto' } = {
     });
     ring(CMD, failedUpstream ? 5 : 0, { job: jobId.slice(0, 8) });
 
-    const data = { job_id: jobId, text, status: finalStatus?.status, persisted: Boolean(finalStatus?.persisted), elapsed_ms: elapsed, cosmetic_failed: cosmetic || undefined };
+    const data = { job_id: jobId, text, status: finalStatus?.status, persisted: Boolean(finalStatus?.persisted), elapsed_ms: elapsed, cosmetic_failed: cosmetic || undefined, output_filtered: status?.outputFiltered === true || undefined };
     if (JSON_MODE) {
         ndjson({ type: 'done', ok: !failedUpstream, data, ctx: ctxSummary(), next: genNextFor(verb, failedUpstream) });
     } else {
@@ -1011,7 +1014,9 @@ async function runGroupGeneration(verb, { promptText = null } = {}) {
         });
         if (!JSON_MODE) process.stdout.write('\n');
         const status = await pollStatus(jobId, { waitMs: 4_000, breakOn: ['awaiting_ack'] }) ?? {};
-        const text = String(status?.text ?? '') || stream.streamed;
+        // Same authoritative-text contract as runGeneration: a finalized
+        // status (incl. finalized-empty outputFiltered '') wins over chunks.
+        const text = status?.status ? String(status?.text ?? '') : stream.streamed;
         return { jobId, text, status, groupReport, streamed: stream.streamed, elapsed: Date.now() - started };
     };
 
@@ -2308,8 +2313,9 @@ async function cmdAttach() {
     const stream = await streamJob(id, { fromSeq: flags.fromSeq ?? 1, onDelta: (d) => { if (JSON_MODE) { if (flags.stream) ndjson({ type: 'delta', text: d }); } else process.stdout.write(d); } });
     if (!JSON_MODE) process.stdout.write('\n');
     const final = await pollStatus(id, { waitMs: 30_000 });
-    // authoritative job text 优先——断流重接的残件不能盖过服务端成文
-    const text = final?.text || stream.streamed || '';
+    // authoritative job text 优先——断流重接的残件不能盖过服务端成文;
+    // finalized-empty(outputFiltered '')同样是权威空,不回落 raw stream。
+    const text = final?.status ? String(final?.text ?? '') : (stream.streamed || '');
     const graceExpired = final?.status === 'failed' && /within grace/.test(final?.error ?? '');
     const wr = await maybeCompensateAttachWrite(id, final, text);
     if (wr && !graceExpired) { const after = await pollStatus(id, { waitMs: 10_000 }); if (after) Object.assign(final, after); }

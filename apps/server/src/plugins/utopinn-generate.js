@@ -384,6 +384,10 @@ export function apply(ctx) {
             text: job.text ?? '',
             error: job.error || null,
             persisted: Boolean(job.persisted),
+            // Finalized-empty terminal: output regex consumed the whole reply.
+            // Distinct from provider-empty (failed) — clients must not fill
+            // the floor with raw streamed chunks when this is true.
+            outputFiltered: Boolean(job.outputFiltered),
             lastSeq: job.lastSeq ?? 0,
             eventCount: Array.isArray(job.events) ? job.events.length : 0,
             trace: job.trace ?? null,

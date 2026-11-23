@@ -27,6 +27,13 @@ export interface JobDetail {
     text: string;
     error: string | null;
     persisted: boolean;
+    /**
+     * Finalized-empty terminal: output regex consumed the whole reply.
+     * Distinct from provider-empty (failed) — the job completed with
+     * nothing to persist; clients must not fill the floor from raw
+     * streamed chunks when this is true.
+     */
+    outputFiltered?: boolean;
     lastSeq: number;
     eventCount: number;
     trace: {
@@ -52,6 +59,29 @@ export async function listJobs(): Promise<{ items: JobSummary[] }> {
 
 export async function getJob(id: string): Promise<JobDetail> {
     return apiGet(`/api/utopinn/jobs/${encodeURIComponent(id)}`);
+}
+
+const JOB_FINAL_STATUSES = new Set(['awaiting_ack', 'persisting', 'completed', 'failed', 'cancelled']);
+
+/**
+ * Poll GET /jobs/:id until the job leaves running/queued or the timeout
+ * elapses, then return the last seen detail (null when never fetched).
+ * The WS `end` frame precedes server-side finalization — output regex and
+ * the filtered-empty check run after dispatch — so consumers needing the
+ * authoritative finalized text must wait for the status to settle.
+ */
+export async function waitJobFinal(id: string, { timeoutMs = 5000, intervalMs = 250 } = {}): Promise<JobDetail | null> {
+    const deadline = Date.now() + timeoutMs;
+    let last: JobDetail | null = null;
+    do {
+        try {
+            const job = await getJob(id);
+            last = job;
+            if (JOB_FINAL_STATUSES.has(String(job.status))) return job;
+        } catch { /* transient fetch failure — keep polling until deadline */ }
+        await new Promise((r) => setTimeout(r, intervalMs));
+    } while (Date.now() < deadline);
+    return last;
 }
 
 /**

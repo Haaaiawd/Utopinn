@@ -11,6 +11,7 @@ import { stripJsonlExt } from '../../storage/name-validation.js';
 import { getChatRepo } from '../../storage/index.js';
 import { settlePersistedMvuMessage } from '../../services/mvu-settle.js';
 import { emit as diagEmit } from '../../services/diag-bus.js';
+import { REGEX_PERSISTED_MARK } from '../../services/extension-prompts.js';
 import { regex_placement } from '@utopinn/core';
 
 const generationJobs = new Map();
@@ -672,6 +673,7 @@ function notifyJobStatus(job) {
         text: job.text,
         last_seq: job.lastSeq,
         error: job.error || '',
+        output_filtered: Boolean(job.outputFiltered),
         finished_at: job.finishedAt || null,
     });
     emitJobTransition(job);
@@ -863,6 +865,9 @@ async function persistGeneratedReply(job, text, generationId = '', modelName = '
             api: String(job?.requestMeta?.api || 'unknown'),
             model: modelName || job?.modelName || job?.requestMeta?.model || '',
             luker_server_persisted: true,
+            // Canonical mark: job.text already ran the persisted regex lane at
+            // completion — projections/prompt assembly must not re-apply it.
+            ...(job?.outputRegexApplied === true ? { [REGEX_PERSISTED_MARK]: true } : {}),
             ...(generationId ? { luker_generation_id: generationId } : {}),
         },
     };
@@ -1101,6 +1106,8 @@ async function persistGeneratedSwipe(job, text, generationId = '', modelName = '
         api: String(job?.requestMeta?.api || 'unknown'),
         model: modelName || job?.modelName || job?.requestMeta?.model || '',
         luker_server_persisted: true,
+        // Canonical mark — job.text already ran the persisted regex lane.
+        ...(job?.outputRegexApplied === true ? { [REGEX_PERSISTED_MARK]: true } : {}),
         // 群楼层同 persistGeneratedReply:gen_id = 群批次 id(对账键)。
         ...(isGroup && persistTarget.gen_id !== undefined && persistTarget.gen_id !== null
             ? { gen_id: persistTarget.gen_id }
@@ -1236,32 +1243,34 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
 
     // GH#3 residual — output-side regex on the generated reply, once, before
     // any persist route sees it. Upstream cleanUpMessage (script.js:11481)
-    // rewrote the reply before the floor landed; the stored form here is the
-    // display chain (persisted -> markdown at depth 0) so `mes` equals what
-    // clients render. Impersonate floors land as is_user -> USER_INPUT, all
-    // other verbs -> AI_OUTPUT, matching chatFloorRegexPlacement.
+    // rewrote the reply before the floor landed via the flagless persisted
+    // lane; that is the lane applied here. Display-only markdown transforms
+    // and prompt-only strips are deliberately NOT applied — job.text stays
+    // canonical so every persist route, next-round prompt assembly and MVU
+    // settle all consume the same authoritative text, while the display
+    // projection re-derives its own view at read time. Impersonate floors
+    // land as is_user -> USER_INPUT, all other verbs -> AI_OUTPUT, matching
+    // chatFloorRegexPlacement. Floors stored from this text are stamped
+    // extra.regex_persisted so projections skip a second persisted pass.
     //
     // Ordering vs MVU settle: this runs strictly before every settle call —
     // client appends, PATCH swipe merges and the grace-timer fallback all
     // consume job.text — preserving upstream order (regex -> floor lands ->
-    // settle folds). extractCommands scans _.cmd(/<json_patch> patterns, so
-    // wrapper-preserving rewrites (e.g. <UpdateVariable> fold-cards) still
-    // settle; scripts that strip the commands lose fold input exactly like
-    // upstream persisted-lane strips. A post-settle pass would need the same
-    // transform threaded through every settle call site plus a second write,
-    // and its only extra reach — rewriting <StatusPlaceHolderImpl/> — would
-    // destroy the mount anchor status panels expect in stored mes.
+    // settle folds). extractCommands scans _.cmd(/<json_patch> patterns in the
+    // canonical text, so <UpdateVariable> blocks hidden only for display still
+    // settle. A post-settle pass would need the same transform threaded
+    // through every settle call site plus a second write, and its only extra
+    // reach — rewriting <StatusPlaceHolderImpl/> — would destroy the mount
+    // anchor status panels expect in stored mes.
     const outputRunner = request?.utopinnFloorRegexRunner;
     if (outputRunner?.scriptCount) {
         const placement = job.requestMeta?.verb === 'impersonate'
             ? regex_placement.USER_INPUT
             : regex_placement.AI_OUTPUT;
-        const processed = outputRunner.displayText(job.text, placement, {
-            depth: 0,
-            characterOverride: job.requestMeta?.char_name || undefined,
-        });
+        const processed = outputRunner.persisted(job.text, placement);
         const applied = processed === job.text ? 0 : 1;
         job.text = processed;
+        job.outputRegexApplied = true;
         diagEmit({
             lvl: 'info', kind: 'inject', code: 'regex_output',
             msg: `regex_output ${job.chatKey || job.id} scripts=${outputRunner.scriptCount} applied=${applied}`,
@@ -1280,8 +1289,27 @@ export async function completeGenerationJobFromText(request, job, text, modelNam
                 scripts: outputRunner.scriptCount,
                 injected: applied,
                 applied,
+                filtered: processed === '' ? 1 : 0,
             },
         });
+    }
+
+    // A reply fully consumed by valid output regex is a finalized result, NOT
+    // "provider produced nothing" (the failed branch above). The job completes
+    // with outputFiltered=true, nothing is persisted, and clients must not
+    // back-fill the floor from raw provider chunks after this terminal frame.
+    if (!job.text) {
+        job.outputFiltered = true;
+        job.status = 'completed';
+        job.error = '';
+        job.updatedAt = Date.now();
+        job.finishedAt = Date.now();
+        job.persisted = false;
+        job.persistenceInFlight = false;
+        job.abortController = null;
+        clearGenerationJobPersistenceTimer(job);
+        notifyJobStatus(job);
+        return false;
     }
     // TASK-044 theater 快照:结构化产出此时定稿(流式 job.text 全量已到)。
     // jobs 详情面立即透出 choices/extra;兜底 persist 按同一份 lift 落楼,
@@ -1411,7 +1439,7 @@ export function cancelGenerationJobForRequest(request, jobId, reason = 'Cancelle
 }
 
 async function persistGenerationJobIfUnacked(job) {
-    if (!job || job.status === 'cancelled' || job.status === 'failed' || job.persisted || job.acked) {
+    if (!job || job.status === 'cancelled' || job.status === 'failed' || job.status === 'completed' || job.persisted || job.acked) {
         return Boolean(job?.persisted);
     }
 

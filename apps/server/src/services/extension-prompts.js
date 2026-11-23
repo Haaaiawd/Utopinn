@@ -234,6 +234,65 @@ export function createFloorRegexRunner(settingsDoc, substCtx, opts = {}) {
     return { scripts, scriptCount: scripts.length, persisted, markdown, prompt, displayText, promptText };
 }
 
+// —— Canonical marks(写面打标)——
+// Since the generation seam now runs the persisted lane on job.text BEFORE
+// any persist route sees it (GH#3 output lane), every stored text that came
+// from a finalized job is already canonical: the persisted lane must NOT be
+// re-applied at read/prompt time (a second pass would double-transform
+// non-idempotent scripts). Write seams stamp these marks; read projections
+// and prompt assembly skip the persisted step for marked text while legacy
+// unmarked floors keep the historical persisted → lane chain.
+//   extra.regex_persisted                    floor.mes is canonical
+//   swipe_info[i].extra.regex_persisted      swipes[i] is canonical
+//   extra.reasoning_persisted                extra.reasoning is canonical
+//   swipe_info[i].extra.reasoning_persisted  per-version reasoning is canonical
+export const REGEX_PERSISTED_MARK = 'regex_persisted';
+export const REASONING_PERSISTED_MARK = 'reasoning_persisted';
+
+/** floor.mes already ran the persisted lane at write time. */
+export const isCanonicalMes = (m) => m?.extra?.[REGEX_PERSISTED_MARK] === true;
+/** swipes[i] already ran the persisted lane at write time. */
+export const isCanonicalSwipe = (m, i) => m?.swipe_info?.[i]?.extra?.[REGEX_PERSISTED_MARK] === true;
+/** An extra.reasoning field already ran the persisted lane at write time. */
+export const isCanonicalReasoning = (extra) => extra?.[REASONING_PERSISTED_MARK] === true;
+
+/**
+ * Stamp the canonical mes mark on a floor object (mutates in place).
+ * @param {object} m floor
+ * @returns {object} same floor
+ */
+export function markCanonicalMes(m) {
+    if (!m || typeof m !== 'object') return m;
+    m.extra = {
+        ...(m.extra && typeof m.extra === 'object' && !Array.isArray(m.extra) ? m.extra : {}),
+        [REGEX_PERSISTED_MARK]: true,
+    };
+    return m;
+}
+
+/**
+ * Stamp the canonical swipe mark on swipe_info[i].extra. Only marks an
+ * existing slot — callers never fabricate swipe_info entries.
+ * @param {object} m floor
+ * @param {number} i swipe index
+ */
+export function markCanonicalSwipe(m, i) {
+    const si = Array.isArray(m?.swipe_info) ? m.swipe_info[i] : null;
+    if (si && typeof si === 'object' && !Array.isArray(si)) {
+        si.extra = {
+            ...(si.extra && typeof si.extra === 'object' && !Array.isArray(si.extra) ? si.extra : {}),
+            [REGEX_PERSISTED_MARK]: true,
+        };
+    }
+}
+
+/** Stamp the canonical reasoning mark on an extra bag (mutates in place). */
+export function markCanonicalReasoning(extra) {
+    if (extra && typeof extra === 'object' && !Array.isArray(extra)) {
+        extra[REASONING_PERSISTED_MARK] = true;
+    }
+}
+
 /** swipe 元素 → 文本:持久层允许 string 与 {mes} 两种形。 */
 const swipeTextOf = (s) => (typeof s === 'string' ? s : (s && typeof s === 'object' ? s.mes : undefined));
 
@@ -275,16 +334,20 @@ export function projectChatFloorsForDisplay(messages, runner) {
         const placement = chatFloorRegexPlacement(m);
         const depth = depthOf.get(i);
         const displayTextOverride = typeof m.extra?.display_text === 'string' ? m.extra.display_text : null;
-        // display_text 未走持久车道 → markdown-only;常态正文 = 持久 → 展示串接。
-        const show = (raw) => typeof raw === 'string'
-            ? (displayTextOverride !== null
+        // display_text 未走持久车道 → markdown-only;标记为 canonical 的存储文
+        // 同样跳过持久车道(写面已跑过);其余 = 持久 → 展示串接。
+        const show = (raw, canonical = false) => typeof raw === 'string'
+            ? (displayTextOverride !== null || canonical
                 ? runner.markdown(raw, placement, { depth, characterOverride: m.name })
                 : runner.displayText(raw, placement, { depth, characterOverride: m.name }))
             : raw;
         // reasoning 同链:上游 ParsedReasoning 落盘前过 flagless REASONING
-        // (reasoning.js:514),展示再跑 isMarkdown(message-formatter 4252)。
-        const showReasoning = (raw) => typeof raw === 'string' && raw
-            ? runner.displayText(raw, regex_placement.REASONING, { depth, characterOverride: m.name })
+        // (reasoning.js:514),展示再跑 isMarkdown(message-formatter 4252);
+        // canonical 标记的 reasoning 只跑 markdown 车道。
+        const showReasoning = (raw, canonical = false) => typeof raw === 'string' && raw
+            ? (canonical
+                ? runner.markdown(raw, regex_placement.REASONING, { depth, characterOverride: m.name })
+                : runner.displayText(raw, regex_placement.REASONING, { depth, characterOverride: m.name }))
             : undefined;
 
         let changed = false;
@@ -292,14 +355,15 @@ export function projectChatFloorsForDisplay(messages, runner) {
 
         // 正文:display_text 覆盖 > 原样 mes(上游 active 视图渲染的就是 mes)。
         const mesBase = displayTextOverride ?? m.mes;
-        out.mes_display = show(mesBase);
+        out.mes_display = show(mesBase, isCanonicalMes(m));
         if (out.mes_display !== mesBase) changed = true;
 
-        // 各 swipe 版本(display_text 在场时上游对任何 swipe 都渲它)。
+        // 各 swipe 版本(display_text 在场时上游对任何 swipe 都渲它);
+        // canonical 标记按版本挂在 swipe_info[i].extra 上。
         if (Array.isArray(m.swipes) && m.swipes.length) {
-            out.swipes_display = m.swipes.map((s) => {
+            out.swipes_display = m.swipes.map((s, si) => {
                 const raw = displayTextOverride ?? swipeTextOf(s);
-                const projected = show(raw);
+                const projected = show(raw, isCanonicalSwipe(m, si));
                 if (projected !== raw) changed = true;
                 return projected;
             });
@@ -307,7 +371,7 @@ export function projectChatFloorsForDisplay(messages, runner) {
 
         // 推理文本(独立 REASONING 车道;只跑 markdown,与上游一致——
         // cleanUpMessage 不动 reasoning)。
-        const rd = showReasoning(m.extra?.reasoning);
+        const rd = showReasoning(m.extra?.reasoning, isCanonicalReasoning(m.extra));
         if (rd !== undefined) {
             out.reasoning_display = rd;
             if (rd !== m.extra.reasoning) changed = true;
@@ -319,7 +383,7 @@ export function projectChatFloorsForDisplay(messages, runner) {
             out.swipe_info = m.swipe_info.map((si) => {
                 const r = si?.extra?.reasoning;
                 if (typeof r !== 'string' || !r) return si;
-                const srd = showReasoning(r);
+                const srd = showReasoning(r, isCanonicalReasoning(si.extra));
                 if (srd === r) return si;
                 changed = true;
                 return { ...si, extra: { ...si.extra, reasoning_display: srd } };
@@ -354,14 +418,22 @@ export function applyChatFloorsPromptRegex(messages, runner, { isContinue = fals
         const persistedPlacement = chatFloorRegexPlacement(m);
         const promptPlacement = m.is_user ? regex_placement.USER_INPUT : regex_placement.AI_OUTPUT;
         const depth = list.length - index - (isContinue ? 2 : 1);
+        // Canonical floors already ran the persisted lane at write time — only
+        // the prompt lane remains (upstream coreChat reads stored canonical
+        // text). Unmarked legacy floors keep the persisted → prompt chain.
         const mes = typeof m.mes === 'string'
-            ? runner.prompt(runner.persisted(m.mes, persistedPlacement), promptPlacement, { depth })
+            ? (isCanonicalMes(m)
+                ? runner.prompt(m.mes, promptPlacement, { depth })
+                : runner.prompt(runner.persisted(m.mes, persistedPlacement), promptPlacement, { depth }))
             : m.mes;
         // 上游 reasoning 落盘前已过 flagless REASONING(reasoning.js:514)
-        // → 出参再跑 persisted→prompt 串接,与正文同链。
+        // → 出参再跑 persisted→prompt 串接,与正文同链;canonical reasoning
+        // 只跑 prompt 车道。
         const rawReasoning = m.extra?.reasoning;
         const reasoning = typeof rawReasoning === 'string' && rawReasoning
-            ? runner.promptText(rawReasoning, regex_placement.REASONING, { depth })
+            ? (isCanonicalReasoning(m.extra)
+                ? runner.prompt(rawReasoning, regex_placement.REASONING, { depth })
+                : runner.promptText(rawReasoning, regex_placement.REASONING, { depth }))
             : rawReasoning;
         if (mes === m.mes && reasoning === rawReasoning) return m;
         applied++;

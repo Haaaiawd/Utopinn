@@ -20,9 +20,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
+import WebSocket from 'ws';
 
 import { getConfigFilePath, setConfigFilePath, reloadConfigCache } from '../src/util.js';
 import { initStorage, getChatRepo, getPresetRepo, getSettingsRepo } from '../src/storage/index.js';
@@ -32,7 +34,7 @@ import { query as diagQuery } from '../src/services/diag-bus.js';
 
 // chats.js 传递依赖(backends/luker-generation.js)模块级读 config ——
 // 必须 setConfigFilePath 后才可 import,故重依赖全部动态引入。
-let chatsRouter, applyUtopinnLibrary, applyUtopinnRegex, lukerGeneration;
+let chatsRouter, applyUtopinnLibrary, applyUtopinnRegex, applyUtopinnGenerate, applyUtopinnDelivery, lukerGeneration, runLukerDispatch, wsTicketTestUtils;
 
 test.before(async () => {
     if (!getConfigFilePath()) {
@@ -45,7 +47,11 @@ test.before(async () => {
     ({ router: chatsRouter } = await import('../src/endpoints/chats.js'));
     ({ apply: applyUtopinnLibrary } = await import('../src/plugins/utopinn-library.js'));
     ({ apply: applyUtopinnRegex } = await import('../src/plugins/utopinn-regex.js'));
+    ({ apply: applyUtopinnGenerate } = await import('../src/plugins/utopinn-generate.js'));
     lukerGeneration = await import('../src/endpoints/backends/luker-generation.js');
+    ({ runLukerDispatch } = await import('../src/luker-dispatch/runner.js'));
+    ({ apply: applyUtopinnDelivery } = await import('../src/plugins/utopinn-delivery.js'));
+    ({ __wsTicketTestUtils: wsTicketTestUtils } = await import('../src/ws-ticket-router.js'));
 });
 
 const HANDLE = 'u';
@@ -149,6 +155,7 @@ function makeApp(dirs) {
     const ctx = { webServer: ws, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) };
     applyUtopinnLibrary(ctx);
     applyUtopinnRegex(ctx);
+    applyUtopinnGenerate(ctx);
     // 插件注册的是全路径(/api/utopinn/...),router 挂根。
     app.use(utopinnRouter);
     return app;
@@ -387,7 +394,7 @@ function defuseJob(job) {
     clearTimeout(job.persistenceTimer);
 }
 
-test('output lane: generated reply display-chain lands in persisted mes', async () => {
+test('output lane: generated reply persisted-lane lands canonical in stored mes', async () => {
     const { tmpDir, dirs } = makeTmpDirs();
     try {
         await seed(dirs);
@@ -401,9 +408,11 @@ test('output lane: generated reply display-chain lands in persisted mes', async 
         await lukerGeneration.completeGenerationJobFromText(request, job, reply, 'test-model');
         defuseJob(job);
 
-        // persisted lane strips <SECRET> (s4 plain); markdown lane strips the
-        // UpdateVariable block (s1 markdownOnly); depth-gated s8 stays quiet.
-        assert.equal(job.text, 'fresh   deep');
+        // Persisted lane only: s4 (plain) strips <SECRET>. s1 is
+        // markdownOnly+promptOnly and s2 promptOnly — neither may run here,
+        // so the UpdateVariable block survives into the canonical text.
+        assert.equal(job.text, 'fresh <UpdateVariable>{"x":9}</UpdateVariable>  deep');
+        assert.equal(job.outputRegexApplied, true);
 
         // regex_output diag event reports the real output-side application.
         const evts = diagQuery({ kind: 'inject', code: 'regex_output' });
@@ -411,15 +420,25 @@ test('output lane: generated reply display-chain lands in persisted mes', async 
         assert.equal(last.data.scripts, SCRIPTS.length);
         assert.equal(last.data.applied, 1);
 
-        // The fallback persist route lands the already-processed text.
+        // The fallback persist route lands the canonical text and stamps
+        // the canonical marks on both the floor and the swipe version.
         const ok = await lukerGeneration.persistJobReplyText(job, job.text, job.id, 'test-model');
         assert.equal(ok, true);
         const reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
         const floor = reread.body[reread.body.length - 1];
-        assert.equal(floor.mes, 'fresh   deep');
-        assert.deepEqual(floor.swipes, ['fresh   deep']);
-        assert.doesNotMatch(floor.mes, /<UpdateVariable>/);
+        assert.equal(floor.mes, 'fresh <UpdateVariable>{"x":9}</UpdateVariable>  deep');
+        assert.deepEqual(floor.swipes, ['fresh <UpdateVariable>{"x":9}</UpdateVariable>  deep']);
         assert.doesNotMatch(floor.mes, /<SECRET>/);
+        assert.equal(floor.extra.regex_persisted, true, 'floor mes marked canonical');
+        assert.equal(floor.swipe_info[0].extra.regex_persisted, true, 'swipe version marked canonical');
+
+        // Display projection re-derives the markdown view at read time —
+        // canonical marked text skips the persisted lane and only runs the
+        // markdown lane (s1 folds the UpdateVariable block away).
+        const runner = createFloorRegexRunner(
+            { extension_settings: {} }, SUBST(), { card: CARD, charDir: CHAR });
+        const { floors } = projectChatFloorsForDisplay(reread.body, runner);
+        assert.equal(floors[floors.length - 1].mes_display, 'fresh   deep');
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -502,17 +521,29 @@ test('output lane ordering: wrapper-preserving rewrite still folds MVU (regex be
         await lukerGeneration.completeGenerationJobFromText(
             request, job, 'settle me <UpdateVariable>_.set(\'hp\', 5)</UpdateVariable>', 'test-model');
         defuseJob(job);
-        assert.equal(job.text, 'settle me <div class="fold">_.set(\'hp\', 5)</div>');
+        // markdownOnly scripts must not run on the persist path — the
+        // canonical text keeps the raw UpdateVariable block so MVU settle
+        // can still extract the _.set command from stored mes.
+        assert.equal(job.text, 'settle me <UpdateVariable>_.set(\'hp\', 5)</UpdateVariable>');
 
         await lukerGeneration.persistJobReplyText(job, job.text, job.id, 'test-model');
         const reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
         const floor = reread.body[reread.body.length - 1];
-        // _.set('hp', 5) folded out of the wrapped block, then the settle
-        // appended its status anchor — before-settle ordering proven end to end.
-        assert.match(floor.mes, /<div class="fold">_.set\('hp', 5\)<\/div>/);
+        // _.set('hp', 5) folded out of the canonical block, then the settle
+        // appended its status anchor — before-settle ordering proven end to
+        // end, and this now works even for scripts that hide the block.
+        assert.match(floor.mes, /<UpdateVariable>_\.set\('hp', 5\)<\/UpdateVariable>/);
         assert.match(floor.mes, /<StatusPlaceHolderImpl\/>/);
+        assert.equal(floor.extra.regex_persisted, true, 'floor marked canonical');
         assert.equal(floor.variables?.[0]?.stat_data?.hp, 5);
         assert.equal(reread.header?.chat_metadata?.variables?.stat_data?.hp, 5);
+
+        // The markdown fold itself is re-derived at read time by the display
+        // projection — it never touches the stored canonical text.
+        const runner = createFloorRegexRunner(
+            { extension_settings: {} }, SUBST(), { card: WRAP_CARD, charDir: CHAR });
+        const { floors } = projectChatFloorsForDisplay(reread.body, runner);
+        assert.match(floors[floors.length - 1].mes_display, /<div class="fold">_.set\('hp', 5\)<\/div>/);
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -535,12 +566,327 @@ test('output lane: appended floor reasoning gets REASONING display chain', async
         assert.equal(res.status, 200);
         const reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
         const floor = reread.body[reread.body.length - 1];
-        // s9 'think'→'[R]' and s10 '<SECRET>'→'' both ran at REASONING.
+        // s9 'think'→'[R]' and s10 '<SECRET>'→'' both ran at REASONING —
+        // the persisted lane only (plain scripts), matching upstream's
+        // flagless call before the reasoning field lands.
         assert.equal(floor.extra.reasoning, '[R] ');
         assert.equal(floor.swipe_info[0].extra.reasoning, '[R] deep');
+        // Transformed fields are stamped reasoning_persisted so read/prompt
+        // projections run only their own lane on them.
+        assert.equal(floor.extra.reasoning_persisted, true);
+        assert.equal(floor.swipe_info[0].extra.reasoning_persisted, true);
         // mes is client-supplied floor text, not a job reply — untouched here.
         assert.equal(floor.mes, 'plain reply');
     } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// —— Filtered-empty terminal: whole reply consumed by output regex ————————
+
+const FILTER_CARD = {
+    spec: 'chara_card_v2', spec_version: '2.0',
+    data: {
+        name: 'MVU', description: 'You are MVU.', first_mes: 'hi',
+        extensions: {
+            regex_scripts: [
+                // Plain persisted-lane script that consumes the entire reply.
+                { id: 'f1', scriptName: 'strip-analysis', findRegex: '/<Analysis>[\\s\\S]*?<\\/Analysis>/g', replaceString: '', placement: [2] },
+            ],
+        },
+    },
+};
+
+test('output lane: reply fully consumed by regex finalizes empty, not failed', async () => {
+    const { tmpDir, dirs } = makeTmpDirs();
+    try {
+        await seed(dirs, { card: FILTER_CARD });
+        const request = makeGenRequest(dirs);
+        request.utopinnFloorRegexRunner = createFloorRegexRunner(
+            { extension_settings: {} }, SUBST(), { card: FILTER_CARD, charDir: CHAR });
+
+        // Contrast 1: provider returned nothing → still a failure.
+        const emptyJob = makeGenJob(request, 'job-provider-empty');
+        await lukerGeneration.completeGenerationJobFromText(request, emptyJob, '', 'test-model');
+        assert.equal(emptyJob.status, 'failed');
+        assert.equal(emptyJob.error, 'Generation produced no output.');
+        assert.equal(emptyJob.outputFiltered ?? false, false);
+
+        // Contrast 2: provider returned text that the rules consumed
+        // entirely → finalized empty reply, completed with nothing to write.
+        const job = makeGenJob(request, 'job-filtered-empty');
+        await lukerGeneration.completeGenerationJobFromText(
+            request, job, '<Analysis>draft</Analysis>', 'test-model');
+        assert.equal(job.status, 'completed');
+        assert.equal(job.outputFiltered, true);
+        assert.equal(job.text, '');
+        assert.equal(job.error ?? '', '');
+        // No persistence timer was armed (job never entered awaiting_ack).
+        assert.equal(job.persistenceTimer ?? null, null);
+
+        // Nothing was persisted for the filtered reply.
+        assert.notEqual(job.persisted, true);
+        const reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
+        assert.equal(reread.body.length, CHAT_BODY.length, 'no floor appended');
+
+        // Job detail reports the filtered terminal so clients can never
+        // mistake it for a stream failure and fill raw chunks back in.
+        const app = makeApp(dirs);
+        const detail = await getJson(app, '/api/utopinn/jobs/job-filtered-empty');
+        assert.equal(detail.status, 200);
+        assert.equal(detail.json.status, 'completed');
+        assert.equal(detail.json.outputFiltered, true);
+        assert.equal(detail.json.text, '');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// —— Two-round canonical: markdown/prompt lanes on their views only ————————
+
+const TWO_ROUND_CARD = {
+    spec: 'chara_card_v2', spec_version: '2.0',
+    data: {
+        name: 'MVU', description: 'You are MVU.', first_mes: 'hi',
+        extensions: {
+            regex_scripts: [
+                // Plain persisted lane, deliberately NON-idempotent so a
+                // second persisted pass would leave visible damage.
+                { id: 't1', scriptName: 'double-o', findRegex: 'o', replaceString: 'oo', placement: [2] },
+                // Same marker, two view-specific rewrites — proves each lane
+                // only runs on its own projection.
+                { id: 't2', scriptName: 'fold-md', findRegex: '/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/g', replaceString: '[FOLD]', placement: [2], markdownOnly: true },
+                { id: 't3', scriptName: 'fold-prompt', findRegex: '/<UpdateVariable>[\\s\\S]*?<\\/UpdateVariable>/g', replaceString: '[HIDDEN]', placement: [2], promptOnly: true },
+            ],
+        },
+    },
+};
+
+test('two-round: canonical stores persisted text; markdown/prompt views stay separate', async () => {
+    const { tmpDir, dirs } = makeTmpDirs();
+    try {
+        await seed(dirs, { card: TWO_ROUND_CARD });
+        const request = makeGenRequest(dirs);
+        request.utopinnFloorRegexRunner = createFloorRegexRunner(
+            { extension_settings: {} }, SUBST(), { card: TWO_ROUND_CARD, charDir: CHAR });
+        const job = makeGenJob(request, 'job-two-round');
+
+        // Round 1 — provider reply goes through the persisted lane only:
+        // t1 doubles the first 'o' (literal find, no /g flag — still
+        // non-idempotent: a second pass would add another 'o'); t2/t3 are
+        // view lanes and must not run.
+        await lukerGeneration.completeGenerationJobFromText(
+            request, job, 'root <UpdateVariable>{"x":9}</UpdateVariable> end', 'test-model');
+        defuseJob(job);
+        const canonical = 'rooot <UpdateVariable>{"x":9}</UpdateVariable> end';
+        assert.equal(job.text, canonical);
+
+        await lukerGeneration.persistJobReplyText(job, job.text, job.id, 'test-model');
+        const reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
+        const stored = reread.body[reread.body.length - 1];
+        assert.equal(stored.mes, canonical, 'canonical text persisted');
+        assert.equal(stored.extra.regex_persisted, true, 'floor marked canonical');
+
+        // Display projection: marked canonical floor runs ONLY the markdown
+        // lane — t2 folds the block to [FOLD], t3 does not run, t1 is not
+        // re-applied (o count unchanged).
+        const runner = createFloorRegexRunner(
+            { extension_settings: {} }, SUBST(), { card: TWO_ROUND_CARD, charDir: CHAR });
+        const { floors } = projectChatFloorsForDisplay(reread.body, runner);
+        assert.equal(
+            floors[floors.length - 1].mes_display,
+            'rooot [FOLD] end');
+
+        // Round 2 — prompt assembly: marked canonical floor runs ONLY the
+        // prompt lane — t3 yields [HIDDEN], t2 does not run, and crucially
+        // t1 does not double-apply (canonical 'rooot' would become 'roooot'
+        // if the persisted lane ran again).
+        const { request: asmReq } = await buildGenerationContext({
+            request, charDir: CHAR, chatName: 'c1', card: TWO_ROUND_CARD, presetName: 'Default', user: { name: 'User' },
+        });
+        const chat = asmReq.chat;
+        assert.equal(chat[chat.length - 1].mes, 'rooot [HIDDEN] end');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// —— Real WS delivery → client write-back stores canonical text ————————————
+
+const WS_RAW = 'fresh <SECRET> deep';
+const WS_CANONICAL = 'fresh  deep';
+
+/** Decode WS chunk frames (base64 SSE bytes) into joined delta text. */
+function wsStreamedText(frames) {
+    let out = '';
+    for (const m of frames) {
+        if (m.type !== 'chunk') continue;
+        const sse = Buffer.from(m.data, 'base64').toString('utf8');
+        for (const line of sse.split('\n')) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (!payload || payload === '[DONE]') continue;
+            try {
+                const j = JSON.parse(payload);
+                out += j?.choices?.[0]?.delta?.content ?? '';
+            } catch { /* non-JSON SSE line — ignore */ }
+        }
+    }
+    return out;
+}
+
+test('ws e2e: streamed raw chunks vs job detail canonical → append + PATCH store canonical', async () => {
+    const { tmpDir, dirs } = makeTmpDirs();
+    let httpServer = null;
+    const jobs = [];
+    try {
+        await seed(dirs);
+        const app = express();
+        app.use(express.json({ limit: '10mb' }));
+        app.use((req, _res, next) => {
+            req.user = { profile: { handle: HANDLE, name: 'User' }, directories: dirs, canWrite: true };
+            next();
+        });
+        app.post('/api/backends/chat-completions/generate', (req, res) => {
+            // Same stash the generate endpoint leaves on the request.
+            req.utopinnFloorRegexRunner = createFloorRegexRunner(
+                { extension_settings: {} }, SUBST(), { card: CARD, charDir: CHAR });
+            return runLukerDispatch(req, res, {
+                endpoint: 'chat-completions',
+                select: () => async (ctx) => {
+                    const sse = `data: ${JSON.stringify({ choices: [{ delta: { content: WS_RAW } }] })}\n\n`;
+                    ctx.emit.chunk(new TextEncoder().encode(sse));
+                    ctx.emit.end();
+                },
+            });
+        });
+        const utopinnRouter = express.Router();
+        httpServer = http.createServer(app);
+        // Minimal webServer seam — registerUpgrade dispatches on request
+        // path the same way the kernel webServer does in production.
+        const upgradeHandlers = [];
+        httpServer.on('upgrade', (req, socket, head) => {
+            const pathname = new URL(req.url, 'http://localhost').pathname;
+            const hit = upgradeHandlers.find((h) => h.path === pathname);
+            if (hit) return hit.handler(req, socket, head);
+            socket.destroy();
+        });
+        const wsr = {
+            register: (spec) => {
+                utopinnRouter[String(spec.method || 'GET').toLowerCase()](spec.path, spec.handler);
+                return () => {};
+            },
+            registerUpgrade: ({ path: p, handler }) => {
+                upgradeHandlers.push({ path: p, handler });
+                return () => {};
+            },
+        };
+        const pctx = { webServer: wsr, effect: (fn) => (typeof fn === 'function' ? fn() : undefined) };
+        applyUtopinnLibrary(pctx);
+        applyUtopinnGenerate(pctx);
+        applyUtopinnDelivery(pctx);
+        app.use(utopinnRouter);
+        await new Promise((r) => httpServer.listen(0, r));
+        const port = httpServer.address().port;
+        const base = `http://127.0.0.1:${port}`;
+
+        const requestId = 'job-ws-canonical';
+        const genRes = await fetch(`${base}/api/backends/chat-completions/generate`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-luker-request-id': requestId },
+            // kind 'none' — client owns the write-back; server never persists.
+            body: JSON.stringify({ type: 'normal', luker_generation: { persist_target: { kind: 'none' } } }),
+        });
+        assert.equal(genRes.status, 200);
+
+        // Stream over real WS — resume from seq 1 like the production client.
+        const ticket = wsTicketTestUtils.mintTicket(HANDLE);
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/api/ws-delivery`, [`luker-ws-ticket.${ticket}`]);
+        await new Promise((r) => ws.once('open', r));
+        const frames = [];
+        const done = new Promise((resolve) => {
+            ws.on('message', (raw) => {
+                const m = JSON.parse(String(raw));
+                frames.push(m);
+                if (m.type === 'end') resolve();
+            });
+        });
+        ws.send(JSON.stringify({ type: 'resume', request_id: requestId, from_seq: 1 }));
+        await done;
+        ws.close();
+
+        // The stream carried raw provider text — regex runs at finalize,
+        // not on the wire. The end frame carries no text by design.
+        const streamed = wsStreamedText(frames);
+        assert.equal(streamed, WS_RAW);
+        const endFrame = frames.find((m) => m.type === 'end');
+        assert.ok(endFrame, 'end frame delivered');
+        assert.equal('text' in endFrame, false, 'end frame stays text-less');
+
+        // The authoritative finalized text comes from the job detail —
+        // the web stage polls it after the end frame before write-back.
+        const jobRes = await fetch(`${base}/api/utopinn/jobs/${requestId}`);
+        assert.equal(jobRes.status, 200);
+        const job = await jobRes.json();
+        jobs.push(job);
+        assert.equal(job.status, 'awaiting_ack');
+        assert.equal(job.outputFiltered, false);
+        assert.equal(job.text, WS_CANONICAL, 'server-finalized text is canonical, not raw');
+
+        // Write-back 1: append — the stage's non-swipe path.
+        const appendRes = await fetch(`${base}/api/utopinn/characters/${CHAR}/chats/c1/messages`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                luker_generation_id: requestId,
+                messages: [{
+                    is_user: false, name: 'MVU', send_date: 100,
+                    mes: job.text,
+                    swipes: [job.text],
+                    swipe_id: 0,
+                    swipe_info: [{ send_date: 100, gen_started: null, gen_finished: null, extra: {} }],
+                    extra: { api: 'openai', model: 'test-model' },
+                }],
+            }),
+        });
+        assert.equal(appendRes.status, 200);
+        let reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
+        let floor = reread.body[reread.body.length - 1];
+        assert.equal(floor.mes, WS_CANONICAL, 'append stored canonical text');
+        assert.deepEqual(floor.swipes, [WS_CANONICAL]);
+        assert.equal(floor.extra.regex_persisted, true, 'appended floor marked canonical');
+        assert.equal(floor.swipe_info[0].extra.regex_persisted, true, 'appended swipe marked canonical');
+
+        // Write-back 2: PATCH swipe-merge — the stage's swipe verb path on
+        // the floor just appended (a re-swipe writes another version).
+        const lastIdx = reread.body.length - 1;
+        const patchRes = await fetch(`${base}/api/utopinn/characters/${CHAR}/chats/c1`, {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+                luker_generation_id: requestId,
+                ops: [
+                    { op: 'add', path: `/body/${lastIdx}/swipes/-`, value: job.text },
+                    { op: 'replace', path: `/body/${lastIdx}/swipe_id`, value: 1 },
+                    { op: 'add', path: `/body/${lastIdx}/swipe_info/-`, value: { send_date: 200, extra: {} } },
+                    { op: 'replace', path: `/body/${lastIdx}/mes`, value: job.text },
+                ],
+            }),
+        });
+        assert.equal(patchRes.status, 200);
+        reread = await getChatRepo().get(HANDLE, CHAR, 'c1');
+        floor = reread.body[lastIdx];
+        assert.deepEqual(floor.swipes, [WS_CANONICAL, WS_CANONICAL], 'PATCH stored canonical swipe');
+        assert.equal(floor.mes, WS_CANONICAL, 'PATCH stored canonical mes');
+        assert.equal(floor.swipe_info[1].extra.regex_persisted, true, 'PATCH marked new swipe slot');
+        assert.equal(floor.extra.regex_persisted, true, 'PATCH marked floor mes');
+    } finally {
+        for (const j of jobs) {
+            const live = lukerGeneration.getGenerationJobForRequest(
+                { user: { profile: { handle: HANDLE } } }, j.id);
+            if (live?.persistenceTimer) clearTimeout(live.persistenceTimer);
+        }
+        if (httpServer) await new Promise((r) => httpServer.close(r));
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });

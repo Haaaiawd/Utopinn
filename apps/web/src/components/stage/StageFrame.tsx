@@ -12,7 +12,7 @@ import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
 import { postGenerate, streamJob } from '../../api/generate';
-import { abortJob, getJob, listJobs } from '../../api/jobs';
+import { abortJob, getJob, listJobs, waitJobFinal } from '../../api/jobs';
 import { getPreset } from '../../api/presets';
 import { settleMvu, type MvuTarget } from '../../api/mvu';
 import {
@@ -870,11 +870,32 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     });
                 }
             } else {
-                if (!imp) setMsgs((prev) => prev.filter((m) => m.id !== floorId));
-                try { await writeBackGeneration(type, res.text, jobId, false); await reload(); }
-                catch (e) {
-                    s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
-                    void reload();
+                // Authoritative text lives on the job: the WS `end` frame
+                // precedes server-side finalization (output regex and the
+                // filtered-empty check run after dispatch), so streamed
+                // chunks are a display-only preview. Fetch the finalized
+                // text before write-back; fall back to streamed text only
+                // when the job detail is unreachable.
+                const fin = await waitJobFinal(jobId);
+                if (fin?.outputFiltered === true) {
+                    // Finalized-empty: output regex consumed the whole
+                    // reply — the job completed with nothing to persist.
+                    // Drop the transient floor; never back-fill from raw
+                    // streamed chunks.
+                    if (imp) setDraft('');
+                    else setMsgs((prev) => prev.filter((m) => m.id !== floorId));
+                } else if (fin && (fin.status === 'failed' || fin.status === 'cancelled')) {
+                    const message = String(fin.error || res.error || 'job failed');
+                    if (imp) pushErrorFloor({ code: 'job_error', message, jobId, retry: { type } });
+                    else patchFloor(floorId, { streaming: false, error: { code: 'job_error', message, jobId, retry: { type } } });
+                } else {
+                    const finalText = typeof fin?.text === 'string' ? fin.text : res.text;
+                    if (!imp) setMsgs((prev) => prev.filter((m) => m.id !== floorId));
+                    try { await writeBackGeneration(type, finalText, jobId, false); await reload(); }
+                    catch (e) {
+                        s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
+                        void reload();
+                    }
                 }
             }
             void refreshTokens(jobId);
