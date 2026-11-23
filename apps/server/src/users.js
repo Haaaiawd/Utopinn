@@ -224,6 +224,20 @@ async function provisionRandomAdminPasswords(adminUsers) {
 export async function verifySecuritySettings() {
     const { listen, basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
 
+    // Account mode with zero enabled admins is unrecoverable in-band —
+    // nobody can reach the admin panel to create or promote one (the
+    // seeded default-user is deliberately not admin). Warn on every boot,
+    // not just when listening: the lockout exists regardless of exposure.
+    if (ENABLE_ACCOUNTS) {
+        const enabledUsers = await getAllEnabledUsers();
+        if (!enabledUsers.some(user => user.admin)) {
+            console.warn(color.yellow('User accounts are enabled, but no enabled admin account exists.'));
+            console.warn(color.yellow('Grant admin to an account from the server console with:'));
+            console.warn(color.yellow('  node recover.js <handle> <password> --admin'));
+            console.log();
+        }
+    }
+
     // Skip all security checks as listen is set to false
     if (!listen) {
         return;
@@ -1080,7 +1094,12 @@ export async function setUserDataMiddleware(request, response, next) {
         const handle = DEFAULT_USER.handle;
         const directories = getUserDirectories(handle);
         request.user = {
-            profile: DEFAULT_USER,
+            // Single-user mode is implicitly admin — same contract as
+            // isRequestAdmin(). The stored DEFAULT_USER record itself is
+            // not admin anymore (a seeded account in multi-user mode must
+            // not silently carry admin power), so the flag is applied to
+            // the request-scoped profile copy here.
+            profile: { ...DEFAULT_USER, admin: true },
             directories: directories,
         };
         return next();

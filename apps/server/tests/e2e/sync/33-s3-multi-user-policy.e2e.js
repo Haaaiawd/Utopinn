@@ -7,6 +7,7 @@ import { s3Fixture, awaitS3Page, createReadyWorldBook, reloadS3Page } from '../_
 import { createUserViaAdminUI, openAdminPanel } from '../_lib/page.js';
 import { closeChatPopups as closeAllPopups } from '../_lib/s3-chat.js';
 import { startHttpFixture } from '../../sync/_lib/network-fixtures.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { loginAs, openLanSyncPanel, addS3Backend, fillS3Form, waitForBackendSync, setSyncSchedule,
     generatePairingLink, acceptPairingLink, waitForBackgroundSync } from '../_lib/sync.js';
 
@@ -19,7 +20,10 @@ const readStatus = page => page.evaluate(async () => (await fetch('/api/sync/v1/
 async function accountServer(browser, name, allowPrivateAddressesForUsers) {
     const device = await fixture.device(browser, name);
     await device.server.restart({ extraConfig: { enableUserAccounts: true, 'sync.allowPrivateAddressesForUsers': allowPrivateAddressesForUsers } });
-    await loginAs(device.page, device.server.baseURL, { handle: 'default-user', password: '' });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before logging in.
+    await grantAdminAccess(device.server);
+    await loginAs(device.page, device.server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     await awaitS3Page(device.page);
     return device;
 }

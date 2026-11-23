@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { loginAs } from '../_lib/sync.js';
 import { awaitMainUI, openUserSettingsDrawer } from '../_lib/page.js';
 
@@ -11,6 +12,9 @@ test.beforeAll(async () => {
         scenarioId: 'resource-cache-account',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before driving admin flows.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -20,7 +24,7 @@ test.afterAll(async () => {
 test('resource metadata keeps account identity across reload and a new login', async ({ page }) => {
     const metadata = () => page.waitForResponse(response => new URL(response.url()).pathname === '/api/bootstrap/metadata');
     const initial = metadata();
-    await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+    await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     expect((await initial).status()).toBe(200);
     expect((await (await initial).json()).account).toBe('default-user');
     const reloaded = metadata();
@@ -38,7 +42,7 @@ test('resource metadata keeps account identity across reload and a new login', a
     expect(afterLogout.status()).toBe(403);
 
     const renewed = metadata();
-    await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+    await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     expect((await renewed).status()).toBe(200);
     expect((await (await renewed).json()).account).toBe('default-user');
 });

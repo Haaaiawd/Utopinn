@@ -104,8 +104,12 @@ node recover.js <username> <new-password>
 # Example: reset default-user's password
 node recover.js default-user myNewPassword
 
-# Omit password to clear it
+# Omit password to clear it (the account can then no longer sign in via the password form)
 node recover.js default-user
+
+# Also grant admin while setting a password (bootstrap the first admin on a
+# multi-user install — the seeded default-user is not admin)
+node recover.js default-user myNewPassword --admin
 ```
 
 ::: tip
@@ -152,7 +156,7 @@ Whitelist mode is enabled by default, allowing only local access. To allow LAN a
 If you set `whitelistMode: false`, Luker requires another protection layer. Otherwise it will detect an insecure setup at startup and terminate the process (in Docker, this manifests as the container restarting in a loop). To expose the server safely, do at least one of the following:
 
 - Enable `basicAuthMode` and configure `basicAuthUser` — see [Authentication](/guide/authentication)
-- Enable multi-user mode (`enableUserAccounts: true`) **and** set a password for every admin user via `node recover.js default-user <password>` — see [Authentication › Password Reset](/guide/authentication#password-reset). Both are required: enabling accounts alone still fails the check while admin users have no password, and setting a password alone still fails while accounts are disabled.
+- Enable multi-user mode (`enableUserAccounts: true`) **and** make sure at least one enabled admin has a password — on a fresh install the seeded `default-user` is neither, so bootstrap it via `node recover.js default-user <password> --admin` — see [Authentication › Password Reset](/guide/authentication#password-reset). Both are required: enabling accounts alone still fails the check while admin users have no password, and setting a password alone still fails while accounts are disabled.
 - Set `securityOverride: true` (debugging only — **never** use this on a public network)
 :::
 

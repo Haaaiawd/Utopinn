@@ -35,6 +35,18 @@ Once multi-user mode is enabled, administrators can create, edit, and delete use
 
 The system includes a built-in default user named `default-user`. If you switch from single-user mode to multi-user mode, your existing data will belong to this default user.
 
+::: warning
+`default-user` is seeded **without admin rights and without a password**. On a fresh multi-user install nobody is an admin yet — grant admin to an account once, out-of-band:
+
+```bash
+node recover.js default-user <new-password> --admin
+```
+
+The server also prints this hint at startup whenever `enableUserAccounts` is on but no enabled admin account exists.
+:::
+
+An account without a password cannot sign in through the password form at all — it can only enter via SSO/OAuth or, when it is the only account on the server, through the automatic login on `/login` (the convenience path that lets a single-user install skip the login screen). Setting any password later (admin panel → change-password, or `recover.js`) opens the password path.
+
 ### Password Reset
 
 If you forget a user's password, you can reset it via the command-line tool:
@@ -46,8 +58,11 @@ node recover.js <username> <new-password>
 # Example: reset default-user's password
 node recover.js default-user myNewPassword
 
-# Omit password to clear it
+# Omit password to clear it (account becomes unable to sign in via the password form)
 node recover.js default-user
+
+# Grant admin while setting a password (bootstrap the first admin)
+node recover.js default-user myNewPassword --admin
 ```
 
 ::: tip

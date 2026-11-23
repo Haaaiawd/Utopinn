@@ -29,8 +29,12 @@ async function initStorage(configPath) {
  * @param {string} configPath - The path to the config file.
  * @param {string} userAccount - The username of the account to recover.
  * @param {string} [userPassword] - The new password for the account. If not provided, sets an empty password.
+ * @param {object} [options] - Additional recovery options.
+ * @param {boolean} [options.admin] - Also grant the account admin privileges.
+ *   This is the out-of-band path for bootstrapping the first admin on a
+ *   multi-user install (the seeded default-user is not admin).
  */
-export async function recoverPassword(configPath, userAccount, userPassword) {
+export async function recoverPassword(configPath, userAccount, userPassword, options = {}) {
     await initStorage(configPath);
 
     /**
@@ -48,6 +52,13 @@ export async function recoverPassword(configPath, userAccount, userPassword) {
         user.enabled = true;
     }
 
+    if (options.admin) {
+        if (!user.admin) {
+            console.log('Granting admin privileges...');
+        }
+        user.admin = true;
+    }
+
     if (userPassword) {
         console.log('Setting new password...');
         const salt = getPasswordSalt();
@@ -58,6 +69,7 @@ export async function recoverPassword(configPath, userAccount, userPassword) {
         console.log('Setting an empty password...');
         user.password = '';
         user.salt = '';
+        console.log('Note: an account without a password cannot sign in via the password login form.');
     }
 
     await storage.setItem(toKey(userAccount), user);

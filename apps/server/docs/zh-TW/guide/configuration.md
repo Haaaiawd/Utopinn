@@ -104,8 +104,11 @@ node recover.js <使用者名稱> <新密碼>
 # 例如重設 default-user 的密碼
 node recover.js default-user myNewPassword
 
-# 不提供密碼則清空密碼
+# 不提供密碼則清空密碼（此後該帳號無法透過密碼表單登入）
 node recover.js default-user
+
+# 設定密碼的同時授予管理員權限（初始化第一個管理員——內建 default-user 預設非 admin）
+node recover.js default-user myNewPassword --admin
 ```
 
 ::: tip
@@ -152,7 +155,7 @@ whitelistDockerHosts: true
 設定 `whitelistMode: false` 後，Luker 要求至少存在另一種保護機制，否則啟動時會判定為不安全設定並直接終止行程（Docker 下表現為容器反覆重新啟動）。安全暴露服務時，請至少滿足以下任一條件：
 
 - 啟用 `basicAuthMode` 並設定 `basicAuthUser` —— 詳見 [認證](/zh-TW/guide/authentication)
-- 啟用多使用者模式（`enableUserAccounts: true`），**並且**透過 `node recover.js default-user <密碼>` 為所有 admin 使用者設定密碼 —— 詳見 [認證 › 密碼重設](/zh-TW/guide/authentication#密碼重設)。兩步缺一不可：只啟用多使用者但 admin 沒密碼仍會被攔下，只設密碼但沒啟用多使用者同樣會被攔下。
+- 啟用多使用者模式（`enableUserAccounts: true`），**並且**保證至少一個啟用狀態的 admin 有密碼 —— 全新安裝裡內建的 `default-user` 兩者都不是，需透過 `node recover.js default-user <密碼> --admin` 初始化 —— 詳見 [認證 › 密碼重設](/zh-TW/guide/authentication#密碼重設)。兩步缺一不可：只啟用多使用者但 admin 沒密碼仍會被攔下，只設密碼但沒啟用多使用者同樣會被攔下。
 - 設定 `securityOverride: true`（僅用於除錯，**嚴禁**用於公網部署）
 :::
 

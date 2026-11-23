@@ -1,6 +1,7 @@
 // Storage Inspector · admin per-user view.
 //
-// Multi-user scenario: default-user (auto-admin) creates alice + bob via
+// Multi-user scenario: default-user (admin via grantAdminAccess — it
+// ships passwordless + non-admin since GH #38) creates alice + bob via
 // the real Admin Panel New User form. Both get fixture data seeded on
 // disk. The admin then opens Storage Management tab, sees the user
 // picker (aggregate row + alice + bob), clicks bob, and drills into
@@ -12,7 +13,8 @@
 import { test, expect } from '@playwright/test';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
-import { awaitMainUI, openAdminPanel, createUserViaAdminUI } from '../_lib/page.js';
+import { openAdminPanel, createUserViaAdminUI } from '../_lib/page.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { loginAs } from '../_lib/sync.js';
 import { takeDocScreenshot } from '../_lib/doc-screenshots.js';
 import { seedFixtureUser } from './_helpers.js';
@@ -27,12 +29,16 @@ test.beforeAll(async ({ browser }) => {
         scenarioId: 'admin-per-user',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band, then the single-user auto-login no longer fires and
+    // the form login below is required for an admin session.
+    await grantAdminAccess(server);
 
-    // Bootstrap: log in as the default admin and create alice + bob via
-    // the real Admin Panel New User form.
+    // Bootstrap: log in as the admin and create alice + bob via the real
+    // Admin Panel New User form.
     const bootCtx = await browser.newContext();
     const bootPage = await bootCtx.newPage();
-    await awaitMainUI(bootPage, server.baseURL);
+    await loginAs(bootPage, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     await createUserViaAdminUI(bootPage, { handle: 'alice', name: 'Alice Merren', password: 'pw-alice' });
     // The Admin Panel popup drops back to Manage Users after create; we
     // need it fully closed before starting the second create, else the
@@ -55,8 +61,8 @@ test.afterAll(async () => {
 
 test.describe('Storage Inspector · admin per-user view', () => {
     test('admin sees picker, switches to bob, sees bob\'s Chats', async ({ page }) => {
-        // Default-user is admin; log in as them to exercise the admin path.
-        await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+        // Default-user is admin via grantAdminAccess; log in to exercise the admin path.
+        await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
         await openAdminPanel(page);
 
         // Click the Storage Management nav tab.

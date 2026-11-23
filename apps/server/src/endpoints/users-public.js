@@ -674,19 +674,28 @@ router.post('/login', parseAccountBody, async (request, response) => {
             return response.status(403).json({ error: 'User is disabled' });
         }
 
-        // OAuth-bound accounts are created without a password. An empty
-        // password field must NOT satisfy them — that would make every
-        // OAuth account trivially impersonable via the password path
-        // (handle-guessing + any password). Only a locally-set password
-        // may pass the password check; OAuth login goes through
-        // /oauth/start instead. Same generic error as an unknown user
-        // so the response leaks nothing about how the account authenticates.
-        if (user.oauth && !user.password) {
-            console.warn('Login failed: Password login rejected for OAuth-bound user', user.handle);
-            return response.status(403).json({ error: 'Incorrect credentials' });
+        // An account with no stored password must NOT authenticate through
+        // the password path at all: an empty stored value would otherwise
+        // satisfy `password === hash(submitted)` for EVERY submitted
+        // password, making the account trivially impersonable by anyone
+        // who guesses the handle. Passwordless accounts are a legitimate
+        // state — OAuth-provisioned accounts (created without one),
+        // admin-created accounts (password is optional there), and the
+        // bootstrap default user — but they can only sign in via
+        // /oauth/start, trusted-proxy SSO headers, or the single-user
+        // auto-login, and otherwise need an admin to set a password first.
+        // The specific reason is withheld under discreet login to keep the
+        // handle-existence oracle closed (the public /list route that
+        // normally advertises `password: false` answers 204 in that mode).
+        if (!user.password) {
+            console.warn('Login failed: Password login rejected for passwordless user', user.handle);
+            const error = DISCREET_LOGIN
+                ? 'Incorrect credentials'
+                : 'This account has no password set. Sign in with an external provider or ask an admin to set one.';
+            return response.status(403).json({ error });
         }
 
-        if (user.password && user.password !== getPasswordHash(request.body.password, user.salt)) {
+        if (user.password !== getPasswordHash(request.body.password, user.salt)) {
             console.warn('Login failed: Incorrect password for', user.handle);
             return response.status(403).json({ error: 'Incorrect credentials' });
         }

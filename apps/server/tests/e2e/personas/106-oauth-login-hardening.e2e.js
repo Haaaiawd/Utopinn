@@ -16,24 +16,26 @@
 // GitHub round-trip which is not the gesture under test), then proves:
 //
 //   1. POST /api/users/login { handle: 'octocat', password: <anything> }
-//      -> 403 with the generic 'Incorrect credentials' body — same
-//      error text as an unknown account, so handle-guessing yields no
-//      information about which accounts are OAuth-bound.
+//      -> 403 with the 'no password set' body — the account exists but
+//      the password path is closed for it. (The 'Incorrect credentials'
+//      wording only comes back under enableDiscreetLogin, where the
+//      public /list route that advertises `password:false` is also
+//      switched off; with discreet login off, account existence is
+//      already public information.)
 //   2. The same account still logs in via the session path the OAuth
 //      callback itself establishes (simulated by checking the account
 //      is not structurally broken: the datum round-trips through
 //      /api/users/list with password:false).
-//   3. A passwordless NON-OAuth account (default-user) still
-//      auto-logins on the login page — the legacy single-user
-//      convenience must keep working; the rejection is specific to
-//      OAuth-bound accounts.
+//   3. A passwordless NON-OAuth account (default-user) is rejected
+//      identically — the rule is 'no stored password → no password
+//      login', not an OAuth special case (GH #38).
 //   4. An OAuth account whose admin later set a password CAN
 //      password-login (both credentials valid) — the OAuth flag
 //      removes the passwordless loophole, not the password path.
 
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { createHash, scryptSync } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
 
@@ -71,16 +73,26 @@ async function seedDataRoot() {
     mkdirSync(resolve(dataRoot, '_storage'), { recursive: true });
     mkdirSync(resolve(dataRoot, 'default-user'), { recursive: true });
 
-    // default-user: copy the seed datum byte-for-byte (admin, no
-    // password, no oauth — the classic passwordless admin).
-    const seedStorage = resolve(REPO_ROOT, 'data', '_storage');
-    const defaultUserDatum = resolve(seedStorage, storageFile('user:default-user'));
-    if (existsSync(defaultUserDatum)) {
-        writeFileSync(
-            resolve(dataRoot, '_storage', storageFile('user:default-user')),
-            readFileSync(defaultUserDatum),
-        );
-    }
+    // default-user: seeded the way a fresh multi-account install seeds it
+    // — enabled, NOT admin, and no password (GH #38 made the bootstrap
+    // account a plain shell; the first admin is granted out-of-band via
+    // `node recover.js <handle> <password> --admin`). Written explicitly
+    // rather than copied from the dev seed so the record is deterministic.
+    writeFileSync(
+        resolve(dataRoot, '_storage', storageFile('user:default-user')),
+        JSON.stringify({
+            key: 'user:default-user',
+            value: {
+                handle: 'default-user',
+                name: 'Default User',
+                created: Date.now(),
+                password: '',
+                salt: '',
+                admin: false,
+                enabled: true,
+            },
+        }),
+    );
 
     // octocat: GitHub-bound account exactly as createUserFromOAuth
     // writes it (password: '', salt: '', oauth: { github: {...} }).
@@ -159,31 +171,33 @@ async function newSession(baseURL) {
 }
 
 test.describe('#106 — OAuth accounts cannot be password-logged-into', () => {
-    test('password login with any password -> 403 generic Incorrect credentials (no account-existence leak)', async () => {
+    test('password login with any password -> 403 with the no-password-set reason', async () => {
         const s = await newSession(server.baseURL);
         try {
             const res = await s.post('/api/users/login', { handle: 'octocat', password: 'x'.repeat(32) });
             expect(res.status(), 'OAuth account must reject password login').toBe(403);
             const body = await res.json();
-            // Same error text as an unknown handle — no oracle for account type.
-            expect(body.error).toBe('Incorrect credentials');
+            // Clear semantics: the account exists but has no password —
+            // the generic 'Incorrect credentials' wording is reserved for
+            // discreet-login mode, where /list leaks nothing either.
+            expect(body.error).toBe('This account has no password set. Sign in with an external provider or ask an admin to set one.');
         } finally {
             await s.dispose();
         }
     });
 
-    test('empty password (the login-page auto-submit path) -> 403 too', async () => {
+    test('empty submitted password (the login-page auto-submit path) -> 403 too', async () => {
         const s = await newSession(server.baseURL);
         try {
             const res = await s.post('/api/users/login', { handle: 'octocat', password: '' });
             expect(res.status()).toBe(403);
-            expect((await res.json()).error).toBe('Incorrect credentials');
+            expect((await res.json()).error).toBe('This account has no password set. Sign in with an external provider or ask an admin to set one.');
         } finally {
             await s.dispose();
         }
     });
 
-    test('unknown handle gets the identical 403 body (indistinguishable from OAuth rejection)', async () => {
+    test('unknown handle still gets the generic 403 body', async () => {
         const s = await newSession(server.baseURL);
         try {
             const res = await s.post('/api/users/login', { handle: 'does-not-exist', password: 'x'.repeat(32) });
@@ -195,11 +209,14 @@ test.describe('#106 — OAuth accounts cannot be password-logged-into', () => {
         }
     });
 
-    test('passwordless NON-OAuth admin (default-user) still logs in — legacy convenience intact', async () => {
+    test('passwordless NON-OAuth account (default-user) is rejected identically — the rule is not OAuth-specific', async () => {
         const s = await newSession(server.baseURL);
         try {
-            const res = await s.post('/api/users/login', { handle: 'default-user', password: '' });
-            expect(res.ok(), `default-user login failed (${res.status()})`).toBe(true);
+            for (const attempt of ['', 'x'.repeat(32)]) {
+                const res = await s.post('/api/users/login', { handle: 'default-user', password: attempt });
+                expect(res.status(), `default-user login with ${JSON.stringify(attempt)} must 403`).toBe(403);
+                expect((await res.json()).error).toBe('This account has no password set. Sign in with an external provider or ask an admin to set one.');
+            }
         } finally {
             await s.dispose();
         }

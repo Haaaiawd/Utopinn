@@ -12,7 +12,8 @@
 import { test, expect } from '@playwright/test';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
-import { awaitMainUI, openAdminPanel, createUserViaAdminUI } from '../_lib/page.js';
+import { openAdminPanel, createUserViaAdminUI } from '../_lib/page.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { loginAs } from '../_lib/sync.js';
 import { takeDocScreenshot } from '../_lib/doc-screenshots.js';
 import { seedFixtureUser } from './_helpers.js';
@@ -27,10 +28,14 @@ test.beforeAll(async ({ browser }) => {
         scenarioId: 'admin-aggregate',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band, then the single-user auto-login no longer fires and
+    // the form login below is required for an admin session.
+    await grantAdminAccess(server);
 
     const bootCtx = await browser.newContext();
     const bootPage = await bootCtx.newPage();
-    await awaitMainUI(bootPage, server.baseURL);
+    await loginAs(bootPage, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     await createUserViaAdminUI(bootPage, { handle: 'alice', name: 'Alice Merren', password: 'pw-alice' });
     await bootPage.locator('dialog.popup[open] .popup-button-ok').last().click();
     await bootPage.waitForFunction(() => !document.querySelector('dialog.popup[open]'), { timeout: 10_000 });
@@ -48,7 +53,7 @@ test.afterAll(async () => {
 
 test.describe('Storage Inspector · admin aggregate view', () => {
     test('aggregate L1 sums categories; L2 shows per-user rows; click redirects to that user', async ({ page }) => {
-        await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+        await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
         await openAdminPanel(page);
         const popup = page.locator('dialog.popup[open]').last();
         await popup.locator('button[data-target-tab="storageManagementTab"]').click();

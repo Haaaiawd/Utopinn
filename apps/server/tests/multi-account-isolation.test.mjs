@@ -12,7 +12,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { startServer } from './e2e/_lib/server.js';
@@ -105,19 +105,49 @@ test('server boots with enableUserAccounts', async () => {
     assert.ok(srv?.baseURL, 'server url');
 });
 
-test('anonymous session has no user; default-user login works', async () => {
-    admin = await new Session(srv.baseURL).init();
-    const anonMe = await admin.get('/api/users/me');
+test('passwordless accounts cannot authenticate via the password path', async () => {
+    const anon = await new Session(srv.baseURL).init();
+    const anonMe = await anon.get('/api/users/me');
     assert.equal(anonMe.status, 403, 'no session handle → 403');
 
-    // default-user is bootstrapped passwordless on first boot.
-    const login = await admin.login('default-user', '');
-    assert.equal(login.status, 200, 'default-user login');
-    const me = await admin.get('/api/users/me');
-    assert.equal(me.status, 200);
-    const body = await me.json();
-    assert.equal(body.handle, 'default-user');
-    assert.equal(body.admin, true, 'bootstrapped default-user is admin');
+    // default-user is seeded with NO password. Previously the
+    // `user.password && user.password !== hash` guard skipped the whole
+    // comparison for a falsy stored password — ANY submitted password
+    // (empty included) authenticated (GH #38). Now a passwordless account
+    // must be unreachable through /login until a password is set.
+    const missing = await anon.post('/api/users/login', {});
+    assert.equal(missing.status, 400, 'missing handle → 400');
+    const empty = await anon.login('default-user', '');
+    assert.equal(empty.status, 403, 'empty password must not log in');
+    const any = await anon.login('default-user', 'literally-anything');
+    assert.equal(any.status, 403, 'arbitrary password must not log in');
+    const body = await any.json();
+    assert.match(String(body.error || ''), /no password/i,
+        'passwordless rejection must carry clear semantics (not a misleading credential error)');
+});
+
+test('operator bootstrap: seeded default-user is not admin; recoverPassword --admin grants it', async () => {
+    // A fresh multi-account install has ZERO admins — the seeded
+    // default-user is a plain shell, so the first admin can only be
+    // granted out-of-band. This drives the same function the
+    // `node recover.js <handle> <password> --admin` boot warning prints.
+    const { DEFAULT_USER } = await import('../src/constants.js');
+    assert.equal(DEFAULT_USER.admin, false, 'seeded DEFAULT_USER must not ship admin');
+
+    const cfgDir = mkdtempSync(join(tmpdir(), 'uto-ma-cfg-'));
+    const cfgPath = join(cfgDir, 'config.yaml');
+    writeFileSync(cfgPath, `enableUserAccounts: true\ndataRoot: ${JSON.stringify(dataRoot)}\n`);
+    const { setConfigFilePath } = await import('../src/util.js');
+    setConfigFilePath(cfgPath);
+    const { recoverPassword } = await import('../src/recover-password.js');
+    await recoverPassword(cfgPath, 'default-user', 'boot-pw-A1', { admin: true });
+
+    admin = await new Session(srv.baseURL).init();
+    const login = await admin.login('default-user', 'boot-pw-A1');
+    assert.equal(login.status, 200, 'post-recover login with the real password');
+    const me = await (await admin.get('/api/users/me')).json();
+    assert.equal(me.handle, 'default-user');
+    assert.equal(me.admin, true, 'recoverPassword --admin granted admin');
 });
 
 test('self-registration is disabled by default', async () => {
@@ -130,7 +160,22 @@ test('admin creates two accounts; each logs in on its own session', async () => 
     for (const [handle, name] of [['peer-a', 'Peer A'], ['peer-b', 'Peer B']]) {
         const res = await admin.post('/api/users/create', { handle, name, password: `pw-${handle}` });
         assert.ok(res.status === 200 || res.status === 204, `create ${handle}: ${res.status}`);
+        const body = await res.json();
+        assert.equal(body.passwordSet, true, 'create with password → passwordSet:true');
     }
+    // Passwordless create stays allowed (SSO-bound, invite-then-set) but
+    // must be flagged and must NOT authenticate via the password path.
+    const nopw = await admin.post('/api/users/create', { handle: 'no-pass', name: 'No Password' });
+    assert.equal(nopw.status, 200, `create no-pass: ${nopw.status}`);
+    const created = await nopw.json();
+    assert.equal(created.passwordSet, false, 'create without password → passwordSet:false');
+
+    const ghost = await new Session(srv.baseURL).init();
+    for (const attempt of ['', 'whatever']) {
+        const res = await ghost.login('no-pass', attempt);
+        assert.equal(res.status, 403, `no-pass login must be rejected (tried ${JSON.stringify(attempt)})`);
+    }
+
     userA = await new Session(srv.baseURL).init();
     userB = await new Session(srv.baseURL).init();
     const la = await userA.login('peer-a', 'pw-peer-a');
@@ -147,6 +192,29 @@ test('admin creates two accounts; each logs in on its own session', async () => 
         dataRoot, handle: 'peer-b', avatarFile: AVATAR_B,
         overrides: { name: 'Bryn the Lamplighter' },
     });
+});
+
+test('Basic Auth: passwordless accounts never resolve, passworded accounts do', async () => {
+    // resolveUserFromBasicAuth backs perUserBasicAuth — the second
+    // password-credential surface. It already required a truthy stored
+    // password before comparing, but pin it: an empty stored password
+    // must resolve NO credential (the same falsy-shortcut class of bug
+    // GH #38 hit in /login). Storage in this process was initialized by
+    // the recoverPassword call above and shares the server's dataRoot.
+    const { resolveUserFromBasicAuth } = await import('../src/users.js');
+    // Success resolution also builds getUserDirectories(handle), which
+    // joins paths off globalThis.DATA_ROOT — point it at the same root
+    // the spawned server uses.
+    globalThis.DATA_ROOT = dataRoot;
+    const req = (handle, password) => ({
+        headers: { authorization: `Basic ${Buffer.from(`${handle}:${password}`).toString('base64')}` },
+    });
+    for (const attempt of ['', 'whatever', 'pw-peer-a']) {
+        const resolved = await resolveUserFromBasicAuth(req('no-pass', attempt));
+        assert.equal(resolved, null, `passwordless no-pass must not resolve (tried ${JSON.stringify(attempt)})`);
+    }
+    const ok = await resolveUserFromBasicAuth(req('peer-a', 'pw-peer-a'));
+    assert.ok(ok && ok.profile.handle === 'peer-a', 'peer-a real credential resolves');
 });
 
 test('characters: user A cannot see user B cards', async () => {
@@ -309,7 +377,7 @@ test('web client: login path cannot double-fire; gate links /login', async () =>
     //    must link back to legacy /login where provider buttons + recover live.
     assert.match(gateSrc, /href="\/login"/, 'LoginGate must link to /login for OAuth/recovery');
     assert.match(gateSrc, /t\('login\.alt'\)/, 'LoginGate link must be localized');
-    assert.ok(i18nSrc.includes("'login.alt'"), "i18n 'login.alt' must exist");
+    assert.ok(i18nSrc.includes('\'login.alt\''), 'i18n login.alt key must exist');
 });
 
 test('logout invalidates the session; other user unaffected', async () => {
@@ -350,4 +418,33 @@ test('generation job: recycled job_id cannot touch another handle\'s job', async
     // Owner re-POSTs the same id (legit retry) — recycles as before.
     const jobA2 = createGenerationJob(req('peer-a'), { job_id: JOB });
     assert.equal(jobA2, jobA, 'owner retry recycles own job');
+});
+
+// ---------- single-user auto-login escape hatch ----------
+
+test('single passwordless user still auto-logs in — but only as non-admin', async () => {
+    // Deliberate escape hatch: a single-user install with no password
+    // auto-authenticates /login visitors (otherwise the account could
+    // never be entered to set a password). The fix pins that this session
+    // is NOT admin — exposure stays bounded to that user's own data and
+    // the admin surface remains closed.
+    const soloRoot = mkdtempSync(join(tmpdir(), 'uto-ma-solo-'));
+    const solo = await startServer({
+        batchKey: BATCH,
+        scenarioId: 'accounts-solo',
+        useExistingDataRoot: soloRoot,
+        extraConfig: { enableUserAccounts: true, listen: false },
+    });
+    try {
+        const s = await new Session(solo.baseURL).init();
+        const res = await s.get('/login');
+        assert.equal(res.status, 302, 'single passwordless user → auto-login redirect');
+        const me = await s.get('/api/users/me');
+        assert.equal(me.status, 200);
+        const body = await me.json();
+        assert.equal(body.handle, 'default-user');
+        assert.equal(body.admin, false, 'auto-logged default-user must NOT be admin');
+    } finally {
+        await solo.stop();
+    }
 });

@@ -14,6 +14,7 @@
 
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 
 let server;
 
@@ -23,6 +24,9 @@ test.beforeAll(async () => {
         scenarioId: 'isolation',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before driving admin flows.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -55,7 +59,7 @@ test.describe('#105 — strict per-user data isolation across users + restart', 
         // --- Admin creates two non-admin users.
         const admin = await newSession(server.baseURL);
         try {
-            await loginAs(admin, 'default-user', '');
+            await loginAs(admin, 'default-user', E2E_ADMIN_PASSWORD);
             const createA = await admin.post('/api/users/create', { handle: 'userone', name: 'User One', password: 'pwA' });
             expect(createA.ok(), `create userone failed (${createA.status()})`).toBe(true);
             const createB = await admin.post('/api/users/create', { handle: 'usertwo', name: 'User Two', password: 'pwB' });

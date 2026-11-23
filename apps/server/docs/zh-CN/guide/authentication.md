@@ -35,6 +35,18 @@ enableUserAccounts: true
 
 系统内置了一个名为 `default-user` 的默认用户。如果你从单用户模式切换到多用户模式，之前的数据会归属于这个默认用户。
 
+::: warning
+`default-user` 初始**不带管理员权限、也不设密码**。全新多用户部署中没有任何管理员——需要在带外授予一次：
+
+```bash
+node recover.js default-user <新密码> --admin
+```
+
+当 `enableUserAccounts` 开启但不存在启用状态的管理员账号时，服务端启动日志也会打印这条提示。
+:::
+
+没有密码的账号完全无法通过密码表单登录——只能走 SSO/OAuth，或者在它是服务器上唯一账号时经 `/login` 的自动登录进入（单用户安装免登录的便利通道）。之后设置任意密码（管理面板 → 修改密码，或 `recover.js`）即可开启密码登录。
+
 ### 密码重置
 
 如果忘记了用户密码，可以通过命令行工具重置：
@@ -46,8 +58,11 @@ node recover.js <用户名> <新密码>
 # 例如重置 default-user 的密码
 node recover.js default-user myNewPassword
 
-# 不提供密码则清空密码
+# 不提供密码则清空密码（此后该账号无法通过密码表单登录）
 node recover.js default-user
+
+# 设置密码的同时授予管理员权限（初始化第一个管理员）
+node recover.js default-user myNewPassword --admin
 ```
 
 ::: tip
