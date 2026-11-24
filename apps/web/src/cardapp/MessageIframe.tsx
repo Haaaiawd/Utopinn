@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
-import { PanelBridge } from '@utopinn/api-client';
+import { PanelBridge, UtopinnClient } from '@utopinn/api-client';
 import { CardAppHost } from './ctxHost';
 import { PANEL_METHODS_TH_MSGFRAME } from '@utopinn/protocol';
 import { useShell } from '../kernel/context';
@@ -114,7 +114,10 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
                 openPanel: (type, params) => sRef.current.openPanel(type ?? 'messageframe', params),
                 collapsePanels: () => sRef.current.collapsePanels(),
             },
-        });
+            // 本帧楼层下标进 panel-t0:getCurrentMessageId / message 域变量
+            // 读对的是所在楼层,不是恒 0(共享化前此洞两端同在)。
+            mountMessageId: messageId,
+        }, new UtopinnClient({ baseUrl: window.location.origin }));
         void host.seed();
         const poll = window.setInterval(() => { void host.pollChat(); }, POLL_MS);
         window.addEventListener('message', bridge.onMessage);
