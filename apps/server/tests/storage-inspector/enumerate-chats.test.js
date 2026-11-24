@@ -30,12 +30,12 @@ describe('enumerateCategory("chats") · L2', () => {
         try {
             const res = await enumerateCategory(userRoot, 'chats');
             const keys = res.entries.map(e => e.key).sort();
-            expect(keys).toEqual(expect.arrayContaining(['__group_chats__', 'default_Coding', 'default_Seraphina']));
+            expect(keys).toEqual(expect.arrayContaining(['__group_chats__', 'default_Coding', 'default_我没想当掌门啊']));
 
-            const seraphina = res.entries.find(e => e.key === 'default_Seraphina');
-            expect(seraphina.kind).toBe('character-chat-group');
-            expect(seraphina.sizeBytes).toBeGreaterThan(0);
-            expect(seraphina.childCount).toBe(2); // 2 chats
+            const zhangmen = res.entries.find(e => e.key === 'default_我没想当掌门啊');
+            expect(zhangmen.kind).toBe('character-chat-group');
+            expect(zhangmen.sizeBytes).toBeGreaterThan(0);
+            expect(zhangmen.childCount).toBe(2); // 2 chats
 
             const grp = res.entries.find(e => e.key === '__group_chats__');
             expect(grp.kind).toBe('group-chats-virtual');
@@ -50,8 +50,8 @@ describe('enumerateChatsCharacter · L3', () => {
     test('lists chat files with chat+sidecar合计 size', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
-            const res = await enumerateChatsCharacter(userRoot, 'default_Seraphina');
-            expect(res.path).toEqual(['chats', 'default_Seraphina']);
+            const res = await enumerateChatsCharacter(userRoot, 'default_我没想当掌门啊');
+            expect(res.path).toEqual(['chats', 'default_我没想当掌门啊']);
             const labels = res.entries.map(e => e.label).sort();
             expect(labels).toEqual(['Chat 2024-01-15.jsonl', 'Chat 2024-02-20.jsonl']);
             for (const e of res.entries) {
@@ -93,7 +93,7 @@ describe('readFirstLineByteLen', () => {
     test('returns byte length of first line without trailing newline', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
-            const chatPath = path.join(userRoot, 'chats/default_Seraphina/Chat 2024-01-15.jsonl');
+            const chatPath = path.join(userRoot, 'chats/default_我没想当掌门啊/Chat 2024-01-15.jsonl');
             const firstLine = (await fsPromises.readFile(chatPath, 'utf-8')).split('\n')[0];
             const len = await readFirstLineByteLen(chatPath);
             expect(len).toBe(Buffer.byteLength(firstLine, 'utf-8'));
@@ -107,11 +107,11 @@ describe('enumerateChatFile · L4 leaf', () => {
     test('splits into metadata + messages + sidecar rows', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
-            const chatPath = path.join(userRoot, 'chats/default_Seraphina/Chat 2024-01-15.jsonl');
+            const chatPath = path.join(userRoot, 'chats/default_我没想当掌门啊/Chat 2024-01-15.jsonl');
             const res = await enumerateChatFile(
                 chatPath,
                 'Chat 2024-01-15.jsonl',
-                ['chats', 'default_Seraphina', 'Chat 2024-01-15.jsonl'],
+                ['chats', 'default_我没想当掌门啊', 'Chat 2024-01-15.jsonl'],
             );
             expect(res.isLeaf).toBe(true);
             const kinds = res.entries.map(e => e.kind).sort();
@@ -133,9 +133,9 @@ describe('enumerateChatFile · L4 leaf', () => {
     test('sidecar rows carry namespace as label', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
-            const chatPath = path.join(userRoot, 'chats/default_Seraphina/Chat 2024-01-15.jsonl');
+            const chatPath = path.join(userRoot, 'chats/default_我没想当掌门啊/Chat 2024-01-15.jsonl');
             const res = await enumerateChatFile(chatPath, 'Chat 2024-01-15.jsonl',
-                ['chats', 'default_Seraphina', 'Chat 2024-01-15.jsonl']);
+                ['chats', 'default_我没想当掌门啊', 'Chat 2024-01-15.jsonl']);
             const sidecars = res.entries.filter(e => e.kind === 'chat-sidecar');
             const labels = sidecars.map(s => s.label).sort();
             expect(labels).toEqual(['luker_orchestrator_anchors__floor_log', 'memory_graph__floor_log']);

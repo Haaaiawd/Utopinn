@@ -746,7 +746,7 @@ describe('dispatchOpenAICompatible', () => {
                         ],
                         kimi_partial: true,
                         kimi_partial_content: 'Her reply begins thus:',
-                        kimi_partial_name: 'Seraphina',
+                        kimi_partial_name: '掌门真人',
                     },
                     secretMap: { api_key_moonshot: 'mk' },
                 });
@@ -759,7 +759,7 @@ describe('dispatchOpenAICompatible', () => {
                     role: 'assistant',
                     content: 'Her reply begins thus:',
                     partial: true,
-                    name: 'Seraphina',
+                    name: '掌门真人',
                 });
             });
 
@@ -850,7 +850,7 @@ describe('dispatchOpenAICompatible', () => {
                         messages: toolCallsMessages,
                         kimi_partial: true,
                         kimi_partial_content: 'Her reply begins thus:',
-                        kimi_partial_name: 'Seraphina',
+                        kimi_partial_name: '掌门真人',
                     },
                     secretMap: { api_key_moonshot: 'mk' },
                 });
@@ -904,7 +904,7 @@ describe('dispatchOpenAICompatible', () => {
                         },
                         kimi_partial: true,
                         kimi_partial_content: 'Her reply begins thus:',
-                        kimi_partial_name: 'Seraphina',
+                        kimi_partial_name: '掌门真人',
                     },
                     secretMap: { api_key_moonshot: 'mk' },
                 });

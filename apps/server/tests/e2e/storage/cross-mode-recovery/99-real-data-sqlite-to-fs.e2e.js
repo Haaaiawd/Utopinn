@@ -1,7 +1,7 @@
 // e2e/storage/cross-mode-recovery/99-real-data-sqlite-to-fs.e2e.js
 //
 // Real-data smoke for cross-mode recovery.  The 12 parameterized specs in
-// this directory drive the wiring with a fabricated minimal seed (Seraphina
+// this directory drive the wiring with a fabricated minimal seed (我没想当掌门啊
 // + one Chinese-emoji chat turn) — they prove the orchestration works but
 // can't tell us whether realistic user data (custom presets, lorebooks,
 // extensions, embedded chats) round-trips intact.

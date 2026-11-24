@@ -48,7 +48,7 @@ test('setting request timeout in the Advanced drawer persists and drives a real 
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // 走真实 UI：API Connections 抽屉 → connection manager Advanced 抽屉。
     await openAdvancedProfileSettings(page);

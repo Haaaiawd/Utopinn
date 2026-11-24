@@ -662,7 +662,7 @@ function Shell() {
         if (!live) return;
         const real = chats.filter((c) => !c.id.startsWith('st-') && c.id !== 'c1' && c.id !== 'c2');
         if (real.length > 0 && (activeChat === 'c1' || activeChat === 'c2') && !chats.some((c) => c.id === activeChat && c.charDir !== 'demo-card')) {
-            const hasC1Real = real.some((c) => `${c.charDir}/${c.chatName}` === 'default_Seraphina/demo-chat');
+            const hasC1Real = real.some((c) => `${c.charDir}/${c.chatName}` === 'default_我没想当掌门啊/demo-chat');
             if (!hasC1Real) setActiveChat(real[0]!.id);
         }
     }, [live, chats, activeChat]);

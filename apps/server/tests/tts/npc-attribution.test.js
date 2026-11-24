@@ -98,15 +98,15 @@ function makeContext({ chat, providerName = 'Stub' } = {}) {
         _fs: fs,
         groupId: null,
         name1: 'User',
-        name2: 'Seraphina',
-        characters: [{ name: 'Seraphina' }, { name: 'Marta' }],
+        name2: '掌门真人',
+        characters: [{ name: '掌门真人' }, { name: 'Marta' }],
         groups: [],
     };
 }
 
 beforeEach(() => {
     extension_settings.tts = { npcAttributionEnabled: true, npcAttributionRetryMax: 2, npcAttributionApiPresetName: '', npcAttributionPresetName: '', currentProvider: 'Stub' };
-    extension_settings.tts.Stub = { voiceMap: { Seraphina: 'StubVoice' } };
+    extension_settings.tts.Stub = { voiceMap: { 掌门真人: 'StubVoice' } };
     resetFloorStateInstanceForTesting();
     jest.clearAllMocks();
 });
@@ -135,7 +135,7 @@ describe('npc-attribution', () => {
         const context = makeContext({ chat: [] });
         const map = { 3: { mesHash: 'x', segments: [{ qIndex: 0, speaker: 'Marta' }, { qIndex: 1, speaker: null }] } };
         const roster = buildRoster(context, map);
-        expect(roster).toContain('Seraphina');
+        expect(roster).toContain('掌门真人');
         expect(roster).toContain('User');
         expect(roster).toContain('Marta');
         expect(new Set(roster).size).toBe(roster.length);
@@ -156,10 +156,10 @@ describe('npc-attribution', () => {
     });
 
     test('ensureNpcVoiceMapEntries adds only missing names', async () => {
-        const added = await ensureNpcVoiceMapEntries('Stub', ['Marta', 'Seraphina', '', '[Default Voice]']);
+        const added = await ensureNpcVoiceMapEntries('Stub', ['Marta', '掌门真人', '', '[Default Voice]']);
         expect(added).toEqual(['Marta']);
         expect(extension_settings.tts.Stub.voiceMap.Marta).toBe('[Default Voice]');
-        expect(extension_settings.tts.Stub.voiceMap.Seraphina).toBe('StubVoice');
+        expect(extension_settings.tts.Stub.voiceMap.掌门真人).toBe('StubVoice');
         expect(saveSettingsDebounced).toHaveBeenCalledTimes(1);
         const addedAgain = await ensureNpcVoiceMapEntries('Stub', ['Marta']);
         expect(addedAgain).toEqual([]);
@@ -182,11 +182,11 @@ describe('npc-attribution', () => {
     });
 
     test('parseAndCacheAttribution parses, caches, and adds voice keys; second call hits cache', async () => {
-        const message = { name: 'Seraphina', mes: 'text "line one" more "line two"', swipe_id: 0, is_user: false };
+        const message = { name: '掌门真人', mes: 'text "line one" more "line two"', swipe_id: 0, is_user: false };
         const context = makeContext({ chat: [message] });
         requestToolCallWithRetry.mockImplementation(async () => ({
             segments: [
-                { quote_text: 'line one', speaker: 'Seraphina' },
+                { quote_text: 'line one', speaker: '掌门真人' },
                 { quote_text: 'line two', speaker: 'Marta' },
             ],
         }));
@@ -194,7 +194,7 @@ describe('npc-attribution', () => {
         const first = await parseAndCacheAttribution(context, 0);
         expect(requestToolCallWithRetry).toHaveBeenCalledTimes(1);
         expect(first.segments).toEqual([
-            { qIndex: 0, speaker: 'Seraphina' },
+            { qIndex: 0, speaker: '掌门真人' },
             { qIndex: 1, speaker: 'Marta' },
         ]);
         expect(first.addedVoices).toEqual(['Marta']);
@@ -211,7 +211,7 @@ describe('npc-attribution', () => {
     });
 
     test('hash mismatch invalidates cache entry and triggers re-parse', async () => {
-        const message = { name: 'Seraphina', mes: 'a "quote" b', swipe_id: 0 };
+        const message = { name: '掌门真人', mes: 'a "quote" b', swipe_id: 0 };
         const context = makeContext({ chat: [message] });
         requestToolCallWithRetry.mockImplementation(async () => ({ segments: [{ quote_text: 'quote', speaker: 'Marta' }] }));
         await parseAndCacheAttribution(context, 0);
@@ -224,7 +224,7 @@ describe('npc-attribution', () => {
     });
 
     test('message without quotes skips the LLM entirely', async () => {
-        const context = makeContext({ chat: [{ name: 'Seraphina', mes: 'plain narration', swipe_id: 0 }] });
+        const context = makeContext({ chat: [{ name: '掌门真人', mes: 'plain narration', swipe_id: 0 }] });
         const result = await parseAndCacheAttribution(context, 0);
         expect(result).toBe(null);
         expect(requestToolCallWithRetry).not.toHaveBeenCalled();
@@ -232,7 +232,7 @@ describe('npc-attribution', () => {
     });
 
     test('floor-state commit rejection still returns segments and warns once', async () => {
-        const message = { name: 'Seraphina', mes: 'text "line one" more', swipe_id: 0 };
+        const message = { name: '掌门真人', mes: 'text "line one" more', swipe_id: 0 };
         const context = makeContext({ chat: [message] });
         context._fs.patch = async () => ({ ok: false, reason: 'validation_commit', hint: 'floor below log tail' });
         requestToolCallWithRetry.mockImplementation(async () => ({ segments: [{ quote_text: 'line one', speaker: 'Marta' }] }));

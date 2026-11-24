@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { read } from '../src/character-card-parser.js';
 import { diskCache, readCharacterData, writeCharacterData } from '../src/endpoints/characters.js';
 
-const seedPath = fileURLToPath(new URL('../default/content/default_Seraphina.png', import.meta.url));
+const seedPath = fileURLToPath(new URL('../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 describe('character card cache storage identity', () => {
     test('caches the preferred PNG payload rather than the pre-write string', async () => {

@@ -182,7 +182,7 @@ test.describe('#74 — Capsule injection', () => {
         // appear by accident — assertions become trivial.
         const SENTINEL = '[CAPSULE-74-SENTINEL]';
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page, {
             mainSystemPrompt: 'Test director.',

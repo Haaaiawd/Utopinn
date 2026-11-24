@@ -37,10 +37,10 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart in half.* "Reply A1: I hear the wind shifting south."',
-        '*Seraphina trims the lantern wick.* "Reply A2: it will be a long watch tonight."',
-        '*Seraphina sets a brass weight on the chart corner.* "Reply B1: the reef is restless again."',
-        '*Seraphina taps the spyglass barrel.* "Reply B2: we should mark the second breaker."',
+        '*我没想当掌门啊 folds the chart in half.* "Reply A1: I hear the wind shifting south."',
+        '*我没想当掌门啊 trims the lantern wick.* "Reply A2: it will be a long watch tonight."',
+        '*我没想当掌门啊 sets a brass weight on the chart corner.* "Reply B1: the reef is restless again."',
+        '*我没想当掌门啊 taps the spyglass barrel.* "Reply B2: we should mark the second breaker."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'merge-basic' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -56,7 +56,7 @@ test.afterAll(async () => {
 test.describe('#15 — merge two chats via Past Chats Merge UI', () => {
     test('merge two chats preserves order and source chats', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Chat A: greeting + 2 user/assistant turns.

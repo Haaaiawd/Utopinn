@@ -50,9 +50,9 @@ const STALE_MARKER = 'STALE_RECALL_FROM_PREVIOUS_TURN: the obsolete watch roster
 const BASELINE_USER = 'The harbor bell cracked during the autumn gale. Did the founders ever recast it?';
 const FAILED_USER = 'I heard the fleet returned under a green sky. What did the watchpost record?';
 
-const BASELINE_REPLY = '*Seraphina sets down the tide-table and taps the bell inscription with one finger.* "They recast it before the fleet returned. The crescent flaw stayed — a signature, not a mistake."';
-const FAILED_REPLY = '*Seraphina glances toward the headland, chart still folded in her cuff.* "The watch log says green sky at dusk, then three hulls north by skiff. Nothing after that."';
-const REGEN_REPLY = '*Seraphina opens the cuff and lays the tide-table flat.* "The old watchpost record lists the green sky, then three hulls north. The rest of the page is salt-stained."';
+const BASELINE_REPLY = '*我没想当掌门啊 sets down the tide-table and taps the bell inscription with one finger.* "They recast it before the fleet returned. The crescent flaw stayed — a signature, not a mistake."';
+const FAILED_REPLY = '*我没想当掌门啊 glances toward the headland, chart still folded in her cuff.* "The watch log says green sky at dusk, then three hulls north by skiff. Nothing after that."';
+const REGEN_REPLY = '*我没想当掌门啊 opens the cuff and lays the tide-table flat.* "The old watchpost record lists the green sky, then three hulls north. The rest of the page is salt-stained."';
 
 const SEED_RECORDS = [
     {
@@ -64,11 +64,11 @@ const SEED_RECORDS = [
         },
     },
     {
-        idHint: 'seraphina-tide-table',
+        idHint: 'zhangmen-tide-table',
         type: 'character_sheet',
-        title: 'Seraphina the cartographer',
+        title: '我没想当掌门啊 the cartographer',
         fields: {
-            title: 'Seraphina the cartographer',
+            title: '我没想当掌门啊 the cartographer',
             aliases: 'Sera',
             identity: 'Keeps a folded tide-table stitched inside the left cuff of her weather coat.',
             traits: 'Patient, exacting, dry-witted.',
@@ -81,7 +81,7 @@ const SEED_RECORDS = [
         fields: {
             title: 'Bryn headland watchpost',
             state: 'Green-sky watch log kept under the brass rail.',
-            controller: 'Seraphina',
+            controller: '我没想当掌门啊',
         },
     },
 ];
@@ -269,7 +269,7 @@ test.describe('#74 — failed recall is not cached and cannot leak stale focus',
     test('stale RUNTIME is cleared before the scan; failure writes no focus and no READY snapshot', async ({ page }) => {
         test.setTimeout(240_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgAndTune(page);
         await importBindLatest(page, importPath);
 

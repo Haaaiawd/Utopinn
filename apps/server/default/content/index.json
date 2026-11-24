@@ -116,16 +116,8 @@
         "type": "background"
     },
     {
-        "filename": "default_Seraphina.png",
+        "filename": "default_我没想当掌门啊.png",
         "type": "character"
-    },
-    {
-        "filename": "Seraphina",
-        "type": "sprites"
-    },
-    {
-        "filename": "Eldoria.json",
-        "type": "world"
     },
     {
         "filename": "user-default.png",

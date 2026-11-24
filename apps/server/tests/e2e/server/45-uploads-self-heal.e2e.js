@@ -51,7 +51,7 @@ test.describe('#45 — _uploads/ directory self-heals after deletion', () => {
         // _uploads. The fix is in middleware, so even a failing import body
         // exercises the destination resolver.
         // Actually: use the bundled real PNG so the import path is more robust.
-        const PNG_PATH = resolve(process.cwd(), '../default/content/default_Seraphina.png');
+        const PNG_PATH = resolve(process.cwd(), '../default/content/default_我没想当掌门啊.png');
         const pngBuf = (() => {
             try { return readFileSync(PNG_PATH); } catch { return Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]); }
         })();

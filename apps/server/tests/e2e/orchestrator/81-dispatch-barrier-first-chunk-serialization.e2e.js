@@ -106,7 +106,7 @@ test.afterAll(async () => {
  * three sub-agent request records observed at the mock.
  */
 async function runFanOutTurn(page, { agentApiPresetName }) {
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // Three sub-agents; whether apiPresetName is populated is the
     // independent variable across the two sub-tests.

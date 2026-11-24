@@ -74,7 +74,7 @@ test.describe('corrupted auto-loaded chat does not raise a save-aborted toast', 
         });
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 });
 
         // Positive control: on a healthy load the persona tracker still
@@ -86,7 +86,7 @@ test.describe('corrupted auto-loaded chat does not raise a save-aborted toast', 
 
         const chatId = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());
         expect(chatId, 'opening the character must yield an active chat id').toBeTruthy();
-        const chatFile = resolve(server.dataRoot, 'default-user', 'chats', 'default_Seraphina', `${chatId}.jsonl`);
+        const chatFile = resolve(server.dataRoot, 'default-user', 'chats', 'default_我没想当掌门啊', `${chatId}.jsonl`);
         await expect.poll(() => existsSync(chatFile), { timeout: 10_000 }).toBe(true);
         expect(readFileSync(chatFile, 'utf8')).toContain('chat_metadata');
 

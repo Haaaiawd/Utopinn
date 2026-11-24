@@ -41,7 +41,7 @@ function makeChat(message) {
 
 describe('getBackupKey', () => {
     test('keeps plain ASCII names unchanged', () => {
-        expect(chats.getBackupKey('Seraphina')).toBe('seraphina');
+        expect(chats.getBackupKey('ZhangMen')).toBe('zhangmen');
         expect(chats.getBackupKey('Some Test')).toBe('some_test');
     });
 

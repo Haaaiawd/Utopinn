@@ -33,7 +33,7 @@ test.afterAll(async () => {
 test.describe('#92 — Quick Reply triggers slash command via real button click', () => {
     test('clicking the rendered .qr--button in #qr--bar sends a message and triggers reply', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for greeting so MESSAGE_RECEIVED later is the QR reply.
         await page.waitForFunction(() => {

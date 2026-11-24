@@ -247,7 +247,17 @@ export function assetHandler(request, response) {
     if (relPath === 'cdn' || relPath.startsWith('cdn/')) {
         return response.status(404).json({ error: 'reserved_prefix' });
     }
-    const fullPath = resolveAssetPath(mount, relPath);
+    let fullPath = resolveAssetPath(mount, relPath);
+    if (!fullPath || !fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+        // Luker-era cards may treat ctx.assetBase as the embedded "assets/"
+        // subtree root — their binaries live under card_app.files/assets/*
+        // while assetBase is the mount root. Retry under that prefix; exact
+        // paths still win first so this never shadows a real file.
+        if (!relPath.startsWith('assets/')) {
+            const alt = resolveAssetPath(mount, 'assets/' + relPath);
+            if (alt && fs.existsSync(alt) && fs.statSync(alt).isFile()) fullPath = alt;
+        }
+    }
     if (!fullPath || !fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
         return response.status(404).json({ error: 'asset_not_found' });
     }

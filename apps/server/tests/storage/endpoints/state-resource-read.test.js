@@ -12,7 +12,7 @@ import { router as presetsRouter } from '../../../src/endpoints/presets.js';
 import { write as writeCardChunk } from '../../../src/character-card-parser.js';
 import { getChatRepo, getPresetRepo } from '../../../src/storage/index.js';
 
-const seedPath = fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url));
+const seedPath = fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 function seedCard(charsDir, name) {
     fs.mkdirSync(charsDir, { recursive: true });

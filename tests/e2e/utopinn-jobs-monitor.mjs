@@ -5,7 +5,7 @@
 import http from 'node:http';
 const B = 'http://127.0.0.1:8000';
 const STUB_PORT = 18767;
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-jobs-probe';
 const PIECES = ['The ', 'stars ', 'align.'];
 let cookie = '', token = '';

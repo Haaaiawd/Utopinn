@@ -51,7 +51,7 @@ test.afterAll(async () => {
 test.describe('#98 — function-call runtime tool round-trip via real send', () => {
     test('mock returns tool_call → registered tool runs → final bubble has "sunny" + "21°C"', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();

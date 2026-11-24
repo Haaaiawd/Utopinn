@@ -37,7 +37,7 @@ test.afterAll(async () => {
 test.describe('#10 — Impersonate populates the user textarea', () => {
     test('impersonate output lands in #send_textarea, chat length unchanged', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const beforeCount = await page.locator('#chat .mes').count();

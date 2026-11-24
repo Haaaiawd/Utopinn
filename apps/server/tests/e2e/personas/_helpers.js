@@ -7,7 +7,7 @@
 //     PNG. The server reads card data from PNG chunks ONLY (see
 //     src/character-card-parser.js#read) so a sidecar JSON file is not
 //     honoured; the original helper writes only that sidecar and the
-//     character ends up named "Seraphina" from the fallback PNG's own
+//     character ends up named "我没想当掌门啊" from the fallback PNG's own
 //     embedded chunk. This helper is the chunk-aware variant.
 //
 //  2. `preseedPersona` — directly stamps a persona into a user's
@@ -30,7 +30,7 @@ import { resolve } from 'node:path';
 import { write as writeChara } from '../../../src/character-card-parser.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-const SERAPHINA_PNG = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+const SEED_PNG = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 
 function userRoot(dataRoot, handle = 'default-user') {
     return resolve(dataRoot, handle);
@@ -81,7 +81,7 @@ export function writeCharacterWithChunks({
         ...overrides,
     };
 
-    const seedBuf = readFileSync(SERAPHINA_PNG);
+    const seedBuf = readFileSync(SEED_PNG);
     const cardJson = JSON.stringify(card);
     const stamped = writeChara(seedBuf, cardJson);
     writeFileSync(resolve(charsDir, avatarFile), stamped);
@@ -144,7 +144,7 @@ export function preseedPersona({
     // raw bytes are written straight to disk.
     const avatarsDir = resolve(userRoot(dataRoot, handle), 'User Avatars');
     mkdirSync(avatarsDir, { recursive: true });
-    copyFileSync(SERAPHINA_PNG, resolve(avatarsDir, avatarId));
+    copyFileSync(SEED_PNG, resolve(avatarsDir, avatarId));
 
     return avatarId;
 }

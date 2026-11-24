@@ -105,7 +105,7 @@ test.beforeAll(async () => {
     // server extract `card_app.files` into the per-character card-apps dir,
     // which is the production path real cards take.
     tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-130-'));
-    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
 
     const v2 = {
         name: NAME,

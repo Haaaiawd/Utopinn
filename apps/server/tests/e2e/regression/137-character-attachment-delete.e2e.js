@@ -18,12 +18,12 @@ test.use({ actionTimeout: 15_000 });
 test.beforeAll(async () => {
     server = await startServer({ batchKey: 'regression', scenarioId: 'character-attachment-delete' });
     markOnboarded({ dataRoot: server.dataRoot });
-    writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: 'Seraphina.png', card: { name: 'Seraphina', first_mes: 'Welcome back to the glade.' } });
+    writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: '掌门真人.png', card: { name: '掌门真人', first_mes: 'Welcome back to the glade.' } });
     const root = userRootOf(server);
     fs.mkdirSync(path.join(root, 'user', 'files'), { recursive: true });
     fs.writeFileSync(path.join(root, 'user', 'files', 'glade-ledger.txt'), 'The spring rises beneath the white stones.');
     const settings = JSON.parse(readUserFile(server, 'settings.json'));
-    settings.extension_settings.character_attachments = { 'Seraphina.png': [ATTACHMENT] };
+    settings.extension_settings.character_attachments = { '掌门真人.png': [ATTACHMENT] };
     fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify(settings, null, 4));
 });
 
@@ -39,7 +39,7 @@ async function loadUI(page) {
 async function openCharacterDataBank(page) {
     await openTopDrawer(page, 'rightNavHolder');
     await page.locator('#rm_button_characters').click();
-    await page.locator('#rm_print_characters_block .character_select', { has: page.locator('.avatar[title$="File: Seraphina.png"]') }).click();
+    await page.locator('#rm_print_characters_block .character_select', { has: page.locator('.avatar[title$="File: 掌门真人.png"]') }).click();
     await closeTopDrawer(page, 'rightNavHolder');
     await page.locator('#extensionsMenuButton').click();
     await page.locator('#manageAttachments').click();
@@ -59,7 +59,7 @@ test('deleting a character attachment persists after reloading', async ({ page }
     await page.locator('dialog.popup[open]').last().locator('.popup-button-ok').click();
     await expect(row).toHaveCount(0);
     expect(fs.existsSync(path.join(userRootOf(server), 'user', 'files', 'glade-ledger.txt'))).toBe(false);
-    await expect.poll(() => JSON.parse(readUserFile(server, 'settings.json')).extension_settings.character_attachments['Seraphina.png'],
+    await expect.poll(() => JSON.parse(readUserFile(server, 'settings.json')).extension_settings.character_attachments['掌门真人.png'],
         { timeout: 10_000, message: 'the deleted character attachment is removed from saved settings' }).toEqual([]);
 
     await loadUI(page);

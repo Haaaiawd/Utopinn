@@ -68,7 +68,7 @@ describe('storage inspector primitives', () => {
 
     describe('assertSafeSegment', () => {
         test('accepts plain filenames', () => {
-            expect(() => assertSafeSegment('Seraphina.png')).not.toThrow();
+            expect(() => assertSafeSegment('掌门真人.png')).not.toThrow();
             expect(() => assertSafeSegment('some chat.jsonl')).not.toThrow();
             expect(() => assertSafeSegment('_hidden')).not.toThrow();
         });

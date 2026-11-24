@@ -70,7 +70,7 @@ describe('sync session lifecycle', () => {
     test('the offer body categories are ignored', async () => {
         await upsertLanBackend({ userRoot: device.userRoot, backendId: PEER, label: 'p', categories: ['worlds'] });
         device.write('worlds/w.json', '{"a":1}');
-        device.write('chats/Seraphina/c1.jsonl', '{"chat_metadata":{}}\n');
+        device.write('chats/掌门真人/c1.jsonl', '{"chat_metadata":{}}\n');
         const r = await offer({ categories: ['chats'] });
         expect(r.status).toBe(200);
         expect((await readRegistry({ userRoot: device.userRoot })).backends[PEER].categories).toEqual(['worlds']);

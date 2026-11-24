@@ -150,8 +150,8 @@ test.each(['edit', 'unlock'])('%s maintenance drains a real GET while manual, po
 test.each(['resolve', 'dismiss', 'undo'])('actionable queued %s commits after GET and maintenance without snapshotting disabled live edits', async operation => {
     const categories = ['worlds', 'chats', 'themes'];
     const source = await device(undefined, categories);
-    const chat = 'chats/Seraphina/c.jsonl';
-    const chatBytes = text => `${JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} })}\n${JSON.stringify({ name: 'Seraphina', is_user: false, mes: text })}\n`;
+    const chat = 'chats/掌门真人/c.jsonl';
+    const chatBytes = text => `${JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} })}\n${JSON.stringify({ name: '掌门真人', is_user: false, mes: text })}\n`;
     source.write('worlds/action.json', 'before'); source.write('themes/disabled.css', 'before');
     source.write(chat, chatBytes('before'));
     expect(await source.run()).toMatchObject({ ok: true });

@@ -44,7 +44,7 @@ test('streaming chunk gap beyond the profile timeout aborts generation and cance
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     await page.locator('#send_textarea').fill('The lantern needs another turn before the tide shifts.');

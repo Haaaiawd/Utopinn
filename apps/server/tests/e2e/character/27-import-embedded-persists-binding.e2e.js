@@ -81,7 +81,7 @@ test.describe('#27 — import-embedded persists the binding', () => {
     test.beforeAll(async () => {
         mock = await startMockLLM({});
         tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-27-'));
-        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
         cardAPath = resolve(tmpDir, 'card-a.png');
         cardBPath = resolve(tmpDir, 'card-b.png');
         writeFileSync(cardAPath, buildCardPng(seed, { name: 'Card A', bookName: 'book-a' }));

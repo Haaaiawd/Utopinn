@@ -49,16 +49,16 @@ const SEED_RECORDS = [
     },
     {
         type: 'character_sheet',
-        title: 'Seraphina the cartographer',
+        title: '我没想当掌门啊 the cartographer',
         fields: {
-            title: 'Seraphina the cartographer',
+            title: '我没想当掌门啊 the cartographer',
             aliases: 'Sera',
             identity: 'Wind-bitten Bryn coastal cartographer in her early thirties. Maps reef shifts nightly with a brass spyglass that once belonged to her mother.',
             traits: 'Observant, dry-witted, patient.',
             goal: 'Chart the reef before the great surge season returns.',
         },
-        query: 'Describe Seraphina the wind-bitten cartographer who maps the Bryn reef nightly.',
-        idHint: 'seraphina',
+        query: 'Describe 我没想当掌门啊 the wind-bitten cartographer who maps the Bryn reef nightly.',
+        idHint: 'zhangmen',
     },
     {
         type: 'location_state',
@@ -66,7 +66,7 @@ const SEED_RECORDS = [
         fields: {
             title: 'Bryn headland watchpost',
             state: 'Active nighttime post: brass spyglass on the rail, tidal charts pinned, signal lantern trimmed.',
-            controller: 'Seraphina',
+            controller: '我没想当掌门啊',
             resources: 'brass spyglass, tidal charts, spare oil flask, signal lantern',
         },
         query: 'Where on the Bryn headland is the spare oil flask kept along with the tidal charts?',
@@ -86,7 +86,7 @@ const SEED_RECORDS = [
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: Array.from({ length: 5 }, (_, i) =>
-            `*Seraphina folds the chart and meets your eyes.* "Acknowledged. Note ${i + 1} recorded."`,
+            `*我没想当掌门啊 folds the chart and meets your eyes.* "Acknowledged. Note ${i + 1} recorded."`,
         ),
     });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'vector-rebuild' });
@@ -163,7 +163,7 @@ test.describe('#58 — MG vector-index rebuild via real button → semantic reca
 
     test('import seeds, click Rebuild From Chat, vectorSearch ranks each seed first for its paraphrased query', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckboxes(page);
 
         // 2 RP turns so MG has a real chat tail.
@@ -225,7 +225,7 @@ test.describe('#58 — MG vector-index rebuild via real button → semantic reca
 
         const titleByHint = {
             'cliff-lantern': 'Summary 1',
-            'seraphina': 'Seraphina the cartographer',
+            'zhangmen': '我没想当掌门啊 the cartographer',
             'headland-watchpost': 'Bryn headland watchpost',
             'drifters-skiff': 'Summary 2',
         };

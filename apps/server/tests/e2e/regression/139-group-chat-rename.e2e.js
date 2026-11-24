@@ -10,10 +10,10 @@ import { closeAnyOpenTopSettingsDrawer, editMessageViaUI } from '../_lib/page.js
 import { openChatByName, openLanSyncPanel, generatePairingLink, acceptPairingLink, waitForBackendSync, clickSyncNow, setSyncSchedule, setSyncDeviceLabel, closeAllPopups } from '../_lib/sync.js';
 
 test.describe.configure({ timeout: 240_000 });
-const AVATAR = 'default_Seraphina.png';
+const AVATAR = 'default_我没想当掌门啊.png';
 const HEADER = { user_name: 'Archivist', character_name: '', unknown_header: { retained: ['渡口', { exact: true }] }, chat_metadata: { note_prompt: 'Moonlit reeds', unknown: { nested: [null, false, '🌙'] } } };
 const IMPORTED = [
-    { name: 'Seraphina', is_user: false, is_system: false, mes: 'Across the ford: 渡口 🌙 \\ reeds.', send_date: '2026-01-02T03:04:06Z', extra: { unknown: { a: [1, null, false] } }, unknown_message: ['kept'] },
+    { name: '我没想当掌门啊', is_user: false, is_system: false, mes: 'Across the ford: 渡口 🌙 \\ reeds.', send_date: '2026-01-02T03:04:06Z', extra: { unknown: { a: [1, null, false] } }, unknown_message: ['kept'] },
     { name: 'User', is_user: true, is_system: false, mes: 'Keep "every" word.\nAnd this line.', send_date: '2026-01-02T03:04:07Z', extra: { retained: { b: 2 } } },
 ];
 const observe = promise => promise.then(value => ({ value }), error => ({ error }));

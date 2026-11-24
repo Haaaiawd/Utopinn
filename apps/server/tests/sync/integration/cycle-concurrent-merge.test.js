@@ -13,13 +13,13 @@ import { write as writeCard } from '../../../src/character-card-parser.js';
 import { DirectoryBackend } from '../_lib/directory-backend.js';
 import { BACKEND_ID, makeDevice, makeRemote, resolveRefOrNull } from '../_lib/devices.js';
 
-const HEADER = JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} });
-const CHAT = 'chats/Seraphina/c1.jsonl';
+const HEADER = JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} });
+const CHAT = 'chats/掌门真人/c1.jsonl';
 const WORLD = 'worlds/w.json';
 const oid = content => blobOidOf(Buffer.from(content));
-const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_Seraphina.png'));
-const CARD = 'characters/Seraphina.png';
-const card = chat => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: 'Seraphina', data: { name: 'Seraphina' }, ...(chat ? { chat } : {}) }));
+const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_我没想当掌门啊.png'));
+const CARD = 'characters/掌门真人.png';
+const card = chat => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: '掌门真人', data: { name: '掌门真人' }, ...(chat ? { chat } : {}) }));
 
 describe('two devices merging the same heads at once', () => {
     const cleanups = [];
@@ -72,7 +72,7 @@ describe('two devices merging the same heads at once', () => {
 
         const gitdir = Desk.shadow.gitDir;
         const files = await readCommitFiles({ gitdir, commitOid: deskMerge.localHead });
-        const forks = [...files.keys()].filter(key => key.startsWith('chats/Seraphina/') && key.endsWith('.jsonl') && key !== CHAT);
+        const forks = [...files.keys()].filter(key => key.startsWith('chats/掌门真人/') && key.endsWith('.jsonl') && key !== CHAT);
         expect(forks).toHaveLength(1);
 
         const { [WORLD]: record } = await readEntries({ gitdir, files, path: CONFLICTS_PATH, kind: 'conflicts' });
@@ -103,7 +103,7 @@ describe('two devices merging the same heads at once', () => {
         const { Desk, Phone } = devices;
         Desk.ctx.onConflicts = createConflictPolicy({ directories: Desk.directories, localDevice: 'Desk', remoteDevice: 'Phone' });
         Phone.ctx.onConflicts = createConflictPolicy({ directories: Phone.directories, localDevice: 'Phone', remoteDevice: 'Desk' });
-        const chats = { Desk: 'chats/Seraphina/c1.jsonl', Phone: 'chats/Seraphina/c2.jsonl' };
+        const chats = { Desk: 'chats/掌门真人/c1.jsonl', Phone: 'chats/掌门真人/c2.jsonl' };
 
         Desk.write(CARD, card());
         for (const chat of Object.values(chats)) Desk.write(chat, `${HEADER}\nbase`);

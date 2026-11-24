@@ -127,7 +127,7 @@ test.afterAll(async () => {
 test.describe('#41 — four backend sources reachable', () => {
     test('(a) chat-completions (CUSTOM) — UI-driven turn round-trips', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -221,7 +221,7 @@ test.describe('#41 — four backend sources reachable', () => {
         // its routes live on chat-completions.js line 2045 (/jobs/status),
         // 2074 (/jobs/events), 2106 (/jobs/active), 2126 (/jobs/events-stream).
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         ccMock.scriptReply('*Ash answers — luker-gen path.* "Hold the lantern higher."');
 
         await sendMessageAndAwaitReply(page, 'I will hold here until the tide turns.');

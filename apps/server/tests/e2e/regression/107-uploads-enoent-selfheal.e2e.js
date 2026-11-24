@@ -28,7 +28,7 @@ import { resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-const SEED_PNG = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+const SEED_PNG = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 
 let server;
 let tmpDir;
@@ -84,8 +84,8 @@ test.describe('#107 — character import survives _uploads/ wipe', () => {
         });
 
         // 1. First import: drives the real visible button + file input.
-        //    The seed PNG embeds Seraphina's card data so the imported
-        //    name will be Seraphina (or Seraphina_<n> on dupes); we don't
+        //    The seed PNG embeds 我没想当掌门啊's card data so the imported
+        //    name will be 我没想当掌门啊 (or 我没想当掌门啊_<n> on dupes); we don't
         //    care about the specific name — only that the card count grows.
         //    Open the right-nav drawer first so the count is observable.
         const drawer = page.locator('#rightNavDrawerIcon');

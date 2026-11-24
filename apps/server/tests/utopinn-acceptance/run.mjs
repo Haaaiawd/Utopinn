@@ -78,6 +78,11 @@ function cli(args, { stdin } = {}) {
         [CLI_PATH, '-s', BASE, '--state', STATE_FILE, '--json', ...args],
         {
             input: stdin ?? '', encoding: 'utf8', timeout: 120_000, cwd: WORK,
+            // A full card dump (utopinn char) can exceed the spawnSync default
+            // 1MB stdout cap — the bundled card's embedded CardApp pushes it
+            // to several MB — raise maxBuffer explicitly to avoid ENOBUFS
+            // false negatives.
+            maxBuffer: 64 * 1024 * 1024,
             env: {
                 ...process.env,
                 NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
@@ -124,7 +129,7 @@ const { writeCardToPng } = await import('@utopinn/formats').catch(() => ({}));
 function writeCardAppProbe({ dataRoot, avatarFile, name, cardApp }) {
     const charsDir = resolve(dataRoot, 'default-user', 'characters');
     mkdirSync(charsDir, { recursive: true });
-    const seed = resolve(SERVER_DIR, 'default/content/default_Seraphina.png');
+    const seed = resolve(SERVER_DIR, 'default/content/default_我没想当掌门啊.png');
     const card = {
         spec: 'chara_card_v2', spec_version: '2.0',
         data: {
@@ -174,6 +179,12 @@ function seedCorpus(dataRoot, { upstreamUrl }) {
     sdoc.oai_settings = {
         ...(sdoc.oai_settings ?? {}),
         chat_completion_source: 'openai',
+        // First boot synthesizes legacy oai slots into connection_profiles
+        // (the "default" profile points at real api.openai.com). Profile
+        // dispatch always wins over oai_settings.reverse_proxy, so without
+        // clearing this a generate would dial the public internet instead of
+        // the hang server. Emptying the list falls back to the legacy slot.
+        connection_profiles: [],
         reverse_proxy: upstreamUrl,
         proxy_password: 'acc-probe-pw',
         model: 'acc-probe', openai_model: 'acc-probe',

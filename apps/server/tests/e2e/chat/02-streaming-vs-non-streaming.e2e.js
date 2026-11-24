@@ -19,7 +19,7 @@ import { awaitMainUI, selectCharacterByName } from '../_lib/page.js';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const LONG_REPLY = '*Seraphina watches the dark line of the breakers and speaks slowly, as if drawing each phrase off the tide.* "The reef holds. The lantern holds. The path holds. We walk it again before the night turns."';
+const LONG_REPLY = '*我没想当掌门啊 watches the dark line of the breakers and speaks slowly, as if drawing each phrase off the tide.* "The reef holds. The lantern holds. The path holds. We walk it again before the night turns."';
 
 function patchStreamFlag(dataRoot, on) {
     const sp = resolve(dataRoot, 'default-user', 'settings.json');
@@ -141,7 +141,7 @@ test.describe('#2 — streaming vs non-streaming bubble growth', () => {
 
         try {
             await awaitMainUI(page, server.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
             const samples = await sendAndSampleViaUI(page, 'The wind is gathering. Tell me what to watch for.');
@@ -171,7 +171,7 @@ test.describe('#2 — streaming vs non-streaming bubble growth', () => {
 
         try {
             await awaitMainUI(page, server.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
             const samples = await sendAndSampleViaUI(page, 'No streaming this time — speak plain.');

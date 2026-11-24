@@ -41,11 +41,11 @@ const EDITED_STATE = '夜间执勤；信号灯已重新修剪。';
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour."',
+        '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour."',
         '*She traces a line on the chart with one knuckle.* "Three breakers north of the gull rocks."',
-        '*Seraphina exhales slowly.* "The drifters know that channel better than we do."',
+        '*我没想当掌门啊 exhales slowly.* "The drifters know that channel better than we do."',
         '*She turns to the rail, spyglass raised.* "Hold. Don\'t speak for a moment."',
-        '*Seraphina nods once.* "Then it is decided. We wait."',
+        '*我没想当掌门啊 nods once.* "Then it is decided. We wait."',
     ] });
     server = await startServer({ batchKey: 'iterstudio', scenarioId: '92-mg-graph-negative' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -65,19 +65,19 @@ test.beforeAll(async () => {
             n_1: {
                 id: 'n_1', type: 'event', level: 'semantic',
                 title: 'Summary 1', parentId: '', childrenIds: [],
-                fields: { summary: '第一夜，user 与 Seraphina 在 Bryn 断崖点亮信号灯。' },
+                fields: { summary: '第一夜，user 与 我没想当掌门啊 在 Bryn 断崖点亮信号灯。' },
                 seqTo: 1,
             },
             n_2: {
                 id: 'n_2', type: 'character_sheet', level: 'semantic',
-                title: 'Seraphina', parentId: '', childrenIds: [],
-                fields: { title: 'Seraphina', aliases: '海图官 Sera', identity: 'Bryn 断崖的常驻海图官。' },
+                title: '我没想当掌门啊', parentId: '', childrenIds: [],
+                fields: { title: '我没想当掌门啊', aliases: '海图官 Sera', identity: 'Bryn 断崖的常驻海图官。' },
                 seqTo: 2,
             },
             n_3: {
                 id: 'n_3', type: 'location_state', level: 'semantic',
                 title: 'Bryn headland watchpost', parentId: '', childrenIds: [],
-                fields: { title: 'Bryn headland watchpost', controller: 'Seraphina', state: BASELINE_STATE },
+                fields: { title: 'Bryn headland watchpost', controller: '我没想当掌门啊', state: BASELINE_STATE },
                 seqTo: 3,
             },
         },
@@ -143,7 +143,7 @@ async function readNodeFields(page, nodeId) {
 
 async function seedChatAndGraph(page) {
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await enableMgViaCheckboxes(page);
     for (const turn of CHAT_TURNS) {
         await sendMessageAndAwaitReply(page, turn);

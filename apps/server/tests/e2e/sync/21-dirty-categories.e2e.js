@@ -44,17 +44,17 @@ test.beforeAll(async () => {
     A = await startServer({ batchKey: 'sync', scenarioId: 'dirty-A' });
     B = await startServer({ batchKey: 'sync', scenarioId: 'dirty-B' });
     for (const server of [A, B]) {
-        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: 'Seraphina.png', card: { name: 'Seraphina', first_mes: 'Welcome back to the glade.' } });
-        const chatDir = path.join(userRootOf(server), 'chats', 'Seraphina');
+        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: '掌门真人.png', card: { name: '掌门真人', first_mes: 'Welcome back to the glade.' } });
+        const chatDir = path.join(userRootOf(server), 'chats', '掌门真人');
         fs.mkdirSync(chatDir, { recursive: true });
         fs.writeFileSync(path.join(chatDir, 'Dawn Patrol.jsonl'), [
-            { user_name: 'User', character_name: 'Seraphina', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: '2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a' } },
-            { name: 'Seraphina', is_user: false, mes: 'The patrol leaves at first light.', send_date: '2026-10-01@10h00m01s' },
+            { user_name: 'User', character_name: '掌门真人', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: '2d3e4f5a-6b7c-4d8e-9f0a-1b2c3d4e5f6a' } },
+            { name: '掌门真人', is_user: false, mes: 'The patrol leaves at first light.', send_date: '2026-10-01@10h00m01s' },
             { name: 'User', is_user: true, mes: 'I will carry the lantern.', send_date: '2026-10-01@10h00m02s' },
         ].map(line => JSON.stringify(line)).join('\n'));
         fs.mkdirSync(path.join(userRootOf(server), 'groups'), { recursive: true });
         fs.writeFileSync(path.join(userRootOf(server), 'groups', 'g1.json'), JSON.stringify({
-            id: 'g1', name: 'Glade Watch', members: ['Seraphina.png'], avatar_url: '', allow_self_responses: false,
+            id: 'g1', name: 'Glade Watch', members: ['掌门真人.png'], avatar_url: '', allow_self_responses: false,
             activation_strategy: 1, generation_mode: 0, disabled_members: [], chat_metadata: {}, fav: false, chat_id: 'gc1', chats: ['gc1'], auto_mode_delay: 5,
         }, null, 4));
     }
@@ -128,7 +128,7 @@ test('a UI edit in each covered category reaches the other device after the idle
     // settings, so the step imports a character.
     const larkCard = { name: 'Lark', description: 'A scout who maps the eastern ridge.', first_mes: 'The ridge is clear.', tags: [] };
     const lark = path.join(tmp, 'lark.png');
-    fs.writeFileSync(lark, writePngCard(fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_Seraphina.png')), JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', ...larkCard, data: larkCard })));
+    fs.writeFileSync(lark, writePngCard(fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_我没想当掌门啊.png')), JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', ...larkCard, data: larkCard })));
     await step('characters', {
         ownRoute: /^\/api\/characters\/import\/?$/,
         prepare: () => openCharacterList(pageA),
@@ -151,7 +151,7 @@ test('a UI edit in each covered category reaches the other device after the idle
     });
 
     const bg = path.join(tmp, 'dawn-glade.png');
-    fs.copyFileSync(path.join(REPO_ROOT, 'default/content/default_Seraphina.png'), bg);
+    fs.copyFileSync(path.join(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'), bg);
     // An upload also makes the image the current background and saves the
     // settings, so the step renames an uploaded image.
     await step('backgrounds', {
@@ -223,7 +223,7 @@ test('a UI edit in each covered category reaches the other device after the idle
         extensions: { card_app: { enabled: true, entry: 'index.js', files: { 'index.js': 'export function init() {}\n' } } },
     };
     const card = path.join(tmp, 'wren.png');
-    fs.writeFileSync(card, writePngCard(fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_Seraphina.png')), JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', ...v2, data: v2 })));
+    fs.writeFileSync(card, writePngCard(fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_我没想当掌门啊.png')), JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', ...v2, data: v2 })));
     const cardAppsBefore = listed(B, 'card-apps');
     await step('card-apps', {
         ownRoute: /^\/api\/characters\/import\/?$/,
@@ -236,7 +236,7 @@ test('a UI edit in each covered category reaches the other device after the idle
     await step('vectors', {
         ownRoute: /^\/api\/vector\/insert\/?$/,
         prepare: async () => {
-            await selectCharacterByName(pageA, 'Seraphina');
+            await selectCharacterByName(pageA, '掌门真人');
             await openChatByName(pageA, 'Dawn Patrol');
             await openExtensionsDrawer(pageA);
             await openInlineDrawer(pageA, 'vectors_container');

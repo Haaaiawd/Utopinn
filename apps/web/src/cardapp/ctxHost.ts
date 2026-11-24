@@ -370,7 +370,14 @@ export class CardAppHost {
     }
 
     private async getWorldBookEntries(name: string): Promise<unknown> {
-        try { return await this.client.library.worldGet(String(name)); }
+        try {
+            // ?char= activates the endpoint's embedded-primary-book fallback
+            // so a freshly seeded card's lorebook resolves without an import.
+            // The wire envelope is {name, doc} — shim/card consume the
+            // {entries} document itself, so unwrap it here.
+            const res = await this.client.library.worldGet(String(name), { char: this.charDir }) as { doc?: unknown } | null;
+            return res?.doc ?? res ?? null;
+        }
         catch { return null; }
     }
 

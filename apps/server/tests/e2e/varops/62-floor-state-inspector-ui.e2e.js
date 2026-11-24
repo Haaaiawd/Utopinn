@@ -27,7 +27,7 @@ import { openVarOpsPanel, getRenderedVarOpsRows } from '../_lib/ui-mg-varops.js'
 
 let server, mock;
 
-const REPLY_TURN_1 = '*Seraphina lights the lantern with the patience of long habit.* {{setvar::hp::50}} *The wick takes; she nods once.* {{setvar::tension::low}}';
+const REPLY_TURN_1 = '*我没想当掌门啊 lights the lantern with the patience of long habit.* {{setvar::hp::50}} *The wick takes; she nods once.* {{setvar::tension::low}}';
 const REPLY_TURN_2 = '*She glances toward the dark beyond the lantern\'s glow.* {{incvar::hp}}{{setvar::weather::clear}} "The sea is steady tonight."';
 const REPLY_TURN_3 = '*A gull cries over the breaker; she does not flinch.* {{pushvar::inventory::lantern}}{{pushvar::inventory::spyglass}} "Hold these — both at once if it comes to that."';
 
@@ -47,7 +47,7 @@ test.afterAll(async () => {
 test.describe('#62 — Floor-state inspector UI shows current floor full state', () => {
     test('per-message flask icon is un-hidden by handler; opening the panel mirrors recorded ops', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();

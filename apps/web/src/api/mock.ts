@@ -5,13 +5,13 @@ import type { MessageViewModel } from '@utopinn/protocol';
 import type { CardItem } from './characters';
 import type { ChatSummary, PreviewRequestBody, PreviewResponse } from '../types';
 
-// c1 points at the seeded dev card/chat (data/default-user: default_Seraphina
-// + chats/default_Seraphina/demo-chat.jsonl) so a running server returns REAL
+// c1 points at the seeded dev card/chat (data/default-user: default_我没想当掌门啊
+// + chats/default_我没想当掌门啊/demo-chat.jsonl) so a running server returns REAL
 // assembled prompts. c2 is intentionally nonexistent → honest 404 path.
 // pinned/defaultTabs 是规范稿 s.* 语义(pinned → 侧栏置顶区,
 // defaultTabs → 选中时工作台自动开出的板块)。
 export const MOCK_CHATS: ChatSummary[] = [
-    { id: 'c1', title: '掌门账房线', charDir: 'default_Seraphina', chatName: 'demo-chat', group: 'ungrouped', updatedAt: '刚刚', pinned: true, defaultTabs: ['cardapp'] },
+    { id: 'c1', title: '掌门账房线', charDir: 'default_我没想当掌门啊', chatName: 'demo-chat', group: 'ungrouped', updatedAt: '刚刚', pinned: true, defaultTabs: ['cardapp'] },
     { id: 'c2', title: '旧港灯塔', charDir: 'demo-card', chatName: 'lighthouse', group: 'ungrouped', updatedAt: '昨天', pinned: true },
 ];
 
@@ -19,7 +19,7 @@ export const MOCK_CHATS: ChatSummary[] = [
 export type { CardItem };
 
 export const MOCK_CARDS: CardItem[] = [
-    { charDir: 'default_Seraphina', name: '归墟', avatar: null, fileName: 'default_Seraphina.png', fileSize: 512_000, tags: ['lighthouse', 'keeper'], readable: true },
+    { charDir: 'default_我没想当掌门啊', name: '归墟', avatar: null, fileName: 'default_我没想当掌门啊.png', fileSize: 512_000, tags: ['lighthouse', 'keeper'], readable: true },
     { charDir: 'demo-card', name: '旧港守灯人', avatar: null, fileName: 'demo-card.png', fileSize: 487_000, tags: [], readable: true },
     { charDir: 'corrupted-stub', name: 'corrupted-stub', avatar: null, fileName: 'corrupted-stub.json', fileSize: 12_000, tags: [], readable: false },
 ];
@@ -214,9 +214,9 @@ export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
 
 /** 舞台形态会话行(规范稿 PROJECTS 里 stage!=chat 的预演会话)。 */
 export const MOCK_STAGE_SESSIONS: ChatSummary[] = [
-    { id: 'st-novel', title: '小说连载稿', charDir: 'default_Seraphina', chatName: 'ember-city', group: 'ungrouped', updatedAt: '3h', stage: 'novel', defaultTabs: ['chapters'] },
-    { id: 'st-msg', title: '微信多群聊', charDir: 'default_Seraphina', chatName: 'watch-group', group: 'ungrouped', updatedAt: '1d', stage: 'messenger', defaultTabs: ['channels'] },
-    { id: 'st-gal', title: '正殿夜话 (Gal)', charDir: 'default_Seraphina', chatName: 'hyacinth-route', group: 'ungrouped', updatedAt: '2d', stage: 'theater', defaultTabs: [] },
+    { id: 'st-novel', title: '小说连载稿', charDir: 'default_我没想当掌门啊', chatName: 'ember-city', group: 'ungrouped', updatedAt: '3h', stage: 'novel', defaultTabs: ['chapters'] },
+    { id: 'st-msg', title: '微信多群聊', charDir: 'default_我没想当掌门啊', chatName: 'watch-group', group: 'ungrouped', updatedAt: '1d', stage: 'messenger', defaultTabs: ['channels'] },
+    { id: 'st-gal', title: '正殿夜话 (Gal)', charDir: 'default_我没想当掌门啊', chatName: 'hyacinth-route', group: 'ungrouped', updatedAt: '2d', stage: 'theater', defaultTabs: [] },
 ];
 
 /* ——— 舞台形态会话内容种子(规范稿 s.chapters / s.channels / s.vn) ——— */

@@ -648,9 +648,9 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('resolving 
         const rel = abs => path.relative(h.dirs.root, abs).split(path.sep).join('/');
         return { h, ctx, write, read, rel };
     }
-    const chat = { kind: 'chat', charDir: 'Seraphina', name: 'c1', isGroup: false };
+    const chat = { kind: 'chat', charDir: '掌门真人', name: 'c1', isGroup: false };
     const chatState = { ...chat, kind: 'chat-state', namespace: 'mg' };
-    const chatValue = { header: { user_name: 'U', character_name: 'Seraphina', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'hi' }] };
+    const chatValue = { header: { user_name: 'U', character_name: '掌门真人', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'hi' }] };
 
     beforeEach(async () => {
         _resetGateForTests();
@@ -769,7 +769,7 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('resolving 
     test('a choice whose live write is skipped stays pending and names no committed backend', async () => {
         const B = await device('Phone');
         const ctx = withoutBackend(B.ctx);
-        const statePath = `${B.rel(B.h.dirs.chats)}/Seraphina/c1.luker-state.mg.json`;
+        const statePath = `${B.rel(B.h.dirs.chats)}/掌门真人/c1.luker-state.mg.json`;
         const theirs = JSON.stringify({ v: 1 });
         await writeRecords(ctx, { [statePath]: record('1', { kept: null, ours: null, theirs: oid(theirs) }) }, { 'extra/state.json': theirs });
         const map = new Map([[BACKEND_ID, ctx]]);
@@ -813,8 +813,8 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('resolving 
         await B.write(chat, chatValue);
         await B.write(chatState, { v: 0 });
         const ctx = withoutBackend(B.ctx);
-        const chatPath = `${B.rel(B.h.dirs.chats)}/Seraphina/c1.jsonl`;
-        const statePath = `${B.rel(B.h.dirs.chats)}/Seraphina/c1.luker-state.mg.json`;
+        const chatPath = `${B.rel(B.h.dirs.chats)}/掌门真人/c1.jsonl`;
+        const statePath = `${B.rel(B.h.dirs.chats)}/掌门真人/c1.luker-state.mg.json`;
         await writeRecords(ctx, { [chatPath]: record('1', { theirs: null }), [statePath]: record('1', { ours: null, theirs: null }) });
         const map = new Map([[BACKEND_ID, ctx]]);
         expect(await applyConflictChoices(map, await reviewedChoices(map, [{ path: chatPath, choice: 'theirs' }]))).toEqual([expect.objectContaining({ path: chatPath, applied: true })]);
@@ -843,12 +843,12 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('resolving 
         await runSyncCycle(A.ctx);
         await runSyncCycle(B.ctx);
         await B.write(chatState, { v: 5 });
-        const chatPath = `${B.rel(B.h.dirs.chats)}/Seraphina/c1.jsonl`;
+        const chatPath = `${B.rel(B.h.dirs.chats)}/掌门真人/c1.jsonl`;
         const result = await undoLastSync(withoutBackend(B.ctx));
         expect(result).toMatchObject({
             committed: true,
             reverted: [`${B.rel(B.h.dirs.openAI_Settings)}/creative.json`],
-            keptEdited: [chatPath, `${B.rel(B.h.dirs.chats)}/Seraphina/c1.luker-state.mg.json`],
+            keptEdited: [chatPath, `${B.rel(B.h.dirs.chats)}/掌门真人/c1.luker-state.mg.json`],
         });
         expect(await B.read(chat)).not.toBeNull();
         expect(await B.read(chatState)).toEqual({ v: 5 });
@@ -872,7 +872,7 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('resolving 
         expect(result).toMatchObject({
             committed: true,
             reverted: [`${B.rel(B.h.dirs.openAI_Settings)}/creative.json`],
-            keptEdited: [`${chatsDir}/Seraphina/c1.jsonl`, `${chatsDir}/Seraphina/c1.luker-state.mg.json`],
+            keptEdited: [`${chatsDir}/掌门真人/c1.jsonl`, `${chatsDir}/掌门真人/c1.luker-state.mg.json`],
         });
         expect(await B.read(chat)).toBeNull();
         expect(await B.read(chatState)).toBeNull();

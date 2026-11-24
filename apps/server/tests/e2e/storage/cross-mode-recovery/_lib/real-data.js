@@ -1,7 +1,7 @@
 // Helpers for the real-data cross-mode recovery e2e tests.
 //
 // The 12 parameterized cross-mode tests (01-..12-..) use a programmatically
-// fabricated seed: ST's shipped default Seraphina + a single Chinese-emoji
+// fabricated seed: ST's shipped default 我没想当掌门啊 + a single Chinese-emoji
 // chat turn. They prove the wiring works end-to-end at the category level
 // but tell us nothing about the developer's actual data shape (custom
 // presets, lorebooks, extensions, embedded chats, etc).

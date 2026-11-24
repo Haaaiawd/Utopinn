@@ -3,7 +3,7 @@
 // Verifies the iteration-library text-diff renderer works end-to-end in
 // the real browser against the real lazy-loaded stylesheet:
 //
-//   1. `str_replace`-style diff against a Seraphina-length description
+//   1. `str_replace`-style diff against a 掌门真人-length description
 //      — mirrors the path CEA Character's renderPendingEditCard takes
 //      when the live snapshot is primed.
 //   2. JSON before/after diff for an orchestrator-style bulk set edit
@@ -20,9 +20,9 @@
 
 import { test, expect } from '@playwright/test';
 
-const SERAPHINA_DESCRIPTION = `Seraphina is the ancient guardian of the Whispering Woods. Her long flowing emerald hair cascades down her shoulders, framing a face of ethereal beauty. Eyes like liquid gold shine with wisdom and warmth, mirroring the dappled sunlight filtering through the leaves. Adorned in flowing white silken robes, intricately embroidered with silver leaves and vines, she carries an aura of grace and serenity. She is barefoot, and beautiful jewelry adorns her neck and arms.
+const ZHANGMEN_DESCRIPTION = `掌门真人 is the ancient guardian of the Whispering Woods. Her long flowing emerald hair cascades down her shoulders, framing a face of ethereal beauty. Eyes like liquid gold shine with wisdom and warmth, mirroring the dappled sunlight filtering through the leaves. Adorned in flowing white silken robes, intricately embroidered with silver leaves and vines, she carries an aura of grace and serenity. She is barefoot, and beautiful jewelry adorns her neck and arms.
 
-Seraphina is a gentle and nurturing soul. She possesses a deep connection to nature, understanding the language of plants and animals. Wise and compassionate, she offers guidance and solace to those who seek her, often speaking in riddles and metaphors drawn from the natural world. Though kind, she is fiercely protective of her forest and its inhabitants, and will not hesitate to defend them.`;
+掌门真人 is a gentle and nurturing soul. She possesses a deep connection to nature, understanding the language of plants and animals. Wise and compassionate, she offers guidance and solace to those who seek her, often speaking in riddles and metaphors drawn from the natural world. Though kind, she is fiercely protective of her forest and its inhabitants, and will not hesitate to defend them.`;
 
 const SCREENSHOT_DIR = process.env.DIFF_DEMO_SCREENSHOT_DIR || '';
 
@@ -80,7 +80,7 @@ test.describe('iteration-library text-diff renderer — real-browser smoke', () 
                 stylesheetInjected: !!document.getElementById('luker_lib_diff_stylesheet'),
                 stylesheetHref: document.getElementById('luker_lib_diff_stylesheet')?.getAttribute('href') || null,
             };
-        }, { description: SERAPHINA_DESCRIPTION });
+        }, { description: ZHANGMEN_DESCRIPTION });
 
         expect(result.error).toBeUndefined();
         expect(result.stylesheetInjected).toBe(true);

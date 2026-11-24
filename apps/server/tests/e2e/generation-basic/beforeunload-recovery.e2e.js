@@ -67,7 +67,7 @@ test.describe('generation-basic: beforeunload keeps recoverable job alive', () =
         const contextA = await browser.newContext();
         const pageA = await contextA.newPage();
         await awaitMainUI(pageA, server.baseURL);
-        await selectCharacterByName(pageA, 'Seraphina');
+        await selectCharacterByName(pageA, '我没想当掌门啊');
         await pageA.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await pageA.locator('#send_textarea').fill('Please stream slowly.');
@@ -119,7 +119,7 @@ test.describe('generation-basic: beforeunload keeps recoverable job alive', () =
         expect(String(job.text || ''), 'accumulated job.text must hold the streamed prefix').toContain('chunk');
 
         // ── Reopen through the real UI; the recovery preview must appear.
-        await selectCharacterByName(pageB, 'Seraphina');
+        await selectCharacterByName(pageB, '我没想当掌门啊');
         await pageB.waitForFunction(() => Boolean(document.querySelector('#luker_generation_recovery_preview')), { timeout: 20_000 });
 
         // Completion: preview disappears, persisted message lands, disk copy

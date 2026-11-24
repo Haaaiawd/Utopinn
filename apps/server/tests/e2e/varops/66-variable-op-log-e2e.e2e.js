@@ -26,7 +26,7 @@ import { openVarOpsPanel, getRenderedVarOpsRows } from '../_lib/ui-mg-varops.js'
 let server, mock;
 
 const REPLIES = [
-    '*Seraphina gestures at the tally slate.* "Alice joined the watch at the second bell." {{setvar::roster.alice.hp::50}}',
+    '*我没想当掌门啊 gestures at the tally slate.* "Alice joined the watch at the second bell." {{setvar::roster.alice.hp::50}}',
     '*A scrape on the floor; Alice straightens.* "Took the sword from the rack." {{pushvar::roster.alice.inv::sword}}',
     '*The leather strap creaks.* "And the shield from the lower hook." {{pushvar::roster.alice.inv::shield}}',
     '*A clatter; Alice grimaces.* "Dropped the shield. The strap broke clean." {{popvar::roster.alice.inv}}',
@@ -59,7 +59,7 @@ test.afterAll(async () => {
 test.describe('#66 — variable-op-log e2e (roster across turns; delete; persist)', () => {
     test('six structured mutations render correctly per turn; delete prunes one op; survives restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -141,7 +141,7 @@ test.describe('#66 — variable-op-log e2e (roster across turns; delete; persist
         // the same state the user would see on next session.
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker?.getContext?.();

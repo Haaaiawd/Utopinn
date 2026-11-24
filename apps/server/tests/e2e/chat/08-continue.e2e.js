@@ -20,7 +20,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina starts to answer.* "The path bends —"',
+        '*我没想当掌门啊 starts to answer.* "The path bends —"',
         ' — and then opens onto the headland."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'continue' });
@@ -37,7 +37,7 @@ test.afterAll(async () => {
 test.describe('#8 — Continue extends last message', () => {
     test('Continue from options dropdown appends to last assistant message in place', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const { replyId } = await sendMessageAndAwaitReply(page, 'Trace the path for me, slowly.');

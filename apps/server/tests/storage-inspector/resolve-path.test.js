@@ -35,8 +35,8 @@ describe('resolvePath — L0/L1/L2/L3/L4 dispatch', () => {
     test('["chats", "<char>"] → chat file list', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
-            const res = await resolvePath(userRoot, ['chats', 'default_Seraphina'], OPTS);
-            expect(res.path).toEqual(['chats', 'default_Seraphina']);
+            const res = await resolvePath(userRoot, ['chats', 'default_我没想当掌门啊'], OPTS);
+            expect(res.path).toEqual(['chats', 'default_我没想当掌门啊']);
             expect(res.entries.every(e => e.kind === 'chat-file')).toBe(true);
         } finally { await cleanup(); }
     });
@@ -45,7 +45,7 @@ describe('resolvePath — L0/L1/L2/L3/L4 dispatch', () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
             const res = await resolvePath(userRoot,
-                ['chats', 'default_Seraphina', 'Chat 2024-01-15.jsonl'], OPTS);
+                ['chats', 'default_我没想当掌门啊', 'Chat 2024-01-15.jsonl'], OPTS);
             expect(res.isLeaf).toBe(true);
             expect(res.entries.some(e => e.kind === 'chat-metadata')).toBe(true);
             expect(res.entries.some(e => e.kind === 'chat-messages')).toBe(true);
@@ -73,7 +73,7 @@ describe('resolvePath — L0/L1/L2/L3/L4 dispatch', () => {
     test('["characters", "<char>"] → L3 leaf(card+sprites+sidecar)', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ charactersRich: true });
         try {
-            const res = await resolvePath(userRoot, ['characters', 'default_Seraphina'], OPTS);
+            const res = await resolvePath(userRoot, ['characters', 'default_我没想当掌门啊'], OPTS);
             expect(res.isLeaf).toBe(true);
             expect(res.entries.some(e => e.kind === 'character-card')).toBe(true);
         } finally { await cleanup(); }
@@ -93,14 +93,14 @@ describe('resolvePath — directory drill-down', () => {
     test('["images","user-images","<folder>"] lists the images inside the character folder', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ images: true });
         try {
-            const folder = path.join(userRoot, 'user/images/Seraphina Recalled');
+            const folder = path.join(userRoot, 'user/images/掌门真人 Recalled');
             await fsPromises.mkdir(folder, { recursive: true });
             await fsPromises.writeFile(path.join(folder, 'portrait.png'), Buffer.alloc(2_048));
-            const res = await resolvePath(userRoot, ['images', 'user-images', 'Seraphina Recalled'], OPTS);
-            expect(res.path).toEqual(['images', 'user-images', 'Seraphina Recalled']);
+            const res = await resolvePath(userRoot, ['images', 'user-images', '掌门真人 Recalled'], OPTS);
+            expect(res.path).toEqual(['images', 'user-images', '掌门真人 Recalled']);
             expect(res.entries.map(e => e.label)).toContain('portrait.png');
-            expect(res.breadcrumbs.map(c => c.label)).toEqual(['Storage', 'Images', 'Chat Images', 'Seraphina Recalled']);
-            expect(res.breadcrumbs.at(-1).path).toEqual(['images', 'user-images', 'Seraphina Recalled']);
+            expect(res.breadcrumbs.map(c => c.label)).toEqual(['Storage', 'Images', 'Chat Images', '掌门真人 Recalled']);
+            expect(res.breadcrumbs.at(-1).path).toEqual(['images', 'user-images', '掌门真人 Recalled']);
         } finally { await cleanup(); }
     });
 
@@ -124,15 +124,15 @@ describe('resolvePath — directory drill-down', () => {
     test('nested folders keep drilling until files', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ images: true });
         try {
-            const nested = path.join(userRoot, 'user/images/Seraphina/2024');
+            const nested = path.join(userRoot, 'user/images/掌门真人/2024');
             await fsPromises.mkdir(nested, { recursive: true });
             await fsPromises.writeFile(path.join(nested, 'shot.png'), Buffer.alloc(512));
 
-            const mid = await resolvePath(userRoot, ['images', 'user-images', 'Seraphina'], OPTS);
+            const mid = await resolvePath(userRoot, ['images', 'user-images', '掌门真人'], OPTS);
             const sub = mid.entries.find(e => e.label === '2024');
             expect(sub.canDrill).toBe(true);
 
-            const leaf = await resolvePath(userRoot, ['images', 'user-images', 'Seraphina', '2024'], OPTS);
+            const leaf = await resolvePath(userRoot, ['images', 'user-images', '掌门真人', '2024'], OPTS);
             expect(leaf.entries.map(e => e.label)).toContain('shot.png');
         } finally { await cleanup(); }
     });
@@ -188,7 +188,7 @@ describe('resolvePath — malicious path rejection', () => {
     test.each([
         [['..'], 'traversal'],
         [['chats', '..'], 'nested traversal'],
-        [['chats', 'default_Seraphina/../..'], 'slash in segment'],
+        [['chats', 'default_我没想当掌门啊/../..'], 'slash in segment'],
         [['chats', '\0evil'], 'null byte'],
         [['chats', '/absolute'], 'abs'],
     ])('rejects %j (%s)', async (badPath) => {
@@ -229,7 +229,7 @@ describe('resolvePath — depth limits', () => {
         const { userRoot, cleanup } = await makeFixtureUser({ chatsRich: true });
         try {
             await expect(resolvePath(userRoot,
-                ['chats', 'default_Seraphina', 'Chat 2024-01-15.jsonl', 'deeper'], OPTS))
+                ['chats', 'default_我没想当掌门啊', 'Chat 2024-01-15.jsonl', 'deeper'], OPTS))
                 .rejects.toMatchObject({ code: 'E_INVALID_PATH' });
         } finally { await cleanup(); }
     });
@@ -238,7 +238,7 @@ describe('resolvePath — depth limits', () => {
         const { userRoot, cleanup } = await makeFixtureUser({ charactersRich: true });
         try {
             await expect(resolvePath(userRoot,
-                ['characters', 'default_Seraphina', 'extra'], OPTS))
+                ['characters', 'default_我没想当掌门啊', 'extra'], OPTS))
                 .rejects.toMatchObject({ code: 'E_INVALID_PATH' });
         } finally { await cleanup(); }
     });

@@ -47,7 +47,7 @@ const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 function writeProperCharacter(dataRoot, { handle = 'default-user', avatarFile, name, firstMes }) {
     const charsDir = resolve(dataRoot, handle, 'characters');
     mkdirSync(charsDir, { recursive: true });
-    const seed = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+    const seed = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
     const target = resolve(charsDir, avatarFile);
     copyFileSync(seed, target);
     const card = {
@@ -175,7 +175,7 @@ test.describe.configure({ mode: 'serial' });
 test.describe('#97 — Slash commands regression (real send-textarea + send-button)', () => {
     test('/help (alias of /?) returns without throwing', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await runSlashViaSendButton(page, '/help');
         // /help opens a popup. Close it so subsequent tests aren't blocked.
         await page.locator('.popup .popup-button-ok, .popup .popup-button-close').first().click({ timeout: 5000 }).catch(() => {});
@@ -183,7 +183,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/send appends a user message without triggering generation', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         const before = await chatSnapshot(page);
         await runSlashViaSendButton(page, '/send The lantern wick is fraying again.');
@@ -196,7 +196,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/sysgen appends a system narrator message via the LLM', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         const before = await chatSnapshot(page);
         await runSlashViaSendButton(page, '/sysgen Describe what the wind is doing at this very moment.', { expectsReply: true });
@@ -210,12 +210,12 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/go <char> switches the active character', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         const startName = await page.evaluate(() => {
             const ctx = window.Luker.getContext();
             return ctx.characters[ctx.characterId]?.name;
         });
-        expect(startName).toBe('Seraphina');
+        expect(startName).toBe('我没想当掌门啊');
         await runSlashViaSendButton(page, '/go Bryn the Keeper');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -230,7 +230,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/send + /trigger produces an assistant reply', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         const before = await chatSnapshot(page);
         await runSlashViaSendButton(page, '/send I will keep watch tonight. | /trigger await=true', { expectsReply: true });
@@ -248,7 +248,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
         // gesture; the .swipe_right button is bound to the same handler as
         // /swipe right.
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         // Generate a reply first.
         await sendMessageAndAwaitReply(page, 'Tell me about the gull rocks.');
@@ -273,7 +273,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
     test('/cut <id> removes a specific message', async ({ page }) => {
         // The brief mentioned `/cut last`; the actual command takes a numeric id.
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         await runSlashViaSendButton(page, '/send sentinel-cut-target');
         const before = await chatSnapshot(page);
@@ -290,7 +290,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
         // Generate(type='continue') call — using the menu button asserts the
         // user-visible affordance still works.
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         await sendMessageAndAwaitReply(page, 'Walk me through what you see north of the headland.');
         const before = await chatSnapshot(page);
@@ -303,7 +303,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('regenerate via real options-menu Regenerate re-rolls the tail in place', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         await sendMessageAndAwaitReply(page, 'What is the wind doing right now?');
         const before = await chatSnapshot(page);
@@ -321,7 +321,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
         // in-flight LLM call (that's /stop). We assert by observing that a
         // /setvar after /abort never runs.
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         await runSlashViaSendButton(page, '/setvar key=abort_sentinel before');
         await runSlashViaSendButton(page, '/abort | /setvar key=abort_sentinel after');
@@ -337,7 +337,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('branch-create via real .mes_create_branch forks the chat', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => window.Luker.getContext().chat.length >= 1, { timeout: 10_000 });
         await sendMessageAndAwaitReply(page, 'Branch off this turn.');
         const before = await chatSnapshot(page);
@@ -350,7 +350,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/setvar + /getvar round-trips a value', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await runSlashViaSendButton(page, '/setvar key=foo bar | /getvar foo');
         // The pipeline doesn't echo to chat — read the var back inline.
         const v = await page.evaluate(async () => {
@@ -363,7 +363,7 @@ test.describe('#97 — Slash commands regression (real send-textarea + send-butt
 
     test('/incvar increments a numeric variable', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await runSlashViaSendButton(page, '/setvar key=counter 5 | /incvar counter');
         const v = await page.evaluate(async () => {
             const ctx = window.Luker.getContext();

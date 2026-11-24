@@ -46,8 +46,8 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina pencils a tally in the margin.* "rA: the breeze is freshening."',
-        '*Seraphina trims the lantern wick a half-turn.* "rB: the watch is yours next."',
+        '*我没想当掌门啊 pencils a tally in the margin.* "rA: the breeze is freshening."',
+        '*我没想当掌门啊 trims the lantern wick a half-turn.* "rB: the watch is yours next."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'merge-state-isolation' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -63,7 +63,7 @@ test.afterAll(async () => {
 test.describe('#22 — merge does not carry over the source memory-graph sidecar', () => {
     test('merged chat has no memory_graph__floor_log sidecar even when source has one', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const idA = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());

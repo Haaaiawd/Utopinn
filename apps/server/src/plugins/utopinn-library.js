@@ -36,6 +36,7 @@ import {
 import { assertSafeRepoName, stripJsonlExt } from '../storage/name-validation.js';
 import { sendJsonResource, sendResourceReadError } from '../http-resource-cache.js';
 import { createCardListCache } from '../services/card-list-cache.js';
+import { convertEmbeddedBook, primaryWorldName } from '../services/embedded-world.js';
 import {
     estimateSharedMaterializeBytes,
     getSharedCharactersDir,
@@ -1021,6 +1022,26 @@ export function apply(ctx) {
             const handle = request.user.profile.handle;
             const doc = await repo.get(handle, requested);
             if (doc == null) {
+                // Embedded primary book: seeding copies the PNG without
+                // materializing its character_book. Generation already falls
+                // back to the in-memory conversion (generate-context); give
+                // the read face the same path so CardApps receive their lore
+                // on a fresh install. Only the card's bound primary world
+                // qualifies (?char=<charDir>) — no cross-character guessing.
+                let charDir = '';
+                try {
+                    const q = request.query?.char;
+                    if (typeof q === 'string' && q.trim()) charDir = safeName(q.trim(), 'char');
+                } catch { charDir = ''; }
+                if (charDir) {
+                    const card = await loadCharacterDocMerged(request.user.directories, charDir).then((r) => r.card).catch(() => null);
+                    if (card && primaryWorldName(card) === requested) {
+                        const embedded = convertEmbeddedBook(card);
+                        if (embedded) {
+                            return response.send({ name: requested, doc: embedded, embedded: true });
+                        }
+                    }
+                }
                 return response.status(404).send({ error: `World book not found: ${requested}` });
             }
             const canonical = await repo.resolveName(handle, requested);

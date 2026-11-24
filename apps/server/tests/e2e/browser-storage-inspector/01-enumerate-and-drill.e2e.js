@@ -35,7 +35,7 @@ test.describe('Browser Storage Inspector · enumerate and drill', () => {
         await wipeBrowserFixture(page);
         await seedBrowserFixture(page, {
             localStorage: {
-                'luker-last-chat': 'Chat with Seraphina',
+                'luker-last-chat': 'Chat with 掌门真人',
                 'luker-theme': 'dark',
                 'luker-draft': 'x'.repeat(500),
             },

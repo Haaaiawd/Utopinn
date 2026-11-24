@@ -39,11 +39,11 @@ let server, mock, importPath;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour."',
+        '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour."',
         '*She traces a line on the chart with one knuckle.* "Three breakers north of the gull rocks."',
-        '*Seraphina exhales slowly.* "The drifters know that channel better than we do."',
+        '*我没想当掌门啊 exhales slowly.* "The drifters know that channel better than we do."',
         '*She turns to the rail, spyglass raised.* "Hold. Don\'t speak for a moment."',
-        '*Seraphina nods once.* "Then it is decided. We wait."',
+        '*我没想当掌门啊 nods once.* "Then it is decided. We wait."',
     ] });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'extract-render' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -65,14 +65,14 @@ test.beforeAll(async () => {
             n_1: {
                 id: 'n_1', type: 'event', level: 'semantic',
                 title: 'Summary 1', parentId: '', childrenIds: [],
-                fields: { summary: '时间：第一夜；user 与 Seraphina 在 Bryn 断崖点亮信号灯并完成初次巡视。' },
+                fields: { summary: '时间：第一夜；user 与 我没想当掌门啊 在 Bryn 断崖点亮信号灯并完成初次巡视。' },
                 seqTo: 1,
             },
             n_2: {
                 id: 'n_2', type: 'character_sheet', level: 'semantic',
-                title: 'Seraphina', parentId: '', childrenIds: [],
+                title: '我没想当掌门啊', parentId: '', childrenIds: [],
                 fields: {
-                    title: 'Seraphina',
+                    title: '我没想当掌门啊',
                     aliases: '海图官 Sera',
                     identity: 'Bryn 断崖的常驻海图官，前盐礁灯塔守备。',
                     traits: '冷静、寡言、对夜风极敏感。',
@@ -84,7 +84,7 @@ test.beforeAll(async () => {
                 title: 'Bryn headland watchpost', parentId: '', childrenIds: [],
                 fields: {
                     title: 'Bryn headland watchpost',
-                    controller: 'Seraphina',
+                    controller: '我没想当掌门啊',
                     state: '夜间执勤；信号灯已修剪。',
                     resources: '黄铜望远镜，备用油壶，潮汐图。',
                 },
@@ -149,7 +149,7 @@ test.describe('#52 — Seed via real Import button → View Graph renders cytosc
 
     test('import store, View Graph renders nodes, kill+restart keeps them', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckboxes(page);
 
         // 5 RP turns so MG's chat-key resolver has a real chat to anchor.
@@ -185,12 +185,12 @@ test.describe('#52 — Seed via real Import button → View Graph renders cytosc
         });
         expect(preRestartNodes.length, 'imported nodes should be visible').toBeGreaterThanOrEqual(3);
         const titles = preRestartNodes.map(n => n.title);
-        expect(titles).toEqual(expect.arrayContaining(['Seraphina', 'Bryn headland watchpost']));
+        expect(titles).toEqual(expect.arrayContaining(['我没想当掌门啊', 'Bryn headland watchpost']));
 
         // ── Persistence-across-restart assertion ────────────────────────
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckboxes(page);
 
         await openMgGraphView(page);
@@ -213,6 +213,6 @@ test.describe('#52 — Seed via real Import button → View Graph renders cytosc
             postRestartNodes.length,
             'MG nodes must survive server restart (floor_log + meta sidecars are the durable record)',
         ).toBeGreaterThanOrEqual(3);
-        expect(postRestartNodes.map(n => n.title)).toEqual(expect.arrayContaining(['Seraphina', 'Bryn headland watchpost']));
+        expect(postRestartNodes.map(n => n.title)).toEqual(expect.arrayContaining(['我没想当掌门啊', 'Bryn headland watchpost']));
     });
 });

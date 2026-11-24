@@ -56,7 +56,7 @@ const OLD_BINDINGS = {
 };
 
 function writeReplacementPng(outPath) {
-    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const data = {
         name: NEW_NAME,
         description: 'A weathered keeper of the eastern light.',

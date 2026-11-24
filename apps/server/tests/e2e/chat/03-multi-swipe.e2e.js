@@ -38,9 +38,9 @@ import {
 } from '../_lib/page.js';
 
 const REPLIES = [
-    '*Seraphina looks out across the black water and sighs softly.* "First variant — the wind is steady tonight, and the chart held its shape."',
-    '*Seraphina sets the spyglass down and meets your eye.* "Second variant — the wind is steady tonight, but I do not trust the chart."',
-    '*Seraphina tilts her head, listening.* "Third variant — the wind is steady tonight; something in the silence does not match the chart."',
+    '*我没想当掌门啊 looks out across the black water and sighs softly.* "First variant — the wind is steady tonight, and the chart held its shape."',
+    '*我没想当掌门啊 sets the spyglass down and meets your eye.* "Second variant — the wind is steady tonight, but I do not trust the chart."',
+    '*我没想当掌门啊 tilts her head, listening.* "Third variant — the wind is steady tonight; something in the silence does not match the chart."',
 ];
 
 let server, mock;
@@ -118,7 +118,7 @@ async function swipeRightToVariant(page, targetCounter, marker, { timeoutMs = 30
 test.describe('#3 — multi-swipe persistence', () => {
     test('3 swipe variants, pick #2, ordering preserved across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // First-turn reply → variant 1 (swipe_id 0, counter 1/1).
@@ -171,7 +171,7 @@ test.describe('#3 — multi-swipe persistence', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
 
         // After restart, the rendered counter should still show "2/3"

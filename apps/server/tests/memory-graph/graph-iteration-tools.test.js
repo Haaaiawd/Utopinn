@@ -27,7 +27,7 @@ const SETTINGS = {
 function makeEnv() {
     const store = {
         nodes: {
-            n_1: { id: 'n_1', type: 'character_sheet', level: 'semantic', title: 'Seraphina', fields: { title: 'Seraphina', aliases: 'Sera', identity: 'chart officer' }, childrenIds: [], parentId: '', archived: false, seqTo: 2 },
+            n_1: { id: 'n_1', type: 'character_sheet', level: 'semantic', title: '掌门真人', fields: { title: '掌门真人', aliases: 'Sera', identity: 'chart officer' }, childrenIds: [], parentId: '', archived: false, seqTo: 2 },
             n_2: { id: 'n_2', type: 'location_state', level: 'semantic', title: 'Bryn headland', fields: { title: 'Bryn headland', state: 'lit' }, childrenIds: [], parentId: '', archived: false, seqTo: 2 },
             n_3: { id: 'n_3', type: 'event', level: 'semantic', title: 'Summary 1', fields: { summary: 'signal lit' }, childrenIds: [], parentId: '', archived: false, seqTo: 1 },
             n_4: { id: 'n_4', type: 'event', level: 'semantic', title: 'archived note', fields: {}, childrenIds: [], parentId: '', archived: true, seqTo: 1 },
@@ -117,7 +117,7 @@ describe('create_node', () => {
     test('latestOnly create merges into the matched node and reports archived losers', async () => {
         const e = env();
         e.working.nodes.n_5 = { id: 'n_5', type: 'character_sheet', level: 'semantic', title: 'Sera', fields: { title: 'Sera', aliases: 'Sera', identity: 'dup' }, childrenIds: [], parentId: '', archived: false, seqTo: 2 };
-        const res = await tools.executeGraphWriteTool({ name: 'mg_graph_create_node', args: { type: 'character_sheet', title: 'Seraphina', fields: { aliases: 'Sera', identity: 'updated' } } }, e);
+        const res = await tools.executeGraphWriteTool({ name: 'mg_graph_create_node', args: { type: 'character_sheet', title: '掌门真人', fields: { aliases: 'Sera', identity: 'updated' } } }, e);
         expect(res).toMatchObject({ ok: true, id: 'n_1', action: 'updated' });
         expect(res.archived_losers).toContain('n_5');
         expect(e.working.nodes.n_1.fields.identity).toBe('updated');

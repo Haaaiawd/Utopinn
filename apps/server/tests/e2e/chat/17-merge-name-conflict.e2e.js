@@ -38,9 +38,9 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina sketches a quick note in the margin.* "rOcc: I will hold this corner of the chart."',
-        '*Seraphina taps the rim of the lantern.* "rA: the southern reef is calm now."',
-        '*Seraphina folds the spyglass shut.* "rB: but the north is shifting again."',
+        '*我没想当掌门啊 sketches a quick note in the margin.* "rOcc: I will hold this corner of the chart."',
+        '*我没想当掌门啊 taps the rim of the lantern.* "rA: the southern reef is calm now."',
+        '*我没想当掌门啊 folds the spyglass shut.* "rB: but the north is shifting again."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'merge-name-conflict' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -56,7 +56,7 @@ test.afterAll(async () => {
 test.describe('#17 — merge name conflict resolves to (2) suffix', () => {
     test('existing target slot makes the merged chat land at "merged-conflict (2)"', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Order matters: do the new-chat creations BEFORE the rename so

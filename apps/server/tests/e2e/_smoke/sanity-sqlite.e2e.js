@@ -27,7 +27,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour. Tell me what you saw on the path."',
+        '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour. Tell me what you saw on the path."',
     ] });
     server = await startServer({ batchKey: 'storage', scenarioId: 'sanity-sqlite' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -51,7 +51,7 @@ test('sanity (SQLite): migrate fs->sqlite then run the first-turn happy path', a
     await closeAdminPanel(page);
 
     // Standard sanity flow against the live SQLite backend.
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     await page.waitForFunction(() => {
         const ctx = window.Luker.getContext();
@@ -71,7 +71,7 @@ test('sanity (SQLite): migrate fs->sqlite then run the first-turn happy path', a
     const lastUser = [...finalChat].reverse().find(m => m.is_user);
     const lastAsst = [...finalChat].reverse().find(m => !m.is_user);
     expect(lastUser?.mes).toMatch(/cliff path/);
-    expect(lastAsst?.mes).toMatch(/lantern|chart|Seraphina/);
+    expect(lastAsst?.mes).toMatch(/lantern|chart|我没想当掌门啊/);
 
     const newReqs = mock.requests.slice(before);
     const chatReq = newReqs.find(r => r.url.includes('chat/completions'));

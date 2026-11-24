@@ -16,7 +16,7 @@ import { _resetGateForTests } from '../../../src/sync/in-progress-gate.js';
 import { reviewedChoice } from '../_lib/conflict-choices.js';
 import { PAUSEPOINTS } from '../../../src/sync/pipeline/failpoints.js';
 
-const header = JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} });
+const header = JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} });
 const oid = text => blobOidOf(Buffer.from(text));
 
 describe('conflict routes across two devices', () => {
@@ -163,20 +163,20 @@ describe('conflict routes across two devices', () => {
     });
 
     test('a chat conflict forks the other version on both devices and the notice can be dismissed', async () => {
-        A.write('chats/Seraphina/c1.jsonl', `${header}\nbase`);
+        A.write('chats/掌门真人/c1.jsonl', `${header}\nbase`);
         id = await pair(A, B);
-        A.write('chats/Seraphina/c1.jsonl', `${header}\nfrom A device`);
-        B.write('chats/Seraphina/c1.jsonl', `${header}\nfrom B device`);
+        A.write('chats/掌门真人/c1.jsonl', `${header}\nfrom A device`);
+        B.write('chats/掌门真人/c1.jsonl', `${header}\nfrom B device`);
         expect((await sync(B)).body).toMatchObject({ ok: true, conflicts: 0 });
         const [notice] = (await status(B)).notices;
         expect(['A device', 'B device']).toContain(notice.device);
         const keptDevice = notice.device === 'A device' ? 'B device' : 'A device';
-        expect(notice).toMatchObject({ chat: 'chats/Seraphina/c1.jsonl', target: { kind: 'character', avatar: 'Seraphina.png' } });
+        expect(notice).toMatchObject({ chat: 'chats/掌门真人/c1.jsonl', target: { kind: 'character', avatar: '掌门真人.png' } });
         expect(B.read(notice.path).split('\n')[1]).toBe(`from ${notice.device}`);
         expect(JSON.parse(B.read(notice.path).split('\n')[0]).chat_metadata.main_chat).toBe('c1');
-        expect(B.read('chats/Seraphina/c1.jsonl')).toBe(`${header}\nfrom ${keptDevice}`);
+        expect(B.read('chats/掌门真人/c1.jsonl')).toBe(`${header}\nfrom ${keptDevice}`);
         await until(() => A.read(notice.path) === B.read(notice.path));
-        await until(() => A.read('chats/Seraphina/c1.jsonl') === `${header}\nfrom ${keptDevice}`);
+        await until(() => A.read('chats/掌门真人/c1.jsonl') === `${header}\nfrom ${keptDevice}`);
         await until(async () => (await status(A)).notices.length === 1);
         expect((await A.call('POST', '/notices/dismiss', { body: { paths: [notice.path] } })).body).toMatchObject({ ok: true, results: [{ path: notice.path, backends: [id] }] });
         await until(async () => (await status(B)).notices.length === 0);

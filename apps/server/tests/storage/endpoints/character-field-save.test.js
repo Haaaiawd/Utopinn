@@ -10,7 +10,7 @@ import { router as charactersRouter } from '../../../src/endpoints/characters.js
 import { write as writeCardChunk } from '../../../src/character-card-parser.js';
 import { diskCache } from '../../../src/endpoints/characters.js';
 
-const seedPath = fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url));
+const seedPath = fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 function seedCard(charsDir, name, card) {
     fs.mkdirSync(charsDir, { recursive: true });

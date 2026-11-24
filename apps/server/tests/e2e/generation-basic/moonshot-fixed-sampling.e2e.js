@@ -86,7 +86,7 @@ test.describe.serial('Moonshot fixed sampling', () => {
     test('UI hides sampling controls and the wire body drops them', async ({ page }) => {
         test.setTimeout(120_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         const controls = ['#temp_openai', '#top_p_openai', '#freq_pen_openai', '#pres_pen_openai'];
 

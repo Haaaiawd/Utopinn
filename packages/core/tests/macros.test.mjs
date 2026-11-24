@@ -19,9 +19,9 @@ function ctx(over = {}) {
 }
 
 test('env 宏:{{user}}/{{char}}/<USER>/<BOT>', () => {
-    const env = { user: 'Anon', char: 'Seraphina' };
+    const env = { user: 'Anon', char: '掌门真人' };
     const r = evaluateMacros('{{user}} meets {{char}}. <USER>+<BOT>', env, undefined, ctx());
-    assert.equal(r, 'Anon meets Seraphina. Anon+Seraphina');
+    assert.equal(r, 'Anon meets 掌门真人. Anon+掌门真人');
 });
 
 test('转义:\\{{...}} 不求值,还原为字面 \\{{', () => {

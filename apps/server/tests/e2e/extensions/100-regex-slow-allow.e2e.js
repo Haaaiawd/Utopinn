@@ -118,7 +118,7 @@ test.describe('#100 — Regex slow-script allow-anyway persistence', () => {
     test('"Allow anyway" persists on the script and survives an enable/disable toggle', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;

@@ -7,7 +7,7 @@ import {
 } from '../dist/index.js';
 
 const META = { integrity: 'abc', variables: {}, note_prompt: '' };
-const M1 = { name: 'Seraphina', is_user: false, send_date: '2026-01-01T00:00:00Z', mes: 'hi' };
+const M1 = { name: '掌门真人', is_user: false, send_date: '2026-01-01T00:00:00Z', mes: 'hi' };
 const M2 = { name: 'User', is_user: true, send_date: '2026-01-01T00:01:00Z', mes: 'yo', swipes: ['yo'], swipe_id: 0 };
 
 test('JSONL 解析:头行 metadata + 消息数组', () => {
@@ -15,7 +15,7 @@ test('JSONL 解析:头行 metadata + 消息数组', () => {
     const p = parseChatJsonl(text);
     assert.equal(p.metadata.integrity, 'abc');
     assert.equal(p.messages.length, 2);
-    assert.equal(p.messages[0].name, 'Seraphina');
+    assert.equal(p.messages[0].name, '掌门真人');
     assert.equal(p.messages[1].swipe_id, 0);
 });
 

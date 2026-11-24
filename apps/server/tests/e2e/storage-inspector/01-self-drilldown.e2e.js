@@ -9,7 +9,7 @@
 //      → .userStorageInspectorButton.
 //   2. Verify L1 shows the stacked bar + at least the categories that our
 //      fixture populates.
-//   3. Drill Chats → default_Seraphina → first chat file.
+//   3. Drill Chats → default_我没想当掌门啊 → first chat file.
 //   4. Verify L4 shows metadata + messages + sidecars split rows.
 //   5. Click a breadcrumb crumb to walk back up.
 //
@@ -88,8 +88,8 @@ test.describe('Storage Inspector · self drill-down', () => {
         await inspector.locator('.storageInspectorEntry[data-key="chats"]').click();
         await inspector.locator('.storageInspectorLoading.displayNone').waitFor({ state: 'attached', timeout: 15_000 });
         await expect(inspector.locator('.storageInspectorBreadcrumbCurrent')).toHaveText(/Chats|聊天/);
-        // The seeded fixture guarantees default_Seraphina exists.
-        await expect(inspector.locator('.storageInspectorEntry[data-key="default_Seraphina"]')).toBeVisible();
+        // The seeded fixture guarantees default_我没想当掌门啊 exists.
+        await expect(inspector.locator('.storageInspectorEntry[data-key="default_我没想当掌门啊"]')).toBeVisible();
 
         // Screenshot 02 — L2 chats view showing per-character rows.
         await takeDocScreenshot(page, resolve(SCREENSHOT_DIR, '02-self-chats-drilldown.png'), {
@@ -97,7 +97,7 @@ test.describe('Storage Inspector · self drill-down', () => {
         });
 
         // Drill into the character.
-        await inspector.locator('.storageInspectorEntry[data-key="default_Seraphina"]').click();
+        await inspector.locator('.storageInspectorEntry[data-key="default_我没想当掌门啊"]').click();
         await inspector.locator('.storageInspectorLoading.displayNone').waitFor({ state: 'attached', timeout: 15_000 });
         // Two chats seeded per character.
         expect(await inspector.locator('.storageInspectorEntry[data-kind="chat-file"]').count()).toBeGreaterThanOrEqual(2);
@@ -131,15 +131,15 @@ test.describe('Storage Inspector · self drill-down', () => {
 
         await inspector.locator('.storageInspectorEntry[data-key="user-images"]').click();
         await inspector.locator('.storageInspectorLoading.displayNone').waitFor({ state: 'attached', timeout: 15_000 });
-        const galleryFolder = inspector.locator('.storageInspectorEntry[data-key="default_Seraphina"]');
+        const galleryFolder = inspector.locator('.storageInspectorEntry[data-key="default_我没想当掌门啊"]');
         await expect(galleryFolder).toBeVisible();
         await galleryFolder.click();
         await inspector.locator('.storageInspectorLoading.displayNone').waitFor({ state: 'attached', timeout: 15_000 });
 
         // The folder opens to its files and the breadcrumb names it; no
         // error banner is left behind.
-        await expect(inspector.locator('.storageInspectorBreadcrumbCurrent')).toHaveText('default_Seraphina');
-        await expect(inspector.locator('.storageInspectorEntry[data-key="Seraphina_2024-12-22@12h37m57s.png"]')).toBeVisible();
+        await expect(inspector.locator('.storageInspectorBreadcrumbCurrent')).toHaveText('default_我没想当掌门啊');
+        await expect(inspector.locator('.storageInspectorEntry[data-key="掌门真人_2024-12-22@12h37m57s.png"]')).toBeVisible();
         await expect(inspector.locator('.storageInspectorError')).toBeHidden();
     });
 });

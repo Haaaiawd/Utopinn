@@ -67,7 +67,7 @@ test.describe('#71 — Critic regex search: extended director-driven branches', 
         const CRITIC_VERDICT = 'VOTE: reject. The draft reads in voice; no edits proposed.';
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page, {
             mainSystemPrompt: 'You are the test director. Use write_message, dispatch_subagent, await_subagents, apply_message_patches, finalize.',
@@ -150,7 +150,7 @@ test.describe('#71 — Critic regex search: extended director-driven branches', 
         const CRITIC_VERDICT = `VOTE: edit. Replace "${ORIGINAL_PHRASE}" with "${REPLACEMENT_PHRASE}".`;
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page, {
             mainSystemPrompt: 'You are the test director. Apply critic suggestions via apply_message_patches before finalize.',

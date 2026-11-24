@@ -3,9 +3,9 @@
 // the server's processCharacter() returns the correct name and binding.
 //
 // The shared `writeCharacter` in tests/e2e/_lib/fixtures.js copies the
-// Seraphina seed PNG but only writes a sidecar JSON — the server's
+// 我没想当掌门啊 seed PNG but only writes a sidecar JSON — the server's
 // processCharacter ignores sidecars and reads only PNG metadata, so every
-// card built with the shared helper shows up as "Seraphina". This local
+// card built with the shared helper shows up as "我没想当掌门啊". This local
 // helper re-stamps the PNG metadata with the requested name + binding so
 // multi-character WI tests (#25, #27, #28, #31, #32) can distinguish cards.
 
@@ -31,7 +31,7 @@ const REPO_ROOT = resolve(import.meta.dirname, '../../..');
 export function writeCharacterWithBinding({ dataRoot, handle = 'default-user', avatarFile, name, worldBook, extras = {} }) {
     const charsDir = resolve(dataRoot, handle, 'characters');
     mkdirSync(charsDir, { recursive: true });
-    const seed = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+    const seed = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
     const target = resolve(charsDir, avatarFile);
 
     const card = {

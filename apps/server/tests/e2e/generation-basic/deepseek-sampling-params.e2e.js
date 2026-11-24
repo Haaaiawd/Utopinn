@@ -46,7 +46,7 @@ test.describe.serial('DeepSeek deprecated penalties', () => {
             }
         });
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await sendMessageAndAwaitReply(page, 'Which way does the ebb run past the buoy?');
 
         const clientBody = posted[posted.length - 1];

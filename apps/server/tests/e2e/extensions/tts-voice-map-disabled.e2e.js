@@ -45,7 +45,7 @@ test.describe('TTS voice map popup with TTS disabled', () => {
     test('Manage voices lists participants and keeps added names with TTS off', async ({ page }) => {
         test.setTimeout(240_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Register the Stub provider the TTS specs use (no real
         // synthesizer exists headlessly; the act under test is the
@@ -90,7 +90,7 @@ test.describe('TTS voice map popup with TTS disabled', () => {
 
         // Chat participants must have rows even with TTS off. Before the
         // fix the popup rendered zero rows here.
-        const participantRow = page.locator('#tts_voicemap_popup .tts_voicemap_block_char', { hasText: 'Seraphina' });
+        const participantRow = page.locator('#tts_voicemap_popup .tts_voicemap_block_char', { hasText: '我没想当掌门啊' });
         await expect(participantRow.first()).toBeVisible({ timeout: 10_000 });
 
         // Add an NPC name through the REAL Add entry.

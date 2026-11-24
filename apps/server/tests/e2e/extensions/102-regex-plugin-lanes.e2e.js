@@ -64,7 +64,7 @@ test.afterAll(async () => {
 
 async function openEditor(page) {
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await openExtensionsDrawer(page);
     await openInlineDrawer(page, 'regex_container');
 }

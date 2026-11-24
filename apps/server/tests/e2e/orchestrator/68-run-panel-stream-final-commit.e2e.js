@@ -50,7 +50,7 @@ test.afterAll(async () => {
 test.describe('#68 — Run Panel: stream → final commit 1:1', () => {
     test('run panel auto-opens on RUN_STARTED, accumulates section bytes, commits final 1:1 to chat bubble', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page);
 

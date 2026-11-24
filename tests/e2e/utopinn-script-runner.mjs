@@ -4,7 +4,7 @@
 // 注意 ST 参数语义:setvar 的值是未名参数,if 的 then 是未名闭包子命令。
 import fs from 'node:fs';
 const B = 'http://127.0.0.1:8000';
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-script-probe';
 const QR_PROBE = 'apps/server/data/default-user/QuickReplies/_e2e_probe.json';
 let cookie = '', token = '';
@@ -75,7 +75,7 @@ log('QR 递归执行', String(r.body?.pipe) === 'qr-fired', `pipe=${JSON.stringi
 
 // 8. 宏替换 {{user}} {{char}}
 r = await run('/echo {{user}} vs {{char}}');
-log('宏求值', r.body?.notifications?.some(n => /Seraphina/.test(n.text ?? '')), JSON.stringify(r.body?.notifications?.[0]?.text));
+log('宏求值', r.body?.notifications?.some(n => /我没想当掌门啊/.test(n.text ?? '')), JSON.stringify(r.body?.notifications?.[0]?.text));
 
 // 9. 清理:chat + QR + 全局变量
 await run('/flushglobalvar gprobe');

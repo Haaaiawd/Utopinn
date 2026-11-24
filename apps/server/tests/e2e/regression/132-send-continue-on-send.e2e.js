@@ -17,7 +17,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina keeps her eyes on the reef line and lets the sentence hang.*',
+        '*我没想当掌门啊 keeps her eyes on the reef line and lets the sentence hang.*',
     ] });
     server = await startServer({ batchKey: 'regression', scenarioId: 'send-continue-on-send' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -36,7 +36,7 @@ test.describe('empty-input send with continue_on_send enabled', () => {
         page.on('pageerror', err => pageErrors.push(String(err)));
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 });
 
         // Enable "Press Send to continue" through the real settings UI.

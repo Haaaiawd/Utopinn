@@ -6,8 +6,8 @@ import git from 'isomorphic-git';
 import { assertCompanionHistory } from '../e2e/_lib/s3-chat.js';
 import { commitFiles } from './_lib/commits.js';
 
-const CHAT = 'chats/Seraphina/Forest Path.jsonl';
-const COMPANION = 'chats/Seraphina/Forest Path.luker-state.memory_graph.json';
+const CHAT = 'chats/掌门真人/Forest Path.jsonl';
+const COMPANION = 'chats/掌门真人/Forest Path.luker-state.memory_graph.json';
 const PAYLOAD = { nodes: { spring: { facts: ['birches', 'silver stones'], revision: 7 } }, edges: [], legacyNote: ['before dawn', 'north path'] };
 let root, gitdir, device;
 
@@ -52,7 +52,7 @@ const faults = [
     { name: 'missing root tree', causeKey: 'code', causeValue: 'NotFoundError', content: '{"other":"root tree"}',
         damage: async head => removeLooseObject((await git.readCommit({ fs, gitdir, oid: head })).commit.tree) },
     { name: 'missing nested tree', causeKey: 'code', causeValue: 'NotFoundError', content: '{"other":"nested tree"}',
-        damage: async head => removeLooseObject((await git.readTree({ fs, gitdir, oid: head, filepath: 'chats/Seraphina' })).oid) },
+        damage: async head => removeLooseObject((await git.readTree({ fs, gitdir, oid: head, filepath: 'chats/掌门真人' })).oid) },
     { name: 'missing referenced blob', causeKey: 'code', causeValue: 'NotFoundError', content: '{"other":"blob"}',
         damage: async head => removeLooseObject((await git.readBlob({ fs, gitdir, oid: head, filepath: COMPANION })).oid) },
     { name: 'invalid JSON', causeKey: 'name', causeValue: 'SyntaxError', content: '{', damage: async () => {} },

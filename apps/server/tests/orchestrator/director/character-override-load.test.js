@@ -151,8 +151,8 @@ function makeContextWithOverride(overrideDirector) {
         characterId: 0,
         characters: [
             {
-                avatar: 'default_Seraphina.png',
-                name: 'Seraphina',
+                avatar: 'default_我没想当掌门啊.png',
+                name: '掌门真人',
                 data: {
                     extensions: {
                         orchestrator: {
@@ -207,7 +207,7 @@ describe('loadCharacterDirectorEditorState — override merge', () => {
         };
 
         const ctx = makeContextWithOverride(overrideDirector);
-        const loaded = loadCharacterDirectorEditorState(ctx, 'default_Seraphina.png');
+        const loaded = loadCharacterDirectorEditorState(ctx, 'default_我没想当掌门啊.png');
 
         // After the director-shape unification: load returns FLAT, so the
         // override fields surface at the top of the editor object.
@@ -254,7 +254,7 @@ describe('loadCharacterDirectorEditorState — override merge', () => {
         };
 
         const ctx = makeContextWithOverride(overrideDirector);
-        const loaded = loadCharacterDirectorEditorState(ctx, 'default_Seraphina.png');
+        const loaded = loadCharacterDirectorEditorState(ctx, 'default_我没想当掌门啊.png');
 
         // Explicit empty override sticks — global is NOT rehydrated over
         // it. This is what makes "clear the prompt" / "delete all

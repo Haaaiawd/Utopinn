@@ -44,7 +44,7 @@ async function startStreamAndCloseTab(browser, server) {
     const contextA = await browser.newContext();
     const pageA = await contextA.newPage();
     await awaitMainUI(pageA, server.baseURL);
-    await selectCharacterByName(pageA, 'Seraphina');
+    await selectCharacterByName(pageA, '我没想当掌门啊');
     await pageA.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     await pageA.locator('#send_textarea').fill('Please stream slowly.');
@@ -90,7 +90,7 @@ test.describe('generation-basic: recovery completion fires event chain', () => {
         const contextB = await browser.newContext();
         const pageB = await contextB.newPage();
         await awaitMainUI(pageB, server.baseURL);
-        await selectCharacterByName(pageB, 'Seraphina');
+        await selectCharacterByName(pageB, '我没想当掌门啊');
 
         await pageB.waitForFunction(() => Boolean(document.querySelector('#luker_generation_recovery_preview')), { timeout: 20_000 });
 

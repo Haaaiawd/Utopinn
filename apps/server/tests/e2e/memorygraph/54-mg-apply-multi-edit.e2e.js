@@ -181,7 +181,7 @@ test.describe('#54 — MG schema-iter Studio: 5 set-node-type rounds land every 
         if (verifyState.source !== 'custom') {
             throw new Error(`Settings override failed: source=${verifyState.source}`);
         }
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         // RE-apply our settings override after character switch (which
@@ -228,7 +228,7 @@ test.describe('#54 — MG schema-iter Studio: 5 set-node-type rounds land every 
         // Cross-check via settings before opening the editor: the event
         // node type's tableColumns should now include all 5 new fields.
         // The studio's commitLiveToConfig writes to the active character's
-        // schemaOverride when one is selected (Seraphina here), so read
+        // schemaOverride when one is selected (我没想当掌门啊 here), so read
         // the per-character override path first and fall back to global.
         const persistedColumns = await page.evaluate(() => {
             const ctx = window.Luker.getContext();

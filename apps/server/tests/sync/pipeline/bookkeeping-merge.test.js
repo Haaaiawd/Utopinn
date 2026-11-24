@@ -9,7 +9,7 @@ import encode from '../../../src/png/encode.js';
 import { write as writeCard } from '../../../src/character-card-parser.js';
 import { chooseChatId, mergeGroupDocuments, mergeCharacterCards } from '../../../src/sync/pipeline/bookkeeping-merge.js';
 
-const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_Seraphina.png'));
+const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_我没想当掌门啊.png'));
 
 describe('group document merge', () => {
     const group = extra => ({ id: 'g1', name: 'Glade Watch', chat_id: 'gc1', chats: ['gc1'], date_last_chat: 100, ...extra });
@@ -115,7 +115,7 @@ describe('group document merge', () => {
 });
 
 describe('character card merge', () => {
-    const card = extra => ({ spec: 'chara_card_v2', spec_version: '2.0', name: 'Seraphina', data: { name: 'Seraphina', description: 'A guardian.', extensions: {} }, ...extra });
+    const card = extra => ({ spec: 'chara_card_v2', spec_version: '2.0', name: '掌门真人', data: { name: '掌门真人', description: 'A guardian.', extensions: {} }, ...extra });
     const png = (value, image = SEED_PNG) => writeCard(image, JSON.stringify(value));
     const cardOf = bytes => {
         const chara = extract(new Uint8Array(bytes)).filter(c => c.name === 'tEXt').map(c => PNGtext.decode(c.data)).find(t => t.keyword === 'chara');
@@ -125,11 +125,11 @@ describe('character card merge', () => {
     test('cards that differ only in the last chat merge without a record', () => {
         const merged = mergeCharacterCards(png(card()), png(card({ chat: 'Forest Path' })), png(card({ chat: 'River Ford' })));
         expect(merged.conflicted).toBe(false);
-        expect(cardOf(merged.bytes)).toMatchObject({ name: 'Seraphina', chat: 'Forest Path' });
+        expect(cardOf(merged.bytes)).toMatchObject({ name: '掌门真人', chat: 'Forest Path' });
     });
 
     test('the last chat one side changed takes that side', () => {
-        const merged = mergeCharacterCards(png(card({ chat: 'A' })), png(card({ chat: 'A', data: { name: 'Seraphina', description: 'Edited.', extensions: {} } })), png(card({ chat: 'B' })));
+        const merged = mergeCharacterCards(png(card({ chat: 'A' })), png(card({ chat: 'A', data: { name: '掌门真人', description: 'Edited.', extensions: {} } })), png(card({ chat: 'B' })));
         expect(merged.conflicted).toBe(false);
         expect(cardOf(merged.bytes)).toMatchObject({ chat: 'B', data: { description: 'Edited.' } });
     });
@@ -145,15 +145,15 @@ describe('character card merge', () => {
     });
 
     test('a card one side edited takes that side with the merged last chat', () => {
-        const edited = card({ chat: 'A', data: { name: 'Seraphina', description: 'Edited.', extensions: {} } });
+        const edited = card({ chat: 'A', data: { name: '掌门真人', description: 'Edited.', extensions: {} } });
         const merged = mergeCharacterCards(png(card()), png(edited), png(card({ chat: 'B' })));
         expect(merged.conflicted).toBe(false);
         expect(cardOf(merged.bytes)).toEqual({ ...edited, chat: 'A' });
     });
 
     test('cards both sides edited otherwise are conflicted and keep ours', () => {
-        const ours = card({ chat: 'A', data: { name: 'Seraphina', description: 'Ours.', extensions: {} } });
-        const merged = mergeCharacterCards(png(card()), png(ours), png(card({ chat: 'B', data: { name: 'Seraphina', description: 'Theirs.', extensions: {} } })));
+        const ours = card({ chat: 'A', data: { name: '掌门真人', description: 'Ours.', extensions: {} } });
+        const merged = mergeCharacterCards(png(card()), png(ours), png(card({ chat: 'B', data: { name: '掌门真人', description: 'Theirs.', extensions: {} } })));
         expect(merged.conflicted).toBe(true);
         expect(cardOf(merged.bytes)).toEqual(ours);
     });
@@ -181,7 +181,7 @@ describe('character card merge', () => {
     test('a card whose ccv3 chunk carries content its chara chunk lacks is not merged', () => {
         const chunks = extract(new Uint8Array(png(card({ chat: 'A' }))));
         const ccv3 = chunks.findIndex(c => c.name === 'tEXt' && PNGtext.decode(c.data).keyword === 'ccv3');
-        chunks[ccv3] = PNGtext.encode('ccv3', Buffer.from(JSON.stringify({ ...card({ chat: 'A' }), spec: 'chara_card_v3', spec_version: '3.0', data: { name: 'Seraphina', description: 'A guardian.', extensions: {}, group_only_greetings: ['Hello'] } })).toString('base64'));
+        chunks[ccv3] = PNGtext.encode('ccv3', Buffer.from(JSON.stringify({ ...card({ chat: 'A' }), spec: 'chara_card_v3', spec_version: '3.0', data: { name: '掌门真人', description: 'A guardian.', extensions: {}, group_only_greetings: ['Hello'] } })).toString('base64'));
         const mismatched = Buffer.from(encode(chunks));
         expect(mergeCharacterCards(png(card()), mismatched, png(card({ chat: 'B' })))).toBeNull();
         expect(mergeCharacterCards(png(card()), png(card({ chat: 'B' })), mismatched)).toBeNull();

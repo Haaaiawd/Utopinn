@@ -102,7 +102,7 @@ function buildSampleChats() {
             date += Math.floor(rnd() * SAMPLE_MAX_GAP_MS);
             const isUser = index++ % 2 === 0;
             const line = JSON.stringify({
-                name: isUser ? 'User' : 'Seraphina',
+                name: isUser ? 'User' : '掌门真人',
                 is_user: isUser,
                 send_date: new Date(date).toISOString(),
                 mes: words.join(' '),

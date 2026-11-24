@@ -1,9 +1,9 @@
 // TASK-023 聊天生命周期 E2E:
 // 建 → 追加(带 swipes)→ PATCH swipe_id(切换持久化)→ integrity 冲突 409
-// → rename → 读回验证 → delete。目标卡用真实 Seraphina。
+// → rename → 读回验证 → delete。目标卡用真实 我没想当掌门啊。
 import fs from 'node:fs';
 const B = 'http://127.0.0.1:8000';
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-chat-probe';
 let cookie = '', token = '';
 
@@ -49,7 +49,7 @@ r = await req('POST', `${base}/${CHAT}/messages`, {
     integrity: i0,
     messages: [
         { name: 'You', is_user: true, is_system: false, send_date: Date.now(), mes: 'hello probe', extra: {} },
-        { name: 'Seraphina', is_user: false, is_system: false, send_date: Date.now(), mes: 'swipe-A', swipes: ['swipe-A', 'swipe-B'], swipe_id: 0, extra: { gen_id: 'g1' } },
+        { name: '我没想当掌门啊', is_user: false, is_system: false, send_date: Date.now(), mes: 'swipe-A', swipes: ['swipe-A', 'swipe-B'], swipe_id: 0, extra: { gen_id: 'g1' } },
     ],
 });
 log('追加 accepted=2', r.status === 200 && r.body?.accepted === 2, JSON.stringify(r.body).slice(0, 100));
@@ -57,7 +57,7 @@ const i1 = r.body?.integrity;
 
 // 4. gen_id 重发去重
 r = await req('POST', `${base}/${CHAT}/messages`, {
-    messages: [{ name: 'Seraphina', mes: 'dup', extra: { gen_id: 'g1' } }],
+    messages: [{ name: '我没想当掌门啊', mes: 'dup', extra: { gen_id: 'g1' } }],
 });
 log('gen_id 去重', r.status === 200 && r.body?.dedupedGenIds?.includes('g1') && r.body?.accepted === 0, JSON.stringify(r.body));
 

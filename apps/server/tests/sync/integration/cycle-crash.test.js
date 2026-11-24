@@ -65,7 +65,7 @@ async function fileText(gitdir, commitOid, relPath) {
 // on disk; the default Jest timeout is too short for that under load.
 const CRASH_TEST_TIMEOUT_MS = 60_000;
 
-const chatText = mes => `${JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} })}\n${JSON.stringify({ name: 'Seraphina', is_user: false, mes })}\n`;
+const chatText = mes => `${JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} })}\n${JSON.stringify({ name: '掌门真人', is_user: false, mes })}\n`;
 
 describe('sync cycle survives a process kill', () => {
     let remote;
@@ -280,13 +280,13 @@ describe('sync cycle survives a process kill', () => {
         devices.push(A);
         A.write('characters/a.png', 'A');
         A.write('worlds/w.json', 'A-version');
-        A.write('chats/Seraphina/s.jsonl', chatText('A'));
+        A.write('chats/掌门真人/s.jsonl', chatText('A'));
         await runSyncCycle(A.ctx);
         const B = makeDevice({ remoteDir: remote.remoteDir, categories: ['characters'] });
         devices.push(B);
         await runSyncCycle(B.ctx);
         B.write('worlds/w.json', 'B-version');
-        B.write('chats/Seraphina/s.jsonl', chatText('B'));
+        B.write('chats/掌门真人/s.jsonl', chatText('B'));
         const point = FAILPOINTS.SEED_RECORDS_AFTER_JOURNAL;
         expectKilledAt(runCycleInChild({ ...B, ctx: { ...B.ctx, categories: all } }, point, { policy: true }), point);
         const journal = readReconcileJournal({ userRoot: B.userRoot, backendId: BACKEND_ID });

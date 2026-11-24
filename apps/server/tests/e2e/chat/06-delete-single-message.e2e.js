@@ -16,9 +16,9 @@ import {
 } from '../_lib/page.js';
 
 const REPLIES = [
-    '*Seraphina draws an X on the chart with a thumbnail.* "Reply 1: that line is gone since the spring tide."',
-    '*Seraphina circles a small atoll.* "Reply 2: the rocks here are new, two days old at most."',
-    '*Seraphina shrugs and smiles.* "Reply 3: the lantern will see us through the rest of the night."',
+    '*我没想当掌门啊 draws an X on the chart with a thumbnail.* "Reply 1: that line is gone since the spring tide."',
+    '*我没想当掌门啊 circles a small atoll.* "Reply 2: the rocks here are new, two days old at most."',
+    '*我没想当掌门啊 shrugs and smiles.* "Reply 3: the lantern will see us through the rest of the night."',
 ];
 
 let server, mock;
@@ -81,7 +81,7 @@ async function deleteMessageRealUI(page, mesid) {
 test.describe('#6 — delete single message via pencil', () => {
     test('deleting a middle assistant message leaves the others intact across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await sendMessageAndAwaitReply(page, 'Turn one: what is gone from the chart?');
@@ -111,7 +111,7 @@ test.describe('#6 — delete single message via pencil', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
 
         // Post-restart: same DOM state.

@@ -54,7 +54,7 @@ test.afterAll(async () => {
 test.describe('#18 — merge dialog per-segment trim slices each source', () => {
     test('range inputs feed body.slice(from, to) into the merged body', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const ids = [];
@@ -116,7 +116,7 @@ test.describe('#18 — merge dialog per-segment trim slices each source', () => 
         const bodyMesgs = lines.slice(1).map(l => JSON.parse(l).mes);
 
         // A's full body lives at indices 0..8: greeting then 4 user/reply
-        // pairs. The greeting text is whatever the Seraphina card ships
+        // pairs. The greeting text is whatever the 我没想当掌门啊 card ships
         // with; we don't assert it byte-for-byte (that's the card's
         // contract, not this test's) but the user/reply pattern is ours.
         expect(bodyMesgs).toHaveLength(15);

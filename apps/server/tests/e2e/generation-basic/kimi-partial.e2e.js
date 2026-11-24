@@ -13,7 +13,7 @@
 //   then assert on mock.requests:
 //     - the last /chat/completions body's final message is
 //       role=assistant, content=<prefix>, partial=true
-//     - name present (character source → 'Seraphina'; manual → 'Mira')
+//     - name present (character source → '我没想当掌门啊'; manual → 'Mira')
 //     - the rendered assistant bubble shows ONLY the mock reply — the
 //       prefill prefix is transport-layer, never displayed
 //     - manual-name variant: trailing assistant merges prefix and drops
@@ -82,7 +82,7 @@ test.describe.serial('Kimi partial prefill', () => {
     test('A — wire injection with character-sourced name; prefix never displayed', async ({ page }) => {
         test.setTimeout(120_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -128,7 +128,7 @@ test.describe.serial('Kimi partial prefill', () => {
         expect(last.content).toBe(PREFIX);
         expect(last.partial).toBe(true);
         // Character-sourced name = the selected character's display name.
-        expect(last.name).toBe('Seraphina');
+        expect(last.name).toBe('我没想当掌门啊');
         const prev = messages[messages.length - 2];
         expect(prev.role).toBe('user');
 
@@ -142,7 +142,7 @@ test.describe.serial('Kimi partial prefill', () => {
     test('B — manual name variant reaches the wire', async ({ page }) => {
         test.setTimeout(120_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -174,7 +174,7 @@ test.describe.serial('Kimi partial prefill', () => {
     test('C — preset round trip rehydrates the four controls', async ({ page }) => {
         test.setTimeout(120_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Start from the clean seeded preset so the runtime settings (and
         // any preset saved from here) inherit the shipped default values

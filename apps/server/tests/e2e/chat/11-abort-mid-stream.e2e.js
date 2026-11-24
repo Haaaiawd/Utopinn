@@ -24,8 +24,8 @@ let server, mock;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina is about to answer when the wind catches and the lantern guts; she breaks off mid-sentence and lifts her hand to shield the flame —*',
-            '*Seraphina lights a fresh wick.* "Now — second turn — the lantern is burning steady again."',
+            '*我没想当掌门啊 is about to answer when the wind catches and the lantern guts; she breaks off mid-sentence and lifts her hand to shield the flame —*',
+            '*我没想当掌门啊 lights a fresh wick.* "Now — second turn — the lantern is burning steady again."',
         ],
         latencyMs: 5000,
     });
@@ -43,7 +43,7 @@ test.afterAll(async () => {
 test.describe('#11 — abort mid-stream', () => {
     test('clicking #mes_stop kills in-flight gen, next send via #send_but succeeds', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Real user gesture #1: fill #send_textarea, click #send_but.

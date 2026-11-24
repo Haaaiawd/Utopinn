@@ -621,8 +621,8 @@ describe('write-api graph-iteration fixes', () => {
         const ctx = makeContext({
             nodes: {
                 n_1: {
-                    id: 'n_1', type: 'character_sheet', level: 'semantic', title: 'Seraphina',
-                    fields: { title: 'Seraphina', aliases: 'Sera', identity: 'chart officer' },
+                    id: 'n_1', type: 'character_sheet', level: 'semantic', title: '掌门真人',
+                    fields: { title: '掌门真人', aliases: 'Sera', identity: 'chart officer' },
                     childrenIds: [], parentId: '', archived: false, seqTo: 1,
                 },
                 n_2: {

@@ -119,7 +119,7 @@ test('partial grouped notice dismissal retains an unknown row until the unreadab
     await restoreChatCorpus(a, testInfo, { companions: { iter_studio: COMPANIONS.iter_studio } });
     await openLanSyncPanel(a.page); await addS3Backend(a.page, options); await ready(a, 'Cloud');
     await addS3Backend(b.page, options); await ready(b, 'Cloud');
-    const rel = 'chats/Seraphina/Forest Path.jsonl';
+    const rel = 'chats/我没想当掌门啊/Forest Path.jsonl';
     await editCorpusChat(a, rel, 'Notice from desk'); await editCorpusChat(b, rel, 'Notice from tablet');
     for (const device of [a, b]) {
         await closeAllPopups(device.page); await openLanSyncPanel(device.page); await clickSyncNow(device.page, 'Cloud');

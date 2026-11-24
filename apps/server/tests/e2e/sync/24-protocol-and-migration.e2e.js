@@ -97,7 +97,7 @@ test.describe('v1 registry migration', () => {
         try {
             let pageA = await openDevice(browser, contexts, A);
             let pageB = await openDevice(browser, contexts, B);
-            await writeLore(pageA, A, 'Glade Ledger', 'Seraphina keeps a ledger of the paths through the glade.');
+            await writeLore(pageA, A, 'Glade Ledger', '我没想当掌门啊 keeps a ledger of the paths through the glade.');
             await openLanSyncPanel(pageA);
             const link = await generatePairingLink(pageA, { label: 'B device', categories: ['worlds'] });
             await openLanSyncPanel(pageB);
@@ -162,7 +162,7 @@ test.describe('v1 registry migration', () => {
             await setSyncSchedule(pageB, { idleSeconds: 3600, pollSeconds: 3600 });
 
             await closeAllPopups(pageB);
-            await writeLore(pageB, B, 'Birch Path', 'The birch path leads travelers back to Seraphina’s glade.');
+            await writeLore(pageB, B, 'Birch Path', 'The birch path leads travelers back to 我没想当掌门啊’s glade.');
             await openLanSyncPanel(pageB);
             const pushedSince = Date.now();
             expect(await clickSyncNow(pageB, 'A device')).toBe('success');
@@ -172,7 +172,7 @@ test.describe('v1 registry migration', () => {
             expect(registryOf(A).backends[id].lan.peerBaseUrl).toBe(B.baseURL);
             await waitForBackgroundSync(pageA, { since: pushedSince });
             await closeAllPopups(pageA);
-            await writeLore(pageA, A, 'Moonlit Stones', 'Moonlight marks the stones beside Seraphina’s woodland home.');
+            await writeLore(pageA, A, 'Moonlit Stones', 'Moonlight marks the stones beside 我没想当掌门啊’s woodland home.');
             await openLanSyncPanel(pageA);
             expect(await clickSyncNow(pageA, 'B device')).toBe('success');
             await expect.poll(() => readUserFile(B, 'worlds/Moonlit Stones.json'), { timeout: 60_000 }).toBe(readUserFile(A, 'worlds/Moonlit Stones.json'));
@@ -185,7 +185,7 @@ test.describe('v1 registry migration', () => {
                 expect(registry.backends[id].label).toBe(entry.label);
                 const history = await git.log({ fs, gitdir: path.join(userRootOf(server), '.sync', id, 'repo.git'), ref: 'refs/heads/main' });
                 expect(history.map(commit => commit.oid)).toContain(head);
-                expect(readUserFile(server, 'worlds/Glade Ledger.json')).toContain('Seraphina keeps a ledger');
+                expect(readUserFile(server, 'worlds/Glade Ledger.json')).toContain('我没想当掌门啊 keeps a ledger');
             }
         } finally {
             await closeContexts(contexts);

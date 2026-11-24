@@ -61,7 +61,7 @@ test('generation-basic: HTTP 200 + x-luker-generation-id + ws-delivery stream + 
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     // Wait for the greeting first_mes to land so the reply we assert on
     // is unambiguously the /generate response.
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});

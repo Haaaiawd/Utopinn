@@ -114,7 +114,7 @@ test.describe('Skills iter-studio: LLM authors a real RP-discipline skill', () =
         await page.locator('#sys-settings-button .drawer-toggle').first().click();
         await page.locator('#rm_api_block').waitFor({ state: 'hidden', timeout: 5000 });
 
-        // Load Seraphina (any character works; iter-studio doesn't require one
+        // Load 我没想当掌门啊 (any character works; iter-studio doesn't require one
         // but the orchestrator extension surfaces are calmer with an active
         // character in the workspace).
         const loadedAvatar = await ensureCharacterLoaded(page);

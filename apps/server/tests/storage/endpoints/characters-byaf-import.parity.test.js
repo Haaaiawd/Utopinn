@@ -5,7 +5,7 @@
 //
 // Fixture shape is copy-pasted from tests/e2e/character/18-import-byaf.e2e.js
 // (Halden the Quill-Keeper) — that e2e proves the BYAF zip layout passes the
-// parser end-to-end. We use the repo's default Seraphina PNG as the icon so
+// parser end-to-end. We use the repo's default 我没想当掌门啊 PNG as the icon so
 // the parser's image fallback path is never taken (DEFAULT_AVATAR_PATH is
 // './public/img/ai4.png' which is cwd-relative and brittle inside Jest).
 //
@@ -27,7 +27,7 @@ import { getChatRepo } from '../../../src/storage/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const REPO_ROOT = path.resolve(path.dirname(__filename), '..', '..', '..');
-const DEFAULT_ICON_PATH = path.resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+const DEFAULT_ICON_PATH = path.resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 
 const CHARACTER_NAME = 'Halden the Quill-Keeper';
 

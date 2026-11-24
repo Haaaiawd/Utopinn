@@ -36,7 +36,7 @@ test('a timed-out retry never runs concurrently with the previous attempt upstre
     test.setTimeout(120_000);
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
     await page.locator('#send_textarea').fill('Chart the reef line before dawn.');
     await page.locator('#send_but:not(.displayNone)').waitFor({ state: 'visible', timeout: 30_000 });

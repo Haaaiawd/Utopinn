@@ -41,7 +41,7 @@ import { openIterStudio, sendIterPrompt, applyIterBatch, closeIterStudio } from 
 import { normalizeIterStudioSettings } from '../preset/_helpers.js';
 // The plain writeCharacter fixture ships a sidecar .json the server ignores
 // (card data is read from PNG chunks only), so the card would surface as the
-// seed Seraphina. writeEmbeddedCharacter stamps the card into the PNG via
+// seed 我没想当掌门啊. writeEmbeddedCharacter stamps the card into the PNG via
 // the server's own parser — the canonical cross-batch helper for that.
 import { writeEmbeddedCharacter } from '../character/_helpers.js';
 import { read as readPngCard } from '../../../src/character-card-parser.js';

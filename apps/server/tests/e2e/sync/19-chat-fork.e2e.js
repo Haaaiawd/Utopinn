@@ -25,26 +25,26 @@ import {
 
 const LABELS = { A: 'Glade desk', B: 'Fen tablet' };
 const INTEGRITY = '7d6b3c9e-1f2a-4b5c-8d9e-0a1b2c3d4e5f';
-const header = { user_name: 'User', character_name: 'Seraphina', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: INTEGRITY } };
+const header = { user_name: 'User', character_name: '掌门真人', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: INTEGRITY } };
 const messages = [
-    { name: 'Seraphina', is_user: false, mes: 'Welcome back to the glade, traveler.', send_date: '2026-10-01@10h00m01s' },
+    { name: '掌门真人', is_user: false, mes: 'Welcome back to the glade, traveler.', send_date: '2026-10-01@10h00m01s' },
     { name: 'User', is_user: true, mes: 'Which path leads to the spring?', send_date: '2026-10-01@10h00m02s' },
-    { name: 'Seraphina', is_user: false, mes: 'Follow the birches; the path bends near the stones.', send_date: '2026-10-01@10h00m03s' },
+    { name: '掌门真人', is_user: false, mes: 'Follow the birches; the path bends near the stones.', send_date: '2026-10-01@10h00m03s' },
 ];
 const jsonl = (head, lines) => [head, ...lines].map(line => JSON.stringify(line)).join('\n');
 const CHATS = ['Forest Path', 'River Ford'];
 
 function seed(server) {
     const root = userRootOf(server);
-    writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: 'Seraphina.png', card: { name: 'Seraphina', first_mes: messages[0].mes } });
-    fs.mkdirSync(path.join(root, 'chats', 'Seraphina'), { recursive: true });
+    writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: '掌门真人.png', card: { name: '掌门真人', first_mes: messages[0].mes } });
+    fs.mkdirSync(path.join(root, 'chats', '掌门真人'), { recursive: true });
     for (const chat of CHATS) {
-        fs.writeFileSync(path.join(root, 'chats', 'Seraphina', `${chat}.jsonl`), jsonl(header, messages));
-        fs.writeFileSync(path.join(root, 'chats', 'Seraphina', `${chat}.luker-state.memory_graph.json`), JSON.stringify({ nodes: [{ id: 'spring' }] }));
+        fs.writeFileSync(path.join(root, 'chats', '掌门真人', `${chat}.jsonl`), jsonl(header, messages));
+        fs.writeFileSync(path.join(root, 'chats', '掌门真人', `${chat}.luker-state.memory_graph.json`), JSON.stringify({ nodes: [{ id: 'spring' }] }));
     }
     fs.mkdirSync(path.join(root, 'groups'), { recursive: true });
     fs.mkdirSync(path.join(root, 'group chats'), { recursive: true });
-    fs.writeFileSync(path.join(root, 'groups', 'g1.json'), JSON.stringify({ id: 'g1', name: 'Glade Watch', members: ['Seraphina.png'], avatar_url: '', allow_self_responses: false,
+    fs.writeFileSync(path.join(root, 'groups', 'g1.json'), JSON.stringify({ id: 'g1', name: 'Glade Watch', members: ['掌门真人.png'], avatar_url: '', allow_self_responses: false,
         activation_strategy: 1, generation_mode: 0, disabled_members: [], chat_metadata: {}, fav: false, chat_id: 'gc1', chats: ['gc1'], auto_mode_delay: 5 }, null, 4));
     fs.writeFileSync(path.join(root, 'group chats', 'gc1.jsonl'), jsonl({ user_name: 'unused', character_name: 'unused', chat_metadata: { integrity: INTEGRITY } }, messages));
 }
@@ -113,12 +113,12 @@ async function deleteChatByName(page, server, name) {
     await row.locator('.PastChat_cross').click();
     const confirm = page.locator('dialog.popup[open]', { hasText: 'Delete the Chat File?' });
     await confirm.locator('.popup-button-ok').click();
-    await expect.poll(() => readUserFile(server, `chats/Seraphina/${name}.jsonl`), { timeout: 30_000 }).toBeNull();
+    await expect.poll(() => readUserFile(server, `chats/掌门真人/${name}.jsonl`), { timeout: 30_000 }).toBeNull();
 }
 
 const readHeader = (server, rel) => JSON.parse(readUserFile(server, rel).split('\n')[0]);
 const fileText = (server, rel) => readUserFile(server, rel) ?? '';
-const cardBytes = server => fs.readFileSync(path.join(userRootOf(server), 'characters', 'Seraphina.png'));
+const cardBytes = server => fs.readFileSync(path.join(userRootOf(server), 'characters', '掌门真人.png'));
 const otherSide = side => (side === 'A' ? 'B' : 'A');
 
 /**
@@ -154,10 +154,10 @@ test.describe('LAN Sync — chat conflicts', () => {
         const { pageA, pageB } = await pairedPages(browser);
         const texts = { A: 'A: the path bends north at the birches.', B: 'B: the path bends south past the stones.' };
         for (const [page, server, side] of [[pageA, A, 'A'], [pageB, B, 'B']]) {
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '掌门真人');
             await openChatByName(page, 'Forest Path');
             await editMessageViaUI(page, 2, texts[side]);
-            await expect.poll(() => fileText(server, 'chats/Seraphina/Forest Path.jsonl'), { timeout: 30_000 }).toContain(texts[side]);
+            await expect.poll(() => fileText(server, 'chats/掌门真人/Forest Path.jsonl'), { timeout: 30_000 }).toContain(texts[side]);
         }
         await openLanSyncPanel(pageB);
         expect(await clickSyncNow(pageB, 'A device')).toBe('success');
@@ -166,10 +166,10 @@ test.describe('LAN Sync — chat conflicts', () => {
         const notices = await listPopupNotices(pageB);
         expect(notices).toHaveLength(1);
         const [notice] = notices;
-        const { branch, branched, kept } = forkOf(notice, 'chats/Seraphina', 'Forest Path');
+        const { branch, branched, kept } = forkOf(notice, 'chats/掌门真人', 'Forest Path');
         expect(['A', 'B']).toContain(branched);
-        expect(notice.text).toBe(`chats/Seraphina/Forest Path.jsonl was edited on two devices. The version from ${LABELS[branched]} was saved as the branch chat ${branch}.`);
-        const mainText = readUserFile(B, 'chats/Seraphina/Forest Path.jsonl');
+        expect(notice.text).toBe(`chats/掌门真人/Forest Path.jsonl was edited on two devices. The version from ${LABELS[branched]} was saved as the branch chat ${branch}.`);
+        const mainText = readUserFile(B, 'chats/掌门真人/Forest Path.jsonl');
         const branchText = readUserFile(B, notice.path);
         expect(mainText).toContain(texts[kept]);
         expect(mainText).not.toContain(texts[branched]);
@@ -178,10 +178,10 @@ test.describe('LAN Sync — chat conflicts', () => {
         const branchHeader = readHeader(B, notice.path);
         expect(branchHeader.chat_metadata.main_chat).toBe('Forest Path');
         expect(branchHeader.chat_metadata.integrity).not.toBe(INTEGRITY);
-        expect(branchHeader.chat_metadata.integrity).not.toBe(readHeader(B, 'chats/Seraphina/Forest Path.jsonl').chat_metadata.integrity);
-        expect(readUserFile(B, `chats/Seraphina/${branch}.luker-state.memory_graph.json`)).toBe(JSON.stringify({ nodes: [{ id: 'spring' }] }));
+        expect(branchHeader.chat_metadata.integrity).not.toBe(readHeader(B, 'chats/掌门真人/Forest Path.jsonl').chat_metadata.integrity);
+        expect(readUserFile(B, `chats/掌门真人/${branch}.luker-state.memory_graph.json`)).toBe(JSON.stringify({ nodes: [{ id: 'spring' }] }));
         await expect.poll(() => readUserFile(A, notice.path), { timeout: 60_000 }).toBe(branchText);
-        await expect.poll(() => readUserFile(A, 'chats/Seraphina/Forest Path.jsonl'), { timeout: 60_000 }).toBe(mainText);
+        await expect.poll(() => readUserFile(A, 'chats/掌门真人/Forest Path.jsonl'), { timeout: 60_000 }).toBe(mainText);
         await openBranchFromNotice(pageB, notice.path, branch);
         await expect(pageB.locator('.mes[mesid="2"] .mes_text')).toContainText(texts[branched]);
         await reloadAndAwait(pageB, B.baseURL);
@@ -233,10 +233,10 @@ test.describe('LAN Sync — chat conflicts', () => {
         const plan = { A: { edit: 'River Ford', remove: 'Forest Path' }, B: { edit: 'Forest Path', remove: 'River Ford' } };
         const texts = { A: 'A: the ford runs shallow at dawn.', B: 'B: the path bends south past the stones.' };
         for (const [page, server, side] of [[pageA, A, 'A'], [pageB, B, 'B']]) {
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '掌门真人');
             await openChatByName(page, plan[side].edit);
             await editMessageViaUI(page, 2, texts[side]);
-            await expect.poll(() => fileText(server, `chats/Seraphina/${plan[side].edit}.jsonl`), { timeout: 30_000 }).toContain(texts[side]);
+            await expect.poll(() => fileText(server, `chats/掌门真人/${plan[side].edit}.jsonl`), { timeout: 30_000 }).toContain(texts[side]);
             await deleteChatByName(page, server, plan[side].remove);
             await reloadAndAwait(page, server.baseURL);
         }
@@ -246,18 +246,18 @@ test.describe('LAN Sync — chat conflicts', () => {
         await waitForSyncPopup(pageB);
         expect(await listPopupConflicts(pageB)).toEqual([]);
         expect(await listPopupNotices(pageB)).toEqual([
-            { path: 'chats/Seraphina/Forest Path.jsonl', text: `Forest Path was deleted on ${LABELS.A} but kept on ${LABELS.B}, so it was restored.` },
-            { path: 'chats/Seraphina/River Ford.jsonl', text: `River Ford was deleted on ${LABELS.B} but kept on ${LABELS.A}, so it was restored.` },
+            { path: 'chats/掌门真人/Forest Path.jsonl', text: `Forest Path was deleted on ${LABELS.A} but kept on ${LABELS.B}, so it was restored.` },
+            { path: 'chats/掌门真人/River Ford.jsonl', text: `River Ford was deleted on ${LABELS.B} but kept on ${LABELS.A}, so it was restored.` },
         ]);
         await expect(syncPopup(pageB).locator('.syncNoticeOpenButton')).toHaveText(['Open chat', 'Open chat']);
         for (const server of [A, B]) {
             for (const side of ['A', 'B']) {
-                await expect.poll(() => fileText(server, `chats/Seraphina/${plan[side].edit}.jsonl`), { timeout: 60_000 }).toContain(texts[side]);
+                await expect.poll(() => fileText(server, `chats/掌门真人/${plan[side].edit}.jsonl`), { timeout: 60_000 }).toContain(texts[side]);
             }
         }
         await expect.poll(() => Buffer.compare(cardBytes(A), cardBytes(B)), { timeout: 60_000 }).toBe(0);
         for (const side of ['A', 'B']) {
-            await openBranchFromNotice(pageB, `chats/Seraphina/${plan[side].edit}.jsonl`, plan[side].edit);
+            await openBranchFromNotice(pageB, `chats/掌门真人/${plan[side].edit}.jsonl`, plan[side].edit);
             await expect(pageB.locator('.mes[mesid="2"] .mes_text')).toContainText(texts[side]);
             await reloadAndAwait(pageB, B.baseURL);
             await waitForSyncPopup(pageB);
@@ -268,8 +268,8 @@ test.describe('LAN Sync — chat conflicts', () => {
         const { pageB } = await pairedPages(browser);
         // An older version wrote restored notices without `deletedBy`.
         // Commit one onto A's sync history; A is idle, so nothing races it.
-        const rel = 'chats/Seraphina/Forest Path.jsonl';
-        const notices = { entries: { [rel]: { kind: 'restored', device: LABELS.A, createdAt: new Date().toISOString(), target: { kind: 'character', avatar: 'Seraphina.png', name: 'Forest Path' } } } };
+        const rel = 'chats/掌门真人/Forest Path.jsonl';
+        const notices = { entries: { [rel]: { kind: 'restored', device: LABELS.A, createdAt: new Date().toISOString(), target: { kind: 'character', avatar: '掌门真人.png', name: 'Forest Path' } } } };
         await commitNoticesOnMain(A, notices);
 
         await openLanSyncPanel(pageB);

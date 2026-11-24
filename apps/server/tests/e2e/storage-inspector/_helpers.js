@@ -35,7 +35,7 @@ export async function seedFixtureUser(dataRoot, handle) {
     // chats: 3 characters × 2 dated chats each, each chat carrying a
     // metadata line + 8 message lines, plus two sidecar files per chat
     // (memory graph + orchestrator anchors — Luker's most common sidecars).
-    for (const char of ['default_Seraphina', 'default_Coding', 'default_Alice']) {
+    for (const char of ['default_我没想当掌门啊', 'default_Coding', 'default_Alice']) {
         for (const day of ['2024-01-15', '2024-02-20']) {
             const chatName = `Chat ${day}`;
             const meta = { chat_metadata: { variables: { greeting: 'hi' } } };
@@ -65,15 +65,15 @@ export async function seedFixtureUser(dataRoot, handle) {
     // One folder with two files exercises the Images → Chat Images →
     // character-folder drill (the folder row is one level deeper than the
     // sub-category).
-    await w('user/images/default_Seraphina/Seraphina_2024-12-22@12h37m57s.png', Buffer.alloc(12_000));
-    await w('user/images/default_Seraphina/Seraphina_2024-12-24@08h10m03s.png', Buffer.alloc(8_000));
+    await w('user/images/default_我没想当掌门啊/掌门真人_2024-12-22@12h37m57s.png', Buffer.alloc(12_000));
+    await w('user/images/default_我没想当掌门啊/掌门真人_2024-12-24@08h10m03s.png', Buffer.alloc(8_000));
 
     // Secrets file — the Other category will show it as a sensitive blob
     // with a lock icon (drill blocked at both API and UI).
     await w('secrets.json', JSON.stringify({ api_key_openai: 'sk-FAKE' }));
 
     // A chat backup line — populates the Backups L2.
-    await w('backups/chat_Seraphina_20260101.jsonl', 'line\n');
+    await w('backups/chat_掌门真人_20260101.jsonl', 'line\n');
 
     // Vector store blob — 50 KB placeholder for the Vectors category.
     // non-trivial size for L1 bar visibility

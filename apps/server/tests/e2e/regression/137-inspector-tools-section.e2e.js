@@ -40,7 +40,7 @@ test.afterAll(async () => {
 
 test('request detail renders a Tools section with the tool parameter table', async ({ page }) => {
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     await page.evaluate(async () => {
         const mod = await import('/scripts/openai.js');

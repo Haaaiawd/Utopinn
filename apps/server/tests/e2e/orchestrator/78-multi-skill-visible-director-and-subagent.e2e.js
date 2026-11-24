@@ -54,7 +54,7 @@ const SKILL_NAMES = ['reef-rotation', 'lantern-protocol', 'salt-mark-history'];
 test.describe('#78 — Multi-skill visible: live director dispatch', () => {
     test('live director dispatch: main agent prompt + dispatched sub-agent payload both contain the same `<available_skills>` block', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Install a minimal profile that sets the mode-level visible list
         // to our 3 test skills and configures one sub-agent that inherits.

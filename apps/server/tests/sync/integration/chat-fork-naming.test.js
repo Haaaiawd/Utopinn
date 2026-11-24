@@ -11,7 +11,7 @@ import { materializeUserDataIntoWorkdir } from '../../../src/sync/materialize.js
 import { buildSidecarFilename } from '../../../src/storage/engines/sidecar-naming.js';
 import { branchChatBaseName } from '../../../src/sync/pipeline/chat-fork.js';
 
-const HEADER = { user_name: 'U', character_name: 'Seraphina', chat_metadata: {} };
+const HEADER = { user_name: 'U', character_name: '掌门真人', chat_metadata: {} };
 const branch = branchChatBaseName({ base: 'Forest Path', deviceLabel: 'Phone', date: new Date(2026, 9, 13, 9, 5), taken: new Set() });
 
 describe.each(ENDPOINT_HARNESSES)('chat fork companion names match the chat state endpoint on $name', ({ mode }) => {
@@ -33,16 +33,16 @@ describe.each(ENDPOINT_HARNESSES)('chat fork companion names match the chat stat
     }
 
     test('character branch companion', async () => {
-        await getChatRepo().save(harness.handle, 'Seraphina', branch, HEADER, [], null);
+        await getChatRepo().save(harness.handle, '掌门真人', branch, HEADER, [], null);
         const res = await request(harness.server).post('/api/chats/state/patch')
-            .send({ is_group: false, avatar_url: 'Seraphina.png', file_name: branch, namespace: 'memory_graph', operations: [{ op: 'add', path: '/k', value: 1 }] });
+            .send({ is_group: false, avatar_url: '掌门真人.png', file_name: branch, namespace: 'memory_graph', operations: [{ op: 'add', path: '/k', value: 1 }] });
         expect(res.status).toBe(200);
-        const rel = `chats/Seraphina/${buildSidecarFilename(branch, 'memory_graph')}`;
+        const rel = `chats/掌门真人/${buildSidecarFilename(branch, 'memory_graph')}`;
         expect(fs.existsSync(path.join(await companionRoot(), ...rel.split('/')))).toBe(true);
     });
 
     test('group branch companion', async () => {
-        await getGroupRepo().save(harness.handle, 'g1', { id: 'g1', name: 'Glade Watch', members: ['Seraphina.png'], chat_id: 'Forest Path', chats: ['Forest Path', branch] });
+        await getGroupRepo().save(harness.handle, 'g1', { id: 'g1', name: 'Glade Watch', members: ['掌门真人.png'], chat_id: 'Forest Path', chats: ['Forest Path', branch] });
         await getChatRepo().save(harness.handle, '', branch, HEADER, [], null, { isGroup: true, groupId: branch });
         const res = await request(harness.server).post('/api/chats/state/patch')
             .send({ is_group: true, id: branch, namespace: 'memory_graph', operations: [{ op: 'add', path: '/k', value: 1 }] });

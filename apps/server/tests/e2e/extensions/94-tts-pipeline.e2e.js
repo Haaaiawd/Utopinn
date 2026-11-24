@@ -48,7 +48,7 @@ test.describe('#94 — TTS pipeline reaches playback via real .mes_narrate click
     test('clicking .mes_narrate on assistant reply fires the TTS pipeline (real provider.generateTts call)', async ({ page }) => {
         test.setTimeout(240_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -117,7 +117,7 @@ test.describe('#94 — TTS pipeline reaches playback via real .mes_narrate click
             const ctx = window.Luker.getContext();
             ctx.extensionSettings.tts = ctx.extensionSettings.tts || {};
             ctx.extensionSettings.tts.Stub = ctx.extensionSettings.tts.Stub || {};
-            ctx.extensionSettings.tts.Stub.voiceMap = 'Seraphina:StubVoice';
+            ctx.extensionSettings.tts.Stub.voiceMap = '我没想当掌门啊:StubVoice';
             ctx.saveSettingsDebounced();
             const mod = await import('/scripts/extensions/tts/index.js');
             if (typeof mod.initVoiceMap === 'function') {

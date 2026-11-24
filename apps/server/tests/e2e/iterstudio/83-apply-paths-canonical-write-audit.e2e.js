@@ -173,16 +173,16 @@ test.describe('#83 — All 4 iter-studio Apply paths route through canonical wri
 
     test('CEA Character Apply (real click) → /api/characters/edit', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await installFetchRecorder(page);
 
         await openIterStudio(page, 'cea');
-        const NEW_DESC = 'Seraphina keeps a tide-log on her belt — a half-inch leather notebook.';
+        const NEW_DESC = '我没想当掌门啊 keeps a tide-log on her belt — a half-inch leather notebook.';
         mock.scriptToolCall({
             name: 'cea_set_card_field',
             arguments: { field: 'description', value: NEW_DESC },
         });
-        await sendIterPrompt(page, 'cea', 'Add a tide-log detail to Seraphina\'s description.');
+        await sendIterPrompt(page, 'cea', 'Add a tide-log detail to 我没想当掌门啊\'s description.');
 
         const before = await fetchLogLength(page);
         await applyIterBatch(page, 'cea');

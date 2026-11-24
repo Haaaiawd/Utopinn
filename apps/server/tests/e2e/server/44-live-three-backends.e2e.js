@@ -63,7 +63,7 @@ liveDescribe('#44 — live 3-backend smoke', () => {
         });
         await server.restart();
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         const { text } = await sendMessageAndAwaitReply(
             page,
             'Briefly describe the lantern that hangs at the cliff watchpost. Two sentences.',
@@ -83,7 +83,7 @@ liveDescribe('#44 — live 3-backend smoke', () => {
         });
         await server.restart();
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         const { text } = await sendMessageAndAwaitReply(
             page,
             'Briefly describe the lantern that hangs at the cliff watchpost. Two sentences.',
@@ -103,7 +103,7 @@ liveDescribe('#44 — live 3-backend smoke', () => {
         });
         await server.restart();
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         const { text } = await sendMessageAndAwaitReply(
             page,
             'Briefly describe the lantern that hangs at the cliff watchpost. Two sentences.',

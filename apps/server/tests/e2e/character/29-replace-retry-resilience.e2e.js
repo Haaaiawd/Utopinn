@@ -112,7 +112,7 @@ test.describe('#29 — replace flow failure resilience', () => {
     test.beforeAll(async () => {
         mock = await startMockLLM({});
         tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-replace-resilience-'));
-        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
         briallenPngPath = resolve(tmpdir(), 'briallen-replace.png');
         writeFileSync(briallenPngPath, buildBriallenPng(seed));
     });

@@ -62,9 +62,18 @@ try {
     r = await req('GET', `${entryUrl.replace(/index\.html$/, '')}style.css`);
     log('资产服务', r.status === 200 && String(r.body).includes('background'), `status=${r.status}`);
 
-    // 6. 无卡 app's 拒绝
-    r = await req('POST', '/api/card-runtime/mounts', { charId: 'default_Seraphina' });
-    log('无 card_app 拒绝', r.status === 404 && r.body?.error === 'no_card_app', JSON.stringify(r.body).slice(0, 120));
+    // 6. 无卡 app's 拒绝 —— th-probe 语料卡不声明 card_app(掌门种子卡自带
+    //    卡应用,不能当反例);自建 sidecar 卡保持负例语义。
+    const NCARD = 'e2e-cardapp-none';
+    fs.copyFileSync('tests/corpus/cards/th-probe.json', `apps/server/data/default-user/characters/${NCARD}.json`);
+    try {
+        r = await req('POST', '/api/card-runtime/mounts', { charId: NCARD });
+        log('无 card_app 拒绝', r.status === 404 && r.body?.error === 'no_card_app', JSON.stringify(r.body).slice(0, 120));
+    } finally {
+        fs.unlinkSync(`apps/server/data/default-user/characters/${NCARD}.json`);
+        const ndir = `apps/server/data/default-user/card-apps/${NCARD}`;
+        if (fs.existsSync(ndir)) fs.rmSync(ndir, { recursive: true, force: true });
+    }
 
     // 7. revoke → entry 404
     r = await req('DELETE', `/api/card-runtime/mounts/${mountId}`);

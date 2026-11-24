@@ -24,7 +24,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina lays her hand on the rail beside yours, eyes still on the dark water.* "The reef has been restless tonight, but the lantern still holds. We can keep moving."',
+        '*我没想当掌门啊 lays her hand on the rail beside yours, eyes still on the dark water.* "The reef has been restless tonight, but the lantern still holds. We can keep moving."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'first-turn-persistence' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -40,7 +40,7 @@ test.afterAll(async () => {
 test.describe('#1 — first-turn persistence', () => {
     test('chat survives server restart and reload', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for greeting to land so the message we care about isn't
         // mistaken for the first_mes echo. DOM-side: .mes count >= 1.
@@ -87,7 +87,7 @@ test.describe('#1 — first-turn persistence', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
 
         // After-restart DOM assertion.

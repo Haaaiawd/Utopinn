@@ -23,7 +23,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina speaks before you have finished the question.* "The reef has moved since last night — I do not trust the old chart any more."',
+        '*我没想当掌门啊 speaks before you have finished the question.* "The reef has moved since last night — I do not trust the old chart any more."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'edit-asst' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -39,13 +39,13 @@ test.afterAll(async () => {
 test.describe('#5 — edit assistant message', () => {
     test('edited assistant text persists across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const { replyId } = await sendMessageAndAwaitReply(page, 'How fresh is the chart you are working from?');
         expect(typeof replyId === 'number').toBe(true);
 
-        const newText = '*Seraphina sets the brass spyglass down quietly.* "Edited reply: I no longer trust any chart older than four days on this stretch of coast."';
+        const newText = '*我没想当掌门啊 sets the brass spyglass down quietly.* "Edited reply: I no longer trust any chart older than four days on this stretch of coast."';
         await editMessageViaUI(page, replyId, newText);
 
         // DOM-side primary assertion: the assistant mesid now renders with
@@ -65,7 +65,7 @@ test.describe('#5 — edit assistant message', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
 
         // Post-restart: rendered DOM contains the edit.

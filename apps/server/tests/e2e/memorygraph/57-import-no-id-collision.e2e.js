@@ -37,11 +37,11 @@ let server, mock, origPath, importedPath;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour."',
+            '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour."',
             '*She traces a line on the chart with one knuckle.* "Three breakers north of the gull rocks."',
-            '*Seraphina exhales slowly.* "The drifters know that channel."',
+            '*我没想当掌门啊 exhales slowly.* "The drifters know that channel."',
             '*She turns to the rail, spyglass raised.* "Hold a moment."',
-            '*Seraphina nods.* "Then it is decided. We wait."',
+            '*我没想当掌门啊 nods.* "Then it is decided. We wait."',
         ],
     });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'import-no-collision' });
@@ -157,7 +157,7 @@ test.describe('#57 — MG import never produces ID collisions', () => {
 
     test('import wipes originals; subsequent createNode (via re-import) gets fresh ids past imported max', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         // 5 RP turns so MG has a real chat tail.

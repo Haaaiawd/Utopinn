@@ -144,7 +144,7 @@ const CARD_B_ENTRIES = [
     },
 ];
 
-// PNG-writer helper (mirrors #25's pattern). Uses the shipped Seraphina
+// PNG-writer helper (mirrors #25's pattern). Uses the shipped 我没想当掌门啊
 // PNG as a neutral image carrier.
 function buildCard(name, description, firstMes, bookName) {
     const payload = {
@@ -206,7 +206,7 @@ function buildCard(name, description, firstMes, bookName) {
 }
 
 function writeCardPng(name, description, firstMes, bookName, outPath) {
-    const seedPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const seedPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const png = writePngCard(seedPng, JSON.stringify(buildCard(name, description, firstMes, bookName)));
     writeFileSync(outPath, png);
     return outPath;

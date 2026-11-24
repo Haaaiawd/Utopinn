@@ -98,12 +98,12 @@ beforeEach(() => {
     };
 });
 
-const AVATAR = 'default_Seraphina.png';
+const AVATAR = 'default_我没想当掌门啊.png';
 
 function makeContext(orchestratorExt) {
     const character = {
         avatar: AVATAR,
-        name: 'Seraphina',
+        name: '掌门真人',
         data: { extensions: { orchestrator: orchestratorExt || {} } },
     };
     return { ctx: { characterId: 0, characters: [character] } };

@@ -8,7 +8,7 @@ import { readSqlRecordValue, writeSqlRecordValue } from '../../../src/sync/mater
 import { _resetGateForTests } from '../../../src/sync/in-progress-gate.js';
 
 const WORLD = { kind: 'world', name: 'Glade Lore' };
-const CHAT = { kind: 'chat', charDir: 'Seraphina', name: 'Forest Path', isGroup: false };
+const CHAT = { kind: 'chat', charDir: '掌门真人', name: 'Forest Path', isGroup: false };
 const sqliteDevice = () => startLanDevice({ makeEngine: directories => new SqliteEngine({ directoriesByHandle: () => directories }) });
 const read = (device, record) => device.engine.withTransaction('u', tx => readSqlRecordValue(tx, 'u', record));
 
@@ -30,7 +30,7 @@ describe('LAN sync between two sqlite devices', () => {
         await A.engine.withTransaction('u', tx => writeSqlRecordValue(tx, 'u', WORLD, world));
         const id = await pair(A, B, { categories: ['worlds', 'chats'] });
         expect(await read(B, WORLD)).toEqual(world);
-        const chat = { header: { user_name: 'U', character_name: 'Seraphina', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'Is the path safe?' }] };
+        const chat = { header: { user_name: 'U', character_name: '掌门真人', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'Is the path safe?' }] };
         await B.engine.withTransaction('u', tx => writeSqlRecordValue(tx, 'u', CHAT, chat));
         expect((await B.call('POST', `/backends/${id}/sync`)).body.ok).toBe(true);
         await until(async () => isDeepStrictEqual((await read(A, CHAT))?.body, chat.body));
