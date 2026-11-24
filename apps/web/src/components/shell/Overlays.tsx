@@ -1608,7 +1608,7 @@ function SettingsTabContent() {
 }
 
 /** 外观页签 —— 聊天背景(内置 /assets/ 壁纸 + 服务端 Backgrounds 目录两组,
- *  同一 settings.background 槽)+ power_user.custom_css + 底纹 + 全局氛围层。
+ *  同一 settings.background 槽)+ power_user.custom_css + 全局氛围层。
  *  写面仍是 ST 槽形:settings.background(#bg1 全局)+
  *  chat_metadata.custom_background(会话锁)—— 与生态卡写入语义同构,
  *  读侧渲染链(AmbientBackdrop 锁>全局)不动。 */
@@ -1632,7 +1632,6 @@ function StAppearanceSection() {
             void patchSettings({ power_user: { ui_ambience: {
                 bg_alpha: next.bgAlpha,
                 glass_blur: next.glassBlur,
-                tex_alpha: next.texAlpha,
             } } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
         }, 450);
     };
@@ -1759,35 +1758,12 @@ function StAppearanceSection() {
                     className="w-full select-text rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] p-3 font-mono-ui text-[11.5px] text-[color:var(--fg-secondary)] outline-none"
                 />
             </div>
-            <div className="space-y-2">
-                <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.bgMode')}</div>
-                <div className="px-0.5 text-[10.5px] leading-snug text-[color:var(--fg-faint)]">{t('st.bgMode.tip')}</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    {([
-                        { k: 'none', lbl: t('st.bgMode.none') }, { k: 'app-dark', lbl: t('st.bgMode.appDark') },
-                        { k: 'aurora-dark', lbl: t('st.bgMode.aurora') }, { k: 'drawer-dark', lbl: t('st.bgMode.drawer') },
-                    ]).map(({ k, lbl }) => (
-                        <button
-                            key={k}
-                            className="overflow-hidden rounded-xl border text-left transition-all"
-                            style={{ borderColor: cs.bgMode === k ? 'var(--primary-bg)' : 'var(--border-hairline)', background: 'var(--bg-surface)' }}
-                            onClick={() => s.setChatSetting('bgMode', k)}
-                        >
-                            {k === 'none'
-                                ? <div className="flex h-12 items-center justify-center text-[11px] text-[color:var(--fg-muted)]">{t('st.stBg.none')}</div>
-                                : <img src={`/assets/backgrounds/${k}.png`} alt="" className="h-12 w-full object-cover" />}
-                            <div className="truncate px-2 py-1 text-[10.5px] text-[color:var(--fg-secondary)]">{lbl}</div>
-                        </button>
-                    ))}
-                </div>
-            </div>
-            {/* 全局氛围层:壁纸浓度 / 毛玻璃 / 纹理浓度 —— power_user.ui_ambience 服务端槽 */}
+            {/* 全局氛围层:壁纸浓度 / 毛玻璃 —— power_user.ui_ambience 服务端槽 */}
             <div className="space-y-2.5">
                 <div className="px-0.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('st.amb.title')}</div>
                 {([
                     { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.9, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
                     { k: 'glassBlur' as const, lbl: t('st.amb.glass'), min: 0, max: 28, step: 1, fmt: (v: number) => `${v}px` },
-                    { k: 'texAlpha' as const, lbl: t('st.amb.tex'), min: 0, max: 0.18, step: 0.01, fmt: (v: number) => `${Math.round(v * 100)}%` },
                 ]).map(({ k, lbl, min, max, step, fmt }) => (
                     <div key={k} className="flex items-center gap-3 px-0.5">
                         <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>

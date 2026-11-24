@@ -321,7 +321,7 @@ function ChatFloors() {
        收缩窗口不影响判定(renderable[0],非可见切片头)。 */
     const greetingId = renderable[0]?.m.role === 'assistant' ? renderable[0].m.id : undefined;
 
-    /* 壁纸与氛围纹理已上移到 App 根全局 AmbientBackdrop(半透明 chrome 透出)——
+    /* 壁纸已上移到 App 根全局 AmbientBackdrop(半透明 chrome 透出)——
        舞台不再自绘大图;会话锁/全局槽的数据语义不变,只是渲染收口。 */
     return (
         <div className="relative flex min-h-0 flex-1 flex-col">
