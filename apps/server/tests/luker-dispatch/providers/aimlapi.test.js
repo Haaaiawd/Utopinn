@@ -83,8 +83,8 @@ describe('dispatchAimlapi', () => {
         expect(String(url)).toContain('api.aimlapi.com/v1/chat/completions');
         expect(init.method).toBe('POST');
         expect(init.headers['Authorization']).toBe('Bearer aimlapi-fake-key');
-        expect(init.headers['HTTP-Referer']).toBe('https://sillytavern.app');
-        expect(init.headers['X-Title']).toBe('Luker');
+        expect(init.headers['HTTP-Referer']).toBe('https://github.com/Haaaiawd/Utopinn');
+        expect(init.headers['X-Title']).toBe('Utopinn');
         expect(init.signal).toBe(ctx.signal);
     });
 
