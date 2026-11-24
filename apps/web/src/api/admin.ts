@@ -9,8 +9,8 @@
 import { ApiError, apiFetch } from './client';
 
 export class AdminForbiddenError extends ApiError {
-    constructor(message = '需要管理员权限 (403)') {
-        super(message, 403);
+    constructor(message = '需要管理员权限 (403)', code?: string) {
+        super(message, 403, code);
         this.name = 'AdminForbiddenError';
     }
 }
@@ -35,6 +35,7 @@ export function isAdminForbidden(err: unknown): boolean {
 interface ParsedServerError {
     message: string;
     codes: string[];
+    code?: string;
 }
 
 async function readServerError(res: Response): Promise<ParsedServerError> {
@@ -44,13 +45,14 @@ async function readServerError(res: Response): Promise<ParsedServerError> {
     const raw = await res.text().catch(() => '');
     if (!raw) return { message: res.statusText || `HTTP ${res.status}`, codes: [] };
     try {
-        const j = JSON.parse(raw) as { error?: unknown; message?: unknown; codes?: unknown };
+        const j = JSON.parse(raw) as { error?: unknown; message?: unknown; codes?: unknown; code?: unknown };
         const msg =
             (typeof j.error === 'string' && j.error)
             || (typeof j.message === 'string' && j.message)
             || raw;
         const codes = Array.isArray(j.codes) ? j.codes.filter((c): c is string => typeof c === 'string') : [];
-        return { message: msg, codes };
+        const code = typeof j.code === 'string' && j.code ? j.code : undefined;
+        return { message: msg, codes, code };
     } catch {
         return { message: raw, codes: [] };
     }
@@ -58,9 +60,9 @@ async function readServerError(res: Response): Promise<ParsedServerError> {
 
 async function assertAdminOk(res: Response): Promise<void> {
     if (res.ok) return;
-    const { message } = await readServerError(res);
-    if (res.status === 403) throw new AdminForbiddenError(message);
-    throw new ApiError(message, res.status);
+    const { message, code } = await readServerError(res);
+    if (res.status === 403) throw new AdminForbiddenError(message, code);
+    throw new ApiError(message, res.status, code);
 }
 
 async function adminPostJson<T>(path: string, body: unknown = {}): Promise<T> {

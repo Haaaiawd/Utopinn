@@ -1054,12 +1054,12 @@ router.post('/change-password', async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Change password failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change password failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'Unauthorized', code: 'unauthorized' });
         }
 
         /** @type {import('../users.js').User} */
@@ -1067,17 +1067,17 @@ router.post('/change-password', async (request, response) => {
 
         if (!user) {
             console.error('Change password failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         if (!user.enabled) {
             console.error('Change password failed: User is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'User is disabled', code: 'user_disabled' });
         }
 
         if (!request.user.profile.admin && user.password && user.password !== getPasswordHash(request.body.oldPassword, user.salt)) {
             console.error('Change password failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         if (request.body.newPassword) {
@@ -1676,7 +1676,7 @@ router.post('/reset-settings', async (request, response) => {
 
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(password, request.user.profile.salt)) {
             console.warn('Reset settings failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         const pathToFile = path.join(request.user.directories.root, SETTINGS_FILE);
@@ -1694,12 +1694,12 @@ router.post('/change-name', async (request, response) => {
     try {
         if (!request.body.name || !request.body.handle) {
             console.warn('Change name failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change name failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'Unauthorized', code: 'unauthorized' });
         }
 
         /** @type {import('../users.js').User} */
@@ -1707,7 +1707,7 @@ router.post('/change-name', async (request, response) => {
 
         if (!user) {
             console.warn('Change name failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.name = request.body.name;
@@ -1739,7 +1739,7 @@ router.post('/reset-step1', async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Reset step 1 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Reset step 1 failed:', error);
@@ -1751,12 +1751,12 @@ router.post('/reset-step2', async (request, response) => {
     try {
         if (!request.body.code) {
             console.warn('Reset step 2 failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(request.body.password, request.user.profile.salt)) {
             console.warn('Reset step 2 failed: Incorrect password');
-            return response.status(400).json({ error: 'Incorrect password' });
+            return response.status(400).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
@@ -1771,7 +1771,7 @@ router.post('/reset-step2', async (request, response) => {
         if (!code || code !== request.body.code) {
             await resetLimiter.consume(ip);
             console.warn('Reset step 2 failed: Incorrect code');
-            return response.status(400).json({ error: 'Incorrect code' });
+            return response.status(400).json({ error: 'Incorrect code', code: 'incorrect_code' });
         }
 
         console.info('Resetting account data:', request.user.profile.handle);
@@ -1786,7 +1786,7 @@ router.post('/reset-step2', async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Reset step 2 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Reset step 2 failed:', error);

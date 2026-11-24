@@ -12,6 +12,10 @@ export class ApiError extends Error {
         // (e.g. 'passwordless' on /api/users/login 403) — lets the UI switch
         // on the failure class without string-matching localized text.
         public readonly code?: string,
+        // Leftover fields of a structured error body (card-runtime extras like
+        // errors[]/warnings[]) — kept so callers can render detail the flat
+        // message would otherwise drop.
+        public readonly details?: Record<string, unknown>,
     ) {
         super(message);
         this.name = 'ApiError';
@@ -96,7 +100,47 @@ export async function assertOk(res: Response): Promise<void> {
     if (!res.ok) {
         const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
         const text = await res.text().catch(() => '');
-        throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
+        let message = unreachable ? 'upstream_unavailable' : (text || res.statusText);
+        let code: string | undefined;
+        // {error, code} JSON bodies (users-* endpoints): surface the human
+        // string, not the blob, and carry the machine code through so callers
+        // can map it to localized copy without string-matching English.
+        let details: Record<string, unknown> | undefined;
+        if (!unreachable && text) {
+            try {
+                const j = JSON.parse(text) as Record<string, unknown>;
+                const errStr = typeof j.error === 'string' && j.error ? j.error : undefined;
+                const detailStr = typeof j.detail === 'string' && j.detail ? j.detail : undefined;
+                const codeStr = typeof j.code === 'string' && j.code ? j.code : undefined;
+                // Third shape: {error:{code, message}} (admin mounts/storage
+                // inspect) — unwrap the nested pair.
+                const nested = (j.error && typeof j.error === 'object' ? j.error : null) as { code?: unknown; message?: unknown } | null;
+                const nestedCode = nested && typeof nested.code === 'string' && nested.code ? nested.code : undefined;
+                const nestedMsg = nested && typeof nested.message === 'string' && nested.message ? nested.message : undefined;
+                // Two body shapes in the wild: users-* send {error:<human msg>,
+                // code:<discriminator>}; card-runtime sends {error:<snake_code>,
+                // detail:<human msg>, ...extras}. `detail` always wins as the
+                // message; when it exists a snake_case `error` is the code.
+                if (detailStr) message = detailStr;
+                else if (errStr) message = errStr;
+                else if (nestedMsg) message = nestedMsg;
+                else if (typeof j.message === 'string' && j.message) message = j.message;
+                code = codeStr ?? nestedCode ?? (detailStr && errStr && /^[a-z][a-z0-9_]*$/.test(errStr) ? errStr : undefined);
+                const { error: _e, code: _c, detail: _d, message: _m, ...rest } = j;
+                if (Object.keys(rest).length) details = rest;
+                // Manifest-style bodies carry {errors:[...]} lines with the
+                // concrete filenames — fold a few into the message so toasts
+                // show what actually failed instead of just the class.
+                if (Array.isArray(rest.errors)) {
+                    const lines = rest.errors.filter((x): x is string => typeof x === 'string' && !!x.trim());
+                    if (lines.length) {
+                        const shown = lines.slice(0, 3).join('; ');
+                        message = `${message} — ${shown}${lines.length > 3 ? ` (+${lines.length - 3})` : ''}`;
+                    }
+                }
+            } catch { /* non-JSON body — keep raw text */ }
+        }
+        throw new ApiError(message, res.status, code, details);
     }
 }
 

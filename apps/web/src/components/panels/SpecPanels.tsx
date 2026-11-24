@@ -120,7 +120,7 @@ export function PresetPanel() {
                                 );
                             }) : (
                                 <div className="space-y-2 p-2.5 text-[11.5px] text-[color:var(--fg-muted)]">
-                                    <div>{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
+                                    <div>{s.live ? (s.modelsError === 'profiles_error' ? t('st.conn.profilesError') : (s.modelsError ?? t('st.conn.noModels'))) : t('stage.demoData')}</div>
                                     <button
                                         className="w-full rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium"
                                         style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}

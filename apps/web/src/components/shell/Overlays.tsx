@@ -14,7 +14,7 @@ import { AccountPopCard } from './Chrome';
 import { CenterStage } from '../stage/CenterStage';
 import { charImgFallback } from '../stage/StageFrame';
 import { useRemote, PanelEmpty, type Remote } from '../panels/panelShared';
-import { changeUserName } from '../../api/account';
+import { accountErrorText, changeUserName } from '../../api/account';
 import { cardData, charImageUrl, getCharacter, patchCharacter } from '../../api/characters';
 import {
     listProfiles, putProfile, deleteProfile, testConnectionTarget, listModelsFor,
@@ -1511,7 +1511,7 @@ function AccountSection() {
         void changeUserName(me.handle, nameVal.trim())
             .then(() => s.refreshCurrentUser())
             .then(() => s.hint(t('acct.saved')))
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${accountErrorText(e, t)}`, true))
             .finally(() => setBusy(false));
     };
 

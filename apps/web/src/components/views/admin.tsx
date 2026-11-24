@@ -56,7 +56,7 @@ import {
     type StorageStatus,
 } from '../../api/admin';
 import { listSecrets } from '../../api/secrets';
-import { changeUserName, changeUserPassword, getMe, type CurrentUser } from '../../api/account';
+import { accountErrorText, changeUserName, changeUserPassword, getMe, type CurrentUser } from '../../api/account';
 import { listPlugins, type PluginItem } from '../../api/plugins';
 import { diagStats, type DiagBusStats } from '../../api/diag';
 import { getSettings } from '../../api/settings';
@@ -319,7 +319,7 @@ interface OverviewBundle {
     oaiEndpoint: string | null;
 }
 
-async function fetchOverviewBundle(): Promise<OverviewBundle> {
+async function fetchOverviewBundle(t: (key: string) => string): Promise<OverviewBundle> {
     const overview = await getAdminOverview();
     const [
         me,
@@ -366,7 +366,7 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
         diag: diag as OverviewBundle['diag'],
         config,
         oaiSource: activeProf
-            ? `${str(activeProf.name) ?? 'profile'} · ${str(activeProf.format) === 'anthropic' ? 'Anthropic' : 'OpenAI'}`
+            ? `${str(activeProf.name) ?? t('admin.ov.unnamedProfile')} · ${str(activeProf.format) === 'anthropic' ? 'Anthropic' : 'OpenAI'}`
             : str(oai.chat_completion_source),
         oaiEndpoint: activeProf
             ? (str(activeProf.baseUrl) ?? (str(activeProf.format) === 'anthropic' ? 'api.anthropic.com' : null))
@@ -377,7 +377,7 @@ async function fetchOverviewBundle(): Promise<OverviewBundle> {
 function OverviewSection() {
     const { t } = useI18n();
     const s = useShell();
-    const remote = useRemote('admin:overview', () => guardForbidden(fetchOverviewBundle));
+    const remote = useRemote('admin:overview', () => guardForbidden(() => fetchOverviewBundle(t)));
     const [probing, setProbing] = useState(false);
     const [probeRes, setProbeRes] = useState<ConnectionProbeResult | null>(null);
     const [probeErr, setProbeErr] = useState<string | null>(null);
@@ -388,7 +388,7 @@ function OverviewSection() {
         setProbeErr(null);
         void probeUpstreamConnection()
             .then((r) => setProbeRes(r))
-            .catch((e) => setProbeErr(e instanceof Error ? e.message : String(e)))
+            .catch((e) => setProbeErr(accountErrorText(e, t)))
             .finally(() => setProbing(false));
     };
 
@@ -502,7 +502,7 @@ function OverviewSection() {
                             </div>
                             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[color:var(--border-hairline)] pt-2.5 text-[11px] text-[color:var(--fg-secondary)]">
                                 <span className={mono}>
-                                    {d.kernel ? `${d.kernel.routes.length} ${t('admin.ov.routes')} · ${d.kernel.services.length} ${t('admin.ov.services')}` : 'kernel —'}
+                                    {d.kernel ? `${d.kernel.routes.length} ${t('admin.ov.routes')} · ${d.kernel.services.length} ${t('admin.ov.services')}` : `${t('admin.ov.kernel')} —`}
                                 </span>
                                 <button
                                     className="inline-flex items-center gap-1 text-[11px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
@@ -576,7 +576,7 @@ function OverviewSection() {
                                     {d.overview.totals.users}
                                 </span>
                                 <span className="text-[11.5px] text-[color:var(--fg-muted)]">
-                                    handle · {d.overview.totals.enabledUsers} {t('admin.ov.enabled')} · {d.overview.totals.adminUsers} {t('admin.ov.admins')}
+                                    {t('admin.ov.handlesNoun')} · {d.overview.totals.enabledUsers} {t('admin.ov.enabled')} · {d.overview.totals.adminUsers} {t('admin.ov.admins')}
                                 </span>
                             </div>
                             <div className="flex items-center justify-between gap-2 border-t border-[color:var(--border-hairline)] pt-2.5 text-[11px]">
@@ -624,7 +624,7 @@ function OverviewSection() {
                                         <span className={`truncate ${mono}`} style={{ color: probeRes.ok ? 'var(--status-ok)' : 'var(--status-danger)' }}>
                                             {probeRes.ok
                                                 ? `${t('admin.ov.probeOk')} · ${probeRes.latencyMs}ms${probeRes.modelCount != null ? ` · ${probeRes.modelCount} ${t('admin.ov.probeModels')}` : ''}`
-                                                : `${probeRes.error ?? 'error'}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`}
+                                                : `${probeRes.error ?? t('admin.ov.probeFailed')}${probeRes.upstreamStatus ? ` (${probeRes.upstreamStatus})` : ''}${probeRes.detail ? ` · ${probeRes.detail}` : ''}`}
                                         </span>
                                     </span>
                                 ) : probeErr ? (
@@ -945,7 +945,7 @@ function UsersSection() {
                 s.hint(t('admin.users.opDone'));
                 remote.reload();
             })
-            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
             .finally(() => setRowBusy(null));
     };
 
@@ -971,7 +971,7 @@ function UsersSection() {
                 setCreateOpen(false);
                 remote.reload();
             })
-            .catch((e) => setCreateErr(e instanceof Error ? e.message : String(e)))
+            .catch((e) => setCreateErr(accountErrorText(e, t)))
             .finally(() => setCreateBusy(false));
     };
 
@@ -990,7 +990,7 @@ function UsersSection() {
             const raw = modalInput.trim();
             const mb = raw === '' ? -1 : Number(raw);
             if (raw !== '' && !Number.isFinite(mb)) {
-                setModalErr('Invalid number');
+                setModalErr(t('admin.users.invalidNumber'));
                 setModalBusy(false);
                 return;
             }
@@ -1010,7 +1010,7 @@ function UsersSection() {
                 setModal(null);
                 remote.reload();
             })
-            .catch((e) => setModalErr(e instanceof Error ? e.message : String(e)))
+            .catch((e) => setModalErr(accountErrorText(e, t)))
             .finally(() => setModalBusy(false));
     };
 
@@ -1050,7 +1050,7 @@ function UsersSection() {
             {/* 统计行 */}
             {d && (
                 <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] ${mono} text-[color:var(--fg-muted)]`}>
-                    <span>{d.totals.users} handle</span>
+                    <span>{d.totals.users} {t('admin.ov.handlesNoun')}</span>
                     <span>· {d.totals.enabledUsers} {t('admin.ov.enabled')}</span>
                     <span>· {d.totals.adminUsers} {t('admin.ov.admins')}</span>
                     <span>· {t('admin.ov.totalUsed')} {formatBytes(d.totals.storageBytes)}</span>
@@ -1533,7 +1533,7 @@ function ConfigSection() {
                 if (e instanceof ConfigSaveError) {
                     setSaveErr({ message: e.message, codes: e.codes });
                 } else {
-                    setSaveErr({ message: e instanceof Error ? e.message : String(e), codes: [] });
+                    setSaveErr({ message: accountErrorText(e, t), codes: [] });
                 }
             })
             .finally(() => setSaveBusy(false));
@@ -1554,7 +1554,7 @@ function ConfigSection() {
                 setSettingsDraft(saved);
                 s.hint(t('admin.cfg.settingsSaved'));
             })
-            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
             .finally(() => setSettingsBusy(false));
     };
 
@@ -2040,7 +2040,7 @@ function KeysSection() {
         setErr(null);
         void fn()
             .then(() => { remote.reload(); s.hint(t('admin.keys.done')); })
-            .catch((e) => setErr(e instanceof Error ? e.message : String(e)))
+            .catch((e) => setErr(accountErrorText(e, t)))
             .finally(() => setBusy(false));
     };
 
