@@ -1,11 +1,12 @@
 // sidebar.tree 贡献体 —— 各域左树内容归 feature。
 // chat 域:「+ 选择卡面」钮 + 置顶(卡头像环)+ 角色卡与会话分组(规范稿
 // PROJECTS 树形:组头=卡头像+名+折角,子会话纯文本挂 hairline 竖线)。
-// studio 域:板块目录;plugins 域:installed/market 两段 + 已激活列表。
+// studio 域:板块目录;plugins 域:installed/market 两键 + 已激活列表(全真,
+// market 键落「未提供」空态区块,无假计数)。
 import { useEffect, useRef, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
-import { Icon, type IconName } from '../Icon';
+import { Icon } from '../Icon';
 import type { ChatSummary } from '../../types';
 import { charImageUrl } from '../../api/characters';
 import { createGroupChat } from '../../api/groups';
@@ -14,7 +15,6 @@ import { builtinCoverSrc } from '../../api/personas';
 import { charImgFallback } from '../stage/StageFrame';
 import { STUDIO_NAV_META, normStudioNav, useStudioCounts } from '../views/studio';
 import { pluginIcon, pluginLabel, useServerPlugins } from '../views/plugins';
-import { MOCK_MARKET_PLUGINS } from '../../api/mock';
 
 /** 规范稿段标:text-[11px] font-medium fg-muted(非 caps)。 */
 const sect = 'flex items-center justify-between px-2 pb-1 text-[11px] font-medium text-[color:var(--fg-muted)]';
@@ -413,19 +413,15 @@ export function StudioTree() {
     );
 }
 
-/** plugins 域树:h-12 域头 + installed/market 两键 + 已激活插件列(真清单)。 */
+/** plugins 域树:h-12 域头 + installed/market 两键 + 已激活插件列(真清单)。
+ *  市场无服务端目录面 —— 已激活列只计真实启用件,mock 'mkt:' 件已撤。 */
 export function PluginsTree() {
     const { t } = useI18n();
     const shell = useShell();
     const plugins = useServerPlugins();
-    const activeList = [
-        ...(plugins.data?.items ?? [])
-            .filter((p) => !p.disabled)
-            .map((p) => ({ id: p.id, name: pluginLabel(p.id), icon: pluginIcon(p.id) })),
-        /* 市场目录件加 'mkt:' 前缀 —— 与服务端插件 id 区分(详情卡按前缀分面)。 */
-        ...MOCK_MARKET_PLUGINS.filter((p) => p.installed)
-            .map((p) => ({ id: `mkt:${p.id}`, name: p.name, icon: p.icon as IconName })),
-    ];
+    const activeList = (plugins.data?.items ?? [])
+        .filter((p) => !p.disabled)
+        .map((p) => ({ id: p.id, name: pluginLabel(p.id), icon: pluginIcon(p.id) }));
     return (
         <div className="flex h-full min-h-0 flex-col">
             {!shell.isMobile && (
@@ -445,9 +441,10 @@ export function PluginsTree() {
                                 onClick={() => shell.setPluginsNav(id)}
                             >
                                 <span>{t(`plugins.nav.${id}`)}</span>
-                                <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">
-                                    {id === 'installed' ? activeList.length : MOCK_MARKET_PLUGINS.length}
-                                </span>
+                                {/* 计数只标真实 installed;market 无目录面,不放假数字。 */}
+                                {id === 'installed' && (
+                                    <span className="font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{activeList.length}</span>
+                                )}
                             </button>
                         );
                     })}

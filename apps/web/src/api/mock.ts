@@ -68,7 +68,8 @@ export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
    (settings.world_info_settings.world_info.globalSelect)与作品世界书
    (/api/utopinn/worlds)均已具备服务端端点并在在线态真实水合,以下对应的
    MOCK_* 仅作离线演示回退(经 live 门控与 demoData 标记隔离)。
-   目前仍无服务端面的仅为插件市场目录(MOCK_MARKET_PLUGINS)、舞台预演轨
+   插件市场目录无服务端面:MOCK_MARKET_PLUGINS 已随假数据令撤除,
+   市场区块渲「未提供」空态。剩余 mock 仅舞台预演轨
    (MOCK_STAGE_SESSIONS `st-*`)及预演种子(MOCK_NOVEL_CHAPTERS/IM/VN ——
    仅 st-* 预演会话可读,带「预演」标;真会话零楼层走明说空态)。
    会话楼层不设 mock:离线舞台渲空楼层,发送/快捷动作以 status.stub 拦下。
@@ -153,27 +154,6 @@ export const MOCK_WORLDBOOK: WorldbookItem[] = [
     { id: 'wb-3', title: '底层常驻 | 世界总纲 | 古老修仙与成熟文明', type: '常驻', enabled: true, priority: 130, tokens: 506, content: '青州地界灵脉渐稀,云栖宗坐落偏远小峰,占有一座三阶残阵,实则早已资不抵债。' },
     { id: 'wb-4', title: '底层常驻 | 玩家与云栖宗 | 遗产不是免费的', type: '常驻', enabled: true, priority: 129, tokens: 294, content: '前任掌门留下三百灵石外债与三名记名弟子,月初百草堂执事准时上山催收利息。' },
     { id: 'wb-5', title: '关键词 | 云栖宗总簿 | 账目与大殿修缮', type: '关键词', enabled: true, priority: 122, tokens: 245, content: '大殿耐久低于 60% 时雨夜漏雨;每次修缮消耗 10 灵石可恢复 15% 耐久。' },
-];
-
-/** 插件市场行(规范稿 MARKET_PLUGINS;安装面待备,暂保留预览目录)。 */
-export interface MarketPluginItem {
-    id: string;
-    name: string;
-    icon: string;
-    category: string;
-    desc: string;
-    installed: boolean;
-    color: string;
-    bg: string;
-}
-
-export const MOCK_MARKET_PLUGINS: MarketPluginItem[] = [
-    { id: 'u-stage-novel', name: '小说体连续章节', icon: 'feather', category: 'Stage 形态', desc: '纯书排版、段落点选润色与伏笔目录面板。', installed: true, color: '#f472b6', bg: 'rgba(244,114,182,0.12)' },
-    { id: 'u-stage-im', name: '微信多群聊私聊', icon: 'messages', category: 'Stage 形态', desc: '同世界观多群聊切换、未读红点与 NPC 态度卡。', installed: true, color: '#34d399', bg: 'rgba(52,211,153,0.12)' },
-    { id: 'u-stage-vn', name: '剧场模式', icon: 'sparkles', category: 'Stage 形态', desc: '全屏背景、分支选项浮层与快速存读档。', installed: true, color: '#818cf8', bg: 'rgba(129,140,248,0.12)' },
-    { id: 'u-panel-dice', name: 'TRPG 跑团骰子', icon: 'dice', category: '右栏面板', desc: '支持 COC/DND 检定公式并写入 MVU 变量。', installed: false, color: '#fb923c', bg: 'rgba(251,146,60,0.12)' },
-    { id: 'u-panel-bgm', name: '场景 BGM 播放器', icon: 'music', category: '右栏面板', desc: '根据当前场景与情绪标签自动切换氛围音轨。', installed: false, color: '#38bdf8', bg: 'rgba(56,189,248,0.12)' },
-    { id: 'u-tool-vector', name: '长篇记忆向量库', icon: 'brain', category: '实验性', desc: '针对 200+ 楼长存档自动摘要并按语义召回。', installed: false, color: '#a78bfa', bg: 'rgba(167,139,250,0.12)' },
 ];
 
 /** 舞台形态会话行(规范稿 PROJECTS 里 stage!=chat 的预演会话)。 */

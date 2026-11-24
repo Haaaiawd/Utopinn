@@ -218,7 +218,7 @@ export interface ShellCtx {
     adminNav: string;
     setAdminNav: (v: string) => void;
     /** 插件详情卡选中件 —— rail 插件页点行落点(顶部详情卡);
-     *  'mkt:' 前缀 = mock 市场目录件,无前缀 = 服务端插件 id。null 回总览。 */
+     *  值为服务端插件 id(mock 市场目录 'mkt:' 件已随假数据令撤除)。null 回总览。 */
     selectedPlugin: string | null;
     setSelectedPlugin: (id: string | null) => void;
 
