@@ -29,7 +29,7 @@ import { getWorld } from '../../api/worlds';
 import {
     PanelEmpty, PanelError, chatKey, chatStateTarget, flattenStatData, thCallTarget, useRemote, type MvuVarRow,
 } from './panelShared';
-import { deriveChapters, SEGMENT_FLOORS, type NovelToc } from '../../lib/novelToc';
+import { chaptersFloorsKey, deriveChapters, SEGMENT_FLOORS, type NovelToc } from '../../lib/novelToc';
 import { PresetDocEditor } from './presetEditor';
 
 const lbl = 'mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
@@ -760,17 +760,19 @@ export function LorePanel() {
  *  真会话零楼层 → 空态(不拿 stageData 种子冒充,同 NovelBody 口径);
  *  行点选写 selParaId → novel 阅读位高亮(impl 真行为,保留);
  *  「+新章」原为内存假持久(硬编码标题写 mock stageData),已按审计建议
- *  删除 —— 持久化待 chat_state 侧车。 */
+ *  删除 —— 持久化待 chat_state 侧车。
+ *  重取时机:useRemote key = chaptersFloorsKey(chat, rev)(lib/novelToc)——
+ *  rev 由 StageFrame.refreshPanels 在每次写楼落定 bump,修掉「群回复/
+ *  已命名会话写楼后 updatedAt 不动、目录不刷新」。 */
 export function ChaptersPanel() {
     const { t } = useI18n();
     const s = useShell();
     const chat = s.chat;
-    /* updatedAt 进 key:写楼/切 swipe 后会话清单重拉(updatedAt 变)→
-       面板跟着重取,与 MessageFramePanel 的 stamp 同法。 */
-    const stamp = chat?.updatedAt ?? '';
-    const floorsKey = chat?.groupId
-        ? `chapters:group/${chat.groupId}/${chat.chatName}@${stamp}`
-        : chat?.charDir && chat?.chatName ? `chapters:${chat.charDir}/${chat.chatName}@${stamp}` : null;
+    /* 失效信号 = updatedAt + 写楼 rev:updatedAt 只随会话清单重拉变
+       (群回复/已命名会话写楼不动它),rev 由 StageFrame 写楼落定统一
+       bump(refreshPanels → panelParams['chapters'])—— 任何写楼必失效。 */
+    const chRev = (s.panelParams['chapters'] as { rev?: number } | undefined)?.rev ?? 0;
+    const floorsKey = chaptersFloorsKey(chat, chRev);
     const remote = useRemote(floorsKey, async () =>
         (chat!.groupId
             ? await getGroupChat(chat!.groupId, chat!.chatName)
@@ -808,8 +810,13 @@ export function ChaptersPanel() {
                         key={c.id}
                         className={`${row} inset-row-btn`}
                         /* 章首段若是 user 楼,书页里渲成指挥注记不挂高亮 ——
-                           联动取首个正文段,阅读位才真的落下去。 */
-                        onClick={() => s.patchStageData({ selParaId: c.paras.find((p) => p.role !== 'user')?.id ?? c.paras[0]?.id ?? null })}
+                           联动取首个正文段,阅读位才真的落下去。
+                           阅读位只有 NovelBody 消费 —— 非 novel 形态不哑写,
+                           点击明说定位边界(无形态切换 API 可代为转场)。 */
+                        onClick={() => {
+                            if (chat?.stage !== 'novel') { s.hint(t('panel.chapters.novelOnly')); return; }
+                            s.patchStageData({ selParaId: c.paras.find((p) => p.role !== 'user')?.id ?? c.paras[0]?.id ?? null });
+                        }}
                     >
                         <span className="min-w-0">
                             <span className="block font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{c.num}</span>

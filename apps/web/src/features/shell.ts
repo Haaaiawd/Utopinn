@@ -71,6 +71,7 @@ const zh: Record<string, string> = {
     'panel.chapters.title': '章节目录',
     'panel.chapters.empty': '本会话还没有章节',
     'panel.chapters.emptyDesc': '楼层成书后此处出现目录 —— 按分章标记或等长分段归入。',
+    'panel.chapters.novelOnly': '章节点位联动仅在小说形态生效 —— 当前形态下目录只读',
     /* ctbar 胶囊 + 弹层 */
     'ctx.capsule': '上下文', 'ctx.title': '世界书与上下文栈', 'ctx.bound': '绑定形态', 'ctx.persona': '当前说话人设',
     'ctx.globalLore': '全局常驻 JSON 书', 'ctx.openPreset': '在右侧打开「预设与模型」精细调参',
@@ -499,6 +500,7 @@ const en: Record<string, string> = {
     'panel.chapters.title': 'Chapter index',
     'panel.chapters.empty': 'No chapters in this session yet',
     'panel.chapters.emptyDesc': 'The index appears once floors form the book — filed by chapter markers or even segments.',
+    'panel.chapters.novelOnly': 'Chapter jump only works in the novel stage form — the index is read-only here',
     /* ctbar 胶囊 + 弹层 */
     'ctx.capsule': 'Context', 'ctx.title': 'Lorebooks & Context Stack', 'ctx.bound': 'Bound form', 'ctx.persona': 'Active persona',
     'ctx.globalLore': 'Global persistent JSON books', 'ctx.openPreset': 'Open "Preset & Model" fine-tuning on the right',

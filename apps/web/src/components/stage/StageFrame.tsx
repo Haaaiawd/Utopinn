@@ -1271,10 +1271,15 @@ export function StageFrame({ children }: { children: ReactNode }) {
 
     useEffect(() => { void refreshTokens(); }, [s.live, chatKey, refreshTokens]);
 
-    /* ——— MVU 联动刷新信号:生成/切版/回滚/结算后通知右侧 MvuPanel 重拉快照 ——— */
-    const refreshMvu = useCallback(() => {
+    /* ——— 写楼落定统一失效信号:生成/切版/编辑/回滚/结算/群写回后 bump
+     *     面板 rev —— mvu → MvuPanel 重拉快照;chapters → ChaptersPanel
+     *     目录重取(chat.updatedAt 不随写楼变,rev 是「任何写楼必然
+     *     失效」的 key)。 ——— */
+    const refreshPanels = useCallback(() => {
         if (!s.live) return;
-        s.setPanelParams('mvu', { rev: Date.now() });
+        const rev = Date.now();
+        s.setPanelParams('mvu', { rev });
+        s.setPanelParams('chapters', { rev });
     }, [s]);
 
     const pushErrorFloor = (error: FloorMsg['error']) =>
@@ -1445,7 +1450,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                     catch (e) { s.hint(t('stage.patch.failed') + ': ' + errText(e), true); }
                 }
                 void refreshTokens(jobId);
-                void refreshMvu();
+                void refreshPanels();
                 return report;
             } catch (e) {
                 const message = errText(e);
@@ -1474,7 +1479,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setJob(null);
             setBusy(false);
         }
-    }, [s, busy, groupDoc, patchFloor, reload, writeBackGroupGeneration, refreshTokens, refreshMvu, t]);
+    }, [s, busy, groupDoc, patchFloor, reload, writeBackGroupGeneration, refreshTokens, refreshPanels, t]);
 
     /* ——— 生成写回(legacy save_decision 同构:除 impersonate/quiet 外,
      *     客户端写盘是常路,gen-id/命中末楼 ack 掉 awaiting_ack job,
@@ -1637,7 +1642,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 maybeAutoName();
             }
             void refreshTokens(jobId);
-            void refreshMvu();
+            void refreshPanels();
         } catch (e) {
             const message = errText(e);
             const code = errCode(e);
@@ -1653,7 +1658,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setJob(null);
             setBusy(false);
         }
-    }, [s, busy, patchFloor, reload, writeBackGeneration, runGroupGenerate, refreshTokens, refreshMvu, maybeAutoName, t]);
+    }, [s, busy, patchFloor, reload, writeBackGeneration, runGroupGenerate, refreshTokens, refreshPanels, maybeAutoName, t]);
 
     /* ——— QR/斜杠文本:斜杠指令走真服务端 STscript runner(楼层副作用
      *     env 已落库 → 跑完 reload);非斜杠 = 普通用户输入 ——— */
@@ -1746,7 +1751,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 }
             }
             if (!navigated) await reload();
-            void refreshMvu();
+            void refreshPanels();
         } catch (e) {
             /* 挂起中被打断(interact 404/网络)→ 卸弹层,resolve 已随
                finally 置空,不残留死 promise。 */
@@ -1756,7 +1761,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         } finally {
             setBusy(false);
         }
-    }, [s, busy, t, reload, refreshMvu]);
+    }, [s, busy, t, reload, refreshPanels]);
 
     /* ——— 发送 ——— */
     const send = useCallback(async (text: string, forceCmd = false) => {
@@ -1844,14 +1849,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
             try {
                 if (s.chat.groupId) await patchGroupSwipe(s.chat.groupId, s.chat.chatName, m.id, next);
                 else await patchSwipe(s.chat.charDir, s.chat.chatName, m.id, next);
-                void refreshMvu();
+                void refreshPanels();
             }
             catch (e) {
                 patchFloor(m.id, { activeSwipe: active, content: m.content, reasoning: m.reasoning });
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
             }
         }
-    }, [msgs, s, patchFloor, runGenerate, refreshMvu, t]);
+    }, [msgs, s, patchFloor, runGenerate, refreshPanels, t]);
 
     const onSwipe = useCallback((m: FloorMsg, dir: -1 | 1) => {
         void swipeTo(m, (m.activeSwipe ?? 0) + dir);
@@ -1889,13 +1894,13 @@ export function StageFrame({ children }: { children: ReactNode }) {
             try {
                 if (s.chat.groupId) await patchGroupChat(s.chat.groupId, s.chat.chatName, [{ op: 'remove', path: `/body/${m.id}` }]);
                 else await patchChat(s.chat.charDir, s.chat.chatName, [{ op: 'remove', path: `/body/${m.id}` }]);
-                void refreshMvu();
+                void refreshPanels();
             } catch (e) {
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
                 void reload();
             }
         }
-    }, [s, t, reload, refreshMvu]);
+    }, [s, t, reload, refreshPanels]);
 
     const onSaveEdit = useCallback(async (m: FloorMsg) => {
         const text = editing?.text ?? '';
@@ -1915,14 +1920,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
             try {
                 if (s.chat.groupId) await patchGroupChat(s.chat.groupId, s.chat.chatName, ops);
                 else await patchChat(s.chat.charDir, s.chat.chatName, ops);
-                void refreshMvu(); void reload();
+                void refreshPanels(); void reload();
             }
             catch (e) {
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
                 void reload();
             }
         }
-    }, [s, editing, t, patchFloor, reload, refreshMvu]);
+    }, [s, editing, t, patchFloor, reload, refreshPanels]);
 
     /* ——— 新建分支(TASK-065 fork):从该楼直岔新会话 —— POST fork 深拷贝
      *     header + 0..id 楼层(整楼 swipe 组随拷贝),原会话不动;岔出即跳。
@@ -1966,13 +1971,13 @@ export function StageFrame({ children }: { children: ReactNode }) {
             }
             await settleMvu(target, { message_index: m.id });
             await reload();
-            void refreshMvu();
+            void refreshPanels();
             s.hint(t('stage.rewind.done'));
         } catch (e) {
             s.hint(t('stage.rewind.failed') + ': ' + errText(e), true);
             void reload();
         }
-    }, [s, msgs, t, reload, refreshMvu]);
+    }, [s, msgs, t, reload, refreshPanels]);
 
     const onRetry = useCallback((m: FloorMsg) => {
         const r = m.error?.retry;
@@ -1987,12 +1992,12 @@ export function StageFrame({ children }: { children: ReactNode }) {
         if (!s.live || !target) { s.hint(t('status.stub')); return; }
         try {
             await settleMvu(target);
-            void refreshMvu();
+            void refreshPanels();
             s.hint(t('stage.mvu.synced'));
         } catch (e) {
             s.hint(t('stage.mvu.failed') + ': ' + errText(e), true);
         }
-    }, [s, t, refreshMvu]);
+    }, [s, t, refreshPanels]);
 
     const onSlash = useCallback((key: string) => {
         setMenu('none');

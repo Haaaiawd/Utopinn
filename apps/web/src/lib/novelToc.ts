@@ -3,6 +3,7 @@
 // (SpecPanels 右栏板块)—— 目录真值唯一,谁渲染都是同一套章。
 // 推导策略随行(strategy),展示侧如实标注,不假装是服务端章节目录。
 import type { FloorMsg } from '../api/chats';
+import type { ChatSummary } from '../types';
 
 /** 无分章信号时的自动分段粒度(N 楼/章)。 */
 export const SEGMENT_FLOORS = 4;
@@ -42,6 +43,22 @@ export interface NovelToc {
 
 /** 错误楼(发送/生成失败)与空 system 楼(会话头种)不参与成书。 */
 export const bookable = (m: FloorMsg) => !m.error && (m.role !== 'system' || m.content.trim());
+
+/** ChaptersPanel 取数 key(与 StageFrame.loadChatOf 同一路径):
+ *  群会话走 groupId 路径,单聊走 charDir/chatName;chat 缺名 → null 不取数。
+ *  @stamp = updatedAt + 写楼失效 rev —— updatedAt 只随会话清单重拉变
+ *  (群回复/已命名会话写楼不动它),rev 由 StageFrame 写楼落定统一 bump
+ *  (panelParams['chapters'].rev),是「任何写楼必然失效」的信号。 */
+export function chaptersFloorsKey(
+    chat: Pick<ChatSummary, 'groupId' | 'charDir' | 'chatName' | 'updatedAt'> | null | undefined,
+    rev: number,
+): string | null {
+    if (!chat?.chatName) return null;
+    const stamp = `${chat.updatedAt ?? ''}#${rev}`;
+    if (chat.groupId) return `chapters:group/${chat.groupId}/${chat.chatName}@${stamp}`;
+    if (!chat.charDir) return null;
+    return `chapters:${chat.charDir}/${chat.chatName}@${stamp}`;
+}
 
 /** 章题标记首行自带的序号称谓(「第三章 风波」→ num 第三章 / title 风波)。 */
 const CHAPTER_HEAD = /^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷回部篇]|序[章言]|楔子|尾声|Prologue\b|Chapter\s+\d+)\s*[:：·\-—、 ]*\s*(.*)$/i;
