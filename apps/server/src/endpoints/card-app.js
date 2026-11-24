@@ -19,6 +19,10 @@ router.use((request, response, next) => {
     if (request.method === 'GET') {
         response.setHeader('Cache-Control', 'private, no-cache, max-age=1');
         response.setHeader('Vary', 'Cookie');
+        // Opaque-origin consumers (sandboxed card-runtime iframes) embed card
+        // binaries via <img>/<link> — helmet's global CORP same-origin would
+        // block them. Cross-origin is safe: card assets are public media.
+        response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     }
     next();
 });
