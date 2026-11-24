@@ -2,7 +2,7 @@
 //
 // 一条链:面板帧/CardApp 的 TH 写面(setChatMessages/deleteChatMessages/…)
 // 改的是服务端 chat doc;reader 的 useChatSession 持有内存快照 + wire 缓存,
-// 不重拉就拿旧下标编辑 → 写错楼层。事件泵(usePanelHost/PanelEventPump)
+// 不重拉就拿旧下标编辑 → 写错楼层。事件泵(usePanelHost → CardAppHost)
 // 在两条路上感知变更(chat doc diff dirty / 信箱 mutation 事件),经此模块
 // 广播给当前会话的订阅者;useChatSession 收到后重拉权威快照。
 //

@@ -1,9 +1,18 @@
 // PanelWebView — RN host for untrusted card HTML (TASK-009 + P0-4/5).
 // Flow mirrors the web CardAppFrame (apps/web/src/cardapp/CardAppFrame.tsx):
 //   POST /api/card-runtime/mounts {charId,chatName} → mount bundle (entryUrl +
-//   bridgeNonce + manifest) → WebView at entryUrl?shim=t0 → 'utopinn-panel'
-//   bridge → ctxApi → server TH layer;事件泵(usePanelHost/PanelEventPump)
-//   把订阅过的 th.event 打进 WebView —— 状态类 CardApp 靠它活着。
+//   bridgeNonce + manifest) → WebView at entryUrl?shim=<ctx|t0> → 'utopinn-panel'
+//   bridge → CardAppHost 复合 dispatch(ctx 表 + th T0/th/call);事件泵
+//   (usePanelHost → host.seed/pollChat)把订阅过的 th.event/host.event 打进
+//   WebView —— 状态类 CardApp 靠它活着。
+//
+// Face selection (manifest.entryKind,与 web CardAppFrame 同款判据):
+//   module   → ?shim=ctx — ctx-shim 建 __CARDAPP_CTX__;服务端 module 壳带
+//              init-caller 调 module.init(ctx)(掌门卡即此形态:t0 壳只出
+//              裸 module script,init 永不被调 —— 卡不启动)。
+//   document → ?shim=t0  — TH-face T0 表(生态默认)。
+//   document + ctx-only manifest → degraded 徽标(document 入口没有
+//              init(ctx) 约定,ctx 面只有 module 壳能完整服务)。
 //
 // Security posture (same model as design/cardapp-web-host.md + protocol
 // panels.ts, carried to the RN transport):
@@ -18,13 +27,15 @@
 //   - inbound bridge requests authenticate via the mount-scoped nonce
 //     echoed by the shim (onMessage has no ev.source — nonce equality is
 //     the whole check); ungranted methods are denied without dispatch;
-//   - 'ctx'-only manifests degrade to a badge (t0 shim serves the th face).
+//   - 'ctx'-only manifests on a document entry degrade to a badge (t0 shim
+//     serves the th face; module entries get the full ctx face).
 import { useEffect, useMemo, useState, type FC, type ReactElement, type Ref } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { type PanelContext } from './ctxApi';
 import { expandApiGrants } from '@utopinn/protocol';
 import { mountCardApp, mountErrorCode, revokeMount, type MountBundle } from './mounts';
+import { pickPanelShim, degradesCtxOnly } from './shim';
 import { usePanelHost, type WebViewHandle } from './host';
 import { useSession } from '../state/session';
 import { colors } from '../ui/theme';
@@ -93,12 +104,10 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
                 }
                 mintedId = m.mountId ?? null;
                 setMount(m);
-                // surfaceOnlyCtx:'ctx' 档只放 surface 两法 —— RN 宿主无
-                // 全 ctxDispatch,open/close 由 usePanelHost dispatch 拦截应答。
-                const grants = expandApiGrants(m.manifest?.permissions?.api, { surfaceOnlyCtx: true });
-                // ctx-only manifest: nothing the t0 shim can lawfully call —
-                // still render the frame (static UI survives) under a badge.
-                setPhase(grants.ctxFace && !grants.thFace
+                // ctx-only manifest 只在 document 入口才降级 —— module 入口由
+                // ?shim=ctx 完整服务;document 没有 init(ctx) 约定,ctx 面
+                // 该卡能调的只剩 surface 两法,静态 UI 在徽标下照渲。
+                setPhase(degradesCtxOnly(m.manifest)
                     ? { kind: 'degraded', reason: 'ctx-face' }
                     : { kind: 'ready' });
             })
@@ -117,7 +126,7 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
         };
     }, [charDir, chatName, conn.baseUrl, attempt]);
 
-    const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api, { surfaceOnlyCtx: true }), [mount]);
+    const grants = useMemo(() => expandApiGrants(mount?.manifest?.permissions?.api), [mount]);
 
     // ── bridge + 事件泵(usePanelHost 共享接线)─────────────────────────────
     // surface 语义:面板页本身就是卡的可视表面 —— open 即达意(delivered:
@@ -168,13 +177,15 @@ export function PanelWebView({ charDir, chatName, onSurfaceClose }: PanelContext
         );
     }
 
-    const src = `${conn.url(mount.entryUrl)}${mount.entryUrl.includes('?') ? '&' : '?'}shim=t0`;
+    // 与 web CardAppFrame 同款面选择(判据在 ./shim,node 侧钉测):
+    // module → ctx shim(init-caller 调 init(ctx));document → t0(TH 面)。
+    const src = `${conn.url(mount.entryUrl)}${mount.entryUrl.includes('?') ? '&' : '?'}shim=${pickPanelShim(mount.manifest)}`;
     const mountPrefix = `${conn.baseUrl}/card-runtime/`;
     return (
         <View style={styles.host}>
             {phase.kind === 'degraded' && (
                 <View style={styles.degraded}>
-                    <Text style={styles.degradedText}>此卡声明了 ctx 面,当前只支持 th 面 —— 部分交互不可用</Text>
+                    <Text style={styles.degradedText}>此卡声明了 ctx 面但入口是 document —— 只能提供 th 面,部分交互不可用</Text>
                 </View>
             )}
             <WView

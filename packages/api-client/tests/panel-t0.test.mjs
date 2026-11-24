@@ -64,16 +64,30 @@ test('insertVariables keeps existing values', async () => {
     assert.deepEqual(op.value, { hp: 10, inv: ['sword'], mp: 5 });
 });
 
-test('global scope: reads+writes settings.th_global_variables', async () => {
+test('global scope: reads+writes extension_settings.variables.global(服务端落点,信封须解)', async () => {
     const { handle, calls } = makeDeps({
-        '/api/settings/get': () => ({ th_global_variables: { g: 1 } }),
+        // buildSettingsResponse 真实信封:{settings:'<json string>'} ——
+        // 旧实现拿信封当文档找 th_global_variables 根键,读写全落空。
+        '/api/settings/get': () => ({ settings: JSON.stringify({ extension_settings: { variables: { global: { g: 1 } } } }) }),
         '/api/settings/patch': () => ({}),
     });
     assert.deepEqual(await handle('th.getVariables', { type: 'global' }), { g: 1 });
     await handle('th.replaceVariables', { type: 'global', variables: { g: 2 } });
-    const op = calls.find(c => c.path === '/api/settings/patch').body.operations[0];
-    assert.equal(op.path, '/th_global_variables');
-    assert.deepEqual(op.value, { g: 2 });
+    const ops = calls.find(c => c.path === '/api/settings/patch').body.operations;
+    const leaf = ops.at(-1);
+    assert.equal(leaf.path, '/extension_settings/variables/global');
+    assert.equal(leaf.op, 'add');
+    assert.deepEqual(leaf.value, { g: 2 });
+});
+
+test('global scope: 父段缺席时逐级立(extension_settings/variables)', async () => {
+    const { handle, calls } = makeDeps({
+        '/api/settings/get': () => ({ settings: JSON.stringify({ power_user: {} }) }),
+        '/api/settings/patch': () => ({}),
+    });
+    await handle('th.insertOrAssignVariables', { type: 'global', variables: { g: 1 } });
+    const paths = calls.find(c => c.path === '/api/settings/patch').body.operations.map(o => o.path);
+    assert.deepEqual(paths, ['/extension_settings', '/extension_settings/variables', '/extension_settings/variables/global']);
 });
 
 test('message scope: reads body[i].data; negative index from last', async () => {

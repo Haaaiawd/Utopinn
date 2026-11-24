@@ -10,7 +10,7 @@
 //     WebView 里 window.parent===window,那条路是死的。这里注入同款
 //     ResizeObserver 脚本走 ReactNativeWebView.postMessage → onMessage
 //     先于桥拦截 {type:'utopinn-msgframe-height'} 调帧高(上限同 web 4000)。
-//   - 事件:挂自己的 PanelEventPump(usePanelHost)—— 楼层 diff + 信箱
+//   - 事件:挂自己的 CardAppHost 泵(usePanelHost)—— 楼层 diff + 信箱
 //     事件照常推给卡内 eventOn;refresh_message(mid=本楼) → 重铸本帧。
 //   - getCurrentMessageId → 所在楼层下标(TH 楼层帧身份语义;服务端实现
 //     回 lastMessageId,不同义,宿主层覆盖)。

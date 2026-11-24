@@ -25,7 +25,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { expandApiGrants } from '@utopinn/protocol';
-import { PanelBridge } from '@utopinn/api-client';
+import { PanelBridge, UtopinnClient } from '@utopinn/api-client';
 import { CardAppHost } from './ctxHost';
 import { useI18n } from '../i18n';
 import { useShell } from '../kernel/context';
@@ -137,7 +137,11 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                 openPanel: (type, params) => sRef.current.openPanel(type ?? 'cardapp', params),
                 collapsePanels: () => sRef.current.collapsePanels(),
             },
-        });
+            // manifest 声明的可写 state ns 白名单(mount bundle 已带)。
+            writableNamespaces: mount.manifest?.permissions?.stateNamespaces,
+            // CardAppHost 收敛入 api-client 后 client 必填:同源会话端点,
+            // fetch 即浏览器原生(会话 cookie 随行)。
+        }, new UtopinnClient({ baseUrl: window.location.origin }));
         bridgeRef.current = bridge;
         // 种子快照先于卡 init 竞速(ctx.__ready 也在自己拉 getChat,
         // 双份同值无害 —— host 侧缓存喂的是事件 diff)。

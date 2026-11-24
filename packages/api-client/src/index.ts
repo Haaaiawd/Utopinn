@@ -352,6 +352,22 @@ export class UtopinnClient {
     settingsPatch(operations: JsonPatchOp[]): Promise<unknown> {
         return this.request('/api/settings/patch', { method: 'POST', body: { operations } });
     }
+
+    /**
+     * legacy settingsGet 的信封解包:`{settings:'<json string>'}` → 实文档
+     * 对象;解析失败/字段缺席 → null。注意「读不到 ≠ 键不在」 —— 调用方
+     * 拿 null 只能当「未知」处理,不能当「该键缺席」立空壳覆盖。
+     */
+    async settingsDoc(): Promise<Record<string, unknown> | null> {
+        const res = await this.settingsGet<{ settings?: unknown }>();
+        const raw = (res as { settings?: unknown } | null)?.settings;
+        const doc = typeof raw === 'string'
+            ? (() => { try { return JSON.parse(raw) as unknown; } catch { return null; } })()
+            : raw;
+        return doc !== null && typeof doc === 'object' && !Array.isArray(doc)
+            ? doc as Record<string, unknown>
+            : null;
+    }
 }
 
 function safeJson(text: string): unknown {
@@ -417,3 +433,4 @@ export interface ChatGetResult {
 
 export { createPanelT0Handler, type PanelT0Deps } from './panel-t0.js';
 export { PanelBridge, type PanelBridgeOpts } from './panel-bridge.js';
+export { CardAppHost, type CtxHostOpts } from './cardapp-host.js';
