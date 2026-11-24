@@ -129,6 +129,8 @@ const zh: Record<string, string> = {
     'login.recover.newPassword': '新密码（留空 = 清除密码）',
     'login.recover.send': '发送找回码', 'login.recover.submit': '重置密码并登录',
     'login.recover.sent': '若账号存在，找回码已打印到服务端控制台 —— 请向部署者索取',
+    'login.passwordless': '该账号未设密码',
+    'login.passwordless.hint': '请用下方第三方登录、找回码重设密码，或联系管理员设置。',
     'chat.demo': '演示', 'stage.demoData': '离线演示数据 · 不落库',
     /* cmdk + 设置 */
     'cmdk.placeholder': '搜索卡、世界书、插件…', 'cmdk.empty': '没有匹配项', 'cmdk.views': '视图', 'cmdk.panels': '板块',
@@ -554,6 +556,8 @@ const en: Record<string, string> = {
     'login.recover.newPassword': 'New password (leave empty to clear)',
     'login.recover.send': 'Send recovery code', 'login.recover.submit': 'Reset password and sign in',
     'login.recover.sent': 'If the handle exists, a recovery code was printed to the server console — ask the host for it.',
+    'login.passwordless': 'This account has no password',
+    'login.passwordless.hint': 'Sign in with a provider below, set one via the recovery code, or ask an admin.',
     'chat.demo': 'Demo', 'stage.demoData': 'Offline demo data · not persisted',
     /* cmdk + 设置 */
     'cmdk.placeholder': 'Search cards, lorebooks, plugins…', 'cmdk.empty': 'No matches', 'cmdk.views': 'Views', 'cmdk.panels': 'Panels',

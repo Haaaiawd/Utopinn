@@ -15,16 +15,24 @@ export interface CurrentUser {
 }
 
 async function parseErrorText(res: Response): Promise<string> {
+    return (await parseErrorBody(res)).text;
+}
+
+/** 与 parseErrorText 同源,额外带出服务端 JSON 里的机器可读 code(若给)。 */
+async function parseErrorBody(res: Response): Promise<{ text: string; code?: string }> {
     const raw = await res.text().catch(() => '');
-    if (!raw) return res.statusText || `HTTP ${res.status}`;
+    if (!raw) return { text: res.statusText || `HTTP ${res.status}` };
     try {
-        const j = JSON.parse(raw) as { error?: unknown; message?: unknown };
-        if (typeof j.error === 'string' && j.error) return j.error;
-        if (typeof j.message === 'string' && j.message) return j.message;
+        const j = JSON.parse(raw) as { error?: unknown; message?: unknown; code?: unknown };
+        const text = typeof j.error === 'string' && j.error ? j.error
+            : typeof j.message === 'string' && j.message ? j.message
+                : raw;
+        const code = typeof j.code === 'string' && j.code ? j.code : undefined;
+        return { text, code };
     } catch {
         /* 非 JSON 文本原样返回 */
     }
-    return raw;
+    return { text: raw };
 }
 
 /** GET /api/users/me —— accounts-off 时恒返 default-user(admin=true)。 */
@@ -48,7 +56,10 @@ export async function loginAccount(handle: string, password: string): Promise<vo
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle, password }),
     }, { retryOn403: false });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) {
+        const { text, code } = await parseErrorBody(res);
+        throw new ApiError(text, res.status, code);
+    }
 }
 
 /** POST /api/users/logout —— 清 session.handle/csrfToken/version。 */

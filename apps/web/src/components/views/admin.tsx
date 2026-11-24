@@ -958,7 +958,11 @@ function UsersSection() {
         setCreateErr(null);
         void createUserHandle({ handle, name, password: newPwd || undefined, admin: newAdmin })
             .then((r) => {
-                s.hint(`${t('admin.users.created')}: ${r.handle}`);
+                // passwordSet:false = 无密码账号:密码登录不可达,只能走
+                // SSO 或由管理员后续设置 —— 必须在成功提示里说清,
+                // 不然管理员会以为漏填的密码是个无害的省略。
+                const suffix = r.passwordSet === false ? ` — ${t('admin.users.createdNoPassword')}` : '';
+                s.hint(`${t('admin.users.created')}: ${r.handle}${suffix}`);
                 setNewName('');
                 setNewHandle('');
                 setSlugPreview('');

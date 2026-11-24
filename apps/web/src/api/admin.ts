@@ -300,14 +300,14 @@ export async function slugifyHandle(text: string): Promise<string> {
     return res.text();
 }
 
-/** POST /api/users/create */
+/** POST /api/users/create —— passwordSet:false = 账号无密码,只能靠 SSO/管理员重置。 */
 export function createUserHandle(input: {
     handle: string;
     name: string;
     password?: string;
     admin?: boolean;
-}): Promise<{ handle: string }> {
-    return adminPostJson<{ handle: string }>('/api/users/create', input);
+}): Promise<{ handle: string; passwordSet?: boolean }> {
+    return adminPostJson<{ handle: string; passwordSet?: boolean }>('/api/users/create', input);
 }
 
 /** POST /api/users/enable */

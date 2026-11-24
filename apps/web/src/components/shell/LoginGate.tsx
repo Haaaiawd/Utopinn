@@ -27,6 +27,10 @@ export function LoginGate() {
     const [notice, setNotice] = useState('');
     const [busy, setBusy] = useState(false);
     const [oauth, setOauth] = useState<OAuthProviderLink[]>([]);
+    // Once the server reports code:'passwordless' for a handle, further
+    // password submits against it are pointless — they can only burn the
+    // 5/min login rate limit. Pin the handle until the field is edited.
+    const [passwordlessFor, setPasswordlessFor] = useState('');
 
     // OAuth-bound accounts have no local password and the server refuses the
     // password path for them (users-public.js:684-687). The provider buttons
@@ -46,14 +50,25 @@ export function LoginGate() {
 
     async function submit(ev: FormEvent) {
         ev.preventDefault();
-        if (busy || !handle.trim()) return;
+        const h = handle.trim();
+        if (busy || !h) return;
+        // One-shot marker: an explicit re-submit after the notice IS a new
+        // attempt — an admin or recovery flow may have set a password
+        // meanwhile, so a stale pin must not lock the form. Consume it;
+        // a still-passwordless 403 simply re-pins below.
+        if (h === passwordlessFor) setPasswordlessFor('');
         setBusy(true);
         setErr('');
         try {
-            await loginAccount(handle.trim(), password);
+            await loginAccount(h, password);
             // 重载:cookie-session 已落,服务端会再发 SPA 引导页。
             window.location.assign('/');
         } catch (e) {
+            if (e instanceof ApiError && e.code === 'passwordless') {
+                setPasswordlessFor(h);
+                setBusy(false);
+                return;
+            }
             fail(e);
         }
     }
@@ -88,9 +103,11 @@ export function LoginGate() {
         setNotice('');
         setCodeSent(false);
         setCode('');
+        setPasswordlessFor('');
     }
 
     const recovering = view === 'recover';
+    const isPasswordless = !recovering && passwordlessFor !== '' && handle.trim() === passwordlessFor;
     return (
         <div className="login-gate" role="dialog" aria-modal="true" aria-label={t('login.title')}>
             <form className="login-card" onSubmit={recovering ? submitRecover : submit}>
@@ -104,7 +121,7 @@ export function LoginGate() {
                         autoFocus
                         autoComplete="username"
                         value={handle}
-                        onChange={(e) => setHandle(e.target.value)}
+                        onChange={(e) => { setHandle(e.target.value); setPasswordlessFor(''); }}
                         disabled={busy || codeSent}
                     />
                 </label>
@@ -143,6 +160,13 @@ export function LoginGate() {
                             />
                         </label>
                     </>
+                )}
+                {isPasswordless && (
+                    <div className="login-note" role="status">
+                        <strong>{t('login.passwordless')}</strong>
+                        <br />
+                        {t('login.passwordless.hint')}
+                    </div>
                 )}
                 {err && <div className="login-error" role="alert">{err}</div>}
                 {notice && <div className="login-note" role="status">{notice}</div>}

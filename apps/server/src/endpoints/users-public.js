@@ -689,10 +689,17 @@ router.post('/login', parseAccountBody, async (request, response) => {
         // normally advertises `password: false` answers 204 in that mode).
         if (!user.password) {
             console.warn('Login failed: Password login rejected for passwordless user', user.handle);
-            const error = DISCREET_LOGIN
-                ? 'Incorrect credentials'
-                : 'This account has no password set. Sign in with an external provider or ask an admin to set one.';
-            return response.status(403).json({ error });
+            if (DISCREET_LOGIN) {
+                return response.status(403).json({ error: 'Incorrect credentials' });
+            }
+            // `code` lets the first-party login surface show a dedicated
+            // "account has no password" recovery path instead of a generic
+            // credential error — the specific reason is still withheld under
+            // discreet login to keep the handle-existence oracle closed.
+            return response.status(403).json({
+                error: 'This account has no password set. Sign in with an external provider or ask an admin to set one.',
+                code: 'passwordless',
+            });
         }
 
         if (user.password !== getPasswordHash(request.body.password, user.salt)) {

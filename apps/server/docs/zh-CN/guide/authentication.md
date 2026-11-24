@@ -45,7 +45,7 @@ node recover.js default-user <新密码> --admin
 当 `enableUserAccounts` 开启但不存在启用状态的管理员账号时，服务端启动日志也会打印这条提示。
 :::
 
-没有密码的账号完全无法通过密码表单登录——只能走 SSO/OAuth，或者在它是服务器上唯一账号时经 `/login` 的自动登录进入（单用户安装免登录的便利通道）。之后设置任意密码（管理面板 → 修改密码，或 `recover.js`）即可开启密码登录。
+没有密码的账号完全无法通过密码表单登录——只能走 SSO/OAuth，或者在它是服务器上唯一账号时经 `/login` 的自动登录进入（单用户安装免登录的便利通道）。该自动登录仅在非暴露部署下生效：当服务器监听网络且未开白名单或 Basic Auth 保护时，启动流程会为所有无密码账号随机分配密码并把凭据打到 stderr（容器部署见 `docker logs`）。之后设置任意密码（管理面板 → 修改密码，或 `recover.js`）即可开启密码登录。
 
 ### 密码重置
 
@@ -63,10 +63,17 @@ node recover.js default-user
 
 # 设置密码的同时授予管理员权限（初始化第一个管理员）
 node recover.js default-user myNewPassword --admin
+
+# 定位以 --dataRoot / --configPath 启动的服务器实例
+node recover.js --dataRoot /srv/utopinn-data default-user myNewPassword --admin
+node recover.js --configPath /etc/utopinn/config.yaml default-user myNewPassword
+
+# 以 "-" 开头的密码需要用 -- 分隔，否则会被当成 flag
+node recover.js default-user -- "--s0me-pa55word"
 ```
 
 ::: tip
-此命令需要在 Luker 项目根目录下执行，服务无需处于运行状态。
+工具默认从 `./config.yaml` 读取 `dataRoot`；可传 `--configPath` 与/或 `--dataRoot`（与 `server.js` 同名参数），确保操作的是运行中实例对应的数据目录。服务无需处于运行状态。
 :::
 
 ### 网页端密码恢复
