@@ -71,6 +71,7 @@ docker logs utopinn         # 拿一次性凭据:user: default-user / pass: <首
 
 - `./data` 单卷全状态:`config.yaml`/账号/卡/聊天/secrets/共享卡库——**备份此目录=备份一切**
 - 首启自动播种 `config.yaml`(容器友好默认:`dataRoot:/data`、`enableUserAccounts:true`、`whitelistMode:false`、`browserLaunch` 关);端口只绑 `127.0.0.1`,公网走前置 TLS
+- 出厂种子卡:**我没想当掌门啊**(CardApp 总簿台账 + 内嵌世界书 252 条 + 40 立绘;卡内 `extensions.mvu:false` 声明自管账,服务端 MVU settle 对它硬否决不干涉)——每个新账号卡库第一张即是,开聊后右栏面板开 CardApp
 - 账号默认即开:内核闸刀检测到无防护 listen 会拒起;账号体系是最小防护面。`default-user` 首启自动配随机密码打在日志里(**只在首次出现,改密后不再打印**)
 - compose 附注释掉的 Caddy 块 + `docker/Caddyfile.example`(`{$DOMAIN}` + `reverse_proxy app:8000`),取消注释即 `https://<域名>`
 - 账号恢复/设密:`docker exec -u node utopinn node /app/apps/server/recover.js <handle> <新密码>`
@@ -121,13 +122,13 @@ LUKER_SKIP_WEBPACK=1 node server.js --dataRoot <原生盘数据目录> --port 80
 `enableUserAccounts:true` 只开多账号隔离,**不开放注册**(`accountRegistration.enabled` 默认 false,admin 面板可开)。首个 admin 凭据按部署路径分两种:
 
 - **Docker**:种子配置已开账号。首启内核检测到 `default-user` 是「无密码 admin + 无其他防护」,**自动配随机密码打 stderr**(`docker logs utopinn` 拿,只出现一次)→ 登录 → 立刻改密。
-- **裸机**:手动开 `enableUserAccounts` 时同样触发自动配密;但若账号开着、白名单/basicAuth 也开着(闸刀跳过配密路径),`default-user` 保持出厂**空密码**——#38 修复落地前**任意密码都能登它**,必须手动设密:
-  - SPA/admin 面改密,或 `POST /api/users/change-password`
-  - `cd apps/server && node recover.js default-user <新密码>`(容器里:`docker exec -u node utopinn node /app/apps/server/recover.js default-user <新密码>`;recover.js 从 `./config.yaml` 读 dataRoot,容器 WORKDIR=/data + 种子 `dataRoot:/data` 已对齐)
+- **裸机**:手动开 `enableUserAccounts` 时同样触发自动配密;但若账号开着、白名单/basicAuth 也开着(闸刀跳过配密路径),`default-user` 保持出厂**空密码**——空密码账号**任何密码都登不进**(登录返回「该账号未设密码」,SPA 登录页会给恢复指引),只能先设密解封:
+  - `cd apps/server && node recover.js default-user <新密码>`(容器里:`docker exec -u node utopinn node /app/apps/server/recover.js default-user <新密码>`)
+  - recover.js 支持 `--dataRoot`/`--configPath` 与服务端同名定位(args > `LUKER_DATA_ROOT` env > config.yaml,相对路径锚 server 目录);`--admin` 旗标授管(密码以 `-` 开头时用 `--` 分隔,如 `node recover.js default-user -- --weird-pass`)
 
 之后再给朋友建号,两条路:
 
-1. **admin 面板**:`default-user` 登录 → 管理面建号。一律 `admin:false`;`password` **必填**——漏掉会造出空密码账号(#38 同款坑)。
+1. **admin 面板**:`default-user` 登录 → 管理面建号。一律 `admin:false`;`password` **必填**——漏掉会造出空密码账号,该账号任何人都登不进(除非走 SSO),只能 admin 重置或 recover.js 解封。
 2. **API**:admin 会话下 `POST /api/users/create`,body `{"handle","name","password","admin"}`。注意路径是 `/api/users/create`(不是 `/api/users/admin/create`);非 GET 走 CSRF——先 `GET /csrf-token` 拿 token,之后请求带 `X-CSRF-Token` 头 + 会话 cookie。
 
 ### 运维备忘
