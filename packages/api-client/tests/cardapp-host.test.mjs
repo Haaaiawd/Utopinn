@@ -32,11 +32,17 @@ function fakeMailbox(entries = []) {
  * 以及 panel-t0 的 legacy 触点(getChat/settingsGet/settingsPatch)。
  * calls 账本按域分组,路由断言直接点名。
  */
-function makeHost({ chatDoc, chatDocs, mailbox, chatName = 'chat-1', onThEvent, onChatChanged, surface } = {}) {
+function makeHost({
+    chatDoc, chatDocs, mailbox, chatName = 'chat-1', onThEvent, onChatChanged, surface,
+    settingsDocValue, legacyGetChat, writableNamespaces, mountMessageId, settingsPatchFails,
+} = {}) {
     const pushes = [];
     const calls = { th: [], lib: [], state: [], gen: [], legacy: [] };
     const docs = chatDocs ?? [chatDoc ?? { header: { chat_metadata: {} }, messages: [] }];
     let docIdx = 0;
+    // settingsDocValue 语义:'unreadable' → settingsDoc()=null(信封读不出);
+    // 其它 → 实文档对象(settingsGet 信封 {settings:'<json>'} 解出者)。
+    const sdoc = settingsDocValue === 'unreadable' ? null : (settingsDocValue ?? {});
     const client = {
         library: {
             // chatDocs 序列桩:每拍取下一帧到底钉住;深拷贝出参 —— 真 fetch
@@ -77,11 +83,24 @@ function makeHost({ chatDoc, chatDocs, mailbox, chatName = 'chat-1', onThEvent, 
             jobGet: async (id) => { calls.gen.push(['jobGet', id]); return { status: 'completed', text: 'done' }; },
         },
         // panel-t0 legacy 触点
-        getChat: async () => { calls.legacy.push(['getChat']); return { header: { chat_metadata: { variables: { hp: 7 } } }, body: [] }; },
-        settingsGet: async () => { calls.legacy.push(['settingsGet']); return {}; },
-        settingsPatch: async (ops) => { calls.legacy.push(['settingsPatch', ops]); return {}; },
-        patchChat: async () => { calls.legacy.push(['patchChat']); return {}; },
-        patchChatMetadata: async () => { calls.legacy.push(['patchChatMetadata']); return {}; },
+        getChat: legacyGetChat ?? (async () => { calls.legacy.push(['getChat']); return { header: { chat_metadata: { variables: { hp: 7 } } }, body: [] }; }),
+        settingsGet: async () => { calls.legacy.push(['settingsGet']); return { settings: JSON.stringify(sdoc ?? {}) }; },
+        // 与真 settingsDoc 同语义:信封 settings 字段 JSON.parse → 文档|null。
+        settingsDoc: async () => { calls.legacy.push(['settingsDoc']); return sdoc; },
+        // settingsPatchFails:'once' → 首拍拒(模拟缺父键)后继放行;
+        // true → 全拒。settingsPatch 记账照常在拒绝前留痕。
+        settingsPatch: (() => {
+            let n = 0;
+            return async (ops) => {
+                calls.legacy.push(['settingsPatch', ops]);
+                if (settingsPatchFails === true || (settingsPatchFails === 'once' && n++ === 0)) {
+                    throw new Error('missing replace/add parent');
+                }
+                return {};
+            };
+        })(),
+        patchChat: async (d, c, ops) => { calls.legacy.push(['patchChat', ops]); return {}; },
+        patchChatMetadata: async (d, c, ops) => { calls.legacy.push(['patchChatMetadata', ops]); return {}; },
         stateGet: async () => ({}),
         statePatch: async () => ({}),
     };
@@ -93,12 +112,14 @@ function makeHost({ chatDoc, chatDocs, mailbox, chatName = 'chat-1', onThEvent, 
             onThEvent,
             onChatChanged,
             surface,
+            writableNamespaces,
+            mountMessageId,
             log: () => { },
             generationWaitMs: 2000,
         },
         /** @type {any} */(client),
     );
-    return { host, pushes, calls };
+    return { host, pushes, calls, client };
 }
 
 // ─── ctx dispatch 路由 ───────────────────────────────────────────────────
@@ -289,4 +310,174 @@ test('surface 未接 → surfaceOpen/Close 如实 PANEL_SURFACE_UNAVAILABLE', as
     const c = await host.dispatch('ctx.surfaceClose', {});
     assert.equal(c.ok, false);
     assert.equal(c.reason, 'panel_surface_unavailable');
+});
+
+// ─── review round-1:信封语义 / TH 变量落点 / ns 白名单 / 帧身份 ────────────
+
+test('ctx.setExtensionPrompt:已有 extension_prompts 时不得先立空表抹档', async () => {
+    const { host, calls } = makeHost({
+        settingsDocValue: { extension_prompts: { scene: { value: 'x', position: -1 } } },
+    });
+    await host.dispatch('ctx.setExtensionPrompt', { key: 'style', value: 'v2' });
+    const patch = calls.legacy.find(c => c[0] === 'settingsPatch');
+    assert.ok(patch, 'settingsPatch 未发');
+    const ops = patch[1];
+    assert.equal(ops.length, 1, '已有 prompt 表 → 只发叶子写,不得带清壳 op');
+    assert.equal(ops[0].path, '/extension_prompts/style');
+    assert.equal(ops[0].op, 'add');
+});
+
+test('ctx.setExtensionPrompt:文档无 prompt 表 → 先立表再写;两键连写共存', async () => {
+    const { host, calls } = makeHost({ settingsDocValue: {} });
+    await host.dispatch('ctx.setExtensionPrompt', { key: 'a', value: 'va' });
+    const first = calls.legacy.filter(c => c[0] === 'settingsPatch').at(-1);
+    assert.deepEqual(first[1].map(o => o.path), ['/extension_prompts', '/extension_prompts/a']);
+    // 第二键:文档(桩内不持久)仍回 {},但服务端语义上表已在 —— 真实
+    // 场景 settingsDoc 会解出新表;此处钉的是「op 序列不重复立表」的形状。
+    await host.dispatch('ctx.setExtensionPrompt', { key: 'b', value: 'vb' });
+    const second = calls.legacy.filter(c => c[0] === 'settingsPatch').at(-1);
+    assert.equal(second[1].at(-1).path, '/extension_prompts/b');
+});
+
+test('ctx.setExtensionPrompt:信封读不出 → 叶子写失败时回退立壳(不裸立空表)', async () => {
+    const { host, calls } = makeHost({ settingsDocValue: 'unreadable', settingsPatchFails: 'once' });
+    await host.dispatch('ctx.setExtensionPrompt', { key: 'k', value: 'v' });
+    const patches = calls.legacy.filter(c => c[0] === 'settingsPatch');
+    assert.equal(patches.length, 2, '叶子被拒后应重试立壳+叶子');
+    assert.equal(patches[0][1].length, 1);
+    assert.deepEqual(patches[1][1].map(o => o.path), ['/extension_prompts', '/extension_prompts/k']);
+});
+
+test('th.getVariables global → 读 settings.extension_settings.variables.global(非信封顶层)', async () => {
+    const { host } = makeHost({
+        settingsDocValue: { extension_settings: { variables: { global: { gold: 5 } } }, th_global_variables: { decoy: 1 } },
+    });
+    const r = await host.dispatch('th.getVariables', { type: 'global' });
+    assert.equal(r.gold, 5);
+    assert.equal(r.decoy, undefined, '不得读信封根层平行键');
+});
+
+test('th.insertOrAssignVariables global → 写 /extension_settings/variables/global(父缺逐级立)', async () => {
+    // 父段齐全:单叶子 op
+    const { host, calls } = makeHost({
+        settingsDocValue: { extension_settings: { variables: { global: { gold: 5 } } } },
+    });
+    await host.dispatch('th.insertOrAssignVariables', { type: 'global', variables: { silver: 2 } });
+    const patch = calls.legacy.filter(c => c[0] === 'settingsPatch').at(-1);
+    assert.deepEqual(patch[1].map(o => o.path), ['/extension_settings/variables/global']);
+    assert.equal(patch[1][0].op, 'add');
+
+    // variables 段缺席:立袋 + 叶子(同批顺序)
+    const { host: h2, calls: c2 } = makeHost({ settingsDocValue: { extension_settings: { other: 1 } } });
+    await h2.dispatch('th.insertOrAssignVariables', { type: 'global', variables: { a: 1 } });
+    const p2 = c2.legacy.filter(c => c[0] === 'settingsPatch').at(-1);
+    assert.deepEqual(p2[1].map(o => o.path), ['/extension_settings/variables', '/extension_settings/variables/global']);
+    assert.equal(p2[1][0].op, 'add');
+});
+
+test('th 变量首写(chat 无 variables 键)→ op 用 add 而非 replace', async () => {
+    const { host, calls } = makeHost({
+        legacyGetChat: async () => ({ header: { chat_metadata: {} }, body: [] }),
+    });
+    await host.dispatch('th.insertOrAssignVariables', { type: 'chat', variables: { hp: 10 } });
+    const patch = calls.legacy.find(c => c[0] === 'patchChatMetadata');
+    assert.ok(patch);
+    assert.equal(patch[1][0].op, 'add', '首写 replace 会被 patch 校验拒');
+    assert.equal(patch[1][0].path, '/variables');
+});
+
+test('th.getVariables message → variables 兜底合并,data 冲突赢', async () => {
+    const { host } = makeHost({
+        legacyGetChat: async () => ({
+            header: { chat_metadata: {} },
+            body: [
+                { mes: 'm0', variables: { score: 7 } },
+                { mes: 'm1', variables: { a: 1 }, data: { a: 2, b: 3 } },
+            ],
+        }),
+    });
+    const r0 = await host.dispatch('th.getVariables', { type: 'message', message_id: 0 });
+    assert.equal(r0.score, 7, '仅 variables 存的值须可达');
+    const r1 = await host.dispatch('th.getVariables', { type: 'message', message_id: 1 });
+    assert.equal(r1.a, 2, '冲突键 data 赢');
+    assert.equal(r1.b, 3);
+});
+
+test('ctx.getChatState/CharacterState:ns 未初始化(data:null)→ state null 非信封', async () => {
+    const { host, client } = makeHost();
+    client.state.chat.get = async () => ({ ok: true, data: null });
+    client.state.char.get = async () => ({ ok: true, data: null });
+    const r = await host.dispatch('ctx.getChatState', { namespace: 'inv' });
+    assert.equal(r.state, null, '空 ns 不得回整个 {ok,data} 信封');
+    const c = await host.dispatch('ctx.getCharacterState', { namespace: 'inv' });
+    assert.equal(c.state, null);
+});
+
+test('stateNamespaces 白名单:声明外的 state 写全拒,读放行', async () => {
+    const { host, calls } = makeHost({ writableNamespaces: ['inv'] });
+    // 声明内 → 放行
+    const ok = await host.dispatch('ctx.updateChatState', { namespace: 'inv', state: { hp: 1 } });
+    assert.equal(ok.ok, true);
+    assert.ok(calls.state.some(c => c[0] === 'chat.patch' && c[2] === 'inv'));
+    // 声明外 → 拒;且不得触服务端
+    const denied = await host.dispatch('ctx.updateChatState', { namespace: 'other', state: { hp: 1 } });
+    assert.equal(denied.ok, false);
+    assert.equal(denied.reason, 'forbidden');
+    assert.ok(!calls.state.some(c => c[0] === 'chat.patch' && c[2] === 'other'));
+    const del = await host.dispatch('ctx.deleteChatState', { namespace: 'other' });
+    assert.equal(del.ok, false);
+    assert.equal(del.reason, 'forbidden');
+    const ch = await host.dispatch('ctx.updateCharacterState', { namespace: 'other', state: {} });
+    assert.equal(ch.ok, false);
+    assert.ok(!calls.state.some(c => c[0] === 'char.set'));
+    // operations 形同尺
+    const pop = await host.dispatch('ctx.updateChatState', { namespace: 'other', operations: [{ op: 'replace', path: '/x', value: 1 }] });
+    assert.equal(pop.ok, false);
+    // 读面不收(TH 生态 state 跨卡共读)
+    const rd = await host.dispatch('ctx.getChatState', { namespace: 'other' });
+    assert.equal(rd.ok, true);
+});
+
+test('stateNamespaces 空表 = 全拒(声明口径);未给名单 = 不约束(旧行为)', async () => {
+    const { host, calls } = makeHost({ writableNamespaces: [] });
+    const r = await host.dispatch('ctx.updateChatState', { namespace: 'inv', state: {} });
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'forbidden');
+    const { host: h2 } = makeHost(); // writableNamespaces 未传 → 不约束
+    const r2 = await h2.dispatch('ctx.updateChatState', { namespace: 'anything', state: {} });
+    assert.equal(r2.ok, true);
+});
+
+test('th.getCurrentMessageId:无挂载坐标 → 末楼下标(服务端口径),非 0', async () => {
+    const { host } = makeHost({
+        legacyGetChat: async () => ({ header: { chat_metadata: {} }, body: [{ mes: 'a' }, { mes: 'b' }, { mes: 'c' }] }),
+    });
+    assert.equal(await host.dispatch('th.getCurrentMessageId', {}), 2);
+    const { host: framed } = makeHost({ mountMessageId: 1 });
+    assert.equal(await framed.dispatch('th.getCurrentMessageId', {}), 1);
+});
+
+test('seed 前的 poll 不回放;滞留 refresh_message 钉头后不重铸', async () => {
+    const seen = [];
+    const mb = fakeMailbox();
+    // 信箱滞留历史(refresh 重铸环的成因 —— 挂载前别的 mount 写的)
+    mb.log.push({ seq: 1, at: 1, event: 'refresh_message', args: [0], origin: 'other' });
+    mb.log.push({ seq: 2, at: 2, event: 'chat_changed', args: ['chat-1.jsonl'], origin: 'other' });
+    const { host, pushes } = makeHost({
+        mailbox: mb,
+        onThEvent: (n, a) => seen.push([n, a]),
+    });
+    // (a) seed 未竟的 poll 必须 no-op —— 游标未钉,回放滞留 refresh 即重铸环
+    await host.pollChat();
+    assert.equal(seen.length, 0);
+    assert.equal(pushes.length, 0);
+    // (b) seed 把游标钉到头(seq=2),滞留条目不再回放
+    await host.seed();
+    await host.pollChat();
+    assert.equal(seen.filter(([n]) => n === 'refresh_message').length, 0, '滞留 refresh 不得回放');
+    // (c) seed 之后的新条目照常旁路
+    mb.log.push({ seq: 3, at: 3, event: 'refresh_message', args: [4], origin: 'other' });
+    await host.pollChat();
+    assert.equal(seen.filter(([n]) => n === 'refresh_message').length, 1);
+    assert.deepEqual(seen[0], ['refresh_message', [4]]);
 });

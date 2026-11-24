@@ -137,6 +137,8 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                 openPanel: (type, params) => sRef.current.openPanel(type ?? 'cardapp', params),
                 collapsePanels: () => sRef.current.collapsePanels(),
             },
+            // manifest 声明的可写 state ns 白名单(mount bundle 已带)。
+            writableNamespaces: mount.manifest?.permissions?.stateNamespaces,
             // CardAppHost 收敛入 api-client 后 client 必填:同源会话端点,
             // fetch 即浏览器原生(会话 cookie 随行)。
         }, new UtopinnClient({ baseUrl: window.location.origin }));

@@ -129,6 +129,9 @@ export function usePanelHost(opts: PanelHostOpts): {
             // 帧/面板的 TH 写改了 chat doc → 广播给该会话的读者重对坐标。
             onChatChanged: () => notifyChatChanged(charDir, chatName),
             mountMessageId: currentMessageId,
+            // manifest 声明的可写 state ns 白名单 —— 不给则卡可越界写
+            // 任意 chat_state(SEC:mount 时 manifest 已在手)。
+            writableNamespaces: mount.manifest?.permissions?.stateNamespaces,
         }, client());
         // client() 构造时锚定 session.baseUrl —— 会话切换要重建 host
         // (旧实现 per-dispatch 取 client() 天然跟随;deps 里留 baseUrl 还原文)。

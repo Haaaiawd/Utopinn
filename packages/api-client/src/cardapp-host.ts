@@ -47,8 +47,9 @@ export interface CtxHostOpts {
     onChatChanged?: () => void;
     /**
      * th face 挂载语义的本帧楼层下标(喂 panel-t0 mountMessageId:
-     * getCurrentMessageId / message 域变量读)。面板整页挂载 = 0;
-     * 楼层前端帧 = 所在楼层(RN 侧 usePanelHost.currentMessageId)。
+     * getCurrentMessageId / message 域变量读)。楼层前端帧 = 所在楼层
+     * (RN 侧 usePanelHost.currentMessageId);整页面板不传 → 服务端
+     * 口径末楼下标(getLastMessageId 同义),不是 0。
      */
     mountMessageId?: number;
     /** 诊断/日志行(默认 console)。 */
@@ -57,6 +58,15 @@ export interface CtxHostOpts {
     generationWaitMs?: number;
     /** 发消息用的用户名(默认 User)。 */
     userName?: string;
+    /**
+     * manifest.permissions.stateNamespaces —— 桥可写 state 命名空间白名单
+     * (chat_state 的 updateChatState/deleteChatState 与 char_state 的
+     * updateCharacterState 同尺约束写;读面 getChatState/getCharacterState
+     * 不收 —— TH 生态 state 本就跨卡共读)。挂载组件拿得到 manifest 就
+     * 必须喂进来;undefined = 宿主未给 → 不约束(仅测试/无 manifest
+     * 场景)。空数组 = 卡没声明任何可写 ns → 全部 state 写越界拒。
+     */
+    writableNamespaces?: string[];
 }
 
 interface ChatDoc {
@@ -78,6 +88,8 @@ interface LooseThResult {
 }
 const loose = (r: unknown): LooseThResult => (r ?? {}) as LooseThResult;
 const jsonClone = <T>(v: T): T => (v === undefined ? v : JSON.parse(JSON.stringify(v)) as T);
+const isObj = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * 信箱里标识 chat doc 变更的事件(服务端在 set/create/delete/rotate/生成
@@ -118,6 +130,8 @@ export class CardAppHost {
     private readonly log: (msg: string) => void;
     private readonly generationWaitMs: number;
     private readonly userName: string;
+    /** stateNamespaces 白名单(manifest 声明面);undefined=未约束(宿主没给)。 */
+    private readonly writableNs?: ReadonlySet<string>;
     /** mailbox origin 标:本 mount 写出的条目,自己的泵跳过防回流双发。 */
     private readonly hostId = `h-${Math.random().toString(36).slice(2, 10)}`;
     private lastEventSeq = 0;
@@ -146,12 +160,15 @@ export class CardAppHost {
         this.log = opts.log ?? ((m) => console.warn('[cardapp-host]', m));
         this.generationWaitMs = opts.generationWaitMs ?? 120_000;
         this.userName = opts.userName ?? 'User';
+        this.writableNs = opts.writableNamespaces === undefined ? undefined : new Set(opts.writableNamespaces);
         this.client = client;
         this.panelT0 = createPanelT0Handler({
             client: this.client,
             avatarUrl: this.avatarUrl,
             chatFileName: this.chatFileName ?? '',
-            mountMessageId: opts.mountMessageId ?? 0,
+            // 不传 mountMessageId(整页面板)→ panel-t0 回服务端口径末楼
+            // 下标;?? 0 会把「未挂坐标」吞成「0 楼」,两个语义不能合并。
+            mountMessageId: opts.mountMessageId,
             // 卡 eventEmit → server 信箱(跨 mount 扇出;本卡 shim 已 dispatchLocal,
             // 回推自己 bridge 会双发 —— 旧实现的 bug,信箱化后顺带修了)。
             emitToPanels: async (ev: string, args: unknown[]) => { await this.recordThEvent(ev, args); },
@@ -381,17 +398,36 @@ export class CardAppHost {
     }
 
     // ── ctxDispatch(与 cardapp-host.mjs 同语义)───────────────────────────
+
+    /** manifest stateNamespaces 白名单校验;宿主没给名单(undefined)→ 不约束。 */
+    private nsWritable(ns: string): boolean {
+        return this.writableNs === undefined || this.writableNs.has(ns);
+    }
+    /** 越界写按各 state 方法既有信封面如实拒 —— 不假装成了。 */
+    private nsDenied(ns: string): { ok: false; reason: 'forbidden'; hint: string } {
+        this.log(`ctx state write denied: namespace '${ns}' not in manifest stateNamespaces`);
+        return { ok: false, reason: 'forbidden', hint: `namespace '${ns}' is not declared in permissions.stateNamespaces` };
+    }
+
     private async setExtensionPrompt(key: string, value: string, position: unknown, depth: unknown, scan: unknown, role: unknown): Promise<void> {
         const escKey = esc(String(key));
-        const settings = await this.client.settingsGet().catch(() => null) as Record<string, unknown> | null;
-        const ops: JsonPatchOp[] = [];
-        if (!settings || typeof settings !== 'object' || settings.extension_prompts === undefined) {
-            ops.push({ op: 'add', path: '/extension_prompts', value: {} });
-        }
-        ops.push({
+        const leaf: JsonPatchOp = {
+            // add=upsert;replace 在键缺席时 409
             op: 'add', path: `/extension_prompts/${escKey}`,
             value: { value: String(value ?? ''), position: position ?? -1, depth, scan: !!scan, role },
-        });
+        };
+        // settingsGet 回信封 {settings:'<json>'} —— 旧代码拿信封找
+        // extension_prompts 恒 undefined → 每次都先立空表,已注册 prompt
+        // 全被抹。读不出信封 ≠ 键缺席:先试叶子写,父缺再补壳。
+        const doc = await this.client.settingsDoc().catch(() => null);
+        if (doc === null) {
+            await this.client.settingsPatch([leaf]).catch(() =>
+                this.client.settingsPatch([{ op: 'add', path: '/extension_prompts', value: {} }, leaf]));
+            return;
+        }
+        const ops: JsonPatchOp[] = [];
+        if (!isObj(doc.extension_prompts)) ops.push({ op: 'add', path: '/extension_prompts', value: {} });
+        ops.push(leaf);
         await this.client.settingsPatch(ops);
     }
 
@@ -509,13 +545,16 @@ export class CardAppHost {
                 try {
                     const res = await this.client.state.chat.get(
                         { avatar_url: this.avatarUrl, file_name: this.chatFileName! }, String(args?.namespace ?? ''));
-                    return { ok: true, state: (res as { data?: unknown })?.data ?? res ?? null };
+                    // 信封 {ok,data} 直解 —— data:null(空命名空间)时回
+                    // 整个信封会让卡把响应字段当已初始化 state。
+                    return { ok: true, state: (res as { data?: unknown } | null)?.data ?? null };
                 } catch (e) {
                     return { ok: false, state: null, reason: 'transport', hint: String(e instanceof Error ? e.message : e) };
                 }
             }
             case 'updateChatState': {
                 const ns = String(args?.namespace ?? '');
+                if (!this.nsWritable(ns)) return this.nsDenied(ns);
                 const target = { avatar_url: this.avatarUrl, file_name: this.chatFileName! };
                 try {
                     if (Array.isArray(args?.operations)) {
@@ -530,9 +569,11 @@ export class CardAppHost {
                 }
             }
             case 'deleteChatState': {
+                const ns = String(args?.namespace ?? '');
+                if (!this.nsWritable(ns)) return this.nsDenied(ns);
                 try {
                     await this.client.state.chat.delete(
-                        { avatar_url: this.avatarUrl, file_name: this.chatFileName! }, String(args?.namespace ?? ''));
+                        { avatar_url: this.avatarUrl, file_name: this.chatFileName! }, ns);
                     return { ok: true };
                 } catch (e) {
                     return { ok: false, reason: 'transport', hint: String(e instanceof Error ? e.message : e) };
@@ -540,10 +581,12 @@ export class CardAppHost {
             }
             case 'getCharacterState': {
                 const st = await this.client.state.char.get({ avatar_url: this.avatarUrl }, String(args?.namespace ?? '')).catch(() => null);
-                return { ok: true, state: (st as { data?: unknown } | null)?.data ?? st ?? null };
+                // 同 getChatState:空 ns(data:null)不能落成整个信封。
+                return { ok: true, state: (st as { data?: unknown } | null)?.data ?? null };
             }
             case 'updateCharacterState': {
                 const ns = String(args?.namespace ?? '');
+                if (!this.nsWritable(ns)) return this.nsDenied(ns);
                 const cur = ((await this.client.state.char.get({ avatar_url: this.avatarUrl }, ns).catch(() => null)) as { data?: Record<string, unknown> } | null)?.data ?? {};
                 const next = { ...cur, ...(jsonClone(args?.state ?? args?.value) as Record<string, unknown> ?? {}) };
                 await this.client.state.char.set({ avatar_url: this.avatarUrl }, ns, next as Record<string, unknown>);

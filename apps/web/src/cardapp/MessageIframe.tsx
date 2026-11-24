@@ -28,7 +28,7 @@ interface DocMountBundle {
     mountId?: string;
     entryUrl: string;
     bridgeNonce?: string;
-    manifest?: { entryKind?: string; permissions?: { api?: string[]; sameOrigin?: boolean } };
+    manifest?: { entryKind?: string; permissions?: { api?: string[]; sameOrigin?: boolean; stateNamespaces?: string[] } };
 }
 
 const POLL_MS = 8_000;
@@ -117,6 +117,7 @@ export function MessageIframe({ charDir, chatName, html, messageId, blockIndex =
             // 本帧楼层下标进 panel-t0:getCurrentMessageId / message 域变量
             // 读对的是所在楼层,不是恒 0(共享化前此洞两端同在)。
             mountMessageId: messageId,
+            writableNamespaces: mount.manifest?.permissions?.stateNamespaces,
         }, new UtopinnClient({ baseUrl: window.location.origin }));
         void host.seed();
         const poll = window.setInterval(() => { void host.pollChat(); }, POLL_MS);

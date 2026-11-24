@@ -5,7 +5,7 @@
  *
  * Scope mapping (see card-runtime-ecosystem.md §1C):
  *   chat   → chat_metadata.variables            (travels with the chat file)
- *   global → settings.th_global_variables       (user-level, all cards)
+ *   global → settings.extension_settings.variables.global(TH 服务端落点)
  *   message→ chat.body[i].data                  (per-floor, swipe-aware reads)
  *   script → chat_state ns `thvars.<script_id>` (per-script sidecar)
  */
@@ -39,7 +39,6 @@ export interface PanelT0Deps {
 
 const NS_INJECT = 'th.inject';
 const NS_SCRIPT_VARS = (scriptId: string) => `thvars.${scriptId}`;
-const SETTINGS_GLOBAL_VARS = 'th_global_variables';
 
 const esc = (seg: string) => seg.replace(/~/g, '~0').replace(/\//g, '~1');
 const pathOf = (segments: string[]) => '/' + segments.map(esc).join('/');
@@ -121,13 +120,24 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
             case 'chat':
                 return chatVariables();
             case 'global': {
-                const s = await client.settingsGet();
-                return (s[SETTINGS_GLOBAL_VARS] as Record<string, unknown>) ?? {};
+                // TH 服务端 resolveScope 落点:settings.extension_settings
+                // .variables.global;信封须先解(settingsGet 回 {settings:
+                // '<json>'}),读不到信封 → 空表(读面返回 {} 无害,写面才要
+                // 区分「缺席」与「未知」)。
+                const doc = await client.settingsDoc();
+                const ext = doc?.extension_settings;
+                const vars = isObj(ext) && isObj(ext.variables) ? ext.variables : undefined;
+                return vars && isObj(vars.global) ? vars.global : {};
             }
             case 'message': {
                 const body = await chatBody();
                 const idx = resolveMessageIndex(args.message_id, body.length);
-                return (body[idx]?.data as Record<string, unknown>) ?? {};
+                const msg = body[idx];
+                // 服务端 resolveScope:message.variables 兜底合并进 data,
+                // 冲突 data 赢;写面只落 data。
+                const vars = isObj(msg?.variables) ? msg!.variables : {};
+                const data = isObj(msg?.data) ? msg!.data : {};
+                return { ...vars, ...data };
             }
             case 'script': {
                 if (!args.script_id) throw new Error('script scope requires script_id');
@@ -153,18 +163,38 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
 
         switch (scope) {
             case 'chat':
+                // add=upsert:chat_metadata 无 variables 键的首写用 replace
+                // 会被 patch 校验拒(Invalid replace path)—— TH 服务端是
+                // 「缺席先立 {} 再写」,等价语义。
                 await client.patchChatMetadata(deps.avatarUrl, deps.chatFileName,
-                    [{ op: 'replace', path: '/variables', value: next }]);
+                    [{ op: 'add', path: '/variables', value: next }]);
                 return;
-            case 'global':
-                await client.settingsPatch(
-                    [{ op: 'replace', path: `/${esc(SETTINGS_GLOBAL_VARS)}`, value: next }]);
+            case 'global': {
+                // add=upsert;父段缺席要逐级立(同批顺序应用)。信封读不出
+                // → 逐级兜底:叶(父在即成)→ 变量袋 → 整段,任一级成了即停。
+                const leaf: JsonPatchOp = { op: 'add', path: '/extension_settings/variables/global', value: next };
+                const doc = await client.settingsDoc().catch(() => null);
+                if (doc === null) {
+                    await client.settingsPatch([leaf]).catch(() =>
+                        client.settingsPatch([{ op: 'add', path: '/extension_settings/variables', value: { global: next } }]).catch(() =>
+                            client.settingsPatch([{ op: 'add', path: '/extension_settings', value: { variables: { global: next } } }])));
+                    return;
+                }
+                const ops: JsonPatchOp[] = [];
+                const ext = doc.extension_settings;
+                if (!isObj(ext)) ops.push({ op: 'add', path: '/extension_settings', value: {} });
+                const vars = isObj(ext) ? ext.variables : undefined;
+                if (!isObj(vars)) ops.push({ op: 'add', path: '/extension_settings/variables', value: {} });
+                ops.push(leaf);
+                await client.settingsPatch(ops);
                 return;
+            }
             case 'message': {
                 const body = await chatBody();
                 const idx = resolveMessageIndex(args.message_id, body.length);
+                // add=upsert:msg.data 缺席的楼层首写同「首写必死」坑。
                 await client.patchChat(deps.avatarUrl, deps.chatFileName,
-                    [{ op: 'replace', path: `/body/${idx}/data`, value: next }]);
+                    [{ op: 'add', path: `/body/${idx}/data`, value: next }]);
                 return;
             }
             case 'script': {
@@ -245,7 +275,10 @@ export function createPanelT0Handler(deps: PanelT0Deps) {
                 return body.length - 1;
             }
             case 'th.getCurrentMessageId':
-                return deps.mountMessageId ?? 0;
+                // 挂载帧给 mountMessageId(楼层身份);全页面板没挂载坐标,
+                // 按服务端口径回末楼下标(utopinn-th.js getCurrentMessageId
+                // = getLastMessageId 同义),不再恒 0。
+                return deps.mountMessageId ?? (await chatBody()).length - 1;
 
             // ── injected prompts (consumed by the generation pipeline; should_scan → WI scan buffer) ──
             case 'th.injectPrompts': {
