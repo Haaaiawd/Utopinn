@@ -117,8 +117,9 @@ export async function runQuietGeneration({
         headers: {},
         user: { profile: { handle, name: userName }, directories },
         utopinnDiagId: diagId,
-        // TH 生命周期由调用方(th.generate/quiet 宿主)自管——job 漏斗
-        // emitThLifecycle 见此旗标跳过,防 started/ended 双发。
+        // TH lifecycle events are self-managed by the caller (th.generate /
+        // quiet host) — the job funnel emitThLifecycle skips on this flag,
+        // otherwise started/ended would publish twice.
         utopinnThSelfManaged: true,
         once() { return this; },
         // 先置动词:派发体在 dispatch 前整体回填覆盖;组装失败路径上

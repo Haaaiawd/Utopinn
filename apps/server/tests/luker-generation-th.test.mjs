@@ -1,24 +1,34 @@
 /**
- * luker-generation → TH 生命周期信箱(修复「正常生成路径无生命周期事件」)。
+ * luker-generation → TH lifecycle mailbox (fix: the normal generation path
+ * emitted no lifecycle events at all).
  *
- * 背景:generation_started/ended 此前只有宿主发起链(ctx.generate/
- * /trigger/th.generate)亲手 recordThEvent;用户正常发送走
- * /api/utopinn/generate → runLukerDispatch → job,信箱一行没有——
- * CardApp 的 arm()/回滚钩子永远不跑。
+ * Background: generation_started/ended used to be recorded only by
+ * host-initiated chains (ctx.generate / /trigger / th.generate) via
+ * recordThEvent; a plain user send through /api/utopinn/generate →
+ * runLukerDispatch → job wrote nothing to the mailbox — CardApp arm()/
+ * rollback hooks never ran.
  *
- * 修复:全部 job 状态迁移的既有漏斗 emitJobTransition 挂生命周期 emit
- * (running→started / completed→ended / failed|cancelled→stopped),
- * request.utopinnThCtx 或 persist_target 派生 ctx;trigger/quiet 自管链
- * 经 request.utopinnThSelfManaged 豁免防双发。
+ * Fix: the existing emitJobTransition funnel (all job status transitions)
+ * emits lifecycle events (running→started / completed→ended /
+ * failed|cancelled→stopped) with ctx from request.utopinnThCtx or derived
+ * from persist_target; self-managed chains (trigger/quiet, CardApp hosts)
+ * are exempt via utopinnThSelfManaged / luker_generation.th_self_managed.
+ * Group persist_target resolves to the GROUP mailbox (isGroup) — never a
+ * same-named private chat (cross-session leak guard). Writes chain per job
+ * (job.thWriteChain) so started lands before the terminal event, and
+ * persistJobReplyText drains the chain before appending the reply floor.
  *
- * 本钉(in-process,真 FsEngine):
- *   1. createGenerationJob(running) → th.events 信箱 generation_started[verb]
- *   2. 同 job awaiting_ack → ack → completed → generation_ended[finalText]
- *   3. failed → generation_stopped[err];每 job 恰 started + 一个终态事件
- *   4. utopinnThSelfManaged job → 信箱零增长(自管链不双发)
- *   5. 显式 utopinnThCtx 挂法(.jsonl 后缀剥除)
+ * Pins (in-process, real FsEngine):
+ *   1. createGenerationJob(running) → th.events mailbox generation_started[verb]
+ *   2. same job awaiting_ack → ack → completed → generation_ended[finalText]
+ *   3. failed → generation_stopped[err]; each job emits started + one terminal
+ *   4. utopinnThSelfManaged job → mailbox unchanged (self-managed, no doubles)
+ *   5. explicit utopinnThCtx (.jsonl suffix stripped)
+ *   6. group job: group chatId == a member's private chatName → events land
+ *      in the group mailbox only, private mailbox untouched
+ *   7. body.luker_generation.th_self_managed → funnel silent (CardApp host path)
  *
- * 跑法:node --test tests/luker-generation-th.test.mjs
+ * Run: node --test tests/luker-generation-th.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -74,8 +84,9 @@ const persistTarget = {
 };
 
 async function eventLog(expectedCount, tries = 40) {
-    // recordThEvent 是 emitJobTransition 里 fire-and-forget 的异步写,
-    // 轮询 chat_state 到目标条数(或超时返回现状)。
+    // recordThEvent is a fire-and-forget async write inside
+    // emitJobTransition — poll chat_state until the target count (or the
+    // timeout returns whatever landed).
     const repo = getChatRepo();
     let doc = null;
     for (let i = 0; i < tries; i++) {
@@ -86,7 +97,7 @@ async function eventLog(expectedCount, tries = 40) {
     return doc;
 }
 
-test('luker-generation job 生命周期 → TH 信箱(started/ended/stopped + 自管豁免)', async (t) => {
+test('luker-generation job lifecycle → TH mailbox (started/ended/stopped + self-managed exemption)', async (t) => {
     if (!getConfigFilePath()) {
         setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
     }
@@ -103,37 +114,39 @@ test('luker-generation job 生命周期 → TH 信箱(started/ended/stopped + �
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
         const repo = getChatRepo();
-        // chat 资源须在场 —— withEventDoc 对缺席 chat 返回 404 不落信箱。
+        // The chat resource must exist — withEventDoc 404s on an absent
+        // chat and never lands a mailbox entry.
         await repo.save(HANDLE, CHAR, CHAT, { user_name: 'User', chat_metadata: {} }, [
             { is_user: false, name: CHAR, mes: '开场。' },
         ], null);
 
         let lifeJob = null;
-        await t.test('running → generation_started[verb](persist_target 派生 ctx)', async () => {
+        await t.test('running → generation_started[verb] (ctx derived from persist_target)', async () => {
             const request = makeRequest(dirs);
             lifeJob = createGenerationJob(request, { job_id: 'job-life-1', persist_target: persistTarget });
             assert.ok(lifeJob, 'job created');
-            // 未挂 utopinnThCtx —— avatar_url/file_name 派生面须命中。
+            // No utopinnThCtx attached — the avatar_url/file_name derivation
+            // surface must hit.
             assert.equal(lifeJob.thCtx.charDir, CHAR);
             assert.equal(lifeJob.thCtx.chatName, CHAT);
             const doc = await eventLog(1);
             const e = doc?.log?.[0];
             assert.equal(e?.event, 'generation_started');
-            assert.deepEqual(e?.args, ['normal'], 'started 负载 = verb(trigger-generation 同形)');
+            assert.deepEqual(e?.args, ['normal'], 'started payload = verb (same shape as trigger-generation)');
             assert.equal(e?.origin, 'server');
         });
 
         await t.test('awaiting_ack → ack → completed → generation_ended[text]', async () => {
             const request = makeRequest(dirs);
             const done = await completeGenerationJobFromText(request, lifeJob, '最终定稿文本', 'test-model');
-            assert.equal(done, false, 'completeFromText 回 false(等 ack)');
+            assert.equal(done, false, 'completeFromText returns false (awaiting ack)');
             assert.equal(lifeJob.status, 'awaiting_ack');
             const acked = acknowledgeGenerationJobsForRequest(request, ['job-life-1']);
             assert.deepEqual(acked, ['job-life-1']);
             const doc = await eventLog(2);
             const e = doc?.log?.[1];
             assert.equal(e?.event, 'generation_ended');
-            assert.deepEqual(e?.args, ['最终定稿文本'], 'ended 负载 = 定稿文本(TH GENERATION_ENDED 语义)');
+            assert.deepEqual(e?.args, ['最终定稿文本'], 'ended payload = final text (TH GENERATION_ENDED semantics)');
         });
 
         await t.test('failed → generation_stopped[err]', async () => {
@@ -145,15 +158,16 @@ test('luker-generation job 生命周期 → TH 信箱(started/ended/stopped + �
             const last = doc?.log?.at(-1);
             assert.equal(last?.event, 'generation_stopped');
             assert.match(String(last?.args?.[0] ?? ''), /upstream exploded/);
-            // job-life-2 的 started 也在信箱 —— started→stopped 二选一终态成对。
+            // job-life-2's started is in the mailbox too — each job pairs
+            // started with exactly one of ended|stopped.
             const events = doc.log.map((x) => x.event);
             assert.deepEqual(events, [
                 'generation_started', 'generation_ended',
                 'generation_started', 'generation_stopped',
-            ], '信箱序:每 job 恰 started + 一个终态事件');
+            ], 'mailbox order: started + exactly one terminal event per job');
         });
 
-        await t.test('utopinnThSelfManaged → 漏斗静默(自管链不双发)', async () => {
+        await t.test('utopinnThSelfManaged → funnel silent (self-managed chains do not double-fire)', async () => {
             const request = makeRequest(dirs, { utopinnThSelfManaged: true });
             const job = createGenerationJob(request, { job_id: 'job-life-3', persist_target: persistTarget });
             assert.ok(job);
@@ -161,18 +175,67 @@ test('luker-generation job 生命周期 → TH 信箱(started/ended/stopped + �
             failGenerationJob(job, 'self managed boom');
             await new Promise((r) => setTimeout(r, 300));
             const doc = await repo.getState(HANDLE, CHAR, CHAT, TH_NS);
-            assert.equal(doc.log.length, 4, '自管 job 不写信箱(宿主自己发)');
+            assert.equal(doc.log.length, 4, 'self-managed job writes nothing (the host publishes itself)');
         });
 
-        await t.test('显式 utopinnThCtx 挂法(.jsonl 后缀剥除)', async () => {
+        await t.test('explicit utopinnThCtx (.jsonl suffix stripped)', async () => {
             const request = makeRequest(dirs, {
                 utopinnThCtx: { charDir: CHAR, chatName: CHAT + '.jsonl' },
             });
             const job = createGenerationJob(request, { job_id: 'job-life-4', persist_target: persistTarget });
-            assert.equal(job.thCtx.chatName, CHAT, '.jsonl 后缀被剥');
+            assert.equal(job.thCtx.chatName, CHAT, '.jsonl suffix stripped');
             assert.equal(job.thCtx.charDir, CHAR);
             const doc = await eventLog(5);
             assert.equal(doc?.log?.at(-1)?.event, 'generation_started');
+        });
+
+        await t.test('body.luker_generation.th_self_managed → funnel silent (CardApp host path)', async () => {
+            const request = makeRequest(dirs);
+            request.body = { type: 'normal', luker_generation: { job_id: 'host-job', th_self_managed: true } };
+            const job = createGenerationJob(request, { job_id: 'job-life-5', persist_target: persistTarget });
+            assert.ok(job);
+            assert.equal(job.thSelfManaged, true, 'body flag marks the job self-managed');
+            failGenerationJob(job, 'host-managed boom');
+            await new Promise((r) => setTimeout(r, 300));
+            const doc = await repo.getState(HANDLE, CHAR, CHAT, TH_NS);
+            assert.equal(doc.log.length, 5, 'host-flagged job writes nothing to the mailbox');
+        });
+
+        await t.test('group persist_target → group mailbox only, no private-chat leak', async () => {
+            // Adversary: a private chat named exactly like the group chatId.
+            // The group job's lifecycle must land in the group doc
+            // (isGroup key) — never the member's same-named private mailbox.
+            const GID = 'guild-chat';
+            const repo2 = getChatRepo();
+            await repo2.save(HANDLE, CHAR, GID, { user_name: 'User', chat_metadata: {} }, [
+                { is_user: false, name: CHAR, mes: '同名私聊。' },
+            ], null);
+            await repo2.save(HANDLE, '', GID, { user_name: 'User', chat_metadata: {} }, [
+                { is_user: false, name: CHAR, mes: '群开局。' },
+            ], null, { isGroup: true, groupId: GID });
+
+            const request = makeRequest(dirs);
+            const job = createGenerationJob(request, {
+                job_id: 'job-grp-1',
+                persist_target: { kind: 'group', id: GID, original_avatar: CHAR + '.png' },
+            });
+            assert.ok(job);
+            assert.equal(job.thCtx.isGroup, true);
+            assert.equal(job.thCtx.chatName, GID);
+            failGenerationJob(job, 'group boom');
+
+            let gdoc = null;
+            for (let i = 0; i < 40; i++) {
+                gdoc = await repo2.getState(HANDLE, '', GID, TH_NS, { isGroup: true, groupId: GID }).catch(() => null);
+                if ((gdoc?.log?.length ?? 0) >= 2) break;
+                await new Promise((r) => setTimeout(r, 50));
+            }
+            assert.deepEqual(gdoc?.log?.map((x) => x.event), ['generation_started', 'generation_stopped'],
+                'group lifecycle lands in the group mailbox');
+
+            // The member's same-named private mailbox must stay empty.
+            const pdoc = await repo2.getState(HANDLE, CHAR, GID, TH_NS).catch(() => null);
+            assert.equal(pdoc?.log?.length ?? 0, 0, 'no leak into the same-named private chat mailbox');
         });
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });

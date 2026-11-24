@@ -155,37 +155,81 @@ function insertListener(doc, entry) {
     if (i === -1) doc.listeners.push(entry); else doc.listeners.splice(i, 0, entry);
 }
 /**
- * RMW:event doc(chat_state / 会话态)读-改-写。
- * chat 目标在 → engine 事务(原子);缺席 → handle 键会话 Map。
- * mutate(doc) → {ok:true,...}|{ok:false,status,error};chat 缺席 → 404。
+ * Mailbox addressing: group ctx (isGroup) resolves the GROUP chat resource
+ * (charDir '' + name=chatId + groupId) — never the speaker's private chat,
+ * even when a private chat shares the group chatId; bare name matching
+ * would leak group lifecycle events into that private chat's mailbox.
+ * Private ctx resolves as before; no chat target → session Map by handle.
+ */
+function eventDocKey(ctx2) {
+    if (ctx2.isGroup === true) {
+        if (!ctx2.chatName) return null;
+        return {
+            kind: 'chat',
+            handle: ctx2.handle,
+            charDir: '',
+            name: ctx2.chatName,
+            isGroup: true,
+            groupId: ctx2.groupId ?? ctx2.chatName,
+        };
+    }
+    if (ctx2.charDir && ctx2.chatName) {
+        return { kind: 'chat', handle: ctx2.handle, charDir: ctx2.charDir, name: ctx2.chatName, isGroup: false };
+    }
+    return null; // no chat target → session mailbox
+}
+
+/**
+ * Serialized RMW per mailbox doc: the fs engine already serializes writes
+ * inside a transaction, but SQL engines' withTransaction does not lock the
+ * doc — concurrent RMW from lifecycle emits / eventEmit / listener churn on
+ * the same doc can lose entries. Invocation order = landing order, which
+ * the mailbox relies on (started before ended).
+ */
+const eventDocLocks = new Map();
+function serializedEventDoc(ctx2, fn) {
+    const k = [ctx2.handle, ctx2.isGroup === true ? 1 : 0, ctx2.charDir ?? '', ctx2.chatName ?? ''].join('');
+    const prev = eventDocLocks.get(k) ?? Promise.resolve();
+    const next = prev.then(fn, fn); // a failed predecessor must not jam the queue
+    eventDocLocks.set(k, next.catch(() => {}));
+    return next;
+}
+
+/**
+ * RMW: event doc (chat_state / session-state) read-modify-write.
+ * chat target present → engine transaction (atomic); absent → handle-keyed
+ * session Map. mutate(doc) → {ok:true,...}|{ok:false,status,error};
+ * chat absent → 404.
  */
 async function withEventDoc(ctx2, mutate) {
-    if (!ctx2.charDir || !ctx2.chatName) {
-        const doc = normalizeEventDoc(sessionEventDocs.get(ctx2.handle));
-        const out = await mutate(doc);
-        sessionEventDocs.set(ctx2.handle, doc);
-        return out;
-    }
-    const engine = getStorageEngine();
-    const key = { kind: 'chat', handle: ctx2.handle, charDir: ctx2.charDir, name: ctx2.chatName, isGroup: false };
-    return engine.withTransaction(ctx2.handle, async (tx) => {
-        if (!(await tx.hasChatResource(key))) {
-            return { ok: false, status: 404, error: `chat not found: ${ctx2.charDir}/${ctx2.chatName}` };
+    return serializedEventDoc(ctx2, async () => {
+        const key = eventDocKey(ctx2);
+        if (!key) {
+            const doc = normalizeEventDoc(sessionEventDocs.get(ctx2.handle));
+            const out = await mutate(doc);
+            sessionEventDocs.set(ctx2.handle, doc);
+            return out;
         }
-        const doc = normalizeEventDoc(await tx.getChatState(key, TH_EVENTS_NS));
-        const out = await mutate(doc);
-        await tx.putChatState(key, TH_EVENTS_NS, doc);
-        return out;
+        const engine = getStorageEngine();
+        return engine.withTransaction(ctx2.handle, async (tx) => {
+            if (!(await tx.hasChatResource(key))) {
+                return { ok: false, status: 404, error: `chat not found: ${ctx2.isGroup ? 'group:' : ''}${ctx2.charDir}/${ctx2.chatName}` };
+            }
+            const doc = normalizeEventDoc(await tx.getChatState(key, TH_EVENTS_NS));
+            const out = await mutate(doc);
+            await tx.putChatState(key, TH_EVENTS_NS, doc);
+            return out;
+        });
     });
 }
-/** 只读面:getEventLog 不为缺席 chat 立档。 */
+/** Read-only side: getEventLog does not create the doc for an absent chat. */
 async function readEventDoc(ctx2) {
-    if (!ctx2.charDir || !ctx2.chatName) {
+    const key = eventDocKey(ctx2);
+    if (!key) {
         const d = sessionEventDocs.get(ctx2.handle);
         return d ? normalizeEventDoc(d) : null;
     }
     const engine = getStorageEngine();
-    const key = { kind: 'chat', handle: ctx2.handle, charDir: ctx2.charDir, name: ctx2.chatName, isGroup: false };
     return engine.withTransaction(ctx2.handle, async (tx) => {
         if (!(await tx.hasChatResource(key))) return null;
         return normalizeEventDoc(await tx.getChatState(key, TH_EVENTS_NS));
@@ -1541,6 +1585,9 @@ const METHODS = {
         if (a?.generation_id) {
             const job = jobs.getGenerationJobForRequest(fakeReq, a.generation_id);
             if (!job) return { ok: false, status: 404, error: `job not found: ${a.generation_id}` };
+            // This handler publishes its own stopped below — mark the job so
+            // the emitJobTransition funnel stays silent (no double event).
+            job.thSelfManaged = true;
             const stopped = jobs.abortGenerationJobForInspector(job, 'stopped via th.stopGeneration');
             await recordThEvent(ctx2, 'generation_stopped', [String(a.generation_id)]);
             return { ok: true, result: { stopped, job_id: String(a.generation_id) } };
@@ -1552,7 +1599,10 @@ const METHODS = {
         let cancelled = 0;
         for (const j of active) {
             const job = jobs.getGenerationJobForRequest(fakeReq, j.id);
-            if (job && jobs.abortGenerationJobForInspector(job, 'stopped via th.stopGeneration')) cancelled++;
+            if (job) {
+                job.thSelfManaged = true; // same: stopped is published by this handler, funnel stays silent
+                if (jobs.abortGenerationJobForInspector(job, 'stopped via th.stopGeneration')) cancelled++;
+            }
         }
         if (cancelled) await recordThEvent(ctx2, 'generation_stopped', [`${cancelled} jobs`]);
         // quiet 任务 persist_target=none 不在 chatKey 面——如实标注覆盖口径。
@@ -1695,6 +1745,15 @@ export function apply(ctx) {
                 const target = body.target ?? {};
                 const charDir = target.charDir ? safeName(target.charDir, 'target.charDir') : null;
                 const chatName = target.chatName ? safeName(stripJsonlExt(target.chatName), 'target.chatName') : null;
+                // Group chats: target.is_group + chatName=<chatId> (groupId
+                // defaults to chatName, matching the storage key where a
+                // group chat resource is keyed name=groupId=chatId). The
+                // event mailbox resolves the group doc, never a same-named
+                // private chat.
+                const isGroup = target.is_group === true || target.isGroup === true;
+                const groupId = isGroup
+                    ? (target.groupId ? safeName(String(target.groupId), 'target.groupId') : chatName)
+                    : null;
                 const fn = METHODS[method];
                 if (!fn) {
                     thEvent('th_unsupported', `th unsupported: ${method}`, { method, charDir, chatName });
@@ -1705,6 +1764,8 @@ export function apply(ctx) {
                     directories: request.user.directories,
                     charDir,
                     chatName,
+                    isGroup,
+                    groupId,
                     userName: request.user.profile.name,
                 };
 

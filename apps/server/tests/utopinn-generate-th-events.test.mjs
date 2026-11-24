@@ -1,16 +1,17 @@
 /**
- * /api/utopinn/generate 正常发送路径 → TH 生命周期事件 e2e(node:test,
- * 真 server 子进程 + mock LLM)。
+ * /api/utopinn/generate normal-send path → TH lifecycle events e2e
+ * (node:test, real server subprocess + mock LLM).
  *
- * 修复点:用户正常发送(job 链)此前无任何 recordThEvent —— CardApp
- * eventOn('generation_started')/arm()/回滚钩子永远不跑。本钉走完整
- * 编排面(插件挂 utopinnThCtx → runner 建 job → emitJobTransition 漏斗
- * → recordThEvent → chat_state 'th.events')断言:
- *   1. started 先于终态落地,args[0]=verb;
- *   2. 兜底 persist → completed → generation_ended,args[0]=mock 回复全文;
- *   3. 无 generation_stopped(成功终态不混搭)。
+ * The fix: a plain user send (job chain) previously wrote no recordThEvent
+ * at all — CardApp eventOn('generation_started')/arm()/rollback hooks
+ * never ran. This pin walks the full orchestration surface (plugin
+ * attaches utopinnThCtx → runner creates the job → emitJobTransition
+ * funnel → recordThEvent → chat_state 'th.events') and asserts:
+ *   1. started lands before the terminal event, args[0]=verb;
+ *   2. fallback persist → completed → generation_ended, args[0]=full mock reply;
+ *   3. no generation_stopped (a successful terminal never mixes).
  *
- * 跑法:E2E_SCRATCH_ROOT=/tmp/uto-scratch node --test tests/utopinn-generate-th-events.test.mjs
+ * Run: E2E_SCRATCH_ROOT=/tmp/uto-scratch node --test tests/utopinn-generate-th-events.test.mjs
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,7 +27,7 @@ const HANDLE = 'default-user';
 const CHAT = 'utopinn-gen-th';
 const REPLY = '"The lantern dips once — the reef is listening tonight." — lifecycle reply floor.';
 
-/** 复用 scratch 里已有的 webpack 产物跳过首启编译(~60s+);无则正常编译 */
+/** Reuse prebuilt webpack bundles from the scratch dir to skip the ~60s+ first-boot build; falls back to a normal build when absent. */
 function findPrebuiltBundles() {
     if (process.env.LUKER_PREBUILT_BUNDLES_DIR) return process.env.LUKER_PREBUILT_BUNDLES_DIR;
     const scratch = resolve(fileURLToPath(new URL('.', import.meta.url)), '.e2e-scratch');
@@ -59,7 +60,7 @@ async function post(baseURL, path, session, body) {
     });
 }
 
-test('/api/utopinn/generate → TH 生命周期信箱(started→ended,无 stopped)', async (t) => {
+test('/api/utopinn/generate → TH lifecycle mailbox (started→ended, no stopped)', async (t) => {
     const mock = await startMockLLM({ scriptedReplies: [REPLY] });
     const prebuilt = findPrebuiltBundles();
     const server = await startServer({
@@ -70,7 +71,8 @@ test('/api/utopinn/generate → TH 生命周期信箱(started→ended,无 stoppe
             NO_PROXY: '*', no_proxy: '*',
             HTTP_PROXY: '', HTTPS_PROXY: '', http_proxy: '', https_proxy: '',
         },
-        // ack 宽限收紧(下限 1000ms):兜底 persist 快进终态,测试不白等 15s。
+        // Tighten the ack grace window (floor 1000ms): the fallback persist
+        // reaches its terminal state fast so the test doesn't wait out 15s.
         extraConfig: { generationAckGraceMs: 1200 },
     });
     let charDir;
@@ -100,7 +102,7 @@ test('/api/utopinn/generate → TH 生命周期信箱(started→ended,无 stoppe
         assert.equal(res.status, 200);
         assert.equal(res.headers.get('x-luker-generation-id'), jobId);
 
-        // 轮询 job 到 persisted(兜底 persist → completed;宽限 1.2s)
+        // Poll the job until persisted (fallback persist → completed; 1.2s grace)
         let status = null;
         for (let i = 0; i < 120; i++) {
             const s = await post(server.baseURL, '/api/backends/chat-completions/jobs/status', session, { id: jobId });
@@ -112,23 +114,23 @@ test('/api/utopinn/generate → TH 生命周期信箱(started→ended,无 stoppe
         }
         assert.ok(status, 'job status reachable');
         assert.equal(String(status.status), 'completed', JSON.stringify(status));
-        assert.ok(status.persisted, '兜底 persist 落账');
+        assert.ok(status.persisted, 'fallback persist landed');
 
-        // TH 信箱:started → ended 成对,无 stopped
+        // TH mailbox: started → ended pair, no stopped
         const log = await (await post(server.baseURL, '/api/utopinn/th/call', session, {
             method: 'getEventLog', args: {}, target: { charDir, chatName: CHAT },
         })).json();
         const entries = log?.result?.entries ?? [];
         const events = entries.map((e) => e.event);
-        assert.ok(events.includes('generation_started'), 'generation_started 落信箱: ' + JSON.stringify(events));
-        assert.ok(events.includes('generation_ended'), 'generation_ended 落信箱: ' + JSON.stringify(events));
-        assert.ok(!events.includes('generation_stopped'), '成功终态无 stopped: ' + JSON.stringify(events));
-        assert.ok(events.indexOf('generation_started') < events.indexOf('generation_ended'), 'started 先于 ended');
+        assert.ok(events.includes('generation_started'), 'generation_started landed: ' + JSON.stringify(events));
+        assert.ok(events.includes('generation_ended'), 'generation_ended landed: ' + JSON.stringify(events));
+        assert.ok(!events.includes('generation_stopped'), 'no stopped on a successful terminal: ' + JSON.stringify(events));
+        assert.ok(events.indexOf('generation_started') < events.indexOf('generation_ended'), 'started lands before ended');
 
         const started = entries.find((e) => e.event === 'generation_started');
-        assert.deepEqual(started?.args, ['normal'], 'started 负载 = verb');
+        assert.deepEqual(started?.args, ['normal'], 'started payload = verb');
         const ended = entries.find((e) => e.event === 'generation_ended');
-        assert.equal(String(ended?.args?.[0] ?? ''), REPLY, 'ended 负载 = mock 回复全文');
+        assert.equal(String(ended?.args?.[0] ?? ''), REPLY, 'ended payload = full mock reply');
     } finally {
         await tearDownServer(server).catch(() => {});
         await mock.stop().catch(() => {});

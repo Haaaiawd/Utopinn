@@ -1613,7 +1613,8 @@ function mvuRepoArgsFromRequest(request, { group = false } = {}) {
         name: key.name,
         isGroup: key.isGroup,
         groupId: key.groupId,
-        // mvuHardDisabled 卡级否决评估要读卡(.characters);群聊 '' 自动退化。
+        // mvuHardDisabled card-level veto needs the card read (.characters);
+        // group chats ('' charDir) degrade to the metadata-only gate.
         directories: request.user.directories,
     };
 }

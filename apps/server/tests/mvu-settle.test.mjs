@@ -512,34 +512,37 @@ test('TASK-045 — /api/chats/append + /group/append 真实路由:预建聊天�
     }
 });
 
-// ---------- mvuHardDisabled:卡自持账本 / 每聊天显式关闭(掌门卡腐蚀修复) ----------
-// 场景:CardApp 自管 stat_data —— 卡侧解析 AI 回复里的 _.set 行经
-// ctx.setVariable 写账,editMessage 再把命令行从 mes 剥掉,并自管
-// stat_data_prev/_for 回滚。服务端在 /save + /patch 后 resettleChatMvu
-// 从已剥文本重折叠 → 楼层快照打回 baseline → stat_data 永久丢账。
-// 钉:veto 命中时 init/settle/resettle 全静默(disabled/not_mvu),
-// 楼层快照/mes/镜像/integrity 一字不动,StatusPlaceHolderImpl 不注入。
+// ---------- mvuHardDisabled: card-owned ledger / per-chat explicit off (corrosion fix) ----------
+// Scenario: a CardApp manages stat_data itself — card-side code parses
+// _.set lines out of the AI reply, writes the ledger via ctx.setVariable,
+// strips the command lines from mes via editMessage, and keeps its own
+// stat_data_prev/_for rollback. The server running resettleChatMvu after
+// /save + /patch refolds from already-stripped text → floor snapshots
+// revert to baseline → stat_data is permanently lost.
+// Pins: on a veto hit, init/settle/resettle go fully silent
+// (disabled/not_mvu) — floor snapshots/mes/mirror/integrity untouched,
+// StatusPlaceHolderImpl never injected.
 
-/** 卡账快照 fixture:isMvuData 需 stat_data + schema 双键在场。 */
+/** Card-ledger snapshot fixture: isMvuData requires stat_data + schema. */
 function mvuSnap(statData) {
     return { stat_data: statData, schema: { type: 'object', properties: {} }, initialized_lorebooks: {} };
 }
 
-test('mvuHardDisabled — 纯函数:旗标矩阵', () => {
+test('mvuHardDisabled — pure function: flag matrix', () => {
     assert.equal(mvuHardDisabled({}), false);
     assert.equal(mvuHardDisabled({ chatMetadata: { mvu: { enabled: false } } }), true);
     assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: false } } } }), true);
     assert.equal(mvuHardDisabled({ card: { extensions: { mvu: false } } }), true);
-    // 显式 false 压显式 true(否决是防御位)
+    // explicit false beats explicit true (veto is the defensive position)
     assert.equal(mvuHardDisabled({
         card: { data: { extensions: { mvu: false } } },
         chatMetadata: { mvu: { enabled: true } },
     }), true);
-    // 真值旗标不算否决
+    // truthy flag is not a veto
     assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: true } } } }), false);
 });
 
-test('mvuHardDisabled — 卡旗标 extensions.mvu:false:settle/resettle/init 全静默,卡账不回滚', async () => {
+test('mvuHardDisabled — card flag extensions.mvu:false: settle/resettle/init all silent, card ledger not reverted', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-veto-'));
     try {
         const dirs = makeDirs(tmpDir);
@@ -550,9 +553,11 @@ test('mvuHardDisabled — 卡旗标 extensions.mvu:false:settle/resettle/init �
             data: { name: CHAR, extensions: { world: 'CharBook', mvu: false } },
         }));
         const repo = getChatRepo();
-        // 会话态 = CardApp 写后形:floor-0 快照 hp:100;floor-1 快照 hp:42
-        // 是卡自己的账(ctx.setVariable),mes 里的 _.set 行已被 editMessage
-        // 剥掉;chat_metadata.variables.stat_data.hp=42 是卡最新账。
+        // Session state = the post-CardApp-write shape: floor-0 snapshot
+        // hp:100; floor-1 snapshot hp:42 is the card's own ledger
+        // (ctx.setVariable), the _.set lines in mes were already stripped
+        // by editMessage; chat_metadata.variables.stat_data.hp=42 is the
+        // card's latest ledger.
         await repo.save(HANDLE, CHAR, 'veto', {
             user_name: 'User',
             chat_metadata: { variables: { stat_data: { hp: 42 }, schema: { type: 'object' } } },
@@ -562,41 +567,44 @@ test('mvuHardDisabled — 卡旗标 extensions.mvu:false:settle/resettle/init �
         ], null);
         const before = await repo.get(HANDLE, CHAR, 'veto');
 
-        // resettle:armed(镜像键+楼层快照满格)但卡否决 → 'disabled',整图不动。
+        // resettle: armed (mirror key + floor snapshots at full strength)
+        // but the card veto hits → 'disabled', nothing moves.
         const rr = await resettleChatMvu({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
-        assert.equal(rr.status, 'disabled', '卡旗标否决 resettle');
+        assert.equal(rr.status, 'disabled', 'card flag vetoes resettle');
         let doc = await repo.get(HANDLE, CHAR, 'veto');
-        assert.equal(doc.integrity, before.integrity, '否决不推高 integrity');
-        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, '卡账快照不回滚 baseline');
-        assert.equal(doc.body[1].mes, '她收剑还鞘。', 'mes 不被注入占位符');
-        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, '镜像不被覆盖');
+        assert.equal(doc.integrity, before.integrity, 'veto does not bump integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, 'card ledger snapshot not reverted to baseline');
+        assert.equal(doc.body[1].mes, '她收剑还鞘。', 'mes gets no placeholder injection');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, 'mirror not overwritten');
 
-        // settle:同 veto —— 不 fold、不注占位符。
+        // settle: same veto — no fold, no placeholder injection.
         const ss = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
-        assert.equal(ss.status, 'disabled', '卡旗标否决 settle');
+        assert.equal(ss.status, 'disabled', 'card flag vetoes settle');
         doc = await repo.get(HANDLE, CHAR, 'veto');
         assert.equal(doc.body[1].variables['0'].stat_data.hp, 42);
-        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), '无占位符注入');
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), 'no placeholder injected');
 
-        // init:正信号满格([initvar] 注释 + floorText _.set)也被卡否决 → 'disabled'。
+        // init: positive signals at full strength ([initvar] comment +
+        // floorText _.set) are still vetoed by the card flag → 'disabled'.
         const init = await initializeMvuChat({
             handle: HANDLE, charDir: CHAR, name: 'veto',
             lorebooks: [{ name: 'b', isPrimary: true, entries: [{ content: 'hp: 1', comment: '[initvar]' }] }],
             directories: dirs,
         });
-        assert.equal(init.status, 'disabled', '卡旗标否决 init');
+        assert.equal(init.status, 'disabled', 'card flag vetoes init');
         assert.equal(init.initialized, false);
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
 
-test('mvuHardDisabled — chat_metadata.mvu.enabled === false:免读卡单闸全静默', async () => {
+test('mvuHardDisabled — chat_metadata.mvu.enabled === false: metadata-only gate, fully silent without a card read', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-vetometa-'));
     try {
         const dirs = makeDirs(tmpDir);
         await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
-        // 故意不写卡文件 —— metadata 单闸即须成立(无卡可读不兜底)。
+        // Deliberately no card file — the metadata-only gate must hold on
+        // its own (no card to read, no fallback).
         const repo = getChatRepo();
         await repo.save(HANDLE, CHAR, 'offchat', {
             user_name: 'User',
@@ -615,19 +623,20 @@ test('mvuHardDisabled — chat_metadata.mvu.enabled === false:免读卡单闸全
         assert.equal(init.status, 'disabled');
 
         const doc = await repo.get(HANDLE, CHAR, 'offchat');
-        assert.equal(doc.integrity, before.integrity, '三连 veto 不推高 integrity');
-        assert.equal(doc.body[1].variables['0'].stat_data.hp, 9, '卡账快照不回滚');
-        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), '占位符不注入');
-        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 7, '镜像不被覆盖');
+        assert.equal(doc.integrity, before.integrity, 'three vetoes do not bump integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 9, 'card ledger snapshot not reverted');
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), 'placeholder not injected');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 7, 'mirror not overwritten');
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });
 
-test('mvuHardDisabled — /save 写后 resettleMvuAfterWrite seam:卡旗标经 directories 生效', async () => {
-    // 真实伤害链:CardApp editMessage 剥命令 → PUT /save → seam resettle →
-    // 楼层快照回 baseline。本钉证明 seam 到 resettleChatMvu 的 directories
-    // 管道通了(无 directories 时卡否决读不到卡 = 不生效)。
+test('mvuHardDisabled — post-/save resettleMvuAfterWrite seam: card flag applies via directories', async () => {
+    // Real wound chain: CardApp editMessage strips commands → PUT /save →
+    // seam resettle → floor snapshots revert to baseline. This pin proves
+    // the directories pipe from the seam into resettleChatMvu is wired
+    // (without directories the card veto cannot read the card = no effect).
     if (!getConfigFilePath()) {
         setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
     }
@@ -658,10 +667,10 @@ test('mvuHardDisabled — /save 写后 resettleMvuAfterWrite seam:卡旗标经 d
             user: { profile: { handle: HANDLE }, directories: dirs },
         });
         const doc = await repo.get(HANDLE, CHAR, 'seamveto');
-        assert.equal(doc.integrity, before.integrity, 'seam 全静默不推高 integrity');
-        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, '卡账不回滚');
-        assert.equal(doc.body[1].mes, '已剥命令的楼层。', 'mes 不被改写');
-        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, '镜像不被覆盖');
+        assert.equal(doc.integrity, before.integrity, 'seam stays fully silent, integrity not bumped');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, 'card ledger not reverted');
+        assert.equal(doc.body[1].mes, '已剥命令的楼层。', 'mes untouched');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, 'mirror not overwritten');
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
