@@ -21,8 +21,8 @@ export const panelsFeature: Feature = {
     name: 'panels',
     apply(ctx) {
         /* 注册序=launcher 网格序,对齐规范稿 PANEL_CATALOG:
-         * cardapp 桶(ledger/cardapp)先行,系统桶 mvu→lore→diag→stats→chapters→channels→notes,
-         * preset 为规范稿目录外的真实有线面板,殿后。 */
+         * cardapp 桶(ledger/cardapp)先行,系统桶 mvu→lore→diag→stats→chapters→notes,
+         * preset 为规范稿目录外的真实有线面板,殿后;channels 摘 hidden 桶不进网格。 */
         const reg: RegisteredPanel[] = [];
         const add = (contrib: PanelTypeContribution) =>
             reg.push({ contrib, dispose: ctx.add('panel.type', contrib) });
@@ -32,8 +32,12 @@ export const panelsFeature: Feature = {
         add({ type: 'lore', icon: 'bookOpen', wired: true, Body: LorePanel, desc: 'panel.desc.lore', category: 'system' });
         add({ type: 'diag', icon: 'code', wired: true, Body: DiagPanel, desc: 'panel.desc.diag', badge: 'diag', category: 'system' });
         add({ type: 'stats', icon: 'compass', wired: true, Body: StatsPanel, desc: 'panel.desc.stats', badge: 'stats', category: 'system' });
-        add({ type: 'chapters', icon: 'listNumbers', wired: false, Body: ChaptersPanel, desc: 'panel.desc.chapters', badge: 'panel.badge.unwired', category: 'system' });
-        add({ type: 'channels', icon: 'messages', wired: false, Body: ChannelsPanel, desc: 'panel.desc.channels', badge: 'panel.badge.unwired', category: 'system' });
+        /* chapters —— 真接线:楼层推导目录(lib/novelToc 同源 NovelBody)。 */
+        add({ type: 'chapters', icon: 'listNumbers', wired: true, Body: ChaptersPanel, desc: 'panel.desc.chapters', category: 'system' });
+        /* channels —— 服务端无此面:Body =「未提供」空态(假列表已废),
+         *  category:'hidden' 摘出 launcher/cmdk 目录(部署版不见入口),
+         *  条目仍可经代码 openPanel 打开;wired:false 照实留。 */
+        add({ type: 'channels', icon: 'messages', wired: false, Body: ChannelsPanel, desc: 'panel.desc.channels', category: 'hidden' });
         add({ type: 'notes', icon: 'note', wired: true, Body: NotesPanel, desc: 'panel.desc.notes', category: 'system' });
         /* preset 为规范稿目录外的真实有线面板,殿后不扰动前 7 格序。 */
         add({ type: 'preset', icon: 'sliders', wired: true, Body: PresetPanel, desc: 'panel.desc.preset', category: 'system' });

@@ -97,7 +97,7 @@ function Switch({ on, onToggle, disabled, title }: { on: boolean; onToggle?: () 
     );
 }
 
-/** 诚实徽标(协议未备/只读/排期)—— 与 panel.badge.unwired 同款 mono 小章。 */
+/** 诚实徽标(协议未备/只读/排期)—— mono 小章,只标真实状态,不遮假数据。 */
 export function WiredBadge({ children, warn }: { children: ReactNode; warn?: boolean }) {
     return (
         <span

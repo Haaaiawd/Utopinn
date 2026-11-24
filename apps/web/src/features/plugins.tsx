@@ -22,11 +22,9 @@ export const pluginsFeature: Feature = {
                 'plugins.reloadDone': '已热重载插件', 'plugins.actFailed': '插件操作失败',
                 'plugins.none': '此组没有插件', 'plugins.market': 'Stage 形态与扩展市场',
                 'plugins.marketHint': '计划中 · C12 ui.contrib',
-                'plugins.bundled': '已内置', 'plugins.planned': '计划中',
                 /* 详情卡(rail 页详情面) */
                 'plugins.detail.back': '返回总览', 'plugins.detail.contribs': 'UI 贡献清单',
                 'plugins.detail.noContribs': '无 UI 贡献', 'plugins.detail.gone': '该插件不在当前清单中 —— 可能刚被移除或改名',
-                'plugins.detail.planned': '计划中 · 安装面未备(C12 只读 manifest)',
             },
             en: {
                 'plugins.remove': 'Remove', 'plugins.installed': 'Installed', 'plugins.install': 'Install',
@@ -39,11 +37,9 @@ export const pluginsFeature: Feature = {
                 'plugins.reloadDone': 'Plugin hot-reloaded', 'plugins.actFailed': 'Plugin action failed',
                 'plugins.none': 'No plugins in this group', 'plugins.market': 'Stage forms & extension market',
                 'plugins.marketHint': 'Planned · C12 ui.contrib',
-                'plugins.bundled': 'Bundled', 'plugins.planned': 'Planned',
                 /* 详情卡(rail 页详情面) */
                 'plugins.detail.back': 'Back to overview', 'plugins.detail.contribs': 'UI contributions',
                 'plugins.detail.noContribs': 'No UI contributions', 'plugins.detail.gone': 'This plugin is not in the current list — it may have just been removed or renamed',
-                'plugins.detail.planned': 'Planned · install surface not ready (C12 read-only manifest)',
             },
         });
     },

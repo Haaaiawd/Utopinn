@@ -6,18 +6,17 @@
 //   · 内核锁定段 = list 行 core:true(profile.yaml 旗标透出,与内核
 //     disable 闸同源)∪ 自锁件(utopinn-plugins 拒自己的 disable/reload);
 //   · 可停用段 = enable/disable/reload 真写面,status/patch 原样透显;
-//   · 市场段 = ui.contrib 读面有、安装面未备(C12)—— 目录行渲染「已内置 /
-//     计划中」徽标,不做假安装钮。
+//   · 市场段 = 服务端无目录面(假数据令:mock 目录已撤)—— 区块渲
+//     「未提供」明说空态,不做假条目不假徽标。
 // PluginsSections 与 settings 的「内核插件」页签共享(规范稿同一函数两处用)。
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
-import { PanelError, useRemote, type Remote } from '../panels/panelShared';
+import { PanelEmpty, PanelError, useRemote, type Remote } from '../panels/panelShared';
 import { disablePlugin, enablePlugin, listPlugins, reloadPlugin, type PluginItem } from '../../api/plugins';
 import { listUiContrib, type UiContribItem } from '../../api/contrib';
-import { MOCK_MARKET_PLUGINS } from '../../api/mock';
 
 /* ------------------------------------------------------------------ */
 /* 服务端插件 id → 展示元数据(规范稿 BUILTIN/CORE 插件表的落地形)。          */
@@ -248,38 +247,14 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
                 </>
             )}
 
-            {/* 3. Stage 形态与扩展市场(规范稿:目录行 + 计划中/已内置徽标。
-                安装面未备(C12 只读 manifest)—— 行不可点,不做假钮。) */}
+            {/* 3. Stage 形态与扩展市场 —— 服务端无目录面:mock 目录已撤,
+                本区块明说「未提供」空态;安装面落地再补真目录。 */}
             <div className="space-y-2">
                 <div className="flex items-center justify-between px-0.5">
                     <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('plugins.market')}</span>
                     <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{t('plugins.marketHint')}</span>
                 </div>
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    {MOCK_MARKET_PLUGINS.map((p) => (
-                        <div
-                            key={p.id}
-                            className="flex items-center justify-between gap-3 rounded-[10px] p-3 transition-colors hover:bg-[color:var(--bg-surface-hover)]"
-                            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)' }}
-                        >
-                            <div className="flex min-w-0 items-center gap-3">
-                                <span
-                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
-                                    style={{ background: 'var(--bg-active)', border: '1px solid var(--border-hairline)', color: 'var(--fg-primary)' }}
-                                >
-                                    <Icon name={p.icon as IconName} size={18} active={p.installed} />
-                                </span>
-                                <div className="min-w-0">
-                                    <div className="truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{p.name}</div>
-                                    <div className="mt-0.5 truncate text-[11px] text-[color:var(--fg-muted)]">{p.desc}</div>
-                                </div>
-                            </div>
-                            <span className="shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--bg-active)', color: 'var(--fg-muted)' }}>
-                                {p.installed ? t('plugins.bundled') : t('plugins.planned')}
-                            </span>
-                        </div>
-                    ))}
-                </div>
+                <PanelEmpty icon="puzzle" desc={t('panel.feature.unavailableDesc')}>{t('panel.feature.unavailable')}</PanelEmpty>
             </div>
         </div>
     );
@@ -289,8 +264,8 @@ export function PluginsSections({ full = false, plugins }: { full?: boolean; plu
 /* PluginDetailCard —— 插件详情面(域树点插件行的落点;规范稿无对应,自      */
 /*   设计贴 inset-group/PluginRowShell 既有件)。                          */
 /*   服务端件:徽标行(status/patch/locked)+ module 路径 + 启停/重载 +       */
-/*   ui.contrib 贡献清单(按 slot 分组);市场件('mkt:' 前缀):meta + 计划    */
-/*   中卡 —— 安装面未备不做假钮。                                         */
+/*   ui.contrib 贡献清单(按 slot 分组);市场目录件('mkt:' 前缀)随 mock     */
+/*   目录一同撤除 —— 选择源已不存在。                                     */
 /* ------------------------------------------------------------------ */
 
 /** 徽标小条(详情卡内通用)。 */
@@ -306,12 +281,9 @@ function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugin
     const { t } = useI18n();
     const s = useShell();
     const { busy, act } = usePluginAct(plugins);
-    const isMkt = sel.startsWith('mkt:');
-    const mkt = isMkt ? (MOCK_MARKET_PLUGINS.find((p) => `mkt:${p.id}` === sel) ?? null) : null;
-    const item = isMkt ? null : ((plugins.data?.items ?? []).find((p) => p.id === sel) ?? null);
-    /* 贡献清单:ui.contrib 全量拉一次按 plugin 过滤,按 slot 分组列条;
-       市场件没有服务端面,不发请求。 */
-    const contrib = useRemote(isMkt ? null : `ui-contrib:${sel}`, listUiContrib);
+    const item = (plugins.data?.items ?? []).find((p) => p.id === sel) ?? null;
+    /* 贡献清单:ui.contrib 全量拉一次按 plugin 过滤,按 slot 分组列条。 */
+    const contrib = useRemote(`ui-contrib:${sel}`, listUiContrib);
     const contribGroups = useMemo(() => {
         const g = new Map<string, UiContribItem[]>();
         for (const it of contrib.data?.items ?? []) {
@@ -323,10 +295,10 @@ function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugin
         return [...g.entries()];
     }, [contrib.data, sel]);
 
-    const icon: IconName = isMkt ? ((mkt?.icon ?? 'puzzle') as IconName) : pluginIcon(sel);
-    const name = isMkt ? (mkt?.name ?? sel.slice(4)) : pluginLabel(sel);
-    const desc = isMkt ? (mkt?.desc ?? '') : (item ? pluginDesc(item) : '');
-    const missing = !isMkt && !item && !!plugins.data; // 清单已回但找不到 → 件已下线
+    const icon: IconName = pluginIcon(sel);
+    const name = pluginLabel(sel);
+    const desc = item ? pluginDesc(item) : '';
+    const missing = !item && !!plugins.data; // 清单已回但找不到 → 件已下线
 
     return (
         <div
@@ -345,7 +317,6 @@ function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugin
                     <div className="min-w-0">
                         <div className="flex items-center gap-2">
                             <span className="truncate text-[14px] font-semibold text-[color:var(--fg-primary)]">{name}</span>
-                            {mkt && <DetailBadge text={mkt.category} />}
                         </div>
                         {desc && <div className="mt-0.5 text-[12px] leading-relaxed text-[color:var(--fg-muted)]">{desc}</div>}
                     </div>
@@ -416,64 +387,52 @@ function PluginDetailCard({ sel, plugins }: { sel: string; plugins: ServerPlugin
                 </div>
             )}
 
-            {/* 市场件:meta + 计划中卡(安装面未备) */}
-            {isMkt && (
-                <div className="inset-group">
-                    <div className="inset-row">
-                        <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('plugins.detail.planned')}</span>
-                        {mkt && <DetailBadge text={mkt.installed ? t('plugins.bundled') : t('plugins.planned')} />}
-                    </div>
-                </div>
-            )}
-
             {/* 服务端件:UI 贡献清单(slot 分组 · contribution.type/title 摘要) */}
-            {!isMkt && (
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between px-0.5">
-                        <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('plugins.detail.contribs')}</span>
-                        <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">ui.contrib</span>
-                    </div>
-                    {contrib.error ? (
-                        <div className="inset-group">
-                            <div className="inset-row"><span className="break-all font-mono-ui text-[10.5px]" style={{ color: 'var(--status-danger)' }}>{contrib.error}</span></div>
-                        </div>
-                    ) : contribGroups.length > 0 ? (
-                        contribGroups.map(([slot, list]) => (
-                            <div key={slot} className="space-y-1.5">
-                                <div className="px-0.5 font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{slot}</div>
-                                <div className="inset-group">
-                                    {list.map((it, i) => {
-                                        const c = it.contribution;
-                                        const label = String(c.title ?? c.type ?? c.id ?? '—');
-                                        const sub = c.type && c.type !== c.title ? String(c.type) : null;
-                                        return (
-                                            <div key={`${slot}:${i}`} className="inset-row">
-                                                <div className="min-w-0">
-                                                    <div className="truncate text-[12.5px] text-[color:var(--fg-primary)]">{label}</div>
-                                                    {sub && <div className="truncate font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{sub}</div>}
-                                                </div>
-                                                <span className="flex shrink-0 items-center gap-1.5">
-                                                    {it.core && <DetailBadge text="core" />}
-                                                    {it.disabled && <DetailBadge text="disabled" />}
-                                                    {typeof c.wired === 'boolean' && (
-                                                        <DetailBadge text={c.wired ? 'wired' : 'unwired'} color={c.wired ? 'var(--status-ok)' : 'var(--status-warn)'} />
-                                                    )}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        ))
-                    ) : (
-                        <div className="inset-group">
-                            <div className="inset-row text-[11.5px] text-[color:var(--fg-faint)]">
-                                {contrib.loading ? '…' : t('plugins.detail.noContribs')}
-                            </div>
-                        </div>
-                    )}
+            <div className="space-y-2">
+                <div className="flex items-center justify-between px-0.5">
+                    <span className="text-[11.5px] font-medium text-[color:var(--fg-muted)]">{t('plugins.detail.contribs')}</span>
+                    <span className="font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">ui.contrib</span>
                 </div>
-            )}
+                {contrib.error ? (
+                    <div className="inset-group">
+                        <div className="inset-row"><span className="break-all font-mono-ui text-[10.5px]" style={{ color: 'var(--status-danger)' }}>{contrib.error}</span></div>
+                    </div>
+                ) : contribGroups.length > 0 ? (
+                    contribGroups.map(([slot, list]) => (
+                        <div key={slot} className="space-y-1.5">
+                            <div className="px-0.5 font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{slot}</div>
+                            <div className="inset-group">
+                                {list.map((it, i) => {
+                                    const c = it.contribution;
+                                    const label = String(c.title ?? c.type ?? c.id ?? '—');
+                                    const sub = c.type && c.type !== c.title ? String(c.type) : null;
+                                    return (
+                                        <div key={`${slot}:${i}`} className="inset-row">
+                                            <div className="min-w-0">
+                                                <div className="truncate text-[12.5px] text-[color:var(--fg-primary)]">{label}</div>
+                                                {sub && <div className="truncate font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{sub}</div>}
+                                            </div>
+                                            <span className="flex shrink-0 items-center gap-1.5">
+                                                {it.core && <DetailBadge text="core" />}
+                                                {it.disabled && <DetailBadge text="disabled" />}
+                                                {typeof c.wired === 'boolean' && (
+                                                    <DetailBadge text={c.wired ? 'wired' : 'unwired'} color={c.wired ? 'var(--status-ok)' : 'var(--status-warn)'} />
+                                                )}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="inset-group">
+                        <div className="inset-row text-[11.5px] text-[color:var(--fg-faint)]">
+                            {contrib.loading ? '…' : t('plugins.detail.noContribs')}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

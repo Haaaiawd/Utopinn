@@ -18,6 +18,7 @@ import type { FloorMsg } from '../api/chats';
 import { Icon } from '../components/Icon';
 import { StageFrame, charImgFallback, useStageEngine } from '../components/stage/StageFrame';
 import type { Feature } from '../kernel/kernel';
+import { bookable, deriveChapters, SEGMENT_FLOORS, snippet, type NovelToc } from '../lib/novelToc';
 
 /** 卡头像环(形态内复用:会话卡图,无卡/离线 404 → 内置卡面轮换,charDir 定面)。 */
 function StageRing({ size }: { size: number }) {
@@ -33,105 +34,9 @@ function StageRing({ size }: { size: number }) {
 }
 
 /* =========================================================================
-   novel —— 楼→章推导 + 章目录侧栏
+   novel —— 章目录侧栏 + 书页正文;楼→章推导在 lib/novelToc
+   (ChaptersPanel 同源消费,目录真值唯一)
    ========================================================================= */
-
-/** 无分章信号时的自动分段粒度(N 楼/章)。 */
-const SEGMENT_FLOORS = 4;
-
-const ZH_D = '零一二三四五六七八九';
-/** 1–99 中文数词(章序号);≥100 回落阿拉伯数字。 */
-const zhNum = (n: number): string =>
-    n < 10 ? ZH_D[n]!
-        : n === 10 ? '十'
-            : n < 20 ? `十${ZH_D[n % 10]}`
-                : n < 100 ? `${ZH_D[Math.floor(n / 10)]}十${n % 10 ? ZH_D[n % 10] : ''}`
-                    : String(n);
-
-interface TocPara {
-    id: string;
-    text: string;
-    /** user 楼不进书页正文 —— 渲为段间「指挥」注记,不藏数据。 */
-    role: FloorMsg['role'];
-    streaming?: boolean;
-}
-
-interface TocChapter {
-    id: string;
-    num: string;
-    title: string;
-    paras: TocPara[];
-    /** 覆盖楼层区间(服务端楼号 = body 下标);含瞬态楼(负 id)时不下标。 */
-    floors?: [number, number];
-}
-
-/** 推导路径 —— 侧栏如实标注,不假装是服务端章节目录。 */
-type TocStrategy = 'markers' | 'segmented' | 'single' | 'empty' | 'seed';
-interface NovelToc {
-    chapters: TocChapter[];
-    strategy: TocStrategy;
-}
-
-/** 错误楼(发送/生成失败)与空 system 楼(会话头种)不参与成书。 */
-const bookable = (m: FloorMsg) => !m.error && (m.role !== 'system' || m.content.trim());
-
-/** 章题标记首行自带的序号称谓(「第三章 风波」→ num 第三章 / title 风波)。 */
-const CHAPTER_HEAD = /^(第[零〇一二两三四五六七八九十百千万\d]+[章节卷回部篇]|序[章言]|楔子|尾声|Prologue\b|Chapter\s+\d+)\s*[:：·\-—、 ]*\s*(.*)$/i;
-
-const snippet = (s: string, n: number) => {
-    const v = s.trim().replace(/\s+/g, ' ');
-    return v.length > n ? `${v.slice(0, n)}…` : v;
-};
-
-/** 楼→章推导(三级,任务书口径):
- *  1. system 楼带正文 = 分章标记:首行作章题,标记楼本身不渲成段;
- *     首个标记前的楼层归入「序章」。
- *  2. 无标记且楼数 > SEGMENT_FLOORS → 每 N 楼一节(节题取首段起句)。
- *  3. 再少 → 单章兜底。
- *  user 楼保留为段间注记(role 标记,渲染为「指挥」行)。 */
-function deriveChapters(msgs: FloorMsg[], t: (k: string) => string, chatTitle: string): NovelToc {
-    const floors = msgs.filter(bookable);
-    if (!floors.length) return { chapters: [], strategy: 'empty' };
-    const parasOf = (list: FloorMsg[]): TocPara[] =>
-        list.flatMap((m) => {
-            const blocks = (m.displayContent ?? m.content).split(/\n{2,}/).map((x) => x.trim()).filter(Boolean);
-            return blocks.map((text, i) => ({
-                id: `f${m.id}p${i}`, text, role: m.role,
-                streaming: (m.streaming && i === blocks.length - 1) || undefined,
-            }));
-        });
-    const mk = (seq: number, num: string, title: string, list: FloorMsg[]): TocChapter => ({
-        id: `ch-${seq}`, num, title, paras: parasOf(list),
-        floors: list.length && list[0]!.id >= 0 && list[list.length - 1]!.id >= 0
-            ? [list[0]!.id, list[list.length - 1]!.id] : undefined,
-    });
-    const markerAt = floors.map((m, i) => (m.role === 'system' ? i : -1)).filter((i) => i >= 0);
-    if (markerAt.length) {
-        const chapters: TocChapter[] = [];
-        if (markerAt[0]! > 0) {
-            const pro = floors.slice(0, markerAt[0]!);
-            chapters.push(mk(0, t('novel.prologue'), snippet(parasOf(pro)[0]?.text ?? '', 18), pro));
-        }
-        markerAt.forEach((mi) => {
-            const end = markerAt.find((x) => x > mi) ?? floors.length;
-            const line = (floors[mi]!.displayContent ?? floors[mi]!.content).trim().split('\n')[0]!.trim();
-            const head = CHAPTER_HEAD.exec(line);
-            const num = head ? head[1]! : `第${zhNum(chapters.length + 1)}章`;
-            const title = head ? (head[2]?.trim() || head[1]!) : snippet(line, 24);
-            chapters.push(mk(chapters.length, num, snippet(title, 24), floors.slice(mi + 1, end)));
-        });
-        return { chapters, strategy: 'markers' };
-    }
-    if (floors.length > SEGMENT_FLOORS) {
-        const chapters: TocChapter[] = [];
-        for (let i = 0; i < floors.length; i += SEGMENT_FLOORS) {
-            const slice = floors.slice(i, i + SEGMENT_FLOORS);
-            chapters.push(mk(chapters.length, `第${zhNum(chapters.length + 1)}节`, snippet(parasOf(slice)[0]?.text ?? '', 18), slice));
-        }
-        return { chapters, strategy: 'segmented' };
-    }
-    return { chapters: [mk(0, t('novel.body'), chatTitle || snippet(parasOf(floors)[0]?.text ?? '', 18), floors)], strategy: 'single' };
-}
 
 /** 形态错误楼(非 chat 形态没有楼层列,失败得有自己的露面位)。 */
 function StageErrorFloors() {
@@ -357,9 +262,24 @@ function NovelBody() {
     );
 }
 
-/** messenger 形态(规范稿:频道 pill 条 + 620px 泡列 / 非己方带 w-8 头像环)。 */
+/** messenger 形态(规范稿:频道 pill 条 + 620px 泡列 / 非己方带 w-8 头像环)。
+ *  频道数据无服务端面 —— stageData 种子仅 st-* 预演会话可读(带「预演」
+ *  尾标);真会话明说「未提供」空态,永不渲假频道。 */
 function MessengerBody() {
+    const { t } = useI18n();
     const s = useShell();
+    const isSeedSession = !!s.chat && s.chat.id !== `${s.chat.charDir}/${s.chat.chatName}`;
+    if (!isSeedSession) {
+        return (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 px-6 py-14 text-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] text-[color:var(--fg-muted)]">
+                    <Icon name="messages" size={20} />
+                </span>
+                <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">{t('panel.feature.unavailable')}</div>
+                <div className="max-w-[300px] text-[11.5px] leading-relaxed text-[color:var(--fg-muted)]">{t('msg.unavailable.desc')}</div>
+            </div>
+        );
+    }
     const ch = s.stageData.channels.find((c) => c.id === s.stageData.activeChannel) ?? s.stageData.channels[0]!;
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -380,6 +300,8 @@ function MessengerBody() {
                         </button>
                     );
                 })}
+                {/* 种子轨如实标 —— 与 novel strategy:seed、theater gal.seed 同口径 */}
+                <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]" style={{ border: '1px solid var(--border-hairline)' }}>{t('gal.seed')}</span>
             </div>
             <div className="scroll-fade-mask min-h-0 flex-1 select-text overflow-y-auto px-4 py-5 sm:px-7">
                 <div className="mx-auto max-w-[620px] space-y-4 pb-6">
@@ -549,6 +471,10 @@ function TheaterBody() {
     const last = [...floors].reverse().find((m) => m.content.trim() || m.streaming) ?? null;
     const lastPos = last ? floors.lastIndexOf(last) : -1;
     const fromFloors = floors.length > 0;
+    /* vn 预演种子仅 st-* 会话可读;真会话零楼层不落假台词/假场景/假分支
+       (明说空态:对话条显 gal.line.empty,标题回落会话名,分支区空)。 */
+    const isSeedSession = !!s.chat && s.chat.id !== `${s.chat.charDir}/${s.chat.chatName}`;
+    const useSeed = !fromFloors && isSeedSession;
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const ops = last ? eng.opsOf(last, eng.msgs.indexOf(last)) : null;
 
@@ -586,8 +512,8 @@ function TheaterBody() {
     const beatFloors = lastPos > 0 ? floors.slice(Math.max(0, lastPos - STAGE_BEATS), lastPos) : [];
 
     /* 对话条:末楼 speaker 名签 + 正文;user 楼按线名照显(它是玩家台词)。 */
-    const speaker = fromFloors ? (last?.name || card?.name || '—') : vn.speaker;
-    const line = fromFloors ? (last ? (last.displayContent ?? last.content) : '') : vn.line;
+    const speaker = useSeed ? vn.speaker : (last?.name || card?.name || '—');
+    const line = useSeed ? vn.line : (last ? (last.displayContent ?? last.content) : '');
     const streaming = !!last?.streaming;
     const lastNarrator = !!last && isNarratorFloor(last);
     const lastRole = last ? roleOf(last) : null;
@@ -620,7 +546,7 @@ function TheaterBody() {
     /* 选项区:extra.choices 钩位 → swipe 分支 → 空态;
        分支 +1 位 = 「再生成一支」(swipe 生成,仅末楼有意义)。 */
     let choices: VnOption[];
-    if (!fromFloors) {
+    if (useSeed) {
         choices = vn.choices.map((c) => ({ key: c.op, text: c.text, onPick: () => eng.send(c.text) }));
     } else {
         const extra = extraChoices(last, eng.send);
@@ -738,8 +664,8 @@ function TheaterBody() {
             {/* 顶排:场景签 | 赏景/真全屏/退出 */}
             <div className="relative z-10 flex items-center justify-between gap-2 p-3.5">
                 <span className="rounded-full px-3 py-1 text-[11.5px] text-white/90 backdrop-blur-md" style={pillStyle}>
-                    {fromFloors ? (s.chat?.title ?? '') : vn.scene}
-                    {!fromFloors && <span className="ml-1.5 rounded px-1 text-[9.5px] text-white/55" style={{ border: '1px solid rgba(255,255,255,0.18)' }}>{t('gal.seed')}</span>}
+                    {useSeed ? vn.scene : (s.chat?.title ?? '')}
+                    {useSeed && <span className="ml-1.5 rounded px-1 text-[9.5px] text-white/55" style={{ border: '1px solid rgba(255,255,255,0.18)' }}>{t('gal.seed')}</span>}
                 </span>
                 <div className="flex items-center gap-1.5">
                     <button
@@ -960,6 +886,7 @@ const zh: Record<string, string> = {
     'gal.narrator': '旁 白', 'gal.bag.open': '打开背包面板',
     'gal.fs.enter': '真全屏', 'gal.fs.exit': '退出全屏',
     'gal.rotate.hint': '旋转设备体验更佳', 'gal.advance': '推进',
+    'msg.unavailable.desc': '频道数据源未落地 —— 此处不展示示例数据',
 };
 const en: Record<string, string> = {
     ...Object.fromEntries(Object.keys(zh).map((k) => [k, k])),
@@ -978,6 +905,7 @@ const en: Record<string, string> = {
     'gal.narrator': 'NARRATOR', 'gal.bag.open': 'Open bag panel',
     'gal.fs.enter': 'Fullscreen', 'gal.fs.exit': 'Exit fullscreen',
     'gal.rotate.hint': 'Rotate device for a better experience', 'gal.advance': 'Advance',
+    'msg.unavailable.desc': 'Channel data has no server surface — no sample data is shown',
 };
 
 export const stagepackFeature: Feature = {
