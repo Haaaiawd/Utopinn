@@ -211,9 +211,29 @@ const MVU_VAR_KEYS = ['stat_data', 'mvu_data', 'schema', 'display_data', 'delta_
 const MVU_CMD_RE = /\b_\.\w+\s*\(/;
 
 /**
+ * MVU 显式否决(硬位,先于一切正信号):任一命中 → 服务端 settle/
+ * resettle/init 整体静默,settle.ts 的 StatusPlaceHolderImpl 注入路径
+ * 也随之不触发(占位符只经 settleMvuMessage 写入,veto 后该函数不被
+ * 调用)。用途:卡是权威账本时服务端折叠既冗余又错误——CardApp 类卡
+ * 自管 stat_data(ctx.setVariable 写账 + editMessage 剥 _.set 行 +
+ * stat_data_prev/_for 回滚),服务端从已剥文本重折叠会把楼层打回
+ * baseline 永久丢账。
+ *   a) chat_metadata.mvu.enabled === false(显式每聊天关闭)
+ *   b) card.data.extensions.mvu === false ‖ card.extensions.mvu === false
+ *      (卡声明「账由我管」)
+ * 冲突取 false 优先:否决是防御位(跳过无害),误折叠不可逆。
+ */
+export function mvuHardDisabled({ card, chatMetadata } = {}) {
+    if (chatMetadata?.mvu?.enabled === false) return true;
+    if (card?.data?.extensions?.mvu === false || card?.extensions?.mvu === false) return true;
+    return false;
+}
+
+/**
  * MVU 相关性门控(upstream should_enable 每聊天开关的服务端等价):
  * 满足任一即视为 MVU 上下文,否则 init/settle 跳过——非 MVU 卡不该
  * 长出 stat_data 快照或 StatusPlaceHolder 占位符。
+ * 第 0 位:mvuHardDisabled 显式否决(卡自持账本/每聊天关闭)压全部正信号。
  *   a) chat_metadata.mvu.enabled === true(显式每聊天开关)
  *   b) chat_metadata.variables 已有 MVU 镜像键(已初始化/导入的 MVU 聊天)
  *   c) card.data.extensions.mvu 为真(卡声明)
@@ -221,6 +241,7 @@ const MVU_CMD_RE = /\b_\.\w+\s*\(/;
  *   e) floor-0 正文含 <initvar> 块或 _. 命令(MVU 卡的开场初始化惯例)
  */
 function mvuSignalPresent({ card, chatMetadata, lorebooks, floorText } = {}) {
+    if (mvuHardDisabled({ card, chatMetadata })) return false;
     if (chatMetadata?.mvu?.enabled === true) return true;
     const vars = chatMetadata?.variables;
     if (vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined)) return true;
@@ -270,6 +291,10 @@ export async function initializeMvuChat(args) {
         lorebooks = resolved.lorebooks;
         primaryLorebookName ??= resolved.primaryLorebookName;
         card ??= resolved.card;
+    } else if (card === null && args.card === undefined && args.charDir && args.directories) {
+        // 预解书目路径不产生 card——extensions.mvu===false 否决仍需评估,
+        // 此处补读一次(显式传 card:null 视为「已查过、无卡」不重读)。
+        card = await loadCard(args.directories, args.charDir).catch(() => null);
     }
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
@@ -281,6 +306,11 @@ export async function initializeMvuChat(args) {
         const floor = body[0];
         const floorText = [floor?.mes, ...(Array.isArray(floor?.swipes) ? floor.swipes : [])]
             .filter((s) => typeof s === 'string').join('\n');
+        // 显式否决单列状态('disabled' 可观测)——mvuSignalPresent 内部
+        // 同条件返回 false;提前判是为了不回 'not_mvu' 误导成「无信号」。
+        if (mvuHardDisabled({ card, chatMetadata: chat.header?.chat_metadata })) {
+            return { status: 'disabled', initialized: false };
+        }
         if (!mvuSignalPresent({ card, chatMetadata: chat.header?.chat_metadata, lorebooks, floorText })) {
             return { status: 'not_mvu', initialized: false };
         }
@@ -368,9 +398,13 @@ export async function initializeMvuChat(args) {
  *   探测;显式传 false 退化为纯结算(不补 init)。
  * @param {import('@utopinn/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
  * @param {string} [args.primaryLorebookName] autoInit 主书名。
- * @param {object} [args.directories] autoInit 自解书目所需用户目录(.characters 读卡)。
+ * @param {object} [args.directories] autoInit 自解书目 + 卡否决评估所需用户目录
+ *   (.characters 读卡;缺省退化为 metadata 单闸)。
+ * @param {object} [args.card] 调用方已解析的卡文档;不传且 args.directories
+ *   在时按需 lazy 读(显式 null = 已查过无卡,不重读)。
  * @param {(s:string)=>string} [args.substitute] 透传给 init/settle 的宏替换。
  * @returns {Promise<object>} {status, modified, messageIndex, swipeId, baselineIndex, receipt}
+ *   status='disabled' = mvuHardDisabled 否决命中(卡自持账本/聊天显式关闭)。
  */
 export async function settlePersistedMvuMessage(args) {
     const repo = getChatRepo();
@@ -380,6 +414,11 @@ export async function settlePersistedMvuMessage(args) {
     // 不是「聊天刚建」(调用方判断);显式 false 才关闭探测。
     const autoInit = args.autoInit !== false;
     let initAttempted = false;
+    // 卡级否决(args.card 显式传 = 已解;否则楼层带快照、settle 真会 fold
+    // 时才 lazy 补读一次,重试复用)。无快照聊天 settle 本就 no_baseline
+    // 早退,不值一次读盘;群聊/directories 缺席退化为 metadata 单闸。
+    let vetoCard = args.card ?? null;
+    let vetoCardResolved = args.card !== undefined;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
         const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
@@ -390,6 +429,30 @@ export async function settlePersistedMvuMessage(args) {
         const messageIndex = Number.isInteger(args.messageIndex)
             ? Math.min(Math.max(0, args.messageIndex), body.length - 1)
             : body.length - 1;
+
+        // 显式否决第一顺位(mvuHardDisabled):metadata 开关免读卡先判;
+        // 卡级否决只在楼层带快照(= baseline 存在、settleMvuMessage 真会
+        // fold + 注 StatusPlaceHolderImpl)时评估。
+        const chatMetadata = chat.header?.chat_metadata;
+        if (mvuHardDisabled({ chatMetadata })) {
+            return { status: 'disabled', modified: false, messageIndex, swipeId: -1, baselineIndex: -1 };
+        }
+        const floorArmed = body.some((m) => {
+            const v = m?.variables;
+            if (!v || typeof v !== 'object') return false;
+            return Object.values(v).some((s) => isMvuData(s));
+        });
+        if (floorArmed) {
+            if (!vetoCardResolved) {
+                vetoCardResolved = true;
+                if (args.charDir && args.directories) {
+                    vetoCard = await loadCard(args.directories, args.charDir).catch(() => null);
+                }
+            }
+            if (mvuHardDisabled({ card: vetoCard, chatMetadata })) {
+                return { status: 'disabled', modified: false, messageIndex, swipeId: -1, baselineIndex: -1 };
+            }
+        }
 
         const result = settleMvuMessage({ messages: body, messageIndex, substitute: args.substitute });
         if (result.status !== 'settled') {
@@ -408,6 +471,18 @@ export async function settlePersistedMvuMessage(args) {
                     substitute: args.substitute,
                     updateChatVariables,
                 });
+                if (init.status === 'disabled') {
+                    // 否决透传(卡旗标/metadata 开关):楼层无快照时本 settle
+                    // 的 metadata 单闸已拦,这里是 autoInit 探测到的卡级否决。
+                    return {
+                        status: 'disabled',
+                        modified: false,
+                        messageIndex,
+                        swipeId: result.swipeId,
+                        baselineIndex: result.baselineIndex,
+                        receipt: result.receipt,
+                    };
+                }
                 if (init.status === 'initialized' || init.status === 'already_initialized') {
                     if (init.status === 'initialized' && messageIndex === 0) {
                         // 目标是 floor-0 自身:init 已把开场 swipe 文本 fold 进
@@ -496,12 +571,20 @@ export async function settlePersistedMvuMessage(args) {
 /**
  * 全量重放 settle(旧楼层被编辑/删除/换 swipe 后的投影重建)。
  * 逐层 settleMvuMessage(楼层快照就地更新,供后续层作基底),末尾单次 save。
+ * @param {object} [args.directories] 卡否决评估所需用户目录(.characters 读卡;
+ *   缺省退化为 metadata 单闸)。
+ * @param {object} [args.card] 调用方已解析的卡文档(语义同 settlePersistedMvuMessage)。
  * @returns {Promise<object>} {status, floors, settled, modified, receipts}
+ *   status='disabled' = mvuHardDisabled 否决命中(卡自持账本/聊天显式关闭)。
  */
 export async function resettleChatMvu(args) {
     const repo = getChatRepo();
     const opts = { isGroup: !!args.isGroup, groupId: args.groupId };
     const updateChatVariables = args.updateChatVariables !== false;
+    // 卡级否决(args.card 显式传 = 已解;否则聊天证成 MVU 形态后才 lazy
+    // 补读一次,重试复用)。群聊/无 directories 退化为 metadata 单闸。
+    let vetoCard = args.card ?? null;
+    let vetoCardResolved = args.card !== undefined;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
         const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
@@ -509,9 +592,16 @@ export async function resettleChatMvu(args) {
         if (!chat || !body || body.length === 0) {
             return { status: 'no_chat', modified: false, floors: 0 };
         }
+        // 显式否决第一顺位(mvuHardDisabled):metadata 开关免读卡先判。
+        // CardApp 自持账本的聊天镜像键+楼层快照满格——不先 veto,下两个
+        // 闸必过,重放会把已剥命令的楼层打回 baseline 永久丢账。
+        const chatMetadata = chat.header?.chat_metadata;
+        if (mvuHardDisabled({ chatMetadata })) {
+            return { status: 'disabled', modified: false, floors: body.length };
+        }
         // 非 MVU 聊天直接跳过全量重放(O(n²))——无镜像键且无楼层快照
         // 即无 MVU 参与过,refold 只会有害无益。
-        const vars = chat.header?.chat_metadata?.variables;
+        const vars = chatMetadata?.variables;
         const metaMvu = vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined);
         const floorMvu = body.some((m) => {
             const v = m?.variables;
@@ -520,6 +610,15 @@ export async function resettleChatMvu(args) {
         });
         if (!metaMvu && !floorMvu) {
             return { status: 'not_mvu', modified: false, floors: body.length };
+        }
+        if (!vetoCardResolved) {
+            vetoCardResolved = true;
+            if (args.charDir && args.directories) {
+                vetoCard = await loadCard(args.directories, args.charDir).catch(() => null);
+            }
+        }
+        if (mvuHardDisabled({ card: vetoCard, chatMetadata })) {
+            return { status: 'disabled', modified: false, floors: body.length };
         }
 
         let nextBody = body.slice();

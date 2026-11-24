@@ -29,6 +29,7 @@ import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/
 import {
     MVU_STATE_NAMESPACE,
     initializeMvuChat,
+    mvuHardDisabled,
     resolveMvuInitLorebooks,
     resettleChatMvu,
     settlePersistedMvuMessage,
@@ -507,6 +508,161 @@ test('TASK-045 — /api/chats/append + /group/append 真实路由:预建聊天�
         assert.equal(doc.body[1].variables['0'].stat_data.morale, 15);
     } finally {
         server?.close();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// ---------- mvuHardDisabled:卡自持账本 / 每聊天显式关闭(掌门卡腐蚀修复) ----------
+// 场景:CardApp 自管 stat_data —— 卡侧解析 AI 回复里的 _.set 行经
+// ctx.setVariable 写账,editMessage 再把命令行从 mes 剥掉,并自管
+// stat_data_prev/_for 回滚。服务端在 /save + /patch 后 resettleChatMvu
+// 从已剥文本重折叠 → 楼层快照打回 baseline → stat_data 永久丢账。
+// 钉:veto 命中时 init/settle/resettle 全静默(disabled/not_mvu),
+// 楼层快照/mes/镜像/integrity 一字不动,StatusPlaceHolderImpl 不注入。
+
+/** 卡账快照 fixture:isMvuData 需 stat_data + schema 双键在场。 */
+function mvuSnap(statData) {
+    return { stat_data: statData, schema: { type: 'object', properties: {} }, initialized_lorebooks: {} };
+}
+
+test('mvuHardDisabled — 纯函数:旗标矩阵', () => {
+    assert.equal(mvuHardDisabled({}), false);
+    assert.equal(mvuHardDisabled({ chatMetadata: { mvu: { enabled: false } } }), true);
+    assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: false } } } }), true);
+    assert.equal(mvuHardDisabled({ card: { extensions: { mvu: false } } }), true);
+    // 显式 false 压显式 true(否决是防御位)
+    assert.equal(mvuHardDisabled({
+        card: { data: { extensions: { mvu: false } } },
+        chatMetadata: { mvu: { enabled: true } },
+    }), true);
+    // 真值旗标不算否决
+    assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: true } } } }), false);
+});
+
+test('mvuHardDisabled — 卡旗标 extensions.mvu:false:settle/resettle/init 全静默,卡账不回滚', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-veto-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        fs.mkdirSync(dirs.characters, { recursive: true });
+        fs.writeFileSync(path.join(dirs.characters, CHAR + '.json'), JSON.stringify({
+            name: CHAR,
+            data: { name: CHAR, extensions: { world: 'CharBook', mvu: false } },
+        }));
+        const repo = getChatRepo();
+        // 会话态 = CardApp 写后形:floor-0 快照 hp:100;floor-1 快照 hp:42
+        // 是卡自己的账(ctx.setVariable),mes 里的 _.set 行已被 editMessage
+        // 剥掉;chat_metadata.variables.stat_data.hp=42 是卡最新账。
+        await repo.save(HANDLE, CHAR, 'veto', {
+            user_name: 'User',
+            chat_metadata: { variables: { stat_data: { hp: 42 }, schema: { type: 'object' } } },
+        }, [
+            { is_user: false, name: CHAR, mes: '开场。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 100 }) } },
+            { is_user: false, name: CHAR, mes: '她收剑还鞘。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 42 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'veto');
+
+        // resettle:armed(镜像键+楼层快照满格)但卡否决 → 'disabled',整图不动。
+        const rr = await resettleChatMvu({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
+        assert.equal(rr.status, 'disabled', '卡旗标否决 resettle');
+        let doc = await repo.get(HANDLE, CHAR, 'veto');
+        assert.equal(doc.integrity, before.integrity, '否决不推高 integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, '卡账快照不回滚 baseline');
+        assert.equal(doc.body[1].mes, '她收剑还鞘。', 'mes 不被注入占位符');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, '镜像不被覆盖');
+
+        // settle:同 veto —— 不 fold、不注占位符。
+        const ss = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
+        assert.equal(ss.status, 'disabled', '卡旗标否决 settle');
+        doc = await repo.get(HANDLE, CHAR, 'veto');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42);
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), '无占位符注入');
+
+        // init:正信号满格([initvar] 注释 + floorText _.set)也被卡否决 → 'disabled'。
+        const init = await initializeMvuChat({
+            handle: HANDLE, charDir: CHAR, name: 'veto',
+            lorebooks: [{ name: 'b', isPrimary: true, entries: [{ content: 'hp: 1', comment: '[initvar]' }] }],
+            directories: dirs,
+        });
+        assert.equal(init.status, 'disabled', '卡旗标否决 init');
+        assert.equal(init.initialized, false);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('mvuHardDisabled — chat_metadata.mvu.enabled === false:免读卡单闸全静默', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-vetometa-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        // 故意不写卡文件 —— metadata 单闸即须成立(无卡可读不兜底)。
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'offchat', {
+            user_name: 'User',
+            chat_metadata: { mvu: { enabled: false }, variables: { stat_data: { hp: 7 } } },
+        }, [
+            { is_user: false, name: CHAR, mes: "开局。\n_.set('hp', 7);", swipe_id: 0, variables: { '0': mvuSnap({ hp: 7 }) } },
+            { is_user: false, name: CHAR, mes: "推进。\n_.set('hp', 9);", swipe_id: 0, variables: { '0': mvuSnap({ hp: 9 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'offchat');
+
+        const rr = await resettleChatMvu({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(rr.status, 'disabled');
+        const ss = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(ss.status, 'disabled');
+        const init = await initializeMvuChat({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(init.status, 'disabled');
+
+        const doc = await repo.get(HANDLE, CHAR, 'offchat');
+        assert.equal(doc.integrity, before.integrity, '三连 veto 不推高 integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 9, '卡账快照不回滚');
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), '占位符不注入');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 7, '镜像不被覆盖');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('mvuHardDisabled — /save 写后 resettleMvuAfterWrite seam:卡旗标经 directories 生效', async () => {
+    // 真实伤害链:CardApp editMessage 剥命令 → PUT /save → seam resettle →
+    // 楼层快照回 baseline。本钉证明 seam 到 resettleChatMvu 的 directories
+    // 管道通了(无 directories 时卡否决读不到卡 = 不生效)。
+    if (!getConfigFilePath()) {
+        setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
+    }
+    reloadConfigCache();
+    const { resettleMvuAfterWrite } = await import('../src/endpoints/chats.js');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-vetoseam-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        fs.mkdirSync(dirs.characters, { recursive: true });
+        fs.writeFileSync(path.join(dirs.characters, CHAR + '.json'), JSON.stringify({
+            name: CHAR,
+            data: { name: CHAR, extensions: { mvu: false } },
+        }));
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'seamveto', {
+            user_name: 'User',
+            chat_metadata: { variables: { stat_data: { hp: 42 } } },
+        }, [
+            { is_user: false, name: CHAR, mes: '开场。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 100 }) } },
+            { is_user: false, name: CHAR, mes: '已剥命令的楼层。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 42 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'seamveto');
+
+        await resettleMvuAfterWrite({
+            body: { avatar_url: 'Alice.png', file_name: 'seamveto.jsonl' },
+            user: { profile: { handle: HANDLE }, directories: dirs },
+        });
+        const doc = await repo.get(HANDLE, CHAR, 'seamveto');
+        assert.equal(doc.integrity, before.integrity, 'seam 全静默不推高 integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, '卡账不回滚');
+        assert.equal(doc.body[1].mes, '已剥命令的楼层。', 'mes 不被改写');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, '镜像不被覆盖');
+    } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });

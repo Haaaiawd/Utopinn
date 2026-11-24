@@ -1613,6 +1613,8 @@ function mvuRepoArgsFromRequest(request, { group = false } = {}) {
         name: key.name,
         isGroup: key.isGroup,
         groupId: key.groupId,
+        // mvuHardDisabled 卡级否决评估要读卡(.characters);群聊 '' 自动退化。
+        directories: request.user.directories,
     };
 }
 
@@ -1637,11 +1639,7 @@ export async function settleMvuAfterAppend(request, { group = false, autoInit = 
     try {
         const args = mvuRepoArgsFromRequest(request, { group });
         if (!args) return;
-        await settlePersistedMvuMessage({
-            ...args,
-            autoInit,
-            directories: request.user.directories,
-        });
+        await settlePersistedMvuMessage({ ...args, autoInit });
     } catch (error) {
         console.error('[mvu] post-append settle failed:', error);
     }
