@@ -547,7 +547,8 @@ async function selectZhangmen(page) {
     await closeAllPopups(page);
     await closeAnyOpenTopSettingsDrawer(page);
     await openCharacterList(page);
-    const card = page.locator('#rm_print_characters_block .character_select').filter({ has: page.locator(`img[src*="file=${AVATAR}"]`) });
+    // getThumbnailUrl percent-encodes the file param — match the encoded form.
+    const card = page.locator('#rm_print_characters_block .character_select').filter({ has: page.locator(`img[src*="file=${encodeURIComponent(AVATAR)}"]`) });
     await expect(card, 'Bundled 我没想当掌门啊 avatar must be selected unambiguously').toHaveCount(1);
     await card.click();
     await page.waitForFunction(avatar => {

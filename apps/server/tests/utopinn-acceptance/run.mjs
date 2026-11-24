@@ -78,8 +78,10 @@ function cli(args, { stdin } = {}) {
         [CLI_PATH, '-s', BASE, '--state', STATE_FILE, '--json', ...args],
         {
             input: stdin ?? '', encoding: 'utf8', timeout: 120_000, cwd: WORK,
-            // char 全文/大世界书 dump 会超 spawnSync 默认 1MB 上限(新种子卡
-            // 内嵌卡应用让单卡 JSON 达数 MB),显式放大防 ENOBUFS 假阴性。
+            // A full card dump (utopinn char) can exceed the spawnSync default
+            // 1MB stdout cap — the bundled card's embedded CardApp pushes it
+            // to several MB — raise maxBuffer explicitly to avoid ENOBUFS
+            // false negatives.
             maxBuffer: 64 * 1024 * 1024,
             env: {
                 ...process.env,
@@ -177,9 +179,11 @@ function seedCorpus(dataRoot, { upstreamUrl }) {
     sdoc.oai_settings = {
         ...(sdoc.oai_settings ?? {}),
         chat_completion_source: 'openai',
-        // 首跑一次会把 legacy oai 槽合成 connection_profiles(default 档指
-        // 真 api.openai.com);profile 派发恒优先于 oai_settings.reverse_proxy,
-        // 不清空 generate 会直连外网而不是 hang-server。置空回落旧单槽。
+        // First boot synthesizes legacy oai slots into connection_profiles
+        // (the "default" profile points at real api.openai.com). Profile
+        // dispatch always wins over oai_settings.reverse_proxy, so without
+        // clearing this a generate would dial the public internet instead of
+        // the hang server. Emptying the list falls back to the legacy slot.
         connection_profiles: [],
         reverse_proxy: upstreamUrl,
         proxy_password: 'acc-probe-pw',

@@ -324,6 +324,8 @@ export interface WorldListResponse {
 export interface WorldGetResponse {
     name: string;
     doc: WorldBook;
+    /** true when the doc came from the bound card's embedded character_book (?char= fallback), not a materialized world file. */
+    embedded?: boolean;
 }
 export interface WorldPutResponse {
     ok: true;

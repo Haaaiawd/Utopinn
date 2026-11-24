@@ -49,9 +49,10 @@ test('golden-assemble:语料存在性检查', (t) => {
     const goldens = listGoldens();
     console.log('   [golden-assemble] ' + goldens.length + ' golden files discovered');
     if (goldens.length === 0) {
-        // 种子卡换位后公开语料为空(Seraphina 卡与 golden 一并移除),
-        // 待 tests/golden-diff/capture.sh 对 default_我没想当掌门啊 重新捕获。
-        t.skip('no public golden corpus — recapture for the new seed card');
+        // 语料已带一份 core 自产 synthetic 基线(default_我没想当掌门啊,
+        // 标记 synthetic:true,钉 harness 活性与回归,非上游 ST 真值);
+        // 权威 parity 仍待 tests/golden-diff/capture.sh 对种子卡重捕获。
+        t.skip('no golden corpus — neither synthetic baseline nor upstream capture found');
         return;
     }
 });

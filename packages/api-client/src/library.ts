@@ -187,9 +187,11 @@ export class LibraryApi {
         return this.client.request(`${P}/worlds`);
     }
 
-    /** CLI `wi` */
-    worldGet(name: string): Promise<WorldGetResponse> {
-        return this.client.request(`${P}/worlds/${enc(name)}`);
+    /** CLI `wi`. `char` lets the endpoint serve a bound card's embedded
+     *  primary book when no world document was materialized (seeded cards). */
+    worldGet(name: string, opts: { char?: string } = {}): Promise<WorldGetResponse> {
+        const q = opts.char ? `?char=${enc(opts.char)}` : '';
+        return this.client.request(`${P}/worlds/${enc(name)}${q}`);
     }
 
     /** CLI `world-edit`:整档写回 {entries:{}}(upsert;名经 resolveName 归一)。 */

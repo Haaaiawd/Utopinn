@@ -8,6 +8,7 @@ import sanitize from 'sanitize-filename';
 import { createGitClient } from '../git/client.js';
 
 import { resolvePathWithinParent } from '../util.js';
+import { loadCardData, ensureCardAppAssets } from '../card-runtime/mounts.js';
 
 export const router = express.Router();
 
@@ -329,7 +330,7 @@ router.get('/:charId/diff/:hash', async (request, response) => {
  * Serve CardApp files for a character.
  * GET /api/card-app/:charId/*
  */
-router.get('/:charId/*', (request, response) => {
+router.get('/:charId/*', async (request, response) => {
     try {
         const charId = sanitize(String(request.params.charId));
         const filePath = decodeURIComponent(request.params[0]);
@@ -339,7 +340,21 @@ router.get('/:charId/*', (request, response) => {
         }
 
         const charDir = path.join(request.user.directories.cardApps, charId);
-        const fullPath = resolvePathWithinParent(charDir, filePath);
+        let fullPath = resolvePathWithinParent(charDir, filePath);
+
+        // Seeded characters keep card_app.files inside the PNG until the first
+        // mount or import extracts them; without this the legacy UI's
+        // activateCardApp hits 404 on the entry module. Mirror the card-runtime
+        // lazy extraction — ensureCardAppAssets leaves files already on disk
+        // authoritative, so nothing user-edited is overwritten.
+        if (!fullPath || !fs.existsSync(fullPath)) {
+            try {
+                const card = await loadCardData(request.user.directories, charId);
+                if (card && ensureCardAppAssets(card, request.user.directories, charId)) {
+                    fullPath = resolvePathWithinParent(charDir, filePath);
+                }
+            } catch { /* extraction failure falls through to the normal 404 */ }
+        }
 
         if (!fullPath || !fs.existsSync(fullPath)) {
             return response.sendStatus(404);
