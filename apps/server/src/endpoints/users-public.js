@@ -354,7 +354,7 @@ router.post('/register', parseAccountBody, async (request, response) => {
     try {
         const settings = await getAdminSettings();
         if (!settings?.accountRegistration?.enabled) {
-            return response.status(403).json({ error: 'Account registration is disabled.' });
+            return response.status(403).json({ error: 'Account registration is disabled.', code: 'registration_disabled' });
         }
 
         const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
@@ -365,17 +365,17 @@ router.post('/register', parseAccountBody, async (request, response) => {
         const password = String(request.body?.password || '');
 
         if (!rawHandle || !rawName || !password) {
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         const handle = sanitizeRequestedHandle(rawHandle);
         if (!handle) {
-            return response.status(400).json({ error: 'Invalid handle' });
+            return response.status(400).json({ error: 'Invalid handle', code: 'invalid_handle' });
         }
 
         const handles = await getAllUserHandles();
         if (handles.includes(handle)) {
-            return response.status(409).json({ error: 'User already exists' });
+            return response.status(409).json({ error: 'User already exists', code: 'user_exists' });
         }
 
         if (!request.session) {
@@ -411,7 +411,7 @@ router.post('/register', parseAccountBody, async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.warn('Registration failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later.', code: 'rate_limited' });
         }
 
         console.error('Registration failed:', error);
@@ -655,7 +655,7 @@ router.post('/login', parseAccountBody, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Login failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
@@ -666,12 +666,12 @@ router.post('/login', parseAccountBody, async (request, response) => {
 
         if (!user) {
             console.error('Login failed: User', request.body.handle, 'not found');
-            return response.status(403).json({ error: 'Incorrect credentials' });
+            return response.status(403).json({ error: 'Incorrect credentials', code: 'incorrect_credentials' });
         }
 
         if (!user.enabled) {
             console.warn('Login failed: User', user.handle, 'is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'User is disabled', code: 'user_disabled' });
         }
 
         // An account with no stored password must NOT authenticate through
@@ -690,7 +690,7 @@ router.post('/login', parseAccountBody, async (request, response) => {
         if (!user.password) {
             console.warn('Login failed: Password login rejected for passwordless user', user.handle);
             if (DISCREET_LOGIN) {
-                return response.status(403).json({ error: 'Incorrect credentials' });
+                return response.status(403).json({ error: 'Incorrect credentials', code: 'incorrect_credentials' });
             }
             // `code` lets the first-party login surface show a dedicated
             // "account has no password" recovery path instead of a generic
@@ -704,7 +704,7 @@ router.post('/login', parseAccountBody, async (request, response) => {
 
         if (user.password !== getPasswordHash(request.body.password, user.salt)) {
             console.warn('Login failed: Incorrect password for', user.handle);
-            return response.status(403).json({ error: 'Incorrect credentials' });
+            return response.status(403).json({ error: 'Incorrect credentials', code: 'incorrect_credentials' });
         }
 
         if (!request.session) {
@@ -720,7 +720,7 @@ router.post('/login', parseAccountBody, async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Login failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or recover your password.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or recover your password.', code: 'rate_limited' });
         }
 
         console.error('Login failed:', error);
@@ -732,7 +732,7 @@ router.post('/recover-step1', parseAccountBody, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Recover step 1 failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
@@ -743,12 +743,12 @@ router.post('/recover-step1', parseAccountBody, async (request, response) => {
 
         if (!user) {
             console.error('Recover step 1 failed: User', request.body.handle, 'not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         if (!user.enabled) {
             console.error('Recover step 1 failed: User', user.handle, 'is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'User is disabled', code: 'user_disabled' });
         }
 
         const mfaCode = generateRecoveryCode();
@@ -760,7 +760,7 @@ router.post('/recover-step1', parseAccountBody, async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Recover step 1 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Recover step 1 failed:', error);
@@ -772,7 +772,7 @@ router.post('/recover-step2', parseAccountBody, async (request, response) => {
     try {
         if (!request.body.handle || !request.body.code) {
             console.warn('Recover step 2 failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         /** @type {import('../users.js').User} */
@@ -786,12 +786,12 @@ router.post('/recover-step2', parseAccountBody, async (request, response) => {
 
         if (!user) {
             console.error('Recover step 2 failed: User', request.body.handle, 'not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         if (!user.enabled) {
             console.warn('Recover step 2 failed: User', user.handle, 'is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'User is disabled', code: 'user_disabled' });
         }
 
         const mfaCode = MFA_CACHE.get(user.handle);
@@ -799,7 +799,7 @@ router.post('/recover-step2', parseAccountBody, async (request, response) => {
         if (request.body.code !== mfaCode) {
             await recoverLimiter.consume(ip);
             console.warn('Recover step 2 failed: Incorrect code');
-            return response.status(403).json({ error: 'Incorrect code' });
+            return response.status(403).json({ error: 'Incorrect code', code: 'incorrect_code' });
         }
 
         if (request.body.newPassword) {
@@ -823,7 +823,7 @@ router.post('/recover-step2', parseAccountBody, async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Recover step 2 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Recover step 2 failed:', error);

@@ -96,7 +96,20 @@ export async function assertOk(res: Response): Promise<void> {
     if (!res.ok) {
         const unreachable = res.status === 502 && res.headers.has('x-utopinn-proxy-error');
         const text = await res.text().catch(() => '');
-        throw new ApiError(unreachable ? 'upstream_unavailable' : (text || res.statusText), res.status);
+        let message = unreachable ? 'upstream_unavailable' : (text || res.statusText);
+        let code: string | undefined;
+        // {error, code} JSON bodies (users-* endpoints): surface the human
+        // string, not the blob, and carry the machine code through so callers
+        // can map it to localized copy without string-matching English.
+        if (!unreachable && text) {
+            try {
+                const j = JSON.parse(text) as { error?: unknown; message?: unknown; code?: unknown };
+                if (typeof j.error === 'string' && j.error) message = j.error;
+                else if (typeof j.message === 'string' && j.message) message = j.message;
+                if (typeof j.code === 'string' && j.code) code = j.code;
+            } catch { /* non-JSON body — keep raw text */ }
+        }
+        throw new ApiError(message, res.status, code);
     }
 }
 

@@ -828,7 +828,7 @@ function PresetPop({ onClose }: { onClose: () => void }) {
                                         );
                                     }) : (
                                         <div className="space-y-2 p-2.5 text-[11px] text-[color:var(--fg-muted)]">
-                                            <div className="break-all font-mono-ui text-[10.5px]">{s.live ? (s.modelsError ?? t('st.conn.noModels')) : t('stage.demoData')}</div>
+                                            <div className="break-all font-mono-ui text-[10.5px]">{s.live ? (s.modelsError === 'profiles_error' ? t('st.conn.profilesError') : (s.modelsError ?? t('st.conn.noModels'))) : t('stage.demoData')}</div>
                                             <button
                                                 type="button"
                                                 className="w-full rounded-lg px-2.5 py-1.5 text-[11.5px] font-medium"

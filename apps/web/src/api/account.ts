@@ -14,11 +14,7 @@ export interface CurrentUser {
     created?: number;
 }
 
-async function parseErrorText(res: Response): Promise<string> {
-    return (await parseErrorBody(res)).text;
-}
-
-/** 与 parseErrorText 同源,额外带出服务端 JSON 里的机器可读 code(若给)。 */
+/** 解服务端 {error, code} JSON 错误体;text 取人读串,code 取机器判别码(若有)。 */
 async function parseErrorBody(res: Response): Promise<{ text: string; code?: string }> {
     const raw = await res.text().catch(() => '');
     if (!raw) return { text: res.statusText || `HTTP ${res.status}` };
@@ -33,6 +29,11 @@ async function parseErrorBody(res: Response): Promise<{ text: string; code?: str
         /* 非 JSON 文本原样返回 */
     }
     return { text: raw };
+}
+
+async function throwApiError(res: Response): Promise<never> {
+    const { text, code } = await parseErrorBody(res);
+    throw new ApiError(text, res.status, code);
 }
 
 /** GET /api/users/me —— accounts-off 时恒返 default-user(admin=true)。 */
@@ -65,7 +66,7 @@ export async function loginAccount(handle: string, password: string): Promise<vo
 /** POST /api/users/logout —— 清 session.handle/csrfToken/version。 */
 export async function logoutAccount(): Promise<void> {
     const res = await apiFetch('/api/users/logout', { method: 'POST' });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) await throwApiError(res);
 }
 
 /** POST /api/users/oauth/providers — anonymous-reachable; failure/unconfigured → null (LoginGate hides the OAuth row). */
@@ -91,7 +92,7 @@ export async function requestRecoveryCode(handle: string): Promise<void> {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle }),
     }, { retryOn403: false });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) await throwApiError(res);
 }
 
 /** POST /api/users/recover-step2 — code + newPassword; empty newPassword clears the password (403 = wrong code). */
@@ -101,7 +102,7 @@ export async function resetPasswordWithCode(handle: string, code: string, newPas
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle, code, newPassword }),
     }, { retryOn403: false });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) await throwApiError(res);
 }
 
 /** POST /api/users/change-name —— 改显示名(204 No Content)。 */
@@ -111,7 +112,7 @@ export async function changeUserName(handle: string, name: string): Promise<void
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle, name }),
     });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) await throwApiError(res);
 }
 
 /** POST /api/users/change-password —— 设/清密码(newPassword 空串 = 清除;admin 无需旧密)。 */
@@ -121,5 +122,24 @@ export async function changeUserPassword(handle: string, newPassword: string, ol
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ handle, newPassword, ...(oldPassword !== undefined ? { oldPassword } : {}) }),
     });
-    if (!res.ok) throw new ApiError(await parseErrorText(res), res.status);
+    if (!res.ok) await throwApiError(res);
+}
+
+/**
+ * 账号域错误 → 本地化文案。users-*(public/admin/private)错误体带稳定
+ * `code` 机器判别码;已知码映射 `login.err.<code>` 词条,未知码/无码
+ * 回落原始 message(诚实露出,不编造语义)。
+ */
+const LOCALIZED_ERR_CODES = new Set([
+    'missing_fields', 'invalid_handle', 'user_exists', 'registration_disabled',
+    'incorrect_credentials', 'user_disabled', 'passwordless', 'rate_limited',
+    'user_not_found', 'incorrect_code', 'unauthorized', 'incorrect_password',
+    'cannot_self', 'protected_user',
+]);
+
+export function accountErrorText(e: unknown, t: (key: string) => string): string {
+    if (e instanceof ApiError && e.code && LOCALIZED_ERR_CODES.has(e.code)) {
+        return t(`login.err.${e.code}`);
+    }
+    return e instanceof Error ? e.message : String(e);
 }

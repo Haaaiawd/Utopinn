@@ -706,13 +706,13 @@ router.post('/set-quota', requireAdminMiddleware, async (request, response) => {
     try {
         const handle = String(request.body?.handle || '').trim();
         if (!handle) {
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         /** @type {import('../users.js').User} */
         const user = await storage.getItem(toKey(handle));
         if (!user) {
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         const rawQuota = request.body?.storageQuotaBytes;
@@ -781,12 +781,12 @@ router.post('/disable', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Disable user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle === request.user.profile.handle) {
             console.warn('Disable user failed: Cannot disable yourself');
-            return response.status(400).json({ error: 'Cannot disable yourself' });
+            return response.status(400).json({ error: 'Cannot disable yourself', code: 'cannot_self' });
         }
 
         /** @type {import('../users.js').User} */
@@ -794,7 +794,7 @@ router.post('/disable', requireAdminMiddleware, async (request, response) => {
 
         if (!user) {
             console.error('Disable user failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.enabled = false;
@@ -810,7 +810,7 @@ router.post('/enable', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Enable user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         /** @type {import('../users.js').User} */
@@ -818,7 +818,7 @@ router.post('/enable', requireAdminMiddleware, async (request, response) => {
 
         if (!user) {
             console.error('Enable user failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.enabled = true;
@@ -834,7 +834,7 @@ router.post('/promote', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Promote user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         /** @type {import('../users.js').User} */
@@ -842,7 +842,7 @@ router.post('/promote', requireAdminMiddleware, async (request, response) => {
 
         if (!user) {
             console.error('Promote user failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.admin = true;
@@ -858,12 +858,12 @@ router.post('/demote', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Demote user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle === request.user.profile.handle) {
             console.warn('Demote user failed: Cannot demote yourself');
-            return response.status(400).json({ error: 'Cannot demote yourself' });
+            return response.status(400).json({ error: 'Cannot demote yourself', code: 'cannot_self' });
         }
 
         /** @type {import('../users.js').User} */
@@ -871,7 +871,7 @@ router.post('/demote', requireAdminMiddleware, async (request, response) => {
 
         if (!user) {
             console.error('Demote user failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.admin = false;
@@ -887,7 +887,7 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle || !request.body.name) {
             console.warn('Create user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         const handles = await getAllUserHandles();
@@ -895,12 +895,12 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
 
         if (!handle) {
             console.warn('Create user failed: Invalid handle');
-            return response.status(400).json({ error: 'Invalid handle' });
+            return response.status(400).json({ error: 'Invalid handle', code: 'invalid_handle' });
         }
 
         if (handles.some(x => x === handle)) {
             console.warn('Create user failed: User with that handle already exists');
-            return response.status(409).json({ error: 'User already exists' });
+            return response.status(409).json({ error: 'User already exists', code: 'user_exists' });
         }
 
         const salt = getPasswordSalt();
@@ -940,17 +940,17 @@ router.post('/delete', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Delete user failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle === request.user.profile.handle) {
             console.warn('Delete user failed: Cannot delete yourself');
-            return response.status(400).json({ error: 'Cannot delete yourself' });
+            return response.status(400).json({ error: 'Cannot delete yourself', code: 'cannot_self' });
         }
 
         if (request.body.handle === DEFAULT_USER.handle) {
             console.warn('Delete user failed: Cannot delete default user');
-            return response.status(400).json({ error: 'Sorry, but the default user cannot be deleted. It is required as a fallback.' });
+            return response.status(400).json({ error: 'Sorry, but the default user cannot be deleted. It is required as a fallback.', code: 'protected_user' });
         }
 
         await storage.removeItem(toKey(request.body.handle));
@@ -984,7 +984,7 @@ router.post('/slugify', requireAdminMiddleware, async (request, response) => {
     try {
         if (!request.body.text) {
             console.warn('Slugify failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         const text = slugify(request.body.text);

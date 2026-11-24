@@ -11,9 +11,21 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '../../i18n';
 import { ApiError } from '../../api/client';
-import { getOAuthProviders, loginAccount, requestRecoveryCode, resetPasswordWithCode } from '../../api/account';
+import { accountErrorText, getOAuthProviders, loginAccount, requestRecoveryCode, resetPasswordWithCode } from '../../api/account';
 import { oauthProviderLinks, type OAuthProviderLink } from '../../api/oauth';
 import { Icon } from '../Icon';
+
+// OAuth callback failures bounce back as /login?error=<reason>
+// (users-public.js redirectToLoginWithError). The SPA owns /login — nothing
+// else reads the param. Reasons with a user-actionable meaning get their own
+// copy; the rest (state/token/callback plumbing) share the generic line.
+const OAUTH_ERR_KEYS: Record<string, string> = {
+    oauth_user_disabled: 'login.err.oauth.disabled',
+    oauth_user_not_linked: 'login.err.oauth.notLinked',
+    discord_guild_check_failed: 'login.err.oauth.guild',
+    provider_not_configured: 'login.err.oauth.notConfigured',
+    unsupported_provider: 'login.err.oauth.notConfigured',
+};
 
 export function LoginGate() {
     const { t } = useI18n();
@@ -33,7 +45,7 @@ export function LoginGate() {
     const [passwordlessFor, setPasswordlessFor] = useState('');
 
     // OAuth-bound accounts have no local password and the server refuses the
-    // password path for them (users-public.js:684-687). The provider buttons
+    // password path for them (users-public.js /login, ~line 690). The provider buttons
     // are their only way in, so they must be discovered and rendered here.
     useEffect(() => {
         let dead = false;
@@ -43,8 +55,21 @@ export function LoginGate() {
         return () => { dead = true; };
     }, []);
 
+    // Surface the ?error=<reason> bounce once, then strip it so a reload or a
+    // bookmarked URL doesn't replay a stale OAuth failure.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const reason = params.get('error');
+        if (!reason) return;
+        params.delete('error');
+        const qs = params.toString();
+        window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}${window.location.hash}`);
+        const key = OAUTH_ERR_KEYS[reason];
+        setErr(key ? t(key) : t('login.err.oauth'));
+    }, [t]);
+
     function fail(e: unknown) {
-        setErr(e instanceof ApiError ? e.message : String(e));
+        setErr(accountErrorText(e, t));
         setBusy(false);
     }
 

@@ -1054,12 +1054,12 @@ router.post('/change-password', async (request, response) => {
     try {
         if (!request.body.handle) {
             console.warn('Change password failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change password failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'Unauthorized', code: 'unauthorized' });
         }
 
         /** @type {import('../users.js').User} */
@@ -1067,17 +1067,17 @@ router.post('/change-password', async (request, response) => {
 
         if (!user) {
             console.error('Change password failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         if (!user.enabled) {
             console.error('Change password failed: User is disabled');
-            return response.status(403).json({ error: 'User is disabled' });
+            return response.status(403).json({ error: 'User is disabled', code: 'user_disabled' });
         }
 
         if (!request.user.profile.admin && user.password && user.password !== getPasswordHash(request.body.oldPassword, user.salt)) {
             console.error('Change password failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         if (request.body.newPassword) {
@@ -1694,12 +1694,12 @@ router.post('/change-name', async (request, response) => {
     try {
         if (!request.body.name || !request.body.handle) {
             console.warn('Change name failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.body.handle !== request.user.profile.handle && !request.user.profile.admin) {
             console.error('Change name failed: Unauthorized');
-            return response.status(403).json({ error: 'Unauthorized' });
+            return response.status(403).json({ error: 'Unauthorized', code: 'unauthorized' });
         }
 
         /** @type {import('../users.js').User} */
@@ -1707,7 +1707,7 @@ router.post('/change-name', async (request, response) => {
 
         if (!user) {
             console.warn('Change name failed: User not found');
-            return response.status(404).json({ error: 'User not found' });
+            return response.status(404).json({ error: 'User not found', code: 'user_not_found' });
         }
 
         user.name = request.body.name;
