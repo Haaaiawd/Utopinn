@@ -580,6 +580,15 @@ export function createGenerationJob(request, options) {
     job.finishedAt = null;
     job.persistenceInFlight = false;
     job.requestMeta = buildGenerationJobRequestMeta(request, persistTarget);
+    // TH 生命周期信箱(emitJobTransition 漏斗取):ctx 显式挂载优先
+    // (utopinn-generate 预挂,dispatchBody 盖 body 后 charDir/chatName
+    // 不在 body 上),否则从 persist_target 派生;两路皆空 → charDir/
+    // chatName 空串 → 事件落会话态信箱(withEventDoc 语义)。
+    job.thCtx = normalizeThCtx(request.utopinnThCtx) ?? deriveThCtxFromPersistTarget(persistTarget);
+    // 宿主自管链(trigger-generation / quiet-generation 的 /internal 合成
+    // request)自己 recordThEvent 同名事件——置真 → 本 job 的状态迁移不再
+    // 自动发,防 started/ended 双发让卡侧 arm()/回滚钩子跑两遍。
+    job.thSelfManaged = request.utopinnThSelfManaged === true;
     job.modelName = String(request.body?.model || '');
     if (!Array.isArray(job.events)) {
         job.events = [];
@@ -701,11 +710,87 @@ function notifyJobStatus(job) {
  * 去重发 job 事件——比逐个迁移点埋点少一圈挂点,且节流 progress 帧
  * (status 不变)天然不重复发。
  */
+/** request.utopinnThCtx → {charDir, chatName}|null。 */
+function normalizeThCtx(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const charDir = String(raw.charDir ?? '').trim();
+    const chatName = stripJsonlExt(String(raw.chatName ?? '').trim());
+    if (!charDir && !chatName) return null;
+    return { charDir, chatName };
+}
+
+/**
+ * persist_target → TH 信箱 ctx(utopinnThCtx 缺席时的派生面):
+ *   character → avatar_url/file_name;group → original_avatar(发言成员)/
+ *   id。不可派生( kind:'none'/缺字段)→ null → 事件落会话态信箱。
+ */
+function deriveThCtxFromPersistTarget(persistTarget) {
+    if (!persistTarget || typeof persistTarget !== 'object') return null;
+    if (persistTarget.kind === 'group') {
+        return {
+            charDir: normalizePersistAvatarDirectory(persistTarget.original_avatar ?? ''),
+            chatName: stripJsonlExt(String(persistTarget.id ?? '')),
+        };
+    }
+    const charDir = normalizePersistAvatarDirectory(persistTarget.avatar_url ?? '');
+    const chatName = stripJsonlExt(normalizePersistJsonlFileName(persistTarget.file_name ?? ''));
+    if (!charDir && !chatName) return null;
+    return { charDir, chatName };
+}
+
+/** job → recordThEvent ctx2(withEventDoc 契约:{handle,charDir,chatName})。 */
+function jobThContext(job) {
+    const handle = String(job?.handle ?? job?.owner ?? '');
+    if (!handle) return null;
+    const ctx = (job.thCtx && typeof job.thCtx === 'object') ? job.thCtx : null;
+    return { handle, charDir: String(ctx?.charDir ?? ''), chatName: String(ctx?.chatName ?? '') };
+}
+
+// TH 生命周期信箱 —— 用户正常发送(/api/utopinn/generate)此前没有任何
+// recordThEvent,CardApp 的 arm()/回滚钩子永远不跑。全部 job 状态迁移同
+// 漏斗 emitJobTransition 挂点,事件名/负载照抄 trigger-generation.js:
+//   running            → generation_started [verb]
+//   completed          → generation_ended   [finalText](ack/兜底 persist 同归)
+//   failed | cancelled → generation_stopped [err.slice(0,300)]
+// 每次迁移恰一事件(started → ended|stopped 二选一);job 回收重跑自然再武装。
+// 信箱写失败不掩 job 生命周期(recordThEvent 内吞,本层再裹一层防火)。
+let utopinnThModulePromise = null;
+function loadUtopinnTh() {
+    // 注意层级:本文件在 endpoints/backends/ 下,插件目录取 ../../。
+    utopinnThModulePromise ??= import('../../plugins/utopinn-th.js').catch(() => null);
+    return utopinnThModulePromise;
+}
+function emitThLifecycle(job, status) {
+    try {
+        if (!job || job.thSelfManaged === true) return;
+        let event = null;
+        let args = null;
+        if (status === 'running') {
+            event = 'generation_started';
+            args = [String(job.requestMeta?.verb || 'normal')];
+        } else if (status === 'completed') {
+            event = 'generation_ended';
+            args = [String(job.text ?? '')];
+        } else if (status === 'failed' || status === 'cancelled') {
+            event = 'generation_stopped';
+            args = [String(job.error || status).slice(0, 300)];
+        } else {
+            return; // queued/awaiting_ack/persisting —— 非生命周期位
+        }
+        const ctx = jobThContext(job);
+        if (!ctx) return;
+        void loadUtopinnTh().then((mod) => {
+            try { return mod?.recordThEvent?.(ctx, event, args); } catch { /* noop */ }
+        }).catch(() => {});
+    } catch { /* 观测面绝不炸 job 生命周期 */ }
+}
+
 function emitJobTransition(job) {
     try {
         const status = String(job?.status ?? '');
         if (!status || job._diagStatus === status) return;
         job._diagStatus = status;
+        emitThLifecycle(job, status);
         diagEmit({
             lvl: status === 'failed' ? 'error' : (status === 'cancelled' ? 'warn' : 'info'),
             kind: 'job',
@@ -1484,6 +1569,10 @@ export function acknowledgeGenerationJobsForRequest(request, generationIds = [])
         job.updatedAt = acknowledgedAt;
         job.finishedAt = acknowledgedAt;
         job.abortController = null;
+        // ack 是终态迁移(running→…→completed)——推订阅者 + 走迁移漏斗
+        // (diag job_completed / TH generation_ended 都经 notifyJobStatus
+        // 到达);此前静默翻状态,两条观测面一起漏。
+        notifyJobStatus(job);
         acknowledged.push(id);
     }
 

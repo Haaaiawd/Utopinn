@@ -104,6 +104,9 @@ export async function runTriggerGeneration({
         headers: {},
         user: { profile: { handle, name: userName }, directories },
         utopinnDiagId: diagId,
+        // TH 生命周期本函数自管(generation_requested/started/ended/stopped
+        // 亲手发)——job 漏斗 emitThLifecycle 见此旗标跳过,防双发。
+        utopinnThSelfManaged: true,
         once() { return this; },
         // dispatch 前回填整包;verb 预置保证 assemble 失败也能落台账。
         body: { type },
