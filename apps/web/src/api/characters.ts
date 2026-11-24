@@ -123,6 +123,51 @@ export async function installCharacter(charDir: string): Promise<InstallCharacte
     return (await res.json()) as InstallCharacterResponse;
 }
 
+/** 卡文件级操作的统一响应面 —— charDir/fileName 均为新干名(rename/duplicate
+ *  会改存储键;avatar 保持原干名)。 */
+export interface CardFileResponse {
+    charDir: string;
+    fileName: string;
+    card: CardDoc | null;
+}
+
+/** POST /characters/:charDir/rename —— 显示名+存储键一起搬(会话/侧车/CardApp
+ *  /资产夹全级联);共享卡服务端先物化。返回新干名。 */
+export async function renameCharacter(charDir: string, name: string): Promise<CardFileResponse> {
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/rename`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+    });
+    await assertOk(res);
+    invalidateCharDocs();
+    return (await res.json()) as CardFileResponse;
+}
+
+/** POST /characters/:charDir/duplicate —— 复制卡(<stem>_N 命名,私副本落私有层)。 */
+export async function duplicateCharacter(charDir: string): Promise<CardFileResponse> {
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/duplicate`, {
+        method: 'POST',
+    });
+    await assertOk(res);
+    invalidateCharDocs();
+    return (await res.json()) as CardFileResponse;
+}
+
+/** POST /characters/:charDir/avatar —— 换封面:multipart 'avatar',卡数据原样
+ *  重打包;JSON 卡服务端 400。 */
+export async function replaceCharacterAvatar(charDir: string, file: File): Promise<CardFileResponse> {
+    const form = new FormData();
+    form.append('avatar', file);
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}/avatar`, {
+        method: 'POST',
+        body: form,
+    });
+    await assertOk(res);
+    invalidateCharDocs();
+    return (await res.json()) as CardFileResponse;
+}
+
 /** DELETE /api/utopinn/characters/:charDir —— 删卡(204)。
  *  deleteChats=true 连带该角色全部会话;共享池卡服务端 403。 */
 export async function deleteCharacter(charDir: string, opts?: { deleteChats?: boolean }): Promise<void> {

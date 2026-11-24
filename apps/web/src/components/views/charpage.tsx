@@ -4,11 +4,11 @@
 // 辅书 charLore / 卡级正则,全部真接口,读不到照实空着不造假)。
 // 数据:卡文档 loadCharDoc(共享缓存)、会话 listChatsForChar、
 // 正则 getRegexFullView、辅书 settings.charLore —— 离线回落 ctx.chats 汇总。
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
-import { cardData, charImageUrl, deleteCharacter, installCharacter, loadCharDoc } from '../../api/characters';
+import { cardData, charImageUrl, deleteCharacter, duplicateCharacter, installCharacter, loadCharDoc, renameCharacter, replaceCharacterAvatar } from '../../api/characters';
 import { builtinCoverSrc } from '../../api/personas';
 import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
@@ -64,6 +64,16 @@ export function CharView() {
     const [delChats, setDelChats] = useState(true);
     const [deleting, setDeleting] = useState(false);
     const [delErr, setDelErr] = useState<string | null>(null);
+    const [renOpen, setRenOpen] = useState(false);
+    const [renName, setRenName] = useState('');
+    const [renaming, setRenaming] = useState(false);
+    const [renErr, setRenErr] = useState<string | null>(null);
+    const [dupBusy, setDupBusy] = useState(false);
+    const [dupErr, setDupErr] = useState<string | null>(null);
+    const [avatarBusy, setAvatarBusy] = useState(false);
+    const [avatarErr, setAvatarErr] = useState<string | null>(null);
+    const [coverNonce, setCoverNonce] = useState(0);
+    const avatarInputRef = useRef<HTMLInputElement>(null);
 
     /* 三/四条取数互不相干:卡文档 / 会话列表 / 正则全量 / 辅书(settings)。
        离线一律不取(key=null) —— 空态如实,不拿 mock 糊窗。 */
@@ -150,6 +160,51 @@ export function CharView() {
             setDeleting(false);
         }
     };
+    /* 改名/复制/换封面:服务端在共享卡上自动物化,响应干名可能变 ——
+       一律按返回 charDir 跳页。 */
+    const doRename = async () => {
+        const next = renName.trim();
+        if (!dir || renaming || !next) return;
+        setRenaming(true);
+        setRenErr(null);
+        try {
+            const r = await renameCharacter(dir, next);
+            await s.refreshCards();
+            s.openChar(r.charDir);
+        } catch (e) {
+            setRenErr(e instanceof Error ? e.message : String(e));
+            setRenaming(false);
+        }
+    };
+    const doDuplicate = async () => {
+        if (!dir || dupBusy) return;
+        setDupBusy(true);
+        setDupErr(null);
+        try {
+            const r = await duplicateCharacter(dir);
+            await s.refreshCards();
+            s.openChar(r.charDir);
+        } catch (e) {
+            setDupErr(e instanceof Error ? e.message : String(e));
+            setDupBusy(false);
+        }
+    };
+    const doAvatarFile = async (f: File | undefined) => {
+        if (!dir || !f || avatarBusy) return;
+        setAvatarBusy(true);
+        setAvatarErr(null);
+        try {
+            await replaceCharacterAvatar(dir, f);
+            await s.refreshCards();
+            setCoverNonce((n) => n + 1);
+            docR.reload();
+        } catch (e) {
+            setAvatarErr(e instanceof Error ? e.message : String(e));
+        } finally {
+            setAvatarBusy(false);
+            if (avatarInputRef.current) avatarInputRef.current.value = '';
+        }
+    };
     /* 带书名跳 studio:本页看的卡 ≠ 活跃会话卡,必须显式带书,
        否则 WorldbookPage 回落到活跃 chat 的绑书(StageFrame ChatInfoPop 同款)。 */
     const goStudio = (nav: string, book?: string) => {
@@ -205,6 +260,78 @@ export function CharView() {
                         title={t('charpage.edit')}
                     >
                         <Icon name="pencil" size={14} /><span className="hidden sm:inline">{t('charpage.edit')}</span>
+                    </button>
+                    {/* 改名:显示名+存储键一起搬(共享卡服务端先物化);弹层输入新名。 */}
+                    <div className="relative">
+                        <button
+                            className="ghost-btn h-8 w-8 shrink-0"
+                            onClick={() => { setRenName(name); setRenOpen((v) => !v); setRenErr(null); }}
+                            title={t('charpage.rename')}
+                        >
+                            <Icon name="note" size={14} />
+                        </button>
+                        {renOpen && (
+                            <div
+                                className="absolute right-0 top-9 z-30 w-[240px] rounded-xl border border-[color:var(--border-hairline)] p-3"
+                                style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }}
+                            >
+                                <div className="text-[12.5px] font-medium text-[color:var(--fg-primary)]">{t('charpage.rename.title')}</div>
+                                <div className="mt-1 text-[11px] leading-snug text-[color:var(--fg-muted)]">{t('charpage.rename.desc')}</div>
+                                <input
+                                    className="field-input mt-2.5 h-8 w-full px-2.5 text-[12.5px]"
+                                    value={renName}
+                                    onChange={(e) => setRenName(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') void doRename(); }}
+                                    placeholder={t('charpage.rename.placeholder')}
+                                    autoFocus
+                                />
+                                {renErr && (
+                                    <div className="mt-2 rounded-lg px-2 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                                        {t('charpage.rename.failed')}: {renErr}
+                                    </div>
+                                )}
+                                <div className="mt-3 flex justify-end gap-2">
+                                    <button className="ghost-btn h-7 px-3 text-[11.5px]" onClick={() => setRenOpen(false)} disabled={renaming}>
+                                        {t('stage.edit.cancel')}
+                                    </button>
+                                    <button
+                                        className="h-7 rounded-lg px-3 text-[11.5px] font-medium"
+                                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)', opacity: renaming || !renName.trim() ? 0.5 : 1 }}
+                                        onClick={() => void doRename()}
+                                        disabled={renaming || !renName.trim()}
+                                    >
+                                        {renaming ? t('charpage.rename.renaming') : t('charpage.rename.confirm')}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    {/* 复制:私有副本落 <stem>_N;共享卡即装私有副本。 */}
+                    <button
+                        className="ghost-btn h-8 w-8 shrink-0"
+                        style={{ opacity: dupBusy ? 0.5 : 1 }}
+                        onClick={() => void doDuplicate()}
+                        disabled={dupBusy}
+                        title={t('charpage.duplicate')}
+                    >
+                        <Icon name="copy" size={14} />
+                    </button>
+                    {/* 换封面:隐藏 file input,multipart 直传;JSON 卡服务端 400。 */}
+                    <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        onChange={(e) => void doAvatarFile(e.target.files?.[0])}
+                    />
+                    <button
+                        className="ghost-btn h-8 w-8 shrink-0"
+                        style={{ opacity: avatarBusy ? 0.5 : 1 }}
+                        onClick={() => avatarInputRef.current?.click()}
+                        disabled={avatarBusy}
+                        title={t('charpage.avatar')}
+                    >
+                        <Icon name="image" size={14} />
                     </button>
                     {/* 删除:仅私有卡可删(共享池卡只读,服务端 403);
                         两步确认面板可选连带全部会话。 */}
@@ -269,7 +396,7 @@ export function CharView() {
                     <div className="flex items-start gap-5">
                         <div className={`relative shrink-0 overflow-hidden rounded-[14px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] ${s.isMobile ? 'h-36 w-24' : 'h-48 w-32'}`} style={{ boxShadow: 'var(--shadow-card)' }}>
                             {card?.avatar ? (
-                                <img src={charImageUrl(card.avatar)} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
+                                <img src={`${charImageUrl(card.avatar)}${coverNonce ? `?v=${coverNonce}` : ''}`} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
                             ) : (
                                 <img src={builtinCoverSrc(dir)} alt="" className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
                             )}
@@ -284,6 +411,16 @@ export function CharView() {
                             {installErr && (
                                 <div className="rounded-lg px-2.5 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
                                     {t('charpage.install.failed')}: {installErr}
+                                </div>
+                            )}
+                            {dupErr && (
+                                <div className="rounded-lg px-2.5 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                                    {t('charpage.duplicate.failed')}: {dupErr}
+                                </div>
+                            )}
+                            {avatarErr && (
+                                <div className="rounded-lg px-2.5 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                                    {t('charpage.avatar.failed')}: {avatarErr}
                                 </div>
                             )}
                             {docR.error && (

@@ -48,7 +48,7 @@ import {
     readCharacterStateMerged,
     resolveCharacterFileMerged,
 } from '../services/shared-library.js';
-import { isCharacterStateSidecarFileName, deleteAllCharacterStateSidecars } from '../services/character-state.js';
+import { isCharacterStateSidecarFileName, deleteAllCharacterStateSidecars, resolveCharacterFilePath, CHARACTER_FILE_EXTS } from '../services/character-state.js';
 import { readCharacterFolderName, isCharacterFolderNameShared } from '../character-assets.js';
 import { deleteCardAppFiles } from '../endpoints/card-app.js';
 import { checkUserStorageQuota } from '../users.js';
@@ -103,6 +103,8 @@ import {
     mapCharacterStatePatchError,
     // 角色写面(C-3):原子 PNG 重写 + ccv3/chara 双 chunk + 缓存失效,与 legacy /edit 同管线。
     writeCharacterData,
+    // rename/duplicate/avatar 面:legacy /rename /duplicate /edit-avatar 同管线读卡。
+    readCharacterData,
     // 人设头像上传(TASK-067):与 legacy /api/avatars/upload 同一裁剪/落盘管线。
     applyAvatarCropResize,
 } from '../endpoints/characters.js';
@@ -1696,6 +1698,338 @@ export function apply(ctx) {
             });
         } catch (error) {
             return sendError(response, error, 'utopinn/characters install');
+        }
+    });
+
+    /**
+     * 干名占用探测 —— 卡文件三扩展 + chats/<stem> 目录双路防撞
+     * (getPngName 语义 + json/webp 补全);excludeStem 排除自身干名,
+     * 改名回退同名时才不会自己撞自己。
+     */
+    const characterStemTaken = (directories, stem, excludeStem = '') => {
+        if (!stem || stem === excludeStem) return false;
+        for (const ext of CHARACTER_FILE_EXTS) {
+            if (fs.existsSync(path.join(directories.characters, `${stem}${ext}`))) return true;
+        }
+        return fs.existsSync(path.join(directories.chats, stem));
+    };
+
+    /** 共享卡写操作的标准前置:物化(计配额)→ 重载私有文档,失败已回响应时返回 null。 */
+    const materializeForWrite = async (request, response, charDir) => {
+        const violation = await checkUserStorageQuota(
+            request.user,
+            estimateSharedMaterializeBytes(request.user.directories, charDir),
+            { fresh: true },
+        );
+        if (violation) {
+            response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
+            return null;
+        }
+        const materialized = await materializeSharedCharacter(request.user.directories, charDir);
+        const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, materialized.charDir);
+        if (!reloaded.card || !reloaded.source) {
+            response.status(500).send({ error: `Shared character materialized but unreadable: ${materialized.fileName}` });
+            return null;
+        }
+        return { ...reloaded, effectiveCharDir: materialized.charDir };
+    };
+
+    /**
+     * POST /characters/:charDir/rename —— 改名 = 显示名 + 存储键(charDir)
+     * 一起搬(legacy /api/characters/rename 语义;PATCH 的 name 只动显示)。
+     *
+     * body:{name}。共享卡先物化(copy-on-write 同 PATCH),落在私有层再改。
+     *
+     * 级联与 legacy 同序:卡文档 name 写回 → 新干名卡文件(.json 直写;
+     *   .png/.webp 走 writeCharacterData 输出 .png)→ ChatRepo.renameCharDir
+     *   → chats/ 目录 cp → recent 索引作废 → state 侧车迁移 →
+     *   cardApps/<stem> 改名 → 名片资产夹(display-name 键)随名迁移 →
+     *   旧卡文件摘除 + 缩略图失效。
+     *   同干名改名(仅显示名变):原位写卡,不动任何迁移。
+     *
+     * 响应 {charDir,fileName,card} —— 均为新干名面。
+     */
+    regPost(`${P}/characters/:charDir/rename`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const newName = String(request.body?.name ?? '').trim();
+            if (!newName || newName === '.') {
+                return response.status(400).send({ error: 'Body name must be a non-empty string' });
+            }
+            const sanitizedNew = sanitize(newName);
+            if (!sanitizedNew || sanitizedNew === '.' || sanitizedNew === '..') {
+                return response.status(400).send({ error: `name sanitizes to nothing: ${newName}` });
+            }
+
+            let { card, source, shared } = await loadCharacterDocMerged(request.user.directories, charDir);
+            if (!card || !source) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            let effectiveCharDir = charDir;
+            if (shared) {
+                assertWritable();
+                const mat = await materializeForWrite(request, response, charDir);
+                if (!mat) return;
+                ({ card, source } = mat);
+                effectiveCharDir = mat.effectiveCharDir;
+            }
+
+            // 资产夹按 display name 落盘 —— 写盘改名前先记住旧夹名。
+            const oldFolderName = await readCharacterFolderName(source.filePath);
+            const oldFileName = path.basename(source.filePath);
+
+            // 新干名:三扩展卡文件 + chats/ 目录防撞,排除自身干名。
+            let newStem = sanitizedNew;
+            for (let i = 1; characterStemTaken(request.user.directories, newStem, effectiveCharDir); i++) {
+                newStem = `${sanitizedNew}${i}`;
+            }
+
+            assertWritable();
+            const next = _.cloneDeep(card);
+            const hasData = next.data && typeof next.data === 'object' && !Array.isArray(next.data);
+            const fieldTarget = hasData ? next.data : next;
+            // 双存形两层都写:toStoredV2Character 会把旧根值提升复活。
+            fieldTarget.name = newName;
+            if (fieldTarget !== next) next.name = newName;
+
+            if (source.kind === 'json') {
+                const targetPath = path.join(request.user.directories.characters, `${newStem}.json`);
+                writeFileAtomicSync(targetPath, JSON.stringify(next), 'utf8');
+            } else {
+                if (next.spec === undefined) {
+                    next.spec = 'chara_card_v2';
+                    next.spec_version = '2.0';
+                }
+                const writeOk = await writeCharacterData(source.filePath, JSON.stringify(next), newStem, request, undefined, {
+                    allowMissingInputFallback: false,
+                    requireExistingOutput: false,
+                    normalize: true,
+                });
+                if (!writeOk) {
+                    const cause = request.lastWriteCharacterDataError || 'unknown write error';
+                    return response.status(500).send({ error: `Failed to persist character data: ${cause}` });
+                }
+            }
+            const newExt = source.kind === 'json' ? '.json' : '.png';
+            const newFileName = `${newStem}${newExt}`;
+
+            if (newStem !== effectiveCharDir || newFileName !== oldFileName) {
+                const handle = request.user.profile.handle;
+                // 会话库键迁移(repo 层覆盖全部存储引擎)。
+                await getChatRepo().renameCharDir(handle, effectiveCharDir, newStem);
+                // fs 面 chats/<stem>/ 目录(.webp 世代/导入会话仍落盘)。
+                const oldChatsPath = path.join(request.user.directories.chats, effectiveCharDir);
+                const newChatsPath = path.join(request.user.directories.chats, newStem);
+                if (fs.existsSync(oldChatsPath) && !fs.existsSync(newChatsPath)) {
+                    fs.cpSync(oldChatsPath, newChatsPath, { recursive: true, filter: () => true });
+                    fs.rmSync(oldChatsPath, { recursive: true, force: true });
+                }
+                await invalidateRecentChatIndex(request);
+                // char_state 侧车随卡文件改名迁移。
+                migrateCharacterStateSidecars(request.user.directories.characters, oldFileName, newFileName);
+                // CardApp 抽取目录按 charDir 键 —— 不改名即成孤儿。
+                const oldAppDir = path.join(request.user.directories.cardApps, sanitize(effectiveCharDir));
+                const newAppDir = path.join(request.user.directories.cardApps, sanitize(newStem));
+                if (fs.existsSync(oldAppDir) && !fs.existsSync(newAppDir)) {
+                    try { fs.renameSync(oldAppDir, newAppDir); } catch (error) {
+                        console.warn(`Failed to migrate CardApp dir ${effectiveCharDir} → ${newStem}:`, error);
+                    }
+                }
+                // 旧卡文件摘除 + 缩略图失效。
+                try { fs.unlinkSync(source.filePath); } catch (unlinkError) {
+                    console.warn(`Failed to remove renamed-from character file ${oldFileName}:`, unlinkError);
+                }
+                invalidateThumbnail(request.user.directories, 'avatar', oldFileName);
+            }
+            invalidateThumbnail(request.user.directories, 'avatar', newFileName);
+
+            // 名片资产夹(characters/<displayName>/ userImages/<displayName>/):
+            // 夹名变且无他卡共享旧夹名时整夹搬走;目标夹已在则留旧(合并
+            // 有风险,不静默做)。
+            const newFolderName = sanitize(newName);
+            if (oldFolderName && newFolderName && oldFolderName !== newFolderName) {
+                const sharedName = await isCharacterFolderNameShared(
+                    request.user.directories.characters,
+                    oldFolderName,
+                    { excludeAvatars: [oldFileName, newFileName] },
+                );
+                if (!sharedName) {
+                    for (const [base, folderName] of [
+                        [request.user.directories.characters, oldFolderName],
+                        [request.user.directories.userImages, oldFolderName],
+                    ]) {
+                        const from = path.join(base, folderName);
+                        const to = path.join(base, newFolderName);
+                        if (fs.existsSync(from) && !fs.existsSync(to)) {
+                            try { fs.renameSync(from, to); } catch (error) {
+                                console.warn(`Failed to migrate character asset folder ${folderName} → ${newFolderName}:`, error);
+                            }
+                        }
+                    }
+                }
+            }
+
+            const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, newStem);
+            return response.send({
+                charDir: newStem,
+                fileName: newFileName,
+                card: reloaded.card ?? null,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters rename');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/duplicate —— 复制卡(legacy /duplicate 语义)。
+     *
+     * 同干名兄弟档一起拷(Foo.png 纯封面 + Foo.json 数据档的双档形,
+     *   同物化面整组搬);cardApps/<stem> 已抽取文件随迁(共享卡则跳过,
+     *   私副本首挂载时自行重抽);state 侧车不拷 —— 副本是新卡,账目从零。
+     *   会话不拷(副本无聊天记录,legacy 同)。
+     *   共享池卡可复:副本天然落私有层(=装私有副本的另一入口)。
+     *
+     * 命名:legacy 后缀序 —— 干名尾 _N 剥离后递增,撞到全卡文件+chats
+     *   双路都空才落名。
+     *
+     * 响应 {charDir,fileName,card} —— 副本干名面。
+     */
+    regPost(`${P}/characters/:charDir/duplicate`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const resolved = resolveCharacterFileMerged(request.user.directories, charDir);
+            if (!resolved) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+
+            assertWritable();
+            // 计配额:同干名兄弟档 + cardApps 抽取目录总量(私有源才带后者)。
+            let estimate = 0;
+            for (const ext of CHARACTER_FILE_EXTS) {
+                const sibling = resolved.shared
+                    ? path.join(getSharedCharactersDir(request.user.directories) ?? '', `${charDir}${ext}`)
+                    : path.join(request.user.directories.characters, `${charDir}${ext}`);
+                try { estimate += fs.statSync(sibling).size || 0; } catch { /* absent */ }
+            }
+            const srcAppDir = path.join(request.user.directories.cardApps, sanitize(charDir));
+            if (!resolved.shared && fs.existsSync(srcAppDir)) {
+                for (const entry of fs.readdirSync(srcAppDir, { withFileTypes: true, recursive: true })) {
+                    if (entry.isFile()) {
+                        try { estimate += fs.statSync(path.join(entry.parentPath, entry.name)).size || 0; } catch { /* race */ }
+                    }
+                }
+            }
+            const violation = await checkUserStorageQuota(request.user, estimate, { fresh: true });
+            if (violation) {
+                return response.status(413).send({ error: violation.message, usedBytes: violation.usageBytes, quotaBytes: violation.quotaBytes });
+            }
+
+            // 尾 _N 剥离递增,与 legacy 同名规则。
+            const parts = charDir.split('_');
+            const last = parts[parts.length - 1];
+            const hasNum = !isNaN(Number(last)) && parts.length > 1;
+            const baseName = hasNum ? parts.slice(0, -1).join('_') : charDir;
+            let suffix = hasNum ? parseInt(last, 10) + 1 : 1;
+            let dupStem = `${baseName}_${suffix}`;
+            while (characterStemTaken(request.user.directories, dupStem)) {
+                suffix++;
+                dupStem = `${baseName}_${suffix}`;
+            }
+
+            const copied = [];
+            for (const ext of CHARACTER_FILE_EXTS) {
+                const from = resolved.shared
+                    ? path.join(getSharedCharactersDir(request.user.directories) ?? '', `${charDir}${ext}`)
+                    : path.join(request.user.directories.characters, `${charDir}${ext}`);
+                if (!fs.existsSync(from)) continue;
+                const to = path.join(request.user.directories.characters, `${dupStem}${ext}`);
+                fs.copyFileSync(from, to);
+                copied.push(to);
+            }
+            if (!copied.length) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            if (!resolved.shared && fs.existsSync(srcAppDir)) {
+                try {
+                    fs.cpSync(srcAppDir, path.join(request.user.directories.cardApps, sanitize(dupStem)), { recursive: true });
+                } catch (error) {
+                    console.warn(`Failed to copy CardApp dir ${charDir} → ${dupStem}:`, error);
+                }
+            }
+
+            const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, dupStem);
+            return response.send({
+                charDir: dupStem,
+                fileName: path.basename(copied[0]),
+                card: reloaded.card ?? null,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters duplicate');
+        }
+    });
+
+    /**
+     * POST /characters/:charDir/avatar —— 换封面(legacy /edit-avatar 语义):
+     *   multipart field 'avatar'(全局 multer 落 _uploads/)+ ?crop= JSON
+     *   裁剪参数;新图经 writeCharacterData 与卡数据重打包写回原干名,
+     *   卡内容一个字段不动。
+     *
+     * 共享卡先物化;JSON 卡无图像载体 → 400;.webp 源写产物恒为
+     *   <stem>.png —— 摘除旧 .webp 并迁 state 侧车(同 PATCH 转换面)。
+     *
+     * 响应 {fileName,card}。
+     */
+    regPost(`${P}/characters/:charDir/avatar`, 'POST', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            if (!request.file?.path) {
+                return response.status(400).send({ error: 'Multipart field "avatar" required' });
+            }
+            const uploadPath = request.file.path;
+            let { card, source, shared } = await loadCharacterDocMerged(request.user.directories, charDir);
+            if (!card || !source) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            let effectiveCharDir = charDir;
+            if (shared) {
+                assertWritable();
+                const mat = await materializeForWrite(request, response, charDir);
+                if (!mat) return;
+                ({ card, source } = mat);
+                effectiveCharDir = mat.effectiveCharDir;
+            }
+            if (source.kind !== 'image') {
+                return response.status(400).send({ error: 'JSON character cards have no replaceable cover image' });
+            }
+
+            const data = await readCharacterData(source.filePath);
+            if (!data) {
+                return response.status(400).send({ error: 'Failed to read character data' });
+            }
+            const crop = tryParse(request.query.crop);
+            assertWritable();
+            const writeOk = await writeCharacterData(uploadPath, data, effectiveCharDir, request, crop);
+            try { fs.unlinkSync(uploadPath); } catch { /* best-effort multer cleanup */ }
+            if (!writeOk) {
+                const cause = request.lastWriteCharacterDataError || 'unknown write error';
+                return response.status(500).send({ error: `Failed to persist character image: ${cause}` });
+            }
+            if (source.ext !== '.png') {
+                // 产物恒 <stem>.png —— 旧 .webp 摘除 + 侧车迁移(同 PATCH)。
+                try { fs.unlinkSync(source.filePath); } catch (unlinkError) {
+                    console.warn(`Failed to remove superseded character file ${source.filePath}:`, unlinkError);
+                }
+                migrateCharacterStateSidecars(request.user.directories.characters, path.basename(source.filePath), `${effectiveCharDir}.png`);
+            }
+            invalidateThumbnail(request.user.directories, 'avatar', `${effectiveCharDir}.png`);
+
+            const reloaded = await loadCharacterDocFromDir(request.user.directories.characters, effectiveCharDir);
+            return response.send({
+                fileName: `${effectiveCharDir}.png`,
+                card: reloaded.card ?? null,
+            });
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters avatar');
         }
     });
 
