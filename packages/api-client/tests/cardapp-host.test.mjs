@@ -52,7 +52,7 @@ function makeHost({
             patchChat: async (d, c, ops) => { calls.lib.push(['patchChat', ops]); return { ok: true }; },
             settings: async () => { calls.lib.push(['settings']); return {}; },
             char: async () => { calls.lib.push(['char']); return { data: { extensions: {} } }; },
-            worldGet: async (n) => { calls.lib.push(['worldGet', n]); return { entries: {} }; },
+            worldGet: async (n, o) => { calls.lib.push(['worldGet', n, o]); return { entries: {} }; },
             worldEdit: async (n, d2) => { calls.lib.push(['worldEdit', n]); return { ok: true }; },
         },
         state: {
@@ -480,4 +480,15 @@ test('seed 前的 poll 不回放;滞留 refresh_message 钉头后不重铸', asy
     await host.pollChat();
     assert.equal(seen.filter(([n]) => n === 'refresh_message').length, 1);
     assert.deepEqual(seen[0], ['refresh_message', [4]]);
+});
+
+test('ctx.getWorldBook:?char= 回落 + {name,doc} 信封解 doc(#46 语义随行)', async () => {
+    const { host, calls, client } = makeHost();
+    // 内嵌书回落路径:服务端回 {name,doc:{entries}} 信封 —— 卡要的是 doc 本体
+    client.library.worldGet = async (n, o) => { calls.lib.push(['worldGet', n, o]); return { name: n, doc: { entries: { e1: { content: 'lore' } } }, embedded: true }; };
+    const r = await host.dispatch('ctx.getWorldBook', { name: 'embedded-book' });
+    const wg = calls.lib.find(c => c[0] === 'worldGet');
+    assert.equal(wg[1], 'embedded-book');
+    assert.equal(wg[2]?.char, 'card.png', '?char=<charDir> 参数必须随行(内嵌书回落)');
+    assert.deepEqual(r, { entries: { e1: { content: 'lore' } } }, '须解信封回 doc 本体');
 });
