@@ -134,11 +134,13 @@
 
     --ease: cubic-bezier(.22, 1, .36, 1);
 
-    /* 全局氛围层(App 根 backdrop):壁纸浓度 / 毛玻璃 / 纹理浓度 —
-       power_user.ui_ambience 服务端槽,JS 水合后写这三个 var。 */
+    /* 全局氛围层(App 根 backdrop):壁纸浓度 / 毛玻璃 —
+       power_user.ui_ambience 服务端槽,JS 水合后写这两个 var。 */
     --amb-bg-alpha: 0.62;
     --amb-glass-blur: 14px;
-    --amb-tex-alpha: 0.06;
+    /* 氛围滤镜与暗角按主题分档:暗色压黑收对比,亮色提亮不收黑。 */
+    --amb-wall-filter: blur(10px) saturate(1.15) brightness(0.9);
+    --amb-vignette: radial-gradient(130% 110% at 50% 0%, transparent 55%, rgba(0,0,0,0.38) 100%);
 }
 
 /* =========================================================================
@@ -241,13 +243,17 @@
     --surface-3: #ECEAE2;
 
     --amb-base: #F5F4EF;
-    /* 亮色覆盖层同样要给氛围层留窗(0.90/0.92 时壁纸全灭);
-       底与面同色,无壁纸时外观不变。 */
-    --bg-chrome: rgba(245, 244, 239, 0.78);
-    --bg-tray: rgba(245, 244, 239, 0.78);
-    --bg-sidebar: rgba(245, 244, 239, 0.78);
-    --bg-canvas: rgba(250, 249, 245, 0.82);
-    --bg-workbench: rgba(250, 249, 245, 0.82);
+    /* 亮色壁纸滤镜:提亮不压暗;暗角改暖色轻晕(黑角在亮底上是脏痕)。 */
+    --amb-wall-filter: blur(10px) saturate(1.1) brightness(1.04);
+    --amb-vignette: radial-gradient(130% 110% at 50% 0%, transparent 60%, rgba(150,142,120,0.16) 100%);
+    /* 亮色覆盖层同样要给氛围层留窗——0.78/0.82 时壁纸可见度只剩 ~14%
+       (0.62 图层 alpha × (1−覆盖)),观感=无背景;降到 0.58/0.62 与暗色
+       同档(~25% 可见度),文字层 surface-2/3 仍实心不影响可读性。 */
+    --bg-chrome: rgba(245, 244, 239, 0.58);
+    --bg-tray: rgba(245, 244, 239, 0.58);
+    --bg-sidebar: rgba(245, 244, 239, 0.58);
+    --bg-canvas: rgba(250, 249, 245, 0.62);
+    --bg-workbench: rgba(250, 249, 245, 0.62);
     --bg-surface: #F2F0E8;
     --bg-input: #FFFFFF;
     --bg-surface-hover: #ECEAE2;

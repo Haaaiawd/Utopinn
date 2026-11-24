@@ -57,8 +57,6 @@ export interface ChatSettings {
     showFloorNum: boolean;
     confirmDelete: boolean;
     fontSize: number;
-    /** 内置氛围纹理(本地滤镜,叠加于酒馆背景之上)。 */
-    bgMode: string;
     customCss: string;
 }
 
@@ -70,11 +68,10 @@ export interface StBackground {
 }
 
 /** 全局氛围层参数 —— power_user.ui_ambience 服务端槽(snake_case 落盘):
- *  bg_alpha 壁纸浓度(0~0.9) / glass_blur 毛玻璃 px(0~32) / tex_alpha 纹理浓度(0~0.3)。 */
+ *  bg_alpha 壁纸浓度(0~0.9) / glass_blur 毛玻璃 px(0~32)。 */
 export interface UiAmbience {
     bgAlpha: number;
     glassBlur: number;
-    texAlpha: number;
 }
 
 /** 舞台形态会话的展示数据(规范稿 s.chapters/s.channels/s.vn 落地位)。
@@ -267,7 +264,7 @@ export interface ShellCtx {
     setChatBgLock: (url: string | null) => void;
     stCss: string;
     setStCss: (css: string) => void;
-    /** 全局氛围层(power_user.ui_ambience)—— 壁纸/纹理浓度 + 毛玻璃量。 */
+    /** 全局氛围层(power_user.ui_ambience)—— 壁纸浓度 + 毛玻璃量。 */
     uiAmbience: UiAmbience;
     setUiAmbience: (a: UiAmbience) => void;
 

@@ -74,7 +74,6 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
     showFloorNum: true,
     confirmDelete: true,
     fontSize: 15,
-    bgMode: 'none',
     customCss: '',
 };
 
@@ -93,7 +92,6 @@ function loadChatSettings(): ChatSettings {
             showFloorNum: bool(j.showFloorNum, DEFAULT_CHAT_SETTINGS.showFloorNum),
             confirmDelete: bool(j.confirmDelete, DEFAULT_CHAT_SETTINGS.confirmDelete),
             fontSize: num(j.fontSize, DEFAULT_CHAT_SETTINGS.fontSize, 12, 18),
-            bgMode: typeof j.bgMode === 'string' && j.bgMode ? j.bgMode : DEFAULT_CHAT_SETTINGS.bgMode,
             customCss: typeof j.customCss === 'string' ? j.customCss : DEFAULT_CHAT_SETTINGS.customCss,
         };
     } catch {
@@ -297,18 +295,17 @@ function Shell() {
     const [stBg, setStBg] = useState<StBackground | null>(null);
     const [chatBgLock, setChatBgLock] = useState<string | null>(null);
     const [stCss, setStCss] = useState('');
-    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.62, glassBlur: 14, texAlpha: 0.06 });
+    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.62, glassBlur: 14 });
     /* 置顶会话清单 —— accountStorage.pinnedChats(ST 同槽:{file_name,avatar})。 */
     const [pinnedChats, setPinnedChats] = useState<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     pinnedRef.current = pinnedChats;
 
-    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃/纹理 即时生效。 */
+    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃 即时生效。 */
     useEffect(() => {
         const r = document.documentElement;
         r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
         r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
-        r.style.setProperty('--amb-tex-alpha', String(uiAmbience.texAlpha));
     }, [uiAmbience]);
 
     /* 正文字号 → --chat-font-size:设置滑杆/A± 即时落到 .chat-body-text。 */
@@ -524,7 +521,6 @@ function Shell() {
                 setUiAmbience({
                     bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.62, 0, 0.9),
                     glassBlur: num(u.glass_blur ?? u.glassBlur, 14, 0, 32),
-                    texAlpha: num(u.tex_alpha ?? u.texAlpha, 0.06, 0, 0.3),
                 });
             }
             /* accountStorage.pinnedChats —— ST 置顶会话清单槽(welcome-screen 同路径)。 */
@@ -1186,8 +1182,9 @@ function useWallOk(cssUrl: string | null): boolean | null {
 
 /** 全局氛围层 —— App 根 backdrop,整壳半透明 chrome 透上来。
  *  图层:会话锁(chat_metadata.custom_background)> 全局 settings.background,
- *  重模糊压成氛围色场而非照片;bgMode 纹理叠其上;末层暗角保对比。
- *  浓度/模糊量全部由 --amb-* var 控(power_user.ui_ambience)。 */
+ *  重模糊压成氛围色场而非照片;末层暗角保对比。
+ *  浓度/模糊量由 --amb-* var 控(power_user.ui_ambience);滤镜与暗角
+ *  按主题分档(tokens.css --amb-wall-filter/--amb-vignette)。 */
 function AmbientBackdrop() {
     const s = useShell();
     /* 会话锁 > 全局;两源各自预载验证 —— 死文件(清单换血/已删)不渲,
@@ -1208,22 +1205,13 @@ function AmbientBackdrop() {
                         backgroundSize: 'cover',
                         backgroundPosition: 'center',
                         opacity: 'var(--amb-bg-alpha)',
-                        filter: 'blur(10px) saturate(1.15) brightness(0.9)',
-                    }}
-                />
-            )}
-            {s.chatSettings.bgMode !== 'none' && (
-                <div
-                    className="absolute inset-0"
-                    style={{
-                        background: `url('/assets/backgrounds/${s.chatSettings.bgMode}.png') center/cover no-repeat`,
-                        opacity: 'var(--amb-tex-alpha)',
+                        filter: 'var(--amb-wall-filter)',
                     }}
                 />
             )}
             <div
                 className="absolute inset-0"
-                style={{ background: 'radial-gradient(130% 110% at 50% 0%, transparent 55%, rgba(0,0,0,0.38) 100%)' }}
+                style={{ background: 'var(--amb-vignette)' }}
             />
         </div>
     );
