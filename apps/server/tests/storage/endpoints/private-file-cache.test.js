@@ -11,7 +11,7 @@ import { createSkillsRouter } from '../../../src/endpoints/skills.js';
 import { createSkillRepository } from '../../../src/skills/repository.js';
 import { read as readCard, stripCharacterMetadata, write as writeCard } from '../../../src/character-card-parser.js';
 
-const seedPath = fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url));
+const seedPath = fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 describe.each(ENDPOINT_HARNESSES)('private file reads on $name', ({ mode }) => {
     let harness;

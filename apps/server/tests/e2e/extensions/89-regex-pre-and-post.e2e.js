@@ -96,7 +96,7 @@ test.describe('#89 — Regex pre+post process applied via real UI', () => {
     test('user-input regex replaces [BR] before send; AI-output regex transforms reply', async ({ page }) => {
         test.setTimeout(120_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for greeting so MESSAGE_RECEIVED later is the real reply.
         await page.waitForFunction(() => {

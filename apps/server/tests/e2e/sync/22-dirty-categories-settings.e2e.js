@@ -26,7 +26,7 @@ import {
 } from '../_lib/sync.js';
 
 const REPO_ROOT = path.resolve(import.meta.dirname, '../../..');
-const SAMPLE_PNG = path.join(REPO_ROOT, 'default/content/default_Seraphina.png');
+const SAMPLE_PNG = path.join(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 const CATEGORIES = ['settings', 'secrets', 'themes', 'movingUI', 'openai-presets', 'textgen-presets', 'koboldai-presets', 'novelai-presets', 'instruct', 'context',
     'sysprompt', 'reasoning', 'quickreplies', 'comfy-workflows', 'assets', 'extensions', 'avatars', 'user-images', 'user-files'];
 // A's idle delay; client saves debounce for at most `debounce_timeout.relaxed` (1 s).
@@ -55,7 +55,7 @@ test.beforeAll(async () => {
     B = await startServer({ batchKey: 'sync', scenarioId: 'dirty2-B' });
     for (const server of [A, B]) {
         const root = userRootOf(server);
-        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: 'Seraphina.png', card: { name: 'Seraphina', first_mes: 'Welcome back to the glade.' } });
+        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: '掌门真人.png', card: { name: '掌门真人', first_mes: 'Welcome back to the glade.' } });
         fs.mkdirSync(path.join(root, 'assets', 'ambient'), { recursive: true });
         fs.copyFileSync(SAMPLE_PNG, path.join(root, 'assets', 'ambient', 'glade-rain.mp3'));
         fs.mkdirSync(path.join(root, 'user', 'files'), { recursive: true });
@@ -350,7 +350,7 @@ test('a UI edit in each settings, preset, media and extension category reaches t
         ownRoute: /^\/api\/images\/upload\/?$/,
         prepare: async () => {
             await closeTopDrawer(pageA, 'extensions-settings-button');
-            await selectCharacter(pageA, 'Seraphina');
+            await selectCharacter(pageA, '掌门真人');
             const selectedAt = Date.now();
             await expect.poll(() => writes.inFlight.size === 0 && Date.now() - Math.max(writes.at(-1)?.at ?? 0, writes.lastSentAt, selectedAt) >= IDLE_SECONDS * 1000,
                 { timeout: 30_000, message: 'character selection finishes before opening the gallery' }).toBe(true);

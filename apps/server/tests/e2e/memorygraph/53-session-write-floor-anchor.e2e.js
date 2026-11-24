@@ -42,11 +42,11 @@ let server, mock, importPath;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart and meets your eyes.* "The lantern will hold."',
+        '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold."',
         '*She traces a line on the chart with one knuckle.* "Breakers north of the gulls."',
-        '*Seraphina exhales slowly.* "The drifters know that channel better than we do."',
+        '*我没想当掌门啊 exhales slowly.* "The drifters know that channel better than we do."',
         '*She turns to the rail, spyglass raised.* "Hold. Don\'t speak for a moment."',
-        '*Seraphina nods once.* "Then it is decided. We wait."',
+        '*我没想当掌门啊 nods once.* "Then it is decided. We wait."',
     ] });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'floor-anchor' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -91,7 +91,7 @@ test.beforeAll(async () => {
                 fields: {
                     title: 'TailAnchorPost',
                     state: '夜风骤起；信号灯被风吹斜。',
-                    controller: 'Seraphina',
+                    controller: '我没想当掌门啊',
                 },
                 seqTo: 5,
             },
@@ -135,7 +135,7 @@ test.describe('#53 — session-write floor anchor: delete-floor truncates MG rec
     test('5 turns → import sentinels bound to tail → delete last assistant → sentinels are gone', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckboxes(page);
 
         // Disable the delete-confirmation popup so deleteMessageViaUI does

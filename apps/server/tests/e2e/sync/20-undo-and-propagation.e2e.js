@@ -28,11 +28,11 @@ test.beforeEach(async ({}, testInfo) => {
     A = await startServer({ batchKey: 'sync', scenarioId: `undo-${testInfo.testId}-A` });
     B = await startServer({ batchKey: 'sync', scenarioId: `undo-${testInfo.testId}-B` });
     for (const server of [A, B]) {
-        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: 'Seraphina.png', card: { name: 'Seraphina', first_mes: 'Welcome back to the glade.' } });
-        fs.mkdirSync(path.join(userRootOf(server), 'chats', 'Seraphina'), { recursive: true });
-        fs.writeFileSync(path.join(userRootOf(server), 'chats', 'Seraphina', 'Moonlit Walk.jsonl'), [
-            { user_name: 'User', character_name: 'Seraphina', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: '1c9e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f' } },
-            { name: 'Seraphina', is_user: false, mes: 'The moon is bright tonight.', send_date: '2026-10-01@10h00m01s' },
+        writeCharacterPng({ dataRoot: server.dataRoot, avatarFile: '掌门真人.png', card: { name: '掌门真人', first_mes: 'Welcome back to the glade.' } });
+        fs.mkdirSync(path.join(userRootOf(server), 'chats', '掌门真人'), { recursive: true });
+        fs.writeFileSync(path.join(userRootOf(server), 'chats', '掌门真人', 'Moonlit Walk.jsonl'), [
+            { user_name: 'User', character_name: '掌门真人', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: '1c9e2d3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f' } },
+            { name: '掌门真人', is_user: false, mes: 'The moon is bright tonight.', send_date: '2026-10-01@10h00m01s' },
         ].map(line => JSON.stringify(line)).join('\n'));
     }
     await testInfo.attach('actual-server-argv', { body: JSON.stringify([A, B].map(server => ({ port: server.port, dataRoot: server.dataRoot, argv: server.execArgv }))), contentType: 'application/json' });
@@ -150,12 +150,12 @@ test.describe('LAN Sync — undo and change propagation', () => {
         await selectWorldBook(pageA, 'Fading Isle');
         await deleteSelectedWorldBook(pageA);
         await expect.poll(() => readUserFile(B, 'worlds/Fading Isle.json'), { timeout: 60_000 }).toBeNull();
-        await selectCharacterByName(pageA, 'Seraphina');
+        await selectCharacterByName(pageA, '掌门真人');
         await openChatByName(pageA, 'Moonlit Walk');
         await renameCurrentChatViaUI(pageA, 'Moonlit Walk by the River');
         await expect.poll(() => [
-            readUserFile(B, 'chats/Seraphina/Moonlit Walk.jsonl'),
-            readUserFile(B, 'chats/Seraphina/Moonlit Walk by the River.jsonl') !== null,
+            readUserFile(B, 'chats/掌门真人/Moonlit Walk.jsonl'),
+            readUserFile(B, 'chats/掌门真人/Moonlit Walk by the River.jsonl') !== null,
         ], { timeout: 60_000 }).toEqual([null, true]);
     });
 
@@ -166,7 +166,7 @@ test.describe('LAN Sync — undo and change propagation', () => {
             const file = path.join(tmp, 'starlit-glade.png');
             // A real PNG followed by 8 MiB after IEND: decoders ignore trailing bytes,
             // and the size makes the transfer span many object chunks.
-            fs.writeFileSync(file, Buffer.concat([fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_Seraphina.png')), crypto.randomBytes(8 * 1024 * 1024)]));
+            fs.writeFileSync(file, Buffer.concat([fs.readFileSync(path.join(REPO_ROOT, 'default/content/default_我没想当掌门啊.png')), crypto.randomBytes(8 * 1024 * 1024)]));
             await pageA.locator('#add_bg_button').setInputFiles(file);
             const sha = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
             const target = path.join(userRootOf(B), 'backgrounds', 'starlit-glade.png');

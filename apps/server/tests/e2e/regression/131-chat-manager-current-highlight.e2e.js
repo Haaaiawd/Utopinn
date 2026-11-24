@@ -41,8 +41,8 @@ let server, mock, trio;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina sets the spyglass on the sill and taps the rim twice.* "The tide book says the night watch starts when the gulls settle — that is our cue."',
-        '*Seraphina pulls the lantern shutter a finger\'s width wider.* "Keep the log open; the second bell will want a line of its own."',
+        '*我没想当掌门啊 sets the spyglass on the sill and taps the rim twice.* "The tide book says the night watch starts when the gulls settle — that is our cue."',
+        '*我没想当掌门啊 pulls the lantern shutter a finger\'s width wider.* "Keep the log open; the second bell will want a line of its own."',
     ] });
     server = await startServer({ batchKey: 'regression', scenarioId: 'chat-manager-highlight' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -73,7 +73,7 @@ async function readManagerRows(page) {
 test.describe('#131 — current chat highlight in Manage Chat Files', () => {
     test('character: the open chat is the only highlighted row', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await sendMessageAndAwaitReply(page, 'Note the bell and the state of the cove in the log.');
 
         const firstChatId = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());

@@ -38,7 +38,7 @@ import {
 
 let A, B;
 
-const CARD_NAME = 'default_Seraphina';
+const CARD_NAME = 'default_我没想当掌门啊';
 const CHAT_FILE = '2026-06-25 diverged conflict';
 
 // The label both servers give themselves: with no device label set, a
@@ -63,10 +63,10 @@ const A_CHAT_BODY = [
         name: 'Captain',
         is_user: true,
         send_date: '2026-06-25',
-        mes: 'Seraphina, the salt-mark drifters are sighting fires three coves north. What do the charts say about the tide window before dawn?',
+        mes: '我没想当掌门啊, the salt-mark drifters are sighting fires three coves north. What do the charts say about the tide window before dawn?',
     },
     {
-        name: 'Seraphina',
+        name: '我没想当掌门啊',
         is_user: false,
         send_date: '2026-06-25',
         mes: '*She unrolls the brittle reef chart with one hand, weighting the corner with her brass spyglass.* "Three hours, no more. The slow swallow runs after that and no skiff crosses the gull rocks until next moon."',
@@ -77,10 +77,10 @@ const B_CHAT_BODY = [
         name: 'Captain',
         is_user: true,
         send_date: '2026-06-25',
-        mes: 'Seraphina, the lantern on the north breaker has gone dark. Should we signal the relief crew or wait out the tide?',
+        mes: '我没想当掌门啊, the lantern on the north breaker has gone dark. Should we signal the relief crew or wait out the tide?',
     },
     {
-        name: 'Seraphina',
+        name: '我没想当掌门啊',
         is_user: false,
         send_date: '2026-06-25',
         mes: '*Her jaw tightens; she lays a finger across the chart\'s margin.* "Wait. A dark lantern is a message, not an accident. Light our own and they will read us before we read them."',
@@ -91,14 +91,14 @@ const B_CHAT_BODY = [
  * Import an independently specified chat through the actual history form.
  */
 async function saveDivergedChat(page, body) {
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     const seedChat = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());
     await openOptionsAndClick(page, 'option_select_chat');
     const imported = page.waitForResponse(response => new URL(response.url()).pathname === '/api/chats/import' && response.request().method() === 'POST');
     const chooser = page.waitForEvent('filechooser');
     await page.locator('#chat_import_button').click();
     await (await chooser).setFiles({ name: `${CHAT_FILE}.jsonl`, mimeType: 'application/json', buffer: Buffer.from([
-        { user_name: 'Captain', character_name: 'Seraphina', create_date: '2026-06-25 12:00:00', chat_metadata: {} }, ...body,
+        { user_name: 'Captain', character_name: '我没想当掌门啊', create_date: '2026-06-25 12:00:00', chat_metadata: {} }, ...body,
     ].map(value => JSON.stringify(value)).join('\n')) });
     const response = await imported;
     expect(response.ok()).toBe(true);

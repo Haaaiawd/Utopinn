@@ -4,7 +4,7 @@
 import http from 'node:http';
 const B = 'http://127.0.0.1:8000';
 const STUB_PORT = 18768;
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-stats-probe';
 const PIECES = ['The ', 'stars ', 'align.'];
 let cookie = '', token = '';
@@ -46,9 +46,9 @@ token = (await req('GET', '/csrf-token')).body?.token ?? '';
 const base = `/api/utopinn/characters/${CHAR}/chats`;
 await req('DELETE', `${base}/${CHAT}`);
 await req('PUT', `${base}/${CHAT}`, {});
-// 种子消息带 Eldoria 书关键词(eldoria/forest/glade),worldinfo 必激活——
+// 种子消息带掌门卡内嵌书关键词(灵石/贡献点/俸禄),worldinfo 必激活——
 // 保证条目级命中断言吃到真数据,不是空表兜底。
-await req('POST', `${base}/${CHAT}/messages`, { messages: [{ name: 'You', is_user: true, send_date: Date.now(), mes: 'I wander through the eldoria forest toward the glade', extra: {} }] });
+await req('POST', `${base}/${CHAT}/messages`, { messages: [{ name: 'You', is_user: true, send_date: Date.now(), mes: '账本里的灵石俸禄和贡献点对不上', extra: {} }] });
 
 // 一次生成(textgen stub),产出 job + inject 事件序列
 const gen = await req('POST', '/api/utopinn/generate', {

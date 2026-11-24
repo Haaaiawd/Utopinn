@@ -32,7 +32,7 @@ import { openVarOpsPanel, getRenderedVarOpsRows } from '../_lib/ui-mg-varops.js'
 let server, mock;
 
 const REPLY = (n) => [
-    `*Seraphina marks the slate with a steady hand.* {{setvar::count::${n}}}`,
+    `*我没想当掌门啊 marks the slate with a steady hand.* {{setvar::count::${n}}}`,
     ` "Mark ${n} on the tally, keep — that brings us to ${n}."`,
 ].join('');
 
@@ -53,7 +53,7 @@ test.describe('#63 — Rollback one turn → state restored (real delete-message
     test('delete last assistant turn via trash icon; rebuild reflects the previous turn count; persists across restart', async ({ page }) => {
         test.setTimeout(240_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -189,7 +189,7 @@ test.describe('#63 — Rollback one turn → state restored (real delete-message
         // ── Persistence across restart ────────────────────────────────
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker?.getContext?.();

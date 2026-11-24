@@ -11,8 +11,8 @@ import { ensureShadowRepo } from '../../../src/sync/shadow.js';
 import { atomicFs } from '../../../src/sync/pipeline/atomic-fs.js';
 import { _resetGateForTests } from '../../../src/sync/in-progress-gate.js';
 
-const HEADER = JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} });
-const CHAT = 'chats/Seraphina/c1.jsonl';
+const HEADER = JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} });
+const CHAT = 'chats/掌门真人/c1.jsonl';
 
 describe('two LAN devices on the shared pipeline', () => {
     let A;
@@ -78,7 +78,7 @@ describe('two LAN devices on the shared pipeline', () => {
         expect(await mainOf(A)).toBe(await mainOf(B));
         const { gitDir } = await ensureShadowRepo({ userRoot: A.userRoot, peerId: id });
         const files = await readCommitFiles({ gitdir: gitDir, commitOid: await mainOf(A) });
-        expect([...files.keys()].filter(key => key.startsWith('chats/Seraphina/') && key.endsWith('.jsonl') && key !== CHAT)).toHaveLength(1);
+        expect([...files.keys()].filter(key => key.startsWith('chats/掌门真人/') && key.endsWith('.jsonl') && key !== CHAT)).toHaveLength(1);
         const { 'worlds/w.json': record } = await readEntries({ gitdir: gitDir, files, path: CONFLICTS_PATH, kind: 'conflicts' });
         expect(record.kept).toBe(files.get('worlds/w.json').oid);
         expect(record.ours).toBe(blobOidOf(Buffer.from(content[record.oursDevice][1])));

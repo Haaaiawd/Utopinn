@@ -35,7 +35,7 @@ test.beforeAll(async () => {
     // will make the bytes differ from the original).
     tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-avatar-'));
     newAvatarPath = resolve(tmpDir, 'new-avatar.png');
-    writeFileSync(newAvatarPath, readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png')));
+    writeFileSync(newAvatarPath, readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png')));
 });
 
 test.afterAll(async () => {

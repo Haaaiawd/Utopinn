@@ -10,16 +10,16 @@ import { writeBlob } from '../_lib/commits.js';
 
 const layout = { chatsDir: 'chats', groupChatsDir: 'group chats', groupsDir: 'groups' };
 const date = new Date(2026, 9, 13, 9, 5);
-const header = JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: { integrity: 'old-integrity' } });
-const lines = [JSON.stringify({ name: 'U', is_user: true, mes: 'The glade is quiet.' }), JSON.stringify({ name: 'Seraphina', is_user: false, mes: 'Rest, traveler.' })];
+const header = JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: { integrity: 'old-integrity' } });
+const lines = [JSON.stringify({ name: 'U', is_user: true, mes: 'The glade is quiet.' }), JSON.stringify({ name: '掌门真人', is_user: false, mes: 'Rest, traveler.' })];
 
 describe('branch names', () => {
     test('formatForkTimestamp uses local time', () => {
         expect(formatForkTimestamp(date)).toBe('2026-10-13 09.05');
     });
     test('names follow the sync conflict pattern and stay unique', () => {
-        expect(branchChatBaseName({ base: 'Seraphina - 2026-10-01', deviceLabel: 'Laptop', date, taken: new Set() }))
-            .toBe('Seraphina - 2026-10-01 - Sync conflict Laptop 2026-10-13 09.05');
+        expect(branchChatBaseName({ base: '掌门真人 - 2026-10-01', deviceLabel: 'Laptop', date, taken: new Set() }))
+            .toBe('掌门真人 - 2026-10-01 - Sync conflict Laptop 2026-10-13 09.05');
         expect(branchChatBaseName({ base: 'S', deviceLabel: 'Laptop', date, taken: new Set(['S - Sync conflict Laptop 2026-10-13 09.05']) }))
             .toBe('S - Sync conflict Laptop 2026-10-13 09.05 (2)');
     });
@@ -82,7 +82,7 @@ describe('forkChat', () => {
     afterEach(() => fs.rmSync(userRoot, { recursive: true, force: true }));
 
     test('classifyChatPath recognizes chats, group chats and their companions only', () => {
-        expect(classifyChatPath(layout, 'chats/Seraphina/c1.luker-state.mg.json')).toEqual({ kind: 'character', dir: 'chats/Seraphina', base: 'c1', chatPath: 'chats/Seraphina/c1.jsonl', avatarDir: 'Seraphina' });
+        expect(classifyChatPath(layout, 'chats/掌门真人/c1.luker-state.mg.json')).toEqual({ kind: 'character', dir: 'chats/掌门真人', base: 'c1', chatPath: 'chats/掌门真人/c1.jsonl', avatarDir: '掌门真人' });
         expect(classifyChatPath(layout, 'group chats/gc1.jsonl')).toEqual({ kind: 'group', dir: 'group chats', base: 'gc1', chatPath: 'group chats/gc1.jsonl', avatarDir: null });
         expect(classifyChatPath(layout, 'groups/g1.json')).toBeNull();
         expect(classifyChatPath(layout, 'worlds/w.json')).toBeNull();
@@ -90,19 +90,19 @@ describe('forkChat', () => {
 
     test('a character chat fork rewrites main_chat and integrity and copies the companions', async () => {
         const theirsFiles = new Map([
-            ['chats/Seraphina/c1.jsonl', await blobFile([header, ...lines].join('\n'))],
-            ['chats/Seraphina/c1.luker-state.memory_graph.json', await blobFile('{"nodes":[]}')],
+            ['chats/掌门真人/c1.jsonl', await blobFile([header, ...lines].join('\n'))],
+            ['chats/掌门真人/c1.luker-state.memory_graph.json', await blobFile('{"nodes":[]}')],
         ]);
-        const files = new Map([['chats/Seraphina/c1.jsonl', await blobFile([header, lines[0]].join('\n'))]]);
-        const result = await fork(files, theirsFiles, 'chats/Seraphina/c1.jsonl');
+        const files = new Map([['chats/掌门真人/c1.jsonl', await blobFile([header, lines[0]].join('\n'))]]);
+        const result = await fork(files, theirsFiles, 'chats/掌门真人/c1.jsonl');
         const branch = 'c1 - Sync conflict Phone 2026-10-13 09.05';
-        expect(result.branchPath).toBe(`chats/Seraphina/${branch}.jsonl`);
+        expect(result.branchPath).toBe(`chats/掌门真人/${branch}.jsonl`);
         const [first, ...rest] = (await text(files.get(result.branchPath))).split('\n');
         expect(JSON.parse(first).chat_metadata.main_chat).toBe('c1');
         expect(JSON.parse(first).chat_metadata.integrity).toMatch(/^[0-9a-f-]{36}$/);
         expect(rest).toEqual(lines);
-        expect(files.get(`chats/Seraphina/${branch}.luker-state.memory_graph.json`).oid).toBe(theirsFiles.get('chats/Seraphina/c1.luker-state.memory_graph.json').oid);
-        expect(result.notice).toEqual({ kind: 'fork', chat: 'chats/Seraphina/c1.jsonl', device: 'Phone', createdAt: date.toISOString(), target: { kind: 'character', avatar: 'Seraphina.png', name: branch } });
+        expect(files.get(`chats/掌门真人/${branch}.luker-state.memory_graph.json`).oid).toBe(theirsFiles.get('chats/掌门真人/c1.luker-state.memory_graph.json').oid);
+        expect(result.notice).toEqual({ kind: 'fork', chat: 'chats/掌门真人/c1.jsonl', device: 'Phone', createdAt: date.toISOString(), target: { kind: 'character', avatar: '掌门真人.png', name: branch } });
     });
 
     test('the chat sync companion holding the old integrity is not copied', async () => {
@@ -130,7 +130,7 @@ describe('forkChat', () => {
     });
 
     test('a group chat fork appends the branch id to the owning group', async () => {
-        const group = { id: 'g1', name: 'Glade Watch', members: ['Seraphina.png'], chat_id: 'gc1', chats: ['gc1'] };
+        const group = { id: 'g1', name: 'Glade Watch', members: ['掌门真人.png'], chat_id: 'gc1', chats: ['gc1'] };
         const files = new Map([['groups/g1.json', await blobFile(JSON.stringify(group, null, 4))], ['group chats/gc1.jsonl', await blobFile(header)]]);
         const theirsFiles = new Map([['group chats/gc1.jsonl', await blobFile([header, ...lines].join('\n'))]]);
         const result = await fork(files, theirsFiles, 'group chats/gc1.jsonl');

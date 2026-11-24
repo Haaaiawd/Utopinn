@@ -4,7 +4,7 @@
 // PNG but the server reads character data exclusively from the PNG
 // `chara`/`ccv3` chunks, so override.name / override.description never
 // reach the running app — every fixture character ends up as the seed
-// "Seraphina". For group rotation tests we need three distinct
+// "我没想当掌门啊". For group rotation tests we need three distinct
 // characters with stable, recognizable names, so we re-encode the PNG
 // here via the same character-card-parser the server uses.
 //
@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 import { write as writeCardToPng } from '../../../src/character-card-parser.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-const SEED_PNG = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+const SEED_PNG = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 
 /**
  * Write a real V2 character card embedded in a PNG (chara chunk).

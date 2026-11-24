@@ -52,7 +52,7 @@ test.afterAll(async () => {
 test.describe('#19 — same source added twice keeps both slices', () => {
     test('two segment rows on one source survive into the merged body', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const id = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());

@@ -110,7 +110,7 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
             ? s.chat.groupId
                 ? (s.chat.group ?? s.chat.title)
                 : `${s.cards.get(s.chat.charDir)?.name ?? s.chat.charDir} · ${s.chat.title}`
-            : 'Seraphina'));
+            : '我没想当掌门啊'));
     const time = typeof m.timestamp === 'number' && Number.isFinite(m.timestamp) ? new Date(m.timestamp).toTimeString().slice(0, 5) : '';
     if (isUser) {
         return (

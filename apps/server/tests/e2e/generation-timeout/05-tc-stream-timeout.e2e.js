@@ -38,7 +38,7 @@ test('main text-completion streaming gap beyond the profile timeout aborts gener
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     await page.locator('#send_textarea').fill('Log the reef line before the turn, slowly.');

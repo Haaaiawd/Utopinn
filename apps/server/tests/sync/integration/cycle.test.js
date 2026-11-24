@@ -847,16 +847,16 @@ describe('runSyncCycle against a directory remote', () => {
 
     test('a live edit skipped by the seed records reconcile keeps the records in main and is synced next', async () => {
         const all = ['characters', 'worlds', 'chats'];
-        const chatText = mes => `${JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} })}\n${JSON.stringify({ name: 'Seraphina', is_user: false, mes })}\n`;
+        const chatText = mes => `${JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} })}\n${JSON.stringify({ name: '掌门真人', is_user: false, mes })}\n`;
         const A = device({ categories: all });
         A.write('characters/a.png', 'A');
         A.write('worlds/w.json', 'A-version');
-        A.write('chats/Seraphina/s.jsonl', chatText('A'));
+        A.write('chats/掌门真人/s.jsonl', chatText('A'));
         await runSyncCycle(A.ctx);
         const B = device({ categories: ['characters'] });
         await runSyncCycle(B.ctx);
         B.write('worlds/w.json', 'B-version');
-        B.write('chats/Seraphina/s.jsonl', chatText('B'));
+        B.write('chats/掌门真人/s.jsonl', chatText('B'));
         B.ctx.categories = all;
         const policy = createConflictPolicy({ directories: B.directories, localDevice: 'B', remoteDevice: 'remote' });
         let branchPath = null;

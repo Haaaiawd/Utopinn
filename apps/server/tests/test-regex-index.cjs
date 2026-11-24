@@ -21,7 +21,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SERVER_DIR = path.resolve(__dirname, '..');
-const SEED_PNG = path.join(SERVER_DIR, 'default', 'content', 'default_Seraphina.png');
+const SEED_PNG = path.join(SERVER_DIR, 'default', 'content', 'default_我没想当掌门啊.png');
 const SEED_CONFIG = path.join(SERVER_DIR, 'default', 'config.yaml');
 const PNG_CARD_COUNT = 8;   // 8×551KB 真 PNG 卡 —— 冷/热全量视图拉开量级差
 const READY_TIMEOUT_MS = 180_000;

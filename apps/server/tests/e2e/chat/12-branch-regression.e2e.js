@@ -29,10 +29,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const REPLIES = [
-    '*Seraphina nods.* "Reply 1: the chart is fresh as of yesterday."',
-    '*Seraphina taps the corner.* "Reply 2: the eastern reef looks calm."',
-    '*Seraphina frowns.* "Reply 3: but the south is restless."',
-    '*Seraphina sets the brass spyglass down.* "Reply 4: I do not like the look of the southern stretch."',
+    '*我没想当掌门啊 nods.* "Reply 1: the chart is fresh as of yesterday."',
+    '*我没想当掌门啊 taps the corner.* "Reply 2: the eastern reef looks calm."',
+    '*我没想当掌门啊 frowns.* "Reply 3: but the south is restless."',
+    '*我没想当掌门啊 sets the brass spyglass down.* "Reply 4: I do not like the look of the southern stretch."',
 ];
 
 let server, mock;
@@ -53,7 +53,7 @@ test.afterAll(async () => {
 test.describe('#12 — branch-from-message regression', () => {
     test('clicking .mes_create_branch at turn 2 copies prefix, leaves original chat intact', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await sendMessageAndAwaitReply(page, 'Turn 1: chart fresh?');
@@ -116,7 +116,7 @@ test.describe('#12 — branch-from-message regression', () => {
         // Restart and re-load original chat; turn 3+4 should still be there.
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 15_000 });
 
         // Switch back to the original chat. After reload the character

@@ -28,7 +28,7 @@ import { write as writeCardChunk } from '../../../src/character-card-parser.js';
  */
 function seedRealCardPng(charsDir, name, jsonData) {
     fs.mkdirSync(charsDir, { recursive: true });
-    const seedPath = fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url));
+    const seedPath = fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url));
     const seed = fs.readFileSync(seedPath);
     const png = writeCardChunk(seed, JSON.stringify(jsonData));
     fs.writeFileSync(path.join(charsDir, `${name}.png`), png);

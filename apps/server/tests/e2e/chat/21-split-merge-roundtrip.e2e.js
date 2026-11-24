@@ -47,9 +47,9 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart edge under a brass weight.* "r0: the swell is rising."',
-        '*Seraphina taps the compass glass twice.* "r1: north-by-east, steady."',
-        '*Seraphina lowers the spyglass onto the chart.* "r2: the reef is masked tonight."',
+        '*我没想当掌门啊 folds the chart edge under a brass weight.* "r0: the swell is rising."',
+        '*我没想当掌门啊 taps the compass glass twice.* "r1: north-by-east, steady."',
+        '*我没想当掌门啊 lowers the spyglass onto the chart.* "r2: the reef is masked tonight."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'split-merge-roundtrip' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -65,7 +65,7 @@ test.afterAll(async () => {
 test.describe('#21 — split then merge back yields byte-equal message body', () => {
     test('split at [2, 4] then re-merge the three parts reconstructs the source body', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const sourceChatId = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());

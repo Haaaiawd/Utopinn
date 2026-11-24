@@ -53,15 +53,15 @@ test.describe('#50 — large character card import', () => {
         // endpoint accepts file_type=png + the PNG body in the multipart.
         const seedCandidates = [
             // worktree-relative
-            resolve(server.dataRoot.replace(/\/[^/]+$/, ''), '..', '..', 'default', 'content', 'default_Seraphina.png'),
+            resolve(server.dataRoot.replace(/\/[^/]+$/, ''), '..', '..', 'default', 'content', 'default_我没想当掌门啊.png'),
             // direct path under default-user (post-clone)
-            resolve(server.dataRoot, 'default-user', 'characters', 'Seraphina.png'),
+            resolve(server.dataRoot, 'default-user', 'characters', '我没想当掌门啊.png'),
         ];
         let seedPng = seedCandidates.find(existsSync);
         if (!seedPng) {
             // Fall back to scanning /default in the repo.
             const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-            const fallback = resolve(REPO_ROOT, 'default', 'content', 'default_Seraphina.png');
+            const fallback = resolve(REPO_ROOT, 'default', 'content', 'default_我没想当掌门啊.png');
             if (existsSync(fallback)) seedPng = fallback;
         }
         expect(seedPng, 'no PNG seed found').toBeTruthy();
@@ -111,7 +111,7 @@ test.describe('#50 — large character card import', () => {
 
         // Resolve the real avatar filename — the import endpoint names the
         // file from the EMBEDDED PNG `chara` chunk (not from the multipart
-        // filename), so the seed Seraphina PNG lands as Seraphina.png. The
+        // filename), so the seed 我没想当掌门啊 PNG lands as 我没想当掌门啊.png. The
         // edit call must address that real filename.
         let importedAvatar = 'big-ash.png';
         try {
@@ -165,6 +165,6 @@ test.describe('#50 — large character card import', () => {
             return j.map(c => c?.name).filter(Boolean).sort();
         });
         // The renamed character should be present after the edit.
-        expect(list.some(n => /BigAsh|Ash|Seraphina/.test(n)), `expected a known char in list; saw ${list.join(',')}`).toBe(true);
+        expect(list.some(n => /BigAsh|Ash|我没想当掌门啊/.test(n)), `expected a known char in list; saw ${list.join(',')}`).toBe(true);
     });
 });

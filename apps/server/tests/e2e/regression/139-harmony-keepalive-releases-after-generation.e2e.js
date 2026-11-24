@@ -77,7 +77,7 @@ test('releases the HarmonyOS keep-alive after a tool-call turn ends', async ({ b
     await page.locator('#luker_mobile_keep_alive').check();
     await page.waitForFunction(() => window.Luker.getContext().powerUserSettings.luker_mobile_keep_alive_harmony_enabled === true);
 
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // Register one tool the model can call.
     await page.evaluate(() => {

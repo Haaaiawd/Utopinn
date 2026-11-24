@@ -78,6 +78,9 @@ function cli(args, { stdin } = {}) {
         [CLI_PATH, '-s', BASE, '--state', STATE_FILE, '--json', ...args],
         {
             input: stdin ?? '', encoding: 'utf8', timeout: 120_000, cwd: WORK,
+            // char 全文/大世界书 dump 会超 spawnSync 默认 1MB 上限(新种子卡
+            // 内嵌卡应用让单卡 JSON 达数 MB),显式放大防 ENOBUFS 假阴性。
+            maxBuffer: 64 * 1024 * 1024,
             env: {
                 ...process.env,
                 NO_PROXY: 'localhost,127.0.0.1', no_proxy: 'localhost,127.0.0.1',
@@ -124,7 +127,7 @@ const { writeCardToPng } = await import('@utopinn/formats').catch(() => ({}));
 function writeCardAppProbe({ dataRoot, avatarFile, name, cardApp }) {
     const charsDir = resolve(dataRoot, 'default-user', 'characters');
     mkdirSync(charsDir, { recursive: true });
-    const seed = resolve(SERVER_DIR, 'default/content/default_Seraphina.png');
+    const seed = resolve(SERVER_DIR, 'default/content/default_我没想当掌门啊.png');
     const card = {
         spec: 'chara_card_v2', spec_version: '2.0',
         data: {
@@ -174,6 +177,10 @@ function seedCorpus(dataRoot, { upstreamUrl }) {
     sdoc.oai_settings = {
         ...(sdoc.oai_settings ?? {}),
         chat_completion_source: 'openai',
+        // 首跑一次会把 legacy oai 槽合成 connection_profiles(default 档指
+        // 真 api.openai.com);profile 派发恒优先于 oai_settings.reverse_proxy,
+        // 不清空 generate 会直连外网而不是 hang-server。置空回落旧单槽。
+        connection_profiles: [],
         reverse_proxy: upstreamUrl,
         proxy_password: 'acc-probe-pw',
         model: 'acc-probe', openai_model: 'acc-probe',

@@ -94,7 +94,7 @@ import {
 } from '../_lib/page.js';
 
 await awaitMainUI(page, server.baseURL);
-await selectCharacterByName(page, 'Seraphina');
+await selectCharacterByName(page, '我没想当掌门啊');
 const { text } = await sendMessageAndAwaitReply(page, 'I walked the cliff path.');
 const snap = await getChatSnapshot(page);  // {chatId, length, messages, metadata}
 ```
@@ -127,7 +127,7 @@ test.afterAll(async () => {
 test.describe('#NN — short title', () => {
     test('first scenario', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         // ... act ...
         // ... assert ...
     });

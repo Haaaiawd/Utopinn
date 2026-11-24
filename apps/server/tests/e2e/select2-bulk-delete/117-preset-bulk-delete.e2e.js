@@ -19,7 +19,7 @@ let server, mock;
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
-    mock = await startMockLLM({ scriptedReplies: ['*Seraphina folds the chart away.* The lantern still holds.'] });
+    mock = await startMockLLM({ scriptedReplies: ['*我没想当掌门啊 folds the chart away.* The lantern still holds.'] });
     server = await startServer({
         batchKey: 'bulkdelete',
         scenarioId: 'preset',

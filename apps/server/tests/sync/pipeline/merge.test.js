@@ -254,14 +254,14 @@ describe('object-store merge', () => {
 
     test('a surviving chat state companion keeps its parent chat', async () => {
         const { files, conflicts } = await mergeWithParents(
-            { 'chats/Seraphina/c1.jsonl': 'A', 'chats/Seraphina/c1.luker-state.mg.json': 'S0' },
-            { 'chats/Seraphina/c1.jsonl': 'A', 'chats/Seraphina/c1.luker-state.mg.json': 'S1' },
+            { 'chats/掌门真人/c1.jsonl': 'A', 'chats/掌门真人/c1.luker-state.mg.json': 'S0' },
+            { 'chats/掌门真人/c1.jsonl': 'A', 'chats/掌门真人/c1.luker-state.mg.json': 'S1' },
             {},
         );
-        expect(contents(files)).toEqual({ 'chats/Seraphina/c1.jsonl': oid('A'), 'chats/Seraphina/c1.luker-state.mg.json': oid('S1') });
+        expect(contents(files)).toEqual({ 'chats/掌门真人/c1.jsonl': oid('A'), 'chats/掌门真人/c1.luker-state.mg.json': oid('S1') });
         expect(conflicts).toEqual([
-            { filepath: 'chats/Seraphina/c1.luker-state.mg.json', kind: 'deleteByTheirs', oursOid: oid('S1'), theirsOid: null },
-            { filepath: 'chats/Seraphina/c1.jsonl', kind: 'deleteByTheirs', oursOid: oid('A'), theirsOid: null },
+            { filepath: 'chats/掌门真人/c1.luker-state.mg.json', kind: 'deleteByTheirs', oursOid: oid('S1'), theirsOid: null },
+            { filepath: 'chats/掌门真人/c1.jsonl', kind: 'deleteByTheirs', oursOid: oid('A'), theirsOid: null },
         ]);
     });
 

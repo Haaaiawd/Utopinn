@@ -83,7 +83,7 @@ test.describe('#26 — post-replace world-book paths actually work', () => {
     test.beforeAll(async () => {
         mock = await startMockLLM({});
         tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-26-'));
-        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
         briallenPath = resolve(tmpDir, 'briallen.png');
         writeFileSync(briallenPath, buildBriallenPng(seed));
         // Variant: new card already has extensions.world pointing to its OWN book

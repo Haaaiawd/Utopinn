@@ -140,14 +140,14 @@ describe('sync scheduler', () => {
         const h = withNestedDirs(await sqlite.make());
         cleanups.push(() => h.cleanup());
         fs.mkdirSync(h.dirs.chats, { recursive: true });
-        const orphan = await commitFiles(remotes.r1, { 'chats/Seraphina/c1.luker-state.mg.json': '{"v":1}' });
+        const orphan = await commitFiles(remotes.r1, { 'chats/掌门真人/c1.luker-state.mg.json': '{"v":1}' });
         await git.writeRef({ fs: atomicFs, gitdir: remotes.r1, ref: 'refs/heads/main', value: orphan, force: true });
         await upsertLanBackend({ userRoot: h.dirs.root, backendId: 'r1', label: 'r1', categories: ['chats'] });
         const owner = { handle: h.handle, displayName: h.handle, userRoot: h.dirs.root, directories: h.dirs, engine: h.engine };
         const result = await scheduler().trigger(owner, 'r1', 'manual');
-        expect(result).toMatchObject({ ok: true, stalled: ['chats/Seraphina/c1.luker-state.mg.json'] });
+        expect(result).toMatchObject({ ok: true, stalled: ['chats/掌门真人/c1.luker-state.mg.json'] });
         expect(readHeads.r1).toBe(2);
-        expect((await readRegistry({ userRoot: h.dirs.root })).backends.r1.lastSync.stalled).toEqual(['chats/Seraphina/c1.luker-state.mg.json']);
+        expect((await readRegistry({ userRoot: h.dirs.root })).backends.r1.lastSync.stalled).toEqual(['chats/掌门真人/c1.luker-state.mg.json']);
     }, 60_000);
 
     test('the idle timer resets on each dirty mark', async () => {

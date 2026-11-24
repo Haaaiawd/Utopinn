@@ -93,7 +93,7 @@ test.describe('generation-basic: persist-to-disk contract (non-stream + stream)'
         test('non-stream: chat.jsonl assistant `mes` equals the scripted reply verbatim', async ({ page }) => {
             const t0 = Date.now();
             await awaitMainUI(page, server.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
             const userText = 'Trigger the non-stream persistence path.';
@@ -162,7 +162,7 @@ test.describe('generation-basic: persist-to-disk contract (non-stream + stream)'
         test('stream: SSE frames assemble into an exact `mes` at persist time', async ({ page }) => {
             const t0 = Date.now();
             await awaitMainUI(page, server.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
             const { text: replyText } = await sendMessageAndAwaitReply(page, 'Trigger the streaming persistence path.');

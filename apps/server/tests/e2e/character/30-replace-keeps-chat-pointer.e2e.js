@@ -142,7 +142,7 @@ test.describe('#30 — replace keeps the active chat pointer', () => {
             ],
         });
         tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-replace-chat-pointer-'));
-        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+        const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
         briallenPngPath = resolve(tmpDir, 'briallen-replace.png');
         writeFileSync(briallenPngPath, buildBriallenPng(seed));
         // YAML import mints "<name> - <time>" into the stored card's chat

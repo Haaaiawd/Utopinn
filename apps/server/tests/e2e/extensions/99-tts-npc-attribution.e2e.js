@@ -8,7 +8,7 @@
 //      provider via the REAL #tts_provider dropdown, zero the retry
 //      count via the REAL #tts_npc_attribution_retry_max input.
 //   3. Real send; the mock replies with straight-quoted dialogue from
-//      the card character (Seraphina) AND a distinct NPC
+//      the card character (我没想当掌门啊) AND a distinct NPC
 //      (Bryn the Harbourmaster).
 //   4. Push the attribution tool call to the mock AT TEST TIME (after
 //      the reply landed), then really click the NPC quote's inline
@@ -42,8 +42,8 @@ let server, mock;
 const NPC_NAME = 'Bryn the Harbourmaster';
 const NPC_QUOTE_TEXT = 'Tie up the lantern lines before the tide turns';
 
-const REPLY_TEXT = `*Seraphina leans on the rail.*
-"We will reach the port by dawn," Seraphina says.
+const REPLY_TEXT = `*我没想当掌门啊 leans on the rail.*
+"We will reach the port by dawn," 我没想当掌门啊 says.
 ${NPC_NAME} calls from the pier, "Tie up the lantern lines before the tide turns."`;
 
 test.beforeAll(async () => {
@@ -75,7 +75,7 @@ test.describe('#99 — TTS NPC attribution end-to-end', () => {
     test('inline play click on NPC quote → parse → cache → NPC voiceMapKey playback', async ({ page }) => {
         test.setTimeout(240_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -130,7 +130,7 @@ test.describe('#99 — TTS NPC attribution end-to-end', () => {
         // auto_generation on (the default), the assistant reply itself
         // is queued for whole-message TTS the moment it renders, and
         // that job would occupy generateTtsCalls[0] with the author's
-        // voiceMapKey ('Seraphina'). The act under test is the inline
+        // voiceMapKey ('我没想当掌门啊'). The act under test is the inline
         // button click, so turn the whole-message auto path off via the
         // REAL #tts_auto_generation checkbox.
         const autoGenCb = page.locator('#tts_auto_generation');
@@ -145,7 +145,7 @@ test.describe('#99 — TTS NPC attribution end-to-end', () => {
         // to drive headlessly; initVoiceMapInternal reads
         // extension_settings.tts[providerName].voiceMap, not the
         // top-level tts.voiceMap). Two deviations from 94's
-        // 'Seraphina:StubVoice' string seed, both load-bearing for the
+        // '我没想当掌门啊:StubVoice' string seed, both load-bearing for the
         // NPC path:
         //   - OBJECT form: when the attribution parse discovers the NPC
         //     it tops the map up via ensureNpcVoiceMapEntries, which
@@ -162,7 +162,7 @@ test.describe('#99 — TTS NPC attribution end-to-end', () => {
             ctx.extensionSettings.tts = ctx.extensionSettings.tts || {};
             ctx.extensionSettings.tts.Stub = ctx.extensionSettings.tts.Stub || {};
             ctx.extensionSettings.tts.Stub.voiceMap = {
-                'Seraphina': 'StubVoice',
+                '我没想当掌门啊': 'StubVoice',
                 '[Default Voice]': 'StubVoice',
             };
             ctx.saveSettingsDebounced();
@@ -280,14 +280,14 @@ test.describe('#99 — TTS NPC attribution end-to-end', () => {
             name: 'report_dialogue_attribution',
             arguments: {
                 segments: [
-                    { quote_text: 'We will reach the port by dawn', speaker: 'Seraphina' },
+                    { quote_text: 'We will reach the port by dawn', speaker: '我没想当掌门啊' },
                     { quote_text: NPC_QUOTE_TEXT, speaker: NPC_NAME },
                 ],
             },
         });
 
         // Real click on the NPC quote's play button — the second <q> in
-        // the reply (qIndex 1: the Seraphina line is q0, the NPC line is
+        // the reply (qIndex 1: the 我没想当掌门啊 line is q0, the NPC line is
         // q1). The button is visible inside .mes_text, so a real
         // Playwright click lands (no JS dispatch needed, unlike 94's
         // .mes_narrate).

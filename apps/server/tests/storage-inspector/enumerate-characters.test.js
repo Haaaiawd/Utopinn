@@ -21,7 +21,7 @@ describe('enumerateCategory("characters") · L2', () => {
         try {
             const res = await enumerateCategory(userRoot, 'characters');
             expect(res.entries).toHaveLength(2);
-            expect(res.entries.map(e => e.key)).toEqual(['default_Seraphina', 'default_Coding']);
+            expect(res.entries.map(e => e.key)).toEqual(['default_我没想当掌门啊', 'default_Coding']);
             const sera = res.entries[0];
             expect(sera.kind).toBe('character-group');
             expect(sera.canDrill).toBe(true);
@@ -40,15 +40,15 @@ describe('enumerateCharacterDetail · L3 叶子', () => {
     test('splits into card + sprites-summary + per-sidecar rows', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ charactersRich: true });
         try {
-            const res = await enumerateCharacterDetail(userRoot, 'default_Seraphina');
+            const res = await enumerateCharacterDetail(userRoot, 'default_我没想当掌门啊');
             expect(res.isLeaf).toBe(true);
-            expect(res.path).toEqual(['characters', 'default_Seraphina']);
+            expect(res.path).toEqual(['characters', 'default_我没想当掌门啊']);
             const kinds = res.entries.map(e => e.kind).sort();
             expect(kinds).toEqual(expect.arrayContaining(['character-card', 'character-sprites', 'character-sidecar', 'character-sidecar']));
 
             const card = res.entries.find(e => e.kind === 'character-card');
             const sprites = res.entries.find(e => e.kind === 'character-sprites');
-            expect(card.label).toBe('default_Seraphina.png');
+            expect(card.label).toBe('default_我没想当掌门啊.png');
             expect(card.canDrill).toBe(false);
             expect(sprites.label).toMatch(/Sprites/);
             expect(sprites.childCount).toBe(3);  // happy + sad + neutral

@@ -1,7 +1,7 @@
 // #82 — CEA Character iter-studio: Apply → character description mutated → survives restart.
 //
 // REAL USER-GESTURE flow:
-//   1. Select the bundled Seraphina character via her card.
+//   1. Select the bundled 我没想当掌门啊 character via her card.
 //   2. Open the CEA editor iter-studio popup via real clicks
 //      (extensions drawer → CEA panel → "Open Editor") (openIterStudio).
 //   3. Script a `cea_set_card_field` tool_call on the mock with
@@ -11,7 +11,7 @@
 //   6. Close popup. Verify the character description was rewritten:
 //      - In-memory ctx.characters[id] carries the new description
 //      - /api/characters/get returns the new description from disk
-//   7. Restart, reload, re-select Seraphina, re-assert via the rendered
+//   7. Restart, reload, re-select 我没想当掌门啊, re-assert via the rendered
 //      #description_textarea (DOM-side ground truth).
 
 import { test, expect } from '@playwright/test';
@@ -24,7 +24,7 @@ import { normalizeIterStudioSettings } from '../preset/_helpers.js';
 
 let server, mock;
 
-const NEW_DESCRIPTION = 'Seraphina now wears a wind-bitten cartographer\'s coat over her healer\'s robes. '
+const NEW_DESCRIPTION = '我没想当掌门啊 now wears a wind-bitten cartographer\'s coat over her healer\'s robes. '
     + 'A brass spyglass, verdigrised at the bezel, hangs from her belt — Ash gifted it to her '
     + 'after the third reef survey. Her hands still smell of salt and chamomile.';
 
@@ -49,9 +49,9 @@ test.afterAll(async () => {
 });
 
 test.describe('#82 — CEA character iter-studio Apply → description persists across restart (real UI)', () => {
-    test('Apply writes Seraphina.description via real Apply button click', async ({ page }) => {
+    test('Apply writes 我没想当掌门啊.description via real Apply button click', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         const beforeAvatar = await page.evaluate(() => {
             const ctx = window.Luker.getContext();
@@ -72,7 +72,7 @@ test.describe('#82 — CEA character iter-studio Apply → description persists 
         });
 
         // Send + wait for Apply.
-        await sendIterPrompt(page, 'cea', 'Rewrite Seraphina\'s description to give her a wind-bitten cartographer\'s coat over her healer\'s robes.');
+        await sendIterPrompt(page, 'cea', 'Rewrite 我没想当掌门啊\'s description to give her a wind-bitten cartographer\'s coat over her healer\'s robes.');
 
         // Click Apply via real button.
         await applyIterBatch(page, 'cea');
@@ -105,7 +105,7 @@ test.describe('#82 — CEA character iter-studio Apply → description persists 
         // Restart + reload + re-select character.
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // After reload, the right-nav editor's #description_textarea must
         // reflect the persisted description (the user-facing surface).

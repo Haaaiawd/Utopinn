@@ -42,11 +42,11 @@ const SEED_RECORDS = [
         },
     },
     {
-        idHint: 'seraphina',
+        idHint: 'zhangmen',
         type: 'character_sheet',
-        title: 'Seraphina the cartographer',
+        title: '我没想当掌门啊 the cartographer',
         fields: {
-            title: 'Seraphina the cartographer',
+            title: '我没想当掌门啊 the cartographer',
             aliases: 'Sera',
             identity: 'Wind-bitten Bryn coastal cartographer in her early thirties.',
             traits: 'Observant, dry-witted, patient.',
@@ -59,7 +59,7 @@ const SEED_RECORDS = [
         fields: {
             title: 'Bryn headland watchpost',
             state: 'Active nighttime post: brass spyglass on the rail, tidal charts pinned.',
-            controller: 'Seraphina',
+            controller: '我没想当掌门啊',
         },
     },
     {
@@ -75,7 +75,7 @@ const SEED_RECORDS = [
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: Array.from({ length: 5 }, (_, i) =>
-            `*Seraphina nods.* "Acknowledged. Note ${i + 1} recorded."`),
+            `*我没想当掌门啊 nods.* "Acknowledged. Note ${i + 1} recorded."`),
     });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'rag-vector-only' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -172,7 +172,7 @@ test.describe('#61 — RAG recall mode reaches the seeded graph via real chat se
 
     test('after switching to RAG and importing, a matching user turn surfaces the seeded node in the recall trace', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgAndSelectRag(page);
 
         // 2 RP turns to give MG a real chat tail.
@@ -232,7 +232,7 @@ test.describe('#61 — RAG recall mode reaches the seeded graph via real chat se
         ).toBeGreaterThan(0);
         // The mock embedder is a deterministic bag-of-tokens hash, so we
         // can't assert which specific seed ranks first across nodes that
-        // share Bryn / lantern / Seraphina vocabulary. The real contract
+        // share Bryn / lantern / 我没想当掌门啊 vocabulary. The real contract
         // is that the seeded nodes (n_1..n_4) make it into selection — proving
         // the pipeline reached the imported graph.
         const seededIds = new Set(['n_1', 'n_2', 'n_3', 'n_4']);

@@ -42,7 +42,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina studies the tide chart, tracing the reef edge with a slow finger.* We have until dusk, no later.',
+        '*我没想当掌门啊 studies the tide chart, tracing the reef edge with a slow finger.* We have until dusk, no later.',
     ] });
     server = await startServer({
         batchKey: 'preset',

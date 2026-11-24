@@ -85,7 +85,7 @@ test.beforeAll(async () => {
         extraConfig: { 'storage.mode': 'fs' },
     });
     tmpDir = mkdtempSync(join(tmpdir(), 'luker-resource-state-'));
-    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const payload = {
         spec: 'chara_card_v2',
         spec_version: '2.0',

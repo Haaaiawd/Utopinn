@@ -31,7 +31,7 @@ test.describe('Browser Storage Inspector · delete localStorage key', () => {
         await wipeBrowserFixture(page);
         await seedBrowserFixture(page, {
             localStorage: {
-                'luker-last-chat':   'Chat with Seraphina',
+                'luker-last-chat':   'Chat with 掌门真人',
                 'luker-draft-x729':  'x'.repeat(400),
                 'luker-theme':       'dark',
             },
@@ -66,7 +66,7 @@ test.describe('Browser Storage Inspector · delete localStorage key', () => {
             keep2:   localStorage.getItem('luker-theme'),
         }));
         expect(state.deleted).toBeNull();
-        expect(state.keep1).toBe('Chat with Seraphina');
+        expect(state.keep1).toBe('Chat with 掌门真人');
         expect(state.keep2).toBe('dark');
 
         await wipeBrowserFixture(page);

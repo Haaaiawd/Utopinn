@@ -17,28 +17,28 @@ const CATEGORIES = ['worlds', 'chats', 'settings', 'stats', 'openai-presets', 't
 // Keys deliberately out of the order MySQL JSON and Postgres JSONB store
 // them in: both sort object keys by length, then bytewise.
 const RECORDS = [
-    [{ kind: 'world', name: 'Eldoria' }, {
-        name: 'Eldoria',
+    [{ kind: 'world', name: '太玄录' }, {
+        name: '太玄录',
         entries: { 0: { uid: 0, key: ['harbor'], keysecondary: [], comment: 'Harbor', content: 'Ships arrive at dawn.', constant: false, order: 100, depth: 4 } },
         extensions: { depth: 4 },
     }],
-    [{ kind: 'settings' }, { power_user: { font_scale: 1.1, theme: 'dark' }, username: 'U', active_character: 'Seraphina.png' }],
+    [{ kind: 'settings' }, { power_user: { font_scale: 1.1, theme: 'dark' }, username: 'U', active_character: '掌门真人.png' }],
     [{ kind: 'preset', dirKey: 'openAI_Settings', name: 'Creative' }, { temperature: 0.7, top_p: 0.95, frequency_penalty: 0.1 }],
     [{ kind: 'preset-state', dirKey: 'openAI_Settings', name: 'Creative', namespace: 'iter_lib' }, { nodes: ['n1'], cursor: 1 }],
     [{ kind: 'named-doc', bucket: 'themes', name: 'Midnight' }, { name: 'Midnight', main_text_color: '#fff', blur_strength: 10 }],
-    [{ kind: 'stats' }, { 'Seraphina.png': { user_msg_count: 7, total_gen_time: 1234, char_msg_count: 9 }, timestamp: 1760000000 }],
-    [{ kind: 'group', id: 'grp-1' }, { name: 'Crew', id: 'grp-1', members: ['Seraphina.png'], chats: ['gc-1'], chat_id: 'gc-1', avatar_url: '' }],
+    [{ kind: 'stats' }, { '掌门真人.png': { user_msg_count: 7, total_gen_time: 1234, char_msg_count: 9 }, timestamp: 1760000000 }],
+    [{ kind: 'group', id: 'grp-1' }, { name: 'Crew', id: 'grp-1', members: ['掌门真人.png'], chats: ['gc-1'], chat_id: 'gc-1', avatar_url: '' }],
     [{ kind: 'chat', charDir: null, name: 'gc-1', isGroup: true }, {
         header: { user_name: 'U', create_date: '2026-10-14', chat_metadata: { variables: { round: 1 }, integrity: 'group-integrity' } },
-        body: [{ name: 'Seraphina', is_user: false, send_date: '2026-10-14', mes: 'The crew gathers.' }],
+        body: [{ name: '掌门真人', is_user: false, send_date: '2026-10-14', mes: 'The crew gathers.' }],
     }],
 ];
 
-const CHAT = { kind: 'chat', charDir: 'Seraphina', name: 'Seraphina - 2026-10-14', isGroup: false };
+const CHAT = { kind: 'chat', charDir: '掌门真人', name: '掌门真人 - 2026-10-14', isGroup: false };
 const CHAT_VALUE = {
-    header: { user_name: 'U', character_name: 'Seraphina', create_date: '2026-10-14', chat_metadata: { variables: { mood: 'calm' }, integrity: 'seed-integrity' } },
+    header: { user_name: 'U', character_name: '掌门真人', create_date: '2026-10-14', chat_metadata: { variables: { mood: 'calm' }, integrity: 'seed-integrity' } },
     body: [
-        { name: 'Seraphina', is_user: false, send_date: '2026-10-14', mes: 'Welcome to the glade.', extra: { gen_id: 'g1', model: 'opus' } },
+        { name: '掌门真人', is_user: false, send_date: '2026-10-14', mes: 'Welcome to the glade.', extra: { gen_id: 'g1', model: 'opus' } },
         { name: 'U', is_user: true, send_date: '2026-10-14', mes: 'Thank you.' },
     ],
 };

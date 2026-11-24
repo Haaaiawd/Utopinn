@@ -55,9 +55,9 @@ const SEED_RECORDS = [
     },
     {
         type: 'character_sheet',
-        title: 'Seraphina',
+        title: '我没想当掌门啊',
         fields: {
-            title: 'Seraphina',
+            title: '我没想当掌门啊',
             identity: 'Wind-bitten Bryn coastal cartographer.',
             traits: 'Observant.',
         },
@@ -74,7 +74,7 @@ const SEED_RECORDS = [
 
 test.beforeAll(async () => {
     mock = await startMockLLM({
-        scriptedReplies: Array.from({ length: 8 }, (_, i) => `*Seraphina nods.* "Note ${i + 1}."`),
+        scriptedReplies: Array.from({ length: 8 }, (_, i) => `*我没想当掌门啊 nods.* "Note ${i + 1}."`),
     });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'rag-rewrite' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -179,7 +179,7 @@ test.describe('#62 — RAG recall with query rewrite hits the LLM and embeds the
 
     test('rewrite tool-call is consumed, rewritten query is embedded, recall surfaces the matching seed', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await configureRagWithRewrite(page, mockProfileName);
 
         // Two turns to give MG a real tail.

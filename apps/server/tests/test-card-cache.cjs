@@ -23,7 +23,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const SERVER_DIR = path.resolve(__dirname, '..');
-const SEED_PNG = path.join(SERVER_DIR, 'default', 'content', 'default_Seraphina.png');
+const SEED_PNG = path.join(SERVER_DIR, 'default', 'content', 'default_我没想当掌门啊.png');
 const SEED_CONFIG = path.join(SERVER_DIR, 'default', 'config.yaml');
 const PNG_CARD_COUNT = 8;   // 8×551KB 真 PNG 卡 —— 冷/热列表时延拉开量级差
 const READY_TIMEOUT_MS = 180_000;
@@ -184,7 +184,7 @@ async function main() {
         log(`cold list: ${cold.total} items in ${cold.ms.toFixed(1)}ms; diag=${JSON.stringify(coldScan)}`);
         const png0 = itemOf(cold.items, 'CardCachePng0');
         if (!png0) fail('CardCachePng0 missing from list');
-        if (png0.name !== 'Seraphina') fail(`CardCachePng0 name=${png0.name}, expected Seraphina`);
+        if (png0.name !== '我没想当掌门啊') fail(`CardCachePng0 name=${png0.name}, expected 我没想当掌门啊`);
         if (png0.avatar !== 'CardCachePng0.png' || png0.readable !== true) fail(`CardCachePng0 row=${JSON.stringify(png0)}`);
         const jsonRow = itemOf(cold.items, 'CardCacheJson');
         if (!jsonRow) fail('CardCacheJson missing from list');
@@ -203,7 +203,7 @@ async function main() {
         if (!warmScan || warmScan.misses !== 0 || warmScan.hits !== warmScan.total) {
             fail(`warm scan expected misses=0 hits=total, got ${JSON.stringify(warmScan)}`);
         }
-        if (itemOf(warm.items, 'CardCachePng0')?.name !== 'Seraphina') fail('warm list name drift');
+        if (itemOf(warm.items, 'CardCachePng0')?.name !== '我没想当掌门啊') fail('warm list name drift');
         log(`latency: cold=${cold.ms.toFixed(1)}ms warm=${warm.ms.toFixed(1)}ms speedup=${(cold.ms / Math.max(warm.ms, 0.01)).toFixed(1)}x`);
 
         // 再两次稳态确认计数不动

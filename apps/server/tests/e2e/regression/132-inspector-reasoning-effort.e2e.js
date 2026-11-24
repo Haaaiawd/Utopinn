@@ -50,7 +50,7 @@ test.afterAll(async () => {
 test('inspector shows the outbound reasoning effort for a real chat request', async ({ page }) => {
     test.setTimeout(180_000);
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // Let the first_mes greeting settle so the reply we await is the user turn.
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});

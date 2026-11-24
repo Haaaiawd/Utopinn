@@ -16,7 +16,7 @@ const { awaitMainUI, selectCharacterByName } = await imp('page.js');
 const { createRequire } = await import('node:module');
 const { chromium } = createRequire(join(LIB, 'index.js'))('@playwright/test');
 
-const card = process.argv[2] || 'apps/server/default/content/default_Seraphina.png';
+const card = process.argv[2] || 'apps/server/default/content/default_我没想当掌门啊.png';
 const mock = await startMockLLM({ scriptedReplies: ['<X>'] });
 const server = await startServer({ batchKey: 'chat', scenarioId: 'repro' });
 const userDir = join(server.dataRoot, 'default-user', 'characters');
@@ -43,7 +43,7 @@ browser.on('disconnected', () => console.error('!! BROWSER DISCONNECT'));
 await awaitMainUI(page, server.baseURL);
 console.error('>> UI up, selecting char...');
 const { extractCard } = await import('./extract-card.mjs');
-const name = extractCard(card).card.data?.name || 'Seraphina';
+const name = extractCard(card).card.data?.name || '我没想当掌门啊';
 await selectCharacterByName(page, name);
 const chk = (tag) => console.error(`>> ${tag} isClosed=${page.isClosed()}`);
 chk('after select');

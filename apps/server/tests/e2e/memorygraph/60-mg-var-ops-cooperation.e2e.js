@@ -41,7 +41,7 @@ import { openVarOpsPanel, getRenderedVarOpsRows, openMgGraphView } from '../_lib
 
 let server, mock, importPath;
 
-const SETVAR_REPLY = '*Seraphina lifts the chart with both hands.* {{setvar::current_omen_threshold::7.5}} "The threshold for tonight reads 7.5 — anything past that and we lift the watch."';
+const SETVAR_REPLY = '*我没想当掌门啊 lifts the chart with both hands.* {{setvar::current_omen_threshold::7.5}} "The threshold for tonight reads 7.5 — anything past that and we lift the watch."';
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [SETVAR_REPLY] });
@@ -111,7 +111,7 @@ test.describe('#60 — MG + var_ops co-operation via macro expansion', () => {
 
     test('setvar from reply lands in flask panel; MG field expands {{getvar::*}} via substituteParams', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         await page.waitForFunction(() => {

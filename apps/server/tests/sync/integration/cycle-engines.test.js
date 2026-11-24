@@ -105,18 +105,18 @@ describe.each(CONTRACT_HARNESSES.filter(h => h.name !== 'FsEngine'))('state comp
     test('a merge that keeps a state companion converges without a rerun', async () => {
         const A = await device();
         const B = await device();
-        const chat = { header: { user_name: 'U', character_name: 'Seraphina', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'hi' }] };
-        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat', charDir: 'Seraphina', name: 'c1', isGroup: false }, chat));
-        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat-state', charDir: 'Seraphina', name: 'c1', isGroup: false, namespace: 'mg' }, { v: 0 }));
+        const chat = { header: { user_name: 'U', character_name: '掌门真人', chat_metadata: {} }, body: [{ name: 'U', is_user: true, mes: 'hi' }] };
+        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat', charDir: '掌门真人', name: 'c1', isGroup: false }, chat));
+        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat-state', charDir: '掌门真人', name: 'c1', isGroup: false, namespace: 'mg' }, { v: 0 }));
         await runSyncCycle(A.ctx);
         await runSyncCycle(B.ctx);
-        await B.h.engine.withTransaction(B.h.handle, tx => writeSqlRecordValue(tx, B.h.handle, { kind: 'chat-state', charDir: 'Seraphina', name: 'c1', isGroup: false, namespace: 'mg' }, { v: 1 }));
-        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat', charDir: 'Seraphina', name: 'c1', isGroup: false }, null));
+        await B.h.engine.withTransaction(B.h.handle, tx => writeSqlRecordValue(tx, B.h.handle, { kind: 'chat-state', charDir: '掌门真人', name: 'c1', isGroup: false, namespace: 'mg' }, { v: 1 }));
+        await A.h.engine.withTransaction(A.h.handle, tx => writeSqlRecordValue(tx, A.h.handle, { kind: 'chat', charDir: '掌门真人', name: 'c1', isGroup: false }, null));
         await runSyncCycle(A.ctx);
         // B keeps its companion provisionally only as ours.
         await orderLocalHead(B.ctx, await remoteHead(remote.remoteDir), true);
         const outcome = await runSyncCycle(B.ctx);
         expect(outcome).toMatchObject({ status: 'synced', mergeCase: 'merged' });
-        expect(await B.h.engine.withTransaction(B.h.handle, tx => readSqlRecordValue(tx, B.h.handle, { kind: 'chat', charDir: 'Seraphina', name: 'c1', isGroup: false }))).not.toBeNull();
+        expect(await B.h.engine.withTransaction(B.h.handle, tx => readSqlRecordValue(tx, B.h.handle, { kind: 'chat', charDir: '掌门真人', name: 'c1', isGroup: false }))).not.toBeNull();
     }, 60_000);
 });

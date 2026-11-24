@@ -29,10 +29,10 @@ export const COMPANIONS = {
     iter_studio: { sessions: [{ id: 'draft', label: 'Before dawn', messages: ['north', 'south'] }], selected: 'draft' },
 };
 const seedLines = text => [
-    { user_name: 'User', character_name: 'Seraphina', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: INTEGRITY } },
-    { name: 'Seraphina', is_user: false, mes: text, send_date: '2026-10-01@10h00m01s', swipe_id: 1, swipes: ['The glade before dawn.', text] },
+    { user_name: 'User', character_name: '我没想当掌门啊', create_date: '2026-10-01@10h00m00s', chat_metadata: { integrity: INTEGRITY } },
+    { name: '我没想当掌门啊', is_user: false, mes: text, send_date: '2026-10-01@10h00m01s', swipe_id: 1, swipes: ['The glade before dawn.', text] },
     { name: 'User', is_user: true, mes: 'Which path leads to the spring?', send_date: '2026-10-01@10h00m02s' },
-    { name: 'Seraphina', is_user: false, mes: 'Follow the birches.', send_date: '2026-10-01@10h00m03s' },
+    { name: '我没想当掌门啊', is_user: false, mes: 'Follow the birches.', send_date: '2026-10-01@10h00m03s' },
 ];
 const jsonl = text => seedLines(text).map(line => JSON.stringify(line)).join('\n') + '\n';
 
@@ -45,7 +45,7 @@ export async function restoreChatCorpus(device, testInfo, { companions = COMPANI
     const root = outputPath('corpus');
     fs.mkdirSync(root, { recursive: true });
     const png = writeCardToPng(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'),
-        JSON.stringify({ name: 'Seraphina', first_mes: 'Welcome back to the glade.', chat: 'Forest Path' }));
+        JSON.stringify({ name: '我没想当掌门啊', first_mes: 'Welcome back to the glade.', chat: 'Forest Path' }));
     const file = outputPath('corpus.zip');
     // Store already-compressed PNG bytes verbatim. Both ZIP and the restore
     // remain genuine; this fixture is not a ZIP-deflate acceptance test.
@@ -55,10 +55,10 @@ export async function restoreChatCorpus(device, testInfo, { companions = COMPANI
     zip.pipe(output);
     const add = (name, content) => zip.append(content, { name });
     add('manifest.json', Buffer.from(JSON.stringify({ schemaVersion: 1, handle: 'default-user', selection: { characters: true, chats: true } })));
-    add('characters/Seraphina.png', png);
-    add('groups/g1.json', Buffer.from(JSON.stringify({ id: 'g1', name: 'Glade Watch', date_added: 1700000000000, members: ['Seraphina.png'], avatar_url: '', allow_self_responses: false,
+    add('characters/我没想当掌门啊.png', png);
+    add('groups/g1.json', Buffer.from(JSON.stringify({ id: 'g1', name: 'Glade Watch', date_added: 1700000000000, members: ['我没想当掌门啊.png'], avatar_url: '', allow_self_responses: false,
         activation_strategy: 1, generation_mode: 0, disabled_members: [], fav: false, chat_id: 'gc1', chats: ['gc1'], auto_mode_delay: 5 }, null, 4)));
-    for (const rel of ['chats/Seraphina/Forest Path', 'chats/Seraphina/River Ford', 'group chats/gc1']) {
+    for (const rel of ['chats/我没想当掌门啊/Forest Path', 'chats/我没想当掌门啊/River Ford', 'group chats/gc1']) {
         add(`${rel}.jsonl`, Buffer.from(jsonl('Welcome back to the glade.')));
         for (const [namespace, content] of Object.entries(companions)) add(`${rel}.luker-state.${namespace}.json`, Buffer.from(JSON.stringify(content)));
     }
@@ -114,7 +114,7 @@ export async function readChatData(page, route, body) {
 
 export function chatTarget(rel) {
     return rel.startsWith('group chats/') ? { is_group: true, id: rel.slice('group chats/'.length, -'.jsonl'.length) }
-        : { avatar_url: 'Seraphina.png', file_name: rel.slice('chats/Seraphina/'.length, -'.jsonl'.length) };
+        : { avatar_url: '我没想当掌门啊.png', file_name: rel.slice('chats/我没想当掌门啊/'.length, -'.jsonl'.length) };
 }
 
 export async function readChat(page, rel) {
@@ -216,13 +216,13 @@ export async function closeChatPopups(page) {
 export async function captureChatEvidence(devices, testInfo, { live = true } = {}) {
     for (const [index, device] of devices.entries()) {
         const evidence = { live: {}, shadows: {} };
-        const paths = new Set(['chats/Seraphina/Forest Path.jsonl', 'group chats/gc1.jsonl']);
+        const paths = new Set(['chats/我没想当掌门啊/Forest Path.jsonl', 'group chats/gc1.jsonl']);
         for (const id of Object.keys(registryOf(device.server).backends)) {
             const gitdir = path.join(userRootOf(device.server), '.sync', id, 'repo.git');
             const head = await git.resolveRef({ fs, gitdir, ref: 'refs/heads/main' });
             const files = await readCommitFiles({ gitdir, commitOid: head });
             const contents = {};
-            for (const [rel, file] of files) if (rel.startsWith('.luker-sync/') || rel.startsWith('chats/Seraphina/') || rel.startsWith('group chats/') || rel === 'groups/g1.json') {
+            for (const [rel, file] of files) if (rel.startsWith('.luker-sync/') || rel.startsWith('chats/我没想当掌门啊/') || rel.startsWith('group chats/') || rel === 'groups/g1.json') {
                 contents[rel] = { oid: file.oid, bytes: (await readBlobBytes({ gitdir, oid: file.oid })).toString() };
                 if (rel.endsWith('.jsonl')) paths.add(rel);
             }
@@ -246,13 +246,13 @@ export async function openCorpusChat(page, rel) {
         await page.locator('#rm_print_characters_block .group_select', { hasText: 'Glade Watch' }).click();
         await page.waitForFunction(() => window.Luker.getContext().groupId === 'g1' && window.Luker.getContext().chat.length >= 3);
     } else {
-        const card = page.locator('#rm_print_characters_block .character_select').filter({ has: page.locator('.avatar[title$="File: Seraphina.png"]') });
+        const card = page.locator('#rm_print_characters_block .character_select').filter({ has: page.locator('.avatar[title$="File: 我没想当掌门啊.png"]') });
         await card.click();
         // A click does not await the asynchronous character/chat transition.
         // Manage chat files must observe the selected character, not welcome.
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
-            return ctx.groupId == null && ctx.characters[ctx.characterId]?.avatar === 'Seraphina.png' && ctx.chat.length >= 3;
+            return ctx.groupId == null && ctx.characters[ctx.characterId]?.avatar === '我没想当掌门啊.png' && ctx.chat.length >= 3;
         });
         await expect(page.locator('.mes[mesid="2"] .mes_text')).toBeVisible();
     }
@@ -276,7 +276,7 @@ export async function mountCharacterCorpusChat(device, rel, { drift = false } = 
     await expect.poll(async () => {
         const settings = JSON.parse((await readChatData(device.page, '/api/settings/get', {})).settings);
         return { selected: settings.active_character, autoLoad: settings.power_user.auto_load_chat };
-    }, { timeout: 30_000 }).toEqual({ selected: 'Seraphina.png', autoLoad: true });
+    }, { timeout: 30_000 }).toEqual({ selected: '我没想当掌门啊.png', autoLoad: true });
     // Migration is per mounted floor-state instance. Reload the selected chat
     // through its persisted DOM selection instead of assuming a later switch
     // resets that instance's migration latch.

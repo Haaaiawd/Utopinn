@@ -26,7 +26,7 @@ const NEW_BOOK = 'briallen-no-cea';
 const NEW_ENTRY_CONTENT = 'The eastern light burns whale oil on a sixteen-hour cycle.';
 
 function buildReplacementPng(outPath) {
-    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const seed = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const data = {
         name: NEW_NAME,
         description: 'A weathered keeper of the eastern light.',

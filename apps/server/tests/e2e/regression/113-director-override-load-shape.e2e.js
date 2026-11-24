@@ -96,7 +96,7 @@ test.describe('#113 — director-mode character override survives reload', () =>
 
     test('save-to-character then reload reloads the override with its flat shape and the marker intact', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await setOrchModeToDirector(page);
 
         // Open editor (global scope — no override yet).
@@ -124,7 +124,7 @@ test.describe('#113 — director-mode character override survives reload', () =>
 
         // RELOAD — the load-bearing leg.
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await setOrchModeToDirector(page);
 
         const overrideToggleAfterReload = page.locator('#luker_orch_director_override_toggle');

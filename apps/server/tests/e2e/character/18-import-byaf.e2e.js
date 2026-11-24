@@ -55,7 +55,7 @@ test.beforeAll(async () => {
     appendConnectionProfile({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
 
     tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-byaf-'));
-    const iconPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const iconPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const zip = new AdmZip();
     zip.addFile('manifest.json', Buffer.from(JSON.stringify(MANIFEST), 'utf8'));
     zip.addFile('character/halden.json', Buffer.from(JSON.stringify(CHARACTER), 'utf8'));

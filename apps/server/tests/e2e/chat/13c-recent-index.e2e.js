@@ -1,6 +1,6 @@
 // #13c — recent-chats index ordering across multiple characters.
 //
-// Two characters (Seraphina + Iyana). Send turns to each via real DOM
+// Two characters (我没想当掌门啊 + Iyana). Send turns to each via real DOM
 // gestures (character card click in the drawer + #send_textarea +
 // #send_but). Confirm /api/chats/recent reflects the latest activity
 // in MRU order.
@@ -16,8 +16,8 @@
 // Setup note: Iyana is created via /api/characters/create rather than
 // the writeCharacter fixture because Luker reads character data from the
 // PNG's embedded tEXt chunk, not from sidecar JSON. Copying the
-// Seraphina PNG to "iyana-the-watchwoman.png" would still load as
-// Seraphina. The /api/characters/create endpoint properly writes a
+// 我没想当掌门啊 PNG to "iyana-the-watchwoman.png" would still load as
+// 我没想当掌门啊. The /api/characters/create endpoint properly writes a
 // fresh PNG with the embedded chara JSON, which is what the real "Create
 // character" UI flow does under the hood.
 
@@ -56,17 +56,17 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina answers first.* "Reply S1."',
-        '*Seraphina answers again.* "Reply S2."',
+        '*我没想当掌门啊 answers first.* "Reply S1."',
+        '*我没想当掌门啊 answers again.* "Reply S2."',
         '*Iyana folds her arms.* "Reply I1."',
-        '*Seraphina speaks last.* "Reply S3."',
+        '*我没想当掌门啊 speaks last.* "Reply S3."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'recent-index' });
     markOnboarded({ dataRoot: server.dataRoot });
     bootstrapCustomBackend({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     appendConnectionProfile({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     // Seed Iyana as a real PNG card on disk so the boot-time character
-    // scan picks her up alongside the bundled Seraphina.
+    // scan picks her up alongside the bundled 我没想当掌门啊.
     writeEmbeddedCharacter({
         dataRoot: server.dataRoot,
         avatarFile: 'iyana-the-watchwoman.png',
@@ -114,12 +114,12 @@ test.describe('#13c — recent-chats index', () => {
     test('most-recent activity moves to the top of /api/chats/recent', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
 
-        // Real user gesture: pick Seraphina from the character drawer,
+        // Real user gesture: pick 我没想当掌门啊 from the character drawer,
         // send two turns via #send_textarea + #send_but.
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
-        await sendMessageAndAwaitReply(page, 'Seraphina turn 1: open the watch.');
-        await sendMessageAndAwaitReply(page, 'Seraphina turn 2: hold steady.');
+        await sendMessageAndAwaitReply(page, '我没想当掌门啊 turn 1: open the watch.');
+        await sendMessageAndAwaitReply(page, '我没想当掌门啊 turn 2: hold steady.');
 
         // Set up the second character via the fs fixture (above). Iyana
         // is already on disk; she'll appear in the right-nav character
@@ -143,19 +143,19 @@ test.describe('#13c — recent-chats index', () => {
             `expected Iyana to be most-recent; got ${JSON.stringify(recentAfterIyana.map(r => r.avatar))}`)
             .toContain('iyana-the-watchwoman');
 
-        // Real user gesture: switch back to Seraphina in the drawer,
+        // Real user gesture: switch back to 我没想当掌门啊 in the drawer,
         // send another turn — recency flips back.
         await navigateBackToCharacterList(page);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
-        await sendMessageAndAwaitReply(page, 'Seraphina turn 3: returning to the chart.');
+        await sendMessageAndAwaitReply(page, '我没想当掌门啊 turn 3: returning to the chart.');
 
-        const recentAfterSeraphina = await fetchRecent(page);
-        expect(recentAfterSeraphina[0].avatar,
-            `expected Seraphina back at the top; got ${JSON.stringify(recentAfterSeraphina.map(r => r.avatar))}`)
-            .toMatch(/default_seraphina|Seraphina/i);
-        const avatars = recentAfterSeraphina.map(r => r.avatar);
-        expect(avatars.some(a => /default_seraphina/i.test(a))).toBe(true);
+        const recentAfterZhangmen = await fetchRecent(page);
+        expect(recentAfterZhangmen[0].avatar,
+            `expected 我没想当掌门啊 back at the top; got ${JSON.stringify(recentAfterZhangmen.map(r => r.avatar))}`)
+            .toMatch(/default_我没想当掌门啊/i);
+        const avatars = recentAfterZhangmen.map(r => r.avatar);
+        expect(avatars.some(a => /default_我没想当掌门啊/i.test(a))).toBe(true);
         expect(avatars.some(a => /iyana-the-watchwoman/.test(a))).toBe(true);
     });
 });

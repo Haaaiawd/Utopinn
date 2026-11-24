@@ -4,7 +4,7 @@
 // unsupported 显式返回 / {{getvar::stat_data.*}} 宏互通。
 import fs from 'node:fs';
 const B = 'http://127.0.0.1:8000';
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-th-probe';
 let cookie = '', token = '';
 
@@ -74,7 +74,7 @@ log('global 落库', s?.extension_settings?.variables?.global?.th?.probe === 'ye
 await call('deleteVariable', { type: 'global', path: 'th.probe' });
 
 // 8. getChatMessages
-await req('POST', `${base}/${CHAT}/messages`, { messages: [{ name: 'You', is_user: true, mes: 'm1', send_date: 1 }, { name: 'Seraphina', is_user: false, mes: 'm2', send_date: 2 }] });
+await req('POST', `${base}/${CHAT}/messages`, { messages: [{ name: 'You', is_user: true, mes: 'm1', send_date: 1 }, { name: '我没想当掌门啊', is_user: false, mes: 'm2', send_date: 2 }] });
 r = await call('getChatMessages', { start: 0, end: 2 });
 log('消息面', r.body?.result?.length === 2 && r.body.result[1].role === 'assistant' && r.body.result[1].mes === 'm2', `count=${r.body?.result?.length}`);
 

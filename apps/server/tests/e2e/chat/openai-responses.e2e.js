@@ -29,7 +29,7 @@ import {
 } from '../_lib/fixtures.js';
 import { awaitMainUI, selectCharacterByName, sendMessageAndAwaitReply } from '../_lib/page.js';
 
-const STREAMED_REPLY = '*Seraphina traces the reef line with one finger.* "The slow swallow turns tonight — keep the lantern trimmed and stay off the sandspit."';
+const STREAMED_REPLY = '*我没想当掌门啊 traces the reef line with one finger.* "The slow swallow turns tonight — keep the lantern trimmed and stay off the sandspit."';
 const NON_STREAM_REPLY = '*She folds the chart closed.* "Then we walk the headland path and let the tide argue with itself."';
 
 let server;
@@ -109,7 +109,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 1 — streamed text round trip with Responses-shaped request', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -174,7 +174,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 2 — reasoning summary renders and requests summary=auto', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Read-only sanity: the thoughts toggle ships enabled by default;
         // this is what drives include_reasoning → reasoning.summary='auto'.
@@ -215,7 +215,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 3 — function tool round trip via function_call / function_call_output', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -325,7 +325,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 4 — web search toggle adds a web_search tool entry', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Real pointer path: the web-search toggle is visible for this
         // source once the API settings drawer is open, so click it like a
@@ -362,7 +362,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 5 — image attachment becomes an input_image content part', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -418,7 +418,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
         setStreamFlag(false);
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         mock.scriptReply(NON_STREAM_REPLY);
         const { replyId, text } = await sendMessageAndAwaitReply(page, 'One plain answer, no theatrics — is the path safe?');
@@ -476,7 +476,7 @@ test.describe.serial('OpenAI Responses end-to-end', () => {
 
     test('scenario 7 — upstream 500 surfaces an error toast and the UI recovers', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // One-shot upstream failure; nothing else queued so there is no
         // fallback reply to mask it. Body mirrors a real provider error

@@ -9,7 +9,7 @@
 //      Backend tab → pick sqlite → Migrate Now → confirm. The status
 //      panel reflows to "sqlite".
 //   3. Verify via /api/users/storage/status that the backend is now sqlite.
-//   4. Select Seraphina, send 2 user turns → 2 assistant replies (chat A).
+//   4. Select 我没想当掌门啊, send 2 user turns → 2 assistant replies (chat A).
 //   5. option_start_new_chat → confirm to create chat B; send 2 more turns.
 //   6. Open the merge dialog via the past-chats popup, pick A then B,
 //      submit. ST emits CHAT_CHANGED on openCharacterChat(merged_name).
@@ -42,10 +42,10 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart in half.* "Reply A1: I hear the wind shifting south."',
-        '*Seraphina trims the lantern wick.* "Reply A2: it will be a long watch tonight."',
-        '*Seraphina sets a brass weight on the chart corner.* "Reply B1: the reef is restless again."',
-        '*Seraphina taps the spyglass barrel.* "Reply B2: we should mark the second breaker."',
+        '*我没想当掌门啊 folds the chart in half.* "Reply A1: I hear the wind shifting south."',
+        '*我没想当掌门啊 trims the lantern wick.* "Reply A2: it will be a long watch tonight."',
+        '*我没想当掌门啊 sets a brass weight on the chart corner.* "Reply B1: the reef is restless again."',
+        '*我没想当掌门啊 taps the spyglass barrel.* "Reply B2: we should mark the second breaker."',
     ] });
     server = await startServer({ batchKey: 'storage', scenarioId: 'merge-db-mode' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -75,7 +75,7 @@ test.describe('#23 — merge two chats after migrating storage to sqlite', () =>
         // From here on, EVERY chat write/read flows through SqliteEngine.
         // The merge endpoint and ChatRepo are backend-agnostic — this
         // test exists to prove that.
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         const chatAId = await page.evaluate(() => window.Luker.getContext().getCurrentChatId());

@@ -89,7 +89,7 @@ export async function runCrossModeRecoveryFlow({ page, sourceMode, destMode, spe
             appendConnectionProfile({ dataRoot: sourceServer.dataRoot, baseURL: mock.baseURL });
 
             await awaitMainUI(page, sourceServer.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await sendMessageAndAwaitReply(page, SEED_MESSAGE);
             // Force a save then wait for ST's chat-save debounce to flush.
             // The debounce is ~1s; we await saveChatConditional to flush the
@@ -136,7 +136,7 @@ export async function runCrossModeRecoveryFlow({ page, sourceMode, destMode, spe
 
                 // Step 7: login + verify the dest does NOT already carry the seed.
                 await awaitMainUI(page, destServer.baseURL);
-                await selectCharacterByName(page, 'Seraphina');
+                await selectCharacterByName(page, '我没想当掌门啊');
                 const preChatSnapshot = await page.evaluate(() => {
                     const ctx = window.Luker?.getContext?.();
                     return (ctx?.chat || []).map(m => String(m.mes || ''));
@@ -238,7 +238,7 @@ async function restoreBackupViaUI(page, zipPath, { sourceMode, scratchDbConfig }
     await openBackupManagerViaUI(page);
 
     // Pick "Overwrite Update" so the migrated chat replaces the dest's
-    // pre-seeded default Seraphina chat (merge mode would keep both as
+    // pre-seeded default 我没想当掌门啊 chat (merge mode would keep both as
     // separate chats keyed by name; since the names are identical the
     // result depends on which write happens last).
     await page.locator('input[name="backupRestoreMode"][value="overwrite"]').last().click();

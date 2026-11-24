@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { readCharacterFolderName, isCharacterFolderNameShared } from '../../src/character-assets.js';
 import { write as writeCardChunk } from '../../src/character-card-parser.js';
 
-const SEED_PNG = fileURLToPath(new URL('../../default/content/default_Seraphina.png', import.meta.url));
+const SEED_PNG = fileURLToPath(new URL('../../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 function writeCard(dir, avatarFile, name) {
     fs.mkdirSync(dir, { recursive: true });

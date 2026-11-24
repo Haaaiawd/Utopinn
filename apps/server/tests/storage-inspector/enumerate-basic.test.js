@@ -194,7 +194,7 @@ describe('enumerateCategory — grouped (images / attachments / presets / backup
 
             const chats = await enumerateSubDir(userRoot, 'backups', 'chat-backups');
             const settings = await enumerateSubDir(userRoot, 'backups', 'settings-backups');
-            expect(chats.entries.map(e => e.label)).toEqual(['chat_Seraphina_20260101.jsonl']);
+            expect(chats.entries.map(e => e.label)).toEqual(['chat_掌门真人_20260101.jsonl']);
             expect(settings.entries.map(e => e.label)).toEqual(['settings_20260101.json']);
         } finally {
             await cleanup();
@@ -218,10 +218,10 @@ describe('enumerateSubDir — grouped category L3 leaves', () => {
     test('single-rel sub-category keeps directory rows drillable', async () => {
         const { userRoot, cleanup } = await makeFixtureUser({ images: true });
         try {
-            await fsPromises.mkdir(path.join(userRoot, 'user/images/Seraphina'), { recursive: true });
-            await fsPromises.writeFile(path.join(userRoot, 'user/images/Seraphina/shot.png'), Buffer.alloc(64));
+            await fsPromises.mkdir(path.join(userRoot, 'user/images/掌门真人'), { recursive: true });
+            await fsPromises.writeFile(path.join(userRoot, 'user/images/掌门真人/shot.png'), Buffer.alloc(64));
             const res = await enumerateSubDir(userRoot, 'images', 'user-images');
-            const folder = res.entries.find(e => e.label === 'Seraphina');
+            const folder = res.entries.find(e => e.label === '掌门真人');
             expect(folder.canDrill).toBe(true);
             expect(res.isLeaf).toBe(false);
         } finally {

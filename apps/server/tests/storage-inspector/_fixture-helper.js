@@ -35,23 +35,23 @@ export async function makeFixtureUser(opts = {}) {
     };
 
     if (opts.chats) {
-        await write('chats/default_Seraphina/Chat 2024-01-15.jsonl',
+        await write('chats/default_我没想当掌门啊/Chat 2024-01-15.jsonl',
             JSON.stringify({ chat_metadata: { variables: { foo: 'bar' } } }) + '\n' +
             JSON.stringify({ name: 'User', mes: 'hi' }) + '\n' +
             JSON.stringify({ name: 'Sera', mes: 'hello' }) + '\n');
-        await write('chats/default_Seraphina/Chat 2024-01-15.luker-state.memory_graph__floor_log.json',
+        await write('chats/default_我没想当掌门啊/Chat 2024-01-15.luker-state.memory_graph__floor_log.json',
             JSON.stringify({ nodes: [] }));
-        await write('chats/default_Seraphina/Chat 2024-01-15.luker-state.luker_orchestrator_anchors__floor_log.json',
+        await write('chats/default_我没想当掌门啊/Chat 2024-01-15.luker-state.luker_orchestrator_anchors__floor_log.json',
             JSON.stringify({ anchors: [] }));
         await write('group chats/group_abc123.jsonl',
             JSON.stringify({ chat_metadata: {} }) + '\n');
     }
     if (opts.characters) {
         // PNG 内容用 fake bytes;walker 只看 size,不解 PNG。
-        await write('characters/default_Seraphina.png', Buffer.alloc(50_000, 0xff));
-        await write('characters/default_Seraphina/happy.png', Buffer.alloc(10_000, 0xff));
-        await write('characters/default_Seraphina/sad.png', Buffer.alloc(10_000, 0xff));
-        await write('characters/default_Seraphina.state.cardapp_studio_sessions_v2.json',
+        await write('characters/default_我没想当掌门啊.png', Buffer.alloc(50_000, 0xff));
+        await write('characters/default_我没想当掌门啊/happy.png', Buffer.alloc(10_000, 0xff));
+        await write('characters/default_我没想当掌门啊/sad.png', Buffer.alloc(10_000, 0xff));
+        await write('characters/default_我没想当掌门啊.state.cardapp_studio_sessions_v2.json',
             JSON.stringify({ sessions: [] }));
     }
     if (opts.worlds) {
@@ -81,7 +81,7 @@ export async function makeFixtureUser(opts = {}) {
         await write('vectors/index_a/data.bin', Buffer.alloc(100_000));
     }
     if (opts.backups) {
-        await write('backups/chat_Seraphina_20260101.jsonl', 'line\n');
+        await write('backups/chat_掌门真人_20260101.jsonl', 'line\n');
         await write('backups/settings_20260101.json', '{}');
     }
     if (opts.other) {
@@ -93,7 +93,7 @@ export async function makeFixtureUser(opts = {}) {
     }
     if (opts.chatsRich) {
         // 2 chars · 每 char 2 chat · 每 chat 2 sidecar · 加 1 个 group chat(flat)
-        for (const char of ['default_Seraphina', 'default_Coding']) {
+        for (const char of ['default_我没想当掌门啊', 'default_Coding']) {
             for (const day of ['2024-01-15', '2024-02-20']) {
                 const chatName = `Chat ${day}`;
                 const meta = { chat_metadata: { variables: { greeting: 'hi' } } };
@@ -114,13 +114,13 @@ export async function makeFixtureUser(opts = {}) {
     }
     if (opts.charactersRich) {
         // 2 char · 一个带 sprites + sidecar · 一个 plain
-        await write('characters/default_Seraphina.png', Buffer.alloc(60_000, 0xff));
-        await write('characters/default_Seraphina/happy.png', Buffer.alloc(20_000, 0xff));
-        await write('characters/default_Seraphina/sad.png', Buffer.alloc(20_000, 0xff));
-        await write('characters/default_Seraphina/neutral.png', Buffer.alloc(20_000, 0xff));
-        await write('characters/default_Seraphina.state.cardapp_studio_sessions_v2.json',
+        await write('characters/default_我没想当掌门啊.png', Buffer.alloc(60_000, 0xff));
+        await write('characters/default_我没想当掌门啊/happy.png', Buffer.alloc(20_000, 0xff));
+        await write('characters/default_我没想当掌门啊/sad.png', Buffer.alloc(20_000, 0xff));
+        await write('characters/default_我没想当掌门啊/neutral.png', Buffer.alloc(20_000, 0xff));
+        await write('characters/default_我没想当掌门啊.state.cardapp_studio_sessions_v2.json',
             JSON.stringify({ sessions: Array.from({ length: 5 }, (_, i) => ({ id: i })) }));
-        await write('characters/default_Seraphina.state.character_editor_assistant_iter_sessions.json',
+        await write('characters/default_我没想当掌门啊.state.character_editor_assistant_iter_sessions.json',
             JSON.stringify({ sessions: [] }));
         // Coding: 只有 PNG · 无 sprites · 无 sidecar
         await write('characters/default_Coding.png', Buffer.alloc(40_000, 0xff));

@@ -60,15 +60,15 @@ const SEED_RECORDS = [
         fields: {
             title: 'Bryn headland watchpost',
             state: 'Active nighttime post: brass spyglass on the rail, tidal charts pinned.',
-            controller: 'Seraphina',
+            controller: '我没想当掌门啊',
         },
     },
 ];
 
 const REPLIES = [
-    '*Seraphina steadies the lantern against the wind.* "First variant — the brass signal holds its flame steady above the tide."',
-    '*Seraphina leans on the rail, watching the dark water.* "Second variant — the tide turns and the brass light keeps its vigil."',
-    '*Seraphina folds the tidal chart away.* "Third variant — the wind shifts, yet the lantern answers from the headland."',
+    '*我没想当掌门啊 steadies the lantern against the wind.* "First variant — the brass signal holds its flame steady above the tide."',
+    '*我没想当掌门啊 leans on the rail, watching the dark water.* "Second variant — the tide turns and the brass light keeps its vigil."',
+    '*我没想当掌门啊 folds the tidal chart away.* "Third variant — the wind shifts, yet the lantern answers from the headland."',
 ];
 
 // The chat send path consumes scripted replies in order: the two warmup
@@ -199,7 +199,7 @@ test.describe('#68 — overswipe regenerate reuses the recall snapshot', () => {
 
     test('swipe to a new variant does not re-run RAG recall when the anchor user message is unchanged', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgAndSelectRag(page);
 
         // Two RP turns for a real chat tail.

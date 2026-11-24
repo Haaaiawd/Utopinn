@@ -12,7 +12,7 @@ import { startMockLLM } from '../_lib/mockLLM.js';
 import { bootstrapCustomBackend, appendConnectionProfile, markOnboarded } from '../_lib/fixtures.js';
 import { awaitMainUI, reloadAndAwait, selectCharacterByName, sendMessageAndAwaitReply, getChatSnapshot } from '../_lib/page.js';
 
-const FIRST_REPLY = '*Seraphina traces the reef line on the chart.* "The tide turned an hour ago. We have until dawn."';
+const FIRST_REPLY = '*我没想当掌门啊 traces the reef line on the chart.* "The tide turned an hour ago. We have until dawn."';
 const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
 
 let server, mock;
@@ -79,7 +79,7 @@ async function readLastMessageSwipeState(page) {
 test.describe('#25 — arrow key swipes setting', () => {
     test('ArrowRight only swipes when the setting is enabled', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 });
         await sendMessageAndAwaitReply(page, 'What do you read in the reef tonight?');
         await waitForGenerationIdle(page);
@@ -105,7 +105,7 @@ test.describe('#25 — arrow key swipes setting', () => {
         // The setting is saved, not just live in memory.
         await page.waitForTimeout(1_200);
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
         await waitForGenerationIdle(page);
         await openUserSettings(page);

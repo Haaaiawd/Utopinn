@@ -73,7 +73,7 @@ test('generation-basic: ws-delivery replays every chunk across a mid-stream offl
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     // Fire the send but do NOT await reply — we need to interrupt mid-stream.

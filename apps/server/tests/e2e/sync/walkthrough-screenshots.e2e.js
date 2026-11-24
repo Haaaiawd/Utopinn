@@ -27,8 +27,8 @@ const IMAGES = path.join(ROOT, 'docs/public/images/sync');
 const UPDATE_IMAGES = process.env.LUKER_UPDATE_DOC_SCREENSHOTS === '1';
 const VIEWPORT = { width: 1440, height: 1400 };
 const CATEGORIES = ['characters', 'chats', 'worlds'];
-const AVATAR = 'default_Seraphina.png';
-const CHAT_DIR = 'chats/default_Seraphina';
+const AVATAR = 'default_我没想当掌门啊.png';
+const CHAT_DIR = 'chats/default_我没想当掌门啊';
 const LORE = 'worlds/Cascade Lore.json';
 const WORDS = {
     base: 'The moonwell lies beyond the old cascade, where birches shelter the standing stones.',
@@ -103,12 +103,12 @@ async function journey(browser, testInfo, name, body) {
             storage.push(provider);
             const sdk = new S3Client({ endpoint: provider.endpoint, region: provider.region, forcePathStyle: true,
                 credentials: { accessKeyId: provider.accessKeyId, secretAccessKey: provider.secretAccessKey }, maxAttempts: 1 });
-            const bucket = `seraphina-${randomBytes(8).toString('hex')}`;
+            const bucket = `zhangmen-${randomBytes(8).toString('hex')}`;
             try { await sdk.send(new CreateBucketCommand({ Bucket: bucket })); } finally { sdk.destroy(); }
             const proxy = await startS3Proxy({ upstream: provider.endpoint, region: provider.region,
                 credentials: { accessKeyId: provider.accessKeyId, secretAccessKey: provider.secretAccessKey } });
             proxies.push(proxy);
-            return { proxy, options: { ...provider, endpoint: proxy.endpoint, bucket, prefix: 'seraphina/', label: 'Shared archive',
+            return { proxy, options: { ...provider, endpoint: proxy.endpoint, bucket, prefix: 'zhangmen/', label: 'Shared archive',
                 passphrase: 'Silver birches shelter the moonwell', forcePathStyle: true, categories: ['worlds'] } };
         },
         response(page, endpoint, timeout = 60_000) {
@@ -434,7 +434,7 @@ test('Stale lore preview and cancelled then confirmed overwrite images', async (
 
 async function assertS3Form(page, options) {
     await expect(page.locator('.userSyncS3 h3')).toHaveText('Add S3 backend');
-    for (const [field, value] of [['Label', options.label], ['Endpoint', options.endpoint], ['Bucket', options.bucket], ['Prefix', 'seraphina/']]) {
+    for (const [field, value] of [['Label', options.label], ['Endpoint', options.endpoint], ['Bucket', options.bucket], ['Prefix', 'zhangmen/']]) {
         await expect(page.locator(`.syncS3${field}`)).toBeVisible();
         await expect(page.locator(`.syncS3${field}`)).toHaveValue(value);
     }
@@ -506,7 +506,7 @@ test('S3 setup, second-device pull, mixed backends and genuine active capsule im
             await expect(a.page.locator('.lanSyncPollSeconds')).toBeVisible();
         });
         await leavePanels(a.page);
-        await selectSeraphina(a.page);
+        await selectZhangmen(a.page);
         await editMessageViaUI(a.page, 0, WORDS.desk);
         await renameChat(a.page, 'Forest Path');
         await openLanSyncPanel(a.page);
@@ -514,7 +514,7 @@ test('S3 setup, second-device pull, mixed backends and genuine active capsule im
         const held = scope.hold(proxy);
         const response = scope.response(a.page, `/api/sync/v1/backends/${id}/sync`, 90_000);
         await backend(a.page, 'Shared archive').locator('.lanSyncPeerSyncButton').click();
-        await expect.poll(() => proxy.requests.some(request => request.method === 'GET' && request.relativeKey === 'seraphina/head' && !request.responseDelivered && !request.closed), { timeout: 30_000, message: 'Active capsule must be backed by a genuinely held storage read' }).toBe(true);
+        await expect.poll(() => proxy.requests.some(request => request.method === 'GET' && request.relativeKey === 'zhangmen/head' && !request.responseDelivered && !request.closed), { timeout: 30_000, message: 'Active capsule must be backed by a genuinely held storage read' }).toBe(true);
         await held.reached;
         await leavePanels(a.page);
         const composer = a.page.locator('#send_textarea');
@@ -543,18 +543,18 @@ test('S3 setup, second-device pull, mixed backends and genuine active capsule im
     });
 });
 
-async function selectSeraphina(page) {
+async function selectZhangmen(page) {
     await closeAllPopups(page);
     await closeAnyOpenTopSettingsDrawer(page);
     await openCharacterList(page);
     const card = page.locator('#rm_print_characters_block .character_select').filter({ has: page.locator(`img[src*="file=${AVATAR}"]`) });
-    await expect(card, 'Bundled Seraphina avatar must be selected unambiguously').toHaveCount(1);
+    await expect(card, 'Bundled 我没想当掌门啊 avatar must be selected unambiguously').toHaveCount(1);
     await card.click();
     await page.waitForFunction(avatar => {
         const context = window.Luker.getContext();
         return context.characters[context.characterId]?.avatar === avatar && !context.groupId && context.chat.length > 0;
     }, AVATAR);
-    await expect(page.locator('#character_name_pole')).toHaveValue('Seraphina');
+    await expect(page.locator('#character_name_pole')).toHaveValue('我没想当掌门啊');
     await expect(page.locator('#chat .mes[mesid="0"] .mes_text')).not.toBeEmpty();
     await closeAnyOpenTopSettingsDrawer(page);
 }
@@ -569,7 +569,7 @@ async function renameChat(page, name) {
 }
 
 async function createCharacterChat(device) {
-    await selectSeraphina(device.page);
+    await selectZhangmen(device.page);
     await editMessageViaUI(device.page, 0, WORDS.base);
     await renameChat(device.page, 'Forest Path');
     await expect.poll(() => readUserFile(device.server, `${CHAT_DIR}/Forest Path.jsonl`)).toContain(WORDS.base);
@@ -627,7 +627,7 @@ async function createGroup(device, scope) {
         groupId: id, chatId: initialChat, persisted,
         visible: await device.page.evaluate(() => window.Luker.getContext().chat.map(message => ({ name: message.name, is_user: message.is_user, mes: message.mes }))),
     });
-    expect(persisted[1], 'The fresh group must retain the displayed Seraphina greeting when its first RP turn is saved').toMatchObject({ name: 'Seraphina', is_user: false, mes: greetingText });
+    expect(persisted[1], 'The fresh group must retain the displayed 我没想当掌门啊 greeting when its first RP turn is saved').toMatchObject({ name: '我没想当掌门啊', is_user: false, mes: greetingText });
     await editMessageViaUI(device.page, 0, WORDS.base);
     await renameChat(device.page, 'River Ford');
     await expect.poll(() => readUserFile(device.server, 'group chats/River Ford.jsonl')).toContain(WORDS.base);
@@ -694,7 +694,7 @@ async function forkJourney(browser, testInfo, { group, name, image }) {
         const { a, b, groupId } = await prepareChatPair(scope, group);
         for (const [device, words] of [[a, WORDS.desk], [b, WORDS.tablet]]) {
             if (group) await openGroup(device, groupId);
-            else { await selectSeraphina(device.page); await openChatByName(device.page, 'Forest Path'); }
+            else { await selectZhangmen(device.page); await openChatByName(device.page, 'Forest Path'); }
             await editMessageViaUI(device.page, 0, words);
             await expect.poll(() => readUserFile(device.server, group ? 'group chats/River Ford.jsonl' : `${CHAT_DIR}/Forest Path.jsonl`)).toContain(words);
         }
@@ -730,7 +730,7 @@ async function forkJourney(browser, testInfo, { group, name, image }) {
         await waitForStatusChecks(b.page, 1);
         await expect(syncPopup(b.page)).toHaveCount(0);
         if (group) await openGroup(b, groupId, notice.target.name);
-        else { await selectSeraphina(b.page); await openChatByName(b.page, notice.target.name); }
+        else { await selectZhangmen(b.page); await openChatByName(b.page, notice.target.name); }
         await expect(b.page.locator('.mes[mesid="0"] .mes_text')).toContainText(branchWords);
     });
 }
@@ -739,12 +739,12 @@ async function restoredJourney(browser, testInfo, { group, name, image }) {
     return journey(browser, testInfo, name, async scope => {
         const { a, b, groupId } = await prepareChatPair(scope, group);
         if (group) await openGroup(b, groupId);
-        else { await selectSeraphina(b.page); await openChatByName(b.page, 'Forest Path'); }
+        else { await selectZhangmen(b.page); await openChatByName(b.page, 'Forest Path'); }
         await editMessageViaUI(b.page, 0, WORDS.tablet);
         const rel = group ? 'group chats/River Ford.jsonl' : `${CHAT_DIR}/Forest Path.jsonl`;
         await expect.poll(() => readUserFile(b.server, rel)).toContain(WORDS.tablet);
         if (group) await deleteGroup(a, groupId, scope);
-        else { await selectSeraphina(a.page); await deleteCharacterChat(a); }
+        else { await selectZhangmen(a.page); await deleteCharacterChat(a); }
         await openLanSyncPanel(b.page);
         expect(await clickSyncNow(b.page, 'Desk')).toBe('success');
         await waitForSyncPopup(b.page);

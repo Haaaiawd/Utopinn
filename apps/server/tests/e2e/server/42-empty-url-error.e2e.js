@@ -48,7 +48,7 @@ test.describe('#42 — profile with no URL surfaces a friendly error', () => {
         page.on('pageerror', e => { errors.push(`pageerror: ${e.message}`); });
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for greeting so any failure we observe is the attempted
         // send turn, not the initial load.

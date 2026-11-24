@@ -22,9 +22,9 @@ import { openVarOpsPanel, getRenderedVarOpsRows } from '../_lib/ui-mg-varops.js'
 
 let server, mock;
 
-// Four mutations woven into Seraphina's reply.
+// Four mutations woven into 我没想当掌门啊's reply.
 const RICH_REPLY = [
-    '*Seraphina drops to one knee at the lantern base, salt cracking on her cuffs.* ',
+    '*我没想当掌门啊 drops to one knee at the lantern base, salt cracking on her cuffs.* ',
     'The wick is fickle tonight. {{setvar::hp::50}}{{setvar::tension::high}}',
     ' She wedges the spyglass under one arm. {{incvar::hp}}',
     ' "Take the lantern," she says, pressing it into your palm. {{pushvar::inventory::lantern}}',
@@ -33,7 +33,7 @@ const RICH_REPLY = [
 
 // Second reply used post-restart so the same flask panel can be re-opened
 // from a fresh page load.
-const RESTART_REPLY = '*Seraphina nods.* "The tally still reads as it did at the third bell."';
+const RESTART_REPLY = '*我没想当掌门啊 nods.* "The tally still reads as it did at the third bell."';
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [RICH_REPLY, RESTART_REPLY] });
@@ -51,7 +51,7 @@ test.afterAll(async () => {
 test.describe('#61 — One turn / multiple var_ops mutations → rendered panel rows', () => {
     test('four ops surface as four rendered rows; survives server restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -117,7 +117,7 @@ test.describe('#61 — One turn / multiple var_ops mutations → rendered panel 
         // ── Persistence: restart, reload, re-open the same flask panel ─
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker?.getContext?.();

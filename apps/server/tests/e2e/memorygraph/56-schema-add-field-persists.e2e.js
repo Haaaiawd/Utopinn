@@ -34,7 +34,7 @@ let server, mock;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina looks up from the chart.* "The lantern wants more oil before the next watch."',
+            '*我没想当掌门啊 looks up from the chart.* "The lantern wants more oil before the next watch."',
             '*She marks a faint line on the chart.* "Note that — the wind shifted east an hour ago."',
             '*A measured nod.* "Hold here. The watch will turn at the third bell."',
         ],
@@ -70,7 +70,7 @@ test.describe('#56 — MG schema editor: add field through real UI → persists 
 
     test('open editor, append column to event card, Save to Global, restart, field still in editor', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         // Drive 3 turns so MG has a real chat to anchor against (not
@@ -116,7 +116,7 @@ test.describe('#56 — MG schema editor: add field through real UI → persists 
         // ── Persistence across restart ────────────────────────────────
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         // Re-open the schema editor and assert the field is still in the

@@ -27,10 +27,10 @@ function userRoot(dataRoot, handle = 'default-user') {
 export function writeCharacter({ dataRoot, handle = 'default-user', avatarFile = 'ash-the-cartographer.png', overrides = {} }) {
     const charsDir = resolve(userRoot(dataRoot, handle), 'characters');
     mkdirSync(charsDir, { recursive: true });
-    // Use a real PNG byte stream from the bundled Seraphina sample so the
+    // Use a real PNG byte stream from the bundled 我没想当掌门啊 sample so the
     // file passes Luker's PNG validation; the embedded card data lives in
     // a sidecar JSON which Luker honors for non-embedded edits.
-    const seed = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+    const seed = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
     const target = resolve(charsDir, avatarFile);
     copyFileSync(seed, target);
 

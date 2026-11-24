@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const JIMP_URL = pathToFileURL(resolve(REPO_ROOT, 'src/jimp.js')).href;
-const PNG = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+const PNG = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
 
 test('jimp decodes and re-encodes a PNG under --jitless', () => {
     const code = `

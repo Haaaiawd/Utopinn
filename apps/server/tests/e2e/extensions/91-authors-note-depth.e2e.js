@@ -51,7 +51,7 @@ test.describe('#91 — Authors Note via real inputs, depth-2 injection', () => {
     test('AN content appears in prompt sent to mock at configured depth', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for the greeting to land.
         await page.waitForFunction(() => {

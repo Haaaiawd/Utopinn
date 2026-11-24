@@ -351,12 +351,12 @@
     "tags": [
         {
             "id": "1345561466591",
-            "name": "ST Default",
+            "name": "Default",
             "color": "rgba(108, 32, 32, 1)"
         }
     ],
     "tag_map": {
-        "default_Seraphina.png": [
+        "default_我没想当掌门啊.png": [
             "1345561466591"
         ]
     },
@@ -417,7 +417,7 @@
     },
     "oai_settings": {
         "preset_settings_openai": "Default",
-        "temp_openai": 1.0,
+        "temp_openai": 1,
         "freq_pen_openai": 0,
         "pres_pen_openai": 0,
         "top_p_openai": 1,

@@ -45,7 +45,7 @@ test.afterAll(async () => {
 test.describe('#49 — chat attachment via real paperclip → referenced in prompt body', () => {
     test('text file attachment surfaces in the next LLM request', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;

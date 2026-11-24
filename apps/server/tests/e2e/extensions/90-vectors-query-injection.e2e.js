@@ -98,19 +98,19 @@ async function probeOllama() {
 const TOPICS = [
     {
         userText: 'The brass signal lantern on the headland needs trimming before tide-rise. Keep an eye on its three flashes per minute — that is our harbor protocol.',
-        aiReply: '*Seraphina nods.* "Aye — the brass lantern is trimmed and primed. Three flashes per minute, holding steady."',
+        aiReply: '*我没想当掌门啊 nods.* "Aye — the brass lantern is trimmed and primed. Three flashes per minute, holding steady."',
     },
     {
         userText: 'I have lost confidence in the chart\'s northwest compass rose. The needle drifts a half-point west of true.',
-        aiReply: '*Seraphina sets her elbow on the chart.* "The compass needle is biased — a half-point west, as you say. I will note the deviation."',
+        aiReply: '*我没想当掌门啊 sets her elbow on the chart.* "The compass needle is biased — a half-point west, as you say. I will note the deviation."',
     },
     {
         userText: 'The salt-mark drifters were sighted moving north by skiff after midnight. They never light fires inland and refused our cliffside relocation offer.',
-        aiReply: '*Seraphina shakes her head slowly.* "The drifters keep to themselves. Skiffs north, no fires — that pattern has held for weeks."',
+        aiReply: '*我没想当掌门啊 shakes her head slowly.* "The drifters keep to themselves. Skiffs north, no fires — that pattern has held for weeks."',
     },
     {
         userText: 'The watchpost supplies are low: one spare oil flask, half a coil of pitch-rope, and the larder is down to dried fish.',
-        aiReply: '*Seraphina checks the slate.* "Oil flask, pitch-rope, dried fish — I will signal the supply skiff at dawn."',
+        aiReply: '*我没想当掌门啊 checks the slate.* "Oil flask, pitch-rope, dried fish — I will signal the supply skiff at dawn."',
     },
 ];
 
@@ -118,7 +118,7 @@ const TOPICS = [
 // message). We expect the vectors interceptor to rank that past message
 // first and inject it into the prompt for this turn.
 const QUERY_USER_TEXT = 'How did the brass lantern on the headland behave tonight — was the three-flash signal still on protocol?';
-const QUERY_AI_REPLY = '*Seraphina glances at the cliff-side post.* "The brass lantern holds — three flashes, as before."';
+const QUERY_AI_REPLY = '*我没想当掌门啊 glances at the cliff-side post.* "The brass lantern holds — three flashes, as before."';
 
 vectorsDescribe('#90 — vectors vectorize+query+inject (real ollama embedder)', () => {
     test.beforeAll(async () => {
@@ -190,7 +190,7 @@ vectorsDescribe('#90 — vectors vectorize+query+inject (real ollama embedder)',
         test.setTimeout(240_000);
 
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Confirm the vectors extension picked up the bootstrapped profile.
         const wiring = await page.evaluate(() => {

@@ -58,9 +58,9 @@ async function navigateBackToCharacterList(page) {
 }
 
 const REPLIES = [
-    '*Seraphina answers with the brisk patience of a watchwoman.* "Roundtrip reply A."',
-    '*Seraphina half-smiles.* "Roundtrip reply B."',
-    '*Seraphina folds her arms.* "Roundtrip reply C."',
+    '*我没想当掌门啊 answers with the brisk patience of a watchwoman.* "Roundtrip reply A."',
+    '*我没想当掌门啊 half-smiles.* "Roundtrip reply B."',
+    '*我没想当掌门啊 folds her arms.* "Roundtrip reply C."',
 ];
 
 let server, mock;
@@ -72,7 +72,7 @@ test.beforeAll(async () => {
     bootstrapCustomBackend({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     appendConnectionProfile({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     // Seed Iyana as a real PNG card on disk so the boot-time character
-    // scan picks her up alongside the bundled Seraphina. This is the same
+    // scan picks her up alongside the bundled 我没想当掌门啊. This is the same
     // pattern as #13c — and lets the spec switch to her via the real
     // character drawer without driving the "Create New Character" UI as
     // a side-quest (which is exercised by #19).
@@ -124,7 +124,7 @@ async function closeManageChats(page) {
 test.describe('#14 — export/import roundtrip', () => {
     test('Export → Import via real DOM gestures preserves turns across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Iyana is seeded as a PNG card in `beforeAll`. The boot-time

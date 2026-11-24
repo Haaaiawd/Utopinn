@@ -12,7 +12,7 @@ import { getChatRepo } from '../../../src/storage/index.js';
 import { diskCache } from '../../../src/endpoints/characters.js';
 import { assembleCharacterRaw } from '../../../src/character-resource-view.js';
 
-const seedPath = fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url));
+const seedPath = fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url));
 
 function seedCard(charsDir, name, card) {
     fs.mkdirSync(charsDir, { recursive: true });

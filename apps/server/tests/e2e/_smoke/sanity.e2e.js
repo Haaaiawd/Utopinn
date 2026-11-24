@@ -3,7 +3,7 @@
 // 1. Spawns a Luker server on its own port + cloned dataRoot.
 // 2. Spawns the in-process mock LLM and bootstraps the custom backend
 //    in the cloned settings.json so the first turn already routes to it.
-// 3. Loads the UI, selects the bundled Seraphina, sends one message, and
+// 3. Loads the UI, selects the bundled 我没想当掌门啊, sends one message, and
 //    confirms (a) the assistant bubble appears, (b) the mock recorded a
 //    chat-completion request from Luker's server.
 //
@@ -21,7 +21,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour. Tell me what you saw on the path."',
+        '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour. Tell me what you saw on the path."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'sanity' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -36,7 +36,7 @@ test.afterAll(async () => {
 
 test('sanity: dedicated server + mock backend + first-turn happy path', async ({ page }) => {
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // Wait for the first_mes to settle (so MESSAGE_RECEIVED later is the
     // /send reply, not the greeting). Greeting fires as a chat-load event.
@@ -59,7 +59,7 @@ test('sanity: dedicated server + mock backend + first-turn happy path', async ({
     const lastUser = [...finalChat].reverse().find(m => m.is_user);
     const lastAsst = [...finalChat].reverse().find(m => !m.is_user);
     expect(lastUser?.mes).toMatch(/cliff path/);
-    expect(lastAsst?.mes).toMatch(/lantern|chart|Seraphina/);
+    expect(lastAsst?.mes).toMatch(/lantern|chart|我没想当掌门啊/);
 
     const newReqs = mock.requests.slice(before);
     const chatReq = newReqs.find(r => r.url.includes('chat/completions'));

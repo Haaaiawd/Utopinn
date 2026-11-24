@@ -3,7 +3,7 @@
 // `writeCharacter` fixture in _lib/fixtures.js only writes a JSON
 // sidecar, but ST's /api/characters/all path parses card data from the
 // PNG itself, so the sidecar is invisible — characters created that way
-// surface under the bundled Seraphina's name. This helper embeds the
+// surface under the bundled 我没想当掌门啊's name. This helper embeds the
 // card properly so the character appears under its own name.
 
 import { resolve } from 'node:path';
@@ -227,7 +227,7 @@ function buildAshCard(overrides = {}) {
 export function writeEmbeddedCharacter({ dataRoot, handle = 'default-user', avatarFile = 'ash-the-cartographer.png', overrides = {} } = {}) {
     const charsDir = resolve(dataRoot, handle, 'characters');
     mkdirSync(charsDir, { recursive: true });
-    const seed = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+    const seed = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
     const seedPng = readFileSync(seed);
     const card = buildAshCard(overrides);
     const png = writePngCard(seedPng, JSON.stringify(card));

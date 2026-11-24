@@ -276,13 +276,13 @@ test('real orchestration and Sync share desktop and narrow placement with long l
     const label = 'Lighthouse archive — northern passage charts and lantern keeper records';
     const options = { ...await fixture.options(), endpoint: proxy.endpoint, label };
     let storage, response;
-    const final = '*Seraphina folds the chart against the wind.* "The lighthouse has answered. Follow the green lanterns; I will meet you at the harbor gate."';
+    const final = '*我没想当掌门啊 folds the chart against the wind.* "The lighthouse has answered. Follow the green lanterns; I will meet you at the harbor gate."';
     try {
         const id = await addCloud(page, options);
         await closeAllPopups(page);
         await closeAnyOpenTopSettingsDrawer(page);
-        await importCharacterFile(page, { filePath: fileURLToPath(new URL('../../../default/content/default_Seraphina.png', import.meta.url)), expectedName: 'Seraphina' });
-        await selectCharacterByName(page, 'Seraphina');
+        await importCharacterFile(page, { filePath: fileURLToPath(new URL('../../../default/content/default_我没想当掌门啊.png', import.meta.url)), expectedName: '我没想当掌门啊' });
+        await selectCharacterByName(page, '我没想当掌门啊');
         await openTopDrawer(page, 'sys-settings-button');
         await page.locator('#main_api').selectOption('openai');
         await page.locator('#chat_completion_source').selectOption('custom');
@@ -302,7 +302,7 @@ test('real orchestration and Sync share desktop and narrow placement with long l
         await page.locator('#luker_orch_llm_preset').selectOption('');
         const chooser = page.waitForEvent('filechooser');
         await page.locator('#orchestrator_settings [data-luker-preset-action="import"][data-mode="director"]').click();
-        await (await chooser).setFiles({ name: 'lighthouse-director.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ mode: 'director', profile: { mode: 'director', name: 'Lighthouse watch', mainAgent: { systemPrompt: 'Guide Seraphina through the harbor watch. Use write_message for her reply and finalize when it is ready.', apiPresetName: '', promptPresetName: '', skills: { visible: [], deny: [] } }, subAgents: [], tools: {}, maxRounds: 4, skills: { visible: [], deny: [] } } })) });
+        await (await chooser).setFiles({ name: 'lighthouse-director.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ mode: 'director', profile: { mode: 'director', name: 'Lighthouse watch', mainAgent: { systemPrompt: 'Guide 我没想当掌门啊 through the harbor watch. Use write_message for her reply and finalize when it is ready.', apiPresetName: '', promptPresetName: '', skills: { visible: [], deny: [] } }, subAgents: [], tools: {}, maxRounds: 4, skills: { visible: [], deny: [] } } })) });
         const imported = page.locator('dialog.popup[open]').last();
         await imported.locator('.popup-input').fill('Lighthouse watch');
         await imported.locator('.popup-button-ok').click();

@@ -16,7 +16,7 @@ import { openLanSyncPanel, addS3Backend, waitForBackendSync, setSyncDeviceLabel,
     clickSyncNow, clickForgetPeer, waitForBackgroundSync, shadowMain, userRootOf, readUserFile, waitForSyncPopup, listPopupNotices, listPopupConflicts } from './sync.js';
 
 const WORLD = 'worlds/Inherited Grove.json';
-const chats = ['chats/Seraphina/Forest Path.jsonl', 'group chats/gc1.jsonl'];
+const chats = ['chats/我没想当掌门啊/Forest Path.jsonl', 'group chats/gc1.jsonl'];
 const point = 'after-remote-head';
 const lanEntry = d => Object.entries(registryOf(d.server).backends).find(([, entry]) => entry.kind === 'lan');
 const lanGit = d => path.join(userRootOf(d.server), '.sync', lanEntry(d)[0], 'repo.git');
@@ -92,7 +92,7 @@ export async function inheritedEpoch(fixture, browser, testInfo, kind) {
                     await editCorpusChat(d, rel, `${letter} complete inherited chat`);
                 } catch (error) {
                     const failedAt = Date.now();
-                    const target = rel.startsWith('group chats/') ? { avatar_url: null, group_id: 'g1', query: '' } : { avatar_url: 'Seraphina.png', group_id: null, query: '' };
+                    const target = rel.startsWith('group chats/') ? { avatar_url: null, group_id: 'g1', query: '' } : { avatar_url: '我没想当掌门啊.png', group_id: null, query: '' };
                     const observations = await Promise.allSettled([
                         d.page.evaluate(() => {
                             const ctx = window.Luker.getContext();
@@ -230,7 +230,7 @@ export async function inheritedEpoch(fixture, browser, testInfo, kind) {
             const base = rel.slice(rel.lastIndexOf('/') + 1, -6), branch = `${base} - Sync conflict ${labels[parents[1]]} ${stamp}`;
             const fork = `${rel.slice(0, rel.lastIndexOf('/') + 1)}${branch}.jsonl`;
             expectedNotices[fork] = { kind: 'fork', chat: rel, device: labels[parents[1]], createdAt: date.toISOString(), target: rel.startsWith('group chats/')
-                ? { kind: 'group', groupId: 'g1', name: branch } : { kind: 'character', avatar: 'Seraphina.png', name: branch } };
+                ? { kind: 'group', groupId: 'g1', name: branch } : { kind: 'character', avatar: '我没想当掌门啊.png', name: branch } };
             const from = (await readBlobBytes({ gitdir: pathsOf(a).gitDir, oid: sides[1].get(rel).oid })).toString().trim().split('\n').map(JSON.parse);
             const hex = createHash('sha256').update(`${sides[1].get(rel).oid}\0${branch}`).digest('hex');
             from[0].chat_metadata = { ...from[0].chat_metadata, main_chat: base, integrity: `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}` };

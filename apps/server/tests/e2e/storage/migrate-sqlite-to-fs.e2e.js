@@ -19,7 +19,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina marks the chart with a stub of charcoal.* "If the gulls fly seaward at first light, the swell will calm before noon — write that down."',
+        '*我没想当掌门啊 marks the chart with a stub of charcoal.* "If the gulls fly seaward at first light, the swell will calm before noon — write that down."',
     ] });
     server = await startServer({ batchKey: 'storage', scenarioId: 'sqlite-to-fs' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -45,7 +45,7 @@ test('migrate sqlite -> fs via admin UI preserves a chat sent while in sqlite', 
     // land in the SQLite kv_chats table (verified indirectly by the
     // post-fs-migration assertion: any data on disk has to have come
     // from the sqlite source set during the reverse migration).
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => {
         const ctx = window.Luker.getContext();
         return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -71,7 +71,7 @@ test('migrate sqlite -> fs via admin UI preserves a chat sent while in sqlite', 
 
     // Reload so the chat panel re-reads from the (now active) fs engine.
     await reloadAndAwait(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => {
         const ctx = window.Luker.getContext();
         return Array.isArray(ctx.chat) && ctx.chat.length >= 2;

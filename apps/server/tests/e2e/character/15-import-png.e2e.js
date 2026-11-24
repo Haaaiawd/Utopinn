@@ -1,6 +1,6 @@
 // #15 — Import a PNG character card via the real UI file picker.
 //
-// Builds a v2 PNG card by re-embedding the bundled Seraphina PNG with
+// Builds a v2 PNG card by re-embedding the bundled 我没想当掌门啊 PNG with
 // fresh card metadata via `src/character-card-parser.js#write()`, writes
 // it to /tmp, drives the import through the visible #character_import_button
 // + setInputFiles on the hidden #character_import_file (per the audit
@@ -93,7 +93,7 @@ test.beforeAll(async () => {
 
     // Build a PNG file on disk that the file picker can ingest.
     tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-png-'));
-    const seedPath = resolve(REPO_ROOT, 'default/content/default_Seraphina.png');
+    const seedPath = resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png');
     const seed = readFileSync(seedPath);
     const png = writePngCard(seed, JSON.stringify(V2_PAYLOAD));
     pngPath = resolve(tmpDir, 'briallen.png');

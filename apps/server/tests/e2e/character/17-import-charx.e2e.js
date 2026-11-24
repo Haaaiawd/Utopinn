@@ -58,7 +58,7 @@ test.beforeAll(async () => {
 
     // Build a tiny charx (zip) in /tmp.
     tmpDir = mkdtempSync(resolve(tmpdir(), 'luker-e2e-charx-'));
-    const iconPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_Seraphina.png'));
+    const iconPng = readFileSync(resolve(REPO_ROOT, 'default/content/default_我没想当掌门啊.png'));
     const zip = new AdmZip();
     zip.addFile('card.json', Buffer.from(JSON.stringify(CARD), 'utf8'));
     zip.addFile('main.png', iconPng);

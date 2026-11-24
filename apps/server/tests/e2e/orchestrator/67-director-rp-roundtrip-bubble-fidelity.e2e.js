@@ -62,7 +62,7 @@ test.afterAll(async () => {
 test.describe('#67 — Director RP one full round → 1:1 bubble fidelity', () => {
     test('director run commits scripted reply 1:1 to chat bubble + persists across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page);
 
@@ -109,7 +109,7 @@ test.describe('#67 — Director RP one full round → 1:1 bubble fidelity', () =
         const before = await getChatSnapshot(page);
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for the persisted chat to rehydrate.
         await page.waitForFunction((wantLen) => {

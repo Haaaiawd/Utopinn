@@ -39,7 +39,7 @@ test('migrate fs -> sqlite via admin UI preserves an in-progress chat', async ({
     await awaitMainUI(page, server.baseURL);
 
     // Establish a chat under fs mode.
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => {
         const ctx = window.Luker.getContext();
         return Array.isArray(ctx.chat) && ctx.chat.length >= 1;
@@ -75,7 +75,7 @@ test('migrate fs -> sqlite via admin UI preserves an in-progress chat', async ({
     // in-memory copy from the pre-migration session — a stale copy that
     // would mask any "data didn't actually land in SQLite" regression.
     await reloadAndAwait(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
 
     // Wait for the chat to populate post-reload.
     await page.waitForFunction(() => {

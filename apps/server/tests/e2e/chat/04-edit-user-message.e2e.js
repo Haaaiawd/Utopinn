@@ -23,7 +23,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina sets the chart aside and looks at you.* "The wind has shifted. We will walk the outer line in an hour."',
+        '*我没想当掌门啊 sets the chart aside and looks at you.* "The wind has shifted. We will walk the outer line in an hour."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'edit-user' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -39,7 +39,7 @@ test.afterAll(async () => {
 test.describe('#4 — edit user message', () => {
     test('edited user text persists across restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await sendMessageAndAwaitReply(page, 'I will take the outer line at dawn.');
@@ -67,7 +67,7 @@ test.describe('#4 — edit user message', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 2, { timeout: 15_000 });
 
         // Post-restart: rendered DOM contains the edit.

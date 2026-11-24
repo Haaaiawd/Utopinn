@@ -30,7 +30,7 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina cleans the spyglass with the heel of her palm.* "Reply 1: I will be ready when the wind drops."',
+        '*我没想当掌门啊 cleans the spyglass with the heel of her palm.* "Reply 1: I will be ready when the wind drops."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'rename' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -46,7 +46,7 @@ test.afterAll(async () => {
 test.describe('#13 — rename chat via Manage Chat Files UI', () => {
     test('clicking the pencil + entering a new name updates the file on disk and recent index', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await sendMessageAndAwaitReply(page, 'Tell me when you will be ready.');

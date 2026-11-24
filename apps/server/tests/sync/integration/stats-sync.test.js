@@ -44,17 +44,17 @@ describe('stats around sync', () => {
     test('in-memory stats are flushed before the snapshot without a dirty mark', async () => {
         const dirty = [];
         setDirtyListener(info => dirty.push(info));
-        expect((await request(harness.server).post('/api/stats/update').send({ Seraphina: { user_word_count: 42 } })).status).toBe(200);
+        expect((await request(harness.server).post('/api/stats/update').send({ 掌门真人: { user_word_count: 42 } })).status).toBe(200);
         await runSyncCycle(ctx());
         const files = await readCommitFiles({ gitdir: remote.remoteDir, commitOid: await remoteHead(remote.remoteDir) });
         const pushed = JSON.parse((await readBlobBytes({ gitdir: remote.remoteDir, oid: files.get('stats.json').oid })).toString('utf8'));
-        expect(pushed.Seraphina.user_word_count).toBe(42);
+        expect(pushed.掌门真人.user_word_count).toBe(42);
         expect(dirty).toEqual([]);
     });
 
     test('a flush waiting on the gate cannot overwrite stats.json written by a sync', async () => {
-        expect((await request(harness.server).post('/api/stats/update').send({ Seraphina: { user_word_count: 1 } })).status).toBe(200);
-        const synced = { Seraphina: { user_word_count: 99 }, timestamp: 5 };
+        expect((await request(harness.server).post('/api/stats/update').send({ 掌门真人: { user_word_count: 1 } })).status).toBe(200);
+        const synced = { 掌门真人: { user_word_count: 99 }, timestamp: 5 };
         // The flush starts outside the writer scope, as the periodic save does.
         let release;
         const writer = withWriterLock(harness.dirs.root, () => new Promise(resolve => { release = resolve; }));
@@ -67,22 +67,22 @@ describe('stats around sync', () => {
         release();
         await writer;
         await flush;
-        expect(statsFile().Seraphina.user_word_count).toBe(99);
+        expect(statsFile().掌门真人.user_word_count).toBe(99);
         expect((await request(harness.server).post('/api/stats/get')).body).toEqual(statsFile());
     });
 
     test('stats updated after the last flush are merged over a synced stats.json and saved by the next flush', async () => {
         const update = body => request(harness.server).post('/api/stats/update').send(body);
-        expect((await update({ Seraphina: { user_word_count: 1 }, Lilith: { user_word_count: 4 } })).status).toBe(200);
+        expect((await update({ 掌门真人: { user_word_count: 1 }, Lilith: { user_word_count: 4 } })).status).toBe(200);
         await flushStatsForHandle(owner);
         const flushedAt = Date.now();
         // A save at the same millisecond as an update does not count the update as newer.
         await until(() => Date.now() > flushedAt);
-        expect((await update({ Seraphina: { user_word_count: 5 }, Lilith: { user_word_count: 4 }, Mira: { user_word_count: 2 } })).status).toBe(200);
-        fs.writeFileSync(path.join(harness.dirs.root, 'stats.json'), JSON.stringify({ Seraphina: { user_word_count: 3 }, Other: { user_word_count: 8 }, timestamp: 5 }));
+        expect((await update({ 掌门真人: { user_word_count: 5 }, Lilith: { user_word_count: 4 }, Mira: { user_word_count: 2 } })).status).toBe(200);
+        fs.writeFileSync(path.join(harness.dirs.root, 'stats.json'), JSON.stringify({ 掌门真人: { user_word_count: 3 }, Other: { user_word_count: 8 }, timestamp: 5 }));
         await runAfterReconcile(owner, { written: ['stats.json'], deleted: [], alreadyApplied: [], skipped: [], ignored: [] });
         const merged = (await request(harness.server).post('/api/stats/get')).body;
-        expect(merged).toMatchObject({ Seraphina: { user_word_count: 5 }, Mira: { user_word_count: 2 }, Other: { user_word_count: 8 } });
+        expect(merged).toMatchObject({ 掌门真人: { user_word_count: 5 }, Mira: { user_word_count: 2 }, Other: { user_word_count: 8 } });
         expect(merged.Lilith).toBeUndefined();
         await flushStatsForHandle(owner);
         expect(statsFile()).toEqual(merged);
@@ -90,10 +90,10 @@ describe('stats around sync', () => {
 
     test('a synced stats.json from another device becomes the in-memory stats', async () => {
         const A = makeDevice({ remoteDir: remote.remoteDir, categories: ['stats'] });
-        A.write('stats.json', JSON.stringify({ Seraphina: { user_word_count: 7 }, timestamp: 3 }));
+        A.write('stats.json', JSON.stringify({ 掌门真人: { user_word_count: 7 }, timestamp: 3 }));
         await runSyncCycle(A.ctx);
         await runSyncCycle(ctx());
-        expect((await request(harness.server).post('/api/stats/get')).body).toEqual({ Seraphina: { user_word_count: 7 }, timestamp: 3 });
+        expect((await request(harness.server).post('/api/stats/get')).body).toEqual({ 掌门真人: { user_word_count: 7 }, timestamp: 3 });
         A.cleanup();
     });
 });

@@ -4,7 +4,7 @@
 import http from 'node:http';
 const B = 'http://127.0.0.1:8000';
 const STUB_PORT = 18765;
-const CHAR = 'default_Seraphina';
+const CHAR = 'default_我没想当掌门啊';
 const CHAT = 'e2e-textgen-probe';
 let cookie = '', token = '';
 
@@ -76,7 +76,7 @@ log('stub 抓到 prompt', !!captured?.prompt, captured ? `len=${captured.prompt.
 if (captured) {
     const p = captured.prompt;
     log('转录含用户行', /describe your garden/.test(p));
-    log('尾锚 name2:', /Seraphina:\s*$/.test(p) || p.trimEnd().endsWith('Seraphina:'), p.slice(-60).replace(/\n/g, '\\n'));
+    log('尾锚 name2:', /我没想当掌门啊:\s*$/.test(p) || p.trimEnd().endsWith('我没想当掌门啊:'), p.slice(-60).replace(/\n/g, '\\n'));
     log('角色内容在场', p.length > 200);
     log('生成参数透传', captured.temperature !== undefined, `temp=${captured.temperature}`);
 }

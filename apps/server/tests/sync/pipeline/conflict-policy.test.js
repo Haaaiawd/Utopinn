@@ -19,11 +19,11 @@ import { write as writeCard } from '../../../src/character-card-parser.js';
 import { makeUserDirs } from '../_lib/user-dirs.js';
 import { commitFiles } from '../_lib/commits.js';
 
-const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_Seraphina.png'));
+const SEED_PNG = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../default/content/default_我没想当掌门啊.png'));
 const NOW = new Date('2026-10-13T09:05:00.000Z');
 const oid = content => blobOidOf(Buffer.from(content));
-const CHAT = 'chats/Seraphina/c1.jsonl';
-const header = JSON.stringify({ user_name: 'U', character_name: 'Seraphina', chat_metadata: {} });
+const CHAT = 'chats/掌门真人/c1.jsonl';
+const header = JSON.stringify({ user_name: 'U', character_name: '掌门真人', chat_metadata: {} });
 const record = (extra = {}) => ({ kept: oid('k'), ours: oid('o'), theirs: oid('t'), oursDevice: 'X', theirsDevice: 'Y', mergeParents: ['a'.repeat(40), 'b'.repeat(40)], createdAt: '2026-10-01T00:00:00.000Z', ...extra });
 
 describe('conflict policy', () => {
@@ -83,11 +83,11 @@ describe('conflict policy', () => {
 
     test('a chat conflict forks theirs and adds a notice instead of a record', async () => {
         const out = await run(
-            { 'chats/Seraphina/c1.jsonl': `${header}\nB` },
-            { 'chats/Seraphina/c1.jsonl': `${header}\nO` },
-            { 'chats/Seraphina/c1.jsonl': `${header}\nT` },
+            { 'chats/掌门真人/c1.jsonl': `${header}\nB` },
+            { 'chats/掌门真人/c1.jsonl': `${header}\nO` },
+            { 'chats/掌门真人/c1.jsonl': `${header}\nT` },
         );
-        const branchPath = `chats/Seraphina/c1 - Sync conflict Phone ${formatForkTimestamp(NOW)}.jsonl`;
+        const branchPath = `chats/掌门真人/c1 - Sync conflict Phone ${formatForkTimestamp(NOW)}.jsonl`;
         expect(out.files.has(branchPath)).toBe(true);
         expect(Object.keys(await notices(out.files))).toEqual([branchPath]);
         expect(await records(out.files)).toEqual({});
@@ -210,17 +210,17 @@ describe('conflict policy', () => {
     });
 
     test('character cards that differ only in the last chat merge without a record', async () => {
-        const png = chat => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: 'Seraphina', data: { name: 'Seraphina' }, ...(chat ? { chat } : {}) }));
-        const out = await run({ 'characters/Seraphina.png': png() }, { 'characters/Seraphina.png': png('Forest Path') }, { 'characters/Seraphina.png': png('River Ford') });
-        expect(out.files.get('characters/Seraphina.png').oid).toBe(blobOidOf(png('Forest Path')));
+        const png = chat => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: '掌门真人', data: { name: '掌门真人' }, ...(chat ? { chat } : {}) }));
+        const out = await run({ 'characters/掌门真人.png': png() }, { 'characters/掌门真人.png': png('Forest Path') }, { 'characters/掌门真人.png': png('River Ford') });
+        expect(out.files.get('characters/掌门真人.png').oid).toBe(blobOidOf(png('Forest Path')));
         expect(await records(out.files)).toEqual({});
         expect(out.conflicts).toEqual([]);
     });
 
     test('character cards edited on both sides beyond the last chat get a record', async () => {
-        const png = (description, chat) => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: 'Seraphina', data: { name: 'Seraphina', description }, chat }));
-        const out = await run({ 'characters/Seraphina.png': png('base', 'a') }, { 'characters/Seraphina.png': png('ours', 'b') }, { 'characters/Seraphina.png': png('theirs', 'c') });
-        expect((await records(out.files))['characters/Seraphina.png']).toMatchObject({ kept: blobOidOf(png('ours', 'b')), ours: blobOidOf(png('ours', 'b')), theirs: blobOidOf(png('theirs', 'c')) });
+        const png = (description, chat) => writeCard(SEED_PNG, JSON.stringify({ spec: 'chara_card_v2', spec_version: '2.0', name: '掌门真人', data: { name: '掌门真人', description }, chat }));
+        const out = await run({ 'characters/掌门真人.png': png('base', 'a') }, { 'characters/掌门真人.png': png('ours', 'b') }, { 'characters/掌门真人.png': png('theirs', 'c') });
+        expect((await records(out.files))['characters/掌门真人.png']).toMatchObject({ kept: blobOidOf(png('ours', 'b')), ours: blobOidOf(png('ours', 'b')), theirs: blobOidOf(png('theirs', 'c')) });
     });
 
     test('conflicting record files merge with the entry rule and are never reported', async () => {

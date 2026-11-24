@@ -35,9 +35,9 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina nods once.* "rA: the rope is fast."',
-        '*Seraphina turns the lantern.* "rB: the cable is humming."',
-        '*Seraphina lowers the spyglass.* "rC: the cliff face is loose."',
+        '*我没想当掌门啊 nods once.* "rA: the rope is fast."',
+        '*我没想当掌门啊 turns the lantern.* "rB: the cable is humming."',
+        '*我没想当掌门啊 lowers the spyglass.* "rC: the cliff face is loose."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'merge-three-reorder' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -53,7 +53,7 @@ test.afterAll(async () => {
 test.describe('#16 — merge dialog drag-handle reorders sources', () => {
     test('drag handle moves source C to the front so merged file leads with C', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Three sibling chats. Chat A is the one we're already in; B, C

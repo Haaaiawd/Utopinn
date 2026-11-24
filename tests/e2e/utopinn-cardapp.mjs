@@ -63,7 +63,7 @@ try {
     log('资产服务', r.status === 200 && String(r.body).includes('background'), `status=${r.status}`);
 
     // 6. 无卡 app's 拒绝
-    r = await req('POST', '/api/card-runtime/mounts', { charId: 'default_Seraphina' });
+    r = await req('POST', '/api/card-runtime/mounts', { charId: 'default_我没想当掌门啊' });
     log('无 card_app 拒绝', r.status === 404 && r.body?.error === 'no_card_app', JSON.stringify(r.body).slice(0, 120));
 
     // 7. revoke → entry 404

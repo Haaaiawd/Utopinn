@@ -12,11 +12,11 @@ import { openCharacterList } from '../_lib/ui-character.js';
 import { closeAnyOpenTopSettingsDrawer, editMessageViaUI, openTopDrawer } from '../_lib/page.js';
 import { openChatByName } from '../_lib/sync.js';
 
-const AVATAR = 'default_Seraphina.png';
+const AVATAR = 'default_我没想当掌门啊.png';
 const TURN = '*I raise the lantern.* "Keep every word: 渡口, 🌙, and \\ reeds."';
 const EDIT = 'The lantern shines beyond the reeds. "Follow the moonlit path."';
 const IMPORTED = [
-    { name: 'Seraphina', is_user: false, is_system: false, mes: 'Original imported greeting.', send_date: '2026-10-26T10:00:00Z', extra: { retained: ['moon', 'reeds'] } },
+    { name: '我没想当掌门啊', is_user: false, is_system: false, mes: 'Original imported greeting.', send_date: '2026-10-26T10:00:00Z', extra: { retained: ['moon', 'reeds'] } },
     { name: 'User', is_user: true, is_system: false, mes: 'Original imported reply: 渡口 🌙.', send_date: '2026-10-26T10:00:01Z', extra: {} },
 ];
 const HEADER = { user_name: 'unused', character_name: 'unused', chat_metadata: { note_prompt: 'Imported metadata stays here', tainted: true } };

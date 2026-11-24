@@ -125,7 +125,7 @@ test.describe('#39 — connection profile switching routes per backend (real dro
     test('switch via #connection_profiles dropdown flips which mock receives the next turn', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         // Wait for greeting to settle.
         await page.waitForFunction(() => {

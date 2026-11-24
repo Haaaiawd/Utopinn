@@ -74,7 +74,7 @@ test('generation-basic: closing the tab mid-stream leaves the job running; a fre
     });
 
     await awaitMainUI(pageA, server.baseURL);
-    await selectCharacterByName(pageA, 'Seraphina');
+    await selectCharacterByName(pageA, '我没想当掌门啊');
     await pageA.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     // Fire the send but do NOT await reply — we intend to close mid-stream.

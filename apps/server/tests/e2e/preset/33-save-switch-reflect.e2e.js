@@ -30,7 +30,7 @@ const VALUES_A = {
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina folds the chart away.* The lantern still holds, so we have time.',
+        '*我没想当掌门啊 folds the chart away.* The lantern still holds, so we have time.',
     ] });
     server = await startServer({
         batchKey: 'preset',

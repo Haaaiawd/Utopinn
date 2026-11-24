@@ -7,10 +7,10 @@ const char = extra => ({ total_gen_time: 10, user_word_count: 5, non_user_word_c
 describe('stats.json merge', () => {
     test('counters take the larger value and dates the later or earlier one', () => {
         expect(mergeStatsDocuments(
-            { Seraphina: char(), timestamp: 1 },
-            { Seraphina: char({ user_word_count: 9, date_last_chat: 2000, date_first_chat: 0 }), timestamp: 5 },
-            { Seraphina: char({ non_user_word_count: 30, date_last_chat: 1500, date_first_chat: 400 }), timestamp: 7 },
-        )).toEqual({ timestamp: 7, Seraphina: char({ user_word_count: 9, non_user_word_count: 30, date_last_chat: 2000, date_first_chat: 400 }) });
+            { 掌门真人: char(), timestamp: 1 },
+            { 掌门真人: char({ user_word_count: 9, date_last_chat: 2000, date_first_chat: 0 }), timestamp: 5 },
+            { 掌门真人: char({ non_user_word_count: 30, date_last_chat: 1500, date_first_chat: 400 }), timestamp: 7 },
+        )).toEqual({ timestamp: 7, 掌门真人: char({ user_word_count: 9, non_user_word_count: 30, date_last_chat: 2000, date_first_chat: 400 }) });
     });
     test('a character on one side only is kept', () => {
         expect(mergeStatsDocuments({ timestamp: 1 }, { timestamp: 2, A: char() }, { timestamp: 3, B: char({ chat_size: 1 }) }))

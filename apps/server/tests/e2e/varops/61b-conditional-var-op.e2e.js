@@ -30,7 +30,7 @@ import { openVarOpsPanel, getRenderedVarOpsRows } from '../_lib/ui-mg-varops.js'
 let server, mock;
 
 const REPLY_WITH_IF_WRAPPER = [
-    '*Seraphina glances at the slate she keeps under the lantern base.* ',
+    '*我没想当掌门啊 glances at the slate she keeps under the lantern base.* ',
     '"The wind tells me which way to read it." ',
     '{{if 0}}{{setvar::wind::southerly}}{{else}}{{setvar::wind::northerly}}{{/if}} ',
     '*She taps the chart, smoke curling at her wrist.* ',
@@ -38,7 +38,7 @@ const REPLY_WITH_IF_WRAPPER = [
 ].join('');
 
 const REPLY_LLM_CHOSE_BRANCH = [
-    '*Seraphina settles onto the bench, fingers spread on the chart.* ',
+    '*我没想当掌门啊 settles onto the bench, fingers spread on the chart.* ',
     '"Tonight it is northerly — I can smell the kelp burn." ',
     '{{setvar::wind::northerly}}',
     ' "Bank the lantern accordingly."',
@@ -62,7 +62,7 @@ test.afterAll(async () => {
 test.describe('#61b — Conditional var op (if-wrapper) end-to-end through the flask panel', () => {
     test('extractor is condition-blind: both branches of {{if}} render as panel rows; LLM-driven branch shows one row', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();

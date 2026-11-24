@@ -47,7 +47,7 @@ test.describe('#101 — Regex display and plugin scope coexist', () => {
     test('ticking Plugin Messages keeps Alter Chat Display enabled, and both persist', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;

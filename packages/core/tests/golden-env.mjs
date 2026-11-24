@@ -49,7 +49,7 @@ const GOLDEN_DIRS = [
     join(REPO, 'tests', 'golden-diff', 'golden'),
     join(REPO, 'tests', 'golden-diff', 'golden-private'),
 ];
-// 卡解析顺序:公开语料 → 私有语料 → Luker 内置默认内容(default_Seraphina 只在这)
+// 卡解析顺序:公开语料 → 私有语料 → Luker 内置默认内容(default_我没想当掌门啊 只在这)
 const CARD_DIRS = [
     join(REPO, 'tests', 'corpus', 'cards'),
     join(REPO, 'tests', 'corpus-private', 'cards'),
@@ -174,7 +174,7 @@ export async function buildFixture(goldenPath) {
     const name1 = meta.last_user_persona?.name ?? 'User';
     const name2 = d.name ?? golden.card?.name ?? '';
 
-    // Generate() 时刻的 chat:剔除 mock 回复占位(Seraphina 含 user turn,私有卡不含)
+    // Generate() 时刻的 chat:剔除 mock 回复占位(我没想当掌门啊 含 user turn,私有卡不含)
     const genChat = (golden.chatSnapshot?.messages ?? [])
         .filter((m) => !REPLY_PLACEHOLDER.test(m.mes ?? ''));
 

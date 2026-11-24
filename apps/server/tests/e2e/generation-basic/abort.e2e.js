@@ -60,7 +60,7 @@ test('generation-basic: #mes_stop fires POST /api/generation/:id/abort, keeps pa
     });
 
     await awaitMainUI(page, server.baseURL);
-    await selectCharacterByName(page, 'Seraphina');
+    await selectCharacterByName(page, '我没想当掌门啊');
     await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
     // Fire the send but don't await reply — we intend to abort mid-flight.

@@ -10,7 +10,7 @@
 //      segments are body[0..2), body[2..4), body[4..7) — i.e. 2 / 2 / 3
 //      entries respectively. The greeting always lives in segment 0
 //      because it's body[0]; the brief's "2/2/2" framing assumed no
-//      greeting, but Seraphina (and every character card) always renders
+//      greeting, but 我没想当掌门啊 (and every character card) always renders
 //      one.
 //   4. Set per-segment names part1 / part2 / part3 and click OK.
 //
@@ -47,9 +47,9 @@ let server, mock;
 
 test.beforeAll(async () => {
     mock = await startMockLLM({ scriptedReplies: [
-        '*Seraphina charts the swell on the parchment.* "r0: the tide is full."',
-        '*Seraphina rolls a brass weight along the chart.* "r1: the wind backs to the east."',
-        '*Seraphina notches a tally into the rail.* "r2: that\'s three watches gone."',
+        '*我没想当掌门啊 charts the swell on the parchment.* "r0: the tide is full."',
+        '*我没想当掌门啊 rolls a brass weight along the chart.* "r1: the wind backs to the east."',
+        '*我没想当掌门啊 notches a tally into the rail.* "r2: that\'s three watches gone."',
     ] });
     server = await startServer({ batchKey: 'chat', scenarioId: 'split-basic' });
     markOnboarded({ dataRoot: server.dataRoot });
@@ -65,7 +65,7 @@ test.afterAll(async () => {
 test.describe('#20 — split one chat into three via the per-message split icon', () => {
     test('split at [2, 4] writes three sibling chats with the expected slices', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         // Build a 7-entry chat: greeting + 3 user/reply pairs.

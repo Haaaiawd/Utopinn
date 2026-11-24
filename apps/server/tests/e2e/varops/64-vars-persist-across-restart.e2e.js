@@ -25,8 +25,8 @@ let server, mock;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina sets her elbow on the chart, watching you mark the slate.* "The wind tells me you have the tallies right."',
-            '*Seraphina glances at the slate again.* "Still three. The numbers stand."',
+            '*我没想当掌门啊 sets her elbow on the chart, watching you mark the slate.* "The wind tells me you have the tallies right."',
+            '*我没想当掌门啊 glances at the slate again.* "Still three. The numbers stand."',
         ],
     });
     server = await startServer({ batchKey: 'varops', scenarioId: 'setvar-persist' });
@@ -60,7 +60,7 @@ async function sendSlashCommand(page, command) {
 test.describe('#64 — Variables persist across restart (typed /setvar in textarea)', () => {
     test('/setvar typed into the textarea + send-button survives server restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
@@ -122,7 +122,7 @@ test.describe('#64 — Variables persist across restart (typed /setvar in textar
         // ── Restart + reload → vars still present in cache + via UI ────
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker?.getContext?.();

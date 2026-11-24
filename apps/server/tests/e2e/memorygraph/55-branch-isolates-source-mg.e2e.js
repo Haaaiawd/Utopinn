@@ -45,11 +45,11 @@ let server, mock, sourceImportPath, branchImportPath;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina folds the chart and meets your eyes.* "The lantern will hold another hour."',
+            '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold another hour."',
             '*She traces a line on the chart with one knuckle.* "Three breakers north of the gull rocks."',
-            '*Seraphina exhales slowly.* "The drifters know that channel better than we do."',
+            '*我没想当掌门啊 exhales slowly.* "The drifters know that channel better than we do."',
             '*She turns to the rail, spyglass raised.* "Hold. Don\'t speak for a moment."',
-            '*Seraphina nods once.* "Then it is decided. We wait."',
+            '*我没想当掌门啊 nods once.* "Then it is decided. We wait."',
             // Reply for the branched chat (which forks off after an
             // earlier turn).
             '*Ash takes a breath, considering the alternate path.* "Chart toward the headland instead — the reef gives a different account from that angle."',
@@ -93,9 +93,9 @@ test.beforeAll(async () => {
             },
             n_3: {
                 id: 'n_3', type: 'character_sheet', level: 'semantic',
-                title: 'SOURCE-S3 Seraphina latest', parentId: '', childrenIds: [],
+                title: 'SOURCE-S3 我没想当掌门啊 latest', parentId: '', childrenIds: [],
                 fields: {
-                    title: 'SOURCE-S3 Seraphina latest',
+                    title: 'SOURCE-S3 我没想当掌门啊 latest',
                     identity: 'Bryn 断崖的常驻海图官；本夜后段决定按兵不动等待天明。',
                     traits: '冷静、寡言、对夜风极敏感；今夜情绪偏沉重。',
                 },
@@ -162,7 +162,7 @@ test.describe('#55 — Branch chat keeps source MG intact (real branch UI)', () 
 
     test('5 turns + sentinels → branch via UI → branch sees its own sentinel, not source late sentinels', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckbox(page);
 
         await page.waitForFunction(() => {
@@ -197,7 +197,7 @@ test.describe('#55 — Branch chat keeps source MG intact (real branch UI)', () 
         expect(sourceSnapshot.sourceTitles).toEqual([
             'SOURCE-S1 cliff lantern keeper',
             'SOURCE-S2 reef sentinel',
-            'SOURCE-S3 Seraphina latest',
+            'SOURCE-S3 我没想当掌门啊 latest',
         ]);
 
         // The Extensions drawer is still open from enableMgViaCheckbox +

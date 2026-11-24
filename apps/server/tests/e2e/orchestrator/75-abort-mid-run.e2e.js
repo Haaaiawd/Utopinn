@@ -48,7 +48,7 @@ test.describe('#75 — Abort mid-run', () => {
         const page = await browser.newPage();
         try {
             await awaitMainUI(page, slowServer.baseURL);
-            await selectCharacterByName(page, 'Seraphina');
+            await selectCharacterByName(page, '我没想当掌门啊');
             await installMinimalDirectorProfile(page, {
                 mainSystemPrompt: 'Test director.',
                 subAgents: [

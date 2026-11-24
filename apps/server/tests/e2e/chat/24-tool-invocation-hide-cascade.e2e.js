@@ -80,7 +80,7 @@ test.describe('tool-invocation hide cascade', () => {
     test.beforeAll(async ({ browser }) => {
         page = await browser.newPage();
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();
             return Array.isArray(ctx.chat) && ctx.chat.length >= 1;

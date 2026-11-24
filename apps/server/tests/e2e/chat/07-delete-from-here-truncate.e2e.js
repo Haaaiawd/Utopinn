@@ -60,10 +60,10 @@ async function deleteMessageViaUI(page, mesid) {
 }
 
 const REPLIES = [
-    '*Seraphina nods.* "Reply A — keep going."',
-    '*Seraphina taps the chart.* "Reply B — and now the second line."',
-    '*Seraphina exhales.* "Reply C — the third question is the right one."',
-    '*Seraphina smiles wryly.* "Reply D — we have run out of charts."',
+    '*我没想当掌门啊 nods.* "Reply A — keep going."',
+    '*我没想当掌门啊 taps the chart.* "Reply B — and now the second line."',
+    '*我没想当掌门啊 exhales.* "Reply C — the third question is the right one."',
+    '*我没想当掌门啊 smiles wryly.* "Reply D — we have run out of charts."',
 ];
 
 let server, mock;
@@ -84,7 +84,7 @@ test.afterAll(async () => {
 test.describe('#7 — delete-from-here truncate', () => {
     test('deleting turn-2 onward via pencil leaves only turn-1 after restart', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 10_000 }).catch(() => {});
 
         await sendMessageAndAwaitReply(page, 'Turn 1 user: walk me through the eastern stretch.');
@@ -123,7 +123,7 @@ test.describe('#7 — delete-from-here truncate', () => {
 
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await page.waitForFunction(() => document.querySelectorAll('#chat .mes').length >= 1, { timeout: 15_000 });
 
         // Post-restart: same DOM state.

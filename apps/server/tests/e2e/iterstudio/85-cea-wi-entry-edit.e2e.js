@@ -12,7 +12,7 @@
 // as Apply failing to mutate the on-disk world book.
 
 import { test, expect } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
 import { startMockLLM } from '../_lib/mockLLM.js';
@@ -23,8 +23,8 @@ import { normalizeIterStudioSettings } from '../preset/_helpers.js';
 
 let server, mock;
 
-const BOOK_NAME = 'Eldoria';
-const NEW_CONTENT = '*The Eldoria wood is older than the kingdoms it shadows.* '
+const BOOK_NAME = '太玄录';
+const NEW_CONTENT = '*The Taixuan stacks are older than the sects that guard them.* '
     + 'Reef-rusted lantern brackets line every path where the canopy thins enough for a survey crew to camp. '
     + 'When the wind moves through the high beeches, the chart-bearers say it sounds like a tide.';
 const TARGET_UID = 0;
@@ -33,9 +33,36 @@ function worldsJsonPath(dataRoot, bookName) {
     return resolve(dataRoot, 'default-user', 'worlds', `${bookName}.json`);
 }
 
-function readEldoriaEntry(dataRoot, uid) {
+function readBookEntry(dataRoot, uid) {
     const raw = JSON.parse(readFileSync(worldsJsonPath(dataRoot, BOOK_NAME), 'utf8'));
     return raw?.entries?.[String(uid)] || null;
+}
+
+// The test used to lean on the shipped Eldoria seed book; the seed swap
+// replaced that card, so the suite now writes its own minimal book.
+function writeFixtureBook(dataRoot) {
+    const dir = resolve(dataRoot, 'default-user', 'worlds');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(worldsJsonPath(dataRoot, BOOK_NAME), JSON.stringify({
+        entries: {
+            '0': {
+                uid: 0,
+                key: ['taixuan', 'stacks', 'scroll'],
+                keysecondary: [],
+                comment: 'taixuan',
+                content: '*A survey of the Taixuan stacks, shelved under the east eaves.*',
+                constant: false, selective: true, order: 100, position: 0,
+                disable: false, displayIndex: 0, addMemo: true,
+                group: '', groupOverride: false, groupWeight: 100,
+                sticky: 0, cooldown: 0, delay: 0, probability: 100, depth: 4,
+                useProbability: true, role: null, vectorized: false,
+                excludeRecursion: false, preventRecursion: false,
+                delayUntilRecursion: false, scanDepth: null,
+                caseSensitive: null, matchWholeWords: null,
+                useGroupScoring: null, automationId: '',
+            },
+        },
+    }, null, 4));
 }
 
 test.beforeAll(async () => {
@@ -49,6 +76,7 @@ test.beforeAll(async () => {
     bootstrapCustomBackend({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     appendConnectionProfile({ dataRoot: server.dataRoot, baseURL: mock.baseURL });
     normalizeIterStudioSettings(server.dataRoot);
+    writeFixtureBook(server.dataRoot);
 });
 
 test.afterAll(async () => {
@@ -57,13 +85,13 @@ test.afterAll(async () => {
 });
 
 test.describe('#85 — CEA character iter-studio WI entry edit → persists across restart (real UI)', () => {
-    test('Apply rewrites Eldoria entry uid=0 content via real Apply button click', async ({ page }) => {
+    test('Apply rewrites 太玄录 entry uid=0 content via real Apply button click', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
-        // Baseline: the seeded entry's content does NOT yet contain the
+        // Baseline: the fixture entry's content does NOT yet contain the
         // reef-survey wording — confirms the assertion below is not a tautology.
-        const beforeContent = readEldoriaEntry(server.dataRoot, TARGET_UID)?.content || '';
+        const beforeContent = readBookEntry(server.dataRoot, TARGET_UID)?.content || '';
         expect(beforeContent).not.toContain('reef-rusted lantern brackets');
 
         // Open CEA editor iter-studio popup.
@@ -86,7 +114,7 @@ test.describe('#85 — CEA character iter-studio WI entry edit → persists acro
 
         // Disk-side: world book file rewritten with new content.
         await expect.poll(() => {
-            const e = readEldoriaEntry(server.dataRoot, TARGET_UID);
+            const e = readBookEntry(server.dataRoot, TARGET_UID);
             return e?.content || '';
         }, { timeout: 10_000 }).toBe(NEW_CONTENT);
 
@@ -94,7 +122,7 @@ test.describe('#85 — CEA character iter-studio WI entry edit → persists acro
         await server.restart();
         await reloadAndAwait(page, server.baseURL);
 
-        const afterRestart = readEldoriaEntry(server.dataRoot, TARGET_UID);
+        const afterRestart = readBookEntry(server.dataRoot, TARGET_UID);
         expect(afterRestart).toBeTruthy();
         expect(afterRestart.content).toBe(NEW_CONTENT);
     });

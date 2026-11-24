@@ -42,9 +42,9 @@ let server, mock, importPath;
 test.beforeAll(async () => {
     mock = await startMockLLM({
         scriptedReplies: [
-            '*Seraphina folds the chart and meets your eyes.* "The lantern will hold."',
+            '*我没想当掌门啊 folds the chart and meets your eyes.* "The lantern will hold."',
             '*She traces a line on the chart.* "North of the gull rocks."',
-            '*Seraphina exhales slowly.* "The drifters know the channel."',
+            '*我没想当掌门啊 exhales slowly.* "The drifters know the channel."',
         ],
     });
     server = await startServer({ batchKey: 'memorygraph', scenarioId: 'read-api-search' });
@@ -63,12 +63,12 @@ test.beforeAll(async () => {
             title, parentId: '', childrenIds: [], fields, seqTo: i,
         };
     };
-    add(1, 'event', 'Summary 1', { summary: '时间：黄昏；user 与 Seraphina 在 Bryn 断崖点亮信号灯；夜风偏南。' });
+    add(1, 'event', 'Summary 1', { summary: '时间：黄昏；user 与 我没想当掌门啊 在 Bryn 断崖点亮信号灯；夜风偏南。' });
     add(2, 'event', 'Summary 2', { summary: '时间：第一夜中段；礁石回响变得迟缓；标记可能的涌动征兆。' });
     add(3, 'event', 'Summary 3', { summary: '时间：第二夜；user 在海图官小屋外看到三艘盐礁漂泊者的轻舟。' });
     add(4, 'event', 'Summary 4', { summary: '时间：第三幕；user 决定推迟换岗；保留断崖夜哨直至天明。' });
-    add(5, 'character_sheet', 'Seraphina', {
-        title: 'Seraphina',
+    add(5, 'character_sheet', '我没想当掌门啊', {
+        title: '我没想当掌门啊',
         aliases: '海图官 Sera; 灯塔守备',
         identity: 'Bryn 断崖的常驻海图官；前盐礁灯塔守备。',
         traits: '冷静、寡言、对夜风极敏感。',
@@ -88,7 +88,7 @@ test.beforeAll(async () => {
     add(8, 'location_state', 'Bryn headland watchpost', {
         title: 'Bryn headland watchpost',
         aliases: '断崖夜哨点',
-        controller: 'Seraphina',
+        controller: '我没想当掌门啊',
         state: '夜间执勤；信号灯刚修剪过；备用油壶在手边。',
         resources: '黄铜望远镜、备用油壶、潮汐图。',
     });
@@ -154,7 +154,7 @@ test.describe('#59 — MG seeded corpus surfaces in real recall flow (real send)
 
     test('after import, sending a real user turn drives recall that surfaces the seeded nodes', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
         await enableMgViaCheckboxes(page);
 
         // 1 turn so MG has a chat tail; then import the corpus.
@@ -178,7 +178,7 @@ test.describe('#59 — MG seeded corpus surfaces in real recall flow (real send)
         // to "Summary N" by MG conventions.
         const titles = visible.map(v => v.title).sort();
         expect(titles).toEqual(expect.arrayContaining([
-            'Seraphina',
+            '我没想当掌门啊',
             'Maren the boatwright',
             'Oleas the keeper',
             'Bryn headland watchpost',
@@ -194,7 +194,7 @@ test.describe('#59 — MG seeded corpus surfaces in real recall flow (real send)
             const items = session ? session.listVisibleCandidates({ types: ['character_sheet'] }) : [];
             return items.map(n => n.title).sort();
         });
-        expect(characters).toEqual(['Maren the boatwright', 'Oleas the keeper', 'Seraphina']);
+        expect(characters).toEqual(['Maren the boatwright', 'Oleas the keeper', '我没想当掌门啊']);
 
         // Sanity check: keyword search hits an aliased character.
         const kwHits = await page.evaluate(async () => {

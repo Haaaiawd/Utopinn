@@ -105,7 +105,7 @@ test.describe('Skills RP demo (manual user path)', () => {
         }, null, { timeout: 30000 });
         await takeDocScreenshot(page, stepPath(2, 'api-claude-connected'), { fullPage: false });
 
-        // ── Step 3: select Seraphina from the right-side character list.
+        // ── Step 3: select 我没想当掌门啊 from the right-side character list.
         // Close the API drawer first so the character panel comes back into
         // focus naturally — real user behavior.
         await page.locator('#sys-settings-button .drawer-toggle').first().click();
@@ -123,17 +123,17 @@ test.describe('Skills RP demo (manual user path)', () => {
             await page.locator('#rm_print_characters_block').waitFor({ state: 'visible', timeout: 10000 });
         }
         // The character list is rendered into #rm_print_characters_block. The
-        // bundled Seraphina is rendered as a tile with her name. Click it.
-        const seraphinaTile = page.locator(
-            '.character_select:has-text("Seraphina"), .character_select[chid] >> text=Seraphina',
+        // bundled 我没想当掌门啊 is rendered as a tile with her name. Click it.
+        const zhangmenTile = page.locator(
+            '.character_select:has-text("我没想当掌门啊"), .character_select[chid] >> text=我没想当掌门啊',
         ).first();
-        await seraphinaTile.waitFor({ state: 'visible', timeout: 10000 });
-        await seraphinaTile.click();
+        await zhangmenTile.waitFor({ state: 'visible', timeout: 10000 });
+        await zhangmenTile.click();
         // Wait for ctx.characterId to flip — read-only assertion.
         await page.waitForFunction(() => {
             const ctx = window.Luker?.getContext?.();
             return ctx?.characterId !== null && ctx?.characterId !== undefined
-                && ctx.characters?.[ctx.characterId]?.name === 'Seraphina';
+                && ctx.characters?.[ctx.characterId]?.name === '我没想当掌门啊';
         }, null, { timeout: 15000 });
         // Close the right-nav drawer — its #HotSwapWrapper overlay would
         // otherwise intercept pointer events for the next step's clicks on
@@ -152,7 +152,7 @@ test.describe('Skills RP demo (manual user path)', () => {
                 return h && h.classList.contains('closedDrawer');
             }, null, { timeout: 5000 });
         }
-        await takeDocScreenshot(page, stepPath(3, 'seraphina-loaded'), { fullPage: false });
+        await takeDocScreenshot(page, stepPath(3, 'zhangmen-loaded'), { fullPage: false });
 
         // ── Step 4: open Extensions drawer → Orchestrator inline-drawer →
         //           click "Manage skills..."

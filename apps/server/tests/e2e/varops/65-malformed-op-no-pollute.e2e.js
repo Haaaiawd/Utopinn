@@ -32,7 +32,7 @@ let server, mock;
 
 // Turn 1: a VALID setvar followed by a MALFORMED setvar with a forbidden path.
 const REPLY_TURN_1 = [
-    '*Seraphina leans over the chart, marking the slate.* ',
+    '*我没想当掌门啊 leans over the chart, marking the slate.* ',
     '{{setvar::wind::northerly}}',
     ' "Tonight the wind is northerly." ',
     // Forbidden segment — parsePathSegments returns [] → applyPathOp logs a
@@ -42,7 +42,7 @@ const REPLY_TURN_1 = [
 ].join('');
 
 const REPLY_TURN_2 = [
-    '*Seraphina sets the spyglass aside.* ',
+    '*我没想当掌门啊 sets the spyglass aside.* ',
     '{{setvar::watch_state::trimmed}}',
     ' "Lantern is trimmed; the wick will hold the next bell."',
 ].join('');
@@ -63,7 +63,7 @@ test.afterAll(async () => {
 test.describe('#65 — var_ops failure does NOT pollute next turn (rendered panel)', () => {
     test('malformed forbidden-path op is no-op; valid sibling lands; next turn starts clean', async ({ page }) => {
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await page.waitForFunction(() => {
             const ctx = window.Luker.getContext();

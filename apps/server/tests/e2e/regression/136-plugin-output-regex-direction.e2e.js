@@ -71,7 +71,7 @@ test.describe('#136 — plugin output-direction regex', () => {
     test('cooks the assistant text a plugin request returns before the parent sees it', async ({ page }) => {
         test.setTimeout(180_000);
         await awaitMainUI(page, server.baseURL);
-        await selectCharacterByName(page, 'Seraphina');
+        await selectCharacterByName(page, '我没想当掌门啊');
 
         await installMinimalDirectorProfile(page, {
             mainSystemPrompt: 'You are the test director. Use write_message, dispatch_subagent, await_subagents, finalize.',

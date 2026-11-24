@@ -84,7 +84,7 @@ for (const [source, receiver] of [['sqlite', 'mysql'], ['mysql', 'postgres'], ['
         await openLanSyncPanel(a.page); await addS3Backend(a.page, options); await waitForBackendSync(a.page, { label: 'Cloud' });
         await addS3Backend(b.page, options); await waitForBackendSync(b.page, { label: 'Cloud' });
         for (const d of [a, b]) await closeAllPopups(d.page);
-        const originals = ['chats/Seraphina/Forest Path.jsonl', 'group chats/gc1.jsonl'];
+        const originals = ['chats/我没想当掌门啊/Forest Path.jsonl', 'group chats/gc1.jsonl'];
         for (const d of [a, b]) await assertCompanions(d.page, originals, { drift });
         await createReadyWorldBook(a.page, 'SQL Bridge Grove');
         await addWorldEntry(a.page, { key: 'sql', content: `${source} writes through the DOM` });
@@ -136,7 +136,7 @@ for (const [source, receiver] of [['sqlite', 'mysql'], ['mysql', 'postgres'], ['
         for (const d of [a, b]) {
             await assertCompanions(d.page, [...originals, ...forks], { mounted: true, drift });
             await assertCommittedCompanions(d, [...originals, ...forks], { drift });
-            await assertCompanions(d.page, ['chats/Seraphina/River Ford.jsonl'], { drift });
+            await assertCompanions(d.page, ['chats/我没想当掌门啊/River Ford.jsonl'], { drift });
             await assertCompanionHistory(d, originals, drift ? LEGACY_DRIFT : COMPANIONS.memory_graph);
             for (const [rel, expected] of expectedChats) expect(await readChat(d.page, rel)).toEqual(expected);
             const groups = await readChatData(d.page, '/api/groups/all', {});
@@ -145,7 +145,7 @@ for (const [source, receiver] of [['sqlite', 'mysql'], ['mysql', 'postgres'], ['
             await d.server.restart(); await reloadS3Page(d.page); await manual(d);
             await assertCompanions(d.page, [...originals, ...forks], { mounted: true, drift });
             await assertCommittedCompanions(d, [...originals, ...forks], { drift });
-            await assertCompanions(d.page, ['chats/Seraphina/River Ford.jsonl'], { drift });
+            await assertCompanions(d.page, ['chats/我没想当掌门啊/River Ford.jsonl'], { drift });
             await assertCompanionHistory(d, originals, drift ? LEGACY_DRIFT : COMPANIONS.memory_graph);
             for (const [rel, expected] of expectedChats) expect(await readChat(d.page, rel)).toEqual(expected);
             expect((await readChatData(d.page, '/api/groups/all', {})).find(g => g.id === 'g1').chats).toEqual(['gc1', groupFork]);
@@ -155,7 +155,7 @@ for (const [source, receiver] of [['sqlite', 'mysql'], ['mysql', 'postgres'], ['
         await manual(b); await manual(a);
         for (const d of [a, b]) { await reloadS3Page(d.page); await waitForStatusChecks(d.page); await expect(syncPopup(d.page)).toHaveCount(0); }
         if (drift) {
-            const restored = ['chats/Seraphina/River Ford.jsonl', 'group chats/gc1.jsonl'];
+            const restored = ['chats/我没想当掌门啊/River Ford.jsonl', 'group chats/gc1.jsonl'];
             const restoredChats = new Map();
             for (const rel of restored) {
                 for (const d of [a, b]) {
@@ -214,8 +214,8 @@ for (const [source, receiver] of [['sqlite', 'mysql'], ['mysql', 'postgres'], ['
                     initialized: performance.getEntriesByName('[init] complete').length,
                     toasts: [...document.querySelectorAll('.toast-message')].map(element => element.textContent) };
             }),
-            stored: await readChat(d.page, 'chats/Seraphina/River Ford.jsonl'),
-            search: await readChatData(d.page, '/api/chats/search', { avatar_url: 'Seraphina.png', group_id: null, query: '' }),
+            stored: await readChat(d.page, 'chats/我没想当掌门啊/River Ford.jsonl'),
+            search: await readChatData(d.page, '/api/chats/search', { avatar_url: '我没想当掌门啊.png', group_id: null, query: '' }),
         })));
         fs.writeFileSync(testInfo.outputPath('selection-failure.json'), JSON.stringify(observations.map(result => result.status === 'fulfilled'
             ? { status: result.status, value: result.value } : { status: result.status, error: result.reason.stack }), null, 2));
