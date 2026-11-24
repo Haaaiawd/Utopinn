@@ -48,7 +48,9 @@ import {
     readCharacterStateMerged,
     resolveCharacterFileMerged,
 } from '../services/shared-library.js';
-import { isCharacterStateSidecarFileName } from '../services/character-state.js';
+import { isCharacterStateSidecarFileName, deleteAllCharacterStateSidecars } from '../services/character-state.js';
+import { readCharacterFolderName, isCharacterFolderNameShared } from '../character-assets.js';
+import { deleteCardAppFiles } from '../endpoints/card-app.js';
 import { checkUserStorageQuota } from '../users.js';
 import { emit as diagEmit } from '../services/diag-bus.js';
 import { buildGreetingFloor, buildGroupGreetingFloors, isEmptySystemSeedFloor, resolveGreetingName1 } from '../services/greeting-seed.js';
@@ -82,6 +84,7 @@ import {
     isChatStatePatchConflictError,
     isJsonPatchValidationError,
     deleteRecentChatIndexEntry,
+    deleteRecentChatIndexEntriesUnderDirectory,
     deleteAllChatStateSidecars,
     // recent-chats 读面:/chats/recent 与 legacy /api/chats/recent 同一索引与排序源。
     ensureRecentChatIndex,
@@ -1587,6 +1590,78 @@ export function apply(ctx) {
             return response.send(body);
         } catch (error) {
             return sendError(response, error, 'utopinn/characters patch');
+        }
+    });
+
+    /**
+     * DELETE /characters/:charDir —— 删卡(legacy /api/characters/delete 语义)。
+     *
+     * body: { delete_chats?: boolean } —— true 连带该角色全部会话
+     *   (repo.deleteAllForCharacter + chats/<dir>/ 目录 + recent 索引)。
+     *
+     * 级联与 legacy 同序:卡 state 侧车 → 卡文件 → 缩略图失效 →
+     *   名片资产夹(characters/<name>/ 与 userImages/<name>/;他卡解析到同名
+     *   夹时跳过防误删)→ 会话(可选)→ CardApp 抽取文件。
+     *   共享池卡只读 → 403(池是实例级资产;先 install 成私有副本再删)。
+     *   私有同名遮蔽共享卡时只删私有层 —— 遮蔽解除,共享条目重新露出。
+     */
+    regPost(`${P}/characters/:charDir`, 'DELETE', async function (request, response) {
+        try {
+            const charDir = safeName(request.params.charDir, 'charDir');
+            const { card, source, shared } = await loadCharacterDocMerged(request.user.directories, charDir);
+            if (!card || !source) {
+                return response.status(404).send({ error: `Character not found: ${charDir}` });
+            }
+            if (shared) {
+                return response.status(403).send({ error: 'Shared library cards are read-only; install a private copy first.' });
+            }
+
+            assertWritable();
+            const avatarPath = source.filePath;
+            // 在卡文件摘链前先解析名片资产夹名 —— 夹按 display name 落盘,
+            // 不随 avatar 文件名走(legacy 同序)。
+            const ownedFolderName = await readCharacterFolderName(avatarPath);
+
+            deleteAllCharacterStateSidecars(avatarPath);
+            fs.unlinkSync(avatarPath);
+            invalidateThumbnail(request.user.directories, 'avatar', path.basename(avatarPath));
+
+            if (ownedFolderName) {
+                const sharedName = await isCharacterFolderNameShared(
+                    request.user.directories.characters,
+                    ownedFolderName,
+                    { excludeAvatars: [path.basename(avatarPath)] },
+                );
+                if (sharedName) {
+                    console.warn(`Skipping asset cascade for "${ownedFolderName}": another card resolves to the same folder name.`);
+                } else {
+                    for (const ownedDir of [
+                        path.join(request.user.directories.characters, ownedFolderName),
+                        path.join(request.user.directories.userImages, ownedFolderName),
+                    ]) {
+                        try {
+                            await fs.promises.rm(ownedDir, { recursive: true, force: true });
+                        } catch (error) {
+                            console.warn('Failed to delete character-owned assets:', ownedDir, error);
+                        }
+                    }
+                }
+            }
+
+            if (request.body?.delete_chats === true) {
+                const handle = request.user.profile.handle;
+                const removedChatsDir = path.join(request.user.directories.chats, sanitize(charDir));
+                await getChatRepo().deleteAllForCharacter(handle, charDir);
+                await fs.promises.rm(removedChatsDir, { recursive: true, force: true });
+                await deleteRecentChatIndexEntriesUnderDirectory(request, removedChatsDir);
+            }
+
+            // CardApp 抽取文件随卡走(charDir 即干名,与 legacy dir_name 同形)。
+            deleteCardAppFiles(charDir, request.user.directories.cardApps);
+
+            return response.sendStatus(204);
+        } catch (error) {
+            return sendError(response, error, 'utopinn/characters delete');
         }
     });
 
