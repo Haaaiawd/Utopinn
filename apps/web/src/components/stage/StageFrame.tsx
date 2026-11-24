@@ -46,17 +46,8 @@ import {
     type SlashGroupKey, type SlashNav, type SlashNavRow, type SlashPrefs,
 } from './slash';
 
-import {
-    MOCK_IMPERSONATE_DRAFT, MOCK_MESSAGES, MOCK_REPLY_CHAT, MOCK_REPLY_IM,
-    MOCK_REPLY_NOVEL, MOCK_REPLY_VN,
-} from '../../api/mock';
 import { diagTraceParams } from '../panels/DiagPanel';
 import type { ChatSummary, StageKind } from '../../types';
-
-let mockMid = 100;
-const mkMock = (role: 'user' | 'assistant', content: string, streaming = false, userName = 'User'): FloorMsg => ({
-    id: ++mockMid, role, name: role === 'user' ? userName : '云栖宗 · 陈修线', content, streaming, timestamp: Date.now(),
-});
 
 /** 卡头像兜底链:真图 404 → 内置卡面轮换(data-cover-key 稳定键定面)→ 终降固定卡面(black-cat)。
  *  首图即卡面也挂时跳过同 URL 重试,直落终降。 */
@@ -981,7 +972,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const { t } = useI18n();
     const s = useShell();
     const stageKind: StageKind = s.chat?.stage ?? 'chat';
-    const [msgs, setMsgs] = useState<FloorMsg[]>(MOCK_MESSAGES);
+    const [msgs, setMsgs] = useState<FloorMsg[]>([]);
     const [draft, setDraft] = useState('');
     const [busy, setBusy] = useState(false);
     const [job, setJob] = useState<{ id: string; type: GenerateVerb; floorId: number } | null>(null);
@@ -1136,8 +1127,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 });
             return () => { dead = true; };
         }
-        /* live 无会话 → 空楼层(选会话空态);离线/mock 路 → mock 种子。 */
-        setMsgs(s.live ? [] : MOCK_MESSAGES);
+        /* live 无会话 → 空楼层(选会话空态);离线 → 同样空楼层,
+           mock 楼层种子已撤(假数据令:离线不编台词,发送被 status.stub 拦下)。 */
+        setMsgs([]);
         s.setChatBgLock(null);
         setQrNames([]); setQrSel(''); setQrDoc(null);
         setQrSettings(null); setQrChatCfg(null); setQrPick(false);
@@ -1285,41 +1277,8 @@ export function StageFrame({ children }: { children: ReactNode }) {
         s.setPanelParams('mvu', { rev: Date.now() });
     }, [s]);
 
-    const pushReply = (content: string) => setMsgs((prev) => [...prev, mkMock('assistant', content)]);
     const pushErrorFloor = (error: FloorMsg['error']) =>
         setMsgs((prev) => [...prev, { id: --transientRef.current, role: 'assistant', name: '', content: '', timestamp: Date.now(), error }]);
-
-    /* ——— 规范稿 sendText 的 stage 分支:mock 路把文本/回文送回形态数据。
-     *     novel/theater 现以楼层轨优先渲染 —— mock 回文落成楼层,
-     *     章目录/对话框经推导自然更新;落进 stageData 种子会进不可见轨。 ——— */
-    const mockStagePush = useCallback((kind: StageKind, text: string) => {
-        if (kind === 'messenger') {
-            s.patchStageData({
-                channels: s.stageData.channels.map((c) => c.id === s.stageData.activeChannel
-                    ? { ...c, msgs: [...c.msgs, { sender: s.persona?.name ?? s.currentUser?.name ?? 'User', self: true, time: '刚刚', text }] }
-                    : c),
-            });
-            return;
-        }
-        /* novel 的 user 楼渲成段间「指挥」注记,theater 渲成玩家台词楼。 */
-        setMsgs((prev) => [...prev, mkMock('user', text, false, s.persona?.name ?? s.currentUser?.name ?? 'User')]);
-    }, [s]);
-
-    const mockStageReply = useCallback((kind: StageKind, reply: string) => {
-        if (kind === 'messenger') {
-            s.patchStageData({
-                channels: s.stageData.channels.map((c) => c.id === s.stageData.activeChannel
-                    ? { ...c, msgs: [...c.msgs, { sender: c.members[0]?.name ?? '群成员', self: false, time: '刚刚', text: reply }] }
-                    : c),
-            });
-            return;
-        }
-        /* chat/novel/theater 统一回楼层:章目录按推导重分段,theater 末楼换台词。 */
-        pushReply(reply);
-    }, [s]);
-
-    const mockReplyFor = (kind: StageKind) =>
-        kind === 'novel' ? MOCK_REPLY_NOVEL : kind === 'messenger' ? MOCK_REPLY_IM : kind === 'theater' ? MOCK_REPLY_VN : MOCK_REPLY_CHAT;
 
     /* ——— 群生成(TASK-062)———
      *   选员恒在服务端(groupId 入参 → 纯函数编排);本层只透传 member 强指、
@@ -1824,12 +1783,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
             void runScript(v);
             return;
         }
-        if (!s.live || !s.chat) {
-            mockStagePush(stageKind, v);
-            setBusy(true);
-            setTimeout(() => { mockStageReply(stageKind, mockReplyFor(stageKind)); setBusy(false); }, 600);
-            return;
-        }
+        /* messenger 频道面无服务端数据源(未提供)—— 发送一律明说,
+           不暗落看不见的楼层;其余形态离线由 status.stub 拦下(不编回文)。 */
+        if (stageKind === 'messenger') { s.hint(t('panel.feature.unavailable')); return; }
+        if (!s.live || !s.chat) { s.hint(t('status.stub')); return; }
         const chat = s.chat;
         const senderName = s.persona?.name || s.currentUser?.name || s.currentUser?.handle || 'User';
         const uid = transientRef.current - 1;
@@ -1848,7 +1805,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setBusy(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [busy, offline, s, runGenerate, runScript, t, stageKind, mockStagePush, mockStageReply, slashPrefs.enabled]);
+    }, [busy, offline, s, runGenerate, runScript, t, stageKind, slashPrefs.enabled]);
 
     /* ——— 中止:POST /api/utopinn/jobs/:id/abort(走 api/jobs.ts 面;
      *     服务端中止后 WS 未必回终帧 → settleRef 本地兜底 + 关 socket) ——— */
@@ -2042,20 +1999,16 @@ export function StageFrame({ children }: { children: ReactNode }) {
         setPendingCmd(null);
         /* 菜单执行类快捷项落地时,`/`-前缀的半截脚本草稿作废(用户已选动作)。 */
         setDraft((d) => (d.startsWith('/') ? '' : d));
-        if (!s.live || !s.chat) {
-            if (key === 'impersonate') { setDraft(MOCK_IMPERSONATE_DRAFT); return; }
-            if (key === 'mvu') { s.hint(t('status.stub')); return; }
-            setBusy(true);
-            setTimeout(() => { mockStageReply(stageKind, mockReplyFor(stageKind)); setBusy(false); }, 500);
-            return;
-        }
+        /* 与 sendText 同闸:messenger 永说未提供;离线/无会话一律 stub 提示。 */
+        if (stageKind === 'messenger') { s.hint(t('panel.feature.unavailable')); return; }
+        if (!s.live || !s.chat) { s.hint(t('status.stub')); return; }
         if (busy) return;
         if (key === 'continue') void runGenerate('continue');
         else if (key === 'regen') void runGenerate('regenerate');
         else if (key === 'impersonate') void runGenerate('impersonate');
         else if (key === 'mvu') void onMvuSync();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [s, busy, runGenerate, onMvuSync, t, stageKind, mockStageReply]);
+    }, [s, busy, runGenerate, onMvuSync, t, stageKind]);
 
     /* ——— 斜杠偏好写面(localStorage utopinn.slash.*)——— */
     const mutSlashPrefs = useCallback((fn: (p: SlashPrefs) => SlashPrefs) => {

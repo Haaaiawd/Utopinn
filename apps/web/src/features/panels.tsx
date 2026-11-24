@@ -34,10 +34,10 @@ export const panelsFeature: Feature = {
         add({ type: 'stats', icon: 'compass', wired: true, Body: StatsPanel, desc: 'panel.desc.stats', badge: 'stats', category: 'system' });
         /* chapters —— 真接线:楼层推导目录(lib/novelToc 同源 NovelBody)。 */
         add({ type: 'chapters', icon: 'listNumbers', wired: true, Body: ChaptersPanel, desc: 'panel.desc.chapters', category: 'system' });
-        /* channels —— 服务端无此面,纯 mock 规范稿资产:组件保留(messenger
-         *  面落地复用),category:'hidden' 摘出 launcher/cmdk 目录(部署版
-         *  不见入口),条目仍可经代码 openPanel 打开;wired:false 照实留。 */
-        add({ type: 'channels', icon: 'messages', wired: false, Body: ChannelsPanel, desc: 'panel.desc.channels', badge: 'panel.badge.unwired', category: 'hidden' });
+        /* channels —— 服务端无此面:Body =「未提供」空态(假列表已废),
+         *  category:'hidden' 摘出 launcher/cmdk 目录(部署版不见入口),
+         *  条目仍可经代码 openPanel 打开;wired:false 照实留。 */
+        add({ type: 'channels', icon: 'messages', wired: false, Body: ChannelsPanel, desc: 'panel.desc.channels', category: 'hidden' });
         add({ type: 'notes', icon: 'note', wired: true, Body: NotesPanel, desc: 'panel.desc.notes', category: 'system' });
         /* preset 为规范稿目录外的真实有线面板,殿后不扰动前 7 格序。 */
         add({ type: 'preset', icon: 'sliders', wired: true, Body: PresetPanel, desc: 'panel.desc.preset', category: 'system' });

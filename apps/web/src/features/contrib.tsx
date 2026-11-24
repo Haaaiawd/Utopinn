@@ -8,21 +8,20 @@
 //  对账规则(目前只收编 panel.type 槽;其余槽的贡献要真组件,线形 JSON
 //  声明给不了 Body —— 远端声明面落到那些槽时再来扩):
 //    · 服务端 live 声明带 wired:true 而本地 wired:false → 原位纠正为 true:
-//      整段 dispose 后按原序重注册,保 launcher 网格序;「待服务端面」
-//      badge 随翻转摘成服务端给的徽标/不留;
+//      整段 dispose 后按原序重注册,保 launcher 网格序;
 //    · desc/badge/category/title 只补本地缺省,不覆写 —— 本地文案词是
 //      前端资产,服务端给的是归属映射不是第二套词;
-//    · 服务端声明了、本地完全没注册的类型 → 注册占位条目(wired:false +
-//      unwired badge + 通用占位 Body —— 就算服务端标 wired:true,占位体
-//      本身没接线,照实标);icon/desc/category/title 吃服务端值,icon 不在
-//      本地词表兜 'puzzle',category 兜 'suggested'(三方贡献逃生位);
+//    · 服务端声明了、本地完全没注册的类型 → 注册占位条目:wired:false +
+//      category:'hidden'(没有本地 Body 的类型点不出真面,不进可点网格/
+//      cmdk;代码 openPanel 可达时 Body 给「未提供」空态 —— 功能缺席只有
+//      真实现与明说空态两形,不渲示例数据);icon/desc/title 吃服务端值,
+//      icon 不在本地词表兜 'puzzle';
 //    · 服务端没声明的本地类型 → 原样保留(BUILTIN_CONTRIB 合并在服务端做,
 //      前端不二次发明);
 //    · disabled:true 的声明不参与 wired 升级(插件已停,后端面没活着),
-//      但仍算「声明过」:本地没有的类型照样给占位 —— 「声明在、面没接」
-//      正是 unwired 语义。本地已 wired 的类型其提供方被停用,本层不做
-//      降级对账 —— 启停是运行时事件,归插件管理面/诊断面呈现,面板自身
-//      的错误/空态兜底。
+//      但仍算「声明过」:本地没有的类型照样给占位。本地已 wired 的类型
+//      其提供方被停用,本层不做降级对账 —— 启停是运行时事件,归插件管理
+//      面/诊断面呈现,面板自身的错误/空态兜底。
 //
 //  失败降级:fetch 失败/超时/非 2xx → null 返回,静态旗标原样生效
 //  (它们本来就是离线真值);console.warn 一次,不重试不刷屏。
@@ -41,8 +40,6 @@ export interface RegisteredPanel {
     dispose: Disposer;
 }
 
-const UNWIRED_BADGE = 'panel.badge.unwired';
-
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
 const asCategory = (v: unknown): PanelTypeContribution['category'] | undefined =>
@@ -52,11 +49,11 @@ const asCategory = (v: unknown): PanelTypeContribution['category'] | undefined =
 const asIcon = (v: unknown, fallback: IconName): IconName =>
     typeof v === 'string' && ICON_NAMES.has(v) ? (v as IconName) : fallback;
 
-/** 服务端声明、本地无体的占位板块:图标盒 + 类型名 + unwired 诚实注。 */
+/** 服务端声明、本地无体的占位板块:类型名 + 「未提供」明说空态,不装假。 */
 function makeStubBody(type: string, icon: IconName): ComponentType {
     return function ContribStubBody() {
         const { t } = useI18n();
-        return <PanelEmpty icon={icon} desc={t('panel.unwired.note')}>{t(`panel.type.${type}`)}</PanelEmpty>;
+        return <PanelEmpty icon={icon} desc={t('panel.feature.unavailableDesc')}>{t(`panel.type.${type}`)}</PanelEmpty>;
     };
 }
 
@@ -68,8 +65,6 @@ function mergeDecl(local: PanelTypeContribution, live: Record<string, unknown>[]
     if (!wired && srv.wired === true) {
         wired = true;
         changed = true;
-        /* 「待服务端面」是有线前的诚实标 —— 翻转后摘成服务端给的徽标,没给就不留。 */
-        if (badge === UNWIRED_BADGE) badge = str(srv.badge);
     }
     if (badge === undefined && str(srv.badge)) { badge = str(srv.badge); changed = true; }
     if (desc === undefined && str(srv.desc)) { desc = str(srv.desc); changed = true; }
@@ -78,7 +73,9 @@ function mergeDecl(local: PanelTypeContribution, live: Record<string, unknown>[]
     return changed ? { ...local, wired, badge, desc, category, title } : local;
 }
 
-/** 服务端声明了、本地没有的类型 → 占位条目(Body 线形给不了,永远占位壳)。 */
+/** 服务端声明了、本地没有的类型 → 占位条目(Body 线形给不了,永远占位壳)。
+ *  category 恒 'hidden':本地没有 Body 的类型在可点网格里点不出真面,
+ *  不拿服务端给的归属桶进 launcher/cmdk;服务端分类只留作元数据参考。 */
 function placeholder(type: string, meta: Record<string, unknown>): PanelTypeContribution {
     const icon = asIcon(meta.icon, 'puzzle');
     return {
@@ -86,8 +83,7 @@ function placeholder(type: string, meta: Record<string, unknown>): PanelTypeCont
         icon,
         wired: false,
         Body: makeStubBody(type, icon),
-        badge: UNWIRED_BADGE,
-        category: asCategory(meta.category) ?? 'suggested',
+        category: 'hidden',
         ...(str(meta.desc) !== undefined ? { desc: str(meta.desc) } : {}),
         ...(str(meta.title) !== undefined ? { title: str(meta.title) } : {}),
     };

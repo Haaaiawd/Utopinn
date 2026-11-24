@@ -1,7 +1,7 @@
 // Mock data for offline development — every consumer labels it 'mock'.
-// Shapes mirror the real contracts: ChatSummary (sidebar), MessageViewModel
-// (conversation, protocol type), PreviewResponse (assembled prompt).
-import type { MessageViewModel } from '@utopinn/protocol';
+// Shapes mirror the real contracts: ChatSummary (sidebar),
+// PreviewResponse (assembled prompt). 会话楼层不落 mock(假数据令:
+// 离线舞台空楼层,不编台词)。
 import type { CardItem } from './characters';
 import type { ChatSummary, PreviewRequestBody, PreviewResponse } from '../types';
 
@@ -26,44 +26,6 @@ export const MOCK_CARDS: CardItem[] = [
 
 const CHAR_NAME = '归墟';
 const USER_NAME = '旅人';
-
-export const MOCK_MESSAGES: MessageViewModel[] = [
-    {
-        id: 0,
-        role: 'assistant',
-        name: CHAR_NAME,
-        content: '潮水退到第三级石阶时,灯塔的灯恰好亮起来。\n\n我把最后一箱手稿搬进塔基的小屋,回头看你——你站在栈桥尽头,斗篷上全是盐粒。「你迟到了七年,」我说,声音比想象中平静,「不过海还没老。」',
-        timestamp: Date.now() - 3_600_000,
-        swipes: [
-            {
-                index: 0,
-                content: '潮水退到第三级石阶时,灯塔的灯恰好亮起来。\n\n我把最后一箱手稿搬进塔基的小屋,回头看你——你站在栈桥尽头,斗篷上全是盐粒。「你迟到了七年,」我说,声音比想象中平静,「不过海还没老。」',
-            },
-            {
-                index: 1,
-                content: '灯塔亮起来的时候,整片海湾像被谁轻轻合上了一页书。\n\n我没有回头。身后栈桥上的脚步声停了——停在我等过无数个冬天的地方。「进来吧,」我说,「汤还是热的。」',
-            },
-        ],
-        activeSwipe: 0,
-        receipts: [
-            { kind: 'variables', summary: 'setvar 好感度.归墟 +2 → 14', ops: [{ op: 'setvar', key: '好感度.归墟', value: 14, previous: 12 }] },
-        ],
-    },
-    {
-        id: 1,
-        role: 'user',
-        name: USER_NAME,
-        content: '我放下湿透的斗篷,把一直攥在手里的铜钥匙放在桌上。「七年是因为这个——它开的门不在任何一张海图上。」',
-        timestamp: Date.now() - 3_500_000,
-    },
-    {
-        id: 2,
-        role: 'assistant',
-        name: CHAR_NAME,
-        content: '钥匙在桌面上滚了半圈,停在一圈旧水渍里。\n\n那圈水渍我认识。父亲最后一次出海前,海图桌上也有同样的一圈——圆得不像话,像有人用圆规画下的警告。',
-        timestamp: Date.now() - 3_400_000,
-    },
-];
 
 /** Dry-run assembly result shaped exactly like /api/utopinn/preview. */
 export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
@@ -107,7 +69,9 @@ export function mockPreviewResponse(body: PreviewRequestBody): PreviewResponse {
    (/api/utopinn/worlds)均已具备服务端端点并在在线态真实水合,以下对应的
    MOCK_* 仅作离线演示回退(经 live 门控与 demoData 标记隔离)。
    目前仍无服务端面的仅为插件市场目录(MOCK_MARKET_PLUGINS)、舞台预演轨
-   (MOCK_STAGE_SESSIONS `st-*`)及离线演示种子(MOCK_NOVEL_CHAPTERS/IM/VN)。
+   (MOCK_STAGE_SESSIONS `st-*`)及预演种子(MOCK_NOVEL_CHAPTERS/IM/VN ——
+   仅 st-* 预演会话可读,带「预演」标;真会话零楼层走明说空态)。
+   会话楼层不设 mock:离线舞台渲空楼层,发送/快捷动作以 status.stub 拦下。
    ========================================================================= */
 
 /** 生成模型目录项(规范稿 MODELS)。
@@ -295,9 +259,4 @@ export const MOCK_VN: VnData = {
     ],
 };
 
-/** 离线兜底 mock 回文(StageFrame 离线演示用)。 */
-export const MOCK_REPLY_NOVEL = '山风沿着青石阶卷上来,远处竹林沙沙作响。陈修合上《云栖宗总簿》,袖口磨白的粗布在晨光里划出一道利落的弧线。“既如此,便按新定下的章程办。”话音未落,山门外忽然传来一阵急促的铜铃声。';
-export const MOCK_REPLY_IM = '收到掌门!我这就带二师弟把东头屋瓦补上,账目明细同步更新到总簿里。';
-export const MOCK_REPLY_VN = '“原来掌门心里早有盘算!”林砚松了口气,把青铜印信擦净放回案头,“那我这就去办。”';
-export const MOCK_REPLY_CHAT = '林砚连忙捧起账册记了一笔,又朝偏殿喊了一声。二师弟扛着竹梯跑出来,三师妹则从灶房端来一碗温热的清茶。\n\n“掌门放心,刚在山门石阶旁还捡到香客留下的三块碎灵石,我已经记进总簿了。”';
-export const MOCK_IMPERSONATE_DRAFT = '我合上总簿靠在椅背上,抬眼看向林砚:“先别提百草堂,把前任掌门留下的那半张阵图拿出来我看看。”';
+

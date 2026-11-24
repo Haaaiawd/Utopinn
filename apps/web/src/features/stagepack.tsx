@@ -262,9 +262,24 @@ function NovelBody() {
     );
 }
 
-/** messenger 形态(规范稿:频道 pill 条 + 620px 泡列 / 非己方带 w-8 头像环)。 */
+/** messenger 形态(规范稿:频道 pill 条 + 620px 泡列 / 非己方带 w-8 头像环)。
+ *  频道数据无服务端面 —— stageData 种子仅 st-* 预演会话可读(带「预演」
+ *  尾标);真会话明说「未提供」空态,永不渲假频道。 */
 function MessengerBody() {
+    const { t } = useI18n();
     const s = useShell();
+    const isSeedSession = !!s.chat && s.chat.id !== `${s.chat.charDir}/${s.chat.chatName}`;
+    if (!isSeedSession) {
+        return (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2.5 px-6 py-14 text-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] text-[color:var(--fg-muted)]">
+                    <Icon name="messages" size={20} />
+                </span>
+                <div className="text-[13px] font-medium text-[color:var(--fg-primary)]">{t('panel.feature.unavailable')}</div>
+                <div className="max-w-[300px] text-[11.5px] leading-relaxed text-[color:var(--fg-muted)]">{t('msg.unavailable.desc')}</div>
+            </div>
+        );
+    }
     const ch = s.stageData.channels.find((c) => c.id === s.stageData.activeChannel) ?? s.stageData.channels[0]!;
     return (
         <div className="flex min-h-0 flex-1 flex-col">
@@ -285,6 +300,8 @@ function MessengerBody() {
                         </button>
                     );
                 })}
+                {/* 种子轨如实标 —— 与 novel strategy:seed、theater gal.seed 同口径 */}
+                <span className="ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]" style={{ border: '1px solid var(--border-hairline)' }}>{t('gal.seed')}</span>
             </div>
             <div className="scroll-fade-mask min-h-0 flex-1 select-text overflow-y-auto px-4 py-5 sm:px-7">
                 <div className="mx-auto max-w-[620px] space-y-4 pb-6">
@@ -454,6 +471,10 @@ function TheaterBody() {
     const last = [...floors].reverse().find((m) => m.content.trim() || m.streaming) ?? null;
     const lastPos = last ? floors.lastIndexOf(last) : -1;
     const fromFloors = floors.length > 0;
+    /* vn 预演种子仅 st-* 会话可读;真会话零楼层不落假台词/假场景/假分支
+       (明说空态:对话条显 gal.line.empty,标题回落会话名,分支区空)。 */
+    const isSeedSession = !!s.chat && s.chat.id !== `${s.chat.charDir}/${s.chat.chatName}`;
+    const useSeed = !fromFloors && isSeedSession;
     const card = s.chat ? s.cards.get(s.chat.charDir) : undefined;
     const ops = last ? eng.opsOf(last, eng.msgs.indexOf(last)) : null;
 
@@ -491,8 +512,8 @@ function TheaterBody() {
     const beatFloors = lastPos > 0 ? floors.slice(Math.max(0, lastPos - STAGE_BEATS), lastPos) : [];
 
     /* 对话条:末楼 speaker 名签 + 正文;user 楼按线名照显(它是玩家台词)。 */
-    const speaker = fromFloors ? (last?.name || card?.name || '—') : vn.speaker;
-    const line = fromFloors ? (last ? (last.displayContent ?? last.content) : '') : vn.line;
+    const speaker = useSeed ? vn.speaker : (last?.name || card?.name || '—');
+    const line = useSeed ? vn.line : (last ? (last.displayContent ?? last.content) : '');
     const streaming = !!last?.streaming;
     const lastNarrator = !!last && isNarratorFloor(last);
     const lastRole = last ? roleOf(last) : null;
@@ -525,7 +546,7 @@ function TheaterBody() {
     /* 选项区:extra.choices 钩位 → swipe 分支 → 空态;
        分支 +1 位 = 「再生成一支」(swipe 生成,仅末楼有意义)。 */
     let choices: VnOption[];
-    if (!fromFloors) {
+    if (useSeed) {
         choices = vn.choices.map((c) => ({ key: c.op, text: c.text, onPick: () => eng.send(c.text) }));
     } else {
         const extra = extraChoices(last, eng.send);
@@ -643,8 +664,8 @@ function TheaterBody() {
             {/* 顶排:场景签 | 赏景/真全屏/退出 */}
             <div className="relative z-10 flex items-center justify-between gap-2 p-3.5">
                 <span className="rounded-full px-3 py-1 text-[11.5px] text-white/90 backdrop-blur-md" style={pillStyle}>
-                    {fromFloors ? (s.chat?.title ?? '') : vn.scene}
-                    {!fromFloors && <span className="ml-1.5 rounded px-1 text-[9.5px] text-white/55" style={{ border: '1px solid rgba(255,255,255,0.18)' }}>{t('gal.seed')}</span>}
+                    {useSeed ? vn.scene : (s.chat?.title ?? '')}
+                    {useSeed && <span className="ml-1.5 rounded px-1 text-[9.5px] text-white/55" style={{ border: '1px solid rgba(255,255,255,0.18)' }}>{t('gal.seed')}</span>}
                 </span>
                 <div className="flex items-center gap-1.5">
                     <button
@@ -865,6 +886,7 @@ const zh: Record<string, string> = {
     'gal.narrator': '旁 白', 'gal.bag.open': '打开背包面板',
     'gal.fs.enter': '真全屏', 'gal.fs.exit': '退出全屏',
     'gal.rotate.hint': '旋转设备体验更佳', 'gal.advance': '推进',
+    'msg.unavailable.desc': '频道数据源未落地 —— 此处不展示示例数据',
 };
 const en: Record<string, string> = {
     ...Object.fromEntries(Object.keys(zh).map((k) => [k, k])),
@@ -883,6 +905,7 @@ const en: Record<string, string> = {
     'gal.narrator': 'NARRATOR', 'gal.bag.open': 'Open bag panel',
     'gal.fs.enter': 'Fullscreen', 'gal.fs.exit': 'Exit fullscreen',
     'gal.rotate.hint': 'Rotate device for a better experience', 'gal.advance': 'Advance',
+    'msg.unavailable.desc': 'Channel data has no server surface — no sample data is shown',
 };
 
 export const stagepackFeature: Feature = {
