@@ -16,6 +16,7 @@ import { test, expect } from '@playwright/test';
 import { existsSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { startMockLLM } from '../_lib/mockLLM.js';
 import { write as embedCardData } from '../../../src/character-card-parser.js';
 
@@ -30,6 +31,9 @@ test.beforeAll(async () => {
         scenarioId: 'multi-user',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before driving admin flows.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -44,8 +48,12 @@ test.afterAll(async () => {
  *
  * Notes on the auto-login bypass:
  *   - `/login` server-side runs tryAutoLogin, which logs the session in
- *     as the single passwordless user (default-user) and redirects to /.
- *     That would skip the form entirely, which defeats the test.
+ *     as the single PASSWORDLESS user and redirects to /. Once
+ *     grantAdminAccess has given default-user a real password that
+ *     branch can no longer fire — it only triggers while exactly one
+ *     user exists and that user has no stored password — but the
+ *     belt-and-suspenders below stays for any future account that is
+ *     passwordless.
  *   - Passing ?noauto=1 disables that branch, so the login page renders
  *     and the user list / handle entry block is visible to drive.
  *   - We also explicitly POST /api/users/logout first so any session
@@ -94,20 +102,21 @@ async function loginViaForm(page, baseURL, handle, password) {
     if (await loginBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
         await loginBtn.click();
     }
-    // Some flows redirect immediately from the userSelect click (no
-    // password block when an account has no password). Wait for the
-    // SPA to come up either way.
+    // Passwordless accounts used to skip the password block here; since
+    // GH #38 they cannot log in through the form at all, so every
+    // account a spec logs in as has a real password. Wait for the SPA
+    // to come up either way.
     await page.waitForFunction(() => document.getElementById('preloader') === null, { timeout: 60_000 });
     await page.waitForFunction(() => !!window.Luker?.getContext, { timeout: 30_000 });
 }
 
 /**
  * Admin bootstrap: create a non-admin user via the /api/users/create
- * endpoint, authenticated as default-user (the bundled admin).
+ * endpoint, authenticated as default-user (admin via grantAdminAccess).
  */
 async function createUserAsAdmin(page, baseURL, { handle, name, password }) {
     // Log in as default-user first via the form.
-    await loginViaForm(page, baseURL, 'default-user', '');
+    await loginViaForm(page, baseURL, 'default-user', E2E_ADMIN_PASSWORD);
     return page.evaluate(async ({ handle, name, password }) => {
         const csrfResp = await fetch('/csrf-token', { credentials: 'same-origin' });
         const { token } = await csrfResp.json();

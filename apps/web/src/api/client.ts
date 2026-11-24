@@ -8,6 +8,10 @@ export class ApiError extends Error {
     constructor(
         message: string,
         public readonly status?: number,
+        // Machine-readable discriminator echoed from the response body
+        // (e.g. 'passwordless' on /api/users/login 403) — lets the UI switch
+        // on the failure class without string-matching localized text.
+        public readonly code?: string,
     ) {
         super(message);
         this.name = 'ApiError';

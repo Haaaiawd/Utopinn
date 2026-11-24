@@ -8,6 +8,7 @@
 import { test, expect } from '@playwright/test';
 
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { createUserViaAdminUI } from '../_lib/page.js';
 import {
     openLanSyncPanel,
@@ -24,7 +25,7 @@ let A, B;
 
 /** Configure the actual account through its authenticated admin form. */
 async function adminCreateUser(page, baseURL, { handle, name, password }) {
-    await loginAs(page, baseURL, { handle: 'default-user', password: '' });
+    await loginAs(page, baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
     await createUserViaAdminUI(page, { handle, name, password });
 }
 
@@ -39,6 +40,10 @@ test.beforeAll(async () => {
         scenarioId: 'mismatch-B',
         extraConfig: { enableUserAccounts: true, 'sync.allowPrivateAddressesForUsers': true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band on BOTH servers before driving admin flows.
+    await grantAdminAccess(A);
+    await grantAdminAccess(B);
 });
 
 test.afterAll(async () => {

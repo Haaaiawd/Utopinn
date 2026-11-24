@@ -926,7 +926,10 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
         await ensurePublicDirectoriesExist();
         const directories = getUserDirectories(newUser.handle);
         await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
-        return response.json({ handle: newUser.handle });
+        // passwordSet tells the admin UI the account cannot sign in via the
+        // password path yet (empty stored password is rejected at login) —
+        // it needs SSO or a password through change-password/recover.
+        return response.json({ handle: newUser.handle, passwordSet: Boolean(password) });
     } catch (error) {
         console.error('User create failed:', error);
         return response.sendStatus(500);

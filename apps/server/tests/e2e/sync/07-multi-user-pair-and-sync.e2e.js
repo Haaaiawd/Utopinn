@@ -9,15 +9,17 @@
 // durable peer secret that both sides store, so the pair and every later
 // "Sync now" authenticate without the user typing anything.
 //
-// Server-side bootstrap user is `default-user` (admin, no password) on
-// both servers; both admins then create `alice` with the same password
-// so the cross-handle gate never fires.
+// Server-side bootstrap user is `default-user` on both servers — since
+// GH #38 it ships passwordless + non-admin, so grantAdminAccess grants
+// it a real password + admin out-of-band first; both admins then create
+// `alice` with the same password so the cross-handle gate never fires.
 
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { createUserViaAdminUI } from '../_lib/page.js';
 import {
     openLanSyncPanel,
@@ -62,12 +64,16 @@ test.beforeAll(async ({ browser }) => {
         scenarioId: 'multiuser-B',
         extraConfig: { enableUserAccounts: true, 'sync.allowPrivateAddressesForUsers': true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band on BOTH servers before driving admin flows.
+    await grantAdminAccess(A);
+    await grantAdminAccess(B);
 
     for (const server of [A, B]) {
         const context = await browser.newContext();
         try {
             const page = await context.newPage();
-            await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+            await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
             await createUserViaAdminUI(page, { handle: 'alice', name: 'Alice of Bryn', password: ALICE_PASSWORD });
         } finally {
             await context.close();

@@ -98,6 +98,18 @@ describe('resolveUserFromBasicAuth', () => {
         expect(result).toBeNull();
     });
 
+    test('returns null for a passwordless user with any credential', async () => {
+        // The account has no stored password — no credential may satisfy
+        // the check (same rule the /api/users/login path enforces).
+        await seedUser({ handle: 'nopw' });
+        for (const password of ['', 'anything', 'hunter2']) {
+            const result = await resolveUserFromBasicAuth(requestWith({
+                authorization: basicHeader('nopw', password),
+            }, {}));
+            expect(result).toBeNull();
+        }
+    });
+
     test('returns {profile, directories} on a successful credential match', async () => {
         const seeded = await seedUser({ handle: 'alice', password: 'hunter2' });
         const result = await resolveUserFromBasicAuth(requestWith({

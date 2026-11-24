@@ -17,6 +17,7 @@
 
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { markOnboarded } from '../_lib/fixtures.js';
 
 let server;
@@ -27,6 +28,9 @@ test.beforeAll(async () => {
         scenarioId: 'announcements',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before driving admin flows.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -55,7 +59,7 @@ test.describe('#106 — announcements broadcast and dismiss flow', () => {
         const admin = await newSession(server.baseURL);
         let announcementId = '';
         try {
-            const login = await admin.post('/api/users/login', { handle: 'default-user', password: '' });
+            const login = await admin.post('/api/users/login', { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
             expect(login.ok()).toBe(true);
 
             // Create a regular user "alice" who will see the announcement.

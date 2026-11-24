@@ -67,6 +67,13 @@ export const USER_DIRECTORY_TEMPLATE = Object.freeze({
 });
 
 /**
+ * The bootstrap account seeded on first start (and the synthetic profile
+ * used when user accounts are disabled). Deliberately NOT admin: in
+ * multi-user mode a freshly seeded default-user grants no administrative
+ * power — the operator grants admin explicitly (see the no-admin warning
+ * in verifySecuritySettings / `node recover.js <handle> <password> --admin`).
+ * Single-user mode is implicitly admin anyway; setUserDataMiddleware marks
+ * the served profile as such regardless of this flag.
  * @type {import('./users.js').User}
  * @readonly
  */
@@ -75,7 +82,7 @@ export const DEFAULT_USER = Object.freeze({
     name: 'User',
     created: Date.now(),
     password: '',
-    admin: true,
+    admin: false,
     enabled: true,
     salt: '',
 });

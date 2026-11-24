@@ -10,6 +10,7 @@ import { test, expect } from '@playwright/test';
 import { existsSync, mkdirSync, readdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { write as embedCardData } from '../../../src/character-card-parser.js';
 
 let server;
@@ -20,6 +21,9 @@ test.beforeAll(async () => {
         scenarioId: 'isolation-ui',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user is passwordless + non-admin since GH #38 — grant it
+    // out-of-band before driving admin flows.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -119,7 +123,7 @@ async function refreshCharactersList(page, { timeoutMs = 30_000 } = {}) {
 }
 
 async function createUserAsAdmin(page, baseURL, { handle, name, password }) {
-    await loginViaForm(page, baseURL, 'default-user', '');
+    await loginViaForm(page, baseURL, 'default-user', E2E_ADMIN_PASSWORD);
     return page.evaluate(async ({ handle, name, password }) => {
         const csrfResp = await fetch('/csrf-token', { credentials: 'same-origin' });
         const { token } = await csrfResp.json();

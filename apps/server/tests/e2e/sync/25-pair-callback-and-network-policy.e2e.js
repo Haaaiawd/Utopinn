@@ -3,6 +3,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import path from 'node:path';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 import { awaitMainUI, createUserViaAdminUI, completeOnboarding } from '../_lib/page.js';
 import { openLanSyncPanel, generatePairingLink, acceptPairingLink, listPeers, loginAs, clickSyncNow, closeAllPopups, setSyncSchedule, waitForBackgroundSync, readUserFile } from '../_lib/sync.js';
 import { createWorldBook } from '../_lib/ui-worldinfo.js';
@@ -60,8 +61,12 @@ for (const enableUserAccounts of [false, true]) test(`local loopback pairing wor
         const pageA = await contextA.newPage();
         const pageB = await contextB.newPage();
         if (enableUserAccounts) {
-            await loginAs(pageA, A.baseURL, { handle: 'default-user', password: '' });
-            await loginAs(pageB, B.baseURL, { handle: 'default-user', password: '' });
+            // default-user is passwordless + non-admin since GH #38 —
+            // grant it out-of-band before logging in.
+            await grantAdminAccess(A);
+            await grantAdminAccess(B);
+            await loginAs(pageA, A.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
+            await loginAs(pageB, B.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
         } else {
             await awaitMainUI(pageA, A.baseURL);
             await awaitMainUI(pageB, B.baseURL);
@@ -90,7 +95,8 @@ test('nonadmin default policy refuses pairing and the administrator switch permi
             const admin = await browser.newContext();
             contexts.push(admin);
             const page = await admin.newPage();
-            await loginAs(page, server.baseURL, { handle: 'default-user', password: '' });
+            await grantAdminAccess(server);
+            await loginAs(page, server.baseURL, { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
             await createUserViaAdminUI(page, { handle: 'alice', name: 'Alice', password: 'policy-password' });
             await admin.close();
         }

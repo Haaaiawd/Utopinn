@@ -13,6 +13,7 @@
 
 import { test, expect, request as pwRequest } from '@playwright/test';
 import { startServer, tearDownServer } from '../_lib/server.js';
+import { grantAdminAccess, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 
 let server;
 
@@ -22,6 +23,9 @@ test.beforeAll(async () => {
         scenarioId: 'users-crud',
         extraConfig: { enableUserAccounts: true },
     });
+    // default-user ships passwordless + non-admin (GH #38): grant admin
+    // out-of-band exactly like a fresh multi-account install would.
+    await grantAdminAccess(server);
 });
 
 test.afterAll(async () => {
@@ -58,8 +62,8 @@ test.describe('#104 — admin creates / alice changes password / admin deletes',
         // --- Admin session ---
         const admin = await newSession(server.baseURL);
         try {
-            // Default user in Luker is the admin "default-user" with no password.
-            const loginRes = await admin.post('/api/users/login', { handle: 'default-user', password: '' });
+            // default-user got a real password + admin via grantAdminAccess.
+            const loginRes = await admin.post('/api/users/login', { handle: 'default-user', password: E2E_ADMIN_PASSWORD });
             expect(loginRes.ok(), `admin login failed (${loginRes.status()})`).toBe(true);
 
             // Confirm admin context.

@@ -16,7 +16,8 @@ import { sync as writeFileAtomicSync } from 'write-file-atomic';
 import ipMatching from 'ip-matching';
 
 import { USER_DIRECTORY_TEMPLATE, DEFAULT_USER, PUBLIC_DIRECTORIES, SETTINGS_FILE, UPLOADS_DIRECTORY } from './constants.js';
-import { getConfigValue, color, delay, generateTimestamp, invalidateFirefoxCache, Cache, formatBytes, resolvePathWithinParent, isPathUnderParent, setPermissionsSync } from './util.js';
+import ipRegex from 'ip-regex';
+import { getConfigValue, color, delay, generateTimestamp, invalidateFirefoxCache, Cache, formatBytes, resolvePathWithinParent, isPathUnderParent, setPermissionsSync, getHasIP } from './util.js';
 import { readSecret, writeSecret, SECRETS_FILE } from './endpoints/secrets.js';
 import { getContentOfType } from './endpoints/content-manager.js';
 import { serverDirectory } from './server-directory.js';
@@ -216,21 +217,45 @@ function logSecurityAlert(message) {
  * @param {Array<import('./users.js').User>} adminUsers
  * @returns {Promise<void>}
  */
-async function provisionRandomAdminPasswords(adminUsers) {
+async function provisionRandomPasswords(unprotectedUsers) {
     const banner = '='.repeat(60);
     const sep = '-'.repeat(60);
-    for (const user of adminUsers) {
+    for (const user of unprotectedUsers) {
         const password = crypto.randomBytes(12).toString('base64url');
         const salt = getPasswordSalt();
         user.password = getPasswordHash(password, salt);
         user.salt = salt;
         await storage.setItem(toKey(user.handle), user);
         console.error(color.red(banner));
-        console.error(color.red(' Luker generated a random password for an admin account.'));
-        console.error(color.red(' Save it now and change it after first login.'));
+        console.error(color.red(' A random password was generated for this unprotected account.'));
         console.error(color.red(sep));
         console.error(`   user: ${color.yellow(user.handle)}`);
-        console.error(`   pass: ${color.yellow(password)}`);
+        // OAuth-bound accounts keep working through their provider, and
+        // printing a usable password for them would hand anyone who can
+        // read the logs a bypass around OAuth identity. The password is
+        // still set (closing passwordless auto-login), just not disclosed.
+        const boundProviders = Object.keys(user.oauth || {});
+        if (boundProviders.length > 0) {
+            console.error(color.red(' OAuth-bound account — password set internally, not printed.'));
+            // Only point at the provider button when a bound provider is
+            // actually enabled on THIS instance (same predicate as
+            // /api/users/oauth/providers) — otherwise the hint sends the
+            // operator down a dead end and an admin/recover.js reset is
+            // the real way back in.
+            const settings = await getAdminSettings();
+            const usable = boundProviders.filter(p => {
+                const s = settings?.oauth?.[p];
+                return Boolean(s?.enabled && s?.clientId && s?.clientSecret);
+            });
+            if (usable.length > 0) {
+                console.error(color.red(` Sign in via the ${usable.join(' / ')} provider button on the login page.`));
+            } else {
+                console.error(color.red(' No enabled SSO provider found — ask an admin for a password reset, or use recover.js.'));
+            }
+        } else {
+            console.error(color.red(' Save it now and change it after first login.'));
+            console.error(`   pass: ${color.yellow(password)}`);
+        }
         console.error(color.red(banner));
     }
 }
@@ -241,6 +266,31 @@ async function provisionRandomAdminPasswords(adminUsers) {
  */
 export async function verifySecuritySettings() {
     const { listen, basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
+
+    // Account mode with zero enabled admins is unrecoverable in-band —
+    // nobody can reach the admin panel to create or promote one (the
+    // seeded default-user is deliberately not admin). Warn on every boot,
+    // not just when listening: the lockout exists regardless of exposure.
+    if (ENABLE_ACCOUNTS) {
+        const enabledUsers = await getAllEnabledUsers();
+        if (!enabledUsers.some(user => user.admin)) {
+            console.warn(color.yellow('User accounts are enabled, but no enabled admin account exists.'));
+            console.warn(color.yellow('Grant admin to an account from the server console with:'));
+            // Print the resolved data root (and config path when a custom
+            // one was passed) so the command targets THIS instance — the
+            // recover.js default of ./config.yaml would exit on a server
+            // started with a different --configPath.
+            const resolvedDataRoot = path.resolve(globalThis.DATA_ROOT || './data');
+            const resolvedConfigPath = globalThis.COMMAND_LINE_ARGS?.configPath
+                ? path.resolve(globalThis.COMMAND_LINE_ARGS.configPath)
+                : null;
+            const configFlag = resolvedConfigPath && resolvedConfigPath !== path.resolve('./config.yaml')
+                ? ` --configPath "${resolvedConfigPath}"`
+                : '';
+            console.warn(color.yellow(`  node recover.js${configFlag} --dataRoot "${resolvedDataRoot}" <handle> <password> --admin`));
+            console.log();
+        }
+    }
 
     // Skip all security checks as listen is set to false
     if (!listen) {
@@ -262,20 +312,71 @@ export async function verifySecuritySettings() {
         console.warn(`Consider setting a password in the admin panel or by using the ${color.blue('recover.js')} script.`);
         console.log();
 
-        if (unprotectedAdminUsers.length > 0) {
-            const { basicAuthMode: hasBasicAuth, whitelistMode: hasWhitelist } = globalThis.COMMAND_LINE_ARGS;
-            if (!hasBasicAuth && !hasWhitelist) {
-                if (getConfigValue('securityOverride', false, 'boolean')) {
-                    console.error(color.red('If you are not using basic authentication or whitelisting, you should set a password for all admin users.'));
-                    console.warn(color.red('Security has been overridden. If it\'s not a trusted network, change the settings.'));
-                } else {
-                    try {
-                        await provisionRandomAdminPasswords(unprotectedAdminUsers);
-                    } catch (err) {
-                        console.error(color.red(`Failed to auto-provision admin passwords: ${err.message}`));
-                        console.error(color.red('Refusing to start with unprotected admin accounts.'));
-                        process.exit(1);
-                    }
+        const { basicAuthMode: hasBasicAuth, whitelistMode: hasWhitelist, listenAddressIPv4, listenAddressIPv6, enableIPv4, enableIPv6 } = globalThis.COMMAND_LINE_ARGS;
+        // `listen` only flips the wildcard-vs-specific switch: a listen=true
+        // server bound to loopback on BOTH families is still a local-only
+        // deployment — same threat class as listen=false. Deliberately
+        // conservative: only exact loopback literals count.
+        //
+        // Judge the address the SOCKET will actually bind, not the configured
+        // string: getIPv4/6ListenUrl() in command-line.js falls back to the
+        // wildcard (0.0.0.0 / [::]) whenever ipRegex rejects the configured
+        // address — '127.0.0.1 ' or '[::1]' look loopback to a naive check
+        // but the socket ends up on 0.0.0.0. Mirroring that normalisation
+        // keeps the two judgements from diverging. (A configured address that
+        // merely fails to bind at runtime dead-ends that family — there is
+        // no wildcard re-bind in server-startup.js — so only the validation
+        // fallback can widen exposure.)
+        const effectiveBindHost = (configured, family) => {
+            // Test the RAW string — getIPvXListenUrl() validates
+            // this.listenAddressIPvX untrimmed, so '127.0.0.1 ' falls back
+            // to the wildcard even though a trim would rescue it.
+            const cfg = String(configured ?? '');
+            const valid = family === 6
+                ? ipRegex.v6({ exact: true }).test(cfg)
+                : ipRegex.v4({ exact: true }).test(cfg);
+            if (!valid) return family === 6 ? '::' : '0.0.0.0';
+            return cfg.replace(/^\[|\]$/g, '');
+        };
+        const isLoopbackBind = (addr) => /^127\./.test(addr) || addr === '::1';
+        // Only ENABLED families enter the judgement — a disabled family's
+        // configured address never reaches a socket (ServerStartup's
+        // useIPv4/useIPv6), so e.g. '[::1]' on a disabled IPv6 stack must
+        // not read as exposure. 'auto' resolves like the startup path:
+        // listen=true asks whether ANY interface of that family exists.
+        // An unspecified flag counts as enabled — real cliArgs always
+        // resolve to the default (true).
+        const ipQuery = (enableIPv4 === 'auto' || enableIPv6 === 'auto') ? await getHasIP() : null;
+        const familyEnabled = (flag, anyKey) => flag === 'auto' ? Boolean(ipQuery?.[anyKey]) : flag !== false;
+        const enabledBinds = [];
+        if (familyEnabled(enableIPv4, 'hasIPv4Any')) {
+            enabledBinds.push(effectiveBindHost(listenAddressIPv4, 4));
+        }
+        if (familyEnabled(enableIPv6, 'hasIPv6Any')) {
+            enabledBinds.push(effectiveBindHost(listenAddressIPv6, 6));
+        }
+        const boundToLoopbackOnly = enabledBinds.length > 0 && enabledBinds.every(isLoopbackBind);
+        if (!hasBasicAuth && !hasWhitelist && !boundToLoopbackOnly) {
+            // Passwordless accounts on an unprotected listen are not just a
+            // bad credential posture: the single-user auto-login hands an
+            // anonymous network visitor a session whenever the ONLY account
+            // has no password. Provisioning every passwordless account (not
+            // just admins — same first-boot behaviour Docker documents)
+            // closes that anonymous path; once a password exists the marker
+            // no longer applies, so this is idempotent across restarts.
+            if (getConfigValue('securityOverride', false, 'boolean')) {
+                console.error(color.red('If you are not using basic authentication or whitelisting, you should set a password for all user accounts.'));
+                if (unprotectedAdminUsers.length > 0) {
+                    console.error(color.red('Unprotected ADMIN accounts are among them — this is especially dangerous.'));
+                }
+                console.warn(color.red('Security has been overridden. If it\'s not a trusted network, change the settings.'));
+            } else {
+                try {
+                    await provisionRandomPasswords(unprotectedUsers);
+                } catch (err) {
+                    console.error(color.red(`Failed to auto-provision passwords for unprotected accounts: ${err.message}`));
+                    console.error(color.red('Refusing to start with unprotected user accounts.'));
+                    process.exit(1);
                 }
             }
         }
@@ -1098,7 +1199,12 @@ export async function setUserDataMiddleware(request, response, next) {
         const handle = DEFAULT_USER.handle;
         const directories = getUserDirectories(handle);
         request.user = {
-            profile: DEFAULT_USER,
+            // Single-user mode is implicitly admin — same contract as
+            // isRequestAdmin(). The stored DEFAULT_USER record itself is
+            // not admin anymore (a seeded account in multi-user mode must
+            // not silently carry admin power), so the flag is applied to
+            // the request-scoped profile copy here.
+            profile: { ...DEFAULT_USER, admin: true },
             directories: directories,
         };
         return next();

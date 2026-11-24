@@ -12,9 +12,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { startServer } from './e2e/_lib/server.js';
 import { writeCharacter } from './e2e/_lib/fixtures.js';
 
@@ -105,19 +107,49 @@ test('server boots with enableUserAccounts', async () => {
     assert.ok(srv?.baseURL, 'server url');
 });
 
-test('anonymous session has no user; default-user login works', async () => {
-    admin = await new Session(srv.baseURL).init();
-    const anonMe = await admin.get('/api/users/me');
+test('passwordless accounts cannot authenticate via the password path', async () => {
+    const anon = await new Session(srv.baseURL).init();
+    const anonMe = await anon.get('/api/users/me');
     assert.equal(anonMe.status, 403, 'no session handle → 403');
 
-    // default-user is bootstrapped passwordless on first boot.
-    const login = await admin.login('default-user', '');
-    assert.equal(login.status, 200, 'default-user login');
-    const me = await admin.get('/api/users/me');
-    assert.equal(me.status, 200);
-    const body = await me.json();
-    assert.equal(body.handle, 'default-user');
-    assert.equal(body.admin, true, 'bootstrapped default-user is admin');
+    // default-user is seeded with NO password. Previously the
+    // `user.password && user.password !== hash` guard skipped the whole
+    // comparison for a falsy stored password — ANY submitted password
+    // (empty included) authenticated (GH #38). Now a passwordless account
+    // must be unreachable through /login until a password is set.
+    const missing = await anon.post('/api/users/login', {});
+    assert.equal(missing.status, 400, 'missing handle → 400');
+    const empty = await anon.login('default-user', '');
+    assert.equal(empty.status, 403, 'empty password must not log in');
+    const any = await anon.login('default-user', 'literally-anything');
+    assert.equal(any.status, 403, 'arbitrary password must not log in');
+    const body = await any.json();
+    assert.match(String(body.error || ''), /no password/i,
+        'passwordless rejection must carry clear semantics (not a misleading credential error)');
+});
+
+test('operator bootstrap: seeded default-user is not admin; recoverPassword --admin grants it', async () => {
+    // A fresh multi-account install has ZERO admins — the seeded
+    // default-user is a plain shell, so the first admin can only be
+    // granted out-of-band. This drives the same function the
+    // `node recover.js <handle> <password> --admin` boot warning prints.
+    const { DEFAULT_USER } = await import('../src/constants.js');
+    assert.equal(DEFAULT_USER.admin, false, 'seeded DEFAULT_USER must not ship admin');
+
+    const cfgDir = mkdtempSync(join(tmpdir(), 'uto-ma-cfg-'));
+    const cfgPath = join(cfgDir, 'config.yaml');
+    writeFileSync(cfgPath, `enableUserAccounts: true\ndataRoot: ${JSON.stringify(dataRoot)}\n`);
+    const { setConfigFilePath } = await import('../src/util.js');
+    setConfigFilePath(cfgPath);
+    const { recoverPassword } = await import('../src/recover-password.js');
+    await recoverPassword(cfgPath, 'default-user', 'boot-pw-A1', { admin: true });
+
+    admin = await new Session(srv.baseURL).init();
+    const login = await admin.login('default-user', 'boot-pw-A1');
+    assert.equal(login.status, 200, 'post-recover login with the real password');
+    const me = await (await admin.get('/api/users/me')).json();
+    assert.equal(me.handle, 'default-user');
+    assert.equal(me.admin, true, 'recoverPassword --admin granted admin');
 });
 
 test('self-registration is disabled by default', async () => {
@@ -130,7 +162,22 @@ test('admin creates two accounts; each logs in on its own session', async () => 
     for (const [handle, name] of [['peer-a', 'Peer A'], ['peer-b', 'Peer B']]) {
         const res = await admin.post('/api/users/create', { handle, name, password: `pw-${handle}` });
         assert.ok(res.status === 200 || res.status === 204, `create ${handle}: ${res.status}`);
+        const body = await res.json();
+        assert.equal(body.passwordSet, true, 'create with password → passwordSet:true');
     }
+    // Passwordless create stays allowed (SSO-bound, invite-then-set) but
+    // must be flagged and must NOT authenticate via the password path.
+    const nopw = await admin.post('/api/users/create', { handle: 'no-pass', name: 'No Password' });
+    assert.equal(nopw.status, 200, `create no-pass: ${nopw.status}`);
+    const created = await nopw.json();
+    assert.equal(created.passwordSet, false, 'create without password → passwordSet:false');
+
+    const ghost = await new Session(srv.baseURL).init();
+    for (const attempt of ['', 'whatever']) {
+        const res = await ghost.login('no-pass', attempt);
+        assert.equal(res.status, 403, `no-pass login must be rejected (tried ${JSON.stringify(attempt)})`);
+    }
+
     userA = await new Session(srv.baseURL).init();
     userB = await new Session(srv.baseURL).init();
     const la = await userA.login('peer-a', 'pw-peer-a');
@@ -147,6 +194,29 @@ test('admin creates two accounts; each logs in on its own session', async () => 
         dataRoot, handle: 'peer-b', avatarFile: AVATAR_B,
         overrides: { name: 'Bryn the Lamplighter' },
     });
+});
+
+test('Basic Auth: passwordless accounts never resolve, passworded accounts do', async () => {
+    // resolveUserFromBasicAuth backs perUserBasicAuth — the second
+    // password-credential surface. It already required a truthy stored
+    // password before comparing, but pin it: an empty stored password
+    // must resolve NO credential (the same falsy-shortcut class of bug
+    // GH #38 hit in /login). Storage in this process was initialized by
+    // the recoverPassword call above and shares the server's dataRoot.
+    const { resolveUserFromBasicAuth } = await import('../src/users.js');
+    // Success resolution also builds getUserDirectories(handle), which
+    // joins paths off globalThis.DATA_ROOT — point it at the same root
+    // the spawned server uses.
+    globalThis.DATA_ROOT = dataRoot;
+    const req = (handle, password) => ({
+        headers: { authorization: `Basic ${Buffer.from(`${handle}:${password}`).toString('base64')}` },
+    });
+    for (const attempt of ['', 'whatever', 'pw-peer-a']) {
+        const resolved = await resolveUserFromBasicAuth(req('no-pass', attempt));
+        assert.equal(resolved, null, `passwordless no-pass must not resolve (tried ${JSON.stringify(attempt)})`);
+    }
+    const ok = await resolveUserFromBasicAuth(req('peer-a', 'pw-peer-a'));
+    assert.ok(ok && ok.profile.handle === 'peer-a', 'peer-a real credential resolves');
 });
 
 test('characters: user A cannot see user B cards', async () => {
@@ -288,10 +358,12 @@ test('login rate limit: a wrong password burns exactly one attempt', async () =>
     assert.equal(ok.status, 200, 'correct password after 4 wrong attempts must not be rate-limited');
 });
 
-test('web client: login path cannot double-fire; gate links /login', async () => {
+test('web client: login path cannot double-fire; gate handles passwordless + OAuth inline', async () => {
     // Source-pinned assertions for the SPA fix — the web bundle has no
-    // browser test harness here, so pin the two code points that caused the
-    // review findings:
+    // browser test harness here, so pin the code points that caused the
+    // review findings. Post-6459cd0 the SPA owns /login entirely: OAuth
+    // buttons, recovery-code flow and the passwordless notice all live
+    // inside LoginGate (no legacy page to escape to).
     const webRoot = resolve(import.meta.dirname, '../../web/src');
     const accountSrc = readFileSync(join(webRoot, 'api/account.ts'), 'utf8');
     const clientSrc = readFileSync(join(webRoot, 'api/client.ts'), 'utf8');
@@ -305,11 +377,26 @@ test('web client: login path cannot double-fire; gate links /login', async () =>
     assert.match(clientSrc, /retryOn403 !== false/,
         'apiFetch must honor the retryOn403 opt-out');
 
-    // 2) OAuth accounts have no password (users-public.js:684) — the gate
-    //    must link back to legacy /login where provider buttons + recover live.
-    assert.match(gateSrc, /href="\/login"/, 'LoginGate must link to /login for OAuth/recovery');
-    assert.match(gateSrc, /t\('login\.alt'\)/, 'LoginGate link must be localized');
-    assert.ok(i18nSrc.includes("'login.alt'"), "i18n 'login.alt' must exist");
+    // 2) Passwordless accounts: the server 403 carries code:'passwordless'
+    //    (users-public.js) — the gate must recognise it, pin the handle and
+    //    render localized recovery/SSO guidance. The pin is one-shot:
+    //    submit() consumes it so a retried POST (e.g. after an admin reset)
+    //    is never locked out, and the submit button must not stay disabled.
+    assert.match(clientSrc, /public readonly code\?:/, 'ApiError must carry the machine-readable code');
+    assert.match(accountSrc, /new ApiError\(text, res\.status, code\)/, 'loginAccount must propagate code');
+    assert.match(gateSrc, /e\.code === 'passwordless'/, 'LoginGate must recognise the passwordless code');
+    assert.match(gateSrc, /h === passwordlessFor\) setPasswordlessFor\(''\)/,
+        'submit() must consume the pin one-shot so a stale marker cannot lock the handle');
+    assert.doesNotMatch(gateSrc, /disabled=\{[^}]*isPasswordless/,
+        'submit button must not stay disabled on the passwordless pin (admin reset would be unreachable)');
+    assert.match(gateSrc, /isPasswordless/, 'gate must render the passwordless state');
+    assert.match(gateSrc, /t\('login\.passwordless'\)/, 'passwordless notice must be localized');
+    assert.ok(i18nSrc.includes('\'login.passwordless\''), 'i18n login.passwordless key must exist');
+    assert.ok(i18nSrc.includes('\'login.passwordless.hint\''), 'i18n login.passwordless.hint key must exist');
+
+    // 3) OAuth-bound accounts have no local password — the gate renders the
+    //    discovered provider buttons so SSO stays reachable.
+    assert.match(gateSrc, /login-oauth-btn/, 'OAuth provider buttons must render for SSO/passwordless accounts');
 });
 
 test('logout invalidates the session; other user unaffected', async () => {
@@ -350,4 +437,523 @@ test('generation job: recycled job_id cannot touch another handle\'s job', async
     // Owner re-POSTs the same id (legit retry) — recycles as before.
     const jobA2 = createGenerationJob(req('peer-a'), { job_id: JOB });
     assert.equal(jobA2, jobA, 'owner retry recycles own job');
+});
+
+// ---------- single-user auto-login escape hatch ----------
+
+test('single passwordless user still auto-logs in — but only as non-admin', async () => {
+    // Deliberate escape hatch: a single-user install with no password
+    // auto-authenticates /login visitors (otherwise the account could
+    // never be entered to set a password). The fix pins that this session
+    // is NOT admin — exposure stays bounded to that user's own data and
+    // the admin surface remains closed.
+    const soloRoot = mkdtempSync(join(tmpdir(), 'uto-ma-solo-'));
+    const solo = await startServer({
+        batchKey: BATCH,
+        scenarioId: 'accounts-solo',
+        useExistingDataRoot: soloRoot,
+        extraConfig: { enableUserAccounts: true, listen: false },
+    });
+    try {
+        const s = await new Session(solo.baseURL).init();
+        const res = await s.get('/login');
+        assert.equal(res.status, 302, 'single passwordless user → auto-login redirect');
+        const me = await s.get('/api/users/me');
+        assert.equal(me.status, 200);
+        const body = await me.json();
+        assert.equal(body.handle, 'default-user');
+        assert.equal(body.admin, false, 'auto-logged default-user must NOT be admin');
+    } finally {
+        await solo.stop();
+    }
+});
+
+// ---------- exposed-listen auto-provisioning + recover.js CLI ----------
+//
+// These drive verifySecuritySettings() in-process against throwaway data
+// roots (the spawned-server harness always passes --whitelist, which would
+// gate the insecure-listen branch off) and run `node recover.js` in real
+// subprocesses so argv parsing is exercised end-to-end.
+
+const SERVER_DIR = resolve(import.meta.dirname, '..');
+const RECOVER_JS = join(SERVER_DIR, 'recover.js');
+
+/** node-persist file path for a user record inside a data root. */
+function storedUserPath(root, handle) {
+    return join(root, '_storage', createHash('sha256').update(`user:${handle}`).digest('hex'));
+}
+
+function readStoredUser(root, handle) {
+    const p = storedUserPath(root, handle);
+    if (!existsSync(p)) return null;
+    return JSON.parse(readFileSync(p, 'utf8')).value;
+}
+
+function seedStoredUser(root, user) {
+    mkdirSync(join(root, '_storage'), { recursive: true });
+    writeFileSync(storedUserPath(root, user.handle), JSON.stringify({ key: `user:${user.handle}`, value: user }));
+}
+
+/** Seeds an arbitrary node-persist record (e.g. luker:admin-settings:v1). */
+function seedStoredItem(root, key, value) {
+    mkdirSync(join(root, '_storage'), { recursive: true });
+    writeFileSync(join(root, '_storage', createHash('sha256').update(key).digest('hex')), JSON.stringify({ key, value }));
+}
+
+function writeScratchConfig(dataRoot, extra = '') {
+    const dir = mkdtempSync(join(tmpdir(), 'uto-ma-cfg-'));
+    const cfg = join(dir, 'config.yaml');
+    writeFileSync(cfg, `enableUserAccounts: true\ndataRoot: ${JSON.stringify(dataRoot)}\n${extra}`);
+    return cfg;
+}
+
+function runRecover(...args) {
+    return spawnSync('node', [RECOVER_JS, ...args], { cwd: SERVER_DIR, encoding: 'utf8', timeout: 120000 });
+}
+
+test('insecure listen: passwordless accounts get provisioned passwords — anonymous auto-login dies', async () => {
+    // GH#38 review follow-up: accounts-on + listen + no whitelist/basicAuth
+    // used to leave singleUserLogin able to hand an anonymous visitor a
+    // session. verifySecuritySettings now provisions a random password for
+    // EVERY passwordless account and prints the credentials to stderr —
+    // the same first-boot semantics the Docker entrypoint documents (#44).
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-exposed-'));
+    // users.js resolves config.yaml at import time; under --test-name-pattern
+    // the earlier in-process tests may not have run, so point it at a
+    // scratch config only when nothing set one yet.
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings, tryAutoLogin } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const prevRoot = globalThis.DATA_ROOT;
+    const captured = [];
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        globalThis.DATA_ROOT = root;
+        await initUserStorage(root); // seeds the passwordless default-user
+        console.error = (...a) => captured.push(a.join(' '));
+        console.warn = (...a) => captured.push(a.join(' '));
+        globalThis.COMMAND_LINE_ARGS = { listen: true, basicAuthMode: false, whitelistMode: false };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+        globalThis.DATA_ROOT = prevRoot;
+    }
+
+    const stored = readStoredUser(root, 'default-user');
+    assert.ok(stored.password, 'passwordless account must get a provisioned password on an exposed listen');
+    assert.ok(captured.some(l => /user:\s*default-user/.test(l)), 'credential banner names the handle on stderr');
+    assert.ok(captured.some(l => /pass:\s*\S+/.test(l)), 'credential banner prints the password on stderr');
+    // The zero-admin warning must name the actual parsed data root so the
+    // printed recover command targets THIS instance (recover.js --dataRoot).
+    assert.ok(captured.some(l => l.includes('recover.js') && l.includes(root)),
+        'no-admin warning prints a recover.js command with the resolved data root');
+
+    // The anonymous visitor path is now impossible: the only account HAS a
+    // password, so singleUserLogin has nothing passwordless to key on.
+    const req = { session: {}, query: {} };
+    assert.equal(await tryAutoLogin(req, false), false, 'anonymous visitor must not auto-login after provisioning');
+    assert.equal(req.session.handle, undefined, 'no session handle established');
+});
+
+test('exposed-listen provisioning is idempotent — a second boot does not re-provision', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-exposed2-'));
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        await initUserStorage(root);
+        console.error = () => {};
+        console.warn = () => {};
+        globalThis.COMMAND_LINE_ARGS = { listen: true, basicAuthMode: false, whitelistMode: false };
+        await verifySecuritySettings();
+        const first = readStoredUser(root, 'default-user').password;
+        assert.ok(first, 'first boot provisions a password');
+        await verifySecuritySettings();
+        const second = readStoredUser(root, 'default-user').password;
+        assert.equal(second, first, 'second boot must not rotate the provisioned password');
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+    }
+});
+
+test('protected listen: passwordless sole account is NOT provisioned — local auto-login preserved', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-protected-'));
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings, tryAutoLogin } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        await initUserStorage(root);
+        console.error = () => {};
+        console.warn = () => {};
+        globalThis.COMMAND_LINE_ARGS = { listen: true, basicAuthMode: false, whitelistMode: ['127.0.0.1'] };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+    }
+    const stored = readStoredUser(root, 'default-user');
+    assert.equal(stored.password, '', 'a whitelisted deployment must not auto-provision');
+    const req = { session: {}, query: {} };
+    assert.equal(await tryAutoLogin(req, false), true, 'protected single-user auto-login stays');
+    assert.equal(req.session.handle, 'default-user');
+});
+
+test('recover.js: --admin is parsed as a flag — it grants admin and never becomes the password', () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-rc1-'));
+    seedStoredUser(root, { handle: 'cli-victim', name: 'V', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(root);
+    const r = runRecover('--configPath', cfg, 'cli-victim', '--admin');
+    assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+    const u = readStoredUser(root, 'cli-victim');
+    assert.equal(u.admin, true, '--admin flag granted admin');
+    assert.equal(u.password, '', 'the flag token must NOT end up as the stored password');
+});
+
+test('recover.js: "-- --admin" sets the literal password --admin without granting admin', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-rc2-'));
+    seedStoredUser(root, { handle: 'dash-fan', name: 'D', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(root);
+    const r = runRecover('--configPath', cfg, 'dash-fan', '--', '--admin');
+    assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+    const u = readStoredUser(root, 'dash-fan');
+    assert.equal(u.admin, false, 'an escaped --admin is data, not the flag');
+    assert.ok(u.password, 'a password was actually set');
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { getPasswordHash } = await import('../src/users.js');
+    assert.equal(u.password, getPasswordHash('--admin', u.salt), 'stored hash must be the literal password "--admin"');
+});
+
+test('recover.js: a leading-dash password without "--" aborts with guidance', () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-rc3-'));
+    seedStoredUser(root, { handle: 'dash-victim', name: 'D', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(root);
+    const r = runRecover('--configPath', cfg, 'dash-victim', '-secret');
+    assert.notEqual(r.status, 0, 'leading-dash password must abort, not be reinterpreted');
+    assert.match(r.stderr, /--/, 'error output must point at the -- separator');
+    const u = readStoredUser(root, 'dash-victim');
+    assert.equal(u.password, '', 'rejected run must not have touched the account');
+    assert.equal(u.admin, false, 'rejected run must not have granted admin');
+});
+
+test('recover.js --dataRoot targets the override root, not the config.yaml one', () => {
+    // The live server may run with --dataRoot X while ./config.yaml still
+    // says ./data — recovery must hit X. Seed the same handle in both roots
+    // and prove only the override one changes.
+    const cfgRoot = mkdtempSync(join(tmpdir(), 'uto-ma-rcA-'));
+    const realRoot = mkdtempSync(join(tmpdir(), 'uto-ma-rcB-'));
+    seedStoredUser(cfgRoot, { handle: 'dual', name: 'D', enabled: true, admin: false, password: '', salt: '' });
+    seedStoredUser(realRoot, { handle: 'dual', name: 'D', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(cfgRoot); // config.yaml points at cfgRoot
+    const r = runRecover('--configPath', cfg, '--dataRoot', realRoot, 'dual', 'new-pass-9');
+    assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+    const inOverride = readStoredUser(realRoot, 'dual');
+    const inCfg = readStoredUser(cfgRoot, 'dual');
+    assert.ok(inOverride.password, 'override root user got the new password');
+    assert.equal(inCfg.password, '', 'config.yaml root user untouched — a wrong-instance write would set this');
+});
+
+test('recover.js --configPath resolves the dataRoot from the named config file', () => {
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-rc4-'));
+    seedStoredUser(root, { handle: 'cfg-victim', name: 'C', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(root);
+    const r = runRecover('--configPath', cfg, 'cfg-victim', 'pw-from-cfg');
+    assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+    const u = readStoredUser(root, 'cfg-victim');
+    assert.ok(u.password, 'user inside the named config\'s dataRoot was recovered');
+});
+
+test('no-admin warning echoes --configPath only when a custom config was passed', async () => {
+    // The printed recover command must be runnable verbatim: a server
+    // started with --configPath /elsewhere/cfg.yaml would otherwise print a
+    // command whose recover.js loads ./config.yaml and exits.
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(mkdtempSync(join(tmpdir(), 'uto-ma-warn-'))));
+    const { initUserStorage, verifySecuritySettings } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const prevRoot = globalThis.DATA_ROOT;
+    const captured = [];
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        console.error = (...a) => captured.push(a.join(' '));
+        console.warn = (...a) => captured.push(a.join(' '));
+
+        // Custom config → the flag must be echoed.
+        const customCfg = join(mkdtempSync(join(tmpdir(), 'uto-ma-wcfg-')), 'config.yaml');
+        globalThis.DATA_ROOT = mkdtempSync(join(tmpdir(), 'uto-ma-wroot-'));
+        await initUserStorage(globalThis.DATA_ROOT);
+        globalThis.COMMAND_LINE_ARGS = { listen: false, configPath: customCfg };
+        await verifySecuritySettings();
+        const withCustom = captured.filter(l => l.includes('recover.js'));
+        assert.ok(withCustom.some(l => l.includes(`--configPath "${customCfg}"`)),
+            'custom --configPath must be echoed in the printed recover command');
+        captured.length = 0;
+
+        // Default config → the flag is redundant and must be omitted.
+        globalThis.COMMAND_LINE_ARGS = { listen: false, configPath: './config.yaml' };
+        await verifySecuritySettings();
+        const withDefault = captured.filter(l => l.includes('recover.js'));
+        assert.ok(withDefault.some(l => l.includes('--dataRoot')),
+            'recover command still prints --dataRoot');
+        assert.ok(withDefault.every(l => !l.includes('--configPath')),
+            'default ./config.yaml must not add a --configPath flag');
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+        globalThis.DATA_ROOT = prevRoot;
+    }
+});
+
+test('recoverPassword resolves dataRoot from its own configPath, not the process-global config', async () => {
+    // initStorage used to read the process-global CONFIG_PATH/CACHED_CONFIG
+    // and ignore its configPath argument — a second in-process recovery
+    // would silently reuse the FIRST instance's dataRoot (and exit 1 when
+    // the handle was not there). The passed path must win.
+    const { getConfigFilePath, setConfigFilePath } = await import('../src/util.js');
+    let globalCfg = getConfigFilePath();
+    if (!globalCfg) {
+        // Self-contained when run in isolation: pin a FIRST instance's
+        // config ourselves so "global ≠ passed" is exercised regardless
+        // of which tests ran before this one.
+        globalCfg = writeScratchConfig(mkdtempSync(join(tmpdir(), 'uto-ma-first-')));
+        setConfigFilePath(globalCfg);
+    }
+    const rootB = mkdtempSync(join(tmpdir(), 'uto-ma-second-'));
+    seedStoredUser(rootB, { handle: 'second-inst', name: 'B', enabled: true, admin: false, password: '', salt: '' });
+    const cfgB = writeScratchConfig(rootB);
+    // The global path points at a DIFFERENT dataRoot — if it wins, the
+    // recover below targets that root, finds no 'second-inst' and exits.
+    assert.notEqual(globalCfg, cfgB);
+    const { recoverPassword } = await import('../src/recover-password.js');
+    await recoverPassword(cfgB, 'second-inst', 'pw-second-1', {});
+    assert.ok(readStoredUser(rootB, 'second-inst').password,
+        'the passed --configPath must resolve ITS dataRoot, not the global one');
+    assert.equal(getConfigFilePath(), globalCfg,
+        'an already-pinned global config path must not be clobbered');
+});
+
+test('recover.js honours LUKER_DATA_ROOT env over the config.yaml dataRoot', () => {
+    // Server resolution order is --dataRoot > env > config.yaml — the CLI
+    // must match, otherwise a server started with LUKER_DATA_ROOT gets its
+    // recovery written into the wrong store.
+    const cfgRoot = mkdtempSync(join(tmpdir(), 'uto-ma-envcfg-'));
+    const envRoot = mkdtempSync(join(tmpdir(), 'uto-ma-envroot-'));
+    seedStoredUser(cfgRoot, { handle: 'env-victim', name: 'E', enabled: true, admin: false, password: '', salt: '' });
+    seedStoredUser(envRoot, { handle: 'env-victim', name: 'E', enabled: true, admin: false, password: '', salt: '' });
+    const cfg = writeScratchConfig(cfgRoot); // config points at cfgRoot
+    const r = spawnSync('node', [RECOVER_JS, '--configPath', cfg, 'env-victim', 'env-pass-1'], {
+        cwd: SERVER_DIR,
+        encoding: 'utf8',
+        timeout: 120000,
+        env: { ...process.env, LUKER_DATA_ROOT: envRoot },
+    });
+    assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+    assert.ok(readStoredUser(envRoot, 'env-victim').password, 'env-root user got the password');
+    assert.equal(readStoredUser(cfgRoot, 'env-victim').password, '', 'config-root user untouched');
+});
+
+test('recover.js resolves a relative --dataRoot against the server dir, not the caller cwd', () => {
+    // server.js chdir()s into the server directory before opening storage,
+    // so `--dataRoot x` always means <server>/x — running recover.js from a
+    // different cwd must produce the same resolution.
+    const relRoot = `_test-rel-root-${Date.now()}`;
+    const absRoot = join(SERVER_DIR, relRoot);
+    try {
+        seedStoredUser(absRoot, { handle: 'rel-victim', name: 'R', enabled: true, admin: false, password: '', salt: '' });
+        const cfg = writeScratchConfig(mkdtempSync(join(tmpdir(), 'uto-ma-relcfg-')));
+        const elsewhere = mkdtempSync(join(tmpdir(), 'uto-ma-elsewhere-'));
+        const r = spawnSync('node', [RECOVER_JS, '--configPath', cfg, '--dataRoot', relRoot, 'rel-victim', 'rel-pass-1'], {
+            cwd: elsewhere, // deliberately NOT apps/server
+            encoding: 'utf8',
+            timeout: 120000,
+        });
+        assert.equal(r.status, 0, `recover exited ${r.status}: ${r.stderr}`);
+        assert.ok(readStoredUser(absRoot, 'rel-victim').password,
+            'relative --dataRoot must resolve against the server dir like server.js does');
+        assert.equal(existsSync(join(elsewhere, relRoot)), false,
+            'no stray data root may be created under the caller cwd');
+    } finally {
+        rmSync(absRoot, { recursive: true, force: true });
+    }
+});
+
+test('loopback-only bind does NOT provision — local auto-login preserved', async () => {
+    // `listen` + a loopback bind on both families is still a local-only
+    // deployment; provisioning there would break the single-user
+    // convenience for no security gain.
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-loopback-'));
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings, tryAutoLogin } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        await initUserStorage(root);
+        console.error = () => {};
+        console.warn = () => {};
+        globalThis.COMMAND_LINE_ARGS = {
+            listen: true,
+            basicAuthMode: false,
+            whitelistMode: false,
+            listenAddressIPv4: '127.0.0.1',
+            listenAddressIPv6: '::1',
+        };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+    }
+    const stored = readStoredUser(root, 'default-user');
+    assert.equal(stored.password, '', 'loopback-only bind must not trigger provisioning');
+    const req = { session: {}, query: {} };
+    assert.equal(await tryAutoLogin(req, false), true, 'local single-user auto-login stays');
+    assert.equal(req.session.handle, 'default-user');
+});
+
+test('disabled IPv6 family does not break loopback judgement — local auto-login preserved', async () => {
+    // enableIPv6:false means no v6 socket ever opens (ServerStartup
+    // useIPv6) — its configured address must not enter the exposure
+    // judgement. With v4 bound to loopback this is a local-only
+    // deployment; provisioning would only break single-user auto-login.
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-nov6-'));
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings, tryAutoLogin } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        await initUserStorage(root);
+        console.error = () => {};
+        console.warn = () => {};
+        globalThis.COMMAND_LINE_ARGS = {
+            listen: true,
+            basicAuthMode: false,
+            whitelistMode: false,
+            enableIPv4: true,
+            listenAddressIPv4: '127.0.0.1',
+            enableIPv6: false,
+            listenAddressIPv6: '[::1]', // configured but never bound — family disabled
+        };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+    }
+    const stored = readStoredUser(root, 'default-user');
+    assert.equal(stored.password, '', 'a disabled family\'s configured address must not read as exposure');
+    const req = { session: {}, query: {} };
+    assert.equal(await tryAutoLogin(req, false), true, 'local single-user auto-login stays');
+    assert.equal(req.session.handle, 'default-user');
+});
+
+test('loopback-looking address that fails bind validation still provisions — wildcard fallback is exposed', async () => {
+    // '127.0.0.1 ' (trailing space) looks loopback to a naive trimmed check
+    // but fails ipRegex — getIPv4ListenUrl() falls back to 0.0.0.0, so the
+    // socket is actually exposed. Provisioning must judge the EFFECTIVE
+    // bind host, not the configured string.
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-fallback-'));
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings, tryAutoLogin } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        await initUserStorage(root);
+        console.error = () => {};
+        console.warn = () => {};
+        globalThis.COMMAND_LINE_ARGS = {
+            listen: true,
+            basicAuthMode: false,
+            whitelistMode: false,
+            listenAddressIPv4: '127.0.0.1 ', // invalid per ipRegex → binds 0.0.0.0
+            listenAddressIPv6: '::1',
+        };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+    }
+    const stored = readStoredUser(root, 'default-user');
+    assert.ok(stored.password, 'a configured address that binds as wildcard must provision');
+    const req = { session: {}, query: {} };
+    assert.equal(await tryAutoLogin(req, false), false, 'anonymous auto-login stays closed on the wildcard-bound instance');
+});
+
+test('OAuth-bound accounts are provisioned but their passwords are never printed', async () => {
+    // Printing a usable password for an OAuth account would hand every log
+    // reader a bypass around the provider's identity check. The password is
+    // still stored (a sole OAuth account must not stay anonymous-auto-login
+    // bait) — it is simply not disclosed on stderr. The guidance also has
+    // to match reality: a bound provider that is not enabled on this
+    // instance must not be recommended as a sign-in path.
+    const root = mkdtempSync(join(tmpdir(), 'uto-ma-oauth-'));
+    // Instance SSO settings: github enabled+configured, discord absent —
+    // same predicate /api/users/oauth/providers reports on.
+    seedStoredItem(root, 'luker:admin-settings:v1', {
+        oauth: { github: { enabled: true, clientId: 'cid', clientSecret: 'csec' } },
+    });
+    // Pre-seed so initUserStorage does not also drop a default-user in —
+    // three passwordless users: enabled-provider-bound, disabled-provider-
+    // bound, and plain.
+    seedStoredUser(root, { handle: 'sso-user', name: 'S', enabled: true, admin: false, password: '', salt: '', oauth: { github: { id: '42' } } });
+    seedStoredUser(root, { handle: 'sso-orphan', name: 'O', enabled: true, admin: false, password: '', salt: '', oauth: { discord: { id: '7' } } });
+    seedStoredUser(root, { handle: 'plain-user', name: 'P', enabled: true, admin: false, password: '', salt: '' });
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) setConfigFilePath(writeScratchConfig(root));
+    const { initUserStorage, verifySecuritySettings } = await import('../src/users.js');
+    const prevArgs = globalThis.COMMAND_LINE_ARGS;
+    const prevRoot = globalThis.DATA_ROOT;
+    const captured = [];
+    const origErr = console.error;
+    const origWarn = console.warn;
+    try {
+        globalThis.DATA_ROOT = root;
+        await initUserStorage(root);
+        console.error = (...a) => captured.push(a.join(' '));
+        console.warn = (...a) => captured.push(a.join(' '));
+        globalThis.COMMAND_LINE_ARGS = { listen: true, basicAuthMode: false, whitelistMode: false };
+        await verifySecuritySettings();
+    } finally {
+        console.error = origErr;
+        console.warn = origWarn;
+        globalThis.COMMAND_LINE_ARGS = prevArgs;
+        globalThis.DATA_ROOT = prevRoot;
+    }
+    assert.ok(readStoredUser(root, 'sso-user').password, 'OAuth account still gets a stored password (auto-login stays closed)');
+    assert.ok(readStoredUser(root, 'sso-orphan').password, 'disabled-provider account still gets a stored password');
+    assert.ok(readStoredUser(root, 'plain-user').password, 'plain passwordless account provisioned');
+    assert.ok(captured.some(l => /user:\s*sso-user/.test(l)), 'OAuth handle appears in the banner');
+    assert.ok(captured.some(l => /OAuth-bound/.test(l)), 'OAuth-bound marker printed instead of the secret');
+    const passLines = captured.filter(l => /pass:\s*\S+/.test(l));
+    assert.equal(passLines.length, 1, 'only the non-OAuth account may have its password printed');
+    // Guidance filter: the enabled provider is named for sso-user, while
+    // sso-orphan (discord bound but not configured here) gets the
+    // admin/recover.js fallback instead of a dead-end pointer.
+    assert.ok(captured.some(l => /github/i.test(l) && /provider button/.test(l)),
+        'enabled provider is recommended by name');
+    assert.ok(captured.some(l => /No enabled SSO provider/.test(l)),
+        'bound-but-disabled provider falls back to admin/recover.js guidance');
+    assert.ok(captured.every(l => !(/discord/i.test(l) && /provider button/.test(l))),
+        'a provider that is not enabled must never be recommended');
 });
