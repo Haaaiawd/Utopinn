@@ -1676,7 +1676,7 @@ router.post('/reset-settings', async (request, response) => {
 
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(password, request.user.profile.salt)) {
             console.warn('Reset settings failed: Incorrect password');
-            return response.status(403).json({ error: 'Incorrect password' });
+            return response.status(403).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         const pathToFile = path.join(request.user.directories.root, SETTINGS_FILE);
@@ -1739,7 +1739,7 @@ router.post('/reset-step1', async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Reset step 1 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Reset step 1 failed:', error);
@@ -1751,12 +1751,12 @@ router.post('/reset-step2', async (request, response) => {
     try {
         if (!request.body.code) {
             console.warn('Reset step 2 failed: Missing required fields');
-            return response.status(400).json({ error: 'Missing required fields' });
+            return response.status(400).json({ error: 'Missing required fields', code: 'missing_fields' });
         }
 
         if (request.user.profile.password && request.user.profile.password !== getPasswordHash(request.body.password, request.user.profile.salt)) {
             console.warn('Reset step 2 failed: Incorrect password');
-            return response.status(400).json({ error: 'Incorrect password' });
+            return response.status(400).json({ error: 'Incorrect password', code: 'incorrect_password' });
         }
 
         const ip = getIpAddress(request, PREFER_REAL_IP_HEADER);
@@ -1771,7 +1771,7 @@ router.post('/reset-step2', async (request, response) => {
         if (!code || code !== request.body.code) {
             await resetLimiter.consume(ip);
             console.warn('Reset step 2 failed: Incorrect code');
-            return response.status(400).json({ error: 'Incorrect code' });
+            return response.status(400).json({ error: 'Incorrect code', code: 'incorrect_code' });
         }
 
         console.info('Resetting account data:', request.user.profile.handle);
@@ -1786,7 +1786,7 @@ router.post('/reset-step2', async (request, response) => {
     } catch (error) {
         if (error instanceof RateLimiterRes) {
             console.error('Reset step 2 failed: Rate limited from', getIpAddress(request, PREFER_REAL_IP_HEADER));
-            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.' });
+            return retryAfter(response, error).status(429).send({ error: 'Too many attempts. Try again later or contact your admin.', code: 'rate_limited' });
         }
 
         console.error('Reset step 2 failed:', error);

@@ -154,7 +154,7 @@ const zh: Record<string, string> = {
     /* OAuth 回跳 /login?error=<reason>(redirectToLoginWithError)—— 登录面 mount 读一次即剥。 */
     'login.err.oauth': '第三方登录未完成 —— 请重试',
     'login.err.oauth.disabled': '该账号已被停用',
-    'login.err.oauth.notLinked': '该第三方账号未绑定任何本地 handle —— 请先以密码登录再绑定，或联系管理员',
+    'login.err.oauth.notLinked': '该第三方账号未绑定任何本地账号 —— 请联系管理员绑定',
     'login.err.oauth.guild': 'Discord 服务器成员资格校验未通过',
     'login.err.oauth.notConfigured': '该第三方登录方式未在服务端配置',
     'chat.demo': '演示', 'stage.demoData': '离线演示数据 · 不落库',
@@ -608,7 +608,7 @@ const en: Record<string, string> = {
     /* OAuth bounce /login?error=<reason> (redirectToLoginWithError) — read once on mount, then stripped. */
     'login.err.oauth': 'OAuth sign-in did not complete — please try again.',
     'login.err.oauth.disabled': 'This account is disabled.',
-    'login.err.oauth.notLinked': 'This provider account is not linked to any local handle — sign in with a password first, or ask an admin.',
+    'login.err.oauth.notLinked': 'This provider account is not linked to any local account — ask an admin to link it.',
     'login.err.oauth.guild': 'Discord server membership check failed.',
     'login.err.oauth.notConfigured': 'This sign-in provider is not configured on the server.',
     'chat.demo': 'Demo', 'stage.demoData': 'Offline demo data · not persisted',
