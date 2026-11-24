@@ -117,6 +117,10 @@ export async function runQuietGeneration({
         headers: {},
         user: { profile: { handle, name: userName }, directories },
         utopinnDiagId: diagId,
+        // TH lifecycle events are self-managed by the caller (th.generate /
+        // quiet host) — the job funnel emitThLifecycle skips on this flag,
+        // otherwise started/ended would publish twice.
+        utopinnThSelfManaged: true,
         once() { return this; },
         // 先置动词:派发体在 dispatch 前整体回填覆盖;组装失败路径上
         // createGenerationJob 读 request.body.type 落 job.requestMeta.verb,

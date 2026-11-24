@@ -104,6 +104,10 @@ export interface GenerateRequest {
     luker_generation?: {
         job_id?: string;
         persist_target?: PersistTarget;
+        /** Host-managed lifecycle: the caller (CardApp host) publishes
+         *  generation_started/ended|stopped itself — the server transition
+         *  funnel stays silent for this job (no double events). */
+        th_self_managed?: boolean;
     };
     // —— 透传派发参数(chat_completion_source/model/temperature/…按上游 body 走)
     [key: string]: unknown;

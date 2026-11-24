@@ -104,6 +104,10 @@ export async function runTriggerGeneration({
         headers: {},
         user: { profile: { handle, name: userName }, directories },
         utopinnDiagId: diagId,
+        // TH lifecycle events are self-managed by this function
+        // (generation_requested/started/ended/stopped are published by hand)
+        // — the job funnel emitThLifecycle skips on this flag, no doubles.
+        utopinnThSelfManaged: true,
         once() { return this; },
         // dispatch 前回填整包;verb 预置保证 assemble 失败也能落台账。
         body: { type },

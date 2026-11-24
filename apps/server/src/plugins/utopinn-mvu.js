@@ -47,6 +47,7 @@ export function apply(ctx) {
                 ...args,
                 messageIndex,
                 updateChatVariables: request.body?.update_chat_variables !== false,
+                directories: request.user.directories,
             });
             return response.send({ ok: true, ...result });
         } catch (error) {
@@ -64,6 +65,7 @@ export function apply(ctx) {
             const result = await resettleChatMvu({
                 ...args,
                 updateChatVariables: request.body?.update_chat_variables !== false,
+                directories: request.user.directories,
             });
             return response.send({ ok: true, ...result });
         } catch (error) {

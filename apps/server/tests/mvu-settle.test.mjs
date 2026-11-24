@@ -29,6 +29,7 @@ import { getConfigFilePath, reloadConfigCache, setConfigFilePath } from '../src/
 import {
     MVU_STATE_NAMESPACE,
     initializeMvuChat,
+    mvuHardDisabled,
     resolveMvuInitLorebooks,
     resettleChatMvu,
     settlePersistedMvuMessage,
@@ -507,6 +508,170 @@ test('TASK-045 — /api/chats/append + /group/append 真实路由:预建聊天�
         assert.equal(doc.body[1].variables['0'].stat_data.morale, 15);
     } finally {
         server?.close();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// ---------- mvuHardDisabled: card-owned ledger / per-chat explicit off (corrosion fix) ----------
+// Scenario: a CardApp manages stat_data itself — card-side code parses
+// _.set lines out of the AI reply, writes the ledger via ctx.setVariable,
+// strips the command lines from mes via editMessage, and keeps its own
+// stat_data_prev/_for rollback. The server running resettleChatMvu after
+// /save + /patch refolds from already-stripped text → floor snapshots
+// revert to baseline → stat_data is permanently lost.
+// Pins: on a veto hit, init/settle/resettle go fully silent
+// (disabled/not_mvu) — floor snapshots/mes/mirror/integrity untouched,
+// StatusPlaceHolderImpl never injected.
+
+/** Card-ledger snapshot fixture: isMvuData requires stat_data + schema. */
+function mvuSnap(statData) {
+    return { stat_data: statData, schema: { type: 'object', properties: {} }, initialized_lorebooks: {} };
+}
+
+test('mvuHardDisabled — pure function: flag matrix', () => {
+    assert.equal(mvuHardDisabled({}), false);
+    assert.equal(mvuHardDisabled({ chatMetadata: { mvu: { enabled: false } } }), true);
+    assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: false } } } }), true);
+    assert.equal(mvuHardDisabled({ card: { extensions: { mvu: false } } }), true);
+    // explicit false beats explicit true (veto is the defensive position)
+    assert.equal(mvuHardDisabled({
+        card: { data: { extensions: { mvu: false } } },
+        chatMetadata: { mvu: { enabled: true } },
+    }), true);
+    // truthy flag is not a veto
+    assert.equal(mvuHardDisabled({ card: { data: { extensions: { mvu: true } } } }), false);
+});
+
+test('mvuHardDisabled — card flag extensions.mvu:false: settle/resettle/init all silent, card ledger not reverted', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-veto-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        fs.mkdirSync(dirs.characters, { recursive: true });
+        fs.writeFileSync(path.join(dirs.characters, CHAR + '.json'), JSON.stringify({
+            name: CHAR,
+            data: { name: CHAR, extensions: { world: 'CharBook', mvu: false } },
+        }));
+        const repo = getChatRepo();
+        // Session state = the post-CardApp-write shape: floor-0 snapshot
+        // hp:100; floor-1 snapshot hp:42 is the card's own ledger
+        // (ctx.setVariable), the _.set lines in mes were already stripped
+        // by editMessage; chat_metadata.variables.stat_data.hp=42 is the
+        // card's latest ledger.
+        await repo.save(HANDLE, CHAR, 'veto', {
+            user_name: 'User',
+            chat_metadata: { variables: { stat_data: { hp: 42 }, schema: { type: 'object' } } },
+        }, [
+            { is_user: false, name: CHAR, mes: '开场。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 100 }) } },
+            { is_user: false, name: CHAR, mes: '她收剑还鞘。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 42 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'veto');
+
+        // resettle: armed (mirror key + floor snapshots at full strength)
+        // but the card veto hits → 'disabled', nothing moves.
+        const rr = await resettleChatMvu({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
+        assert.equal(rr.status, 'disabled', 'card flag vetoes resettle');
+        let doc = await repo.get(HANDLE, CHAR, 'veto');
+        assert.equal(doc.integrity, before.integrity, 'veto does not bump integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, 'card ledger snapshot not reverted to baseline');
+        assert.equal(doc.body[1].mes, '她收剑还鞘。', 'mes gets no placeholder injection');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, 'mirror not overwritten');
+
+        // settle: same veto — no fold, no placeholder injection.
+        const ss = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'veto', directories: dirs });
+        assert.equal(ss.status, 'disabled', 'card flag vetoes settle');
+        doc = await repo.get(HANDLE, CHAR, 'veto');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42);
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), 'no placeholder injected');
+
+        // init: positive signals at full strength ([initvar] comment +
+        // floorText _.set) are still vetoed by the card flag → 'disabled'.
+        const init = await initializeMvuChat({
+            handle: HANDLE, charDir: CHAR, name: 'veto',
+            lorebooks: [{ name: 'b', isPrimary: true, entries: [{ content: 'hp: 1', comment: '[initvar]' }] }],
+            directories: dirs,
+        });
+        assert.equal(init.status, 'disabled', 'card flag vetoes init');
+        assert.equal(init.initialized, false);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('mvuHardDisabled — chat_metadata.mvu.enabled === false: metadata-only gate, fully silent without a card read', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-vetometa-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        // Deliberately no card file — the metadata-only gate must hold on
+        // its own (no card to read, no fallback).
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'offchat', {
+            user_name: 'User',
+            chat_metadata: { mvu: { enabled: false }, variables: { stat_data: { hp: 7 } } },
+        }, [
+            { is_user: false, name: CHAR, mes: "开局。\n_.set('hp', 7);", swipe_id: 0, variables: { '0': mvuSnap({ hp: 7 }) } },
+            { is_user: false, name: CHAR, mes: "推进。\n_.set('hp', 9);", swipe_id: 0, variables: { '0': mvuSnap({ hp: 9 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'offchat');
+
+        const rr = await resettleChatMvu({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(rr.status, 'disabled');
+        const ss = await settlePersistedMvuMessage({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(ss.status, 'disabled');
+        const init = await initializeMvuChat({ handle: HANDLE, charDir: CHAR, name: 'offchat', directories: dirs });
+        assert.equal(init.status, 'disabled');
+
+        const doc = await repo.get(HANDLE, CHAR, 'offchat');
+        assert.equal(doc.integrity, before.integrity, 'three vetoes do not bump integrity');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 9, 'card ledger snapshot not reverted');
+        assert.ok(!doc.body[1].mes.includes('StatusPlaceHolder'), 'placeholder not injected');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 7, 'mirror not overwritten');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('mvuHardDisabled — post-/save resettleMvuAfterWrite seam: card flag applies via directories', async () => {
+    // Real wound chain: CardApp editMessage strips commands → PUT /save →
+    // seam resettle → floor snapshots revert to baseline. This pin proves
+    // the directories pipe from the seam into resettleChatMvu is wired
+    // (without directories the card veto cannot read the card = no effect).
+    if (!getConfigFilePath()) {
+        setConfigFilePath(path.resolve(__dirname, '../default/config.yaml'));
+    }
+    reloadConfigCache();
+    const { resettleMvuAfterWrite } = await import('../src/endpoints/chats.js');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-mvu-vetoseam-'));
+    try {
+        const dirs = makeDirs(tmpDir);
+        await initStorage({ mode: 'fs', directoriesByHandle: () => dirs });
+        fs.mkdirSync(dirs.characters, { recursive: true });
+        fs.writeFileSync(path.join(dirs.characters, CHAR + '.json'), JSON.stringify({
+            name: CHAR,
+            data: { name: CHAR, extensions: { mvu: false } },
+        }));
+        const repo = getChatRepo();
+        await repo.save(HANDLE, CHAR, 'seamveto', {
+            user_name: 'User',
+            chat_metadata: { variables: { stat_data: { hp: 42 } } },
+        }, [
+            { is_user: false, name: CHAR, mes: '开场。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 100 }) } },
+            { is_user: false, name: CHAR, mes: '已剥命令的楼层。', swipe_id: 0, variables: { '0': mvuSnap({ hp: 42 }) } },
+        ], null);
+        const before = await repo.get(HANDLE, CHAR, 'seamveto');
+
+        await resettleMvuAfterWrite({
+            body: { avatar_url: 'Alice.png', file_name: 'seamveto.jsonl' },
+            user: { profile: { handle: HANDLE }, directories: dirs },
+        });
+        const doc = await repo.get(HANDLE, CHAR, 'seamveto');
+        assert.equal(doc.integrity, before.integrity, 'seam stays fully silent, integrity not bumped');
+        assert.equal(doc.body[1].variables['0'].stat_data.hp, 42, 'card ledger not reverted');
+        assert.equal(doc.body[1].mes, '已剥命令的楼层。', 'mes untouched');
+        assert.equal(doc.header.chat_metadata.variables.stat_data.hp, 42, 'mirror not overwritten');
+    } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
 });

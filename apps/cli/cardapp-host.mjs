@@ -599,6 +599,10 @@ export async function mountCardApp(opts) {
             user: { name: opts.user ?? 'User' },
             luker_generation: {
                 job_id: jobId,
+                // This host publishes started/ended|stopped itself
+                // (pushCtxEvent + pushThEvent + mailbox mirror) — mark the
+                // job so the server transition funnel stays silent.
+                th_self_managed: true,
                 // CLI runGeneration 同款:getPersistChatKey 见 avatar_url 就当真
                 // persist,故仅 normal/regenerate 走 character,其余 kind:'none'
                 // (swipe/continue 由调用方补 patch——headless 只泵事件不落盘)

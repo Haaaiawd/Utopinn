@@ -211,9 +211,34 @@ const MVU_VAR_KEYS = ['stat_data', 'mvu_data', 'schema', 'display_data', 'delta_
 const MVU_CMD_RE = /\b_\.\w+\s*\(/;
 
 /**
+ * Explicit MVU veto (hard gate, ahead of every positive signal): any hit →
+ * server-side settle/resettle/init goes fully silent, and the
+ * StatusPlaceHolderImpl injection path in settle.ts never runs either (the
+ * placeholder is only written via settleMvuMessage, which is not invoked
+ * after a veto). Purpose: when the card is the authoritative ledger,
+ * server refold is both redundant and wrong — CardApp-style cards manage
+ * stat_data themselves (ctx.setVariable writes the ledger, editMessage
+ * strips _.set lines, stat_data_prev/_for roll back), so refolding from
+ * already-stripped floor text reverts floors to the baseline and loses the
+ * ledger permanently.
+ *   a) chat_metadata.mvu.enabled === false (explicit per-chat off)
+ *   b) card.data.extensions.mvu === false ‖ card.extensions.mvu === false
+ *      (card declares "the ledger is mine")
+ * Conflicts resolve to false first: the veto is a defensive gate (skipping
+ * is harmless), a misfold is irreversible.
+ */
+export function mvuHardDisabled({ card, chatMetadata } = {}) {
+    if (chatMetadata?.mvu?.enabled === false) return true;
+    if (card?.data?.extensions?.mvu === false || card?.extensions?.mvu === false) return true;
+    return false;
+}
+
+/**
  * MVU 相关性门控(upstream should_enable 每聊天开关的服务端等价):
  * 满足任一即视为 MVU 上下文,否则 init/settle 跳过——非 MVU 卡不该
  * 长出 stat_data 快照或 StatusPlaceHolder 占位符。
+ * Slot 0: mvuHardDisabled explicit veto (card-owned ledger / per-chat off)
+ * overrides every positive signal.
  *   a) chat_metadata.mvu.enabled === true(显式每聊天开关)
  *   b) chat_metadata.variables 已有 MVU 镜像键(已初始化/导入的 MVU 聊天)
  *   c) card.data.extensions.mvu 为真(卡声明)
@@ -221,6 +246,7 @@ const MVU_CMD_RE = /\b_\.\w+\s*\(/;
  *   e) floor-0 正文含 <initvar> 块或 _. 命令(MVU 卡的开场初始化惯例)
  */
 function mvuSignalPresent({ card, chatMetadata, lorebooks, floorText } = {}) {
+    if (mvuHardDisabled({ card, chatMetadata })) return false;
     if (chatMetadata?.mvu?.enabled === true) return true;
     const vars = chatMetadata?.variables;
     if (vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined)) return true;
@@ -270,6 +296,12 @@ export async function initializeMvuChat(args) {
         lorebooks = resolved.lorebooks;
         primaryLorebookName ??= resolved.primaryLorebookName;
         card ??= resolved.card;
+    } else if (card === null && args.card === undefined && args.charDir && args.directories) {
+        // The pre-resolved-lorebook path yields no card — the
+        // extensions.mvu===false veto still needs evaluating, so read it
+        // once here (an explicit card:null means "checked, none" and is
+        // not re-read).
+        card = await loadCard(args.directories, args.charDir).catch(() => null);
     }
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
@@ -281,6 +313,12 @@ export async function initializeMvuChat(args) {
         const floor = body[0];
         const floorText = [floor?.mes, ...(Array.isArray(floor?.swipes) ? floor.swipes : [])]
             .filter((s) => typeof s === 'string').join('\n');
+        // The explicit veto gets its own status ('disabled' is observable) —
+        // mvuSignalPresent returns false on the same condition; checking
+        // early avoids reporting 'not_mvu' which would read as "no signal".
+        if (mvuHardDisabled({ card, chatMetadata: chat.header?.chat_metadata })) {
+            return { status: 'disabled', initialized: false };
+        }
         if (!mvuSignalPresent({ card, chatMetadata: chat.header?.chat_metadata, lorebooks, floorText })) {
             return { status: 'not_mvu', initialized: false };
         }
@@ -368,9 +406,17 @@ export async function initializeMvuChat(args) {
  *   探测;显式传 false 退化为纯结算(不补 init)。
  * @param {import('@utopinn/core').MvuInitLorebook[]} [args.lorebooks] autoInit 预解书目。
  * @param {string} [args.primaryLorebookName] autoInit 主书名。
- * @param {object} [args.directories] autoInit 自解书目所需用户目录(.characters 读卡)。
- * @param {(s:string)=>string} [args.substitute] 透传给 init/settle 的宏替换。
+ * @param {object} [args.directories] user directories needed by autoInit
+ *   lorebook resolution + card-veto evaluation (.characters card read;
+ *   absent → degrades to the metadata-only gate).
+ * @param {object} [args.card] caller-resolved card document; when absent
+ *   and args.directories is set it is lazy-read on demand (explicit null =
+ *   "checked, no card", never re-read).
+ * @param {(s:string)=>string} [args.substitute] macro substitution passed
+ *   through to init/settle.
  * @returns {Promise<object>} {status, modified, messageIndex, swipeId, baselineIndex, receipt}
+ *   status='disabled' = mvuHardDisabled veto hit (card-owned ledger / chat
+ *   explicitly off).
  */
 export async function settlePersistedMvuMessage(args) {
     const repo = getChatRepo();
@@ -380,6 +426,13 @@ export async function settlePersistedMvuMessage(args) {
     // 不是「聊天刚建」(调用方判断);显式 false 才关闭探测。
     const autoInit = args.autoInit !== false;
     let initAttempted = false;
+    // Card-level veto (explicit args.card = already resolved; otherwise a
+    // lazy read happens only when floors carry snapshots, i.e. when settle
+    // would actually fold — reused across retries). Snapshot-less chats
+    // exit early at no_baseline and are not worth a disk read; group chats
+    // / absent directories degrade to the metadata-only gate.
+    let vetoCard = args.card ?? null;
+    let vetoCardResolved = args.card !== undefined;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
         const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
@@ -390,6 +443,31 @@ export async function settlePersistedMvuMessage(args) {
         const messageIndex = Number.isInteger(args.messageIndex)
             ? Math.min(Math.max(0, args.messageIndex), body.length - 1)
             : body.length - 1;
+
+        // Explicit veto first (mvuHardDisabled): the metadata switch is
+        // judged without a card read; the card-level veto is only evaluated
+        // when floors carry snapshots (= a baseline exists and
+        // settleMvuMessage would actually fold + inject StatusPlaceHolderImpl).
+        const chatMetadata = chat.header?.chat_metadata;
+        if (mvuHardDisabled({ chatMetadata })) {
+            return { status: 'disabled', modified: false, messageIndex, swipeId: -1, baselineIndex: -1 };
+        }
+        const floorArmed = body.some((m) => {
+            const v = m?.variables;
+            if (!v || typeof v !== 'object') return false;
+            return Object.values(v).some((s) => isMvuData(s));
+        });
+        if (floorArmed) {
+            if (!vetoCardResolved) {
+                vetoCardResolved = true;
+                if (args.charDir && args.directories) {
+                    vetoCard = await loadCard(args.directories, args.charDir).catch(() => null);
+                }
+            }
+            if (mvuHardDisabled({ card: vetoCard, chatMetadata })) {
+                return { status: 'disabled', modified: false, messageIndex, swipeId: -1, baselineIndex: -1 };
+            }
+        }
 
         const result = settleMvuMessage({ messages: body, messageIndex, substitute: args.substitute });
         if (result.status !== 'settled') {
@@ -405,9 +483,27 @@ export async function settlePersistedMvuMessage(args) {
                     lorebooks: args.lorebooks,
                     primaryLorebookName: args.primaryLorebookName,
                     directories: args.directories,
+                    // Already-resolved card (explicit args.card or the lazy
+                    // veto read) is forwarded so init judges the same doc —
+                    // unresolved stays undefined and init lazy-loads itself.
+                    card: vetoCardResolved ? vetoCard : args.card,
                     substitute: args.substitute,
                     updateChatVariables,
                 });
+                if (init.status === 'disabled') {
+                    // Veto passthrough (card flag / metadata switch): when
+                    // floors carry no snapshots this settle's metadata gate
+                    // already fired — this is the card-level veto discovered
+                    // by autoInit.
+                    return {
+                        status: 'disabled',
+                        modified: false,
+                        messageIndex,
+                        swipeId: result.swipeId,
+                        baselineIndex: result.baselineIndex,
+                        receipt: result.receipt,
+                    };
+                }
                 if (init.status === 'initialized' || init.status === 'already_initialized') {
                     if (init.status === 'initialized' && messageIndex === 0) {
                         // 目标是 floor-0 自身:init 已把开场 swipe 文本 fold 进
@@ -496,12 +592,25 @@ export async function settlePersistedMvuMessage(args) {
 /**
  * 全量重放 settle(旧楼层被编辑/删除/换 swipe 后的投影重建)。
  * 逐层 settleMvuMessage(楼层快照就地更新,供后续层作基底),末尾单次 save。
+ * @param {object} [args.directories] user directories needed for the
+ *   card-veto evaluation (.characters card read; absent → degrades to the
+ *   metadata-only gate).
+ * @param {object} [args.card] caller-resolved card document (same semantics
+ *   as settlePersistedMvuMessage).
  * @returns {Promise<object>} {status, floors, settled, modified, receipts}
+ *   status='disabled' = mvuHardDisabled veto hit (card-owned ledger / chat
+ *   explicitly off).
  */
 export async function resettleChatMvu(args) {
     const repo = getChatRepo();
     const opts = { isGroup: !!args.isGroup, groupId: args.groupId };
     const updateChatVariables = args.updateChatVariables !== false;
+    // Card-level veto (explicit args.card = already resolved; otherwise a
+    // lazy read happens only after the chat proves MVU-shaped — reused
+    // across retries). Group chats / absent directories degrade to the
+    // metadata-only gate.
+    let vetoCard = args.card ?? null;
+    let vetoCardResolved = args.card !== undefined;
 
     for (let attempt = 0; attempt < MAX_SAVE_ATTEMPTS; attempt++) {
         const chat = await repo.get(args.handle, args.charDir ?? '', args.name, opts);
@@ -509,9 +618,18 @@ export async function resettleChatMvu(args) {
         if (!chat || !body || body.length === 0) {
             return { status: 'no_chat', modified: false, floors: 0 };
         }
+        // Explicit veto first (mvuHardDisabled): the metadata switch is
+        // judged without a card read. Chats whose ledger is card-owned have
+        // mirror keys + floor snapshots at full strength — without this
+        // veto the two gates below pass and the replay reverts stripped
+        // floors to the baseline, losing the ledger permanently.
+        const chatMetadata = chat.header?.chat_metadata;
+        if (mvuHardDisabled({ chatMetadata })) {
+            return { status: 'disabled', modified: false, floors: body.length };
+        }
         // 非 MVU 聊天直接跳过全量重放(O(n²))——无镜像键且无楼层快照
         // 即无 MVU 参与过,refold 只会有害无益。
-        const vars = chat.header?.chat_metadata?.variables;
+        const vars = chatMetadata?.variables;
         const metaMvu = vars && typeof vars === 'object' && MVU_VAR_KEYS.some((k) => vars[k] !== undefined);
         const floorMvu = body.some((m) => {
             const v = m?.variables;
@@ -520,6 +638,15 @@ export async function resettleChatMvu(args) {
         });
         if (!metaMvu && !floorMvu) {
             return { status: 'not_mvu', modified: false, floors: body.length };
+        }
+        if (!vetoCardResolved) {
+            vetoCardResolved = true;
+            if (args.charDir && args.directories) {
+                vetoCard = await loadCard(args.directories, args.charDir).catch(() => null);
+            }
+        }
+        if (mvuHardDisabled({ card: vetoCard, chatMetadata })) {
+            return { status: 'disabled', modified: false, floors: body.length };
         }
 
         let nextBody = body.slice();

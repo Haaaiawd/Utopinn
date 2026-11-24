@@ -1613,6 +1613,9 @@ function mvuRepoArgsFromRequest(request, { group = false } = {}) {
         name: key.name,
         isGroup: key.isGroup,
         groupId: key.groupId,
+        // mvuHardDisabled card-level veto needs the card read (.characters);
+        // group chats ('' charDir) degrade to the metadata-only gate.
+        directories: request.user.directories,
     };
 }
 
@@ -1637,11 +1640,7 @@ export async function settleMvuAfterAppend(request, { group = false, autoInit = 
     try {
         const args = mvuRepoArgsFromRequest(request, { group });
         if (!args) return;
-        await settlePersistedMvuMessage({
-            ...args,
-            autoInit,
-            directories: request.user.directories,
-        });
+        await settlePersistedMvuMessage({ ...args, autoInit });
     } catch (error) {
         console.error('[mvu] post-append settle failed:', error);
     }

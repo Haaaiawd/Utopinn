@@ -106,6 +106,9 @@ describe('createGenerationJob', () => {
             api: 'openai',
             char_name: 'Assistant',
             model: 'gpt-4',
+            profileId: '',
+            profileName: '',
+            theater: false,
             directories: { chats: '/tmp/chats', groupChats: '/tmp/groups', characters: '/tmp/chars' },
         });
         expect(job.modelName).toBe('gpt-4');

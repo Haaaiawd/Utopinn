@@ -312,13 +312,18 @@ export class CardAppHost {
         } catch { /* 信箱面缺席/抖动不致命 — 下轮泵再试 */ }
     }
 
-    /** 轮询入口(CardAppFrame 按 interval 调):diff → 事件 + chat.updated + 信箱。
-     *  seed 未竟的拍整轮跳过 —— 游标钉头是顺序前置,不是可选优化。 */
+    /** Poll entry (CardAppFrame calls on an interval): mailbox events first,
+     *  then floor diff + chat.updated. Lifecycle events (generation_started)
+     *  must reach the card before the floor diff emits message_received for
+     *  the reply — otherwise a card that arms its reply handler on started
+     *  misses a reply that landed between polls. Ticks before seed() are
+     *  skipped whole — cursor anchoring is an ordering prerequisite, not an
+     *  optimization. */
     async pollChat(): Promise<void> {
         if (this.dead || !this.seeded) return;
         const r = await this.syncChat();
-        if (r) this.diffAndEmitChat(r.prev, r.next);
         await this.pollEventLog();
+        if (r) this.diffAndEmitChat(r.prev, r.next);
     }
 
     /**
@@ -366,6 +371,11 @@ export class CardAppHost {
             user: { name: this.userName },
             luker_generation: {
                 job_id: jobId,
+                // This host publishes generation_started/ended|stopped itself
+                // (emitCtx + emitTh + mailbox mirror) — mark the job so the
+                // server transition funnel stays silent and the mailbox is
+                // not double-written.
+                th_self_managed: true,
                 persist_target: (type === 'normal' || type === 'regenerate')
                     ? { kind: 'character', avatar_url: this.avatarUrl, file_name: this.chatFileName, char_name: this.charDir }
                     : { kind: 'none' },

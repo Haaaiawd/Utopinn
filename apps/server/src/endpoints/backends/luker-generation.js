@@ -580,6 +580,23 @@ export function createGenerationJob(request, options) {
     job.finishedAt = null;
     job.persistenceInFlight = false;
     job.requestMeta = buildGenerationJobRequestMeta(request, persistTarget);
+    // TH lifecycle mailbox ctx (consumed by the emitJobTransition funnel):
+    // explicit request.utopinnThCtx first (pre-attached by utopinn-generate —
+    // after dispatchBody replaces request.body, charDir/chatName no longer
+    // live on the body), else derived from persist_target; both empty →
+    // empty strings → events land in the session mailbox (withEventDoc
+    // semantics). Group jobs carry isGroup/groupId so the write targets the
+    // group mailbox and can never leak into a colliding private chat.
+    job.thCtx = normalizeThCtx(request.utopinnThCtx) ?? deriveThCtxFromPersistTarget(persistTarget);
+    // Self-managed chains: trigger-generation / quiet-generation synthetic
+    // requests flag request.utopinnThSelfManaged; CardApp hosts (web
+    // ctxHost / CLI cardapp-host) already publish the same lifecycle events
+    // to their own subscribers and mirror them into the mailbox, so they
+    // flag body.luker_generation.th_self_managed. Either mark → this job's
+    // transitions stay silent; otherwise started/ended publish twice and
+    // card-side arm()/rollback hooks run twice.
+    job.thSelfManaged = request.utopinnThSelfManaged === true
+        || request.body?.luker_generation?.th_self_managed === true;
     job.modelName = String(request.body?.model || '');
     if (!Array.isArray(job.events)) {
         job.events = [];
@@ -701,11 +718,109 @@ function notifyJobStatus(job) {
  * 去重发 job 事件——比逐个迁移点埋点少一圈挂点,且节流 progress 帧
  * (status 不变)天然不重复发。
  */
+/** request.utopinnThCtx → {charDir, chatName, isGroup?, groupId?}|null. */
+function normalizeThCtx(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    if (raw.isGroup === true || raw.is_group === true) {
+        const chatName = stripJsonlExt(String(raw.chatName ?? raw.chatId ?? raw.groupId ?? '').trim());
+        if (!chatName) return null;
+        return { charDir: '', chatName, isGroup: true, groupId: String(raw.groupId ?? chatName) };
+    }
+    const charDir = String(raw.charDir ?? '').trim();
+    const chatName = stripJsonlExt(String(raw.chatName ?? '').trim());
+    if (!charDir && !chatName) return null;
+    return { charDir, chatName };
+}
+
+/**
+ * persist_target → TH mailbox ctx (fallback when utopinnThCtx is absent):
+ *   character → avatar_url/file_name; group → isGroup + id (the group chat
+ *   key — the mailbox must not resolve the speaker's private chat even when
+ *   a private chat shares the group chatId, otherwise group events leak
+ *   cross-session). Underivable (kind:'none'/missing fields) → null →
+ *   events land in the session mailbox.
+ */
+function deriveThCtxFromPersistTarget(persistTarget) {
+    if (!persistTarget || typeof persistTarget !== 'object') return null;
+    if (persistTarget.kind === 'group') {
+        const chatName = stripJsonlExt(String(persistTarget.id ?? '').trim());
+        if (!chatName) return null;
+        return { charDir: '', chatName, isGroup: true, groupId: chatName };
+    }
+    const charDir = normalizePersistAvatarDirectory(persistTarget.avatar_url ?? '');
+    const chatName = stripJsonlExt(normalizePersistJsonlFileName(persistTarget.file_name ?? ''));
+    if (!charDir && !chatName) return null;
+    return { charDir, chatName };
+}
+
+/** job → recordThEvent ctx2 (withEventDoc contract: {handle, charDir, chatName, isGroup?, groupId?}). */
+function jobThContext(job) {
+    const handle = String(job?.handle ?? job?.owner ?? '');
+    if (!handle) return null;
+    const ctx = (job.thCtx && typeof job.thCtx === 'object') ? job.thCtx : null;
+    const out = { handle, charDir: String(ctx?.charDir ?? ''), chatName: String(ctx?.chatName ?? '') };
+    if (ctx?.isGroup === true) {
+        out.isGroup = true;
+        out.groupId = String(ctx.groupId ?? out.chatName);
+    }
+    return out;
+}
+
+// TH lifecycle mailbox — normal sends (/api/utopinn/generate) previously
+// wrote no recordThEvent at all, so CardApp arm()/rollback hooks never ran.
+// Every job status transition funnels through emitJobTransition; event
+// names/payloads mirror trigger-generation.js:
+//   running            → generation_started [verb]
+//   completed          → generation_ended   [finalText] (ack + fallback persist alike)
+//   failed | cancelled → generation_stopped [err.slice(0,300)]
+// Exactly one event per transition (started → ended|stopped); a recycled job
+// re-arms naturally. Writes chain per job (job.thWriteChain): started always
+// lands before the terminal event, and persistJobReplyText awaits the chain
+// so the started entry precedes the appended reply floor — a card arming its
+// reply handler on generation_started can no longer miss the reply to a
+// between-polls landing. Mailbox write failures never mask the job lifecycle
+// (recordThEvent swallows internally, wrapped once more here).
+let utopinnThModulePromise = null;
+function loadUtopinnTh() {
+    // Path note: this file lives in endpoints/backends/, plugins sit at ../../.
+    utopinnThModulePromise ??= import('../../plugins/utopinn-th.js').catch(() => null);
+    return utopinnThModulePromise;
+}
+function emitThLifecycle(job, status) {
+    try {
+        if (!job || job.thSelfManaged === true) return;
+        let event = null;
+        let args = null;
+        if (status === 'running') {
+            event = 'generation_started';
+            args = [String(job.requestMeta?.verb || 'normal')];
+        } else if (status === 'completed') {
+            event = 'generation_ended';
+            args = [String(job.text ?? '')];
+        } else if (status === 'failed' || status === 'cancelled') {
+            event = 'generation_stopped';
+            args = [String(job.error || status).slice(0, 300)];
+        } else {
+            return; // queued/awaiting_ack/persisting — not lifecycle positions
+        }
+        const ctx = jobThContext(job);
+        if (!ctx) return;
+        const prev = job.thWriteChain ?? Promise.resolve();
+        job.thWriteChain = prev
+            .then(() => loadUtopinnTh())
+            .then((mod) => {
+                try { return mod?.recordThEvent?.(ctx, event, args); } catch { /* noop */ }
+            })
+            .catch(() => {});
+    } catch { /* observers must never break the job lifecycle */ }
+}
+
 function emitJobTransition(job) {
     try {
         const status = String(job?.status ?? '');
         if (!status || job._diagStatus === status) return;
         job._diagStatus = status;
+        emitThLifecycle(job, status);
         diagEmit({
             lvl: status === 'failed' ? 'error' : (status === 'cancelled' ? 'warn' : 'info'),
             kind: 'job',
@@ -1204,6 +1319,11 @@ async function persistGeneratedSwipe(job, text, generationId = '', modelName = '
  * kind:'none' 在前置守卫已被拦,到这里恒 character/group。
  */
 export async function persistJobReplyText(job, text, generationId = '', modelName = '') {
+    // Ordering guard: drain queued lifecycle writes (generation_started is
+    // emitted at 'running' via emitThLifecycle) before the reply floor is
+    // appended — a poll tick observing the floor must already find the
+    // started entry in the mailbox. The chain always resolves.
+    await (job?.thWriteChain ?? Promise.resolve()).catch(() => {});
     if (String(job?.requestMeta?.verb || '') === 'swipe') {
         const merged = await persistGeneratedSwipe(job, text, generationId, modelName);
         if (merged) {
@@ -1484,6 +1604,11 @@ export function acknowledgeGenerationJobsForRequest(request, generationIds = [])
         job.updatedAt = acknowledgedAt;
         job.finishedAt = acknowledgedAt;
         job.abortController = null;
+        // Ack is a terminal transition (running→…→completed) — notify
+        // subscribers + run the transition funnel (diag job_completed / TH
+        // generation_ended both arrive via notifyJobStatus). Previously the
+        // status flipped silently and both observation surfaces missed it.
+        notifyJobStatus(job);
         acknowledged.push(id);
     }
 

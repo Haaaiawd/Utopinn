@@ -487,6 +487,17 @@ export function apply(ctx) {
             perf.cardMs = cardMs;
             perf.totalMs += cardMs;
             request.utopinnPerf = perf; // runner 挂 job.perf → trace 面回放
+            // TH lifecycle mailbox ctx (consumed by job.emitThLifecycle):
+            // dispatchBody replaces request.body wholesale, so the ctx must be
+            // attached beforehand. The group path carries the group chat
+            // identity (isGroup + chatId) — addressing the mailbox by bare
+            // {memberDir, chatId} would leak group events into a member's
+            // same-named private chat; the isGroup flag keeps session
+            // identity explicit. trigger/quiet self-managed chains set
+            // utopinnThSelfManaged and do not pass through here.
+            request.utopinnThCtx = groupPlan
+                ? { isGroup: true, chatName: groupPlan.chatId, groupId: groupPlan.chatId }
+                : { charDir, chatName };
             logPerfLine('utopinn/generate', perf, { charDir, chatName });
             // WI timed effects 写回必须排在 dispatch 写楼层之前(effects 锚定的是
             // 生成前楼层计数);失败不阻断生成——下个周期自愈。
