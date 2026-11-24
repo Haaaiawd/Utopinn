@@ -6,8 +6,9 @@
 //   notes   → chat_state get/patch(ns='notes',test-op CAS,409 提示重试)
 //   ledger/cardapp → CardAppFrame 真宿主
 //   lore    → 卡绑书(getCharacter→extensions.world→getWorld)+ statsInject 命中,真接线;
-//   chapters/channels → 服务端面未备,保持 mock + 诚实标注(wired:false)。
-import { useCallback, useEffect, useRef, useState } from 'react';
+//   chapters → 真楼层推导(lib/novelToc deriveChapters,与 NovelBody 同源),真接线;
+//   channels → 服务端面未备,规范稿资产保留但 launcher 摘除(category:'hidden')。
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon } from '../Icon';
@@ -18,6 +19,7 @@ import { undockFrame, useDockedFrames } from '../../cardapp/msgframeDock';
 import { ApiError } from '../../api/client';
 import { cardData, getCharacter } from '../../api/characters';
 import { getChat } from '../../api/chats';
+import { getGroupChat } from '../../api/groups';
 import { getMvuState, resettleMvu, settleMvu, type MvuTarget } from '../../api/mvu';
 import { getIzumiState, putIzumiState } from '../../api/izumi';
 import { thCall } from '../../api/th';
@@ -27,6 +29,7 @@ import { getWorld } from '../../api/worlds';
 import {
     PanelEmpty, PanelError, chatKey, chatStateTarget, flattenStatData, thCallTarget, useRemote, type MvuVarRow,
 } from './panelShared';
+import { deriveChapters, SEGMENT_FLOORS, type NovelToc } from '../../lib/novelToc';
 import { PresetDocEditor } from './presetEditor';
 
 const lbl = 'mb-1 block text-[11px] font-semibold uppercase tracking-[0.08em] text-[color:var(--fg-faint)]';
@@ -769,44 +772,90 @@ export function LorePanel() {
 }
 
 /* ----------------------------------------------------------------------- */
-/* chapters / channels —— 服务端面未备,保持 mock(wired:false)                */
+/* chapters —— 真楼层推导章节目录(lib/novelToc,与 NovelBody 同源)           */
+/* channels —— 服务端面未备,规范稿资产保留(hidden,不进 launcher)            */
 /* ----------------------------------------------------------------------- */
 
 /** 章节板块(规范稿 L1685):章节目录头 + inset-group 章行
- *  (num mono / title)。目录服务端 schema 未出 → mock + unwired 标注;
- *  行点选联动 novel 阅读位是真行为,保留;「+新章」原为内存假持久(硬编码
- *  标题写 mock stageData),已按审计建议删除——持久化待 chat_state 侧车。 */
+ *  (num mono / title + 楼号区间·段数尾注)。
+ *  目录 = 真楼层推导:面板在 StageFrame 外吃不到 eng.msgs,取数走与
+ *  StageFrame.loadChatOf 同一路径(群会话 getGroupChat / 单聊 getChat),
+ *  推导共用 lib/novelToc.deriveChapters —— 与 novel 侧栏同一套章。
+ *  真会话零楼层 → 空态(不拿 stageData 种子冒充,同 NovelBody 口径);
+ *  行点选写 selParaId → novel 阅读位高亮(impl 真行为,保留);
+ *  「+新章」原为内存假持久(硬编码标题写 mock stageData),已按审计建议
+ *  删除 —— 持久化待 chat_state 侧车。 */
 export function ChaptersPanel() {
     const { t } = useI18n();
     const s = useShell();
-    const chs = s.stageData.chapters;
+    const chat = s.chat;
+    /* updatedAt 进 key:写楼/切 swipe 后会话清单重拉(updatedAt 变)→
+       面板跟着重取,与 MessageFramePanel 的 stamp 同法。 */
+    const stamp = chat?.updatedAt ?? '';
+    const floorsKey = chat?.groupId
+        ? `chapters:group/${chat.groupId}/${chat.chatName}@${stamp}`
+        : chat?.charDir && chat?.chatName ? `chapters:${chat.charDir}/${chat.chatName}@${stamp}` : null;
+    const remote = useRemote(floorsKey, async () =>
+        (chat!.groupId
+            ? await getGroupChat(chat!.groupId, chat!.chatName)
+            : await getChat(chat!.charDir, chat!.chatName)).messages);
+    const toc = useMemo<NovelToc | null>(
+        () => (remote.data ? deriveChapters(remote.data, t, chat?.title ?? '') : null),
+        [remote.data, t, chat?.title]);
+
+    if (!floorsKey) return <PanelEmpty icon="listNumbers">{t('panel.needChat')}</PanelEmpty>;
+    if (remote.error) return <PanelError error={remote.error} onRetry={remote.reload} />;
+    if (!toc) return <PanelEmpty icon="listNumbers">…</PanelEmpty>;
+    if (!toc.chapters.length) {
+        return <PanelEmpty icon="listNumbers" desc={t('novel.empty.desc')}>{t('novel.empty')}</PanelEmpty>;
+    }
+
+    /* 推导策略尾注 —— 与 NovelBody 侧栏同口径,如实标不装服务端目录。 */
+    const strategyText = {
+        markers: `${t('novel.strategy.markers')} · ${toc.chapters.length} ${t('novel.strategy.chapters')}`,
+        segmented: `${t('novel.strategy.segmented')} · ${SEGMENT_FLOORS} ${t('novel.strategy.perChapter')}`,
+        single: t('novel.strategy.single'),
+        seed: t('novel.strategy.seed'),
+        empty: t('novel.strategy.empty'),
+    }[toc.strategy];
+
     return (
-        <div className="p-4">
-            <UnwiredNote />
+        <div className="flex h-full flex-col p-4">
             <div className="mb-3 flex items-center justify-between">
                 <div className="heading-tight text-[13px] font-semibold text-[color:var(--fg-primary)]">{t('panel.chapters.title')}</div>
             </div>
             <div className={group}>
-                {chs.map((c) => (
+                {toc.chapters.map((c) => (
                     /* 规范稿为纯展示行;点选联动 selParaId 是 impl 真行为,保留点击、
                        去掉规范稿没有的「当前」徽标。 */
                     <button
                         key={c.id}
                         className={`${row} inset-row-btn`}
-                        onClick={() => s.patchStageData({ selParaId: c.paras[0]?.id ?? null })}
+                        /* 章首段若是 user 楼,书页里渲成指挥注记不挂高亮 ——
+                           联动取首个正文段,阅读位才真的落下去。 */
+                        onClick={() => s.patchStageData({ selParaId: c.paras.find((p) => p.role !== 'user')?.id ?? c.paras[0]?.id ?? null })}
                     >
                         <span className="min-w-0">
                             <span className="block font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{c.num}</span>
                             <span className="mt-0.5 block truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{c.title}</span>
                         </span>
+                        <span className="shrink-0 font-mono-ui text-[10px] text-[color:var(--fg-faint)]">
+                            {c.floors ? `#${c.floors[0] + 1}–${c.floors[1] + 1} · ` : ''}{c.paras.length}{t('panel.chapters.paras')}
+                        </span>
                     </button>
                 ))}
+            </div>
+            <div className="mt-auto px-1 pt-3 font-mono-ui text-[10px] leading-relaxed text-[color:var(--fg-faint)]">
+                {strategyText}
             </div>
         </div>
     );
 }
 
-/** 频道板块 —— mock 保持:messenger 形态频道数据无服务端面。 */
+/** 频道板块 —— mock 保持:messenger 形态频道数据无服务端面。
+ *  规范稿资产保留(messenger 面落地即复用);注册挂 category:'hidden',
+ *  部署版 launcher/cmdk 不露入口,代码 openPanel 仍可开 —— 故 UnwiredNote
+ *  保留,开着就照实标。 */
 export function ChannelsPanel() {
     const { t } = useI18n();
     const s = useShell();
