@@ -15,11 +15,22 @@
  * 推导 —— 三条路永远指向同一个名字。对导入早于本修复的存量卡(内嵌书
  * 未物化、无绑定),装配层按派生名查 worlds/,查不到再用
  * convertEmbeddedBook 即时转换顶上——同一个名字,两种供给方式。
+ *
+ * 第四条路 = ensureEmbeddedWorld(读面首见自愈):卡被读时把「派生名」
+ * 落实成真绑定(物化 worlds/<名> + extensions.world 写回卡面),种子
+ * cpSync/LAN 迁移/sync 落盘这些不走 commitCharacter 的来路由此收口。
  */
+import fs from 'node:fs';
+import path from 'node:path';
+
 import sanitize from 'sanitize-filename';
+import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
 import { convertCharacterBook } from '@utopinn/core';
 import { cardData } from '@utopinn/formats';
+import { write as writeCardToImage } from '../character-card-parser.js';
+import { getWorldInfoRepo } from '../storage/index.js';
+import { isReadOnly } from '../storage/read-only-mode.js';
 
 /** 世界书名长度上限:与 storage/name-validation.js MAX_NAME_LEN 同口径。 */
 const MAX_WORLD_NAME_BYTES = 128;
@@ -124,4 +135,109 @@ export function convertEmbeddedBook(card) {
     const entries = Array.isArray(book.entries) ? book.entries : Object.values(book.entries ?? {});
     if (!entries.length) return null;
     return convertCharacterBook({ ...book, entries });
+}
+
+// ---------------------------------------------------------------------------
+// 首见自愈(读路径物化 + 绑定写回)
+// ---------------------------------------------------------------------------
+
+/**
+ * 写回失败过的卡文件 —— 不再每读重试(防只读目录每读一条 warn 刷屏)。
+ * 文件被外部更新后内容会变,但失败原因(权限/格式)不随内容自愈,
+ * 进程期记忆即可;下次进程起来再试(读到的卡始终内存绑定,功能无损)。
+ */
+const healWriteFailedPaths = new Set();
+
+/**
+ * 用户 handle ← directories.root 干名(getUserDirectories 契约:
+ * root = <dataRoot>/<handle>;seedContentForUser 同款推导)。
+ * @param {object} directories
+ * @returns {string}
+ */
+function handleFromDirectories(directories) {
+    const root = typeof directories?.root === 'string' ? directories.root.trim() : '';
+    return root ? path.basename(path.resolve(root)) : '';
+}
+
+/**
+ * ensureEmbeddedWorld —— 卡读面「首见自愈」:带 character_book 且
+ * extensions.world 缺绑的卡,第一次被读就把派生名落实成真绑定。
+ *
+ * 为什么挂在 loadCharacterDocMerged(所有卡读的唯一漏斗)而不是只挂
+ * 种子路径:seedContent 的 fs cpSync、LAN 迁移、sync 拉取、手工丢进
+ * characters/ 的卡都不走 commitCharacter;在读面自愈一次,装配层
+ * (generate-context/mvu-settle)、LorePanel(extensions.world)、
+ * CardApp getWorldBooks 枚举、worlds?char= 读面全部同口径就位,
+ * 不必逐面另补;存量卡(issue #10 之前的导入)下次被读即修复,免迁移。
+ *
+ * 顺序与导入物化(commitCharacter)同语义:
+ *   1. bindEmbeddedWorld 就地绑定 —— 返回的卡恒带内存态绑定;
+ *      读面/extensions.world 枚举即刻与 primaryWorldName 同口径;
+ *   2. convertEmbeddedBook → WorldInfoRepo.createIfAbsent 物化
+ *      worlds/<派生名> —— 撞名不覆盖(读路径自愈不是显式导入,
+ *      不许动用户既有书);绑定仍指向该名,既有书即生效书;
+ *   3. 私有卡且源文件可写(image:parser 双 chunk 重写原字节;
+ *      json:整档写)→ extensions.world 落盘;共享池卡只读,跳过。
+ *
+ * 早退:已绑卡(哪怕绑的书不在库 —— 用户删书是意图,不复活)、
+ * 无内嵌书卡 —— 正常卡读零成本。持久化失败只告警不阻塞读:
+ * 内存绑定仍让 ?char= 读面与装配层内存兜底按同一名字兜住条目。
+ * read-only 存储模式下一切写跳过,仅内存绑定。
+ *
+ * 无双注:物化文件与内嵌书永远以同一个名字(绑定 ‖ 派生)供给,
+ * 装配层 worldCache 按名寻址 —— 文件在场即文件赢,内存兜底只在
+ * 「主书名不在库」时顶上,物理上不存在同名双份条目。
+ * @param {object} directories 用户目录集合(取 .root/.characters)
+ * @param {string} charDir 诊断日志用
+ * @param {{card?:object|null, source?:{kind:string,filePath:string}|null, shared?:boolean}} doc
+ * @returns {Promise<{healed:boolean, worldName:string|null, materialized:string, persisted:boolean}>}
+ *   materialized ∈ 'materialized'|'skipped'|'failed'|'none'
+ */
+export async function ensureEmbeddedWorld(directories, charDir, { card = null, source = null, shared = false } = {}) {
+    if (!card || embeddedBookEntryCount(card) === 0) {
+        return { healed: false, worldName: null, materialized: 'none', persisted: false };
+    }
+    // 就地绑定(已绑 → fallback:false 原样回报 bound 名,不自愈)。
+    const link = bindEmbeddedWorld(card);
+    if (!link?.fallback || !link.worldName) {
+        return { healed: false, worldName: link?.worldName ?? null, materialized: 'none', persisted: false };
+    }
+    const worldName = link.worldName;
+    const out = { healed: true, worldName, materialized: 'none', persisted: false };
+    if (isReadOnly()) return out;
+
+    const handle = handleFromDirectories(directories);
+    const doc = convertEmbeddedBook(card);
+    if (handle && doc) {
+        try {
+            const { created } = await getWorldInfoRepo().createIfAbsent(handle, worldName, doc);
+            out.materialized = created ? 'materialized' : 'skipped';
+        } catch (error) {
+            out.materialized = 'failed';
+            console.warn(`embedded-world heal: failed to materialize "${worldName}" for ${charDir}:`, error?.message ?? error);
+        }
+    }
+
+    if (!shared && source?.filePath && !healWriteFailedPaths.has(source.filePath)) {
+        try {
+            if (source.kind === 'image') {
+                // image 源恒为 PNG 字节(真 webp 在读面 extract 就过不去,
+                // 走不到这)——parser.write 重写 chara+ccv3 双 chunk,
+                // 其余 chunk 原样保留;mtime 变 → path+mtime 寻址的
+                // memoryCache/resource-view/缩略图缓存自然失效(同
+                // utopinn-data directWriteCard 的缓存论证)。
+                const raw = fs.readFileSync(source.filePath);
+                writeFileAtomicSync(source.filePath, writeCardToImage(raw, JSON.stringify(card)));
+            } else if (source.kind === 'json') {
+                writeFileAtomicSync(source.filePath, JSON.stringify(card));
+            } else {
+                throw new Error(`unknown card source kind: ${source.kind}`);
+            }
+            out.persisted = true;
+        } catch (error) {
+            healWriteFailedPaths.add(source.filePath);
+            console.warn(`embedded-world heal: failed to write binding back to ${source.filePath}:`, error?.message ?? error);
+        }
+    }
+    return out;
 }

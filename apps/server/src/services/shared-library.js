@@ -39,6 +39,7 @@ import {
     readCharacterStateSidecar,
     resolveCharacterFilePath,
 } from './character-state.js';
+import { ensureEmbeddedWorld } from './embedded-world.js';
 
 /** Shared pool root directory name (instance-level, not per-user). */
 export const SHARED_LIBRARY_DIRNAME = '_library';
@@ -241,11 +242,17 @@ export async function loadSharedCharacterDoc(directories, charDir) {
  * private file that fails to parse does NOT fall back to shared — same-stem
  * shadowing is file-level, not "borrow the shared copy when private is
  * broken").
+ * 本函数是卡读的唯一漏斗(library/generate/chats/mounts/stscript 全过
+ * 这里)—— 顺手跑 ensureEmbeddedWorld 首见自愈:带 character_book 但
+ * extensions.world 缺绑的卡(种子 cpSync/LAN 迁移/sync 落盘/旧导入
+ * 存量)物化 worlds/<派生名> 并把绑定写回卡面;共享池卡只读,物化
+ * 照做、绑定只落在返回对象内存态。自愈内部全 try,不抛。
  * @returns {Promise<{card: object|null, source: object|null, shared: boolean}>}
  */
 export async function loadCharacterDocMerged(directories, charDir) {
     if (resolveCharacterFilePath(directories?.characters, charDir)) {
         const doc = await loadCharacterDocFromDir(directories.characters, charDir);
+        await ensureEmbeddedWorld(directories, charDir, { ...doc, shared: false });
         return { ...doc, shared: false };
     }
     if (!isSafeSharedStem(charDir)) return { card: null, source: null, shared: false };
@@ -254,6 +261,7 @@ export async function loadCharacterDocMerged(directories, charDir) {
         return { card: null, source: null, shared: false };
     }
     const doc = await loadSharedCharacterDoc(directories, charDir);
+    await ensureEmbeddedWorld(directories, charDir, { ...doc, shared: true });
     return { ...doc, shared: true };
 }
 

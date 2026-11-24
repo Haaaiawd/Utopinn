@@ -563,7 +563,9 @@ export async function mountCardApp(opts) {
         return options?.withSource ? out : out.map(b => b.name);
     };
     const getWorldBookEntries = async (name) => {
-        try { return await client.library.worldGet(String(name)); }
+        // ?char= 激活服务端内嵌主书回落(未物化存量卡的书也能解到)——
+        // 与 packages/api-client cardapp-host.ts 同款参数。
+        try { return await client.library.worldGet(String(name), { char: charDir }); }
         catch { return null; }
     };
     const getSortedWiEntries = async () => {
