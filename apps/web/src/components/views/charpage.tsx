@@ -8,7 +8,7 @@ import { useMemo, useState } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
 import { Icon, type IconName } from '../Icon';
-import { cardData, charImageUrl, installCharacter, loadCharDoc } from '../../api/characters';
+import { cardData, charImageUrl, deleteCharacter, installCharacter, loadCharDoc } from '../../api/characters';
 import { builtinCoverSrc } from '../../api/personas';
 import { listChatsForChar, type CharChatItem } from '../../api/chats';
 import { getRegexFullView } from '../../api/regex';
@@ -60,6 +60,10 @@ export function CharView() {
     // 共享池卡:显式物化动作 —— 装完跳新私有干名(同干名时即原地转私有)。
     const [installing, setInstalling] = useState(false);
     const [installErr, setInstallErr] = useState<string | null>(null);
+    const [delOpen, setDelOpen] = useState(false);
+    const [delChats, setDelChats] = useState(true);
+    const [deleting, setDeleting] = useState(false);
+    const [delErr, setDelErr] = useState<string | null>(null);
 
     /* 三/四条取数互不相干:卡文档 / 会话列表 / 正则全量 / 辅书(settings)。
        离线一律不取(key=null) —— 空态如实,不拿 mock 糊窗。 */
@@ -132,6 +136,20 @@ export function CharView() {
             setInstalling(false);
         }
     };
+    const doDelete = async () => {
+        if (!dir || deleting) return;
+        setDeleting(true);
+        setDelErr(null);
+        try {
+            await deleteCharacter(dir, { deleteChats: delChats });
+            await s.refreshCards();
+            void s.refreshChats();
+            s.setView('home');
+        } catch (e) {
+            setDelErr(e instanceof Error ? e.message : String(e));
+            setDeleting(false);
+        }
+    };
     /* 带书名跳 studio:本页看的卡 ≠ 活跃会话卡,必须显式带书,
        否则 WorldbookPage 回落到活跃 chat 的绑书(StageFrame ChatInfoPop 同款)。 */
     const goStudio = (nav: string, book?: string) => {
@@ -188,6 +206,53 @@ export function CharView() {
                     >
                         <Icon name="pencil" size={14} /><span className="hidden sm:inline">{t('charpage.edit')}</span>
                     </button>
+                    {/* 删除:仅私有卡可删(共享池卡只读,服务端 403);
+                        两步确认面板可选连带全部会话。 */}
+                    {card && !card.shared && (
+                        <div className="relative">
+                            <button
+                                className="ghost-btn h-8 w-8 shrink-0"
+                                style={{ color: delOpen ? 'var(--status-danger)' : undefined }}
+                                onClick={() => { setDelOpen((v) => !v); setDelErr(null); }}
+                                title={t('charpage.delete')}
+                            >
+                                <Icon name="trash" size={14} />
+                            </button>
+                            {delOpen && (
+                                <div
+                                    className="absolute right-0 top-9 z-30 w-[240px] rounded-xl border border-[color:var(--border-hairline)] p-3"
+                                    style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-float)' }}
+                                >
+                                    <div className="text-[12.5px] font-medium text-[color:var(--fg-primary)]">{t('charpage.delete.title')}</div>
+                                    <div className="mt-1 text-[11px] leading-snug text-[color:var(--fg-muted)]">{t('charpage.delete.desc')}</div>
+                                    {rows.length > 0 && (
+                                        <label className="mt-2.5 flex items-center gap-2 text-[11.5px] text-[color:var(--fg-secondary)]">
+                                            <input type="checkbox" checked={delChats} onChange={(e) => setDelChats(e.target.checked)} />
+                                            {t('charpage.delete.chats')} · {rows.length}
+                                        </label>
+                                    )}
+                                    {delErr && (
+                                        <div className="mt-2 rounded-lg px-2 py-1.5 font-mono-ui text-[10.5px]" style={{ background: 'var(--bg-surface)', color: 'var(--status-danger)' }}>
+                                            {t('charpage.delete.failed')}: {delErr}
+                                        </div>
+                                    )}
+                                    <div className="mt-3 flex justify-end gap-2">
+                                        <button className="ghost-btn h-7 px-3 text-[11.5px]" onClick={() => setDelOpen(false)} disabled={deleting}>
+                                            {t('stage.edit.cancel')}
+                                        </button>
+                                        <button
+                                            className="h-7 rounded-lg px-3 text-[11.5px] font-medium"
+                                            style={{ background: 'var(--status-danger)', color: '#fff', opacity: deleting ? 0.5 : 1 }}
+                                            onClick={() => void doDelete()}
+                                            disabled={deleting}
+                                        >
+                                            {deleting ? t('charpage.delete.deleting') : t('charpage.delete.confirm')}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <button
                         className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium transition-opacity hover:opacity-90"
                         style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}

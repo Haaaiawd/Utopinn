@@ -122,3 +122,15 @@ export async function installCharacter(charDir: string): Promise<InstallCharacte
     invalidateCharDocs();
     return (await res.json()) as InstallCharacterResponse;
 }
+
+/** DELETE /api/utopinn/characters/:charDir —— 删卡(204)。
+ *  deleteChats=true 连带该角色全部会话;共享池卡服务端 403。 */
+export async function deleteCharacter(charDir: string, opts?: { deleteChats?: boolean }): Promise<void> {
+    const res = await apiFetch(`/api/utopinn/characters/${encodeURIComponent(charDir)}`, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ delete_chats: opts?.deleteChats === true }),
+    });
+    await assertOk(res);
+    invalidateCharDocs(charDir);
+}
