@@ -88,6 +88,9 @@ export async function apiFetch(path: string, init: RequestInit = {}, opts: { ret
         res = await fetch(path, { ...init, headers: makeHeaders() });
     }
     if (res.status === 401 || res.status === 403) void reportIfSessionDead();
+    // 判死闸复位:probe 只在 401/403 时跑,不复位则同页二次判死永远
+    // 静默(首判广播后锁存器恒 true)。任一请求成功即证明会话活着。
+    if (res.ok) authExpiredNotified = false;
     return res;
 }
 

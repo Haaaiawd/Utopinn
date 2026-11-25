@@ -22,7 +22,7 @@
 //   th.event frames — no host event bus exists yet; poll-based diff is the
 //   minimal honest delivery joint.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { apiPost } from '../api/client';
+import { ApiError, apiPost } from '../api/client';
 import { dispatchPanelCall, type PanelContext } from './ctxApi';
 import { expandApiGrants } from '@utopinn/protocol';
 import { PanelBridge, UtopinnClient } from '@utopinn/api-client';
@@ -51,12 +51,14 @@ interface MountBundle {
     warnings?: string[];
 }
 
-/** mounting → ready | degraded(reason); failure → error (retryable). */
+/** mounting → ready | degraded(reason); failure → error (retryable;
+    authExpired → 登录会话死,渲染重登引导而非「挂载失败」— 重试对
+    dead session 是死路,重发一万次也是 403)。 */
 type Phase =
     | { kind: 'mounting' }
     | { kind: 'ready' }
     | { kind: 'degraded'; reason: 'ctx-face' }
-    | { kind: 'error'; message: string };
+    | { kind: 'error'; message: string; authExpired?: boolean };
 
 /** 事件泵轮询间隔 —— 面板开着的 8s 一次 chat diff,够浮窗感知楼层变化。 */
 const POLL_MS = 8_000;
@@ -104,7 +106,12 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                     : { kind: 'ready' });
             })
             .catch((e) => {
-                if (!dead) setPhase({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
+                if (dead) return;
+                setPhase({
+                    kind: 'error',
+                    message: e instanceof Error ? e.message : String(e),
+                    authExpired: e instanceof ApiError && (e.status === 401 || e.status === 403),
+                });
             });
         return () => { dead = true; };
     }, [charDir, chatName, attempt]);
@@ -158,7 +165,9 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
     }, [mount, grants, charDir, chatName]);
 
     if (phase.kind === 'error') {
-        /* 规范稿错误域模型:图标盒 + 标题 + code/detail 分层,不裸渲 JSON。 */
+        /* 规范稿错误域模型:图标盒 + 标题 + code/detail 分层,不裸渲 JSON。
+           401/403 → 登录会话死:换「重登引导」域 —— 重试按钮对 dead
+           session 是死路,不给。 */
         let code: string | null = null;
         let detail = phase.message;
         try {
@@ -168,6 +177,24 @@ export function CardAppFrame({ charDir, chatName }: PanelContext) {
                 detail = typeof j.detail === 'string' ? j.detail : phase.message;
             }
         } catch { /* 非 JSON 原样展示 */ }
+        if (phase.authExpired) {
+            return (
+                <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
+                    <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px]" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--status-warn)' }}>
+                        <Icon name="shield" size={20} />
+                    </div>
+                    <div className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('auth.expired')}</div>
+                    <div className="mt-1 max-w-[280px] font-mono-ui text-[11px] leading-relaxed text-[color:var(--fg-muted)]">{t('panel.cardapp.authExpiredDesc')}</div>
+                    <button
+                        className="mt-4 h-8 rounded-lg px-3.5 text-[12px] font-medium transition-opacity hover:opacity-90"
+                        style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
+                        onClick={() => window.location.assign('/login')}
+                    >
+                        {t('auth.relogin')}
+                    </button>
+                </div>
+            );
+        }
         return (
             <div className="flex h-full min-h-[220px] flex-col items-center justify-center px-6 py-10 text-center">
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[12px]" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-hairline)', color: 'var(--status-danger)' }}>

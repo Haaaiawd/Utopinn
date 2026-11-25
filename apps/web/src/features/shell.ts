@@ -116,6 +116,7 @@ const zh: Record<string, string> = {
     /* 总簿板块 */
     'panel.type.cardapp': '卡面应用', 'panel.desc.cardapp': 'CardApp 真宿主(离线报挂载错误)',
     'panel.cardapp.mountFailed': 'CardApp 挂载失败', 'panel.cardapp.retry': '重试', 'panel.cardapp.ctxDegraded': 'ctx 面未接 · 仅静态渲染',
+    'panel.cardapp.authExpiredDesc': '登录会话已失效,重新登录后回到这里面板即恢复。',
     'ledger.title': '云栖宗总簿', 'ledger.灵石': '库存灵石', 'ledger.宗门声望': '宗门声望', 'ledger.大殿耐久': '大殿耐久',
     'ledger.repair': '正殿东头修缮度', 'ledger.op.repair': '拨款修缮东头屋瓦', 'ledger.op.repair.cost': '-10 灵石 · +15%',
     'ledger.op.stipend': '发放弟子月俸与灵米', 'ledger.op.stipend.cost': '-6 灵石 · +3 声望',
@@ -568,6 +569,7 @@ const en: Record<string, string> = {
     /* 总簿板块 */
     'panel.type.cardapp': 'CardApp', 'panel.desc.cardapp': 'Real CardApp host (mount error while offline)',
     'panel.cardapp.mountFailed': 'CardApp mount failed', 'panel.cardapp.retry': 'Retry', 'panel.cardapp.ctxDegraded': 'ctx path unwired · static render only',
+    'panel.cardapp.authExpiredDesc': 'Your login session expired — sign back in and the panel resumes here.',
     'ledger.title': 'Yunqi Sect Ledger', 'ledger.灵石': 'Spirit stones on hand', 'ledger.宗门声望': 'Sect renown', 'ledger.大殿耐久': 'Hall durability',
     'ledger.repair': 'East hall repair progress', 'ledger.op.repair': 'Fund east-wing roof repairs', 'ledger.op.repair.cost': '-10 spirit stones · +15%',
     'ledger.op.stipend': 'Pay disciple stipends & spirit rice', 'ledger.op.stipend.cost': '-6 spirit stones · +3 renown',
