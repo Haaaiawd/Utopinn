@@ -16,8 +16,11 @@
 // 0.62 default must render 0.62, not 0.45).
 //
 // Persisted slot: power_user.ui_ambience (snake_case). The settings PATCH
-// replaces the ui_ambience key wholesale, so writers always emit the
-// complete object:
+// merges this slot one level deeper than the section shallow-merge
+// (server-side NESTED_MERGE_SLOTS), so keys a writer does not emit survive
+// — e.g. tex_alpha orphans left in production docs by the removed texture
+// feature. Writers still emit the complete known-key object, explicit false
+// flags included, because explicit false is what clears a stored true:
 //   { bg_alpha, glass_blur, bg_alpha_override?, glass_blur_override? }
 // Documents written before the *_override keys existed hydrate as
 // follow-CSS — their stored values are kept as slider positions but are
@@ -57,9 +60,9 @@ export function hydrateUiAmbience(raw: unknown): UiAmbience {
     };
 }
 
-/** Persisted slot shape — the PATCH merge replaces ui_ambience wholesale,
- *  so this always emits the complete object, flags included (explicit
- *  false clears a previously pinned flag). */
+/** Persisted slot shape — the PATCH deep-merges ui_ambience, so keys this
+ *  writer does not emit survive; this still emits the complete known-key
+ *  object, flags included (explicit false clears a previously pinned flag). */
 export function uiAmbienceSlot(a: UiAmbience): Record<string, unknown> {
     return {
         bg_alpha: a.bgAlpha,

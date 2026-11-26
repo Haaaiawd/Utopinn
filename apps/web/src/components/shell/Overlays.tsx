@@ -1628,8 +1628,10 @@ function StAppearanceSection() {
     const cssDirty = cssDraft !== null && cssDraft !== s.stCss;
 
     /* Ambience sliders: ctx write applies the CSS var instantly; the
-       debounced (450ms) PATCH persists the whole ui_ambience slot,
-       override flags included (server merge replaces the slot wholesale). */
+       debounced (450ms) PATCH persists the ui_ambience slot. Server-side
+       NESTED_MERGE_SLOTS deep-merges it, so keys this writer does not emit
+       survive (tex_alpha orphans); flags still ride explicitly so unpin's
+       false beats a stored true. */
     const setAmb = (next: UiAmbience) => {
         s.setUiAmbience(next);
         if (ambTimer.current) clearTimeout(ambTimer.current);

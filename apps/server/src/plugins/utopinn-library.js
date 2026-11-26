@@ -616,6 +616,19 @@ const PATCHABLE_SETTINGS_SECTIONS = new Set(['power_user', 'extension_settings',
  */
 const PATCHABLE_SETTINGS_SCALAR_KEYS = new Set(['preset_settings_openai']);
 
+/**
+ * Sub-keys inside whitelisted sections that merge one level deeper than the
+ * section shallow-merge. These slots accumulate keys across clients and
+ * versions, so a wholesale replace would silently drop keys a narrow writer
+ * never emitted — world_info's layered book sources, and ui_ambience orphans
+ * such as tex_alpha left in production docs by the removed texture feature.
+ * Incoming keys still win over stored ones; only absent keys are preserved.
+ */
+const NESTED_MERGE_SLOTS = Object.freeze({
+    world_info_settings: ['world_info'],
+    power_user: ['ui_ambience'],
+});
+
 // ---------------------------------------------------------------------------
 // 路由注册
 // ---------------------------------------------------------------------------
@@ -1314,10 +1327,13 @@ export function apply(ctx) {
                     if (PATCHABLE_SETTINGS_SCALAR_KEYS.has(key)) continue; // 标量键在段合并后统一落,保证同 patch 内顶键优先
                     const section = (base[key] && typeof base[key] === 'object' && !Array.isArray(base[key])) ? base[key] : {};
                     const sanitized = sanitizeSettingsDoc(patch[key]);
-                    if (key === 'world_info_settings'
-                        && section.world_info && typeof section.world_info === 'object' && !Array.isArray(section.world_info)
-                        && sanitized.world_info && typeof sanitized.world_info === 'object' && !Array.isArray(sanitized.world_info)) {
-                        sanitized.world_info = { ...section.world_info, ...sanitized.world_info };
+                    for (const slot of NESTED_MERGE_SLOTS[key] ?? []) {
+                        const stored = section[slot];
+                        const incoming = sanitized[slot];
+                        if (stored && typeof stored === 'object' && !Array.isArray(stored)
+                            && incoming && typeof incoming === 'object' && !Array.isArray(incoming)) {
+                            sanitized[slot] = { ...stored, ...incoming };
+                        }
                     }
                     next[key] = { ...section, ...sanitized };
                 }
