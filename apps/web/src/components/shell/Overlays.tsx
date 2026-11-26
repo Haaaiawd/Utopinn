@@ -1788,7 +1788,7 @@ function SettingsSheet() {
     if (!s.settingsOpen) return null;
     return (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)' }} onClick={s.closeSettings}>
-            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-canvas)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-workbench)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
                 <aside className="flex w-[192px] shrink-0 flex-col border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-sidebar)' }}>
                     <div className="flex h-12 shrink-0 items-center px-4"><span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('settings.title')}</span></div>
                     <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-4">
@@ -1824,7 +1824,7 @@ function MobileSettingsSheet() {
     const s = useShell();
     if (!s.settingsOpen) return null;
     return (
-        <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: 'var(--bg-canvas)' }}>
+        <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: 'var(--bg-workbench)' }}>
             <header
                 className="flex h-12 shrink-0 items-center justify-between border-b px-3"
                 style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border-hairline)' }}

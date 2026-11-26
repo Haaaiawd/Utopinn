@@ -77,6 +77,12 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
     customCss: '',
 };
 
+/* ui_ambience defaults — must stay in sync with the :root values in
+   tokens.css (--amb-bg-alpha / --amb-glass-blur): the hydration effect only
+   pins non-default values inline so stylesheet rules keep ownership of the
+   default case (see the ambience effect below). */
+const UI_AMBIENCE_DEFAULTS: UiAmbience = { bgAlpha: 0.62, glassBlur: 14 };
+
 function loadChatSettings(): ChatSettings {
     try {
         const raw = localStorage.getItem(CHAT_SETTINGS_KEY);
@@ -295,17 +301,30 @@ function Shell() {
     const [stBg, setStBg] = useState<StBackground | null>(null);
     const [chatBgLock, setChatBgLock] = useState<string | null>(null);
     const [stCss, setStCss] = useState('');
-    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.62, glassBlur: 14 });
+    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ ...UI_AMBIENCE_DEFAULTS });
     /* 置顶会话清单 —— accountStorage.pinnedChats(ST 同槽:{file_name,avatar})。 */
     const [pinnedChats, setPinnedChats] = useState<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     pinnedRef.current = pinnedChats;
 
-    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃 即时生效。 */
+    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃 即时生效。
+       Inline custom properties beat every stylesheet declaration (including
+       power_user.custom_css rules), so pinning the DEFAULT value inline too
+       would silently kill custom_css overrides of --amb-*. Only non-default
+       values are written inline; at default we removeProperty and hand the
+       cascade back to tokens.css / custom_css. */
     useEffect(() => {
         const r = document.documentElement;
-        r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
-        r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
+        if (uiAmbience.bgAlpha !== UI_AMBIENCE_DEFAULTS.bgAlpha) {
+            r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
+        } else {
+            r.style.removeProperty('--amb-bg-alpha');
+        }
+        if (uiAmbience.glassBlur !== UI_AMBIENCE_DEFAULTS.glassBlur) {
+            r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
+        } else {
+            r.style.removeProperty('--amb-glass-blur');
+        }
     }, [uiAmbience]);
 
     /* 正文字号 → --chat-font-size:设置滑杆/A± 即时落到 .chat-body-text。 */
@@ -519,8 +538,8 @@ function Shell() {
                 const num = (v: unknown, d: number, lo: number, hi: number) =>
                     typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
                 setUiAmbience({
-                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.62, 0, 0.9),
-                    glassBlur: num(u.glass_blur ?? u.glassBlur, 14, 0, 32),
+                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, UI_AMBIENCE_DEFAULTS.bgAlpha, 0, 0.9),
+                    glassBlur: num(u.glass_blur ?? u.glassBlur, UI_AMBIENCE_DEFAULTS.glassBlur, 0, 32),
                 });
             }
             /* accountStorage.pinnedChats —— ST 置顶会话清单槽(welcome-screen 同路径)。 */
@@ -1115,7 +1134,7 @@ function Shell() {
                 <style id="utopinn-custom-css">{chatSettings.customCss}</style>
             )}
             <AmbientBackdrop />
-            <div className="relative flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
+            <div className="relative flex h-screen flex-col overflow-hidden bg-[color:var(--bg-tray)]">
                 {isMobile ? (
                     <main className="min-h-0 flex-1">
                         <MobileFrame />
@@ -1203,7 +1222,10 @@ function AmbientBackdrop() {
                     style={{
                         backgroundImage: wall,
                         backgroundSize: 'cover',
-                        backgroundPosition: 'center',
+                        /* --amb-wall-pos lets the narrow-portrait media query
+                           lift the cover-crop anchor (landscape art centers
+                           high); defaults to center on desktop. */
+                        backgroundPosition: 'var(--amb-wall-pos, center)',
                         opacity: 'var(--amb-bg-alpha)',
                         filter: 'var(--amb-wall-filter)',
                     }}
