@@ -34,8 +34,12 @@ import {
     clampFloatRect, DEFAULT_FLOAT_RECT,
     ShellProvider, useContribs, useShell,
     type ChatSettings, type FloatRect, type PresetParams, type SheetSnap, type ShellCtx,
-    type StageData, type StBackground, type UiAmbience, type VpMode,
+    type StageData, type StBackground, type VpMode,
 } from './kernel/context';
+import {
+    ambienceInlineVars, hydrateUiAmbience, UI_AMBIENCE_DEFAULTS,
+    type UiAmbience,
+} from './kernel/ambience';
 import { Kernel } from './kernel/kernel';
 import type { PanelType } from './kernel/contributions';
 import { shellFeature } from './features/shell';
@@ -76,12 +80,6 @@ const DEFAULT_CHAT_SETTINGS: ChatSettings = {
     fontSize: 15,
     customCss: '',
 };
-
-/* ui_ambience defaults — must stay in sync with the :root values in
-   tokens.css (--amb-bg-alpha / --amb-glass-blur): the hydration effect only
-   pins non-default values inline so stylesheet rules keep ownership of the
-   default case (see the ambience effect below). */
-const UI_AMBIENCE_DEFAULTS: UiAmbience = { bgAlpha: 0.62, glassBlur: 14 };
 
 function loadChatSettings(): ChatSettings {
     try {
@@ -307,23 +305,16 @@ function Shell() {
     const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     pinnedRef.current = pinnedChats;
 
-    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃 即时生效。
-       Inline custom properties beat every stylesheet declaration (including
-       power_user.custom_css rules), so pinning the DEFAULT value inline too
-       would silently kill custom_css overrides of --amb-*. Only non-default
-       values are written inline; at default we removeProperty and hand the
-       cascade back to tokens.css / custom_css. */
+    /* Ambience params → CSS vars: only OVERRIDDEN params are pinned inline
+       (inline custom properties beat every stylesheet declaration,
+       including power_user.custom_css rules). Follow-CSS params get
+       removeProperty so tokens.css / custom_css keep the cascade — see
+       kernel/ambience.ts for the three-state model. */
     useEffect(() => {
-        const r = document.documentElement;
-        if (uiAmbience.bgAlpha !== UI_AMBIENCE_DEFAULTS.bgAlpha) {
-            r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
-        } else {
-            r.style.removeProperty('--amb-bg-alpha');
-        }
-        if (uiAmbience.glassBlur !== UI_AMBIENCE_DEFAULTS.glassBlur) {
-            r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
-        } else {
-            r.style.removeProperty('--amb-glass-blur');
+        const r = document.documentElement.style;
+        for (const [prop, val] of Object.entries(ambienceInlineVars(uiAmbience))) {
+            if (val === null) r.removeProperty(prop);
+            else r.setProperty(prop, val);
         }
     }, [uiAmbience]);
 
@@ -531,16 +522,11 @@ function Shell() {
             const pu = (st.power_user && typeof st.power_user === 'object' && !Array.isArray(st.power_user))
                 ? (st.power_user as Record<string, unknown>) : null;
             setStCss(str(pu?.custom_css));
-            /* power_user.ui_ambience(snake_case 落盘;camelCase 旧稿兼容读)。 */
+            /* power_user.ui_ambience —— 水合走 kernel/ambience 三态模型;
+               slot 缺席时不覆写(留旧值,与 conn 字段同策略)。 */
             const ua = pu?.ui_ambience;
             if (ua && typeof ua === 'object' && !Array.isArray(ua)) {
-                const u = ua as Record<string, unknown>;
-                const num = (v: unknown, d: number, lo: number, hi: number) =>
-                    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
-                setUiAmbience({
-                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, UI_AMBIENCE_DEFAULTS.bgAlpha, 0, 0.9),
-                    glassBlur: num(u.glass_blur ?? u.glassBlur, UI_AMBIENCE_DEFAULTS.glassBlur, 0, 32),
-                });
+                setUiAmbience(hydrateUiAmbience(ua));
             }
             /* accountStorage.pinnedChats —— ST 置顶会话清单槽(welcome-screen 同路径)。 */
             const acct = (st.accountStorage && typeof st.accountStorage === 'object' && !Array.isArray(st.accountStorage))

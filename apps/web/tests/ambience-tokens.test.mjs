@@ -3,8 +3,10 @@
  * underlay/content surfaces keep the wallpaper "window" values while
  * interactive/overlay surfaces (chrome/sidebar/workbench) stay opaque
  * enough that text and wallpaper detail behind them stop being legible.
- * Also guards the JS↔CSS default sync that the conditional inline write in
- * App.tsx depends on, and the ≤520px bump that mobile bleed requires.
+ * Also guards the JS↔CSS default sync that the override-flag-gated inline
+ * write in App.tsx depends on, and the ≤520px bump that mobile bleed
+ * requires. The override state machine itself is pinned in
+ * ambience-override.test.mjs.
  * 跑法:node --test apps/web/tests/ambience-tokens.test.mjs
  */
 import { test } from 'node:test';
@@ -16,6 +18,7 @@ import { dirname, join } from 'node:path';
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 const tokens = readFileSync(join(SRC, 'styles', 'tokens.css'), 'utf8');
 const app = readFileSync(join(SRC, 'App.tsx'), 'utf8');
+const ambience = readFileSync(join(SRC, 'kernel', 'ambience.ts'), 'utf8');
 
 /** Extract `rgba(r, g, b, A)` alpha for `--name` inside `block` text. */
 const alphaOf = (block, name) => {
@@ -84,20 +87,27 @@ test('≤520px media — every surface steps up, wallpaper anchor lifts', () => 
     assert.ok(alphaOf(l, '--bg-canvas') > 0.62, 'mobile light --bg-canvas must beat the 0.62 default');
 });
 
-test('App.tsx ambience defaults stay in sync with tokens.css :root', () => {
+test('ambience defaults stay in sync with tokens.css :root', () => {
     const rootM = /:root\s*\{([\s\S]*?)\n\}/.exec(tokens);
     assert.ok(rootM, ':root block not found');
     const root = rootM[1];
-    const m = /UI_AMBIENCE_DEFAULTS:\s*UiAmbience\s*=\s*\{\s*bgAlpha:\s*([\d.]+),\s*glassBlur:\s*(\d+)\s*\}/.exec(app);
-    assert.ok(m, 'UI_AMBIENCE_DEFAULTS not found in App.tsx');
+    const m = /UI_AMBIENCE_DEFAULTS:\s*UiAmbience\s*=\s*\{\s*bgAlpha:\s*([\d.]+),\s*glassBlur:\s*(\d+)\s*\}/.exec(ambience);
+    assert.ok(m, 'UI_AMBIENCE_DEFAULTS not found in kernel/ambience.ts');
     const cssAlpha = Number(/(--amb-bg-alpha:\s*([\d.]+))/.exec(root)[2]);
     const cssBlur = Number(/(--amb-glass-blur:\s*([\d.]+)px)/.exec(root)[2]);
     assert.equal(Number(m[1]), cssAlpha, 'bgAlpha default drifted from --amb-bg-alpha');
     assert.equal(Number(m[2]), cssBlur, 'glassBlur default drifted from --amb-glass-blur');
-    /* conditional inline write must actually exist — unconditionally writing
-       the default pins custom_css overrides dead (inline > stylesheet). */
-    assert.match(app, /removeProperty\('--amb-bg-alpha'\)/);
-    assert.match(app, /removeProperty\('--amb-glass-blur'\)/);
+    /* the inline write must be gated on the override flag, not the value —
+       unconditionally writing (or value-equality gating) either pins
+       custom_css dead or hands it a still-warm default (the "slider looks
+       dead" bug). */
+    assert.match(app, /ambienceInlineVars\(uiAmbience\)/);
+    assert.match(app, /removeProperty\(/);
+    assert.match(ambience, /bgAlphaOverride === true \? String\(a\.bgAlpha\) : null/);
+    assert.match(ambience, /glassBlurOverride === true \? `\$\{a\.glassBlur\}px` : null/);
+    /* persisted slot carries the flags (snake_case) so state survives refresh. */
+    assert.match(ambience, /bg_alpha_override/);
+    assert.match(ambience, /glass_blur_override/);
 });
 
 test('app shell paints the underlay token (--bg-tray), not the overlay tier', () => {

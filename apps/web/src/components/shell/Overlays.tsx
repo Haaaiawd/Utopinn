@@ -22,6 +22,10 @@ import {
     type ConnectionTestResponse,
 } from '../../api/connection';
 import { patchSettings } from '../../api/settings';
+import {
+    ambiencePinned, pinAmbience, uiAmbienceSlot, unpinAmbience,
+    type UiAmbience,
+} from '../../kernel/ambience';
 import { listBackgrounds, bgCssUrl, BUILTIN_WALLPAPERS, builtinBgCssUrl } from '../../api/backgrounds';
 import { patchChat, type ChatPatchOp } from '../../api/chats';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry, type SecretsResponse } from '../../api/secrets';
@@ -1623,16 +1627,14 @@ function StAppearanceSection() {
     const cssShown = cssDraft ?? s.stCss;
     const cssDirty = cssDraft !== null && cssDraft !== s.stCss;
 
-    /* 氛围滑杆:live 写 ctx(CSS var 即时生效),防抖 450ms 落 power_user.ui_ambience。 */
-    const setAmb = (patch: Partial<typeof s.uiAmbience>) => {
-        const next = { ...s.uiAmbience, ...patch };
+    /* Ambience sliders: ctx write applies the CSS var instantly; the
+       debounced (450ms) PATCH persists the whole ui_ambience slot,
+       override flags included (server merge replaces the slot wholesale). */
+    const setAmb = (next: UiAmbience) => {
         s.setUiAmbience(next);
         if (ambTimer.current) clearTimeout(ambTimer.current);
         ambTimer.current = setTimeout(() => {
-            void patchSettings({ power_user: { ui_ambience: {
-                bg_alpha: next.bgAlpha,
-                glass_blur: next.glassBlur,
-            } } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
+            void patchSettings({ power_user: { ui_ambience: uiAmbienceSlot(next) } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
         }, 450);
     };
 
@@ -1764,18 +1766,41 @@ function StAppearanceSection() {
                 {([
                     { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.9, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
                     { k: 'glassBlur' as const, lbl: t('st.amb.glass'), min: 0, max: 28, step: 1, fmt: (v: number) => `${v}px` },
-                ]).map(({ k, lbl, min, max, step, fmt }) => (
-                    <div key={k} className="flex items-center gap-3 px-0.5">
-                        <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>
-                        <input
-                            type="range" min={min} max={max} step={step}
-                            value={s.uiAmbience[k]}
-                            onChange={(e) => setAmb({ [k]: Number(e.target.value) })}
-                            className="min-w-0 flex-1"
-                        />
-                        <span className="w-10 shrink-0 text-right font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{fmt(s.uiAmbience[k])}</span>
-                    </div>
-                ))}
+                ]).map(({ k, lbl, min, max, step, fmt }) => {
+                    /* Dragging pins the value inline (override); the trailing
+                       slot shows the source — a "follow CSS" reset link while
+                       pinned, a quiet tag while the stylesheet owns the var. */
+                    const pinned = ambiencePinned(s.uiAmbience, k);
+                    return (
+                        <div key={k} className="flex items-center gap-3 px-0.5">
+                            <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>
+                            <input
+                                type="range" min={min} max={max} step={step}
+                                value={s.uiAmbience[k]}
+                                onChange={(e) => setAmb(pinAmbience(s.uiAmbience, k, Number(e.target.value)))}
+                                className={`min-w-0 flex-1${pinned ? '' : ' opacity-60'}`}
+                            />
+                            <span className={`w-10 shrink-0 text-right font-mono-ui text-[11px] text-[color:var(--fg-muted)]${pinned ? '' : ' opacity-60'}`}>{fmt(s.uiAmbience[k])}</span>
+                            {pinned ? (
+                                <button
+                                    type="button"
+                                    title={t('st.amb.followCssTip')}
+                                    onClick={() => setAmb(unpinAmbience(s.uiAmbience, k))}
+                                    className="w-[68px] shrink-0 text-right text-[10.5px] text-[color:var(--fg-secondary)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg-primary)]"
+                                >
+                                    {t('st.amb.followCss')}
+                                </button>
+                            ) : (
+                                <span
+                                    title={t('st.amb.followCssTip')}
+                                    className="w-[68px] shrink-0 text-right text-[10.5px] text-[color:var(--fg-faint)]"
+                                >
+                                    {t('st.amb.followCss')}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
