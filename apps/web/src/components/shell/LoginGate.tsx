@@ -1,12 +1,17 @@
-// 第一方登录面 —— enableUserAccounts 下会话失效(auth-expired 广播)时
-// 以全屏蒙层接管:handle + password → POST /api/users/login(cookie-session,
-// 同源凭证,apiFetch 自带 CSRF)。成功后整页重载,服务端会话 cookie 让
-// SPA 以新身份重新引导 —— 比重挂在途 React 状态树更诚实。
+// First-party sign-in form — handle + password → POST /api/users/login
+// (cookie-session, same-origin credentials, apiFetch carries CSRF). On
+// success the page reloads wholesale so the server-issued session cookie
+// reboots the SPA fresh — more honest than re-mounting the in-flight React
+// tree. `postLoginUrl` is the reload target; LoginLanding passes the deep
+// link the guest arrived on.
 //
-// The front door lands here too: in SPA mode /login serves this shell, every
-// API call answers 401, the same auth-expired broadcast fires and this gate
-// renders. OAuth sign-in and password recovery must close the loop inside
-// this component — there is no legacy page left to escape to.
+// Container story: this is the form half of LoginLanding's split-screen —
+// rendered as page content, never as an overlay over the shell (App.tsx's
+// AuthGate is what decides shell-vs-landing; the shell is absent from the
+// DOM for guests). The front door lands here too: in SPA mode /login serves
+// the app, the me() probe answers 401/403, and the landing renders. OAuth
+// sign-in and password recovery must close the loop inside this component —
+// there is no legacy page left to escape to.
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '../../i18n';
@@ -27,7 +32,7 @@ const OAUTH_ERR_KEYS: Record<string, string> = {
     unsupported_provider: 'login.err.oauth.notConfigured',
 };
 
-export function LoginGate() {
+export function LoginGate({ postLoginUrl = '/' }: { postLoginUrl?: string }) {
     const { t } = useI18n();
     const [view, setView] = useState<'signin' | 'recover' | 'register'>('signin');
     const [handle, setHandle] = useState('');
@@ -96,7 +101,9 @@ export function LoginGate() {
         try {
             await loginAccount(h, password);
             // 重载:cookie-session 已落,服务端会再发 SPA 引导页。
-            window.location.assign('/');
+            // postLoginUrl keeps the deep link the guest arrived on
+            // (LoginLanding computes it; '/' when mounted bare).
+            window.location.assign(postLoginUrl);
         } catch (e) {
             if (e instanceof ApiError && e.code === 'passwordless') {
                 setPasswordlessFor(h);
@@ -125,7 +132,7 @@ export function LoginGate() {
             }
             await resetPasswordWithCode(h, code.trim(), newPassword);
             await loginAccount(h, newPassword);
-            window.location.assign('/');
+            window.location.assign(postLoginUrl);
         } catch (e) {
             fail(e);
         }
@@ -153,7 +160,7 @@ export function LoginGate() {
         try {
             // The server signs the session in on success — same landing as login.
             await registerAccount({ handle: h, name: n, password, ...(invite ? { inviteCode: invite } : {}) });
-            window.location.assign('/');
+            window.location.assign(postLoginUrl);
         } catch (e) {
             fail(e);
         }
@@ -171,8 +178,12 @@ export function LoginGate() {
     const recovering = view === 'recover';
     const registering = view === 'register';
     const isPasswordless = view === 'signin' && passwordlessFor !== '' && handle.trim() === passwordlessFor;
+    // Container only — the split-screen landing owns the page layout
+    // (spec.css .login-landing); .login-gate is now the in-flow flex
+    // scroller inside the form panel, not a modal overlay, so the
+    // dialog/aria-modal semantics went with it.
     return (
-        <div className="login-gate" role="dialog" aria-modal="true" aria-label={t('login.title')}>
+        <div className="login-gate">
             <form className="login-card" onSubmit={registering ? submitRegister : recovering ? submitRecover : submit}>
                 <div className="login-card-head">
                     <LogoU size={24} />

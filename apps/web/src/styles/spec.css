@@ -616,23 +616,111 @@ input[type="range"] { accent-color: var(--brand); }
 }
 .auth-expired-bar button:hover { background: var(--brand-hover); }
 
-/* 第一方登录面 —— 会话死(auth-expired)时全屏接管。前门未登录 GET /
-   由服务端 302 去 legacy /login;本面只管 SPA 在途会话失效一段。
-   视觉沿用壳语汇:--bg-elevated 卡 + --shadow-pop + popIn。 */
-.login-gate {
+/* =========================================================================
+   Standalone login landing — the whole page for guests. App.tsx's AuthGate
+   mounts it INSTEAD of the shell: rail/stage/workbench never enter the DOM,
+   which is what keeps card names / model ids / user chrome out of
+   body.innerText for unauthenticated visitors.
+
+   Wide (>=900px): brand aside ~55% + form panel. Narrow: the brand column
+   collapses to a top banner and the form takes the rest. Not the ambience
+   layer — AmbientBackdrop needs shell ctx a guest cannot have, so the
+   landing paints its own background (see LoginLanding.tsx).
+   ========================================================================= */
+.login-landing {
+    position: fixed; inset: 0; z-index: 90;
+    display: flex; flex-direction: column;
+    height: 100dvh;
+    background: var(--amb-base);
+    animation: loginLandingIn 0.28s var(--ease);
+}
+@keyframes loginLandingIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+    .login-landing { animation: none; }
+}
+
+/* Boot splash — shown while the auth probe is in flight. */
+.auth-splash {
     position: fixed; inset: 0; z-index: 90;
     display: flex; align-items: center; justify-content: center;
-    background: color-mix(in srgb, var(--bg-canvas) 78%, transparent);
-    backdrop-filter: blur(6px);
-    animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+    background: var(--amb-base);
+}
+
+.login-brand {
+    position: relative; overflow: hidden; flex: 0 0 auto;
+    height: clamp(150px, 30vh, 300px);
+    display: flex; flex-direction: column; justify-content: flex-end;
+    padding: 22px 24px;
+    /* Token-painted fallback under the art layer: if the image 404s the
+       backdrop is still a composed brand field — never a broken frame. */
+    background:
+        radial-gradient(130% 90% at 85% 8%, var(--brand-soft), transparent 62%),
+        radial-gradient(90% 80% at 8% 96%, var(--brand-soft), transparent 58%),
+        var(--amb-base);
+}
+.login-brand-art {
+    position: absolute; inset: 0;
+    background-image: url('/assets/backgrounds/claude-study.png');
+    background-size: cover;
+    background-position: var(--amb-wall-pos, center);
+}
+.login-brand-scrim {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg,
+        color-mix(in srgb, var(--amb-base) 25%, transparent) 0%,
+        transparent 38%,
+        color-mix(in srgb, var(--amb-base) 84%, transparent) 100%);
+}
+.login-brand-body {
+    position: relative; display: flex; flex-direction: column; gap: 8px;
+}
+.login-brand-mark {
+    display: flex; align-items: center; gap: 12px;
+    font-size: var(--fs-title-lg); font-weight: 600; letter-spacing: -0.03em;
+    color: var(--fg-primary);
+}
+.login-brand-tag {
+    font-size: var(--fs-title); color: var(--fg-primary);
+    max-width: 30em; line-height: 1.45;
+}
+.login-brand-sub { font-size: var(--fs-ui); color: var(--fg-muted); }
+@media (max-width: 899px) {
+    .login-brand-sub { display: none; }
+}
+
+.login-panel {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column;
+    background: var(--bg-chrome);
+    border-top: 1px solid var(--border-hairline);
+}
+
+@media (min-width: 900px) {
+    .login-landing { flex-direction: row; }
+    .login-brand { flex: 0 0 55%; height: auto; padding: clamp(32px, 4vw, 64px); }
+    .login-panel { border-top: none; border-left: 1px solid var(--border-hairline); }
+}
+
+/* 第一方登录面 —— LoginLanding 表单侧的内嵌滚动容器(旧全屏蒙层已拆,
+   壳不再垫在底下)。.login-gate 只负责排布;卡片视觉沿用
+   --bg-elevated + --shadow-pop + popIn。 */
+.login-gate {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; overflow-y: auto;
+    padding: 24px;
 }
 .login-card {
+    /* margin:auto inside the scrolling flex column centres the card when
+       the viewport is tall and top-aligns it when it is not — no clipped
+       top edge under an open mobile keyboard. */
+    margin: auto;
     display: flex; flex-direction: column; gap: 14px;
-    width: min(340px, calc(100vw - 48px));
+    width: min(360px, 100%);
     padding: 22px 22px 18px;
     border-radius: 12px;
     background: var(--bg-elevated); color: var(--fg-primary);
     box-shadow: var(--shadow-pop);
+    animation: popIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 .login-card-head {
     display: flex; align-items: center; gap: 10px;

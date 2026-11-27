@@ -33,6 +33,7 @@ import { ICON_NAMES, type IconName } from '../components/Icon';
 import { PanelEmpty } from '../components/panels/panelShared';
 import { useI18n } from '../i18n';
 import { listUiContrib, type UiContribReply } from '../api/contrib';
+import { probeAuthState } from '../api/account';
 
 /** 注册方交来的持柄条目:贡献对象 + 它在本作用域里的 disposer。 */
 export interface RegisteredPanel {
@@ -142,9 +143,13 @@ function reconcile(ctx: FeatureCtx, local: RegisteredPanel[], reply: UiContribRe
     }
 }
 
-/** 一次性拉取;任何失败 → null(调用方静默,静态旗标已是离线真值)。 */
+/** 一次性拉取;任何失败 → null(调用方静默,静态旗标已是离线真值)。
+ *  Guests never ask: the feature applies at module scope, ahead of any auth
+ *  boundary, so gate on the same me() probe AuthGate uses — an unproven
+ *  session would only buy a 403 anyway. */
 async function fetchUiContrib(): Promise<UiContribReply | null> {
     try {
+        if (await probeAuthState() !== 'authed') return null;
         return await listUiContrib();
     } catch (e) {
         console.warn('[contrib] /api/utopinn/ui/contrib unavailable; keeping local declarations.', e);

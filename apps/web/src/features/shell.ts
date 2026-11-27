@@ -160,6 +160,9 @@ const zh: Record<string, string> = {
     'auth.expired': '登录会话已失效', 'auth.relogin': '重新登录',
     'login.title': '登录乌有馆', 'login.handle': '账号', 'login.password': '密码',
     'login.submit': '登录', 'login.working': '登录中…',
+    /* 独立登录颜面(split-screen landing)品牌面文案 —— 未登录时整页只有它。 */
+    'login.landing.tagline': '卡面、世界书与会话 —— 服务端一颗大脑，薄客户端随手接续。',
+    'login.landing.sub': '自部署 · 多设备同步 · 沙盒面板',
     'login.forgot': '找回密码', 'login.back': '返回登录',
     'login.oauth': '或使用 OAuth 登录', 'login.oauth.github': 'GitHub', 'login.oauth.discord': 'Discord',
     'login.recover.title': '找回密码', 'login.recover.code': '找回码（打印在服务端控制台）',
@@ -656,6 +659,9 @@ const en: Record<string, string> = {
     'auth.expired': 'Session expired', 'auth.relogin': 'Sign in again',
     'login.title': 'Sign in to Utopinn', 'login.handle': 'Account handle', 'login.password': 'Password',
     'login.submit': 'Sign in', 'login.working': 'Signing in…',
+    /* Standalone split-screen landing — the only page a guest gets; brand-side copy. */
+    'login.landing.tagline': 'Cards, lorebooks and chats — one server-side brain, thin clients everywhere.',
+    'login.landing.sub': 'Self-hosted · Multi-device sync · Card apps',
     'login.forgot': 'Forgot password?', 'login.back': 'Back to sign in',
     'login.oauth': 'or sign in with', 'login.oauth.github': 'GitHub', 'login.oauth.discord': 'Discord',
     'login.recover.title': 'Recover password', 'login.recover.code': 'Recovery code (printed to the server console)',
