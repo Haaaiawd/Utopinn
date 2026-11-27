@@ -105,13 +105,17 @@ export const flushQrChatCfg = (charDir: string, chatName: string): Promise<void>
 
 /* ---------- React bindings ---------- */
 
+/* Null-key snapshot must be referentially stable — a fresh object per
+   getSnapshot makes useSyncExternalStore loop forever (React #185). */
+const NULL_SNAP: SharedDocSnapshot<never> = { doc: null, status: 'idle', saving: false, version: 0 };
+
 const useDoc = <T,>(store: SharedDocStore<T>, key: string | null): SharedDocSnapshot<T> => {
     const subscribe = useCallback(
         (l: () => void) => (key ? store.subscribe(key, l) : () => undefined),
         [store, key],
     );
     const getSnapshot = useCallback(
-        () => (key ? store.getSnapshot(key) : { doc: null, status: 'idle', saving: false, version: 0 }),
+        () => (key ? store.getSnapshot(key) : NULL_SNAP),
         [store, key],
     );
     const snap = useSyncExternalStore(subscribe, getSnapshot);
