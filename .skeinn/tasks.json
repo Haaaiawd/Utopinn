@@ -6259,6 +6259,17 @@
           "verify_by": ".skeinn/design/multi-user.md",
           "evidence": "§3.1 部署基线 yaml+§3.2 开户流程+§3.5.1 隔离洞清单"
         }
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/server/src/users.js",
+        "tests/multi-account-isolation.test.mjs",
+        "apps/web/src/api/account.ts",
+        ".skeinn/design/multi-user.md"
+      ],
+      "boundaries": [
+        "Does not redesign the multi-user stack; closes out the existing Luker user system",
+        "Does not change default single-user deployments (enableUserAccounts stays off)"
       ]
     },
     {
@@ -6338,12 +6349,8 @@
         "apps/web/src/components/shell/Overlays.tsx",
         "apps/web/src/features/shell.ts"
       ],
-      "implements": [
-        "shared-library.md 形态A 调研定案"
-      ],
-      "design_exemption": null,
+      "implements": "shared-library.md 形态A 调研定案",
       "capability_hooks": [],
-      "capability_exemption": null,
       "integrity_version": 1,
       "covers": [
         "实例级共享卡池:只读池+物化第一形态"
