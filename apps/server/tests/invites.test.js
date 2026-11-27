@@ -115,6 +115,61 @@ describe('accountRegistration.requireInviteCode normalization', () => {
     });
 });
 
+// Regression for the silent-gate-drop hole: the legacy admin form
+// (public/scripts/user.js collectAuthSettingsForm) posts this exact shape —
+// every field EXCEPT requireInviteCode, which it predates. With replace
+// semantics each legacy save reset the flag to false; patch semantics must
+// keep the stored value instead.
+const LEGACY_SETTINGS_PAYLOAD = (enabled) => ({
+    storage: { defaultUserQuotaBytes: -1 },
+    accountRegistration: { enabled },
+    oauth: {
+        github: { enabled: false, clientId: '', clientSecret: '', allowAutoCreate: false },
+        discord: {
+            enabled: false, clientId: '', clientSecret: '', allowAutoCreate: false,
+            requireGuildMembership: false, allowedGuildIds: [], requiredRoleIds: [],
+            scopes: ['identify', 'email'],
+        },
+    },
+});
+
+describe('saveAdminSettings patch semantics (legacy-save regression)', () => {
+    test('a save omitting requireInviteCode preserves the stored flag', async () => {
+        await saveAdminSettings({ accountRegistration: { enabled: true, requireInviteCode: true } });
+        const saved = await saveAdminSettings(LEGACY_SETTINGS_PAYLOAD(true));
+        expect(saved.accountRegistration).toEqual({ enabled: true, requireInviteCode: true });
+        expect((await getAdminSettings()).accountRegistration.requireInviteCode).toBe(true);
+    });
+
+    test('omitting the whole accountRegistration section preserves both flags', async () => {
+        await saveAdminSettings({ accountRegistration: { enabled: true, requireInviteCode: true } });
+        const saved = await saveAdminSettings({ storage: { defaultUserQuotaBytes: 1024 } });
+        expect(saved.accountRegistration).toEqual({ enabled: true, requireInviteCode: true });
+        expect(saved.storage.defaultUserQuotaBytes).toBe(1024);
+    });
+
+    test('an explicit false still clears the flag', async () => {
+        await saveAdminSettings({ accountRegistration: { enabled: true, requireInviteCode: true } });
+        const saved = await saveAdminSettings({ accountRegistration: { enabled: true, requireInviteCode: false } });
+        expect(saved.accountRegistration.requireInviteCode).toBe(false);
+    });
+
+    test('POST /settings/save with the legacy body keeps the invite gate', async () => {
+        const app = makeApp();
+        await saveAdminSettings({ accountRegistration: { enabled: true, requireInviteCode: true } });
+        const res = await request(app).post('/api/users/settings/save').send(LEGACY_SETTINGS_PAYLOAD(true));
+        expect(res.status).toBe(200);
+        expect(res.body.accountRegistration.requireInviteCode).toBe(true);
+
+        // And the gate is still real: registration without a code is refused.
+        const reg = await request(app)
+            .post('/api/users/register')
+            .send({ handle: 'alice', name: 'Alice', password: 'pw' });
+        expect(reg.status).toBe(400);
+        expect(reg.body.code).toBe('invite_code_required');
+    });
+});
+
 describe('POST /api/users/registration/info', () => {
     test('reports requireInviteCode only when both flags are on', async () => {
         const app = makeApp();
@@ -257,12 +312,13 @@ describe('POST /api/users/register — invite gate', () => {
         expect((await getInvite(invite.code)).usedCount).toBe(0);
     });
 
-    test('account-creation failure refunds the consumed use', async () => {
+    test('account-creation failure refunds the use AND rolls back the account', async () => {
         await enableRegistration(true);
         const invite = await invites.createInvite({ maxUses: 1, createdBy: 'admin-user' });
         checkForNewContentSpy.mockImplementation(async () => { throw new Error('seed boom'); });
+        const app = makeApp();
 
-        const res = await request(makeApp())
+        const res = await request(app)
             .post('/api/users/register')
             .send({ handle: 'alice', name: 'Alice', password: 'pw', inviteCode: invite.code });
         expect(res.status).toBe(500);
@@ -270,6 +326,21 @@ describe('POST /api/users/register — invite gate', () => {
         const stored = await getInvite(invite.code);
         expect(stored.usedCount).toBe(0);
         expect(stored.usedBy).toEqual([]);
+
+        // The half-provisioned account must not survive the failure: an
+        // enabled record would sign in on an invite use that was already
+        // refunded — a free registration. Rollback also frees the handle,
+        // which the retry below proves.
+        expect(await storage.getItem(toKey('alice'))).toBeUndefined();
+        const login = await request(app).post('/api/users/login').send({ handle: 'alice', password: 'pw' });
+        expect(login.status).toBe(403);
+        expect(login.body.code).toBe('incorrect_credentials');
+
+        checkForNewContentSpy.mockImplementation(async () => false);
+        const retry = await request(app)
+            .post('/api/users/register')
+            .send({ handle: 'alice', name: 'Alice', password: 'pw', inviteCode: invite.code });
+        expect(retry.status).toBe(200);
     });
 
     test('two racers on the last use -> exactly one wins', async () => {

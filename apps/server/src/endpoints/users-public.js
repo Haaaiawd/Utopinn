@@ -438,8 +438,16 @@ router.post('/register', parseAccountBody, async (request, response) => {
             const directories = getUserDirectories(handle);
             await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
         } catch (error) {
-            // Account creation failed after an invite was consumed — refund
-            // the use so a transient failure does not burn the slot.
+            // Roll the account record back before refunding the invite: a
+            // half-provisioned account left enabled can sign in while the
+            // invite use it consumed is handed back — a free registration
+            // that bypasses the gate. Removing the record keeps
+            // "invite consumed ⇒ account usable" atomic and unblocks a
+            // retry on the same handle after a transient failure. Any
+            // directories already created stay behind orphaned; they are
+            // adopted if the handle registers again.
+            await storage.removeItem(toKey(handle))
+                .catch(rollbackError => console.error('Account rollback failed:', rollbackError));
             if (consumedInviteCode) {
                 await refundInvite({ code: consumedInviteCode, handle })
                     .catch(refundError => console.error('Invite refund failed:', refundError));
