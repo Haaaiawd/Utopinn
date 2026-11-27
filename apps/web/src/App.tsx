@@ -37,7 +37,7 @@ import {
     type StageData, type StBackground, type VpMode,
 } from './kernel/context';
 import {
-    ambienceInlineVars, hydrateUiAmbience, UI_AMBIENCE_DEFAULTS,
+    ambienceHydrateFailLog, ambienceInlineVars, hydrateUiAmbience, UI_AMBIENCE_DEFAULTS,
     type UiAmbience,
 } from './kernel/ambience';
 import { Kernel } from './kernel/kernel';
@@ -478,6 +478,10 @@ function Shell() {
         ]);
 
         const st = stRes.status === 'fulfilled' ? stRes.value.settings : null;
+        /* Ambience degrade trace (issue #60): the slot keeps its previous
+           value on rejection — but without this line a vanished wallpaper
+           is a silent event with nothing to debug from. */
+        if (stRes.status === 'rejected') console.warn(ambienceHydrateFailLog(stRes.reason));
         const oai = (st?.oai_settings && typeof st.oai_settings === 'object' && !Array.isArray(st.oai_settings))
             ? (st.oai_settings as Record<string, unknown>)
             : {};
@@ -1178,7 +1182,17 @@ function useWallOk(cssUrl: string | null): boolean | null {
         let dead = false;
         const img = new Image();
         img.onload = () => { if (!dead) setOk(true); };
-        img.onerror = () => { if (!dead) setOk(false); };
+        /* Second silent drop point in the wallpaper chain (issue #60):
+           /backgrounds/* sits behind login, so a dead session 403s the
+           image itself — same trace duty as the hydrate failure. */
+        img.onerror = () => {
+            if (!dead) {
+                setOk(false);
+                /* data: URLs are legal wallpaper sources — never log raw. */
+                const shown = src.length > 120 ? `${src.slice(0, 117)}...` : src;
+                console.warn(`[ambience] wallpaper image failed to load (${shown}) — layer skipped`);
+            }
+        };
         img.src = src;
         return () => { dead = true; img.onload = img.onerror = null; };
     }, [cssUrl]);

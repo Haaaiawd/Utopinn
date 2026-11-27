@@ -103,3 +103,22 @@ export function unpinAmbience(a: UiAmbience, k: UiAmbienceKey): UiAmbience {
 export function ambiencePinned(a: UiAmbience, k: UiAmbienceKey): boolean {
     return k === 'bgAlpha' ? a.bgAlphaOverride === true : a.glassBlurOverride === true;
 }
+
+/** Degrade trace for a rejected settings hydrate (issue #60 — an
+ *  un-hydrated wallpaper was indistinguishable from "no wallpaper
+ *  selected", so the failure left no trace to debug from). The wallpaper
+ *  slot keeps its previous value either way — hydrate failure never
+ *  clears applied skin.
+ *  HTTP 401/403 is reported as the same auth class CardAppFrame's
+ *  authExpired flag uses: apiFetch already probed /api/users/me and the
+ *  utopinn:auth-expired broadcast owns the recovery UI (LoginGate), so
+ *  this line names the shared explanation instead of a bespoke one. */
+export function ambienceHydrateFailLog(err: unknown): string {
+    const status = err && typeof err === 'object' && typeof (err as { status?: unknown }).status === 'number'
+        ? (err as { status: number }).status : undefined;
+    const detail = status === 401 || status === 403
+        ? `HTTP ${status} — session rejected the request; the auth-expired flow owns recovery`
+        : (status !== undefined ? `HTTP ${status}`
+            : err instanceof Error ? err.message : String(err));
+    return `[ambience] settings hydrate failed (${detail}); wallpaper slot kept at previous value`;
+}
