@@ -1006,6 +1006,16 @@ async function singleUserLogin(request) {
     if (userHandles.length === 1) {
         const user = await storage.getItem(toKey(userHandles[0]));
         if (user && !user.password) {
+            // A registration-enabled instance is multi-user by intent: the
+            // lone passwordless account is the bootstrap record, not "the
+            // only person using this server". Auto-entering it hands every
+            // visitor that account's data — and it stops firing anyway the
+            // moment a second account registers. Skip it so the login page
+            // (and the register form on it) stays reachable.
+            const settings = await getAdminSettings();
+            if (settings?.accountRegistration?.enabled) {
+                return false;
+            }
             request.session.handle = userHandles[0];
             request.session.version = getAccountVersion(user);
             return true;

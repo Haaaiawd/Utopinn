@@ -368,7 +368,15 @@ const serveWebSpa = process.env.LUKER_SERVE_LEGACY !== '1' && fs.existsSync(WEB_
 
 // Host index page
 app.get('/', cacheBuster.middleware, (request, response) => {
-    if (shouldRedirectToLogin(request)) {
+    // SPA mode serves the shell to guests too: AuthGate is the auth
+    // boundary and renders LoginLanding for anyone without a session —
+    // the same contract every history-fallback route below already
+    // follows (none of them redirect). Bouncing guests '/' → '/login'
+    // while loginAutoLoginMiddleware bounces them right back on a
+    // passwordless bootstrap account was the anonymous redirect loop.
+    // The 302 only makes sense for the legacy jQuery UI, whose login
+    // form is a separate page the shell itself cannot render.
+    if (!serveWebSpa && shouldRedirectToLogin(request)) {
         const query = request.url.split('?')[1];
         const redirectUrl = query ? `/login?${query}` : '/login';
         return response.redirect(redirectUrl);
