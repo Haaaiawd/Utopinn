@@ -233,12 +233,27 @@ export interface ShellCtx {
     /** 激活预设(openai 家族)的整档 doc —— PresetDocEditor 直接读;
      *  离线或档未拉到为 null(编辑器禁用,不写假档)。 */
     presetDoc: PresetDocument | null;
-    /** 激活预设统一写路:fn(doc)→next —— 同步重算 presetParams 投影与
-     *  presets 行摘要,防抖整档 PUT;编辑面一律走它,不另开写路。 */
+    /** 激活预设统一写路:fn(doc)→next —— routes through the shared
+     *  presetDocs store (kernel/docStores): same optimistic doc as every
+     *  other edit surface, debounced fresh-base save. Surfaces must NOT
+     *  hold their own doc snapshot. */
     mutatePresetDoc: (fn: (doc: PresetDocument) => PresetDocument) => void;
     /** 外部写面(studio 页/其他端)改过激活预设档后,重拉服务端真值
      *  回灌 presetDoc/presetParams —— 双编辑面收敛位。 */
     reloadPresetDoc: () => void;
+    /** Floor-data revision — bumped when an out-of-band write mutates the
+     *  chat (script runs like /cut, automation ops). StageFrame reloads
+     *  floors when this changes so index-addressed actions (delete/edit)
+     *  can't target a stale message. */
+    chatRevision: number;
+    notifyChatMutation: () => void;
+    /** In-flight script runs that may mutate floors server-side — while
+     *  >0 the transcript's index-addressed actions are stale by definition
+     *  (a /cut can land long before /script/run resolves), so StageFrame
+     *  keeps them disabled until the post-run refetch commits. */
+    chatMutationInFlight: number;
+    beginChatMutation: () => void;
+    endChatMutation: () => void;
     presetParams: PresetParams;
     setPresetParam: (k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => void;
     togglePresetBlock: (id: string) => void;

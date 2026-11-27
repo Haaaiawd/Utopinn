@@ -26,7 +26,11 @@ import {
     type EntryDraft,
 } from './worldbookDraft';
 import { getSettings, patchSettings } from '../../api/settings';
-import { listPresets, getPreset, savePreset, deletePreset, type PresetDocument } from '../../api/presets';
+import { listPresets, savePreset, deletePreset, type PresetDocument } from '../../api/presets';
+import {
+    flushQrChatCfg, flushQrSettings, mutateQrChatCfg, mutateQrSettings,
+    presetDocs, presetKey, usePresetDoc, useQrChatCfg, useQrSettings,
+} from '../../kernel/docStores';
 import { PresetDocEditor } from '../panels/presetEditor';
 import {
     BUILTIN_COVERS, BUILTIN_PERSONA_AVATARS, builtinPickSrc, coverPersonaKey,
@@ -35,7 +39,8 @@ import {
     type PersonaAvatarPick, type PersonaItem,
 } from '../../api/personas';
 import {
-    deleteRegexScript, getRegexFullView, getRegexPresetScope, patchRegexScript, putRegexScope,
+    deleteRegexScript, deleteRegexScriptByContent, getRegexFullView, mutateRegexScope,
+    patchRegexScript, patchRegexScriptByContent, RegexScriptMovedError,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import { statsInject } from '../../api/stats';
@@ -43,8 +48,8 @@ import { openImportModal } from '../shell/overlayBus';
 import { downloadExport, exportPresetUrl, exportWorldUrl } from '../../api/export';
 import { uploadPersonaImage } from '../../api/personas';
 import {
-    deleteQrSet, getChatQrConfig, getQrSet, getQrSettingsDoc, listQrSets,
-    newQrSetDoc, patchChatQrConfig, patchQrSettingsDoc, qrBound, qrCharScopeKey,
+    deleteQrSet, getQrSet, listQrSets,
+    newQrSetDoc, qrBound, qrCharScopeKey,
     qrConfigWithLink, qrStudioFocus, saveQrSet,
     type QrConfig, type QrEntry, type QrSetDoc, type QrSetLink, type QrSettings,
 } from '../../api/quickreplies';
@@ -135,17 +140,9 @@ function invalidateWorldDoc(name: string): void {
 /* 卡文档缓存已收编进 api/characters.ts(loadCharDoc)—— 舞台头资产 chip /
    角色页共享同一真值源,patchCharacter 自动失效,本文件不再私持。 */
 
-const presetDocCache = new Map<string, Promise<PresetDocument>>();
-function loadPresetDoc(name: string, apiId = 'openai'): Promise<PresetDocument> {
-    const key = `${apiId}/${name}`;
-    let p = presetDocCache.get(key);
-    if (!p) {
-        p = getPreset(name, apiId).then((r) => r.doc);
-        presetDocCache.set(key, p);
-        p.catch(() => presetDocCache.delete(key));
-    }
-    return p;
-}
+/* Preset docs are owned by the shared presetDocs store (kernel/docStores)
+   — no per-page cache: every edit surface reads/writes the same entry and
+   the store's fresh-base flush replaces the old ovRef/saveTimer lane. */
 
 /** 全部书文件的条目数(map: name → count|null;null = 读不出)。 */
 function useWorldCounts(items: WorldListItem[]) {
@@ -975,108 +972,13 @@ const tuneOf = (doc: PresetDocument | undefined) => ({
     maxReply: pnum(doc?.openai_max_tokens),
 });
 
-/* 预设 extensions 袋:regex_scripts 读出/写回共用的窄化。 */
-const presetExtBag = (d: PresetDocument): Record<string, unknown> =>
-    (d.extensions && typeof d.extensions === 'object' && !Array.isArray(d.extensions))
-        ? (d.extensions as Record<string, unknown>) : {};
-
-const presetRegexScripts = (doc: PresetDocument): RegexScriptData[] => {
-    const arr = presetExtBag(doc).regex_scripts;
-    return Array.isArray(arr)
-        ? arr.filter((x): x is RegexScriptData => !!x && typeof x === 'object' && !Array.isArray(x))
-        : [];
-};
-
-/** 预设档内正则脚本小节 —— 脚本本体是预设档数据(extensions.regex_scripts),
- *  启停/删除走 doc 写路(onMutate 与调参同一防抖整档 PUT 通道,无跨通道竞写);
- *  放行闸 preset_allowed_regex 在 settings 不在档 —— scoped GET 取态、
- *  PUT allow 写回,in_use 徽标同源。真管理面,不假编辑脚本内容。 */
-function PresetRegexSection({ apiId, name, doc, onMutate }: {
-    apiId: string;
-    name: string;
-    doc: PresetDocument;
-    onMutate: (fn: (d: PresetDocument) => PresetDocument) => void;
-}) {
-    const { t } = useI18n();
-    const s = useShell();
-    const scripts = useMemo(() => presetRegexScripts(doc), [doc]);
-    const scope = useRemote(`regex-preset:${apiId}:${name}`, () => getRegexPresetScope(apiId, name));
-    const [allowBusy, setAllowBusy] = useState(false);
-
-    /* 写穿 mutate fn 内现取 d 的脚本数组 —— 渲染期 scripts 仅作展示,
-       避免与在途调参改动错拍(同通道 fn 串行,恒以最新档为准)。 */
-    const writeScripts = (fn: (arr: RegexScriptData[]) => RegexScriptData[]) => onMutate((d) => ({
-        ...d, extensions: { ...presetExtBag(d), regex_scripts: fn(presetRegexScripts(d)) },
-    }));
-    const toggleScript = (i: number) =>
-        writeScripts((arr) => arr.map((sc, j) => (j === i ? { ...sc, disabled: sc.disabled === true ? false : true } : sc)));
-    const delScript = (i: number) => {
-        const label = scripts[i]?.scriptName || `#${i}`;
-        if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
-        writeScripts((arr) => arr.filter((_, j) => j !== i));
-    };
-    const toggleAllow = () => {
-        if (allowBusy || !scope.data) return;
-        setAllowBusy(true);
-        void putRegexScope({ scope: 'preset', apiId, preset: name }, { allow: !scope.data.allowed })
-            .then(() => scope.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setAllowBusy(false));
-    };
-
-    return (
-        <div className="mt-3 border-t border-[color:var(--border-hairline)] pt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">
-                    {t('studio.presets.regex')}
-                    <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{scripts.length}</span>
-                    {scope.data?.inUse && (
-                        <span className="shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
-                            {t('studio.regex.inUse')}
-                        </span>
-                    )}
-                </span>
-                {scope.error ? (
-                    <button className="shrink-0 text-[10.5px] text-[color:var(--status-danger)]" onClick={scope.reload}>{t('panel.retry')}</button>
-                ) : (
-                    <span className="flex shrink-0 items-center gap-2">
-                        <span className="text-[10.5px] text-[color:var(--fg-faint)]">{t('studio.regex.allowPreset')}</span>
-                        <Switch on={scope.data?.allowed ?? false} disabled={allowBusy || !scope.data} title={t('studio.regex.allowPreset')} onToggle={toggleAllow} />
-                    </span>
-                )}
-            </div>
-            {scripts.length === 0 ? (
-                <div className="inset-row"><span className="text-[11px] text-[color:var(--fg-faint)]">{t('studio.presets.regexEmpty')}</span></div>
-            ) : (
-                <div className="inset-group">
-                    {scripts.map((sc, i) => {
-                        const nm = typeof sc.scriptName === 'string' && sc.scriptName ? sc.scriptName : t('studio.regex.unnamed');
-                        const on = sc.disabled !== true;
-                        return (
-                            <div key={typeof sc.id === 'string' && sc.id ? sc.id : i} className="inset-row gap-3">
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]" style={{ opacity: on ? 1 : 0.5 }}>{nm}</div>
-                                    {typeof sc.findRegex === 'string' && sc.findRegex && (
-                                        <div className="mt-0.5 truncate font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{sc.findRegex}</div>
-                                    )}
-                                </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                    <Switch on={on} onToggle={() => toggleScript(i)} />
-                                    <button
-                                        className="ghost-btn h-7 w-7" title={t('studio.persona.delete')}
-                                        style={{ color: 'var(--status-danger)' }}
-                                        onClick={() => delScript(i)}
-                                    >
-                                        <Icon name="trash" size={13} />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
+/* Per-row doc cell — the row subscribes to the shared presetDocs store,
+   so the displayed doc is the SAME optimistic doc every other surface
+   edits (rail PresetDocEditor, automation panel, sliders): a write from
+   anywhere lands here via store notify, never a stale page snapshot. */
+function PresetRowDoc({ name, fallback }: { name: string; fallback: (doc: PresetDocument | undefined, saving: boolean, unreadable: boolean) => ReactNode }) {
+    const snap = usePresetDoc(PRESET_API_ID, name);
+    return <>{fallback(snap.doc ?? undefined, snap.saving, snap.status === 'error')}</>;
 }
 
 function PresetsPage() {
@@ -1085,67 +987,21 @@ function PresetsPage() {
     const list = useRemote(PRESET_API_ID, () => listPresets(PRESET_API_ID));
     const { slices, reload: sReload } = useSettingsSlices();
     const names = list.data?.items.map((x) => x.name) ?? [];
-    /* 每预设档取真 doc(缓存)—— 列表只给 name,参数在 doc 里。 */
-    const docs = useRemote(names.join('|') ? `preset-docs:${PRESET_API_ID}:${names.length}:${names.join('|').length}` : null, async () => {
-        const out: Record<string, PresetDocument | null> = {};
-        await Promise.all(names.map(async (n) => {
-            try { out[n] = await loadPresetDoc(n, PRESET_API_ID); } catch { out[n] = null; }
-        }));
-        return out;
-    });
-    /* 编辑面真值 = overrides ?? docs —— ref 直写同步(连续编辑不丢步),
-     * 写穿缓存 + 700ms 防抖整档 PUT;PUT 失败 → 丢 override + 失效重拉(回滚)。 */
-    const ovRef = useRef<Record<string, PresetDocument>>({});
-    const docsRef = useRef<Record<string, PresetDocument | null> | null>(null);
-    docsRef.current = docs.data;
-    const [, bumpOv] = useState(0);
-    const saveTimer = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-    const [saving, setSaving] = useState<Record<string, boolean>>({});
     const [switching, setSwitching] = useState<string | null>(null);
     const [editOpen, setEditOpen] = useState<string | null>(null);
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [busyRow, setBusyRow] = useState<string | null>(null);
 
-    const docFor = (n: string): PresetDocument | undefined => ovRef.current[n] ?? docs.data?.[n] ?? undefined;
-
-    /* 编辑底必须新鲜:docsRef 是打开页时的快照,工作台(App.mutatePresetDoc)
-       保存不回流本页 —— 以旧档整档 PUT 会把对面已存的改动盖回(Devin#19)。
-       无 override 时现取服务端档;同名串行,连击叠在同一 base 上。 */
-    const mutateSeq = useRef<Record<string, Promise<unknown>>>({});
+    /* Single write lane: mutate the shared store doc — optimistic apply
+       is synchronous (typing never reverts), the debounced flush does
+       GET → rebase pending → PUT so external writes are merged, and a
+       failed PUT rolls back to server truth (store-owned semantics). */
     const mutateFor = (n: string) => (fn: (d: PresetDocument) => PresetDocument) => {
-        mutateSeq.current[n] = (mutateSeq.current[n] ?? Promise.resolve()).then(async () => {
-            const cur = ovRef.current[n] ?? (await getPreset(n, PRESET_API_ID)).doc;
-            if (!cur) return;
-            const next = fn(cur);
-            if (next === cur) return;
-            ovRef.current[n] = next;
-            presetDocCache.set(`${PRESET_API_ID}/${n}`, Promise.resolve(next));
-            bumpOv((c) => c + 1);
-            clearTimeout(saveTimer.current[n]);
-            saveTimer.current[n] = setTimeout(() => {
-                setSaving((p) => ({ ...p, [n]: true }));
-                savePreset(n, next, PRESET_API_ID)
-                    .then(() => {
-                        /* 改的是激活档 → 面板/舞台侧 doc 回灌收敛(只读 GET)。 */
-                        if (slices.activePreset === n || slices.activePreset === `${n}.json`) s.reloadPresetDoc();
-                    })
-                    .catch((e) => {
-                        /* 回滚服务端真值:override 与缓存一并丢,重拉远端。 */
-                        delete ovRef.current[n];
-                        presetDocCache.delete(`${PRESET_API_ID}/${n}`);
-                        docs.reload();
-                        s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
-                    })
-                    .finally(() => setSaving((p) => ({ ...p, [n]: false })));
-            }, 700);
-        }).catch((e) => {
-            /* 取档失败不落旧基座 —— 那样整档 PUT 会盖掉别处的保存。 */
-            s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
-        });
+        presetDocs.mutate(presetKey(PRESET_API_ID, n), fn);
     };
 
-    const refreshAll = () => Promise.all([list.reload(), docs.reload(), s.refreshConnection(), sReload()]);
+    const refreshAll = () => Promise.all([list.reload(), s.refreshConnection(), sReload()]);
 
     const activatePreset = (name: string) => {
         if (switching) return;
@@ -1165,18 +1021,26 @@ function PresetsPage() {
         if (names.includes(name)) { s.hint(t('studio.presets.exists'), true); return; }
         setBusyRow('new');
         void savePreset(name, {}, PRESET_API_ID)
-            .then(() => { setCreating(false); setNewName(''); setEditOpen(name); return refreshAll(); })
+            .then(() => {
+                presetDocs.prime(presetKey(PRESET_API_ID, name), {});
+                setCreating(false); setNewName(''); setEditOpen(name);
+                return refreshAll();
+            })
             .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setBusyRow(null));
     };
     const copyPreset = (n: string) => {
-        const src = docFor(n);
+        const key = presetKey(PRESET_API_ID, n);
+        const src = presetDocs.getDoc(key);
         if (!src || busyRow) return;
         let cand = `${n}-copy`; let i = 2;
         while (names.includes(cand)) cand = `${n}-copy-${i++}`;
         const target = cand;
         setBusyRow(n);
-        void savePreset(target, JSON.parse(JSON.stringify(src)) as PresetDocument, PRESET_API_ID)
+        /* Flush pending edits first so the copy carries the latest doc,
+           not just what has already hit the server. */
+        void presetDocs.flush(key)
+            .then(() => savePreset(target, JSON.parse(JSON.stringify(presetDocs.getDoc(key) ?? src)) as PresetDocument, PRESET_API_ID))
             .then(() => { setEditOpen(target); return refreshAll(); })
             .catch((e) => s.hint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setBusyRow(null));
@@ -1189,9 +1053,7 @@ function PresetsPage() {
         setBusyRow(n);
         void deletePreset(n, PRESET_API_ID)
             .then(() => {
-                delete ovRef.current[n];
-                presetDocCache.delete(`${PRESET_API_ID}/${n}`);
-                clearTimeout(saveTimer.current[n]);
+                presetDocs.drop(presetKey(PRESET_API_ID, n));
                 if (editOpen === n) setEditOpen(null);
                 /* 激活档被删 → 降级:有余档切首档(走 pickPreset 完整水合),
                    空库清指针 null(merge-patch 删键)。 */
@@ -1241,13 +1103,11 @@ function PresetsPage() {
             )}
             {list.data && !names.length && <PanelEmpty icon="sliders">{t('studio.presets.empty')} · {PRESET_API_ID}</PanelEmpty>}
             <div className="inset-group">
-                {names.map((n) => {
-                    const doc = docFor(n);
+                {names.map((n) => (
+                    <PresetRowDoc key={n} name={n} fallback={(doc, saving, unreadable) => {
                     const tune = tuneOf(doc);
                     const active = slices.activePreset === n || slices.activePreset === n.replace(/\.json$/i, '');
                     const open = editOpen === n;
-                    /* docs.data[n]===null = 服务端档读不出(unreadable);undefined = 尚未取回。 */
-                    const unreadable = !!(docs.data && docs.data[n] === null && !ovRef.current[n]);
                     return (
                         <div key={n} className="inset-row flex-col !items-stretch">
                             <div className="flex items-center justify-between gap-3">
@@ -1259,7 +1119,7 @@ function PresetsPage() {
                                     </div>
                                 </div>
                                 <div className="flex shrink-0 items-center gap-1.5">
-                                    {saving[n] && <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{t('panel.notes.saving')}</span>}
+                                    {saving && <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{t('panel.notes.saving')}</span>}
                                     {/* 导出整档 JSON(TASK-067):回出即 import 'preset' 嗅探形。 */}
                                     <button
                                         className="ghost-btn h-7 w-7" disabled={!doc}
@@ -1303,13 +1163,13 @@ function PresetsPage() {
                             </div>
                             {open && doc && (
                                 <div className="mt-2 border-t border-[color:var(--border-hairline)] pt-3">
-                                    <PresetDocEditor doc={doc} onMutate={mutateFor(n)} />
-                                    <PresetRegexSection apiId={PRESET_API_ID} name={n} doc={doc} onMutate={mutateFor(n)} />
+                                    <PresetDocEditor doc={doc} onMutate={mutateFor(n)} apiId={PRESET_API_ID} presetName={n} />
                                 </div>
                             )}
                         </div>
                     );
-                })}
+                    }} />
+                ))}
             </div>
         </div>
     );
@@ -1662,12 +1522,25 @@ function RegexPage() {
         return out;
     }, [full.data, t]);
 
+    /* Id-less scripts fall back to array-index addressing server-side —
+       sending this view's rendered index can hit a neighbour once the
+       list changed. Route them through the serialized content-addressed
+       ops (same contract as AutomationPanel, review 🔴4 sibling). */
+    const idOp = (r: FlatRegexItem): r is FlatRegexItem & { idOrIdx: string } =>
+        typeof r.idOrIdx === 'string';
+    const onMoved = (e: unknown) => {
+        if (e instanceof RegexScriptMovedError) void full.reload();
+    };
+
     const toggleRow = (r: FlatRegexItem) => {
         if (busyKey) return;
         setBusyKey(r.key);
-        void patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+        const op = idOp(r)
+            ? patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+            : patchRegexScriptByContent(r.target, r.script, { disabled: !r.script.disabled });
+        void op
             .then(() => full.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => { s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true); onMoved(e); })
             .finally(() => setBusyKey(null));
     };
 
@@ -1676,30 +1549,32 @@ function RegexPage() {
         const label = r.script.scriptName || String(r.idOrIdx);
         if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
         setBusyKey(r.key);
-        void deleteRegexScript(r.target, r.idOrIdx)
+        const op = idOp(r)
+            ? deleteRegexScript(r.target, r.idOrIdx)
+            : deleteRegexScriptByContent(r.target, r.script);
+        void op
             .then(() => full.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => { s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true); onMoved(e); })
             .finally(() => setBusyKey(null));
     };
 
     const createGlobal = () => {
         if (busyKey || !newName.trim() || !newFind.trim() || !full.data) return;
         setBusyKey('create');
-        const nextScripts: RegexScriptData[] = [
-            ...full.data.global,
-            {
-                id: `rx-${Date.now()}`,
-                scriptName: newName.trim(),
-                findRegex: newFind,
-                replaceString: newReplace,
-                placement: [2],
-                disabled: false,
-                markdownOnly: true,
-                promptOnly: false,
-                runOnEdit: true,
-            },
-        ];
-        void putRegexScope({ scope: 'global' }, { scripts: nextScripts })
+        const newSc: RegexScriptData = {
+            id: `rx-${Date.now()}`,
+            scriptName: newName.trim(),
+            findRegex: newFind,
+            replaceString: newReplace,
+            placement: [2],
+            disabled: false,
+            markdownOnly: true,
+            promptOnly: false,
+            runOnEdit: true,
+        };
+        /* Fresh-base serialized write — appends onto the server's CURRENT
+           array, never a snapshot built when the form opened. */
+        void mutateRegexScope({ scope: 'global' }, (arr) => [...arr, newSc])
             .then(() => {
                 setAdding(false);
                 setNewName('');
@@ -1878,8 +1753,13 @@ function QuickRepliesPage() {
     const [doc, setDoc] = useState<QrSetDoc | null>(null);
     const [draft, setDraft] = useState<QrSetDoc | null>(null);
     const [dirty, setDirty] = useState(false);
-    const [qr, setQr] = useState<QrSettings | null>(null);
-    const [chatCfg, setChatCfg] = useState<QrConfig | null>(null);
+    /* Bindings doc + per-chat link doc come from the shared stores — the
+       composer header and the automation panel toggle the SAME docs, so
+       a scope write here can never revert a toggle made elsewhere. */
+    const qrSnap = useQrSettings();
+    const qr = qrSnap.doc;
+    const chatCfgSnap = useQrChatCfg(s.chat?.charDir ?? null, s.chat?.chatName ?? null);
+    const chatCfg = chatCfgSnap.doc;
     const [charKey, setCharKey] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
     const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
@@ -1887,16 +1767,6 @@ function QuickRepliesPage() {
     const [renName, setRenName] = useState('');
 
     /* —— 取数:绑定档(settings)+ 本会话 link;深链落点 qrStudioFocus 消一次 —— */
-    useEffect(() => { void getQrSettingsDoc().then(setQr).catch(() => setQr(null)); }, []);
-    useEffect(() => {
-        if (!s.chat?.charDir || !s.chat?.chatName) { setChatCfg(null); return; }
-        let dead = false;
-        getChatQrConfig(s.chat.charDir, s.chat.chatName)
-            .then((c) => { if (!dead) setChatCfg(c); })
-            .catch(() => { if (!dead) setChatCfg(null); });
-        return () => { dead = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [s.chat?.id]);
 
     /* 名录 → 选中册:深链 > 现选留 > 首册。 */
     useEffect(() => {
@@ -1942,6 +1812,11 @@ function QuickRepliesPage() {
         if ((names.data ?? []).includes(nm)) { flash(false, t('studio.qr.exists')); return; }
         setBusy('new');
         try {
+            /* Fresh exists-check — the names list is a snapshot; a set
+               created elsewhere between fetch and save would be silently
+               overwritten by the unconditional PUT upsert. */
+            const existing = await getQrSet(nm).then(() => true).catch(() => false);
+            if (existing) { flash(false, t('studio.qr.exists')); return; }
             await saveQrSet(nm, newQrSetDoc(nm));
             setNewName('');
             names.reload();
@@ -1953,33 +1828,37 @@ function QuickRepliesPage() {
     /** 摘绑:把册名从 settings 全域 link(global + 所有 characterConfigs)
         与 chat cfg 中摘净 —— 删册/改名共用,不留死链。 */
     const stripLinks = async (name: string, renameTo?: string) => {
-        if (qr) {
-            const rewrite = (cfg: QrConfig | undefined): QrConfig | undefined => {
-                if (!cfg?.setList) return cfg;
-                const list = cfg.setList
-                    .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
-                    .filter((l): l is QrSetLink => l != null);
-                return { ...cfg, setList: list };
-            };
-            const next: QrSettings = { ...qr, config: rewrite(qr.config) };
-            if (qr.characterConfigs) {
+        /* The rewrite runs inside the shared store: it applies onto the
+           optimistic doc (which already contains other surfaces' pending
+           toggles) instead of this page's private snapshot. */
+        const rewrite = (cfg: QrConfig | undefined): QrConfig | undefined => {
+            if (!cfg?.setList) return cfg;
+            const list = cfg.setList
+                .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
+                .filter((l): l is QrSetLink => l != null);
+            return { ...cfg, setList: list };
+        };
+        mutateQrSettings((base) => {
+            const next: QrSettings = { ...base, config: rewrite(base.config) };
+            if (base.characterConfigs) {
                 const cc: Record<string, QrConfig> = {};
-                for (const [k, v] of Object.entries(qr.characterConfigs)) {
+                for (const [k, v] of Object.entries(base.characterConfigs)) {
                     const r = rewrite(v);
                     if (r) cc[k] = r;
                 }
                 next.characterConfigs = cc;
             }
-            await patchQrSettingsDoc(next);
-            setQr(next);
-        }
+            return next;
+        });
+        await flushQrSettings();
         if (s.chat && qrBound(chatCfg, name)) {
-            const list = (chatCfg?.setList ?? [])
-                .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
-                .filter((l): l is QrSetLink => l != null);
-            const cfg: QrConfig = { ...(chatCfg ?? {}), setList: list };
-            await patchChatQrConfig(s.chat.charDir, s.chat.chatName, cfg);
-            setChatCfg(cfg);
+            mutateQrChatCfg(s.chat.charDir, s.chat.chatName, (base) => {
+                const list = (base?.setList ?? [])
+                    .map((l) => (l && l.set === name ? (renameTo ? { ...l, set: renameTo } : null) : l))
+                    .filter((l): l is QrSetLink => l != null);
+                return { ...(base ?? {}), setList: list };
+            });
+            await flushQrChatCfg(s.chat.charDir, s.chat.chatName);
         }
     };
 
@@ -2002,6 +1881,8 @@ function QuickRepliesPage() {
         if ((names.data ?? []).includes(nm)) { flash(false, t('studio.qr.exists')); return; }
         setBusy('ren');
         try {
+            const taken = await getQrSet(nm).then(() => true).catch(() => false);
+            if (taken) { flash(false, t('studio.qr.exists')); return; }
             /* 改名 = 新名 PUT 现稿 → 旧名 DELETE → 全域 link 指向换新;
                脏稿随改名一起落(等价于先存再改,语义直白)。 */
             const body: QrSetDoc = { ...(draft ?? doc ?? newQrSetDoc(sel)), name: nm };
@@ -2058,29 +1939,31 @@ function QuickRepliesPage() {
         finally { setBusy(null); }
     };
 
-    /* scope link 写:global/char → settings 档;chat → chat_metadata。 */
+    /* scope link 写:global/char → settings 档;chat → chat_metadata ——
+       all through the shared stores so a composer/automation toggle
+       landing in between is merged, not reverted. */
     const scopeOp = async (scope: 'global' | 'char' | 'chat', set: string, op: 'on' | 'off' | 'unbind') => {
         if (busy) return;
         setBusy(`scope:${scope}:${set}`);
         try {
             if (scope === 'chat') {
                 if (!s.chat) return;
-                const cfg = qrConfigWithLink(chatCfg, set, op);
-                await patchChatQrConfig(s.chat.charDir, s.chat.chatName, cfg);
-                setChatCfg(cfg);
+                mutateQrChatCfg(s.chat.charDir, s.chat.chatName, (base) => qrConfigWithLink(base, set, op));
+                await flushQrChatCfg(s.chat.charDir, s.chat.chatName);
                 return;
             }
-            const base: QrSettings = qr ?? { isEnabled: true };
-            const next: QrSettings = { ...base };
-            if (scope === 'global') {
-                next.config = qrConfigWithLink(base.config, set, op);
-            } else {
-                const cc = { ...(base.characterConfigs ?? {}) };
-                cc[charKey] = qrConfigWithLink(cc[charKey], set, op);
-                next.characterConfigs = cc;
-            }
-            await patchQrSettingsDoc(next);
-            setQr(next);
+            mutateQrSettings((base) => {
+                const next: QrSettings = { ...base };
+                if (scope === 'global') {
+                    next.config = qrConfigWithLink(base.config, set, op);
+                } else {
+                    const cc = { ...(base.characterConfigs ?? {}) };
+                    cc[charKey] = qrConfigWithLink(cc[charKey], set, op);
+                    next.characterConfigs = cc;
+                }
+                return next;
+            });
+            await flushQrSettings();
         } catch (e) { flash(false, `${t('studio.qr.opFailed')} · ${failText(e)}`); }
         finally { setBusy(null); }
     };

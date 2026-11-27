@@ -75,7 +75,10 @@ function ParamSlider({ label, value, min, max, step, fmt, onChange }: {
 }
 
 /** 预设 / 模型板块 —— 与壳共享实时连接/模型/预设源。
- *  在线:PresetDocEditor 全字段编辑面(s.presetDoc + s.mutatePresetDoc 统一写路);
+ *  定位:当前会话「激活预设」的快速切换与调参;资产管理(新建/复制/删除/
+ *  导出/设默认/非激活档)归 studio presets 页 —— 头部「管理」深链直达。
+ *  在线:PresetDocEditor 全字段编辑面(s.presetDoc + s.mutatePresetDoc 统一写路,
+ *  放行闸作用域 = PRESET_API_ID + activeClean);
  *  离线:保留 4 滑杆 + 条目开关 demo 位(不落库,诚实演示)。 */
 export function PresetPanel() {
     const { t } = useI18n();
@@ -88,9 +91,19 @@ export function PresetPanel() {
     }
     return (
         <div className="p-4">
-            <div className="mb-5">
-                <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
-                <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
+            <div className="mb-5 flex items-start justify-between gap-2">
+                <div>
+                    <div className="heading-tight text-[14px] font-semibold">{t('panel.preset.title')}</div>
+                    <div className="mt-0.5 text-[11.5px] text-[color:var(--fg-muted)]">{t('panel.preset.sub')}</div>
+                </div>
+                {s.live && (
+                    <button
+                        className="mt-0.5 shrink-0 text-[11.5px] text-[color:var(--fg-muted)] transition-colors hover:text-[color:var(--fg-primary)]"
+                        onClick={() => { if (s.isMobile) s.setSheetSnap('closed'); s.setView('studio', true); s.setStudioNav('presets'); }}
+                    >
+                        {t('tree.manage')}
+                    </button>
+                )}
             </div>
             <div className="mb-5 space-y-3">
                 <div className="relative">
@@ -156,7 +169,7 @@ export function PresetPanel() {
             </div>
             {s.live ? (
                 s.presetDoc ? (
-                    <PresetDocEditor doc={s.presetDoc} onMutate={s.mutatePresetDoc} />
+                    <PresetDocEditor doc={s.presetDoc} onMutate={s.mutatePresetDoc} apiId={PRESET_API_ID} presetName={activeClean} />
                 ) : (
                     <PanelError error={`${activeClean || '—'} · doc 未拉到`} onRetry={() => void s.refreshConnection()} />
                 )
