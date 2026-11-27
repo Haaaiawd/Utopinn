@@ -1,6 +1,7 @@
 /**
  * Utopinn · Brand Iconography System v3 (U馆 品牌图标系统 · 主导航精修版)
- * Total: 43 icons (P0: 10, P1: 9, P2: 6, P3: 6, Secondary 1.5px: 12) + Portal Spark Logo
+ * Total: 43 icons (P0: 10, P1: 9, P2: 6, P3: 6, Secondary 1.5px: 12)
+ * Brand mark: single implementation lives in components/LogoU.tsx
  * Built-in Aliases: gear -> settings, gitFork -> branch
  * Spec: 24x24 viewBox | core strokeWidth=1.85px | round caps/joins | #FF6B5B structural accents
  * Selected panelRight Concept: 方案 A · 推门光缝 (Portal Slit)
@@ -66,34 +67,6 @@ export interface UtopinnIconProps extends React.SVGProps<SVGSVGElement> {
   size?: number;
   strokeWidth?: number;
 }
-
-export const UtopinnLogo: React.FC<{ size?: number; className?: string }> = ({
-  size = 28,
-  className = '',
-}) => (
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    viewBox="8 5 106 106"
-    width={size}
-    height={size}
-    fill="none"
-    className={className}
-    aria-label="Utopinn"
-  >
-    <path
-      d="M 24.5 44 L 24.5 71 A 25.5 25.5 0 0 0 75.36 73.67"
-      stroke="currentColor"
-      strokeWidth={14.2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-    <path
-      d="M 0 -24.2 C 3.1 -24.2 3.8 -9.6 6.7 -6.7 C 9.6 -3.8 24.2 -3.1 24.2 0 C 24.2 3.1 9.6 3.8 6.7 6.7 C 3.8 9.6 3.1 24.2 0 24.2 C -3.1 24.2 -3.8 9.6 -6.7 6.7 C -9.6 3.8 -24.2 3.1 -24.2 0 C -24.2 -3.1 -9.6 -3.8 -6.7 -6.7 C -3.8 -9.6 -3.1 -24.2 0 -24.2 Z"
-      fill="#FF6B5B"
-      transform="translate(81 36.5) rotate(14)"
-    />
-  </svg>
-);
 
 export const UtopinnIcon: React.FC<UtopinnIconProps> = ({
   name,

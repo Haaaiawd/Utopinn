@@ -13,7 +13,7 @@ import { useI18n } from '../../i18n';
 import { ApiError } from '../../api/client';
 import { accountErrorText, getOAuthProviders, loginAccount, requestRecoveryCode, resetPasswordWithCode } from '../../api/account';
 import { oauthProviderLinks, type OAuthProviderLink } from '../../api/oauth';
-import { Icon } from '../Icon';
+import { LogoU } from '../LogoU';
 
 // OAuth callback failures bounce back as /login?error=<reason>
 // (users-public.js redirectToLoginWithError). The SPA owns /login — nothing
@@ -137,7 +137,7 @@ export function LoginGate() {
         <div className="login-gate" role="dialog" aria-modal="true" aria-label={t('login.title')}>
             <form className="login-card" onSubmit={recovering ? submitRecover : submit}>
                 <div className="login-card-head">
-                    <Icon name="persona" size={22} />
+                    <LogoU size={24} />
                     <span>{recovering ? t('login.recover.title') : t('login.title')}</span>
                 </div>
                 <label className="login-field">

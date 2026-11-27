@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" style="display:none;">
   <!-- Utopinn Icon Sprite v3 | Core 1.85px | Secondary 1.5px | panelRight: Portal Slit -->
   <symbol id="utopinn-logo" viewBox="0 0 120 120" fill="none">
-    <path d="M 24.5 44 L 24.5 71 A 25.5 25.5 0 0 0 75.36 73.67" stroke="currentColor" stroke-width="14.2" stroke-linecap="round" stroke-linejoin="round"/>
-    <path d="M 0 -24.2 C 3.1 -24.2 3.8 -9.6 6.7 -6.7 C 9.6 -3.8 24.2 -3.1 24.2 0 C 24.2 3.1 9.6 3.8 6.7 6.7 C 3.8 9.6 3.1 24.2 0 24.2 C -3.1 24.2 -3.8 9.6 -6.7 6.7 C -9.6 3.8 -24.2 3.1 -24.2 0 C -24.2 -3.1 -9.6 -3.8 -6.7 -6.7 C -3.8 -9.6 -3.1 -24.2 0 -24.2 Z" fill="#FF6B5B" transform="translate(81 36.5) rotate(14)"/>
+    <path d="M 20.5 41 L 20.5 72.5 A 29.5 29.5 0 0 0 79.42 74.6" stroke="currentColor" stroke-width="16.8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M 0 -26.5 C 4.2 -26.5 5.2 -11.4 8.2 -8.2 C 11.4 -5.2 26.5 -4.2 26.5 0 C 26.5 4.2 11.4 5.2 8.2 8.2 C 5.2 11.4 4.2 26.5 0 26.5 C -4.2 26.5 -5.2 11.4 -8.2 8.2 C -11.4 5.2 -26.5 4.2 -26.5 0 C -26.5 -4.2 -11.4 -5.2 -8.2 -8.2 C -5.2 -11.4 -4.2 -26.5 0 -26.5 Z" fill="#FF6B5B" transform="translate(84.5 34.5) rotate(12)"/>
   </symbol>
   <symbol id="icon-home" viewBox="0 0 24 24" fill="none">
     <path d="M 2.8 10.4 L 11.15 4.15 C 11.65 3.78 12.35 3.78 12.85 4.15 L 21.2 10.4" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round"/>
