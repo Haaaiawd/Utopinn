@@ -112,6 +112,7 @@ export interface AdminSettings {
     };
     accountRegistration: {
         enabled: boolean;
+        requireInviteCode: boolean;
     };
     oauth: {
         github: AdminOAuthGithub;
@@ -374,6 +375,46 @@ export function getAdminSettings(): Promise<AdminSettings> {
 /** POST /api/users/settings/save */
 export function saveAdminSettings(settings: AdminSettings): Promise<AdminSettings> {
     return adminPostJson<AdminSettings>('/api/users/settings/save', settings);
+}
+
+/* ------------------------------------------------------------------ */
+/* 注册邀请码(users-admin.js /invites/* 三动词;code 明文可见属设计 ——      */
+/* 邀请码本就是要发到群里的半公开凭据,admin 面回全量审计字段)。            */
+/* ------------------------------------------------------------------ */
+
+export interface AdminInvite {
+    code: string;
+    created: number;
+    createdBy: string;
+    /** 0 = 不限次数。 */
+    maxUses: number;
+    usedCount: number;
+    usedBy: string[];
+    /** ms epoch;null = 永不过期。 */
+    expiresAt: number | null;
+    note: string;
+    revoked: boolean;
+    revokedAt?: number;
+}
+
+/** POST /api/users/invites/list */
+export function listAdminInvites(): Promise<{ items: AdminInvite[] }> {
+    return adminPostJson<{ items: AdminInvite[] }>('/api/users/invites/list');
+}
+
+/** POST /api/users/invites/create —— code 留空由服务端 CSPRNG 生成(推荐)。 */
+export function createAdminInvite(input: {
+    code?: string;
+    maxUses?: number;
+    expiresAt?: number | null;
+    note?: string;
+}): Promise<{ item: AdminInvite }> {
+    return adminPostJson<{ item: AdminInvite }>('/api/users/invites/create', input);
+}
+
+/** POST /api/users/invites/revoke → 204(软删,审计字段保留)。 */
+export function revokeAdminInvite(code: string): Promise<void> {
+    return adminPostVoid('/api/users/invites/revoke', { code });
 }
 
 /* ------------------------------------------------------------------ */

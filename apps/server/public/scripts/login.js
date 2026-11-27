@@ -6,6 +6,7 @@ import { initAccessibility } from './a11y.js';
 let csrfToken = '';
 let discreetLogin = false;
 let oauthAvailable = false;
+let inviteCodeRequired = false;
 
 /**
  * Gets a CSRF token from the server.
@@ -69,7 +70,7 @@ async function getOAuthProviders() {
 
 /**
  * Gets account registration availability from the server.
- * @returns {Promise<{enabled: boolean}|null>}
+ * @returns {Promise<{enabled: boolean, requireInviteCode?: boolean}|null>}
  */
 async function getRegistrationInfo() {
     try {
@@ -326,6 +327,7 @@ function showRegisterBlock() {
     $('#registerHandle').val('');
     $('#registerPassword').val('');
     $('#registerConfirm').val('');
+    $('#registerInviteCode').val('').toggle(inviteCodeRequired);
     displayError('');
     $('#registerName').trigger('focus');
 }
@@ -350,6 +352,7 @@ async function onSubmitRegistrationClick() {
     const handle = String($('#registerHandle').val() || '').trim();
     const password = String($('#registerPassword').val() || '');
     const confirm = String($('#registerConfirm').val() || '');
+    const inviteCode = String($('#registerInviteCode').val() || '').trim();
 
     if (!name || !handle || !password) {
         return displayError('Display name, handle, and password are required.');
@@ -359,15 +362,20 @@ async function onSubmitRegistrationClick() {
         return displayError('Passwords do not match.');
     }
 
-    await submitRegistration({ handle, name, password });
+    if (inviteCodeRequired && !inviteCode) {
+        return displayError('An invite code is required to register.');
+    }
+
+    await submitRegistration({ handle, name, password, ...(inviteCode ? { inviteCode } : {}) });
 }
 
 /**
  * Configures the registration entry button + form, if enabled.
- * @param {{enabled?: boolean}|null} registrationPayload
+ * @param {{enabled?: boolean, requireInviteCode?: boolean}|null} registrationPayload
  */
 function configureRegistration(registrationPayload) {
     const enabled = Boolean(registrationPayload?.enabled);
+    inviteCodeRequired = enabled && Boolean(registrationPayload?.requireInviteCode);
     $('#registerEntryBlock').toggle(enabled);
 
     if (!enabled) {

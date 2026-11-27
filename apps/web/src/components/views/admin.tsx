@@ -17,6 +17,7 @@ import { WiredBadge } from './studio';
 import { pluginLabel } from './plugins';
 import {
     ConfigSaveError,
+    createAdminInvite,
     createUserHandle,
     deleteUserHandle,
     demoteUserHandle,
@@ -29,12 +30,14 @@ import {
     getStorageHealth,
     getStorageStatus,
     isAdminForbidden,
+    listAdminInvites,
     listAdminUsers,
     listLukerServerPlugins,
     listSharedSecrets,
     probeUpstreamConnection,
     promoteSharedSecret,
     promoteUserHandle,
+    revokeAdminInvite,
     rotateSharedSecret,
     saveAdminSettings,
     saveServerConfig,
@@ -43,6 +46,7 @@ import {
     slugifyHandle,
     writeSharedSecret,
     deleteSharedSecret,
+    type AdminInvite,
     type AdminOverview,
     type AdminSettings,
     type AdminUserItem,
@@ -1456,6 +1460,185 @@ const ACCESS_TOGGLES: { key: keyof ConfigAccessFlags; labelKey: string; descKey:
     { key: 'enableServerPlugins', labelKey: 'admin.cfg.key.enableServerPlugins', descKey: 'admin.cfg.key.enableServerPluginsDesc' },
 ];
 
+/* ------------------------------------------------------------------ */
+/* 注册邀请码(admin settings 区内折叠块;发放/限次/吊销)                   */
+/* ------------------------------------------------------------------ */
+
+type InviteStatus = 'active' | 'exhausted' | 'expired' | 'revoked';
+
+function inviteStatus(en: AdminInvite, now: number): InviteStatus {
+    if (en.revoked) return 'revoked';
+    if (en.expiresAt !== null && now > en.expiresAt) return 'expired';
+    if (en.maxUses > 0 && en.usedCount >= en.maxUses) return 'exhausted';
+    return 'active';
+}
+
+const INVITE_STATUS_COLOR: Record<InviteStatus, string> = {
+    active: 'var(--status-ok)',
+    exhausted: 'var(--status-warn)',
+    expired: 'var(--status-warn)',
+    revoked: 'var(--status-danger)',
+};
+
+function InvitesBlock() {
+    const { t } = useI18n();
+    const s = useShell();
+    const remote = useRemote('admin:invites', () => guardForbidden(listAdminInvites));
+
+    const [maxUsesInput, setMaxUsesInput] = useState('');
+    const [expiresDaysInput, setExpiresDaysInput] = useState('');
+    const [noteInput, setNoteInput] = useState('');
+    const [createBusy, setCreateBusy] = useState(false);
+    const [confirmRevoke, setConfirmRevoke] = useState<AdminInvite | null>(null);
+    const [rowBusy, setRowBusy] = useState(false);
+
+    const copyCode = (code: string) => {
+        void navigator.clipboard?.writeText(code)
+            .then(() => s.hint(t('admin.inv.copied')))
+            .catch(() => s.hint(code));
+    };
+
+    const doCreate = () => {
+        if (createBusy) return;
+        const maxUses = maxUsesInput.trim() === '' ? 0 : Math.max(0, Math.floor(Number(maxUsesInput)));
+        if (!Number.isFinite(maxUses)) return;
+        const days = expiresDaysInput.trim() === '' ? 0 : Number(expiresDaysInput);
+        const expiresAt = Number.isFinite(days) && days > 0 ? Date.now() + days * 86400000 : null;
+        setCreateBusy(true);
+        void createAdminInvite({ maxUses, expiresAt, note: noteInput.trim() || undefined })
+            .then((r) => {
+                setMaxUsesInput('');
+                setExpiresDaysInput('');
+                setNoteInput('');
+                void navigator.clipboard?.writeText(r.item.code).catch(() => undefined);
+                s.hint(t('admin.inv.created'));
+                remote.reload();
+            })
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
+            .finally(() => setCreateBusy(false));
+    };
+
+    const doRevoke = () => {
+        if (!confirmRevoke || rowBusy) return;
+        setRowBusy(true);
+        void revokeAdminInvite(confirmRevoke.code)
+            .then(() => {
+                setConfirmRevoke(null);
+                s.hint(t('admin.inv.revoked'));
+                remote.reload();
+            })
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
+            .finally(() => setRowBusy(false));
+    };
+
+    const items = remote.data && !remote.data.forbidden ? remote.data.value.items : [];
+    const now = Date.now();
+
+    return (
+        <div className="space-y-3 border-t border-[color:var(--border-hairline)] p-4">
+            {/* 创建表单 */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[110px_110px_1fr_auto]">
+                <input
+                    value={maxUsesInput}
+                    onChange={(e) => setMaxUsesInput(e.target.value)}
+                    placeholder={t('admin.inv.maxUsesPh')}
+                    inputMode="numeric"
+                    className={`${inputCls} ${mono}`}
+                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <input
+                    value={expiresDaysInput}
+                    onChange={(e) => setExpiresDaysInput(e.target.value)}
+                    placeholder={t('admin.inv.expiresDaysPh')}
+                    inputMode="numeric"
+                    className={`${inputCls} ${mono}`}
+                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <input
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    placeholder={t('admin.inv.notePh')}
+                    className={inputCls}
+                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <button
+                    className="h-8 rounded-lg px-3 text-[12px] font-medium"
+                    style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: createBusy ? 0.5 : 1 }}
+                    disabled={createBusy}
+                    onClick={doCreate}
+                >
+                    {t('admin.inv.create')}
+                </button>
+            </div>
+            <div className="text-[11px] text-[color:var(--fg-faint)]">{t('admin.inv.createHint')}</div>
+
+            {/* 列表 */}
+            <div className="inset-group">
+                {remote.data?.forbidden ? (
+                    <div className="inset-row text-[12px] text-[color:var(--fg-faint)]">{t('admin.forbidden.title')}</div>
+                ) : items.length === 0 ? (
+                    <div className="inset-row text-[12px] text-[color:var(--fg-faint)]">
+                        {remote.loading ? '…' : t('admin.inv.empty')}
+                    </div>
+                ) : (
+                    items.map((en) => {
+                        const status = inviteStatus(en, now);
+                        return (
+                            <div key={en.code} className="inset-row flex-wrap gap-y-1.5">
+                                <div className="min-w-0 flex-1 basis-56">
+                                    <div className="flex items-center gap-2">
+                                        <span className={`truncate text-[12.5px] font-medium text-[color:var(--fg-primary)] ${mono}`}>{en.code}</span>
+                                        <button
+                                            className="ghost-btn h-6 w-6 shrink-0"
+                                            title={t('admin.inv.copy')}
+                                            onClick={() => copyCode(en.code)}
+                                        >
+                                            <Icon name="copy" size={12} />
+                                        </button>
+                                        <span className="inline-flex items-center gap-1 text-[10.5px]" style={{ color: INVITE_STATUS_COLOR[status] }}>
+                                            <StatusDot color={INVITE_STATUS_COLOR[status]} />
+                                            {t(`admin.inv.status.${status}`)}
+                                        </span>
+                                    </div>
+                                    <div className={`mt-0.5 truncate text-[10.5px] text-[color:var(--fg-faint)] ${mono}`}>
+                                        {en.usedCount}/{en.maxUses || '∞'}
+                                        {' · '}{new Date(en.created).toLocaleDateString()}
+                                        {en.expiresAt ? ` · ${t('admin.inv.until')} ${new Date(en.expiresAt).toLocaleDateString()}` : ''}
+                                        {en.note ? ` · ${en.note}` : ''}
+                                    </div>
+                                </div>
+                                {!en.revoked && (
+                                    <button
+                                        className="ghost-btn h-7 px-2 text-[11px]"
+                                        style={{ color: 'var(--status-danger)' }}
+                                        onClick={() => setConfirmRevoke(en)}
+                                    >
+                                        {t('admin.inv.revoke')}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+            {confirmRevoke && (
+                <ConfirmDialog
+                    title={t('admin.inv.revokeConfirmTitle')}
+                    desc={t('admin.inv.revokeConfirmDesc')}
+                    danger
+                    confirmLabel={t('admin.inv.revoke')}
+                    busy={rowBusy}
+                    onConfirm={doRevoke}
+                    onCancel={() => setConfirmRevoke(null)}
+                >
+                    <div className={`text-[12.5px] text-[color:var(--fg-primary)] ${mono}`}>{confirmRevoke.code}</div>
+                </ConfirmDialog>
+            )}
+        </div>
+    );
+}
+
 function ConfigSection() {
     const { t } = useI18n();
     const s = useShell();
@@ -1478,6 +1661,7 @@ function ConfigSection() {
     const [settingsDraft, setSettingsDraft] = useState<AdminSettings | null>(null);
     const [quotaMbInput, setQuotaMbInput] = useState('');
     const [oauthOpen, setOauthOpen] = useState(false);
+    const [invitesOpen, setInvitesOpen] = useState(false);
     const [settingsBusy, setSettingsBusy] = useState(false);
 
     const loaded = remote.data && !remote.data.forbidden ? remote.data.value : null;
@@ -1738,11 +1922,51 @@ function ConfigSection() {
                                         on={settingsDraft.accountRegistration.enabled}
                                         onToggle={() =>
                                             setSettingsDraft((prev) =>
-                                                prev ? { ...prev, accountRegistration: { enabled: !prev.accountRegistration.enabled } } : prev,
+                                                prev
+                                                    ? {
+                                                        ...prev,
+                                                        accountRegistration: {
+                                                            ...prev.accountRegistration,
+                                                            enabled: !prev.accountRegistration.enabled,
+                                                        },
+                                                    }
+                                                    : prev,
                                             )
                                         }
                                     />
                                 </div>
+                                <div className="inset-row">
+                                    <div className="min-w-0">
+                                        <div className="text-[12.5px] text-[color:var(--fg-primary)]">{t('admin.cfg.regRequireInvite')}</div>
+                                        <div className="mt-0.5 text-[11px] text-[color:var(--fg-muted)]">{t('admin.cfg.regRequireInviteDesc')}</div>
+                                    </div>
+                                    <AdminSwitch
+                                        on={settingsDraft.accountRegistration.requireInviteCode}
+                                        onToggle={() =>
+                                            setSettingsDraft((prev) =>
+                                                prev
+                                                    ? {
+                                                        ...prev,
+                                                        accountRegistration: {
+                                                            ...prev.accountRegistration,
+                                                            requireInviteCode: !prev.accountRegistration.requireInviteCode,
+                                                        },
+                                                    }
+                                                    : prev,
+                                            )
+                                        }
+                                    />
+                                </div>
+                                {/* 邀请码折叠组 */}
+                                <button
+                                    type="button"
+                                    className="inset-row inset-row-btn"
+                                    onClick={() => setInvitesOpen((v) => !v)}
+                                >
+                                    <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('admin.inv.fold')}</span>
+                                    <Icon name={invitesOpen ? 'chevronDown' : 'chevronRight'} size={14} className="text-[color:var(--fg-faint)]" />
+                                </button>
+                                {invitesOpen && <InvitesBlock />}
                                 {/* OAuth 折叠组 */}
                                 <button
                                     type="button"
