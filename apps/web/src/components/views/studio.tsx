@@ -39,7 +39,8 @@ import {
     type PersonaAvatarPick, type PersonaItem,
 } from '../../api/personas';
 import {
-    deleteRegexScript, getRegexFullView, mutateRegexScope, patchRegexScript,
+    deleteRegexScript, deleteRegexScriptByContent, getRegexFullView, mutateRegexScope,
+    patchRegexScript, patchRegexScriptByContent, RegexScriptMovedError,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import { statsInject } from '../../api/stats';
@@ -1521,12 +1522,25 @@ function RegexPage() {
         return out;
     }, [full.data, t]);
 
+    /* Id-less scripts fall back to array-index addressing server-side —
+       sending this view's rendered index can hit a neighbour once the
+       list changed. Route them through the serialized content-addressed
+       ops (same contract as AutomationPanel, review 🔴4 sibling). */
+    const idOp = (r: FlatRegexItem): r is FlatRegexItem & { idOrIdx: string } =>
+        typeof r.idOrIdx === 'string';
+    const onMoved = (e: unknown) => {
+        if (e instanceof RegexScriptMovedError) void full.reload();
+    };
+
     const toggleRow = (r: FlatRegexItem) => {
         if (busyKey) return;
         setBusyKey(r.key);
-        void patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+        const op = idOp(r)
+            ? patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+            : patchRegexScriptByContent(r.target, r.script, { disabled: !r.script.disabled });
+        void op
             .then(() => full.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => { s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true); onMoved(e); })
             .finally(() => setBusyKey(null));
     };
 
@@ -1535,9 +1549,12 @@ function RegexPage() {
         const label = r.script.scriptName || String(r.idOrIdx);
         if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
         setBusyKey(r.key);
-        void deleteRegexScript(r.target, r.idOrIdx)
+        const op = idOp(r)
+            ? deleteRegexScript(r.target, r.idOrIdx)
+            : deleteRegexScriptByContent(r.target, r.script);
+        void op
             .then(() => full.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .catch((e) => { s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true); onMoved(e); })
             .finally(() => setBusyKey(null));
     };
 

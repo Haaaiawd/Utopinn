@@ -51,6 +51,7 @@ import {
 } from './slash';
 
 import { diagTraceParams } from '../panels/DiagPanel';
+import { floorsStaleNow } from '../../lib/floorFreshness';
 import type { ChatSummary, StageKind } from '../../types';
 
 /** 卡头像兜底链:真图 404 → 内置卡面轮换(data-cover-key 稳定键定面)→ 终降固定卡面(black-cat)。
@@ -1062,25 +1063,54 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const loadChatOf = useCallback((chat: ChatSummary) =>
         chat.groupId ? getGroupChat(chat.groupId, chat.chatName) : getChat(chat.charDir, chat.chatName), []);
 
+    /* Revision the CURRENT msgs list was fetched under — set only by the
+       full-load paths, never by optimistic patches. A floor write's
+       correctness rests on it: PATCH paths address `/body/<m.id>` by
+       position, so an action fired on a transcript older than the
+       server's hits a different floor. floorsStale below is the gate. */
+    const [floorsRev, setFloorsRev] = useState(s.chatRevision);
+
     const reload = useCallback(async () => {
         const chat = s.chat;
         if (!chat) return;
+        /* Capture the revision BEFORE the fetch — a mutation bump landing
+           mid-flight leaves this list stale-by-construction and the gate
+           (floorsRev !== chatRevision) keeps guards on until a newer
+           fetch commits. */
+        const revAtFetch = sRef.current.chatRevision;
         try {
             const d = await loadChatOf(chat);
             setMsgs(d.messages);
+            setFloorsRev(revAtFetch);
+            /* An editing session bound to a pre-fetch index can re-attach
+               to a different floor after the list shifts — drop it. */
+            setEditing(null);
         } catch { /* reload 失败不炸楼层,下一动作再拉 */ }
     }, [s.chat, loadChatOf]);
+
+    /* Floors are stale whenever a script run that can mutate them is in
+       flight OR a mutation bump hasn't been refetched yet — index-
+       addressed ops (/body/<m.id>) fired on this list would hit a
+       different floor server-side (review 🔴5). */
+    const floorsStale = floorsStaleNow(s.chatMutationInFlight, floorsRev, s.chatRevision);
+    const staleFloorGuard = useCallback((): boolean => {
+        if (!floorsStale) return false;
+        s.hint(t('stage.floors.refreshing'), true);
+        return true;
+    }, [floorsStale, s, t]);
 
     /* Out-of-lane floor mutations bump s.chatRevision (automation panel
        script runs — /cut etc. — don't reload this view themselves).
        Refetch so index-addressed floor actions (delete/edit) can never
        target a stale message. Skipped while generating: the streaming
-       floor isn't persisted yet and the settle write-back reloads. */
+       floor isn't persisted yet and the settle write-back reloads —
+       the bump stays UNCONSUMED (ref moved below the guard) so the
+       reload fires once the job clears instead of being lost. */
     const chatRevRef = useRef(s.chatRevision);
     useEffect(() => {
         if (chatRevRef.current === s.chatRevision) return;
-        chatRevRef.current = s.chatRevision;
         if (settleRef.current || job) return;
+        chatRevRef.current = s.chatRevision;
         void reload();
     }, [s.chatRevision, job, reload]);
 
@@ -1108,10 +1138,12 @@ export function StageFrame({ children }: { children: ReactNode }) {
             /* 会话背景锁:chat_metadata.custom_background(CSS url 字符串)
                与 settings.background 同级语义,锁在则覆盖全局(ST #bg1 优先级)。 */
             s.setChatBgLock(null);
+            const revAtFetch = sRef.current.chatRevision;
             loadChatOf(s.chat)
                 .then((d) => {
                     if (dead) return;
                     setMsgs(d.messages);
+                    setFloorsRev(revAtFetch);
                     const meta = (d.header?.chat_metadata ?? null) as Record<string, unknown> | null;
                     const lock = typeof meta?.custom_background === 'string' && meta.custom_background.trim()
                         ? meta.custom_background : null;
@@ -1683,6 +1715,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
         const chat = s.chat;
         if (!s.live || !chat || busy) return;
         setBusy(true);
+        /* Mark the in-flight window: /cut-style commands can shift body
+           indexes long before /script/run resolves, so index-addressed
+           floor ops stay guarded until the post-run reload commits. */
+        s.beginChatMutation();
         try {
             /* 群会话:stscript-env 绑卡域聊天(群键显式跳过,该域本任务不动)
                → 脚本以无会话 env 跑;要绑楼的命令吃服务端结构化 error,
@@ -1772,6 +1808,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
                regex via TH, QR links, variables) — re-pull every live
                store entry so edit surfaces converge on the truth. */
             invalidateSharedDocs();
+            /* The script may have mutated floors — bump the revision so
+               any other transcript view refetches before exposing
+               index-addressed actions (own reload already ran above). */
+            s.notifyChatMutation();
             void refreshPanels();
         } catch (e) {
             /* 挂起中被打断(interact 404/网络)→ 卸弹层,resolve 已随
@@ -1780,6 +1820,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             setScriptAwait(null);
             s.hint(t('stage.script.failed') + ': ' + errText(e), true);
         } finally {
+            s.endChatMutation();
             setBusy(false);
         }
     }, [s, busy, t, reload, refreshPanels]);
@@ -1852,6 +1893,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
 
     /* ——— swipe ‹ › 与绝对跳版(分支选项直跳同一实现) ——— */
     const swipeTo = useCallback(async (m: FloorMsg, next: number) => {
+        /* /body/<m.id>/swipe_id is index-addressed — refuse on a stale
+           transcript (a mid-flight /cut shifted every floor). */
+        if (staleFloorGuard()) return;
         const count = m.swipes?.length ?? 0;
         const active = m.activeSwipe ?? 0;
         if (next === active) return;
@@ -1877,7 +1921,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 s.hint(t('stage.patch.failed') + ': ' + errText(e), true);
             }
         }
-    }, [msgs, s, patchFloor, runGenerate, refreshPanels, t]);
+    }, [msgs, s, patchFloor, runGenerate, refreshPanels, t, staleFloorGuard]);
 
     const onSwipe = useCallback((m: FloorMsg, dir: -1 | 1) => {
         void swipeTo(m, (m.activeSwipe ?? 0) + dir);
@@ -1909,6 +1953,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     /* PATCH 路径一律用 m.id(= getChat 时的 body 下标);数组下标会
        被 transient 错误楼(负 id)顶偏,不能当服务端楼号使。 */
     const onDelete = useCallback(async (m: FloorMsg) => {
+        if (staleFloorGuard()) return;
         if (s.chatSettings.confirmDelete && !window.confirm(t('stage.op.delConfirm'))) return;
         setMsgs((prev) => prev.filter((x) => x.id !== m.id));
         if (s.live && s.chat && m.id >= 0) {
@@ -1921,9 +1966,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 void reload();
             }
         }
-    }, [s, t, reload, refreshPanels]);
+    }, [s, t, reload, refreshPanels, staleFloorGuard]);
 
     const onSaveEdit = useCallback(async (m: FloorMsg) => {
+        if (staleFloorGuard()) return;
         const text = editing?.text ?? '';
         setEditing(null);
         patchFloor(m.id, {
@@ -1948,7 +1994,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 void reload();
             }
         }
-    }, [s, editing, t, patchFloor, reload, refreshPanels]);
+    }, [s, editing, t, patchFloor, reload, refreshPanels, staleFloorGuard]);
 
     /* ——— 新建分支(TASK-065 fork):从该楼直岔新会话 —— POST fork 深拷贝
      *     header + 0..id 楼层(整楼 swipe 组随拷贝),原会话不动;岔出即跳。
@@ -1956,6 +2002,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const onForkFloor = useCallback(async (m: FloorMsg) => {
         const chat = s.chat;
         if (!s.live || !chat || m.id < 0 || forkBusy !== null) return;
+        if (staleFloorGuard()) return;
         setForkBusy(m.id);
         try {
             const res = await forkChat(chat.charDir, chat.chatName, { messageId: m.id });
@@ -1967,7 +2014,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         } finally {
             setForkBusy(null);
         }
-    }, [s, t, forkBusy]);
+    }, [s, t, forkBusy, staleFloorGuard]);
 
     /* 「跳回该层」:发一次性请求,消费在形态体(chat 楼层列展开+滚动);
        弹层顺手收掉。 */
@@ -1982,6 +2029,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         const chat = s.chat;
         const target = mvuTarget(chat);
         if (!s.live || !chat || !target || m.id < 0) return;
+        if (staleFloorGuard()) return;
         if (!window.confirm(t('stage.op.rewindConfirm'))) return;
         const tail = msgs.filter((x) => x.id > m.id).length;
         const ops: ChatPatchOp[] = Array.from({ length: tail }, () => ({ op: 'remove' as const, path: `/body/${m.id + 1}` }));
@@ -1998,7 +2046,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
             s.hint(t('stage.rewind.failed') + ': ' + errText(e), true);
             void reload();
         }
-    }, [s, msgs, t, reload, refreshPanels]);
+    }, [s, msgs, t, reload, refreshPanels, staleFloorGuard]);
 
     const onRetry = useCallback((m: FloorMsg) => {
         const r = m.error?.retry;
@@ -2134,7 +2182,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
         onQuote,
         /* 编辑框种子=存储原文(ST:编辑框给原文)—— content 槽是 GH#3 展示
            投影文本,直接用会把投影烤进 mes/swipes[k]。 */
-        onEdit: (mm) => setEditing({ id: mm.id, text: floorRawText(mm) }),
+        onEdit: (mm) => { if (staleFloorGuard()) return; setEditing({ id: mm.id, text: floorRawText(mm) }); },
         onEditText: (text) => setEditing((prev) => (prev ? { ...prev, text } : prev)),
         onSaveEdit: (mm) => void onSaveEdit(mm),
         onCancelEdit: () => setEditing(null),

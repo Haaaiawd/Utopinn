@@ -34,10 +34,16 @@ test('qrLink/qrBound/qrVisible — link 存在 vs isVisible 两态分离', () =>
     assert.equal(qrLink(cfg, 'B')?.set, 'B');
 });
 
-test('qrEnabledNames — 三域并集;quickReplyV2 未初始化(null)全册放行', () => {
+test('qrEnabledNames — 三域并集;quickReplyV2 未初始化(null/{})全册放行', () => {
     const names = ['A', 'B', 'C', 'D'];
     /* qr===null = 从未配过绑定面 → 旧只读面「有册即亮」语义,不造全灭 */
     assert.deepEqual([...qrEnabledNames(null, 'x.png', null, names)].sort(), names);
+    /* qr==={} = 共享 store 对 missing doc 的归一化(也可能是外部写入的
+       退档)—— 显式全关的真状态带 isVisible:false link 留存,裸空对象
+       只可能是没配置过 → 同 null 判未配置(🟡7:有册无绑定不全灭)。 */
+    assert.deepEqual([...qrEnabledNames({}, 'x.png', null, names)].sort(), names);
+    /* 有内容但无任何 link = 配过绑定面且全没绑 → 严格判,全不亮。 */
+    assert.equal(qrEnabledNames({ isEnabled: true }, 'x.png', null, names).size, 0);
 
     /* 档在 → 严格 link 解释:全局 A + 本卡 B + 本会话 C → 并集 {A,B,C} */
     const qr = {

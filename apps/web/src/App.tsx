@@ -280,6 +280,7 @@ function Shell() {
     const [presets, setPresets] = useState<PresetItem[]>(MOCK_PRESETS);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
     const [chatRevision, setChatRevision] = useState(0);
+    const [chatMutationInFlight, setChatMutationInFlight] = useState(0);
     const [presetParams, setPresetParams] = useState<PresetParams>({
         temp: 0.85, topP: 0.92, ctxLen: 200000, maxReply: 8192,
         blocks: MOCK_PRESET_BLOCKS.map((b) => ({ ...b })),
@@ -718,6 +719,11 @@ function Shell() {
     }, [live, activePresetId]);
 
     const notifyChatMutation = useCallback(() => setChatRevision((v) => v + 1), []);
+    /* A script run that may mutate floors brackets itself with these —
+       the transcript is index-addressed, so its actions stay disabled
+       until the post-run refetch commits (review 🔴5). */
+    const beginChatMutation = useCallback(() => setChatMutationInFlight((v) => v + 1), []);
+    const endChatMutation = useCallback(() => setChatMutationInFlight((v) => Math.max(0, v - 1)), []);
 
     /* Shared-doc store failures (save/load) surface as hints once. */
     useEffect(() => {
@@ -1098,6 +1104,7 @@ function Shell() {
         presets, activePresetId, pickPreset,
         presetDoc, mutatePresetDoc, reloadPresetDoc,
         chatRevision, notifyChatMutation,
+        chatMutationInFlight, beginChatMutation, endChatMutation,
         presetParams,
         setPresetParam,
         togglePresetBlock,
@@ -1121,7 +1128,7 @@ function Shell() {
         openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
         connSource, connProfiles, models, modelsError, activeModel, setActiveModel,
-        presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, chatRevision, notifyChatMutation, presetParams, setPresetParam, togglePresetBlock,
+        presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, chatRevision, notifyChatMutation, chatMutationInFlight, beginChatMutation, endChatMutation, presetParams, setPresetParam, togglePresetBlock,
         globalLore, toggleGlobalLore, worldbook, refreshConnection,
         chatSettings, stageData, openSettings,
     ]);

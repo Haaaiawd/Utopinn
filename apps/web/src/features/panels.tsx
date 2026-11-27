@@ -46,7 +46,7 @@ export const panelsFeature: Feature = {
         add({ type: 'notes', icon: 'note', wired: true, Body: NotesPanel, desc: 'panel.desc.notes', category: 'system' });
         /* automation —— STscript 命令表 + 三域正则 + QR 册的统一管理面
            (服务端 /script/* 与 /regex/* 早已在跑,本面补齐可发现的管理面;
-           preset 域正则在这是首个可达编辑位)。 */
+           preset 域正则脚本经共享预设档 lane 与 studio/右栏编辑器同写一源)。 */
         add({ type: 'automation', icon: 'wand', wired: true, Body: AutomationPanel, desc: 'panel.desc.automation', category: 'system' });
         /* messageframe —— 楼层嵌帧「收至右栏」的承载板块:可开 tab 可拆窗,
            但不进 launcher 任何桶(瞬态承载,dock 动作直开,非目录条目)。 */

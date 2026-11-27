@@ -247,6 +247,13 @@ export interface ShellCtx {
      *  can't target a stale message. */
     chatRevision: number;
     notifyChatMutation: () => void;
+    /** In-flight script runs that may mutate floors server-side — while
+     *  >0 the transcript's index-addressed actions are stale by definition
+     *  (a /cut can land long before /script/run resolves), so StageFrame
+     *  keeps them disabled until the post-run refetch commits. */
+    chatMutationInFlight: number;
+    beginChatMutation: () => void;
+    endChatMutation: () => void;
     presetParams: PresetParams;
     setPresetParam: (k: 'temp' | 'topP' | 'ctxLen' | 'maxReply', v: number) => void;
     togglePresetBlock: (id: string) => void;

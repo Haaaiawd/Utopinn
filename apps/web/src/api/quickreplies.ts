@@ -192,8 +192,11 @@ export function qrEnabledNames(qr: QrSettings | null, charKey: string | null, ch
     const out = new Set<string>();
     /* quickReplyV2 未初始化 = 从未配置过绑定面 —— 沿用旧只读面「有册即亮」
        语义(全册可视),不给存量部署造「全灭」观感;一旦文档存在则严格按
-       link 解释(ST 钮行同语义:只渲染 visible link 的按钮)。 */
-    if (qr === null) {
+       link 解释(ST 钮行同语义:只渲染 visible link 的按钮)。
+       覆盖两种「未配置」形状:null(服务端无此键)与 {}(共享 store 对
+       missing doc 的归一化/外部写入的退档)—— 显式全关的真状态里
+       link 带着 isVisible:false 留存,裸空对象只可能是没配置过。 */
+    if (qr == null || Object.keys(qr).length === 0) {
         for (const n of allNames) out.add(n);
         return out;
     }

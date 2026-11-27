@@ -29,7 +29,8 @@ import type { PresetDocument } from '../../api/presets';
 import { getRegexPresetScope, putRegexScope, type RegexScriptData } from '../../api/regex';
 import {
     addPresetRegex, newPresetRegexScript, patchPresetRegexByKey,
-    presetRegexKeyOf, presetRegexScripts, removePresetRegexByKey, togglePresetRegexByKey,
+    presetRegexKeyOf, presetRegexRowKey, presetRegexScripts,
+    removePresetRegexByKey, togglePresetRegexByKey,
 } from './presetRegex';
 
 const numOr = (v: unknown, fallback: number): number =>
@@ -228,7 +229,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
     const { t } = useI18n();
     const s = useShell();
     const [open, setOpen] = useState(false);
-    const [openKey, setOpenKey] = useState<string | number | null>(null);
+    const [openKey, setOpenKey] = useState<string | null>(null);
     const [allowBusy, setAllowBusy] = useState(false);
     const scripts = useMemo(() => presetRegexScripts(doc), [doc]);
     const scoped = Boolean(apiId && presetName);
@@ -236,8 +237,13 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
         scoped ? `regex-preset:${apiId}:${presetName}` : null,
         () => getRegexPresetScope(apiId as string, presetName as string),
     );
-    const keyOf = (sc: RegexScriptData, i: number): string | number =>
-        (typeof sc.id === 'string' && sc.id) ? sc.id : i;
+    /* Row identity is (preset, script) — not the script id alone. Two
+       loaded presets routinely share regex ids (copyPreset deep-copies
+       them); a bare-id key lets React reuse an input across the switch
+       and hangs the previous preset's expansion/form state on the new
+       doc (review 🔴6). Scoping by presetName makes every row remount. */
+    const keyOf = (sc: RegexScriptData, i: number): string =>
+        presetRegexRowKey(presetName, sc, i);
 
     const toggleAllow = () => {
         if (!scoped || allowBusy || !scope.data) return;
@@ -252,9 +258,9 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
     };
     /* Writes capture a stable key (id, or the rendered object for legacy
        id-less scripts) — never a bare index — so a list that changed since
-       render can never shift a write onto the wrong entry. First patch on
-       an id-less script stamps a fresh id; later edits stay id-keyed. */
-    const mintId = () => `rx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+       render can never shift a write onto the wrong entry. The first patch
+       on an id-less script stamps a deterministic content id (presetRegex
+       owns the mint), so replays/queues keep resolving to the same row. */
     const delScript = (i: number) => {
         const sc = scripts[i];
         const label = sc?.scriptName || `#${i}`;
@@ -265,7 +271,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
     const addScript = () => {
         const sc = newPresetRegexScript(`rx-${Date.now().toString(36)}`);
         onMutate((d) => addPresetRegex(d, sc));
-        setOpenKey(sc.id ?? null);
+        setOpenKey(keyOf(sc, scripts.length));
     };
 
     return (
@@ -343,7 +349,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                             <input
                                                 className={`${inputCls} h-7 text-[12px]`} value={typeof sc.scriptName === 'string' ? sc.scriptName : ''}
                                                 disabled={disabled} placeholder={t('studio.regex.namePh')}
-                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { scriptName: e.target.value }, mintId))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { scriptName: e.target.value }))}
                                             />
                                         </label>
                                         <label className="block">
@@ -351,7 +357,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                             <input
                                                 className={`${inputCls} h-7 font-mono-ui text-[11.5px]`} value={typeof sc.findRegex === 'string' ? sc.findRegex : ''}
                                                 disabled={disabled} placeholder="/pattern/g"
-                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { findRegex: e.target.value }, mintId))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { findRegex: e.target.value }))}
                                             />
                                         </label>
                                         <label className="block">
@@ -360,7 +366,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                                 className="min-h-[60px] w-full select-text resize-y rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-2 font-mono-ui text-[11.5px] leading-relaxed text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50"
                                                 value={typeof sc.replaceString === 'string' ? sc.replaceString : ''}
                                                 disabled={disabled} placeholder={t('studio.regex.replacePh')}
-                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { replaceString: e.target.value }, mintId))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { replaceString: e.target.value }))}
                                             />
                                         </label>
                                         <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -373,7 +379,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                                         style={on
                                                             ? { borderColor: 'var(--border-strong)', background: 'var(--bg-active)', color: 'var(--fg-primary)' }
                                                             : { borderColor: 'var(--border-hairline)', color: 'var(--fg-faint)' }}
-                                                        onClick={() => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { [f.key]: !on }, mintId))}
+                                                        onClick={() => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { [f.key]: !on }))}
                                                     >
                                                         {t(f.label)}
                                                     </button>

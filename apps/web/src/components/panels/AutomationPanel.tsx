@@ -30,7 +30,8 @@ import { apiPost } from '../../api/client';
 import { listScriptCommands, type ScriptCommandInfo } from '../../api/th';
 import type { PresetDocument } from '../../api/presets';
 import {
-    deleteRegexScript, getRegexFullView, mutateRegexScope, patchRegexScript, putRegexScope,
+    deleteRegexScript, deleteRegexScriptByContent, getRegexFullView, mutateRegexScope,
+    patchRegexScript, patchRegexScriptByContent, putRegexScope, RegexScriptMovedError,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import {
@@ -110,39 +111,48 @@ function useScriptRun() {
         const ctx = chat && !chat.groupId && chat.charDir && chat.chatName
             ? { charDir: chat.charDir, chatName: chat.chatName }
             : {};
-        let res = await apiPost<ScriptRunRes>('/api/utopinn/script/run', { script, ...ctx });
-        let parked = false;
-        while (res.awaiting?.runId) {
-            res = await apiPost<ScriptRunRes>('/api/utopinn/script/interact', {
-                runId: res.awaiting.runId, action: 'abort',
-            });
-            parked = true;
-        }
-        const ops = (res.ops ?? [])
-            .map((raw) => (raw && typeof raw === 'object' ? raw as { type?: string; kind?: string; charDir?: string; chatName?: string } : null))
-            .filter((op): op is NonNullable<typeof op> => op != null);
-        for (const op of ops) {
-            if (op.type === 'go' && op.charDir && op.chatName) {
-                await s.refreshChats();
-                s.selectChat(`${op.charDir}/${op.chatName}`);
-            } else if (op.type === 'custom' && op.kind === 'close-chat') {
-                /* chat already deleted server-side; drop selection so the
-                   stage's 404 fallback never reselects the corpse. */
-                await s.refreshChats();
-                s.selectChat('');
+        /* A script can cut/edit floors mid-run — the transcript's index-
+           addressed actions must not stay live on pre-mutation indexes.
+           begin marks the window (StageFrame guards floor ops while >0);
+           the revision bump after the run makes the stale state explicit
+           until the refetch lands (review 🔴5). */
+        s.beginChatMutation();
+        try {
+            let res = await apiPost<ScriptRunRes>('/api/utopinn/script/run', { script, ...ctx });
+            let parked = false;
+            while (res.awaiting?.runId) {
+                res = await apiPost<ScriptRunRes>('/api/utopinn/script/interact', {
+                    runId: res.awaiting.runId, action: 'abort',
+                });
+                parked = true;
             }
+            const ops = (res.ops ?? [])
+                .map((raw) => (raw && typeof raw === 'object' ? raw as { type?: string; kind?: string; charDir?: string; chatName?: string } : null))
+                .filter((op): op is NonNullable<typeof op> => op != null);
+            for (const op of ops) {
+                if (op.type === 'go' && op.charDir && op.chatName) {
+                    await s.refreshChats();
+                    s.selectChat(`${op.charDir}/${op.chatName}`);
+                } else if (op.type === 'custom' && op.kind === 'close-chat') {
+                    /* chat already deleted server-side; drop selection so the
+                       stage's 404 fallback never reselects the corpse. */
+                    await s.refreshChats();
+                    s.selectChat('');
+                }
+            }
+            /* Scripts can mutate floors (/cut etc.) and any shared doc
+               server-side (preset regex via TH, QR links, variables). The
+               bump makes StageFrame refetch before floor actions go live
+               again; shared docs re-pull so edit surfaces converge. */
+            s.notifyChatMutation();
+            invalidateSharedDocs();
+            const lines = scriptResultLines(res);
+            if (parked) lines.unshift({ text: t('panel.auto.runInteractive'), err: true });
+            if (!lines.length) lines.push({ text: t('panel.auto.runDone'), err: false });
+            return lines;
+        } finally {
+            s.endChatMutation();
         }
-        /* Scripts can mutate floors (/cut etc.) and any shared doc server-
-           side (preset regex via TH, QR links, variables). The composer
-           runner already reloads the transcript — mirror it here by
-           bumping chatRevision (StageFrame refetches floors) and re-pull
-           every live shared doc so edit surfaces converge. */
-        s.notifyChatMutation();
-        invalidateSharedDocs();
-        const lines = scriptResultLines(res);
-        if (parked) lines.unshift({ text: t('panel.auto.runInteractive'), err: true });
-        if (!lines.length) lines.push({ text: t('panel.auto.runDone'), err: false });
-        return lines;
     }, [s, t]);
 }
 
@@ -489,9 +499,23 @@ function RegexSection() {
         setBusyKey(key);
         void op()
             .then(() => { setEditing(null); setDraft(null); setCreateCtx(null); setEditItem(null); full.reload(); })
-            .catch(fail)
+            .catch((e) => {
+                fail(e);
+                /* The captured script is gone/changed server-side — pull a
+                   fresh view so the next op resolves against real rows. */
+                if (e instanceof RegexScriptMovedError) full.reload();
+            })
             .finally(() => setBusyKey(null));
     };
+
+    /* Id-less scripts have NO stable :id — the API falls back to the array
+       index, which is whichever snapshot this view rendered. That was the
+       original #65/#70 bug shape: send the old index, hit a neighbour.
+       Instead route through mutateRegexScope's serial GET→fn→PUT chain
+       and locate by deep-equal CONTENT on the fresh array (review 🔴4;
+       the same trap existed on toggle/edit — all three go by content). */
+    const idOp = (r: RegexFlatItem): r is RegexFlatItem & { idOrIdx: string } =>
+        typeof r.idOrIdx === 'string';
 
     /* Preset-scope rows route through the shared doc lane: the mutation
        is addressed by stable key (id, or the rendered script object for
@@ -507,12 +531,16 @@ function RegexSection() {
     const toggleRow = (r: RegexFlatItem) =>
         r.target.scope === 'preset'
             ? presetOp(r, (d) => togglePresetRegexByKey(d, presetRegexKeyOf(r.script)))
-            : act(r.key, () => patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled }));
+            : act(r.key, () => idOp(r)
+                ? patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled })
+                : patchRegexScriptByContent(r.target, r.script, { disabled: !r.script.disabled }));
     const removeRow = (r: RegexFlatItem) => {
         const label = r.script.scriptName || String(r.idOrIdx);
         if (!window.confirm(`${t('panel.auto.rx.delConfirm')}\n${label}`)) return;
         if (r.target.scope === 'preset') presetOp(r, (d) => removePresetRegexByKey(d, presetRegexKeyOf(r.script)));
-        else act(r.key, () => deleteRegexScript(r.target, r.idOrIdx));
+        else act(r.key, () => idOp(r)
+            ? deleteRegexScript(r.target, r.idOrIdx)
+            : deleteRegexScriptByContent(r.target, r.script));
     };
     const startEdit = (r: RegexFlatItem) => {
         setEditing(r.key); setDraft(regexDraftOf(r.script));
@@ -547,7 +575,9 @@ function RegexSection() {
         if (editItem.target.scope === 'preset') {
             presetOp(editItem, (d) => patchPresetRegexByKey(d, presetRegexKeyOf(editItem.script), set));
         } else {
-            act(editItem.key, () => patchRegexScript(editItem.target, editItem.idOrIdx, set));
+            act(editItem.key, () => idOp(editItem)
+                ? patchRegexScript(editItem.target, editItem.idOrIdx, set)
+                : patchRegexScriptByContent(editItem.target, editItem.script, set));
         }
     };
 

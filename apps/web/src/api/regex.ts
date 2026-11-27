@@ -127,3 +127,37 @@ export function mutateRegexScope(
     scopeChains.set(key, next.catch(() => undefined));
     return next.then((r) => ({ ok: true as const, count: r.count }));
 }
+
+/* ---------- Content-addressed single-script ops (id-less scripts) ----------
+ * The PATCH/DELETE routes resolve :id by exact id first, then by array
+ * index. For scripts WITHOUT an id the only address left is the index —
+ * computed from whichever snapshot the view rendered, so once the list
+ * changed server-side the write lands on the wrong script (review 🔴4).
+ * The transforms live in ./regex-model (pure, testable); these wrappers
+ * run them inside mutateRegexScope's serial GET→fn→PUT chain so the
+ * content lookup always happens on the freshest array. */
+import {
+    regexDeepEqual, RegexScriptMovedError,
+    regexPatchByContent, regexRemoveByContent,
+} from './regex-model';
+
+export { regexDeepEqual, RegexScriptMovedError };
+
+/** DELETE-equivalent for an id-less script: remove the FIRST content
+    match from the freshest array (identical twins are interchangeable). */
+export function deleteRegexScriptByContent(
+    target: RegexScopeTarget,
+    script: RegexScriptData,
+): Promise<{ ok: true; count?: number }> {
+    return mutateRegexScope(target, (arr) => regexRemoveByContent(arr, script));
+}
+
+/** PATCH-equivalent for an id-less script: merge `set` onto the content
+    match inside the serialized scope chain. */
+export function patchRegexScriptByContent(
+    target: RegexScopeTarget,
+    script: RegexScriptData,
+    set: Partial<RegexScriptData>,
+): Promise<{ ok: true; count?: number }> {
+    return mutateRegexScope(target, (arr) => regexPatchByContent(arr, script, set));
+}

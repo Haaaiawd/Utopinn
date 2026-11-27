@@ -52,6 +52,11 @@ export const presetDocs: SharedDocStore<PresetDocument> = createSharedDocStore<P
 
 const QR_KEY = 'quickReplyV2';
 export const qrSettings: SharedDocStore<QrSettings> = createSharedDocStore<QrSettings>({
+    /* Missing binding doc → {} — deliberate "unconfigured" marker: keeps
+       the entry non-null (optimistic apply + ensure caching work), and
+       qrEnabledNames treats a keyless doc like null → legacy all-visible.
+       Do NOT store the raw null: doc==null is the store's "not loaded"
+       signal, and a null doc would also skip optimistic first edits. */
     load: () => getQrSettingsDoc().then((d) => d ?? {}),
     save: (_key, doc) => patchQrSettingsDoc(doc),
     debounceMs: 250,

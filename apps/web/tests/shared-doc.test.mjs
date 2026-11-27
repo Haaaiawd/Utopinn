@@ -107,16 +107,23 @@ test('two surfaces alternating writes on the same doc both persist', async () =>
     assert.equal(b.docs.get('k').foreign, true);
 });
 
-test('PUT failure rolls back to server truth and reports the error', async () => {
+test('PUT failure keeps the optimistic doc and pending edits for retry', async () => {
     const b = initBackend({ k: { v: 'server' } });
     const store = makeStore(b);
     await store.ensure('k');
     store.mutate('k', (d) => ({ ...d, v: 'optimistic' }));
     b.failNextPut = 1;
     await sleep(60);
-    assert.equal(store.getDoc('k').v, 'server', 'optimistic doc rolled back to persisted state');
+    /* Old behaviour rolled doc back to 'server' — that was the silent
+       data-loss shape (the user's form vanished with no way to retry). */
+    assert.equal(store.getDoc('k').v, 'optimistic', 'edit retained, not rolled back');
     assert.equal(b.docs.get('k').v, 'server');
     assert.ok(b.errors.some((m) => m.includes('put-fail')), 'error surfaced via onError');
+    /* The retained pending tail rides the next save — nothing is lost. */
+    store.mutate('k', (d) => ({ ...d, more: 1 }));
+    await sleep(60);
+    assert.equal(b.docs.get('k').v, 'optimistic', 'retained edit lands on retry');
+    assert.equal(b.docs.get('k').more, 1);
 });
 
 test('reload/invalidate rebases pending edits instead of dropping them', async () => {
@@ -200,4 +207,112 @@ test('load failure on first mutate reports error and drops the un-appliable fn',
     store.mutate('missing', (d) => ({ ...d, again: true }));
     await sleep(60);
     assert.deepEqual(b.docs.get('missing'), { ok: true, again: true });
+});
+
+/* ---------- Round-2 review pins (the resurrected bug shapes) ---------- */
+
+test('flush keeps edits queued while its PUT is in flight (typing during autosave, 🔴1)', async () => {
+    const b = initBackend({ k: { v: 'a' } });
+    /* Gate the PUT so a keystroke lands strictly mid-flight. */
+    let releaseSave; let saveStarted;
+    const gate = new Promise((r) => { releaseSave = r; });
+    const started = new Promise((r) => { saveStarted = r; });
+    const store = createSharedDocStore({
+        load: b.load,
+        save: async (key, doc) => { saveStarted(); await gate; return b.save(key, doc); },
+        debounceMs: 60000, // autosave never self-fires — flush drives explicitly
+        onError: (key, msg) => b.errors.push(`${key}:${msg}`),
+    });
+    await store.ensure('k');
+    store.mutate('k', (d) => ({ ...d, v: 'a1' }));
+    const fl = store.flush('k');
+    await started; // PUT is now in flight carrying only v:'a1'
+    /* The reported loss: this keystroke used to be wiped by the resolve
+       path (pending cleared wholesale) and never reached the server. */
+    store.mutate('k', (d) => ({ ...d, typed: true }));
+    releaseSave();
+    await fl;
+    assert.deepEqual(b.docs.get('k'), { v: 'a1' }, 'in-flight write covers only its own batch');
+    assert.equal(store.getDoc('k').typed, true, 'mid-flight edit survives in the optimistic doc');
+    await store.flush('k');
+    assert.deepEqual(b.docs.get('k'), { v: 'a1', typed: true }, 'next write persists the tail');
+});
+
+test('flush REJECTS on save failure — optimistic doc + pending retained for retry (🟡8)', async () => {
+    const b = initBackend({ k: { v: 'server' } });
+    const store = makeStore(b, 60000);
+    await store.ensure('k');
+    store.mutate('k', (d) => ({ ...d, v: 'typed' }));
+    b.failNextPut = 1;
+    await assert.rejects(() => store.flush('k'), /put-fail/, 'caller must see the failure');
+    assert.equal(store.getDoc('k').v, 'typed', 'form content is not discarded');
+    assert.ok(b.errors.some((m) => m.includes('put-fail')), 'still reported via onError');
+    await store.flush('k');
+    assert.equal(b.docs.get('k').v, 'typed', 'plain retry lands the same edits');
+});
+
+test('flush rejects on load failure; serial lane stays usable afterwards', async () => {
+    const b = initBackend({ k: { v: 1 } });
+    const store = makeStore(b, 60000);
+    await store.ensure('k');
+    store.mutate('k', (d) => ({ ...d, v: 2 }));
+    b.failNextGet = 1;
+    await assert.rejects(store.flush('k'), /get-fail/);
+    /* A rejected op must not brick the entry's serial chain. */
+    await store.flush('k');
+    assert.equal(b.docs.get('k').v, 2, 'lane unblocked, retained edit persisted');
+});
+
+test('ensure publishes the fetched doc to subscribers — no loading-snapshot limbo (🔴2)', async () => {
+    const b = initBackend({ k: { v: 'real' } });
+    const store = makeStore(b);
+    const seen = [];
+    const un = store.subscribe('k', () => seen.push(store.getSnapshot('k').status));
+    const doc = await store.ensure('k');
+    const snap = store.getSnapshot('k');
+    assert.equal(doc.v, 'real');
+    assert.equal(snap.status, 'ready');
+    assert.equal(snap.doc?.v, 'real', 'subscribers converge on the real doc');
+    assert.ok(seen.includes('loading'), 'loading phase was observable');
+    assert.equal(seen.at(-1), 'ready');
+    un();
+});
+
+test('a concurrent first-mutate and ensure ride one fetch; failed loads retry (🔴2)', async () => {
+    const b = initBackend({ k: { v: 1 } });
+    const store = makeStore(b);
+    store.mutate('k', (d) => ({ ...d, plus: 1 }));
+    const doc = await store.ensure('k');
+    assert.equal(b.gets, 1, 'ensure rode the mutate in-flight fetch');
+    assert.equal(doc.v, 1);
+    assert.equal(doc.plus, 1, 'queued mutation applied on the fetched doc');
+
+    /* A failed fetch must not poison the entry — next call retries. */
+    const b2 = initBackend({});
+    b2.failNextGet = 1;
+    const store2 = makeStore(b2);
+    await assert.rejects(store2.ensure('m'), /get-fail/);
+    b2.externalWrite('m', { ok: true });
+    const d2 = await store2.ensure('m');
+    assert.equal(d2.ok, true);
+});
+
+test('a mutation that throws on the fresh base is dropped by index — not replayed forever', async () => {
+    const b = initBackend({ k: { v: 0 } });
+    const store = makeStore(b, 60000);
+    await store.ensure('k');
+    store.mutate('k', (d) => ({ ...d, v: 1 })); // healthy
+    /* Applies fine on the optimistic doc but throws on the fresh base. */
+    store.mutate('k', (d) => {
+        if (d.poison) throw new Error('boom');
+        return { ...d, ok: true };
+    });
+    b.externalWrite('k', { v: 0, poison: true });
+    await store.flush('k');
+    assert.equal(b.docs.get('k').v, 1, 'healthy mutation still landed');
+    assert.equal(b.docs.get('k').ok, undefined, 'poisoned fn dropped out of the batch');
+    assert.ok(b.errors.some((m) => m.includes('boom')), 'dead fn reported');
+    const gets = b.gets;
+    await store.flush('k');
+    assert.equal(b.gets, gets, 'dead fn is gone — flush is a no-op');
 });

@@ -78,6 +78,60 @@ export type PresetRegexKey = { id?: string; ref?: RegexScriptData; at?: number }
 export const presetRegexKeyOf = (sc: RegexScriptData): PresetRegexKey =>
     typeof sc.id === 'string' && sc.id ? { id: sc.id } : { ref: sc };
 
+/** React row identity — bound to the (preset, script) PAIR, never the
+    script id alone: copyPreset deep-copies ids, so two loaded presets
+    routinely share them and a bare-id key lets React reuse a row — and
+    its input/form state — across a preset switch (review 🔴6). */
+export const presetRegexRowKey = (presetName: string | null | undefined, sc: RegexScriptData, i: number): string =>
+    `${presetName ?? ''}::${(typeof sc.id === 'string' && sc.id) ? sc.id : `i${i}`}`;
+
+/* ---------- Deterministic id minting (id-less legacy scripts) ----------
+ * A queued mutation is REPLAYED onto several bases: the optimistic doc,
+ * the fresh base inside a flush, and every reload/rebase. A random mint
+ * produced a different id per pass, so the doc the editor saw and the
+ * doc the server got disagreed — and every later write keyed on the
+ * first (already-lost) id silently hit nothing (review 🔴3).
+ * The mint is therefore a pure function of the script's content: same
+ * script ⇒ same id, on every base, in every replay order. */
+const canonForHash = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canonForHash);
+    if (v && typeof v === 'object') {
+        const o: Record<string, unknown> = {};
+        for (const k of Object.keys(v).sort()) o[k] = canonForHash((v as Record<string, unknown>)[k]);
+        return o;
+    }
+    return v;
+};
+
+/** FNV-1a over the sorted-key JSON — small stable content hash. */
+const contentHash = (sc: RegexScriptData): string => {
+    const s = JSON.stringify(canonForHash(sc));
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(36);
+};
+
+/** The id a content-identical script would have been minted — used to
+    RECOVER an entry whose first queued patch already stamped it. */
+export const presetRegexMintedId = (sc: RegexScriptData): string =>
+    `rx-c${contentHash(sc)}`;
+
+/** Deterministic id for `arr[i]` — content hash, with a positional
+    suffix only when a DIFFERENT script already owns the base id. */
+export const mintPresetRegexId = (arr: RegexScriptData[], i: number): string => {
+    const base = presetRegexMintedId(arr[i]!);
+    if (!arr.some((sc, j) => j !== i && sc.id === base)) return base;
+    let n = 2;
+    while (arr.some((sc, j) => j !== i && sc.id === `${base}-${n}`)) n += 1;
+    return `${base}-${n}`;
+};
+
+/* Structural equality for the `ref` fallback — local twin of
+   api/regex.ts's regexDeepEqual (this module stays import-free so
+   node --test can load it; same split as quickreplies.ts/-model.ts). */
 const deepEqual = (a: unknown, b: unknown): boolean => {
     if (a === b) return true;
     if (typeof a !== 'object' || typeof b !== 'object' || a == null || b == null) return false;
@@ -90,19 +144,21 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
 };
 
 /** Resolve a key against the current scripts array — id match first,
-    then deep-equal ref, then render-time `at`; -1 = no resolvable target
-    (no-op writes). */
+    then deep-equal ref, then minted-id recovery (an earlier queued
+    patch on this same ref already stamped the deterministic id — it
+    survives reordering where `at` would hit a neighbour), then
+    render-time `at` as LAST resort. -1 = no resolvable target. */
 export const findPresetRegexIndex = (doc: PresetDocument, key: PresetRegexKey): number => {
     const arr = presetRegexScripts(doc);
     if (key.id) {
-        const i = arr.findIndex((sc) => sc.id === key.id);
-        if (i >= 0) return i;
-        return -1;
+        return arr.findIndex((sc) => sc.id === key.id);
     }
     if (key.ref) {
         const i = arr.findIndex((sc) => deepEqual(sc, key.ref));
         if (i >= 0) return i;
-        if (key.at == null) return -1;
+        const stamped = presetRegexMintedId(key.ref);
+        const j = arr.findIndex((sc) => sc.id === stamped);
+        if (j >= 0) return j;
     }
     return key.at != null && key.at >= 0 && key.at < arr.length ? key.at : -1;
 };
@@ -117,17 +173,19 @@ export const removePresetRegexByKey = (doc: PresetDocument, key: PresetRegexKey)
     return i < 0 ? doc : removePresetRegex(doc, i);
 };
 
-/** Patch by stable key. When the matched script has no id and `mintId` is
-    given, the patch also stamps a fresh id so later edits stay key-stable. */
+/** Patch by stable key. When the matched script has no id, the patch
+    also stamps its DETERMINISTIC content id — every replay mints the
+    same id, so the optimistic doc and the flushed doc converge and
+    later key-addressed edits keep resolving. */
 export const patchPresetRegexByKey = (
     doc: PresetDocument,
     key: PresetRegexKey,
     set: Partial<RegexScriptData>,
-    mintId?: () => string,
 ): PresetDocument => {
+    const arr = presetRegexScripts(doc);
     const i = findPresetRegexIndex(doc, key);
     if (i < 0) return doc;
-    const sc = presetRegexScripts(doc)[i]!;
-    const next = typeof sc.id === 'string' && sc.id ? set : { id: mintId?.(), ...set };
+    const sc = arr[i]!;
+    const next = typeof sc.id === 'string' && sc.id ? set : { id: mintPresetRegexId(arr, i), ...set };
     return patchPresetRegex(doc, i, next);
 };

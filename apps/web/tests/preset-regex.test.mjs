@@ -8,8 +8,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    addPresetRegex, findPresetRegexIndex, newPresetRegexScript, patchPresetRegex,
-    patchPresetRegexByKey, presetExtBag, presetRegexKeyOf, presetRegexScripts,
+    addPresetRegex, findPresetRegexIndex, mintPresetRegexId, newPresetRegexScript,
+    patchPresetRegex, patchPresetRegexByKey, presetExtBag, presetRegexKeyOf,
+    presetRegexMintedId, presetRegexRowKey, presetRegexScripts,
     removePresetRegex, removePresetRegexByKey, togglePresetRegex, togglePresetRegexByKey,
     withPresetRegexScripts,
 } from '../src/components/panels/presetRegex.ts';
@@ -144,24 +145,85 @@ test('findPresetRegexIndex — id first, deep-equal ref, `at` last resort', () =
 test('patchPresetRegexByKey — ref fallback mints an id so later edits stay keyed', () => {
     const legacy = { scriptName: 'old', findRegex: '/x/' };
     const d = docWith([legacy]);
-    const next = patchPresetRegexByKey(d, presetRegexKeyOf(legacy), { scriptName: 'new' }, () => 'rx-minted');
+    const next = patchPresetRegexByKey(d, presetRegexKeyOf(legacy), { scriptName: 'new' });
     const sc = presetRegexScripts(next)[0];
     assert.equal(sc.scriptName, 'new');
-    assert.equal(sc.id, 'rx-minted', 'id-less script gains a stable id on first patch');
+    assert.equal(sc.id, presetRegexMintedId(legacy), 'id-less script gains its deterministic id on first patch');
     /* Subsequent writes address the minted id — ref staleness no longer matters. */
-    const again = patchPresetRegexByKey(next, { id: 'rx-minted' }, { findRegex: '/y/' });
+    const again = patchPresetRegexByKey(next, { id: presetRegexMintedId(legacy) }, { findRegex: '/y/' });
     assert.equal(presetRegexScripts(again)[0].findRegex, '/y/');
 });
 
-test('patchPresetRegexByKey — rapid typing race: stale ref still lands via `at`', () => {
+test('patchPresetRegexByKey — rapid typing race: stale ref still lands via stamped-id recovery', () => {
     /* Keystroke 1 patched the ref'd script (id minted + name changed);
        keystroke 2 arrives with the PRE-patch closure — ref no longer
-       deep-equals, `at` resolves the same slot. */
+       deep-equals, so the stamped minted-id recovery resolves the entry
+       (the `at` slot also still agrees — both guards land it). */
     const legacy = { scriptName: '', findRegex: '/x/' };
     const d = docWith([legacy]);
-    const after1 = patchPresetRegexByKey(d, { ref: legacy, at: 0 }, { scriptName: 'a' }, () => 'rx-1');
-    const after2 = patchPresetRegexByKey(after1, { ref: legacy, at: 0 }, { scriptName: 'ab' }, () => 'rx-2');
+    const after1 = patchPresetRegexByKey(d, { ref: legacy, at: 0 }, { scriptName: 'a' });
+    const after2 = patchPresetRegexByKey(after1, { ref: legacy, at: 0 }, { scriptName: 'ab' });
     const sc = presetRegexScripts(after2)[0];
     assert.equal(sc.scriptName, 'ab', 'second keystroke landed, not dropped');
-    assert.equal(sc.id, 'rx-1', 'minted id persists — subsequent writes stay id-keyed');
+    assert.equal(sc.id, presetRegexMintedId(legacy), 'minted id persists — subsequent writes stay id-keyed');
+});
+
+/* ---------- Deterministic minting — the replayed-mutation bug (🔴3) ---------- */
+
+test('mint is deterministic — same content mints the same id on every base (🔴3)', () => {
+    /* The reported bug: a queued mutation is replayed onto the optimistic
+       doc AND the fresh base inside flush. A random mint produced a
+       different id per pass — edits queued against the first id silently
+       hit nothing on the flushed doc. */
+    const legacy = { scriptName: 'old', findRegex: '/x/' };
+    const key = presetRegexKeyOf(legacy); // { ref: legacy }
+    const patch = (d) => patchPresetRegexByKey(d, key, { scriptName: 'renamed' });
+    const optimistic = patch(docWith([legacy]));
+    const freshBase = patch(docWith([{ id: 'other' }, legacy])); // different neighbours, same script
+    const idA = presetRegexScripts(optimistic)[0].id;
+    const idB = presetRegexScripts(freshBase)[1].id;
+    assert.equal(idA, idB, 'same script ⇒ same id regardless of base/replay order');
+    /* Edits queued against the minted id resolve on BOTH shapes. */
+    const idEdit = (d) => patchPresetRegexByKey(d, { id: idA }, { findRegex: '/y/' });
+    assert.equal(presetRegexScripts(idEdit(optimistic))[0].findRegex, '/y/');
+    assert.equal(presetRegexScripts(idEdit(freshBase))[1].findRegex, '/y/');
+});
+
+test('findPresetRegexIndex — minted-id recovery: stamped entry survives a ref miss + reorder', () => {
+    /* First queued patch already stamped the deterministic id server-side;
+       a later patch carrying the stale ref must still resolve — even when
+       the entry moved slots (where a bare `at` would hit a neighbour). */
+    const legacy = { scriptName: '', findRegex: '/x/' };
+    const stamped = { ...legacy, id: presetRegexMintedId(legacy), scriptName: 'typed' };
+    const d = docWith([{ id: 'n1' }, stamped, { id: 'n2' }]);
+    assert.equal(findPresetRegexIndex(d, { ref: legacy }), 1, 'ref miss → stamped-id hit (no `at` needed)');
+    /* `at` pointing elsewhere must NOT win over the stamped-id recovery. */
+    assert.equal(findPresetRegexIndex(d, { ref: legacy, at: 0 }), 1);
+});
+
+test('mintPresetRegexId — content twins disambiguate with a positional suffix', () => {
+    const twin = { scriptName: 'dup', findRegex: '/d/' };
+    const base = presetRegexMintedId(twin);
+    const arr = [{ ...twin, id: base }, { ...twin }, { id: `${base}-2` }];
+    /* index 1 shares the base content-hash but the id is already taken
+       and -2 is taken too → lands on -3. */
+    assert.equal(mintPresetRegexId(arr, 1), `${base}-3`);
+    /* Free base → no suffix. */
+    assert.equal(mintPresetRegexId([{ ...twin }], 0), base);
+});
+
+test('presetRegexRowKey — row identity bound to (preset, script), not the shared id (🔴6)', () => {
+    /* copyPreset deep-copies script ids, so the SAME id legitimately
+       exists in two loaded presets — a bare-id React key reused an input
+       across the switch and autosave wrote preset B's text into preset A. */
+    const sc = { id: 'shared-id', scriptName: 'S' };
+    assert.notEqual(
+        presetRegexRowKey('preset-a', sc, 0), presetRegexRowKey('preset-b', sc, 0),
+        'same id in two presets must produce different row keys',
+    );
+    assert.equal(presetRegexRowKey('preset-a', sc, 3), presetRegexRowKey('preset-a', sc, 0),
+        'same preset+script → stable key across reorder');
+    assert.equal(presetRegexRowKey('preset-a', { scriptName: 'noid' }, 2), 'preset-a::i2',
+        'id-less script falls back to position within the preset');
+    assert.equal(presetRegexRowKey(null, sc, 0), '::shared-id', 'unscoped host still keys');
 });

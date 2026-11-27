@@ -69,7 +69,14 @@ interface Entry<T> {
     saving: boolean;
     version: number;
     snap: SharedDocSnapshot<T>;
+    /** Serial op queue. INVARIANT: this promise NEVER rejects — every
+        op reports through onError and returns its outcome on a separate
+        caller-facing promise; a rejected chain would silently brick
+        every later op queued onto the entry. */
     chain: Promise<unknown>;
+    /** In-flight initial-load task — shared so concurrent ensure()/first
+        mutate() callers ride one fetch instead of queueing another. */
+    inflight: Promise<T | null> | null;
     timer: ReturnType<typeof setTimeout> | null;
     listeners: Set<() => void>;
 }
@@ -95,7 +102,8 @@ export function createSharedDocStore<T>(opts: {
                 doc: null, synced: null, pending: [], appliedIdx: 0,
                 status: 'idle', saving: false, version: 0,
                 snap: { ...EMPTY_SNAP } as SharedDocSnapshot<T>,
-                chain: Promise.resolve(), timer: null, listeners: new Set(),
+                chain: Promise.resolve(), inflight: null,
+                timer: null, listeners: new Set(),
             };
             entries.set(key, e);
         }
@@ -127,7 +135,9 @@ export function createSharedDocStore<T>(opts: {
 
     const scheduleSave = (key: string, e: Entry<T>) => {
         if (e.timer) clearTimeout(e.timer);
-        e.timer = setTimeout(() => { void flush(key); }, debounceMs);
+        /* flush() rejects on save failure — the debounced path has no
+           caller, so swallow here (onError already reported it). */
+        e.timer = setTimeout(() => { void flush(key).catch(() => undefined); }, debounceMs);
     };
 
     const fetchInto = async (key: string, e: Entry<T>) => {
@@ -142,9 +152,15 @@ export function createSharedDocStore<T>(opts: {
     const fetchOrThrow = (key: string, e: Entry<T>) =>
         fetchInto(key, e).catch((err) => { e.status = 'error'; notify(e); throw err; });
 
-    async function flush(key: string): Promise<void> {
+    /* flush() — queued on the serial chain but RETURNS a caller-facing
+       task that rejects on load/save failure (the chain itself stays
+       resolved so a failed write never bricks the lane). On success it
+       retires exactly the pending batch it wrote; mutations queued while
+       the request was in flight survive for the next write — clearing
+       them here would erase typing that raced the PUT (review 🔴1). */
+    function flush(key: string): Promise<void> {
         const e = get(key);
-        e.chain = e.chain.then(async () => {
+        const task = e.chain.then(async (): Promise<void> => {
             if (!e.pending.length) return;
             if (e.timer) { clearTimeout(e.timer); e.timer = null; }
             e.saving = true;
@@ -160,51 +176,52 @@ export function createSharedDocStore<T>(opts: {
                 e.saving = false;
                 notify(e);
                 report(key, err);
-                return;
+                throw err;
             }
-            /* A throwing mutation must not reject the serial chain — that
-               would silently brick every later op on this entry. Drop the
-               offender (it can never apply cleanly) and keep the rest. */
+            /* The batch this write covers — sliced BEFORE building merged,
+               so anything queued during the awaits belongs to the next
+               write, never to `pending = []` (that was the data loss). */
+            const batch = e.pending.slice();
             let merged = fresh;
-            const kept: Array<(doc: T) => T> = [];
-            for (const f of e.pending) {
+            const dead = new Set<number>();
+            for (const [i, f] of batch.entries()) {
                 try {
                     merged = f(merged);
-                    kept.push(f);
                 } catch (err) {
+                    /* A mutation that can't apply would poison every retry —
+                       drop it (by batch index) and keep the rest. */
+                    dead.add(i);
                     report(key, err);
                 }
             }
-            if (kept.length !== e.pending.length) {
-                e.pending = kept;
-                e.appliedIdx = Math.min(e.appliedIdx, kept.length);
+            if (dead.size) {
+                const lost = [...dead].filter((i) => i < e.appliedIdx).length;
+                e.pending = e.pending.filter((_, i) => !dead.has(i));
+                e.appliedIdx -= lost;
             }
             try {
                 await opts.save(key, merged);
             } catch (err) {
-                /* Rollback to server truth — pending edits are dropped and
-                   the UI re-converges on what actually persisted (same
-                   semantics as the old studio mutateFor rollback). */
-                e.pending = [];
-                e.appliedIdx = 0;
-                try {
-                    e.synced = await opts.load(key);
-                    e.doc = e.synced;
-                    e.status = 'ready';
-                } catch { /* reload failure keeps last doc */ }
+                /* Keep pending + keep the optimistic doc — the caller sees
+                   the rejection and the user's edits survive for a retry.
+                   (Dropping them + rolling back was silent data loss.) */
                 e.saving = false;
                 notify(e);
                 report(key, err);
-                return;
+                throw err;
             }
-            e.pending = [];
-            e.appliedIdx = 0;
+            /* Retire exactly the surviving batch prefix; later-queued
+               mutations stay pending and are re-applied onto merged. */
+            e.pending.splice(0, batch.length - dead.size);
             e.synced = merged;
             e.doc = merged;
+            e.appliedIdx = 0;
+            applyPending(e);
             e.saving = false;
             notify(e);
         });
-        await e.chain;
+        e.chain = task.then(() => undefined, () => undefined);
+        return task;
     }
 
     const store: SharedDocStore<T> = {
@@ -223,11 +240,29 @@ export function createSharedDocStore<T>(opts: {
         ensure(key) {
             const e = get(key);
             if (e.doc != null) return Promise.resolve(e.doc);
-            if (e.status === 'loading') return e.chain.then(() => e.doc);
+            /* Ride the in-flight load (first mutate/ensure share it);
+               a FAILED load leaves inflight null → the next call retries. */
+            if (e.inflight) return e.inflight;
             e.status = 'loading';
             notify(e);
-            e.chain = e.chain.then(() => fetchOrThrow(key, e)).then(() => e.doc);
-            return e.chain.then(() => e.doc);
+            const task: Promise<T | null> = e.chain
+                .then(() => fetchOrThrow(key, e))
+                .then(() => {
+                    /* Publish the real doc — without this notify subscribers
+                       stayed on the loading snapshot forever (review 🔴2). */
+                    notify(e);
+                    return e.doc;
+                });
+            task.catch(() => undefined);
+            e.inflight = task;
+            e.chain = task.then(
+                /* Identity-guarded clear: a mutate()'s no-doc task can
+                   overwrite e.inflight while this one is still queued —
+                   settling must not deregister the newer owner. */
+                () => { if (e.inflight === task) e.inflight = null; },
+                () => { if (e.inflight === task) e.inflight = null; },
+            );
+            return task;
         },
         prime(key, doc) {
             const e = get(key);
@@ -248,23 +283,32 @@ export function createSharedDocStore<T>(opts: {
                 return;
             }
             /* No doc yet — queue fetch+apply on the serial chain so rapid
-               first edits still land in order. */
+               first edits still land in order. The task doubles as the
+               entry's inflight load so a concurrent ensure() rides it. */
             e.status = 'loading';
-            e.chain = e.chain
-                .then(async () => {
-                    if (e.doc == null) await fetchOrThrow(key, e);
-                    applyPending(e);
-                    notify(e);
-                    scheduleSave(key, e);
-                })
-                .catch((err) => {
+            const task = e.chain.then(async () => {
+                if (e.doc == null) await fetchOrThrow(key, e);
+                applyPending(e);
+                notify(e);
+                scheduleSave(key, e);
+            });
+            const inflight = task.then(() => e.doc);
+            /* No guaranteed consumer — suppress unhandled-rejection while
+               still letting ensure() callers observe the failure. */
+            inflight.catch(() => undefined);
+            e.inflight = inflight;
+            e.chain = task.then(
+                () => { if (e.inflight === inflight) e.inflight = null; },
+                (err) => {
                     /* Fetch failed → drop the un-appliable tail so it can't
                        be silently replayed later; surface the error. */
+                    if (e.inflight === inflight) e.inflight = null;
                     e.pending = e.pending.filter((f) => f !== fn);
                     e.status = 'error';
                     notify(e);
                     report(key, err);
-                });
+                },
+            );
         },
         flush,
         reload(key) {
@@ -293,6 +337,7 @@ export function createSharedDocStore<T>(opts: {
             e.pending = [];
             e.appliedIdx = 0;
             e.status = 'idle';
+            e.inflight = null;
             entries.delete(key);
             notify(e);
         },
