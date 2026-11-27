@@ -50,8 +50,13 @@
     display: flex; align-items: center; justify-content: space-between;
     padding: 0 9px; gap: 6px;
 }
+/* Logo axis invariant: the 28px logo box centers on the 32px rail-icon
+   axis (row pad 9 + pill leading pad 9 + half box 14) in BOTH sidebar
+   states. Keeping it a plain first flex item (no justify-content switch)
+   also pins it through the whole open/collapse transition — no sideways
+   drift while the pill morphs around it. */
 .brand-pill-btn {
-    height: 38px; border-radius: 10px; padding: 0 5px;
+    height: 38px; border-radius: 10px; padding: 0 5px 0 9px;
     display: inline-flex; align-items: center;
     cursor: pointer; overflow: hidden; min-width: 38px;
     transition: background 0.14s ease,
@@ -107,10 +112,12 @@
    不可过渡,会跳变);pill 与 rail-btn 同规格(46 方盒)—— 左沿 = row
    padding 9,中心 9+23=32,与下方 rail icon 同一条中轴。
    盒与墨同 rail-btn 规格(46 方盒/26 标):row 52 - pill 46 → 底沿 49,
-   首个 rail-btn 顶沿 52+pt-1 4=56,缝 7px ≈ rail gap 6 —— 视觉节拍统一。 */
+   首个 rail-btn 顶沿 52+pt-1 4=56,缝 7px ≈ rail gap 6 —— 视觉节拍统一。
+   无 justify-content:logo 盒左侧固锚(leading pad 9 双态同值),46 方盒里
+   左右各 9px 自然居中;切 justify-center 反而在收展动画中拖标过轴。 */
 .left-chrome:not([data-open="true"]) .brand-pill-btn {
     margin-left: 0; min-width: 46px; height: 46px;
-    justify-content: center; border-radius: 12px;
+    border-radius: 12px;
 }
 
 .left-tree-pane {

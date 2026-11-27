@@ -148,7 +148,7 @@ export function MobileFrame() {
                         {/* 规范稿移动 drawer 头:logo + Utopinn[·域] + 搜索(仅 chat 域) + 关 */}
                         <div className={`flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-4 ${isChatDomain ? 'mb-2.5' : 'mb-2'}`}>
                             <div className="flex items-center gap-2">
-                                <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={24} /></span>
+                                <span className="flex h-7 w-7 shrink-0 items-center justify-center"><LogoU size={26} /></span>
                                 <span className={`heading-tight ${isChatDomain ? 'text-[15px] font-semibold' : 'text-[13.5px] font-medium'} text-[color:var(--fg-primary)]`}>
                                     {isChatDomain ? t('app.name') : `${t('app.name')} · ${t(`nav.${s.view}`)}`}
                                 </span>
