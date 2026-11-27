@@ -35,7 +35,7 @@ import {
     type PersonaAvatarPick, type PersonaItem,
 } from '../../api/personas';
 import {
-    deleteRegexScript, getRegexFullView, getRegexPresetScope, patchRegexScript, putRegexScope,
+    deleteRegexScript, getRegexFullView, patchRegexScript, putRegexScope,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import { statsInject } from '../../api/stats';
@@ -978,110 +978,6 @@ const tuneOf = (doc: PresetDocument | undefined) => ({
     maxReply: pnum(doc?.openai_max_tokens),
 });
 
-/* 预设 extensions 袋:regex_scripts 读出/写回共用的窄化。 */
-const presetExtBag = (d: PresetDocument): Record<string, unknown> =>
-    (d.extensions && typeof d.extensions === 'object' && !Array.isArray(d.extensions))
-        ? (d.extensions as Record<string, unknown>) : {};
-
-const presetRegexScripts = (doc: PresetDocument): RegexScriptData[] => {
-    const arr = presetExtBag(doc).regex_scripts;
-    return Array.isArray(arr)
-        ? arr.filter((x): x is RegexScriptData => !!x && typeof x === 'object' && !Array.isArray(x))
-        : [];
-};
-
-/** 预设档内正则脚本小节 —— 脚本本体是预设档数据(extensions.regex_scripts),
- *  启停/删除走 doc 写路(onMutate 与调参同一防抖整档 PUT 通道,无跨通道竞写);
- *  放行闸 preset_allowed_regex 在 settings 不在档 —— scoped GET 取态、
- *  PUT allow 写回,in_use 徽标同源。真管理面,不假编辑脚本内容。 */
-function PresetRegexSection({ apiId, name, doc, onMutate }: {
-    apiId: string;
-    name: string;
-    doc: PresetDocument;
-    onMutate: (fn: (d: PresetDocument) => PresetDocument) => void;
-}) {
-    const { t } = useI18n();
-    const s = useShell();
-    const scripts = useMemo(() => presetRegexScripts(doc), [doc]);
-    const scope = useRemote(`regex-preset:${apiId}:${name}`, () => getRegexPresetScope(apiId, name));
-    const [allowBusy, setAllowBusy] = useState(false);
-
-    /* 写穿 mutate fn 内现取 d 的脚本数组 —— 渲染期 scripts 仅作展示,
-       避免与在途调参改动错拍(同通道 fn 串行,恒以最新档为准)。 */
-    const writeScripts = (fn: (arr: RegexScriptData[]) => RegexScriptData[]) => onMutate((d) => ({
-        ...d, extensions: { ...presetExtBag(d), regex_scripts: fn(presetRegexScripts(d)) },
-    }));
-    const toggleScript = (i: number) =>
-        writeScripts((arr) => arr.map((sc, j) => (j === i ? { ...sc, disabled: sc.disabled === true ? false : true } : sc)));
-    const delScript = (i: number) => {
-        const label = scripts[i]?.scriptName || `#${i}`;
-        if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
-        writeScripts((arr) => arr.filter((_, j) => j !== i));
-    };
-    const toggleAllow = () => {
-        if (allowBusy || !scope.data) return;
-        setAllowBusy(true);
-        void putRegexScope({ scope: 'preset', apiId, preset: name }, { allow: !scope.data.allowed })
-            .then(() => scope.reload())
-            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
-            .finally(() => setAllowBusy(false));
-    };
-
-    return (
-        <div className="mt-3 border-t border-[color:var(--border-hairline)] pt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2">
-                <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-medium text-[color:var(--fg-muted)]">
-                    {t('studio.presets.regex')}
-                    <span className="font-mono-ui text-[10px] text-[color:var(--fg-faint)]">{scripts.length}</span>
-                    {scope.data?.inUse && (
-                        <span className="shrink-0 rounded px-1.5 py-0.5 font-mono-ui text-[10px]" style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
-                            {t('studio.regex.inUse')}
-                        </span>
-                    )}
-                </span>
-                {scope.error ? (
-                    <button className="shrink-0 text-[10.5px] text-[color:var(--status-danger)]" onClick={scope.reload}>{t('panel.retry')}</button>
-                ) : (
-                    <span className="flex shrink-0 items-center gap-2">
-                        <span className="text-[10.5px] text-[color:var(--fg-faint)]">{t('studio.regex.allowPreset')}</span>
-                        <Switch on={scope.data?.allowed ?? false} disabled={allowBusy || !scope.data} title={t('studio.regex.allowPreset')} onToggle={toggleAllow} />
-                    </span>
-                )}
-            </div>
-            {scripts.length === 0 ? (
-                <div className="inset-row"><span className="text-[11px] text-[color:var(--fg-faint)]">{t('studio.presets.regexEmpty')}</span></div>
-            ) : (
-                <div className="inset-group">
-                    {scripts.map((sc, i) => {
-                        const nm = typeof sc.scriptName === 'string' && sc.scriptName ? sc.scriptName : t('studio.regex.unnamed');
-                        const on = sc.disabled !== true;
-                        return (
-                            <div key={typeof sc.id === 'string' && sc.id ? sc.id : i} className="inset-row gap-3">
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate text-[12.5px] font-medium text-[color:var(--fg-primary)]" style={{ opacity: on ? 1 : 0.5 }}>{nm}</div>
-                                    {typeof sc.findRegex === 'string' && sc.findRegex && (
-                                        <div className="mt-0.5 truncate font-mono-ui text-[10.5px] text-[color:var(--fg-faint)]">{sc.findRegex}</div>
-                                    )}
-                                </div>
-                                <div className="flex shrink-0 items-center gap-2">
-                                    <Switch on={on} onToggle={() => toggleScript(i)} />
-                                    <button
-                                        className="ghost-btn h-7 w-7" title={t('studio.persona.delete')}
-                                        style={{ color: 'var(--status-danger)' }}
-                                        onClick={() => delScript(i)}
-                                    >
-                                        <Icon name="trash" size={13} />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
 function PresetsPage() {
     const { t } = useI18n();
     const s = useShell();
@@ -1306,8 +1202,7 @@ function PresetsPage() {
                             </div>
                             {open && doc && (
                                 <div className="mt-2 border-t border-[color:var(--border-hairline)] pt-3">
-                                    <PresetDocEditor doc={doc} onMutate={mutateFor(n)} />
-                                    <PresetRegexSection apiId={PRESET_API_ID} name={n} doc={doc} onMutate={mutateFor(n)} />
+                                    <PresetDocEditor doc={doc} onMutate={mutateFor(n)} apiId={PRESET_API_ID} presetName={n} />
                                 </div>
                             )}
                         </div>

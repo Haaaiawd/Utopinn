@@ -1,5 +1,7 @@
 // 预设整档编辑组件 —— openai(apiId 家族)预设 ST 全字段粒度。
-// PresetPanel(工作台实时调参)与 PresetsPage(工坊管理面)共用,勿双份实现。
+// PresetPanel(工作台激活预设实时调参)与 PresetsPage(工坊资产管理面:
+// 列表/新建/复制/删除/导出/设默认)共用,勿双份实现 —— 右栏管「当前这份
+// 怎么调」,studio 管「有哪些档、新建删」。
 //
 // 写路约定:onMutate(fn) —— fn 收当前 doc 回 next doc,宿主负责整档
 // PUT /presets/:name(防抖/缓存策略归宿主)。组件只改它列出的键,
@@ -13,13 +15,22 @@
 //   停止串 custom_stop_strings:string[](数组形;JSON 串形兼容读、写回升格数组)
 //   编排   prompts[{identifier,name,role,content,marker,...}] +
 //          prompt_order[{character_id,order:[{identifier,enabled}]}]
+//   正则   extensions.regex_scripts(PresetRegexSection 内嵌小节;
+//          放行闸 apiId/presetName 作用域props给,缺席则只渲档内编辑面)
 //   注     chat_completion_source / <source>_model 是连接域字段 —— 档内
 //          透传不丢(JSON 视图可见),编辑面归连接设置/模型选择,此组件不渲。
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { useI18n } from '../../i18n';
+import { useShell } from '../../kernel/context';
 import { Icon } from '../Icon';
+import { useRemote } from './panelShared';
 import type { PresetDocument } from '../../api/presets';
+import { getRegexPresetScope, putRegexScope, type RegexScriptData } from '../../api/regex';
+import {
+    addPresetRegex, newPresetRegexScript, patchPresetRegex, presetRegexScripts,
+    removePresetRegex, togglePresetRegex,
+} from './presetRegex';
 
 const numOr = (v: unknown, fallback: number): number =>
     typeof v === 'number' && Number.isFinite(v) ? v : fallback;
@@ -196,16 +207,207 @@ function effectiveOrders(doc: PresetDocument): OrderBlock[] {
 }
 
 /* ---------------------------------------------------------------- */
+/* 正则脚本小节 —— 脚本本体在档(extensions.regex_scripts,doc 写路);    */
+/* 放行闸 preset_allowed_regex 在 settings —— scoped GET 取态、PUT      */
+/* allow 写回,in_use 徽标同源。apiId/presetName 缺 → 闸行不渲,档内      */
+/* 编辑面照给(作用域未知不猜放行)。                                    */
+/* ---------------------------------------------------------------- */
+
+const RX_FLAGS: { key: 'markdownOnly' | 'promptOnly' | 'runOnEdit'; label: string }[] = [
+    { key: 'markdownOnly', label: 'preset.ed.flagMarkdown' },
+    { key: 'promptOnly', label: 'preset.ed.flagPrompt' },
+    { key: 'runOnEdit', label: 'preset.ed.flagRunOnEdit' },
+];
+
+function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
+    apiId?: string; presetName?: string;
+    doc: PresetDocument;
+    onMutate: (fn: (d: PresetDocument) => PresetDocument) => void;
+    disabled?: boolean;
+}) {
+    const { t } = useI18n();
+    const s = useShell();
+    const [open, setOpen] = useState(false);
+    const [openKey, setOpenKey] = useState<string | number | null>(null);
+    const [allowBusy, setAllowBusy] = useState(false);
+    const scripts = useMemo(() => presetRegexScripts(doc), [doc]);
+    const scoped = Boolean(apiId && presetName);
+    const scope = useRemote(
+        scoped ? `regex-preset:${apiId}:${presetName}` : null,
+        () => getRegexPresetScope(apiId as string, presetName as string),
+    );
+    const keyOf = (sc: RegexScriptData, i: number): string | number =>
+        (typeof sc.id === 'string' && sc.id) ? sc.id : i;
+
+    const toggleAllow = () => {
+        if (!scoped || allowBusy || !scope.data) return;
+        setAllowBusy(true);
+        void putRegexScope(
+            { scope: 'preset', apiId: apiId as string, preset: presetName as string },
+            { allow: !scope.data.allowed },
+        )
+            .then(() => scope.reload())
+            .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
+            .finally(() => setAllowBusy(false));
+    };
+    /* 写穿 mutate fn 内现取 d —— 与在途调参改动同通道串行,恒以最新档为准。 */
+    const delScript = (i: number) => {
+        const sc = scripts[i];
+        const label = sc?.scriptName || `#${i}`;
+        if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
+        if (sc && openKey === keyOf(sc, i)) setOpenKey(null);
+        onMutate((d) => removePresetRegex(d, i));
+    };
+    const addScript = () => {
+        const sc = newPresetRegexScript(`rx-${Date.now().toString(36)}`);
+        onMutate((d) => addPresetRegex(d, sc));
+        setOpenKey(sc.id ?? null);
+    };
+
+    return (
+        <Section
+            title={t('preset.ed.regex')} open={open} onToggle={() => setOpen(!open)}
+            meta={(
+                <>
+                    {scope.data?.inUse && (
+                        <span className={badge} style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)' }}>
+                            {t('studio.regex.inUse')}
+                        </span>
+                    )}
+                    <span className="font-mono-ui text-[10px]">{scripts.length}</span>
+                </>
+            )}
+        >
+            {/* 放行闸 —— settings 侧键,与档写路分开;scoped 才取数才渲。 */}
+            {scoped && (
+                <div className="inset-row">
+                    <span className="min-w-0 flex-1">
+                        <span className="block text-[12px] text-[color:var(--fg-secondary)]">{t('studio.regex.allowPreset')}</span>
+                        <span className="mt-0.5 block text-[10px] leading-snug text-[color:var(--fg-faint)]">{t('preset.ed.allowNote')}</span>
+                    </span>
+                    {scope.error ? (
+                        <button className="shrink-0 text-[10.5px] text-[color:var(--status-danger)]" onClick={scope.reload}>{t('panel.retry')}</button>
+                    ) : (
+                        <MiniSwitch
+                            on={scope.data?.allowed ?? false} disabled={disabled || allowBusy || !scope.data}
+                            title={t('studio.regex.allowPreset')} onToggle={toggleAllow}
+                        />
+                    )}
+                </div>
+            )}
+            {scripts.length === 0 && (
+                <div className="inset-group">
+                    <div className="inset-row"><span className="text-[11px] text-[color:var(--fg-faint)]">{t('preset.ed.regexEmpty')}</span></div>
+                </div>
+            )}
+            {scripts.length > 0 && (
+                <div className="inset-group">
+                    {scripts.map((sc, i) => {
+                        const k = keyOf(sc, i);
+                        const on = sc.disabled !== true;
+                        const expanded = openKey === k;
+                        const nm = (typeof sc.scriptName === 'string' && sc.scriptName.trim())
+                            ? sc.scriptName : t('studio.regex.unnamed');
+                        return (
+                            <div key={k}>
+                                <div className="inset-row" style={{ opacity: on ? 1 : 0.55 }}>
+                                    <button
+                                        type="button" className="ghost-btn h-6 w-6 shrink-0" disabled={disabled}
+                                        onClick={() => setOpenKey(expanded ? null : k)}
+                                    >
+                                        <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={11} />
+                                    </button>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[12.5px] text-[color:var(--fg-secondary)]">{nm}</span>
+                                        {typeof sc.findRegex === 'string' && sc.findRegex && (
+                                            <span className="mt-0.5 block truncate font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{sc.findRegex}</span>
+                                        )}
+                                    </span>
+                                    <MiniSwitch on={on} disabled={disabled} onToggle={() => onMutate((d) => togglePresetRegex(d, i))} />
+                                    <button
+                                        type="button" className="ghost-btn h-6 w-6 shrink-0" disabled={disabled}
+                                        title={t('studio.persona.delete')} style={{ color: 'var(--status-danger)' }}
+                                        onClick={() => delScript(i)}
+                                    >
+                                        <Icon name="trash" size={12} />
+                                    </button>
+                                </div>
+                                {expanded && (
+                                    <div className="mx-3 mb-1 space-y-2 rounded-b-lg border border-t-0 border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-2.5">
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10.5px] text-[color:var(--fg-muted)]">{t('preset.ed.name')}</span>
+                                            <input
+                                                className={`${inputCls} h-7 text-[12px]`} value={typeof sc.scriptName === 'string' ? sc.scriptName : ''}
+                                                disabled={disabled} placeholder={t('studio.regex.namePh')}
+                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { scriptName: e.target.value }))}
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10.5px] text-[color:var(--fg-muted)]">{t('preset.ed.findRegex')}</span>
+                                            <input
+                                                className={`${inputCls} h-7 font-mono-ui text-[11.5px]`} value={typeof sc.findRegex === 'string' ? sc.findRegex : ''}
+                                                disabled={disabled} placeholder="/pattern/g"
+                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { findRegex: e.target.value }))}
+                                            />
+                                        </label>
+                                        <label className="block">
+                                            <span className="mb-1 block text-[10.5px] text-[color:var(--fg-muted)]">{t('preset.ed.replaceString')}</span>
+                                            <textarea
+                                                className="min-h-[60px] w-full select-text resize-y rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-2 font-mono-ui text-[11.5px] leading-relaxed text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50"
+                                                value={typeof sc.replaceString === 'string' ? sc.replaceString : ''}
+                                                disabled={disabled} placeholder={t('studio.regex.replacePh')}
+                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { replaceString: e.target.value }))}
+                                            />
+                                        </label>
+                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                            {RX_FLAGS.map((f) => {
+                                                const on = sc[f.key] === true;
+                                                return (
+                                                    <button
+                                                        key={f.key} type="button" disabled={disabled}
+                                                        className="rounded-full border px-2 py-0.5 text-[10px] transition-colors"
+                                                        style={on
+                                                            ? { borderColor: 'var(--border-strong)', background: 'var(--bg-active)', color: 'var(--fg-primary)' }
+                                                            : { borderColor: 'var(--border-hairline)', color: 'var(--fg-faint)' }}
+                                                        onClick={() => onMutate((d) => patchPresetRegex(d, i, { [f.key]: !on }))}
+                                                    >
+                                                        {t(f.label)}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+            <button
+                type="button" className="inset-row inset-row-btn w-full !justify-start gap-2" disabled={disabled}
+                onClick={addScript}
+            >
+                <Icon name="plus" size={12} className="shrink-0 text-[color:var(--fg-muted)]" />
+                <span className="text-[11.5px] font-medium text-[color:var(--fg-secondary)]">{t('preset.ed.regexAdd')}</span>
+            </button>
+        </Section>
+    );
+}
+
+/* ---------------------------------------------------------------- */
 /* 主组件                                                            */
 /* ---------------------------------------------------------------- */
 
-export function PresetDocEditor({ doc, onMutate, disabled }: {
+export function PresetDocEditor({ doc, onMutate, disabled, apiId, presetName }: {
     /** 当前预设整档(宿主真值;每次 onMutate 后宿主应以 next 重渲)。 */
     doc: PresetDocument;
     /** fn(curDoc) → nextDoc;宿主防抖整档 PUT。同步调用,组件内即时生效。 */
     onMutate: (fn: (doc: PresetDocument) => PresetDocument) => void;
     /** 离线/写中禁用整面。 */
     disabled?: boolean;
+    /** 放行闸作用域(apiId 家族 + 预设名);缺 → 正则小节只给档内编辑面。 */
+    apiId?: string;
+    presetName?: string;
 }) {
     const { t } = useI18n();
     const [openSec, setOpenSec] = useState<Record<string, boolean>>({ prompts: true });
@@ -491,6 +693,9 @@ export function PresetDocEditor({ doc, onMutate, disabled }: {
                     )}
                 </div>
             </Section>
+
+            {/* 正则脚本 —— 档内 extensions.regex_scripts + settings 放行闸。 */}
+            <PresetRegexSection apiId={apiId} presetName={presetName} doc={doc} onMutate={onMutate} disabled={disabled} />
 
             {/* 原始 JSON —— 未列出字段的透明位(只读;透传承诺可视化)。 */}
             <Section title={t('preset.ed.json')} open={openSec.json ?? false} onToggle={() => toggleSec('json')}>

@@ -52,6 +52,12 @@ const zh: Record<string, string> = {
     'preset.ed.unorderedGroup': '未进 prompt_order 的条目(不参与组装)', 'preset.ed.unordered': '未排序',
     'preset.ed.unorderedTip': '打开 = 追加进 order 并启用',
     'preset.ed.json': '原始 JSON', 'preset.ed.keepNote': '未列出的键原样透传写回,不丢字段;改动防抖自动整档落盘。',
+    'preset.ed.regex': '正则脚本', 'preset.ed.regexEmpty': '档内无正则脚本',
+    'preset.ed.regexAdd': '加一条正则脚本', 'preset.ed.findRegex': '查找 findRegex',
+    'preset.ed.replaceString': '替换 replaceString',
+    'preset.ed.flagMarkdown': '仅渲染 markdownOnly', 'preset.ed.flagPrompt': '仅提示词 promptOnly',
+    'preset.ed.flagRunOnEdit': '编辑时跑 runOnEdit',
+    'preset.ed.allowNote': '生成链放行位(settings);只有该家族的 in_use 预设才真进链',
     'panel.mvu.vars': '变量', 'panel.mvu.snapshot': 'MVU 变量快照', 'panel.mvu.table': '列表', 'panel.mvu.bridge': '总簿联动',
     'panel.mvu.empty': '暂无 MVU 状态变量', 'panel.mvu.emptyDesc': '当角色卡挂载 mvu 引擎并结算首轮后,变量快照将显示于此', 'panel.mvu.receipts': '结算回执',
     'panel.mvu.settle': '重结算', 'panel.mvu.resettle': '重建投影',
@@ -97,7 +103,7 @@ const zh: Record<string, string> = {
     /* 左树 */
     'tree.pinned': '置顶', 'tree.sessions': '会话', 'tree.stages': '舞台形态',
     'tree.pickCard': '选择卡面', 'tree.cardSessions': '角色卡与会话',
-    'tree.activePlugins': '已激活',
+    'tree.activePlugins': '已激活', 'tree.manage': '管理',
     /* 群聊(TASK-062)— 侧栏/建群模态/舞台名册 */
     'tree.newGroup': '新建群聊', 'tree.groupSessions': '群聊',
     'ov.group.title': '新建群聊', 'ov.group.name': '群名', 'ov.group.namePh': '群聊名称…',
@@ -505,6 +511,12 @@ const en: Record<string, string> = {
     'preset.ed.unorderedGroup': 'Entries not in prompt_order (not assembled)', 'preset.ed.unordered': 'unordered',
     'preset.ed.unorderedTip': 'Turn on = append to order, enabled',
     'preset.ed.json': 'Raw JSON', 'preset.ed.keepNote': 'Unlisted keys pass through unchanged; edits auto-save debounced.',
+    'preset.ed.regex': 'Regex scripts', 'preset.ed.regexEmpty': 'No regex scripts in this file',
+    'preset.ed.regexAdd': 'Add a regex script', 'preset.ed.findRegex': 'Find findRegex',
+    'preset.ed.replaceString': 'Replacement replaceString',
+    'preset.ed.flagMarkdown': 'Rendered only markdownOnly', 'preset.ed.flagPrompt': 'Prompt only promptOnly',
+    'preset.ed.flagRunOnEdit': 'Run on edit runOnEdit',
+    'preset.ed.allowNote': 'Generation-chain gate (settings); only the in-use preset of this family enters the chain',
     'panel.mvu.vars': 'Variables', 'panel.mvu.snapshot': 'MVU Variable Snapshot', 'panel.mvu.table': 'List', 'panel.mvu.bridge': 'Ledger bridge',
     'panel.mvu.empty': 'No MVU state variables yet', 'panel.mvu.emptyDesc': 'Once the card mounts the MVU engine and the first round settles, variable snapshots appear here', 'panel.mvu.receipts': 'Settlement receipts',
     'panel.mvu.settle': 'Re-settle', 'panel.mvu.resettle': 'Rebuild projection',
@@ -550,7 +562,7 @@ const en: Record<string, string> = {
     /* 左树 */
     'tree.pinned': 'Pinned', 'tree.sessions': 'Chats', 'tree.stages': 'Stage Forms',
     'tree.pickCard': 'Pick a card', 'tree.cardSessions': 'Cards & Chats',
-    'tree.activePlugins': 'Active',
+    'tree.activePlugins': 'Active', 'tree.manage': 'Manage',
     /* Group chats (TASK-062) — sidebar / create modal / stage roster */
     'tree.newGroup': 'New group', 'tree.groupSessions': 'Group chats',
     'ov.group.title': 'New group', 'ov.group.name': 'Group name', 'ov.group.namePh': 'Group name…',
