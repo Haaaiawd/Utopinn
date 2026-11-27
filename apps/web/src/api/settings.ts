@@ -16,7 +16,9 @@ export type { SettingsResponse } from '@utopinn/protocol';
 /** PATCH 白名单 —— 与服务端 PATCHABLE_SETTINGS_SECTIONS(对象段)
  *  + PATCHABLE_SETTINGS_SCALAR_KEYS(标量键)同口径(utopinn-library.js)。 */
 export interface SettingsPatch {
-    /** ST power_user 段(custom_css/custom_css_url 等用户外观键)。 */
+    /** ST power_user 段(custom_css/custom_css_url 等用户外观键)。
+     *  ui_ambience merges one level deeper server-side (NESTED_MERGE_SLOTS):
+     *  keys absent from the patch are preserved, so partial writes are safe. */
     power_user?: Record<string, unknown>;
     extension_settings?: Record<string, unknown>;
     /** ST 全局聊天背景槽 {name,url,fitting}(#bg1 同源;会话锁走 chat_metadata.custom_background)。 */

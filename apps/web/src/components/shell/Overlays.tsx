@@ -22,6 +22,10 @@ import {
     type ConnectionTestResponse,
 } from '../../api/connection';
 import { patchSettings } from '../../api/settings';
+import {
+    ambiencePinned, pinAmbience, uiAmbienceSlot, unpinAmbience,
+    type UiAmbience,
+} from '../../kernel/ambience';
 import { listBackgrounds, bgCssUrl, BUILTIN_WALLPAPERS, builtinBgCssUrl } from '../../api/backgrounds';
 import { patchChat, type ChatPatchOp } from '../../api/chats';
 import { listSecrets, putSecret, deleteSecret, type SecretEntry, type SecretsResponse } from '../../api/secrets';
@@ -1623,16 +1627,16 @@ function StAppearanceSection() {
     const cssShown = cssDraft ?? s.stCss;
     const cssDirty = cssDraft !== null && cssDraft !== s.stCss;
 
-    /* 氛围滑杆:live 写 ctx(CSS var 即时生效),防抖 450ms 落 power_user.ui_ambience。 */
-    const setAmb = (patch: Partial<typeof s.uiAmbience>) => {
-        const next = { ...s.uiAmbience, ...patch };
+    /* Ambience sliders: ctx write applies the CSS var instantly; the
+       debounced (450ms) PATCH persists the ui_ambience slot. Server-side
+       NESTED_MERGE_SLOTS deep-merges it, so keys this writer does not emit
+       survive (tex_alpha orphans); flags still ride explicitly so unpin's
+       false beats a stored true. */
+    const setAmb = (next: UiAmbience) => {
         s.setUiAmbience(next);
         if (ambTimer.current) clearTimeout(ambTimer.current);
         ambTimer.current = setTimeout(() => {
-            void patchSettings({ power_user: { ui_ambience: {
-                bg_alpha: next.bgAlpha,
-                glass_blur: next.glassBlur,
-            } } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
+            void patchSettings({ power_user: { ui_ambience: uiAmbienceSlot(next) } }).catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true));
         }, 450);
     };
 
@@ -1764,18 +1768,41 @@ function StAppearanceSection() {
                 {([
                     { k: 'bgAlpha' as const, lbl: t('st.amb.bg'), min: 0, max: 0.9, step: 0.02, fmt: (v: number) => `${Math.round(v * 100)}%` },
                     { k: 'glassBlur' as const, lbl: t('st.amb.glass'), min: 0, max: 28, step: 1, fmt: (v: number) => `${v}px` },
-                ]).map(({ k, lbl, min, max, step, fmt }) => (
-                    <div key={k} className="flex items-center gap-3 px-0.5">
-                        <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>
-                        <input
-                            type="range" min={min} max={max} step={step}
-                            value={s.uiAmbience[k]}
-                            onChange={(e) => setAmb({ [k]: Number(e.target.value) })}
-                            className="min-w-0 flex-1"
-                        />
-                        <span className="w-10 shrink-0 text-right font-mono-ui text-[11px] text-[color:var(--fg-muted)]">{fmt(s.uiAmbience[k])}</span>
-                    </div>
-                ))}
+                ]).map(({ k, lbl, min, max, step, fmt }) => {
+                    /* Dragging pins the value inline (override); the trailing
+                       slot shows the source — a "follow CSS" reset link while
+                       pinned, a quiet tag while the stylesheet owns the var. */
+                    const pinned = ambiencePinned(s.uiAmbience, k);
+                    return (
+                        <div key={k} className="flex items-center gap-3 px-0.5">
+                            <span className="w-16 shrink-0 text-[11.5px] text-[color:var(--fg-secondary)]">{lbl}</span>
+                            <input
+                                type="range" min={min} max={max} step={step}
+                                value={s.uiAmbience[k]}
+                                onChange={(e) => setAmb(pinAmbience(s.uiAmbience, k, Number(e.target.value)))}
+                                className={`min-w-0 flex-1${pinned ? '' : ' opacity-60'}`}
+                            />
+                            <span className={`w-10 shrink-0 text-right font-mono-ui text-[11px] text-[color:var(--fg-muted)]${pinned ? '' : ' opacity-60'}`}>{fmt(s.uiAmbience[k])}</span>
+                            {pinned ? (
+                                <button
+                                    type="button"
+                                    title={t('st.amb.followCssTip')}
+                                    onClick={() => setAmb(unpinAmbience(s.uiAmbience, k))}
+                                    className="w-[68px] shrink-0 text-right text-[10.5px] text-[color:var(--fg-secondary)] underline decoration-dotted underline-offset-2 hover:text-[color:var(--fg-primary)]"
+                                >
+                                    {t('st.amb.followCss')}
+                                </button>
+                            ) : (
+                                <span
+                                    title={t('st.amb.followCssTip')}
+                                    className="w-[68px] shrink-0 text-right text-[10.5px] text-[color:var(--fg-faint)]"
+                                >
+                                    {t('st.amb.followCss')}
+                                </span>
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         </div>
     );
@@ -1788,7 +1815,7 @@ function SettingsSheet() {
     if (!s.settingsOpen) return null;
     return (
         <div className="fixed inset-0 z-[80] flex items-center justify-center p-6" style={{ background: 'rgba(0,0,0,0.58)', backdropFilter: 'blur(4px)' }} onClick={s.closeSettings}>
-            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-canvas)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex h-[540px] w-full max-w-[760px] flex-row overflow-hidden rounded-2xl" style={{ background: 'var(--bg-workbench)', boxShadow: 'var(--shadow-float)' }} onClick={(e) => e.stopPropagation()}>
                 <aside className="flex w-[192px] shrink-0 flex-col border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-sidebar)' }}>
                     <div className="flex h-12 shrink-0 items-center px-4"><span className="heading-tight text-[13.5px] font-semibold text-[color:var(--fg-primary)]">{t('settings.title')}</span></div>
                     <div className="flex flex-col gap-0.5 overflow-y-auto px-2 pb-4">
@@ -1824,7 +1851,7 @@ function MobileSettingsSheet() {
     const s = useShell();
     if (!s.settingsOpen) return null;
     return (
-        <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: 'var(--bg-canvas)' }}>
+        <div className="absolute inset-0 z-[80] flex flex-col" style={{ background: 'var(--bg-workbench)' }}>
             <header
                 className="flex h-12 shrink-0 items-center justify-between border-b px-3"
                 style={{ background: 'var(--bg-sidebar)', borderColor: 'var(--border-hairline)' }}

@@ -34,8 +34,12 @@ import {
     clampFloatRect, DEFAULT_FLOAT_RECT,
     ShellProvider, useContribs, useShell,
     type ChatSettings, type FloatRect, type PresetParams, type SheetSnap, type ShellCtx,
-    type StageData, type StBackground, type UiAmbience, type VpMode,
+    type StageData, type StBackground, type VpMode,
 } from './kernel/context';
+import {
+    ambienceInlineVars, hydrateUiAmbience, UI_AMBIENCE_DEFAULTS,
+    type UiAmbience,
+} from './kernel/ambience';
 import { Kernel } from './kernel/kernel';
 import type { PanelType } from './kernel/contributions';
 import { shellFeature } from './features/shell';
@@ -295,17 +299,23 @@ function Shell() {
     const [stBg, setStBg] = useState<StBackground | null>(null);
     const [chatBgLock, setChatBgLock] = useState<string | null>(null);
     const [stCss, setStCss] = useState('');
-    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ bgAlpha: 0.62, glassBlur: 14 });
+    const [uiAmbience, setUiAmbience] = useState<UiAmbience>({ ...UI_AMBIENCE_DEFAULTS });
     /* 置顶会话清单 —— accountStorage.pinnedChats(ST 同槽:{file_name,avatar})。 */
     const [pinnedChats, setPinnedChats] = useState<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     const pinnedRef = useRef<{ file_name: string; avatar?: string; charDir?: string }[]>([]);
     pinnedRef.current = pinnedChats;
 
-    /* 氛围参数 → CSS var:全局 backdrop 浓度/毛玻璃 即时生效。 */
+    /* Ambience params → CSS vars: only OVERRIDDEN params are pinned inline
+       (inline custom properties beat every stylesheet declaration,
+       including power_user.custom_css rules). Follow-CSS params get
+       removeProperty so tokens.css / custom_css keep the cascade — see
+       kernel/ambience.ts for the three-state model. */
     useEffect(() => {
-        const r = document.documentElement;
-        r.style.setProperty('--amb-bg-alpha', String(uiAmbience.bgAlpha));
-        r.style.setProperty('--amb-glass-blur', `${uiAmbience.glassBlur}px`);
+        const r = document.documentElement.style;
+        for (const [prop, val] of Object.entries(ambienceInlineVars(uiAmbience))) {
+            if (val === null) r.removeProperty(prop);
+            else r.setProperty(prop, val);
+        }
     }, [uiAmbience]);
 
     /* 正文字号 → --chat-font-size:设置滑杆/A± 即时落到 .chat-body-text。 */
@@ -512,16 +522,11 @@ function Shell() {
             const pu = (st.power_user && typeof st.power_user === 'object' && !Array.isArray(st.power_user))
                 ? (st.power_user as Record<string, unknown>) : null;
             setStCss(str(pu?.custom_css));
-            /* power_user.ui_ambience(snake_case 落盘;camelCase 旧稿兼容读)。 */
+            /* power_user.ui_ambience —— 水合走 kernel/ambience 三态模型;
+               slot 缺席时不覆写(留旧值,与 conn 字段同策略)。 */
             const ua = pu?.ui_ambience;
             if (ua && typeof ua === 'object' && !Array.isArray(ua)) {
-                const u = ua as Record<string, unknown>;
-                const num = (v: unknown, d: number, lo: number, hi: number) =>
-                    typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
-                setUiAmbience({
-                    bgAlpha: num(u.bg_alpha ?? u.bgAlpha, 0.62, 0, 0.9),
-                    glassBlur: num(u.glass_blur ?? u.glassBlur, 14, 0, 32),
-                });
+                setUiAmbience(hydrateUiAmbience(ua));
             }
             /* accountStorage.pinnedChats —— ST 置顶会话清单槽(welcome-screen 同路径)。 */
             const acct = (st.accountStorage && typeof st.accountStorage === 'object' && !Array.isArray(st.accountStorage))
@@ -1115,7 +1120,7 @@ function Shell() {
                 <style id="utopinn-custom-css">{chatSettings.customCss}</style>
             )}
             <AmbientBackdrop />
-            <div className="relative flex h-screen flex-col overflow-hidden bg-[color:var(--bg-chrome)]">
+            <div className="relative flex h-screen flex-col overflow-hidden bg-[color:var(--bg-tray)]">
                 {isMobile ? (
                     <main className="min-h-0 flex-1">
                         <MobileFrame />
@@ -1203,7 +1208,10 @@ function AmbientBackdrop() {
                     style={{
                         backgroundImage: wall,
                         backgroundSize: 'cover',
-                        backgroundPosition: 'center',
+                        /* --amb-wall-pos lets the narrow-portrait media query
+                           lift the cover-crop anchor (landscape art centers
+                           high); defaults to center on desktop. */
+                        backgroundPosition: 'var(--amb-wall-pos, center)',
                         opacity: 'var(--amb-bg-alpha)',
                         filter: 'var(--amb-wall-filter)',
                     }}

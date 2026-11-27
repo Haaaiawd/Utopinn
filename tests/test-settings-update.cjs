@@ -16,6 +16,7 @@
  *  6. sanitizeSettingsDoc 剥键:密钥形键不落盘不进响应
  *  7. 端点契约不变:400/422 前置校验照旧,响应仍是 {settings} 全文档
  *  8. fn 抛错 → 全滚,盘上文档不动
+ *  9. NESTED_MERGE_SLOTS:ui_ambience 窄写保留未知键(tex_alpha 哨兵)
  */
 'use strict';
 
@@ -258,6 +259,40 @@ async function runMode(mode, mods) {
         const after = await repo.get('u1');
         log(`${tag} fn 抛错拒绝`, threw);
         log(`${tag} fn 抛错盘上不动`, JSON.stringify(before) === JSON.stringify(after));
+
+        // ---- 9. ui_ambience: narrow writes preserve unknown keys ----
+        // Regression for the tex_alpha wipe — the web writer emits only the
+        // keys it knows ({bg_alpha,glass_blur,*_override}) yet PATCH replaced
+        // the slot wholesale, so one slider drag silently dropped every other
+        // key (tex_alpha orphans still sit in production docs). ui_ambience
+        // now merges one level deeper via NESTED_MERGE_SLOTS.
+        await api(P, { method: 'PATCH', body: { power_user: { ui_ambience: { bg_alpha: 0.45, glass_blur: 14, tex_alpha: 0.02 } } } });
+        const ambNarrow = await api(P, {
+            method: 'PATCH',
+            body: { power_user: { ui_ambience: { bg_alpha: 0.7, glass_blur: 18, bg_alpha_override: true, glass_blur_override: true } } },
+        });
+        const uaRes = ambNarrow.body.settings.power_user.ui_ambience;
+        log(`${tag} ui_ambience 窄写保留未知键(响应+写入键胜出)`,
+            uaRes.tex_alpha === 0.02 && uaRes.bg_alpha === 0.7 && uaRes.bg_alpha_override === true,
+            JSON.stringify(uaRes));
+        const uaDisk = (await repo.get('u1')).power_user?.ui_ambience;
+        log(`${tag} ui_ambience 窄写保留未知键(盘上)`, uaDisk?.tex_alpha === 0.02);
+        // Explicit false overrides a stored true (unpin semantics); keys the
+        // writer omitted still survive.
+        const ambUnpin = await api(P, {
+            method: 'PATCH',
+            body: { power_user: { ui_ambience: { bg_alpha: 0.7, glass_blur: 18, bg_alpha_override: false, glass_blur_override: false } } },
+        });
+        const uaRes2 = ambUnpin.body.settings.power_user.ui_ambience;
+        log(`${tag} ui_ambience 显式 false 覆盖 base true`,
+            uaRes2.bg_alpha_override === false && uaRes2.glass_blur_override === false && uaRes2.tex_alpha === 0.02);
+        // world_info_settings keeps the same treatment (regression anchor for
+        // the pre-existing nested-merge slot).
+        await api(P, { method: 'PATCH', body: { world_info_settings: { world_info: { depth: 2, layer: 'base' } } } });
+        const wiNarrow = await api(P, { method: 'PATCH', body: { world_info_settings: { world_info: { depth: 4 } } } });
+        log(`${tag} world_info 嵌套槽同样保留未知键`,
+            wiNarrow.body.settings.world_info_settings.world_info.layer === 'base'
+            && wiNarrow.body.settings.world_info_settings.world_info.depth === 4);
     } finally {
         server.close();
         await getStorageEngine().close?.();

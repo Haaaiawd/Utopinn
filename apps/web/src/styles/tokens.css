@@ -138,6 +138,9 @@
        power_user.ui_ambience 服务端槽,JS 水合后写这两个 var。 */
     --amb-bg-alpha: 0.62;
     --amb-glass-blur: 14px;
+    /* Wallpaper cover anchor — portrait media query lifts it (see the
+       max-width:520px block); center is the desktop default. */
+    --amb-wall-pos: center;
     /* 氛围滤镜与暗角按主题分档:暗色压黑收对比,亮色提亮不收黑。 */
     --amb-wall-filter: blur(10px) saturate(1.15) brightness(0.9);
     --amb-vignette: radial-gradient(130% 110% at 50% 0%, transparent 55%, rgba(0,0,0,0.38) 100%);
@@ -159,11 +162,17 @@
     --surface-2: #141516;
     --surface-3: #1C1D1F;
 
-    --bg-chrome: var(--canvas-bg);
+    /* Two alpha tiers. Underlay + content surfaces (tray = the full-viewport
+       layer, canvas = work areas) keep the window values above so the
+       wallpaper stays perceptible around them. Interactive/overlay surfaces
+       (left chrome rail, drawers/settings asides, workbench panel, bottom
+       sheets) step up to 0.80 — at 0.45~0.50 the backdrop-filter blur still
+       let text and wallpaper detail ghost through legibly. */
+    --bg-chrome: rgba(8, 9, 10, 0.80);
     --bg-tray: var(--canvas-bg);
-    --bg-sidebar: var(--canvas-bg);
+    --bg-sidebar: rgba(8, 9, 10, 0.80);
     --bg-canvas: var(--surface-1);
-    --bg-workbench: var(--surface-1);
+    --bg-workbench: rgba(15, 16, 17, 0.80);
     --bg-surface: var(--surface-2);
     --bg-input: var(--surface-2);
     --bg-surface-hover: var(--surface-3);
@@ -249,11 +258,11 @@
     /* 亮色覆盖层同样要给氛围层留窗——0.78/0.82 时壁纸可见度只剩 ~14%
        (0.62 图层 alpha × (1−覆盖)),观感=无背景;降到 0.58/0.62 与暗色
        同档(~25% 可见度),文字层 surface-2/3 仍实心不影响可读性。 */
-    --bg-chrome: rgba(245, 244, 239, 0.58);
+    --bg-chrome: rgba(245, 244, 239, 0.86);
     --bg-tray: rgba(245, 244, 239, 0.58);
-    --bg-sidebar: rgba(245, 244, 239, 0.58);
+    --bg-sidebar: rgba(245, 244, 239, 0.86);
     --bg-canvas: rgba(250, 249, 245, 0.62);
-    --bg-workbench: rgba(250, 249, 245, 0.62);
+    --bg-workbench: rgba(250, 249, 245, 0.86);
     --bg-surface: #F2F0E8;
     --bg-input: #FFFFFF;
     --bg-surface-hover: #ECEAE2;
@@ -321,4 +330,29 @@
 
     --mix-row-hover: #EDECE6;
     --mix-row-sel: var(--surface-3);
+}
+
+/* =========================================================================
+   Narrow portrait (≤520px — spec.css mobile-shell breakpoint). Same alpha
+   window bleeds harder here: cover-cropping magnifies wallpaper detail and
+   narrow columns leave less opaque UI between it and the eye. Every surface
+   steps up one notch; the wallpaper cover anchor lifts to center-top where
+   landscape compositions usually carry their subject.
+   ========================================================================= */
+@media (max-width: 520px) {
+    :root {
+        --amb-wall-pos: center 25%;
+    }
+    [data-theme="dark"] {
+        --bg-chrome: rgba(8, 9, 10, 0.85);
+        --bg-sidebar: rgba(8, 9, 10, 0.85);
+        --bg-workbench: rgba(15, 16, 17, 0.85);
+        --bg-canvas: rgba(15, 16, 17, 0.62);
+    }
+    [data-theme="light"] {
+        --bg-chrome: rgba(245, 244, 239, 0.90);
+        --bg-sidebar: rgba(245, 244, 239, 0.90);
+        --bg-workbench: rgba(250, 249, 245, 0.90);
+        --bg-canvas: rgba(250, 249, 245, 0.72);
+    }
 }
