@@ -11,7 +11,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '../../i18n';
 import { ApiError } from '../../api/client';
-import { accountErrorText, getOAuthProviders, loginAccount, requestRecoveryCode, resetPasswordWithCode } from '../../api/account';
+import { accountErrorText, getOAuthProviders, getRegistrationInfo, loginAccount, registerAccount, requestRecoveryCode, resetPasswordWithCode, type RegistrationInfo } from '../../api/account';
 import { oauthProviderLinks, type OAuthProviderLink } from '../../api/oauth';
 import { LogoU } from '../LogoU';
 
@@ -29,16 +29,22 @@ const OAUTH_ERR_KEYS: Record<string, string> = {
 
 export function LoginGate() {
     const { t } = useI18n();
-    const [view, setView] = useState<'signin' | 'recover'>('signin');
+    const [view, setView] = useState<'signin' | 'recover' | 'register'>('signin');
     const [handle, setHandle] = useState('');
     const [password, setPassword] = useState('');
     const [code, setCode] = useState('');
     const [newPassword, setNewPassword] = useState('');
+    const [name, setName] = useState('');
+    const [confirm, setConfirm] = useState('');
+    const [inviteCode, setInviteCode] = useState('');
     const [codeSent, setCodeSent] = useState(false);
     const [err, setErr] = useState('');
     const [notice, setNotice] = useState('');
     const [busy, setBusy] = useState(false);
     const [oauth, setOauth] = useState<OAuthProviderLink[]>([]);
+    // null = probe unanswered/failed → no register entry (server never
+    // advertises a form it would refuse).
+    const [regInfo, setRegInfo] = useState<RegistrationInfo | null>(null);
     // Once the server reports code:'passwordless' for a handle, further
     // password submits against it are pointless — they can only burn the
     // 5/min login rate limit. Pin the handle until the field is edited.
@@ -51,6 +57,9 @@ export function LoginGate() {
         let dead = false;
         void getOAuthProviders().then(providers => {
             if (!dead) setOauth(oauthProviderLinks({ providers: providers ?? undefined }));
+        });
+        void getRegistrationInfo().then(info => {
+            if (!dead) setRegInfo(info);
         });
         return () => { dead = true; };
     }, []);
@@ -122,8 +131,36 @@ export function LoginGate() {
         }
     }
 
-    function toggleView() {
-        setView(view === 'signin' ? 'recover' : 'signin');
+    async function submitRegister(ev: FormEvent) {
+        ev.preventDefault();
+        const h = handle.trim();
+        const n = name.trim();
+        const invite = inviteCode.trim();
+        if (busy || !h || !n || !password) return;
+        // Fail fast on the fields the server would reject anyway — the same
+        // pre-checks the legacy register form runs, so a doomed submit never
+        // burns a registerLimiter slot.
+        if (password !== confirm) {
+            setErr(t('login.register.errConfirm'));
+            return;
+        }
+        if (regInfo?.requireInviteCode && !invite) {
+            setErr(t('login.err.invite_code_required'));
+            return;
+        }
+        setBusy(true);
+        setErr('');
+        try {
+            // The server signs the session in on success — same landing as login.
+            await registerAccount({ handle: h, name: n, password, ...(invite ? { inviteCode: invite } : {}) });
+            window.location.assign('/');
+        } catch (e) {
+            fail(e);
+        }
+    }
+
+    function gotoView(next: 'signin' | 'recover' | 'register') {
+        setView(next);
         setErr('');
         setNotice('');
         setCodeSent(false);
@@ -132,25 +169,38 @@ export function LoginGate() {
     }
 
     const recovering = view === 'recover';
-    const isPasswordless = !recovering && passwordlessFor !== '' && handle.trim() === passwordlessFor;
+    const registering = view === 'register';
+    const isPasswordless = view === 'signin' && passwordlessFor !== '' && handle.trim() === passwordlessFor;
     return (
         <div className="login-gate" role="dialog" aria-modal="true" aria-label={t('login.title')}>
-            <form className="login-card" onSubmit={recovering ? submitRecover : submit}>
+            <form className="login-card" onSubmit={registering ? submitRegister : recovering ? submitRecover : submit}>
                 <div className="login-card-head">
                     <LogoU size={24} />
-                    <span>{recovering ? t('login.recover.title') : t('login.title')}</span>
+                    <span>{registering ? t('login.register.title') : recovering ? t('login.recover.title') : t('login.title')}</span>
                 </div>
+                {registering && (
+                    <label className="login-field">
+                        <span>{t('login.register.name')}</span>
+                        <input
+                            autoFocus
+                            autoComplete="name"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            disabled={busy}
+                        />
+                    </label>
+                )}
                 <label className="login-field">
                     <span>{t('login.handle')}</span>
                     <input
-                        autoFocus
+                        autoFocus={!registering}
                         autoComplete="username"
                         value={handle}
                         onChange={(e) => { setHandle(e.target.value); setPasswordlessFor(''); }}
                         disabled={busy || codeSent}
                     />
                 </label>
-                {!recovering && (
+                {view === 'signin' && (
                     <label className="login-field">
                         <span>{t('login.password')}</span>
                         <input
@@ -161,6 +211,41 @@ export function LoginGate() {
                             disabled={busy}
                         />
                     </label>
+                )}
+                {registering && (
+                    <>
+                        <label className="login-field">
+                            <span>{t('login.password')}</span>
+                            <input
+                                type="password"
+                                autoComplete="new-password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                disabled={busy}
+                            />
+                        </label>
+                        <label className="login-field">
+                            <span>{t('login.register.confirm')}</span>
+                            <input
+                                type="password"
+                                autoComplete="new-password"
+                                value={confirm}
+                                onChange={(e) => setConfirm(e.target.value)}
+                                disabled={busy}
+                            />
+                        </label>
+                        {regInfo?.requireInviteCode && (
+                            <label className="login-field">
+                                <span>{t('login.register.invite')}</span>
+                                <input
+                                    autoComplete="off"
+                                    value={inviteCode}
+                                    onChange={(e) => setInviteCode(e.target.value)}
+                                    disabled={busy}
+                                />
+                            </label>
+                        )}
+                    </>
                 )}
                 {recovering && codeSent && (
                     <>
@@ -195,12 +280,20 @@ export function LoginGate() {
                 )}
                 {err && <div className="login-error" role="alert">{err}</div>}
                 {notice && <div className="login-note" role="status">{notice}</div>}
-                <button type="submit" disabled={busy || !handle.trim() || (recovering && codeSent && !code.trim())}>
+                <button
+                    type="submit"
+                    disabled={
+                        busy || !handle.trim()
+                        || (recovering && codeSent && !code.trim())
+                        || (registering && (!name.trim() || !password || !confirm))
+                    }
+                >
                     {busy ? t('login.working')
-                        : recovering ? (codeSent ? t('login.recover.submit') : t('login.recover.send'))
-                            : t('login.submit')}
+                        : registering ? t('login.register.submit')
+                            : recovering ? (codeSent ? t('login.recover.submit') : t('login.recover.send'))
+                                : t('login.submit')}
                 </button>
-                {!recovering && oauth.length > 0 && (
+                {view === 'signin' && oauth.length > 0 && (
                     <div className="login-oauth">
                         <span>{t('login.oauth')}</span>
                         <div className="login-oauth-btns">
@@ -210,8 +303,13 @@ export function LoginGate() {
                         </div>
                     </div>
                 )}
-                <button type="button" className="login-alt" onClick={toggleView} disabled={busy}>
-                    {recovering ? t('login.back') : t('login.forgot')}
+                {view === 'signin' && regInfo?.enabled && (
+                    <button type="button" className="login-alt" onClick={() => gotoView('register')} disabled={busy}>
+                        {t('login.register.link')}
+                    </button>
+                )}
+                <button type="button" className="login-alt" onClick={() => gotoView(view === 'signin' ? 'recover' : 'signin')} disabled={busy}>
+                    {view === 'signin' ? t('login.forgot') : t('login.back')}
                 </button>
             </form>
         </div>
