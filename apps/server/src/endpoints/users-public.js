@@ -9,6 +9,7 @@ import { color, Cache, getConfigValue } from '../util.js';
 import { getAdminSettings } from '../admin-settings.js';
 import { checkForNewContent, CONTENT_TYPES } from './content-manager.js';
 import { KEY_PREFIX, getUserAvatar, toKey, toAvatarKey, getPasswordHash, getPasswordSalt, getAccountVersion, getAllUserHandles, getUserDirectories, ensurePublicDirectoriesExist, createBackupArchive } from '../users.js';
+import { consumeInvite, refundInvite } from '../invites.js';
 import { consumeLanMigrationOffer } from '../lan-migration.js';
 
 const DISCREET_LOGIN = getConfigValue('enableDiscreetLogin', false, 'boolean');
@@ -343,7 +344,10 @@ router.post('/oauth/providers', parseAccountBody, async (_request, response) => 
 router.post('/registration/info', parseAccountBody, async (_request, response) => {
     try {
         const settings = await getAdminSettings();
-        return response.json({ enabled: Boolean(settings?.accountRegistration?.enabled) });
+        return response.json({
+            enabled: Boolean(settings?.accountRegistration?.enabled),
+            requireInviteCode: Boolean(settings?.accountRegistration?.enabled && settings?.accountRegistration?.requireInviteCode),
+        });
     } catch (error) {
         console.error('Registration info request failed:', error);
         return response.sendStatus(500);
@@ -383,6 +387,36 @@ router.post('/register', parseAccountBody, async (request, response) => {
             return response.sendStatus(500);
         }
 
+        // Invite gate: consume one use only after every cheaper check has
+        // passed, so a request that was going to fail anyway (missing field,
+        // taken handle) never burns a slot. consumeInvite serializes the
+        // read-check-increment-write cycle in-process, so two requests
+        // racing on the last use of a code cannot both succeed. Failed
+        // attempts stay counted in registerLimiter (consumed above) — that
+        // is the anti-enumeration control, same as failed logins.
+        const requireInvite = Boolean(settings?.accountRegistration?.requireInviteCode);
+        let consumedInviteCode = '';
+        if (requireInvite) {
+            const inviteCode = String(request.body?.inviteCode || '').trim();
+            if (!inviteCode) {
+                return response.status(400).json({ error: 'An invite code is required to register.', code: 'invite_code_required' });
+            }
+            const verdict = await consumeInvite({ code: inviteCode, handle });
+            if (!verdict.ok) {
+                const messages = {
+                    invalid_invite_code: 'Invite code is invalid.',
+                    invite_code_revoked: 'Invite code has been revoked.',
+                    invite_code_expired: 'Invite code has expired.',
+                    invite_code_exhausted: 'Invite code has reached its use limit.',
+                };
+                return response.status(403).json({
+                    error: messages[verdict.code] || messages.invalid_invite_code,
+                    code: verdict.code,
+                });
+            }
+            consumedInviteCode = inviteCode;
+        }
+
         const salt = getPasswordSalt();
         const defaultQuotaBytes = Number(settings?.storage?.defaultUserQuotaBytes);
 
@@ -398,10 +432,28 @@ router.post('/register', parseAccountBody, async (request, response) => {
             storageQuotaBytes: Number.isFinite(defaultQuotaBytes) && defaultQuotaBytes >= 0 ? Math.floor(defaultQuotaBytes) : undefined,
         };
 
-        await storage.setItem(toKey(handle), newUser);
-        await ensurePublicDirectoriesExist();
-        const directories = getUserDirectories(handle);
-        await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
+        try {
+            await storage.setItem(toKey(handle), newUser);
+            await ensurePublicDirectoriesExist();
+            const directories = getUserDirectories(handle);
+            await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
+        } catch (error) {
+            // Roll the account record back before refunding the invite: a
+            // half-provisioned account left enabled can sign in while the
+            // invite use it consumed is handed back — a free registration
+            // that bypasses the gate. Removing the record keeps
+            // "invite consumed ⇒ account usable" atomic and unblocks a
+            // retry on the same handle after a transient failure. Any
+            // directories already created stay behind orphaned; they are
+            // adopted if the handle registers again.
+            await storage.removeItem(toKey(handle))
+                .catch(rollbackError => console.error('Account rollback failed:', rollbackError));
+            if (consumedInviteCode) {
+                await refundInvite({ code: consumedInviteCode, handle })
+                    .catch(refundError => console.error('Invite refund failed:', refundError));
+            }
+            throw error;
+        }
 
         await registerLimiter.delete(ip);
         request.session.handle = newUser.handle;

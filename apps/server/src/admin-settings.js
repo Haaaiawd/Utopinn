@@ -14,6 +14,7 @@ const DEFAULT_ADMIN_SETTINGS = Object.freeze({
     },
     accountRegistration: {
         enabled: false,
+        requireInviteCode: false,
     },
     oauth: {
         github: {
@@ -134,6 +135,7 @@ export function sanitizeAdminSettings(rawSettings) {
         },
         accountRegistration: {
             enabled: Boolean(source?.accountRegistration?.enabled),
+            requireInviteCode: Boolean(source?.accountRegistration?.requireInviteCode),
         },
         oauth: {
             github: {
@@ -167,13 +169,53 @@ export async function getAdminSettings() {
     return sanitizeAdminSettings(stored);
 }
 
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Deep-merges `patch` over `base`: object sections merge key-by-key, while a
+ * scalar, array or null explicitly present in `patch` replaces the stored
+ * value wholesale. Keys absent from `patch` keep their stored value.
+ * @param {any} base Stored (already sanitized) settings
+ * @param {any} patch Incoming payload
+ * @returns {any}
+ */
+function mergeSettingsPatch(base, patch) {
+    if (patch === undefined) {
+        return base;
+    }
+    if (!isPlainObject(patch) || !isPlainObject(base)) {
+        return patch;
+    }
+    const out = { ...base };
+    for (const [key, value] of Object.entries(patch)) {
+        out[key] = mergeSettingsPatch(base[key], value);
+    }
+    return out;
+}
+
 /**
  * Saves admin settings to persistent storage.
- * @param {any} settings Raw settings
+ *
+ * The save is a PATCH over the stored document, not a wholesale replace:
+ * any field the submitting client omits inherits its stored value, while
+ * fields it does send (including explicit `false` / `''` / `[]`) always win.
+ * This distinction matters for security-gating flags: the legacy admin form
+ * (public/scripts/user.js) predates `accountRegistration.requireInviteCode`
+ * and still posts `{ accountRegistration: { enabled } }` on every save — with
+ * replace semantics each legacy save silently re-opened the invite gate.
+ * Merge keeps the posture fail-closed for every field a client does not know
+ * about, not just this one; a client that wants a flag off sends it
+ * explicitly (both shipped forms submit every field they manage).
+ * Back-compat is unchanged: nothing stored → the patch lands on defaults.
+ * @param {any} settings Raw settings patch
  * @returns {Promise<import('./types/admin-settings.js').AdminSettings>} Saved normalized settings
  */
 export async function saveAdminSettings(settings) {
-    const normalized = sanitizeAdminSettings(settings);
+    const stored = sanitizeAdminSettings(await storage.getItem(ADMIN_SETTINGS_KEY));
+    const patch = isPlainObject(settings) ? settings : {};
+    const normalized = sanitizeAdminSettings(mergeSettingsPatch(stored, patch));
     await storage.setItem(ADMIN_SETTINGS_KEY, normalized);
     return normalized;
 }
