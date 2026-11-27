@@ -43,6 +43,27 @@ export async function getMe(): Promise<CurrentUser> {
     return (await res.json()) as CurrentUser;
 }
 
+export type AuthProbe = 'authed' | 'guest' | 'unreachable';
+
+/**
+ * Pre-shell auth probe — plain fetch, deliberately NOT apiFetch: the gate
+ * runs before any app surface exists, so there is no CSRF dance to reuse and
+ * no auth-expired broadcast to trigger twice. A 200 unlocks the shell;
+ * 401/403 means accounts are on and there is no session → the standalone
+ * landing renders; anything else (server down, proxy absent, 5xx) cannot
+ * prove auth either way → fail closed, the landing renders too.
+ */
+export async function probeAuthState(): Promise<AuthProbe> {
+    try {
+        const res = await fetch('/api/users/me');
+        if (res.ok) return 'authed';
+        if (res.status === 401 || res.status === 403) return 'guest';
+        return 'unreachable';
+    } catch {
+        return 'unreachable';
+    }
+}
+
 /**
  * POST /api/users/login —— cookie-session 登录;成功后 session.handle 落在
  * 现有 cookie 上,无需换发。CSRF:登录也是 mutation,apiFetch 会先取

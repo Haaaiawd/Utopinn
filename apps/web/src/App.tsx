@@ -10,7 +10,7 @@ import {
     MOCK_VN, MOCK_WORLDBOOK,
     type GlobalLoreItem, type ModelItem, type PresetItem,
 } from './api/mock';
-import { getMe, type CurrentUser } from './api/account';
+import { getMe, probeAuthState, type CurrentUser } from './api/account';
 import { invalidateCharDocs, listCharacters, type CardItem } from './api/characters';
 import { listProfiles, type ActiveModelPointer, type ConnectionProfile } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
@@ -23,12 +23,13 @@ import { listAllChats, createChat, renameChat, deleteChat } from './api/chats';
 import { listGroupChatSummaries, deleteGroupChat } from './api/groups';
 import { RAIL_VIEWS, type ChatSummary, type ServerStatus, type ViewId } from './types';
 import { Icon } from './components/Icon';
+import { LogoU } from './components/LogoU';
 import { LeftChrome } from './components/shell/Chrome';
 import { Workbench } from './components/shell/Workbench';
 import { bumpPanelFreq } from './components/shell/panelFreq';
 import { Cmdk, SettingsModal, MobileFrame } from './components/shell/Overlays';
 import { openNewChatModal } from './components/shell/overlayBus';
-import { LoginGate } from './components/shell/LoginGate';
+import { LoginLanding } from './components/shell/LoginLanding';
 import { TooltipProvider } from './components/ui/tooltip';
 import {
     clampFloatRect, DEFAULT_FLOAT_RECT,
@@ -248,7 +249,6 @@ function Shell() {
     const [wbExpand, setWbExpand] = useState(false);
     const [launcherSearch, setLauncherSearch] = useState('');
     const [serverStatus, setServerStatus] = useState<ServerStatus>('checking');
-    const [authExpired, setAuthExpired] = useState(false);
     const [hintState, setHint] = useState<{ msg: string; err?: boolean } | null>(null);
     const hintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -641,13 +641,6 @@ function Shell() {
     }, []);
 
     useEffect(() => { void refreshCards(); }, [refreshCards]);
-    /* 登录失效广播(api/client.ts 判死:持续 401/403 且 me() 同挂才发)。
-       诚实引导去 legacy /login —— 第一方登录页另案(multi-user.md §3.3)。 */
-    useEffect(() => {
-        const onExpired = () => setAuthExpired(true);
-        window.addEventListener('utopinn:auth-expired', onExpired);
-        return () => window.removeEventListener('utopinn:auth-expired', onExpired);
-    }, []);
     useEffect(() => {
         if (serverStatus !== 'checking') return;
         let dead = false;
@@ -1167,10 +1160,6 @@ function Shell() {
             <Cmdk />
             {!isMobile && <SettingsModal />}
             {hintState && <div className={`hint-pill spec-toast${hintState.err ? ' err' : ''}`}>{hintState.msg}</div>}
-            {/* 会话死 → 第一方登录面全屏接管(POST /api/users/login,成功即
-                整页重载走新会话引导;前门未登录 GET / 仍由服务端 302 legacy
-                /login 把守)。 */}
-            {authExpired && <LoginGate />}
             {dropVeil && (
                 <div className="drop-veil">
                     <Icon name="import" size={26} />
@@ -1260,11 +1249,48 @@ function AmbientBackdrop() {
     );
 }
 
+/** Boot splash — rendered while the auth probe is in flight. The shell must
+ *  not mount until a session is proven, so this is deliberately the bare
+ *  minimum: brand mark on the ambience base color, nothing else in the DOM. */
+function AuthSplash() {
+    return (
+        <div className="auth-splash" role="status" aria-label="Utopinn">
+            <LogoU size={44} />
+        </div>
+    );
+}
+
+/**
+ * The auth boundary — decides what mounts AT ALL. A guest (401/403 from
+ * /api/users/me, or the 'utopinn:auth-expired' broadcast on a dead session
+ * mid-run) gets the standalone split-screen LoginLanding and nothing else:
+ * the shell — rail, sidebar, stage, workbench — never enters the DOM, which
+ * is what keeps card names / model ids / user data out of body.innerText
+ * for unauthenticated visitors. 'unreachable' fails closed into the same
+ * landing (the form's own error surfaces honestly if submit can't reach
+ * the server).
+ */
+function AuthGate() {
+    const [phase, setPhase] = useState<'checking' | 'authed' | 'guest'>('checking');
+    useEffect(() => {
+        let dead = false;
+        const onExpired = () => setPhase('guest');
+        window.addEventListener('utopinn:auth-expired', onExpired);
+        void probeAuthState().then((p) => {
+            if (!dead) setPhase(p === 'authed' ? 'authed' : 'guest');
+        });
+        return () => { dead = true; window.removeEventListener('utopinn:auth-expired', onExpired); };
+    }, []);
+    if (phase === 'authed') return <Shell />;
+    if (phase === 'guest') return <LoginLanding />;
+    return <AuthSplash />;
+}
+
 export default function App() {
     return (
         <I18nProvider registry={registry}>
             <TooltipProvider delayDuration={400}>
-                <Shell />
+                <AuthGate />
             </TooltipProvider>
         </I18nProvider>
     );
