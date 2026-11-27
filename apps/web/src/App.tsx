@@ -1,7 +1,7 @@
 // App shell — 薄壳:状态与服务经 ShellProvider 下发,表面全部走贡献点
 // (nav.rail / view / sidebar.tree / stage.form / panel.type / ctbar.chat /
 // renderer)。壳不认识任何具体域:加域/加板块/换舞台形态 = 一次 feature 注册。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { I18nProvider, useI18n } from './i18n';
 import {
     MOCK_CARDS, MOCK_CHATS, MOCK_GLOBAL_LORE,
@@ -338,6 +338,13 @@ function Shell() {
     }, []);
     const isMobile = vpMode === 'mobile' || (vpMode === 'auto' && narrow);
     const live = serverStatus === 'online';
+
+    /* Form factor → html[data-vp]:the CSS twin of ctx.isMobile — mob: utilities
+       and .desk-only/.mob-only presence helpers consume it.Width media queries
+       would miss ?vp=mobile forced shells; layout-effect write lands pre-paint. */
+    useLayoutEffect(() => {
+        document.documentElement.dataset.vp = isMobile ? 'mobile' : 'desktop';
+    }, [isMobile]);
 
     const railTab = (RAIL_VIEWS as readonly string[]).includes(view) ? view : 'chat';
     const chat = useMemo(() => chats.find((c) => c.id === activeChat) ?? null, [chats, activeChat]);

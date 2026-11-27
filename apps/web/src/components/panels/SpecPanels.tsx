@@ -517,11 +517,10 @@ function CardAppMount() {
 /** CardApp 宿主板块 —— CardAppFrame 原样;离线时它自己给诚实错误态。
  *  (旧 'ledger' 板块是 mock 账簿遗留,与 cardapp 同宿主 → 已并轨。) */
 export function CardAppPanel() {
-    const s = useShell();
     /* min-h 320 是桌面浮窗/右栏的保底;移动 sheet half 净高将将塞不下,
        移动档降到 0 由 iframe 自适应(openPanel 开 cardapp 已自动 full)。 */
     return (
-        <div className={s.isMobile ? 'h-full min-h-0' : 'h-full min-h-[320px]'}>
+        <div className="h-full min-h-[320px] mob:min-h-0">
             <CardAppMount />
         </div>
     );

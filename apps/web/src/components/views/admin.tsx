@@ -249,13 +249,11 @@ export function AdminTree() {
     const nav = normAdminNav(s.adminNav);
     return (
         <div className="flex h-full min-h-0 flex-col">
-            {!s.isMobile && (
-                <div className="flex h-12 shrink-0 items-center px-3">
-                    <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">
-                        {t('nav.admin')}
-                    </span>
-                </div>
-            )}
+            <div className="flex h-12 shrink-0 items-center px-3 desk-only">
+                <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">
+                    {t('nav.admin')}
+                </span>
+            </div>
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-2 pb-4">
                 {ADMIN_BUCKETS.map((bucket) => (
                     <div key={bucket.bucketKey} className="space-y-0.5">

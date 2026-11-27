@@ -166,8 +166,8 @@ function NovelBody() {
                 {tocList}
             </aside>
             {/* 移动态:叠层抽屉章目录 */}
-            {s.isMobile && tocOpen && (
-                <div className="absolute inset-0 z-30 sm:hidden">
+            {tocOpen && (
+                <div className="absolute inset-0 z-30 mob-only">
                     <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.34)' }} onClick={() => setTocOpen(false)} />
                     <aside className="pop-in absolute inset-y-0 left-0 w-56 max-w-[80%] border-r border-[color:var(--border-hairline)]" style={{ background: 'var(--bg-elevated)' }}>
                         {tocList}
@@ -176,15 +176,13 @@ function NovelBody() {
             )}
             <div className="flex min-w-0 flex-1 flex-col">
                 {/* 移动端目录入口条 */}
-                {s.isMobile && (
-                    <button
-                        className="flex h-9 shrink-0 items-center gap-2 border-b border-[color:var(--border-hairline)] px-4 text-[12px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-surface)]"
-                        onClick={() => setTocOpen(true)}
-                    >
-                        <Icon name="listNumbers" size={15} />
-                        <span className="truncate">{toc.chapters.find((c) => c.id === activeCh)?.title ?? t('novel.toc')}</span>
-                    </button>
-                )}
+                <button
+                    className="flex h-9 shrink-0 items-center gap-2 border-b border-[color:var(--border-hairline)] px-4 text-[12px] text-[color:var(--fg-secondary)] transition-colors hover:bg-[color:var(--bg-surface)] mob-only"
+                    onClick={() => setTocOpen(true)}
+                >
+                    <Icon name="listNumbers" size={15} />
+                    <span className="truncate">{toc.chapters.find((c) => c.id === activeCh)?.title ?? t('novel.toc')}</span>
+                </button>
                 <div ref={scrollRef} onScroll={onScroll} className="scroll-fade-mask min-h-0 flex-1 select-text overflow-y-auto px-5 py-6 sm:px-10">
                     <div className="mx-auto max-w-[640px] space-y-8 pb-8">
                         {eng.loadErr && (
