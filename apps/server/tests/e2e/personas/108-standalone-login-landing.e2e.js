@@ -26,11 +26,10 @@ import { test, expect } from '@playwright/test';
 import { createHash, scryptSync } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
-import { startServer, tearDownServer } from '../_lib/server.js';
+import { startServer, tearDownServer, SCRATCH_ROOT } from '../_lib/server.js';
 import { grantAdminAccess, E2E_ADMIN_HANDLE, E2E_ADMIN_PASSWORD } from '../_lib/accounts.js';
 
 const REPO_ROOT = resolve(import.meta.dirname, '../../..');
-const SCRATCH_ROOT = resolve(REPO_ROOT, 'tests/.e2e-scratch');
 const WEB_INDEX = resolve(REPO_ROOT, '../web/dist/index.html');
 const MOCK_TS = resolve(REPO_ROOT, '../web/src/api/mock.ts');
 const SHOTS = resolve(SCRATCH_ROOT, 'personas-login-landing-shots');
@@ -92,16 +91,19 @@ function collectDataRootSecrets(dataRoot) {
 /**
  * The offline-mock strings — the exact payload that leaked in the original
  * bug. Pulled from mock.ts at spec time so the assertion tracks the fixture.
- * Keep only literals that read as user content: CJK text, or ids/paths that
- * carry a digit (model ids like gemini-3.8-flash, preset files like
- * Meowssiah-2.1.7.json, ctx limits like 200k). Structural tokens
- * ('demo-card', 'ungrouped', 'pb-1') can't false-positive against landing
- * copy anyway, but excluding them keeps the failure message readable.
+ * Keep only literals that read as user content: CJK text (two characters is
+ * enough — card and user names like 归墟 / 旅人 / 林砚 are exactly that
+ * short), or ids/paths/timestamps carrying a digit (model ids like
+ * gemini-3.8-flash, preset files like Meowssiah-2.1.7.json, ctx limits
+ * like 200k). Single-character tokens ('a', '1', '的') are the real noise
+ * floor; pure-structural tokens ('demo-card', 'ungrouped') can't
+ * false-positive against landing copy anyway, but excluding them keeps the
+ * failure message readable.
  */
 function collectMockSecrets() {
     const src = readFileSync(MOCK_TS, 'utf8');
     const out = new Set();
-    for (const m of src.matchAll(/'([^'\\]{4,})'/g)) {
+    for (const m of src.matchAll(/'([^'\\]{2,})'/g)) {
         const s = m[1];
         if (/[一-鿿]/.test(s) || /\d/.test(s)) out.add(s);
     }
@@ -296,5 +298,54 @@ test.describe('#108 — standalone login landing', () => {
         expect(btn.y + btn.height).toBeLessThan(844);
         await assertCleanGuestDom(mPage);
         await mobile.close();
+    });
+
+    test('cramped viewport: an open keyboard cannot push the form away', async ({ browser }) => {
+        // Landscape phone. Once the virtual keyboard takes over, a browser
+        // honoring interactive-widget=resizes-content shrinks the LAYOUT
+        // viewport — emulated here by collapsing the height to ~140px, the
+        // review's "<150px left" scenario. The brand field must collapse so
+        // the form's own scroller keeps the submit button reachable.
+        const landscape = await browser.newContext({
+            viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true,
+        });
+        const lPage = await landscape.newPage();
+        await lPage.goto(server.baseURL + '/login');
+        const submit = lPage.locator('form.login-card button[type="submit"]');
+        await expect(submit).toBeVisible();
+        await lPage.screenshot({ path: resolve(SHOTS, 'landscape-844x390.png') });
+
+        await lPage.setViewportSize({ width: 844, height: 140 });
+        await expect(lPage.locator('.login-brand')).toBeHidden();
+        await lPage.fill('input[autocomplete="username"]', E2E_ADMIN_HANDLE);
+        await lPage.fill('input[autocomplete="current-password"]', 'definitely-not-the-password');
+        await submit.scrollIntoViewIfNeeded();
+        await expect(submit).toBeInViewport();
+        await lPage.screenshot({ path: resolve(SHOTS, 'landscape-keyboard-844x140.png') });
+        // Reachable = clickable: the wrong-password error proves the submit
+        // actually dispatched from inside the squashed viewport.
+        await submit.click();
+        await expect(lPage.locator('.login-error')).toBeVisible({ timeout: 10_000 });
+        await assertCleanGuestDom(lPage);
+        await landscape.close();
+    });
+
+    test('oauth return: a stashed deep link is restored on the authed boot', async ({ page }) => {
+        // The OAuth round trip itself needs a live provider, so this drives
+        // the two ends the SPA owns: the stash the OAuth button writes, and
+        // the AuthGate consume after the callback's '/' landing.
+        await page.goto(server.baseURL + '/hub');
+        await expect(page.locator('.login-landing')).toBeVisible();
+        await page.evaluate(() => sessionStorage.setItem('utopinn.oauthReturnTo', '/studio'));
+        await page.fill('input[autocomplete="username"]', E2E_ADMIN_HANDLE);
+        await page.fill('input[autocomplete="current-password"]', E2E_ADMIN_PASSWORD);
+        await page.locator('form.login-card button[type="submit"]').click();
+        // LoginGate assigns '/hub' (the arrival URL); the authed boot then
+        // consumes the stash and re-targets — exactly what the real OAuth
+        // callback's redirect-to-'/' produces.
+        await page.waitForURL((u) => u.pathname === '/studio', { timeout: 20_000 });
+        await expect(page.locator('.login-landing')).toHaveCount(0);
+        await expect(page.locator('.workspace-inset')).toBeVisible({ timeout: 30_000 });
+        expect(await page.evaluate(() => sessionStorage.getItem('utopinn.oauthReturnTo'))).toBeNull();
     });
 });

@@ -16,6 +16,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '../../i18n';
 import { ApiError } from '../../api/client';
+import { stashOAuthReturnTo } from '../../lib/postLoginTarget';
 import { accountErrorText, getOAuthProviders, getRegistrationInfo, loginAccount, registerAccount, requestRecoveryCode, resetPasswordWithCode, type RegistrationInfo } from '../../api/account';
 import { oauthProviderLinks, type OAuthProviderLink } from '../../api/oauth';
 import { LogoU } from '../LogoU';
@@ -309,7 +310,11 @@ export function LoginGate({ postLoginUrl = '/' }: { postLoginUrl?: string }) {
                         <span>{t('login.oauth')}</span>
                         <div className="login-oauth-btns">
                             {oauth.map(p => (
-                                <a key={p.id} className="login-oauth-btn" href={p.href}>{t(`login.oauth.${p.id}`)}</a>
+                                // The OAuth hop leaves the app and the callback
+                                // lands on '/'; the deep link rides sessionStorage
+                                // (stashOAuthReturnTo) so AuthGate can restore it.
+                                <a key={p.id} className="login-oauth-btn" href={p.href}
+                                    onClick={() => stashOAuthReturnTo(postLoginUrl)}>{t(`login.oauth.${p.id}`)}</a>
                             ))}
                         </div>
                     </div>
