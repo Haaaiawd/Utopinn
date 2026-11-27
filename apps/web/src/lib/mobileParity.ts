@@ -3,10 +3,11 @@
  *
  * Every form-factor decision point in src/ (any `isMobile` read that picks
  * a branch: && / || / ternary / if / negation) must be declared here, keyed
- * by file + a substring that appears on the decision line. The contract
- * test (tests/mobile-parity.test.mjs) scans the source and fails when:
- *   - a flagged decision line matches no entry   → new silent asymmetry
- *   - an entry's sites no longer exist in source → stale declaration
+ * by file + a substring that spans the flag token on the decision line.
+ * The contract test (tests/mobile-parity.test.mjs) scans the source and
+ * fails when:
+ *   - a flagged decision read is covered by no entry → new silent asymmetry
+ *   - an entry's sites no longer pin a flag read   → stale declaration
  *
  * Each entry states what mobile gets instead (`mobile`) and why the split
  * is intentional (`why`) — so "feature missing on mobile" is always a
@@ -28,7 +29,9 @@ export interface ParityFork {
     id: string;
     /** File relative to apps/web/src. */
     file: string;
-    /** Substrings — each must appear on a flagged decision line in `file`. */
+    /** Substrings — each must contain the flag token and cover a flagged
+     *  read on its line. Include the fork's action/context too: a bare
+     *  `if (s.isMobile)` claims every identical same-line condition. */
     sites: string[];
     kind: ForkKind;
     /** What mobile users get instead (the parity answer). */
@@ -65,7 +68,7 @@ export const MOBILE_PARITY: readonly ParityFork[] = [
     {
         id: 'panel.open-sheet-snap',
         file: 'App.tsx',
-        sites: ["if (isMobile) setSheetSnap('half')", 'setSheetSnap(registry.find'],
+        sites: ["if (isMobile) setSheetSnap('half')", 'if (isMobile) setSheetSnap(registry.find'],
         kind: 'behavior',
         mobile: 'openPanel raises the bottom sheet (half; cardapp goes full)',
         why: 'Same panels, different host: sheet snap replaces "open workbench column". Content identical.',
@@ -169,7 +172,7 @@ export const MOBILE_PARITY: readonly ParityFork[] = [
     {
         id: 'stage.composer-pop-anchor',
         file: 'components/stage/StageFrame.tsx',
-        sites: ['s.isMobile ? 122 : 126'],
+        sites: ['s.isMobile ? 122 : 126', 's.isMobile ? 88 : 92'],
         kind: 'behavior',
         mobile: 'Composer popovers anchor 4px lower (88/122 vs 92/126 base offsets)',
         why: 'Density tuning of the same popovers — expressed in JS because the value also varies with QR space.',
@@ -177,7 +180,7 @@ export const MOBILE_PARITY: readonly ParityFork[] = [
     {
         id: 'stage.token-fmt',
         file: 'components/stage/StageFrame.tsx',
-        sites: ['lastTokens.toLocaleString'],
+        sites: ["s.isMobile ? `${(lastTokens / 1000).toFixed(1)}k` : lastTokens.toLocaleString()"],
         kind: 'behavior',
         mobile: 'Compact k-format ("12.3k") for the context meter',
         why: 'Same information, denser rendering for a narrower chip.',
