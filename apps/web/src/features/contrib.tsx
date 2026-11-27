@@ -42,8 +42,12 @@ export interface RegisteredPanel {
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined);
 
+/* Server-declared categories fill locally-unspecified ones only; 'pinned'
+ * is included so a server mirror can mark a not-yet-categorized local
+ * panel, while 'hidden' stays excluded on purpose (remote decls must not
+ * be able to pull a local panel out of the launcher). */
 const asCategory = (v: unknown): PanelTypeContribution['category'] | undefined =>
-    v === 'system' || v === 'cardapp' || v === 'suggested' ? v : undefined;
+    v === 'system' || v === 'cardapp' || v === 'pinned' || v === 'suggested' ? v : undefined;
 
 /** 服务端 icon 是任意串 —— 不在本地词表兜 'puzzle'(未知名会让 <Icon> 崩)。 */
 const asIcon = (v: unknown, fallback: IconName): IconName =>

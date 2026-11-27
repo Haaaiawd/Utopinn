@@ -36,11 +36,16 @@ export interface PanelTypeContribution {
      *  category 决定 launcher 分组 —— 规范稿 PANEL_CATALOG 三桶:
      *  'system' 系统面板格 / 'cardapp' 卡提供面板行(iframe 宿主) /
      *  'suggested' 建议组(缺省按 system 收)。
+     *  'pinned' = first-party core panels promoted to a permanent
+     *  recommendation section (between cardapp and system). Kept
+     *  distinct from 'cardapp': pinned means "core product feature",
+     *  not "provided by the current card", so it is never gated by
+     *  the card's card_app manifest.
      *  'hidden' = 已注册可开 tab、但不进 launcher 任何桶
      *  (瞬态承载型板块,如 messageframe 嵌帧 dock 落点)。 */
     desc?: string;
     badge?: string;
-    category?: 'system' | 'cardapp' | 'suggested' | 'hidden';
+    category?: 'system' | 'cardapp' | 'pinned' | 'suggested' | 'hidden';
 }
 
 /** 左树面板贡献:归属 rail 域,壳按当前 railTab 渲染全部匹配贡献
