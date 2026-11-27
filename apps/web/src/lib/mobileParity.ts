@@ -138,6 +138,14 @@ export const MOBILE_PARITY: readonly ParityFork[] = [
         why: 'Navigation sequencing, not a feature difference — the destination is identical.',
     },
     {
+        id: 'panel.auto.open-studio-collapse-sheet',
+        file: 'components/panels/AutomationPanel.tsx',
+        sites: ["if (s.isMobile) s.setSheetSnap('closed');"],
+        kind: 'behavior',
+        mobile: '"Open in Studio" collapses the bottom sheet first, then deep-navs to studio → quickreplies',
+        why: 'The sheet only exists inside MobileFrame — desktop has no tray over the stage, so there is nothing to collapse. Same destination on both form factors; the extra step is sequencing, same as panels.studio-nav-close-sheet.',
+    },
+    {
         id: 'theater.portrait-hint',
         file: 'features/stagepack.tsx',
         sites: ['!immersive || !s.isMobile'],
