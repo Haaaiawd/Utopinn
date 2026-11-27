@@ -6361,6 +6361,92 @@
       "created_at": "2026-11-23T07:47:42.598Z",
       "updated_at": "2026-11-23T08:27:34.643Z",
       "completed_at": "2026-11-23T07:56:44.647Z"
+    },
+    {
+      "id": "TASK-075",
+      "title": "[P0] 未登录重定向环修复 + 注册种子卡收尾(公开发布阻塞)",
+      "outcome": "SPA 模式下匿名 / 与 /login 均直达登录表单(零重定向);accountRegistration.enabled 时 singleUserLogin 不再把游客自动登入免密 bootstrap default-user;registration-off 的单用户免密自动登录保留;<dataRoot>/_seed 池在注册时物化进新账号,seed-accounts.js 支持存量回填。",
+      "acceptance": [
+        {
+          "criterion": "空 dataRoot + enableUserAccounts + registration.enabled 下,匿名 GET / 与 GET /login 均 200 SPA(非 302),Playwright 桌面 1440x900 与移动 390x844 均渲染 LoginLanding 表单,无 @default-user 泄漏",
+          "verify_by": "node --test apps/server/tests/login-spa-fallback.test.mjs 新增两条用例;curl -D- 实测;Playwright 截图 /tmp/verify-shots-regon/",
+          "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+        },
+        {
+          "criterion": "单用户免密自动登录在 registration off 时不回归;/login 302->/ 且 session cookie 对 /api/users/me 生效",
+          "verify_by": "multi-account-isolation.test.mjs + login-spa-fallback 保留用例",
+          "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+        },
+        {
+          "criterion": "邀请码注册端到端:有效邀请码 200 注册,坏码 403,种子卡物化进新账号 card-apps/",
+          "verify_by": "发布姿态 scratch(register.enabled+requireInviteCode+预置 invite+_seed 卡)实测",
+          "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+        }
+      ],
+      "done_when": [],
+      "kind": "delivery",
+      "boundaries": [
+        "不改前端(AuthGate/LoginLanding 是设计好的边界,服务端不再替它弹)",
+        "不删 singleUserLogin——上游自部署单人免密特性在 registration-off 下完整保留",
+        "legacy(LUKER_SERVE_LEGACY=1)与 kernel 模式保留 / -> /login 302:其登录页是独立页,SPA 不挂载",
+        "passwordless 账号仍不可走密码登录(users-public.js:743 既有契约不动)"
+      ],
+      "guardrails": [
+        "注册开放实例=多用户意图:唯一免密账号是 bootstrap 产物,auto-entering 等于把该账号数据交给所有访客",
+        "getAdminSettings 走 storage 读,勿在请求热路径引入额外 IO 之外的新依赖"
+      ],
+      "depends_on": [],
+      "reads": [
+        "apps/server/src/users.js",
+        "apps/server/src/server-main.js",
+        "apps/server/src/admin-settings.js",
+        "apps/server/tests/login-spa-fallback.test.mjs",
+        "apps/server/tests/multi-account-isolation.test.mjs",
+        "apps/web/src/App.tsx"
+      ],
+      "touches": [],
+      "locks": [],
+      "implements": ".skeinn/design/multi-user.md",
+      "design_exemption": "",
+      "capability_hooks": [],
+      "capability_exemption": "",
+      "integrity_version": 1,
+      "covers": [],
+      "status": "done",
+      "progress": {
+        "completed": [],
+        "current": "complete",
+        "next": ""
+      },
+      "evidence": [
+        "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile.",
+        {
+          "type": "acceptance_results",
+          "results": [
+            {
+              "criterion": "空 dataRoot + enableUserAccounts + registration.enabled 下,匿名 GET / 与 GET /login 均 200 SPA(非 302),Playwright 桌面 1440x900 与移动 390x844 均渲染 LoginLanding 表单,无 @default-user 泄漏",
+              "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+            },
+            {
+              "criterion": "单用户免密自动登录在 registration off 时不回归;/login 302->/ 且 session cookie 对 /api/users/me 生效",
+              "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+            },
+            {
+              "criterion": "邀请码注册端到端:有效邀请码 200 注册,坏码 403,种子卡物化进新账号 card-apps/",
+              "evidence": "commits fda11dc+0f73219 on feat/server-seed-card-on-register. login-spa-fallback.test.mjs 12/12 (node --test): anon / 200 SPA not 302; registration-enabled blocks bootstrap auto-login; auto-login preserved when registration off (asserted via /api/users/me oracle). multi-account-isolation 33/33, jest users/invites/basicAuth 45/45, jest seed-content 12/12. Live release posture: anon /+/login 200 SPA, /api/users/me 403, register w/ invite 200 + card materializes in card-apps/, bad invite 403, form login lands shell. Playwright shots /tmp/verify-shots-regon/ desktop+mobile."
+            }
+          ],
+          "at": "2026-11-27T12:02:58.674Z"
+        }
+      ],
+      "created_at": "2026-11-27T12:02:24.535Z",
+      "updated_at": "2026-11-27T12:02:58.717Z",
+      "actual_touches": [
+        "apps/server/src/server-main.js",
+        "apps/server/src/users.js",
+        "apps/server/tests/login-spa-fallback.test.mjs"
+      ],
+      "completed_at": "2026-11-27T12:02:58.717Z"
     }
   ],
   "milestones": [
