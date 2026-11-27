@@ -7,7 +7,7 @@
 //          危险动作(停用/降权/删除)全部二次确认;不做「以 handle 身份游玩」
 //       3) 服务端配置(Config):访问控制表单 ↔ config.yaml 原文同源双写 + 安全闸回显 +
 //          保存二次确认 + admin settings(默认配额/注册开关/折叠 OAuth)
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useShell } from '../../kernel/context';
 import { useI18n } from '../../i18n';
@@ -17,6 +17,7 @@ import { WiredBadge } from './studio';
 import { pluginLabel } from './plugins';
 import {
     ConfigSaveError,
+    createAdminInvite,
     createUserHandle,
     deleteUserHandle,
     demoteUserHandle,
@@ -29,12 +30,14 @@ import {
     getStorageHealth,
     getStorageStatus,
     isAdminForbidden,
+    listAdminInvites,
     listAdminUsers,
     listLukerServerPlugins,
     listSharedSecrets,
     probeUpstreamConnection,
     promoteSharedSecret,
     promoteUserHandle,
+    revokeAdminInvite,
     rotateSharedSecret,
     saveAdminSettings,
     saveServerConfig,
@@ -43,6 +46,7 @@ import {
     slugifyHandle,
     writeSharedSecret,
     deleteSharedSecret,
+    type AdminInvite,
     type AdminOverview,
     type AdminSettings,
     type AdminUserItem,
@@ -68,6 +72,7 @@ import {
     setYamlTopBool,
     type ConfigAccessFlags,
 } from '../../lib/yamlConfig';
+import { parseInviteCreateInput } from '../../lib/inviteForm';
 
 /* ------------------------------------------------------------------ */
 /* 分区定义(刀1 三区)                                                   */
@@ -1454,6 +1459,281 @@ const ACCESS_TOGGLES: { key: keyof ConfigAccessFlags; labelKey: string; descKey:
     { key: 'enableServerPlugins', labelKey: 'admin.cfg.key.enableServerPlugins', descKey: 'admin.cfg.key.enableServerPluginsDesc' },
 ];
 
+/* ------------------------------------------------------------------ */
+/* 注册邀请码(admin settings 区内折叠块;发放/限次/吊销)                   */
+/* ------------------------------------------------------------------ */
+
+type InviteStatus = 'active' | 'exhausted' | 'expired' | 'revoked';
+
+function inviteStatus(en: AdminInvite, now: number): InviteStatus {
+    if (en.revoked) return 'revoked';
+    if (en.expiresAt !== null && now > en.expiresAt) return 'expired';
+    if (en.maxUses > 0 && en.usedCount >= en.maxUses) return 'exhausted';
+    return 'active';
+}
+
+const INVITE_STATUS_COLOR: Record<InviteStatus, string> = {
+    active: 'var(--status-ok)',
+    exhausted: 'var(--status-warn)',
+    expired: 'var(--status-warn)',
+    revoked: 'var(--status-danger)',
+};
+
+/** navigator.clipboard is only exposed on secure contexts — an admin panel
+ *  opened over plain HTTP (LAN box) has none. Honest copy: true on write,
+ *  false when the API is absent or the write is denied. */
+async function writeClipboard(text: string): Promise<boolean> {
+    try {
+        if (!navigator.clipboard?.writeText) return false;
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function selectNodeText(el: HTMLElement | null | undefined) {
+    if (!el) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    sel.addRange(range);
+}
+
+function InvitesBlock({ reloadSignal = 0 }: { reloadSignal?: number }) {
+    const { t } = useI18n();
+    const s = useShell();
+    const remote = useRemote('admin:invites', () => guardForbidden(listAdminInvites));
+
+    const [maxUsesInput, setMaxUsesInput] = useState('');
+    const [expiresDaysInput, setExpiresDaysInput] = useState('');
+    const [noteInput, setNoteInput] = useState('');
+    const [formErr, setFormErr] = useState<{ uses: boolean; days: boolean } | null>(null);
+    const [createBusy, setCreateBusy] = useState(false);
+    const [confirmRevoke, setConfirmRevoke] = useState<AdminInvite | null>(null);
+    const [rowBusy, setRowBusy] = useState(false);
+    const [createdCode, setCreatedCode] = useState('');
+    const codeEls = useRef(new Map<string, HTMLElement>());
+    const createdCodeRef = useRef<HTMLInputElement | null>(null);
+
+    // The Server Config reload also owns this list's freshness — the parent
+    // bumps reloadSignal on every refetch so usage counts never go stale.
+    useEffect(() => {
+        if (reloadSignal > 0) remote.reload();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [reloadSignal]);
+
+    /** Copy with an honest fallback: no clipboard API / denied write → select
+     *  the on-screen code so a manual Ctrl+C still works, and say so. */
+    const copyCode = (code: string) => {
+        void writeClipboard(code).then((ok) => {
+            if (ok) {
+                s.hint(t('admin.inv.copied'));
+            } else {
+                selectNodeText(codeEls.current.get(code));
+                s.hint(t('admin.inv.copyManual'), true);
+            }
+        });
+    };
+
+    const doCreate = () => {
+        if (createBusy) return;
+        const parsed = parseInviteCreateInput(maxUsesInput, expiresDaysInput);
+        if (!parsed.ok) {
+            // Bad input must never silently mint an unlimited code.
+            setFormErr({ uses: parsed.badMaxUses, days: parsed.badDays });
+            return;
+        }
+        setFormErr(null);
+        setCreateBusy(true);
+        void createAdminInvite({ maxUses: parsed.maxUses, expiresAt: parsed.expiresAt, note: noteInput.trim() || undefined })
+            .then((r) => {
+                setMaxUsesInput('');
+                setExpiresDaysInput('');
+                setNoteInput('');
+                // Keep the fresh code on screen — if the clipboard write
+                // fails the admin still has it, and can copy again here.
+                setCreatedCode(r.item.code);
+                void writeClipboard(r.item.code).then((ok) => {
+                    s.hint(ok ? t('admin.inv.created') : t('admin.inv.copyManual'), !ok);
+                });
+                remote.reload();
+            })
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
+            .finally(() => setCreateBusy(false));
+    };
+
+    const doRevoke = () => {
+        if (!confirmRevoke || rowBusy) return;
+        setRowBusy(true);
+        void revokeAdminInvite(confirmRevoke.code)
+            .then(() => {
+                setConfirmRevoke(null);
+                s.hint(t('admin.inv.revoked'));
+                remote.reload();
+            })
+            .catch((e) => s.hint(`${t('admin.users.opFailed')}: ${accountErrorText(e, t)}`, true))
+            .finally(() => setRowBusy(false));
+    };
+
+    const items = remote.data && !remote.data.forbidden ? remote.data.value.items : [];
+    const now = Date.now();
+
+    return (
+        <div className="space-y-3 border-t border-[color:var(--border-hairline)] p-4">
+            {/* 创建表单 */}
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[110px_110px_1fr_auto]">
+                <input
+                    value={maxUsesInput}
+                    onChange={(e) => { setMaxUsesInput(e.target.value); setFormErr(null); }}
+                    placeholder={t('admin.inv.maxUsesPh')}
+                    inputMode="numeric"
+                    aria-invalid={formErr?.uses || undefined}
+                    className={`${inputCls} ${mono}`}
+                    style={{ background: 'var(--bg-canvas)', borderColor: formErr?.uses ? 'var(--status-danger)' : 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <input
+                    value={expiresDaysInput}
+                    onChange={(e) => { setExpiresDaysInput(e.target.value); setFormErr(null); }}
+                    placeholder={t('admin.inv.expiresDaysPh')}
+                    inputMode="numeric"
+                    aria-invalid={formErr?.days || undefined}
+                    className={`${inputCls} ${mono}`}
+                    style={{ background: 'var(--bg-canvas)', borderColor: formErr?.days ? 'var(--status-danger)' : 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <input
+                    value={noteInput}
+                    onChange={(e) => setNoteInput(e.target.value)}
+                    placeholder={t('admin.inv.notePh')}
+                    className={inputCls}
+                    style={{ background: 'var(--bg-canvas)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                />
+                <button
+                    className="h-8 rounded-lg px-3 text-[12px] font-medium"
+                    style={{ background: 'var(--primary-bg)', color: 'var(--primary-fg)', opacity: createBusy ? 0.5 : 1 }}
+                    disabled={createBusy}
+                    onClick={doCreate}
+                >
+                    {t('admin.inv.create')}
+                </button>
+            </div>
+            {formErr ? (
+                <div className="text-[11px]" role="alert" style={{ color: 'var(--status-danger)' }}>{t('admin.inv.invalidInputs')}</div>
+            ) : (
+                <div className="text-[11px] text-[color:var(--fg-faint)]">{t('admin.inv.createHint')}</div>
+            )}
+
+            {/* 新码留痕行：生成后剪贴板写失败也有得复制 */}
+            {createdCode && (
+                <div className="inset-row" style={{ background: 'var(--bg-canvas)' }}>
+                    <span className="text-[11px] text-[color:var(--fg-muted)]">{t('admin.inv.newCode')}</span>
+                    <input
+                        ref={createdCodeRef}
+                        readOnly
+                        value={createdCode}
+                        onFocus={(e) => e.target.select()}
+                        className={`h-7 min-w-0 flex-1 rounded-md border px-2 text-[12px] outline-none ${mono}`}
+                        style={{ background: 'var(--bg-surface)', borderColor: 'var(--border-hairline)', color: 'var(--fg-primary)' }}
+                    />
+                    <button
+                        className="ghost-btn h-6 w-6 shrink-0"
+                        title={t('admin.inv.copy')}
+                        onClick={() => {
+                            void writeClipboard(createdCode).then((ok) => {
+                                if (ok) s.hint(t('admin.inv.copied'));
+                                else { createdCodeRef.current?.select(); s.hint(t('admin.inv.copyManual'), true); }
+                            });
+                        }}
+                    >
+                        <Icon name="copy" size={12} />
+                    </button>
+                    <button className="ghost-btn h-6 w-6 shrink-0" title={t('admin.common.close')} onClick={() => setCreatedCode('')}>
+                        <Icon name="x" size={12} />
+                    </button>
+                </div>
+            )}
+
+            {/* 列表 */}
+            <div className="inset-group">
+                {remote.error ? (
+                    <div className="inset-row flex-wrap gap-y-1.5">
+                        <span className={`min-w-0 flex-1 break-all text-[11.5px] ${mono}`} style={{ color: 'var(--status-danger)' }}>
+                            {remote.error}
+                        </span>
+                        <button className="ghost-btn h-7 px-2 text-[11px]" onClick={remote.reload}>
+                            {t('panel.retry')}
+                        </button>
+                    </div>
+                ) : remote.data?.forbidden ? (
+                    <div className="inset-row text-[12px] text-[color:var(--fg-faint)]">{t('admin.forbidden.title')}</div>
+                ) : items.length === 0 ? (
+                    <div className="inset-row text-[12px] text-[color:var(--fg-faint)]">
+                        {remote.loading ? '…' : t('admin.inv.empty')}
+                    </div>
+                ) : (
+                    items.map((en) => {
+                        const status = inviteStatus(en, now);
+                        return (
+                            <div key={en.code} className="inset-row flex-wrap gap-y-1.5">
+                                <div className="min-w-0 flex-1 basis-56">
+                                    <div className="flex items-center gap-2">
+                                        <span
+                                            ref={(el) => { if (el) codeEls.current.set(en.code, el); else codeEls.current.delete(en.code); }}
+                                            className={`select-all truncate text-[12.5px] font-medium text-[color:var(--fg-primary)] ${mono}`}
+                                        >{en.code}</span>
+                                        <button
+                                            className="ghost-btn h-6 w-6 shrink-0"
+                                            title={t('admin.inv.copy')}
+                                            onClick={() => copyCode(en.code)}
+                                        >
+                                            <Icon name="copy" size={12} />
+                                        </button>
+                                        <span className="inline-flex items-center gap-1 text-[10.5px]" style={{ color: INVITE_STATUS_COLOR[status] }}>
+                                            <StatusDot color={INVITE_STATUS_COLOR[status]} />
+                                            {t(`admin.inv.status.${status}`)}
+                                        </span>
+                                    </div>
+                                    <div className={`mt-0.5 truncate text-[10.5px] text-[color:var(--fg-faint)] ${mono}`}>
+                                        {en.usedCount}/{en.maxUses || '∞'}
+                                        {' · '}{new Date(en.created).toLocaleDateString()}
+                                        {en.expiresAt ? ` · ${t('admin.inv.until')} ${new Date(en.expiresAt).toLocaleDateString()}` : ''}
+                                        {en.note ? ` · ${en.note}` : ''}
+                                    </div>
+                                </div>
+                                {!en.revoked && (
+                                    <button
+                                        className="ghost-btn h-7 px-2 text-[11px]"
+                                        style={{ color: 'var(--status-danger)' }}
+                                        onClick={() => setConfirmRevoke(en)}
+                                    >
+                                        {t('admin.inv.revoke')}
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })
+                )}
+            </div>
+
+            {confirmRevoke && (
+                <ConfirmDialog
+                    title={t('admin.inv.revokeConfirmTitle')}
+                    desc={t('admin.inv.revokeConfirmDesc')}
+                    danger
+                    confirmLabel={t('admin.inv.revoke')}
+                    busy={rowBusy}
+                    onConfirm={doRevoke}
+                    onCancel={() => setConfirmRevoke(null)}
+                >
+                    <div className={`text-[12.5px] text-[color:var(--fg-primary)] ${mono}`}>{confirmRevoke.code}</div>
+                </ConfirmDialog>
+            )}
+        </div>
+    );
+}
+
 function ConfigSection() {
     const { t } = useI18n();
     const s = useShell();
@@ -1476,7 +1756,17 @@ function ConfigSection() {
     const [settingsDraft, setSettingsDraft] = useState<AdminSettings | null>(null);
     const [quotaMbInput, setQuotaMbInput] = useState('');
     const [oauthOpen, setOauthOpen] = useState(false);
+    const [invitesOpen, setInvitesOpen] = useState(false);
     const [settingsBusy, setSettingsBusy] = useState(false);
+    // Bumped by every section reload so the collapsed InvitesBlock refetches
+    // its usage counts too — its useRemote is a separate cache key.
+    const [invitesReloadTick, setInvitesReloadTick] = useState(0);
+
+    const doReload = () => {
+        remote.reload();
+        setInvitesReloadTick((v) => v + 1);
+        s.hint(t('admin.refreshed'));
+    };
 
     const loaded = remote.data && !remote.data.forbidden ? remote.data.value : null;
 
@@ -1572,7 +1862,7 @@ function ConfigSection() {
                         style={{ border: '1px solid var(--border-hairline)', background: 'var(--bg-surface)' }}
                         onClick={() => {
                             if (dirty) setConfirmReload(true);
-                            else { remote.reload(); s.hint(t('admin.refreshed')); }
+                            else doReload();
                         }}
                     >
                         <Icon name="refresh" size={14} />
@@ -1736,11 +2026,51 @@ function ConfigSection() {
                                         on={settingsDraft.accountRegistration.enabled}
                                         onToggle={() =>
                                             setSettingsDraft((prev) =>
-                                                prev ? { ...prev, accountRegistration: { enabled: !prev.accountRegistration.enabled } } : prev,
+                                                prev
+                                                    ? {
+                                                        ...prev,
+                                                        accountRegistration: {
+                                                            ...prev.accountRegistration,
+                                                            enabled: !prev.accountRegistration.enabled,
+                                                        },
+                                                    }
+                                                    : prev,
                                             )
                                         }
                                     />
                                 </div>
+                                <div className="inset-row">
+                                    <div className="min-w-0">
+                                        <div className="text-[12.5px] text-[color:var(--fg-primary)]">{t('admin.cfg.regRequireInvite')}</div>
+                                        <div className="mt-0.5 text-[11px] text-[color:var(--fg-muted)]">{t('admin.cfg.regRequireInviteDesc')}</div>
+                                    </div>
+                                    <AdminSwitch
+                                        on={settingsDraft.accountRegistration.requireInviteCode}
+                                        onToggle={() =>
+                                            setSettingsDraft((prev) =>
+                                                prev
+                                                    ? {
+                                                        ...prev,
+                                                        accountRegistration: {
+                                                            ...prev.accountRegistration,
+                                                            requireInviteCode: !prev.accountRegistration.requireInviteCode,
+                                                        },
+                                                    }
+                                                    : prev,
+                                            )
+                                        }
+                                    />
+                                </div>
+                                {/* 邀请码折叠组 */}
+                                <button
+                                    type="button"
+                                    className="inset-row inset-row-btn"
+                                    onClick={() => setInvitesOpen((v) => !v)}
+                                >
+                                    <span className="text-[12px] text-[color:var(--fg-secondary)]">{t('admin.inv.fold')}</span>
+                                    <Icon name={invitesOpen ? 'chevronDown' : 'chevronRight'} size={14} className="text-[color:var(--fg-faint)]" />
+                                </button>
+                                {invitesOpen && <InvitesBlock reloadSignal={invitesReloadTick} />}
                                 {/* OAuth 折叠组 */}
                                 <button
                                     type="button"
@@ -1885,8 +2215,7 @@ function ConfigSection() {
                     confirmLabel={t('admin.cfg.reload')}
                     onConfirm={() => {
                         setConfirmReload(false);
-                        remote.reload();
-                        s.hint(t('admin.refreshed'));
+                        doReload();
                     }}
                     onCancel={() => setConfirmReload(false)}
                 />

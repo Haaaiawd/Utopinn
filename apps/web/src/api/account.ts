@@ -81,6 +81,50 @@ export async function getOAuthProviders(): Promise<OAuthProviderMap | null> {
     }
 }
 
+export interface RegistrationInfo {
+    enabled: boolean;
+    requireInviteCode: boolean;
+}
+
+/**
+ * POST /api/users/registration/info — anonymous-reachable probe for the
+ * self-service register surface. Failure/unavailable → null: the LoginGate
+ * then hides the create-account entry entirely (same honesty rule as the
+ * OAuth row — a dead endpoint must not advertise a dead form).
+ */
+export async function getRegistrationInfo(): Promise<RegistrationInfo | null> {
+    try {
+        const res = await apiFetch('/api/users/registration/info', { method: 'POST' });
+        if (!res.ok) return null;
+        const body = (await res.json()) as Partial<RegistrationInfo>;
+        if (typeof body.enabled !== 'boolean') return null;
+        return { enabled: body.enabled, requireInviteCode: Boolean(body.requireInviteCode) };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * POST /api/users/register — creates the account and drops a signed-in
+ * session cookie (server sets request.session.handle), so the caller only
+ * needs a full reload, no separate login call. retryOn403=false: a 403 here
+ * is the invite/registration domain answer, not CSRF expiry — a replay would
+ * double-count the attempt in registerLimiter.
+ */
+export async function registerAccount(input: {
+    handle: string;
+    name: string;
+    password: string;
+    inviteCode?: string;
+}): Promise<void> {
+    const res = await apiFetch('/api/users/register', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+    }, { retryOn403: false });
+    if (!res.ok) await throwApiError(res);
+}
+
 /**
  * POST /api/users/recover-step1 — the recovery code is printed to the server
  * console (204); only the host/admin can retrieve it. 403/404 are domain
@@ -135,6 +179,8 @@ const LOCALIZED_ERR_CODES = new Set([
     'incorrect_credentials', 'user_disabled', 'passwordless', 'rate_limited',
     'user_not_found', 'incorrect_code', 'unauthorized', 'incorrect_password',
     'cannot_self', 'protected_user',
+    'invite_code_required', 'invalid_invite_code', 'invite_code_revoked',
+    'invite_code_expired', 'invite_code_exhausted',
 ]);
 
 export function accountErrorText(e: unknown, t: (key: string) => string): string {
