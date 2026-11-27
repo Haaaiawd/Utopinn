@@ -6259,6 +6259,32 @@
           "verify_by": ".skeinn/design/multi-user.md",
           "evidence": "§3.1 部署基线 yaml+§3.2 开户流程+§3.5.1 隔离洞清单"
         }
+      ],
+      "boundaries": [
+        "registration 默认关,不做自助注册面",
+        "不动存储层与 default-user 隐式语义"
+      ],
+      "guardrails": [
+        "跨 owner job_id 复用必须 fail-closed",
+        "LoginGate 仅在 auth-expired 时接管,legacy /login 前门不变"
+      ],
+      "depends_on": [
+        "TASK-071"
+      ],
+      "reads": [
+        ".skeinn/design/multi-user.md",
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/src/users.js",
+        "apps/web/src/App.tsx"
+      ],
+      "touches": [
+        "apps/server/src/endpoints/backends/luker-generation.js",
+        "apps/server/tests/multi-account-isolation.test.mjs",
+        "apps/web/src/api/account.ts",
+        "apps/web/src/components/shell/LoginGate.tsx",
+        "apps/web/src/App.tsx",
+        "apps/web/src/styles/spec.css",
+        ".skeinn/design/multi-user.md"
       ]
     },
     {
@@ -6338,12 +6364,10 @@
         "apps/web/src/components/shell/Overlays.tsx",
         "apps/web/src/features/shell.ts"
       ],
-      "implements": [
-        "shared-library.md 形态A 调研定案"
-      ],
-      "design_exemption": null,
+      "implements": "",
+      "design_exemption": "形态A(实例级只读池+copy-on-write)定案记录在任务 outcome;shared-library.md 设计稿未落档",
       "capability_hooks": [],
-      "capability_exemption": null,
+      "capability_exemption": "存储合并读/CoW 物化机制面,无新增瓶颈能力面(capability exempt)",
       "integrity_version": 1,
       "covers": [
         "实例级共享卡池:只读池+物化第一形态"
