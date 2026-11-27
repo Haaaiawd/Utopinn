@@ -14,6 +14,7 @@ const DEFAULT_ADMIN_SETTINGS = Object.freeze({
     },
     accountRegistration: {
         enabled: false,
+        requireInviteCode: false,
     },
     oauth: {
         github: {
@@ -134,6 +135,7 @@ export function sanitizeAdminSettings(rawSettings) {
         },
         accountRegistration: {
             enabled: Boolean(source?.accountRegistration?.enabled),
+            requireInviteCode: Boolean(source?.accountRegistration?.requireInviteCode),
         },
         oauth: {
             github: {

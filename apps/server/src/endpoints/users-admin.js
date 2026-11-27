@@ -47,6 +47,12 @@ import {
     updateAnnouncement,
     ValidationError as AnnouncementValidationError,
 } from '../announcements.js';
+import {
+    createInvite,
+    listInvites,
+    revokeInvite,
+    ValidationError as InviteValidationError,
+} from '../invites.js';
 import { ensureDirectory, getConfigFilePath, getConfigValue, normalizeZipEntryPath, reloadConfigCache } from '../util.js';
 import {
     installServerPlugin,
@@ -1060,6 +1066,54 @@ router.post('/announcements/delete', requireAdminMiddleware, async (request, res
         return response.sendStatus(204);
     } catch (error) {
         return respondAnnouncementError(error, response);
+    }
+});
+
+function respondInviteError(error, response) {
+    if (error instanceof InviteValidationError) {
+        const status = error.code === 'invite_code_exists' ? 409 : 400;
+        return response.status(status).json({ error: error.message, code: error.code });
+    }
+    console.error('Invites endpoint failed:', error);
+    return response.status(500).json({ error: 'internal' });
+}
+
+router.post('/invites/list', requireAdminMiddleware, async (_request, response) => {
+    try {
+        const items = await listInvites();
+        return response.json({ items });
+    } catch (error) {
+        return respondInviteError(error, response);
+    }
+});
+
+router.post('/invites/create', requireAdminMiddleware, async (request, response) => {
+    try {
+        const body = request.body || {};
+        const item = await createInvite({
+            code: body.code,
+            maxUses: body.maxUses,
+            expiresAt: body.expiresAt,
+            note: body.note,
+            createdBy: request.user?.profile?.handle || 'admin',
+        });
+        return response.json({ item });
+    } catch (error) {
+        return respondInviteError(error, response);
+    }
+});
+
+router.post('/invites/revoke', requireAdminMiddleware, async (request, response) => {
+    try {
+        const body = request.body || {};
+        if (typeof body.code !== 'string' || !body.code.trim()) {
+            return response.status(400).json({ error: 'code is required', code: 'missing_fields' });
+        }
+        const item = await revokeInvite({ code: body.code });
+        if (item === null) return response.status(404).json({ error: 'Invite code not found', code: 'invite_not_found' });
+        return response.sendStatus(204);
+    } catch (error) {
+        return respondInviteError(error, response);
     }
 });
 
