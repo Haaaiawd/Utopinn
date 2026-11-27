@@ -132,7 +132,7 @@ function SessionRow({ s, showCard }: { s: ChatSummary; showCard?: boolean }) {
             {canAct && (
                 <button
                     type="button"
-                    className={`ghost-btn h-5 w-5 shrink-0 ${shell.isMobile || menuOpen ? 'visible' : 'invisible group-hover/srow:visible'}`}
+                    className={`ghost-btn h-5 w-5 shrink-0 ${menuOpen ? 'visible' : 'invisible group-hover/srow:visible mob:visible'}`}
                     title={t('chat.menu')}
                     onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); setDelArmed(false); }}
                 >
@@ -205,7 +205,7 @@ export function ChatTree() {
     return (
         <div className="flex h-full min-h-0 flex-col">
             {/* 桌面:顶部 h-1.5 呼吸位(规范稿无域头);移动 drawer 头部统一管 */}
-            {!shell.isMobile && <div className="h-1.5 shrink-0" />}
+            <div className="h-1.5 shrink-0 desk-only" />
             <div className="shrink-0 px-2.5 pb-3">
                 {/* 移动端同样直发 newChat —— NewChatModal 是 in-shell 模态
                     (Overlays.tsx 有 mobile 变体);旧链 setView('home') 会被
@@ -385,11 +385,9 @@ export function StudioTree() {
     const nav = normStudioNav(shell.studioNav);
     return (
         <div className="flex h-full min-h-0 flex-col">
-            {!shell.isMobile && (
-                <div className="flex h-12 shrink-0 items-center px-3">
-                    <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.studio')}</span>
-                </div>
-            )}
+            <div className="flex h-12 shrink-0 items-center px-3 desk-only">
+                <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.studio')}</span>
+            </div>
             <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain px-2 pb-4">
                 {STUDIO_NAV_META.map(({ id, icon }) => {
                     const act = nav === id;
@@ -424,11 +422,9 @@ export function PluginsTree() {
         .map((p) => ({ id: p.id, name: pluginLabel(p.id), icon: pluginIcon(p.id) }));
     return (
         <div className="flex h-full min-h-0 flex-col">
-            {!shell.isMobile && (
-                <div className="flex h-12 shrink-0 items-center px-3">
-                    <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.plugins')}</span>
-                </div>
-            )}
+            <div className="flex h-12 shrink-0 items-center px-3 desk-only">
+                <span className="heading-tight text-[13.5px] font-medium text-[color:var(--fg-primary)]">{t('nav.plugins')}</span>
+            </div>
             <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-2 pb-4">
                 <div className="space-y-0.5">
                     {(['installed', 'market'] as const).map((id) => {

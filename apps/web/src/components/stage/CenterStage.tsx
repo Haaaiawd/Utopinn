@@ -140,7 +140,7 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
                     )}
                 </div>
                 {/* 触屏无 hover —— 移动端 ops 常显(opacity-90),桌面保留 hover 显现 */}
-                <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 ${ops.isLast || s.isMobile ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                <div className={`flex items-center gap-1 pt-0.5 transition-opacity duration-150 mob:opacity-90 ${ops.isLast ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
                     <button className="ghost-btn h-7 w-7" title={t('floor.quote')} onClick={() => ops.onQuote(m)}><Icon name="quote" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.copy')} onClick={() => ops.onCopy(m)}><Icon name="copy" size={14} /></button>
                     <button className="ghost-btn h-7 w-7" title={t('stage.op.edit')} onClick={() => ops.onEdit(m)}><Icon name="pencil" size={14} /></button>
@@ -242,7 +242,7 @@ function Msg({ m, idx, ops, greeting }: { m: FloorMsg; idx: number; ops: FloorOp
                 )}
                 {/* 规范稿楼层操作条 L1191-1206:左 swipe 胶囊+copy/edit/del/回滚,右 deltas mono 芯 */}
                 {showOps && (
-                    <div className={`flex items-center justify-between gap-2 pt-0.5 transition-opacity duration-150 ${ops.isLast || s.isMobile ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
+                    <div className={`flex items-center justify-between gap-2 pt-0.5 transition-opacity duration-150 mob:opacity-90 ${ops.isLast ? 'opacity-90' : 'opacity-0 group-hover/msg:opacity-100'}`}>
                         <div className="flex items-center gap-1">
                             {(m.swipes || ops.isLast) && (
                                 <span className="mr-1 inline-flex items-center rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] px-0.5">

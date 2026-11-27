@@ -452,11 +452,9 @@ export function PluginsView() {
                 <div className="mx-auto max-w-4xl space-y-7">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                         <div className="flex items-center gap-2">
-                            {s.isMobile && (
-                                <button className="ghost-btn h-8 w-8" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
-                                    <Icon name="menu" size={20} />
-                                </button>
-                            )}
+                            <button className="ghost-btn h-8 w-8 mob-only" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
+                                <Icon name="menu" size={20} />
+                            </button>
                             <div>
                                 <h1 className="heading-tight text-title-lg font-semibold text-[color:var(--fg-primary)]">{t('nav.plugins')}</h1>
                                 <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t('plugins.sub')}</p>

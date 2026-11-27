@@ -230,8 +230,8 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
 }
 
 /** wb tab 条:h-12 px-4(板块 tabs +「+ 新标签页」+ 右钮组);
- *  isMobile 时隐 detach/收起。 */
-function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
+ *  移动端右钮组由 desk-only 隐藏(sheet 有对等物)。 */
+function WorkbenchTabsRow() {
     const { t } = useI18n();
     const shell = useShell();
     const contribs = useContribs('panel.type');
@@ -264,7 +264,7 @@ function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
                         >
                             {/* 移动 tab 密度:未激活窄截断(60px≈2-3 字)给激活让位,
                                 激活页放全名槽(140px);桌面保持 110 原稿。 */}
-                            <span className={`${isMobile ? (active ? 'max-w-[140px]' : 'max-w-[60px]') : 'max-w-[110px]'} truncate`}>{tb.label}</span>
+                            <span className={`max-w-[110px] truncate ${active ? 'mob:max-w-[140px]' : 'mob:max-w-[60px]'}`}>{tb.label}</span>
                             <button
                                 className="wb-tab-close flex h-4 w-4 items-center justify-center rounded transition-colors hover:bg-[color:var(--bg-active)]"
                                 onClick={(e) => { e.stopPropagation(); shell.closeTab(tb.id); }}
@@ -285,31 +285,29 @@ function WorkbenchTabsRow({ isMobile = false }: { isMobile?: boolean }) {
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
                 {/* CardApp 全屏提升(§6.4):cardapp 桶板块激活时给「全屏」;
-                    本体是 .cardapp-host 切 fixed inset-0,同树不 remount。 */}
-                {!isMobile && cardappTab && (
-                    <button className="ghost-btn h-7 w-7" onClick={() => shell.setCardappFs(true)} title={t('wb.fs')}>
+                    本体是 .cardapp-host 切 fixed inset-0,同树不 remount。
+                    移动对等物是 sheet 的 full 档(openPanel/selectTab 自动升),
+                    desk-only 藏钮不藏功能。 */}
+                {cardappTab && (
+                    <button className="ghost-btn h-7 w-7 desk-only" onClick={() => shell.setCardappFs(true)} title={t('wb.fs')}>
                         <Icon name="focus" size={15} />
                     </button>
                 )}
                 {/* 规范稿 detach-panel —— v3 逐板块:激活页摘出为独立浮窗;
                     launcher 页无对象不画,移动端不出(屏小浮窗没意义)。 */}
-                {!isMobile && !launcherActive && shell.activeTab && shell.openTabs.includes(shell.activeTab) && (
-                    <button className="ghost-btn h-7 w-7" onClick={() => shell.detachPanel(shell.activeTab)} title={t('wb.detach')}>
+                {!launcherActive && shell.activeTab && shell.openTabs.includes(shell.activeTab) && (
+                    <button className="ghost-btn h-7 w-7 desk-only" onClick={() => shell.detachPanel(shell.activeTab)} title={t('wb.detach')}>
                         <Icon name="detach" size={15} />
                     </button>
                 )}
                 {/* 占满聊天区:右栏吃整个 workspace-inset(main 压 0 宽不 unmount),
                     还原回原宽 —— CardApp/TH JS 的大视面通道。 */}
-                {!isMobile && (
-                    <button className="ghost-btn h-7 w-7" onClick={() => shell.setWbExpand(!shell.wbExpand)} title={shell.wbExpand ? t('wb.restore') : t('wb.expand')}>
-                        <Icon name={shell.wbExpand ? 'dockBack' : 'wbExpand'} size={15} />
-                    </button>
-                )}
-                {!isMobile && (
-                    <button className="ghost-btn h-7 w-7" onClick={shell.toggleWorkbench} title={t('wb.collapse')}>
-                        <Icon name="x" size={15} />
-                    </button>
-                )}
+                <button className="ghost-btn h-7 w-7 desk-only" onClick={() => shell.setWbExpand(!shell.wbExpand)} title={shell.wbExpand ? t('wb.restore') : t('wb.expand')}>
+                    <Icon name={shell.wbExpand ? 'dockBack' : 'wbExpand'} size={15} />
+                </button>
+                <button className="ghost-btn h-7 w-7 desk-only" onClick={shell.toggleWorkbench} title={t('wb.collapse')}>
+                    <Icon name="x" size={15} />
+                </button>
             </div>
         </div>
     );
@@ -476,7 +474,7 @@ function WorkbenchPool({ isMobile = false, dockedLive = true }: { isMobile?: boo
 export function WorkbenchBody({ isMobile = false, dockedLive = true }: { isMobile?: boolean; dockedLive?: boolean }) {
     return (
         <div className="flex h-full min-h-0 flex-col" style={{ background: 'var(--bg-workbench)' }}>
-            {dockedLive && <WorkbenchTabsRow isMobile={isMobile} />}
+            {dockedLive && <WorkbenchTabsRow />}
             <WorkbenchPool isMobile={isMobile} dockedLive={dockedLive} />
         </div>
     );

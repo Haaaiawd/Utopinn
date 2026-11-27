@@ -294,7 +294,7 @@ function StudioShell({ nav, fill, children }: { nav: StudioNav; fill?: boolean; 
     const s = useShell();
     const importBtn = (
         <button
-            className={`shrink-0 rounded-lg font-medium ${s.isMobile ? 'h-7 px-2.5 text-[11.5px]' : 'h-8 px-3.5 text-[12px]'}`}
+            className="shrink-0 rounded-lg font-medium h-8 px-3.5 text-[12px] mob:h-7 mob:px-2.5 mob:text-[11.5px]"
             style={{ background: 'var(--brand)', color: 'var(--brand-fg)' }}
             onClick={openImportModal}
         >
@@ -303,28 +303,25 @@ function StudioShell({ nav, fill, children }: { nav: StudioNav; fill?: boolean; 
     );
     return (
         <section className="flex h-full min-w-0 flex-1 flex-col" style={{ background: 'var(--bg-canvas)' }}>
-            {s.isMobile && (
-                <header className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-3">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                        <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { if (studioLeaveGuard.check?.() ?? true) s.setView('hub'); }}>
-                            <Icon name="arrowLeft" size={16} />
-                        </button>
-                        <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</span>
-                    </div>
-                    {importBtn}
-                </header>
-            )}
-            <div className={`min-h-0 flex-1 overflow-y-auto ${fill ? 'lg:overflow-hidden' : ''} ${s.isMobile ? 'p-4' : 'px-10 py-8'}`}>
+            {/* 移动端域头(返回 hub + 标题 + 导入):桌面 header 在页内(:323) */}
+            <header className="flex h-12 shrink-0 items-center justify-between border-b border-[color:var(--border-hairline)] px-3 mob-only">
+                <div className="flex min-w-0 items-center gap-1.5">
+                    <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => { if (studioLeaveGuard.check?.() ?? true) s.setView('hub'); }}>
+                        <Icon name="arrowLeft" size={16} />
+                    </button>
+                    <span className="heading-tight truncate text-[14px] font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</span>
+                </div>
+                {importBtn}
+            </header>
+            <div className={`min-h-0 flex-1 overflow-y-auto ${fill ? 'lg:overflow-hidden' : ''} px-10 py-8 mob:p-4`}>
                 <div className={`mx-auto max-w-4xl space-y-5 ${fill ? 'lg:flex lg:h-full lg:flex-col' : ''}`}>
-                    {!s.isMobile && (
-                        <div className="flex shrink-0 flex-wrap items-start justify-between gap-4">
-                            <div>
-                                <h1 className="heading-tight text-title-lg font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</h1>
-                                <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t(`studio.${nav}.sub`)}</p>
-                            </div>
-                            {importBtn}
+                    <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 desk-only">
+                        <div>
+                            <h1 className="heading-tight text-title-lg font-medium text-[color:var(--fg-primary)]">{t(`studio.${nav}.title`)}</h1>
+                            <p className="mt-1 text-[12.5px] text-[color:var(--fg-muted)]">{t(`studio.${nav}.sub`)}</p>
                         </div>
-                    )}
+                        {importBtn}
+                    </div>
                     {fill ? <div className="min-h-0 lg:flex-1">{children}</div> : children}
                 </div>
             </div>

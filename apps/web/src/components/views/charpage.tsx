@@ -217,11 +217,9 @@ export function CharView() {
             {/* 页头:返回卡面大厅(移动端 gotoView 把 home 映射回 chat)+ 标题 + 动作 */}
             <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4">
                 <div className="flex min-w-0 items-center gap-1.5">
-                    {s.isMobile && (
-                        <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
-                            <Icon name="menu" size={20} />
-                        </button>
-                    )}
+                    <button className="ghost-btn h-8 w-8 shrink-0 mob-only" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
+                        <Icon name="menu" size={20} />
+                    </button>
                     <button
                         className="heading-tight flex min-w-0 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
                         onClick={() => s.setView('home')}
@@ -394,7 +392,7 @@ export function CharView() {
                 <div className="mx-auto max-w-3xl space-y-8 pb-8">
                     {/* ——— 封面 + 元信息 ——— */}
                     <div className="flex items-start gap-5">
-                        <div className={`relative shrink-0 overflow-hidden rounded-[14px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] ${s.isMobile ? 'h-36 w-24' : 'h-48 w-32'}`} style={{ boxShadow: 'var(--shadow-card)' }}>
+                        <div className="relative shrink-0 overflow-hidden rounded-[14px] border border-[color:var(--border-hairline)] bg-[color:var(--bg-surface)] h-48 w-32 mob:h-36 mob:w-24" style={{ boxShadow: 'var(--shadow-card)' }}>
                             {card?.avatar ? (
                                 <img src={`${charImageUrl(card.avatar)}${coverNonce ? `?v=${coverNonce}` : ''}`} alt={name} className="h-full w-full object-cover" onError={charImgFallback} data-cover-key={dir} />
                             ) : (
