@@ -15,7 +15,7 @@ import { invalidateCharDocs, listCharacters, type CardItem } from './api/charact
 import { listProfiles, type ActiveModelPointer, type ConnectionProfile } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
 import { listPersonas, type ActivePersona, type PersonaItem } from './api/personas';
-import { getPreset, listPresets, savePreset, type PresetDocument } from './api/presets';
+import { getPreset, listPresets, type PresetDocument } from './api/presets';
 import { getSettings, patchSettings } from './api/settings';
 import { listBackgrounds } from './api/backgrounds';
 import { listWorlds } from './api/worlds';
@@ -41,6 +41,7 @@ import {
     type UiAmbience,
 } from './kernel/ambience';
 import { Kernel } from './kernel/kernel';
+import { presetDocs, presetKey, setSharedDocErrorHandler, usePresetDoc } from './kernel/docStores';
 import type { PanelType } from './kernel/contributions';
 import { shellFeature } from './features/shell';
 import { chatFeature } from './features/chat';
@@ -278,7 +279,7 @@ function Shell() {
         { profileId: '', modelId: MOCK_MODELS[0]!.id });
     const [presets, setPresets] = useState<PresetItem[]>(MOCK_PRESETS);
     const [activePresetId, setActivePreset] = useState(MOCK_PRESETS[0]!.id);
-    const [presetDoc, setPresetDoc] = useState<PresetDocument | null>(null);
+    const [chatRevision, setChatRevision] = useState(0);
     const [presetParams, setPresetParams] = useState<PresetParams>({
         temp: 0.85, topP: 0.92, ctxLen: 200000, maxReply: 8192,
         blocks: MOCK_PRESET_BLOCKS.map((b) => ({ ...b })),
@@ -323,8 +324,6 @@ function Shell() {
         document.documentElement.style.setProperty('--chat-font-size', `${chatSettings.fontSize}px`);
     }, [chatSettings.fontSize]);
 
-    const activePresetDocRef = useRef<{ name: string; doc: PresetDocument } | null>(null);
-    const presetSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
     const worldInfoBaseRef = useRef<Record<string, unknown>>({});
 
     useEffect(() => {
@@ -338,6 +337,12 @@ function Shell() {
     }, []);
     const isMobile = vpMode === 'mobile' || (vpMode === 'auto' && narrow);
     const live = serverStatus === 'online';
+    /* Active preset doc lives in the shared presetDocs store — every edit
+       surface (rail editor, studio page, automation regex groups, param
+       sliders) reads and writes the same optimistic doc; the store does
+       debounced fresh-base saves so no surface can clobber another. */
+    const presetSnap = usePresetDoc('openai', live ? activePresetId.replace(/\.json$/i, '') : null);
+    const presetDoc = presetSnap.doc;
 
     /* Form factor → html[data-vp]:the CSS twin of ctx.isMobile — mob: utilities
        and .desk-only/.mob-only presence helpers consume it.Width media queries
@@ -606,12 +611,14 @@ function Shell() {
             });
             setPresets(builtPresets);
             setActivePreset(chosen);
-            const chosenDoc = docs.find((x) => x.name === chosen)?.doc
-                ?? (chosen ? await getPreset(chosen, 'openai').then((r) => r.doc).catch(() => null) : null);
-            if (chosenDoc) {
-                activePresetDocRef.current = { name: chosen, doc: chosenDoc };
-                setPresetDoc(chosenDoc);
-                setPresetParams(extractPresetParams(chosenDoc));
+            /* Seed the shared store — prime() rebases pending edits on top
+               rather than clobbering them, so an in-flight type burst
+               survives a connection refresh. */
+            for (const { name, doc } of docs) {
+                if (doc) presetDocs.prime(presetKey('openai', name), doc);
+            }
+            if (chosen && !docs.some((x) => x.name === chosen && x.doc)) {
+                await presetDocs.ensure(presetKey('openai', chosen)).catch(() => null);
             }
         }
 
@@ -679,45 +686,46 @@ function Shell() {
         }
     }, [live, chats, activeChat]);
 
-    /**
-     * 激活预设统一写路 —— fn(curDoc)→nextDoc:ref 换写(save 真值源)、
-     * presetDoc 状态水合编辑面、presetParams 投影与 presets 行摘要同步,
-     * 450ms 防抖整档 PUT。PresetDocEditor / setPresetParam / togglePresetBlock
-     * 全走这一条;ref 链保证连续编辑叠在同一 base 上,末次写赢。
-     */
+    /** Active-preset write lane — every surface mutates the shared store
+       doc (optimistic apply + debounced fresh-base PUT). Because the store
+       is the single source, external writes landing between our saves are
+       merged into the next base instead of silently overwritten. */
     const mutatePresetDoc = useCallback((fn: (doc: PresetDocument) => PresetDocument) => {
-        if (!live || !activePresetDocRef.current) return;
-        const { name, doc } = activePresetDocRef.current;
-        const nextDoc = fn(doc);
-        if (nextDoc === doc) return;
-        activePresetDocRef.current = { name, doc: nextDoc };
-        setPresetDoc(nextDoc);
-        setPresetParams(extractPresetParams(nextDoc));
-        setPresets((prev) => prev.map((p) => (p.id === name ? {
-            ...p,
-            temp: numOr(nextDoc.temperature, p.temp),
-            topP: numOr(nextDoc.top_p, p.topP),
-            ctxLen: numOr(nextDoc.openai_max_context, p.ctxLen),
-            maxReply: numOr(nextDoc.openai_max_tokens, p.maxReply),
-        } : p)));
-        if (presetSaveTimer.current) clearTimeout(presetSaveTimer.current);
-        presetSaveTimer.current = setTimeout(() => {
-            void savePreset(name, nextDoc, 'openai').catch((e) => {
-                showHint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
-            });
-        }, 450);
-    }, [live, showHint, t]);
+        if (!live || !activePresetId) return;
+        presetDocs.mutate(presetKey('openai', activePresetId.replace(/\.json$/i, '')), fn);
+    }, [live, activePresetId]);
 
-    /** 外部写面(studio 等)改过激活预设后重拉真值 —— 只读 GET,不动 settings。 */
+    /** Store snapshot → params projection + presets-row summary — applies
+       no matter which surface wrote (rail/studio/automation/sliders). */
+    useEffect(() => {
+        if (!live || !presetDoc || !activePresetId) return;
+        setPresetParams(extractPresetParams(presetDoc));
+        const clean = activePresetId.replace(/\.json$/i, '');
+        setPresets((prev) => prev.map((p) => (p.id === clean ? {
+            ...p,
+            temp: numOr(presetDoc.temperature, p.temp),
+            topP: numOr(presetDoc.top_p, p.topP),
+            ctxLen: numOr(presetDoc.openai_max_context, p.ctxLen),
+            maxReply: numOr(presetDoc.openai_max_tokens, p.maxReply),
+        } : p)));
+    }, [live, presetDoc, activePresetId]);
+
+    /** External writers (studio/other lanes) edited the active doc →
+        re-pull through the store (pending edits rebase onto fresh). */
     const reloadPresetDoc = useCallback(() => {
-        const cur = activePresetDocRef.current;
-        if (!live || !cur) return;
-        void getPreset(cur.name, 'openai').then((res) => {
-            activePresetDocRef.current = { name: cur.name, doc: res.doc };
-            setPresetDoc(res.doc);
-            setPresetParams(extractPresetParams(res.doc));
-        }).catch(() => undefined);
-    }, [live]);
+        if (!live || !activePresetId) return;
+        void presetDocs.reload(presetKey('openai', activePresetId.replace(/\.json$/i, '')));
+    }, [live, activePresetId]);
+
+    const notifyChatMutation = useCallback(() => setChatRevision((v) => v + 1), []);
+
+    /* Shared-doc store failures (save/load) surface as hints once. */
+    useEffect(() => {
+        setSharedDocErrorHandler((_scope, _key, msg) => {
+            showHint(`${t('studio.presets.saveFailed')}: ${msg}`, true);
+        });
+        return () => setSharedDocErrorHandler(() => undefined);
+    }, [showHint, t]);
 
     const setActiveModel = useCallback((sel: ActiveModelPointer) => {
         setActiveModelState(sel);
@@ -737,12 +745,10 @@ function Shell() {
         }
         void Promise.all([
             patchSettings({ preset_settings_openai: clean }),
-            getPreset(clean, 'openai'),
-        ]).then(([, res]) => {
-            activePresetDocRef.current = { name: clean, doc: res.doc };
-            setPresetDoc(res.doc);
-            setPresetParams(extractPresetParams(res.doc));
-        }).catch((e) => {
+            /* Switch lanes to a fresh store doc — any writes the surface
+               made since it was last loaded are pulled in via reload. */
+            presetDocs.reload(presetKey('openai', clean)),
+        ]).catch((e) => {
             showHint(`${t('studio.presets.saveFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
         });
     }, [live, presets, showHint, t]);
@@ -1091,6 +1097,7 @@ function Shell() {
         models, modelsError, activeModel, setActiveModel,
         presets, activePresetId, pickPreset,
         presetDoc, mutatePresetDoc, reloadPresetDoc,
+        chatRevision, notifyChatMutation,
         presetParams,
         setPresetParam,
         togglePresetBlock,
@@ -1114,7 +1121,7 @@ function Shell() {
         openDropdown, accountPopOpen, settingsOpen, settingsTab, cmdkOpen, mobileDrawer,
         sheetSnap, vpMode, isMobile, studioNav, pluginsNav, adminNav, selectedPlugin,
         connSource, connProfiles, models, modelsError, activeModel, setActiveModel,
-        presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, presetParams, setPresetParam, togglePresetBlock,
+        presets, activePresetId, pickPreset, presetDoc, mutatePresetDoc, reloadPresetDoc, chatRevision, notifyChatMutation, presetParams, setPresetParam, togglePresetBlock,
         globalLore, toggleGlobalLore, worldbook, refreshConnection,
         chatSettings, stageData, openSettings,
     ]);

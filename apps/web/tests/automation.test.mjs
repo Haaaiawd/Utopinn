@@ -125,3 +125,26 @@ test('scriptResultLines — pipe/error/notifications/aborted 终态合成', () =
     assert.equal(lines.at(-1).text, 'aborted');
     assert.deepEqual(scriptResultLines({ ok: true }), [], '空终态不给行 —— 调用方补「已执行」');
 });
+
+test('regexDraftOf — existing script keeps runtime truth (rename must not change firing)', () => {
+    /* Reported bug: absent fields were drafted as `true`, so a plain
+       rename-save silently enabled markdownOnly/runOnEdit and widened
+       placement — changing WHEN the script runs. Runtime semantics:
+       absent flag ≡ falsy; absent placement ≡ skipped (same as []). */
+    const legacy = { id: 'l', scriptName: 'L', findRegex: '/x/' }; // all flags absent
+    const d = regexDraftOf(legacy);
+    assert.equal(d.markdownOnly, false, 'absent markdownOnly ≡ falsy, not drafted true');
+    assert.equal(d.runOnEdit, false, 'absent runOnEdit ≡ falsy');
+    assert.equal(d.promptOnly, false);
+    assert.equal(d.placement.size, 0, 'absent placement ≡ never matches — [] preserves that');
+    const p = regexPatchFromDraft(d);
+    assert.equal(p.markdownOnly, false);
+    assert.equal(p.runOnEdit, false);
+    assert.deepEqual(p.placement, [], 'explicit [] ≡ engine-skip, same as absent');
+
+    /* Explicitly-set fields still round-trip honestly. */
+    const set = rx('x', 's', { markdownOnly: true, placement: [2, 5] });
+    const d2 = regexDraftOf(set);
+    assert.equal(d2.markdownOnly, true);
+    assert.deepEqual([...d2.placement], [2, 5]);
+});

@@ -28,18 +28,28 @@ import { Icon, type IconName } from '../Icon';
 import { PanelEmpty, PanelError, useRemote } from './panelShared';
 import { apiPost } from '../../api/client';
 import { listScriptCommands, type ScriptCommandInfo } from '../../api/th';
+import type { PresetDocument } from '../../api/presets';
 import {
-    deleteRegexScript, getRegexFullView, patchRegexScript, putRegexScope,
+    deleteRegexScript, getRegexFullView, mutateRegexScope, patchRegexScript, putRegexScope,
     type RegexScopeTarget, type RegexScriptData,
 } from '../../api/regex';
 import {
-    getChatQrConfig, getQrSet, getQrSettingsDoc, listQrSets, newQrSetDoc,
-    patchChatQrConfig, patchQrSettingsDoc, qrBound, qrCharScopeKey,
+    getQrSet, listQrSets, newQrSetDoc,
+    qrBound, qrCharScopeKey,
     qrConfigWithLink, qrEnabledNames, qrStudioFocus, qrv2WithSetVisible,
     saveQrSet, type QrConfig, type QrSettings,
 } from '../../api/quickreplies';
 import {
-    commandScriptLine, filterCommands, flattenRegexView, qrEntryKind,
+    addPresetRegex, patchPresetRegexByKey, presetRegexKeyOf, presetRegexScripts,
+    removePresetRegexByKey, togglePresetRegexByKey,
+} from './presetRegex';
+import {
+    flushPresetDoc, flushQrChatCfg, flushQrSettings, invalidateSharedDocs,
+    mutatePresetDoc, mutateQrChatCfg, mutateQrSettings,
+    usePresetDoc, useQrChatCfg, useQrSettings,
+} from '../../kernel/docStores';
+import {
+    commandScriptLine, filterCommands, flatItemsForPreset, flattenRegexView, qrEntryKind,
     regexDraftOf, regexNewScript, regexPatchFromDraft, scriptResultLines,
     REGEX_PLACEMENTS, type RegexEditDraft, type RegexFlatItem, type RegexGroupView,
     type ScriptResultLine, type ScriptRunRes,
@@ -122,6 +132,13 @@ function useScriptRun() {
                 s.selectChat('');
             }
         }
+        /* Scripts can mutate floors (/cut etc.) and any shared doc server-
+           side (preset regex via TH, QR links, variables). The composer
+           runner already reloads the transcript — mirror it here by
+           bumping chatRevision (StageFrame refetches floors) and re-pull
+           every live shared doc so edit surfaces converge. */
+        s.notifyChatMutation();
+        invalidateSharedDocs();
         const lines = scriptResultLines(res);
         if (parked) lines.unshift({ text: t('panel.auto.runInteractive'), err: true });
         if (!lines.length) lines.push({ text: t('panel.auto.runDone'), err: false });
@@ -372,6 +389,15 @@ function RegexGroupBlock({ g, busyKey, editing, draft, onToggle, onEdit, onDelet
     onAdd: () => void; onGate?: (on: boolean) => void;
 }) {
     const { t } = useI18n();
+    /* Preset groups render from the shared doc store — the SAME doc the
+       preset editors write. Rows made here are id/identity-addressed into
+       that doc, so a full-view snapshot can never shift a write onto the
+       wrong script; global/char groups keep the server view. */
+    const pT = g.target.scope === 'preset' ? g.target : null;
+    const snap = usePresetDoc(pT?.apiId ?? 'openai', pT?.preset ?? null);
+    const items = pT && snap.doc
+        ? flatItemsForPreset(pT.apiId, pT.preset, presetRegexScripts(snap.doc))
+        : g.items;
     return (
         <div className={group}>
             {/* group header — scope identity + honest badges + gate + add */}
@@ -401,7 +427,7 @@ function RegexGroupBlock({ g, busyKey, editing, draft, onToggle, onEdit, onDelet
             {editing === `new:${g.key}` && draft && (
                 <RegexEditForm draft={draft} busy={busyKey !== null} onChange={onDraft} onCancel={onCancelEdit} onSave={onSaveEdit} />
             )}
-            {g.items.map((r) => {
+            {items.map((r) => {
                 const on = r.script.disabled !== true;
                 const isEditing = editing === r.key;
                 return (
@@ -431,7 +457,7 @@ function RegexGroupBlock({ g, busyKey, editing, draft, onToggle, onEdit, onDelet
                     </div>
                 );
             })}
-            {g.items.length === 0 && (
+            {items.length === 0 && (
                 <div className={row}><span className="text-[10.5px] text-[color:var(--fg-faint)]">—</span></div>
             )}
         </div>
@@ -446,8 +472,15 @@ function RegexSection() {
     /** editing: item.key for patches, `new:<groupKey>` for creates. */
     const [editing, setEditing] = useState<string | null>(null);
     const [draft, setDraft] = useState<RegexEditDraft | null>(null);
-    /** Create-mode context — which scope the PUT lands in + seed array. */
-    const [createCtx, setCreateCtx] = useState<{ target: RegexScopeTarget; scripts: RegexScriptData[] } | null>(null);
+    /** Create-mode context — which scope the new script lands in. The old
+       code also snapshotted the group's script array here and PUT it back
+       whole — a stale base that dropped rows added elsewhere. Now the
+       transform itself re-reads current state (doc lane / fresh scope). */
+    const [createCtx, setCreateCtx] = useState<{ target: RegexScopeTarget } | null>(null);
+    /** The item being edited — preset rows may render from the shared doc
+       store while the full view lags a flush behind, so the row object is
+       stashed at startEdit instead of re-found by key at save time. */
+    const [editItem, setEditItem] = useState<RegexFlatItem | null>(null);
 
     const groups = useMemo(() => (full.data ? flattenRegexView(full.data) : []), [full.data]);
     const fail = (e: unknown) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -455,35 +488,67 @@ function RegexSection() {
         if (busyKey) return;
         setBusyKey(key);
         void op()
-            .then(() => { setEditing(null); setDraft(null); setCreateCtx(null); full.reload(); })
+            .then(() => { setEditing(null); setDraft(null); setCreateCtx(null); setEditItem(null); full.reload(); })
             .catch(fail)
             .finally(() => setBusyKey(null));
     };
 
+    /* Preset-scope rows route through the shared doc lane: the mutation
+       is addressed by stable key (id, or the rendered script object for
+       id-less entries) against the SAME doc the preset editors hold —
+       never an index into a stale snapshot. flush() lands it immediately. */
+    const presetOp = (r: RegexFlatItem, fn: (d: PresetDocument) => PresetDocument) =>
+        act(r.key, async () => {
+            const t = r.target as { apiId: string; preset: string };
+            mutatePresetDoc(t.apiId, t.preset, fn);
+            await flushPresetDoc(t.apiId, t.preset);
+        });
+
     const toggleRow = (r: RegexFlatItem) =>
-        act(r.key, () => patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled }));
+        r.target.scope === 'preset'
+            ? presetOp(r, (d) => togglePresetRegexByKey(d, presetRegexKeyOf(r.script)))
+            : act(r.key, () => patchRegexScript(r.target, r.idOrIdx, { disabled: !r.script.disabled }));
     const removeRow = (r: RegexFlatItem) => {
         const label = r.script.scriptName || String(r.idOrIdx);
         if (!window.confirm(`${t('panel.auto.rx.delConfirm')}\n${label}`)) return;
-        act(r.key, () => deleteRegexScript(r.target, r.idOrIdx));
+        if (r.target.scope === 'preset') presetOp(r, (d) => removePresetRegexByKey(d, presetRegexKeyOf(r.script)));
+        else act(r.key, () => deleteRegexScript(r.target, r.idOrIdx));
     };
-    const startEdit = (r: RegexFlatItem) => { setEditing(r.key); setDraft(regexDraftOf(r.script)); setCreateCtx(null); };
+    const startEdit = (r: RegexFlatItem) => {
+        setEditing(r.key); setDraft(regexDraftOf(r.script));
+        setCreateCtx(null); setEditItem(r);
+    };
     const startAdd = (g: RegexGroupView) => {
         setEditing(`new:${g.key}`);
         setDraft(regexDraftOf());
-        setCreateCtx({ target: g.target, scripts: g.items.map((i) => i.script) });
+        setCreateCtx({ target: g.target });
+        setEditItem(null);
     };
     const saveEdit = () => {
         if (!draft) return;
         if (editing?.startsWith('new:') && createCtx) {
-            act('new', () => putRegexScope(createCtx.target, {
-                scripts: [...createCtx.scripts, regexNewScript(draft, `rx-${Date.now()}`)],
-            }));
+            const t = createCtx.target;
+            const sc = regexNewScript(draft, `rx-${Date.now()}`);
+            if (t.scope === 'preset') {
+                act('new', async () => {
+                    mutatePresetDoc(t.apiId, t.preset, (d) => addPresetRegex(d, sc));
+                    await flushPresetDoc(t.apiId, t.preset);
+                });
+            } else {
+                /* Whole-array PUT is blind — mutateRegexScope re-reads the
+                   scope inside a serialized chain so the append lands on
+                   the freshest array. */
+                act('new', () => mutateRegexScope(t, (arr) => [...arr, sc]));
+            }
             return;
         }
-        const flat = groups.flatMap((g) => g.items).find((i) => i.key === editing);
-        if (!flat) return;
-        act(flat.key, () => patchRegexScript(flat.target, flat.idOrIdx, regexPatchFromDraft(draft)));
+        if (!editItem) return;
+        const set = regexPatchFromDraft(draft);
+        if (editItem.target.scope === 'preset') {
+            presetOp(editItem, (d) => patchPresetRegexByKey(d, presetRegexKeyOf(editItem.script), set));
+        } else {
+            act(editItem.key, () => patchRegexScript(editItem.target, editItem.idOrIdx, set));
+        }
     };
 
     if (full.error) return <PanelError error={full.error} onRetry={full.reload} />;
@@ -514,7 +579,7 @@ function RegexSection() {
                                 editing={editing} draft={draft}
                                 onToggle={toggleRow} onEdit={startEdit} onDelete={removeRow}
                                 onDraft={setDraft}
-                                onCancelEdit={() => { setEditing(null); setDraft(null); setCreateCtx(null); }}
+                                onCancelEdit={() => { setEditing(null); setDraft(null); setCreateCtx(null); setEditItem(null); }}
                                 onSaveEdit={saveEdit}
                                 onAdd={() => startAdd(g)}
                                 onGate={g.gate
@@ -536,37 +601,25 @@ function RegexSection() {
 function QuickSection({ run }: { run: (script: string) => Promise<ScriptResultLine[]> }) {
     const { t } = useI18n();
     const s = useShell();
-    const chatId = s.chat?.id ?? '';
-    /* names: live list; settings/chatCfg: write-bearing state (studio same). */
+    /* names: live list; settings/chatCfg: shared stores — the composer
+       strip and studio QR page toggle the SAME docs, so a write here
+       can't revert a toggle made on another surface. */
     const names = useRemote(s.live ? 'qr:names' : null, listQrSets);
-    const [qr, setQr] = useState<QrSettings | null>(null);
-    const [chatCfg, setChatCfg] = useState<QrConfig | null>(null);
+    const qrSnap = useQrSettings();
+    const qr = qrSnap.doc;
+    const chat = s.chat;
+    const canBindChat = !!chat && !chat.groupId && !!chat.charDir && !!chat.chatName;
+    const cfgSnap = useQrChatCfg(canBindChat ? chat!.charDir : null, canBindChat ? chat!.chatName : null);
+    const chatCfg = cfgSnap.doc;
     const [sel, setSel] = useState('');
     const [newName, setNewName] = useState('');
     const [busy, setBusy] = useState<string | null>(null);
     const [result, setResult] = useState<{ id: number; lines: ScriptResultLine[] } | null>(null);
 
-    const chat = s.chat;
     const charKey = chat?.charDir
         ? qrCharScopeKey(s.cards.get(chat.charDir)?.avatar ?? null, chat.charDir)
         : null;
     const canBind = !!chat && !chat.groupId;
-
-    useEffect(() => {
-        if (!s.live) return;
-        let dead = false;
-        void getQrSettingsDoc().then((v) => { if (!dead) setQr(v); }).catch(() => undefined);
-        return () => { dead = true; };
-    }, [s.live]);
-    useEffect(() => {
-        if (!s.live || !chat || chat.groupId || !chat.charDir || !chat.chatName) { setChatCfg(null); return; }
-        let dead = false;
-        getChatQrConfig(chat.charDir, chat.chatName)
-            .then((c) => { if (!dead) setChatCfg(c); })
-            .catch(() => { if (!dead) setChatCfg(null); });
-        return () => { dead = true; };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [s.live, chatId]);
 
     const ns = names.data ?? [];
     const enabled = qrEnabledNames(qr, charKey, chatCfg, ns);
@@ -588,18 +641,18 @@ function QuickSection({ run }: { run: (script: string) => Promise<ScriptResultLi
     const fail = (e: unknown) => s.hint(`${t('panel.auto.qr.opFailed')}: ${e instanceof Error ? e.message : String(e)}`, true);
 
     /** Set enable/disable — settings scopes flip + chat link off when hiding
-        (same write pair as the composer's toggleQrSet). */
+        (same write pair as the composer's toggleQrSet), now through the
+        shared stores: the transform applies onto the optimistic doc, so a
+        composer toggle that landed after this page loaded is preserved. */
     const toggleSet = async (name: string, on: boolean) => {
         if (busy) return;
         setBusy(`set:${name}`);
         try {
-            const next = qrv2WithSetVisible(qr, charKey, name, on);
-            await patchQrSettingsDoc(next);
-            setQr(next);
+            mutateQrSettings((base) => qrv2WithSetVisible(base, charKey, name, on));
+            await flushQrSettings();
             if (!on && canBind && chat && qrBound(chatCfg, name)) {
-                const cfg = qrConfigWithLink(chatCfg, name, 'off');
-                await patchChatQrConfig(chat.charDir, chat.chatName, cfg);
-                setChatCfg(cfg);
+                mutateQrChatCfg(chat.charDir, chat.chatName, (base) => qrConfigWithLink(base, name, 'off'));
+                await flushQrChatCfg(chat.charDir, chat.chatName);
             }
         } catch (e) { fail(e); }
         finally { setBusy(null); }
@@ -611,6 +664,11 @@ function QuickSection({ run }: { run: (script: string) => Promise<ScriptResultLi
         if (ns.includes(nm)) { s.hint(t('panel.auto.qr.exists'), true); return; }
         setBusy('new');
         try {
+            /* Fresh exists-check — the names list is a snapshot; a set
+               created elsewhere between fetch and save would be silently
+               clobbered by the unconditional PUT upsert. */
+            const existing = await getQrSet(nm).then(() => true).catch(() => false);
+            if (existing) { s.hint(t('panel.auto.qr.exists'), true); return; }
             await saveQrSet(nm, newQrSetDoc(nm));
             setNewName('');
             names.reload();

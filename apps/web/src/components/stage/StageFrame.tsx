@@ -32,11 +32,15 @@ import { listScriptCommands, type ScriptCommandInfo } from '../../api/th';
 import { getSettings } from '../../api/settings';
 import { wbStudioFocus } from '../../api/worlds';
 import {
-    getQrSet, getQrSettingsDoc, listQrSets, patchChatQrConfig, patchQrSettingsDoc,
+    getQrSet, listQrSets,
     qrBound, qrChatConfigFromHeader, qrCharScopeKey, qrConfigWithLink, qrEnabledNames,
     qrv2WithSetVisible, qrStudioFocus,
     type QrConfig, type QrSetDoc, type QrSettings,
 } from '../../api/quickreplies';
+import {
+    flushQrChatCfg, flushQrSettings, invalidateSharedDocs, mutateQrChatCfg,
+    mutateQrSettings, qrChatCfgs, qrChatKey, useQrChatCfg, useQrSettings,
+} from '../../kernel/docStores';
 import { builtinCoverSrc, personaAvatarSrc } from '../../api/personas';
 import { listCharAssets, type SpriteAsset } from '../../api/sprites';
 import { downloadExport, exportChatUrl } from '../../api/export';
@@ -986,8 +990,14 @@ export function StageFrame({ children }: { children: ReactNode }) {
     const [qrNames, setQrNames] = useState<string[]>([]);
     const [qrSel, setQrSel] = useState('');
     const [qrDoc, setQrDoc] = useState<QrSetDoc | null>(null);
-    const [qrSettings, setQrSettings] = useState<QrSettings | null>(null);
-    const [qrChatCfg, setQrChatCfg] = useState<QrConfig | null>(null);
+    /* Bindings docs come from the shared stores — automation panel and
+       studio QR page toggle the SAME quickReplyV2/chat_metadata docs, so
+       a composer toggle can't be reverted by another surface's write. */
+    const qrSettingsSnap = useQrSettings();
+    const qrSettings = qrSettingsSnap.doc;
+    const qrChatBind = !!s.chat && !s.chat.groupId && !!s.chat.charDir && !!s.chat.chatName;
+    const qrChatCfgSnap = useQrChatCfg(qrChatBind ? s.chat!.charDir : null, qrChatBind ? s.chat!.chatName : null);
+    const qrChatCfg = qrChatCfgSnap.doc;
     /* 会话绑书(chat_metadata.world_info,string|string[])—— 随 loadChat
        同车取,会话信息弹层读;TH setChatLorebook 同键。 */
     const [chatBound, setChatBound] = useState<string[]>([]);
@@ -1061,6 +1071,19 @@ export function StageFrame({ children }: { children: ReactNode }) {
         } catch { /* reload 失败不炸楼层,下一动作再拉 */ }
     }, [s.chat, loadChatOf]);
 
+    /* Out-of-lane floor mutations bump s.chatRevision (automation panel
+       script runs — /cut etc. — don't reload this view themselves).
+       Refetch so index-addressed floor actions (delete/edit) can never
+       target a stale message. Skipped while generating: the streaming
+       floor isn't persisted yet and the settle write-back reloads. */
+    const chatRevRef = useRef(s.chatRevision);
+    useEffect(() => {
+        if (chatRevRef.current === s.chatRevision) return;
+        chatRevRef.current = s.chatRevision;
+        if (settleRef.current || job) return;
+        void reload();
+    }, [s.chatRevision, job, reload]);
+
     /* ——— 会话/连接切换:live → 真楼层;否则 mock 种子 ——— */
     useEffect(() => {
         wsClose.current?.();
@@ -1094,8 +1117,15 @@ export function StageFrame({ children }: { children: ReactNode }) {
                         ? meta.custom_background : null;
                     sRef.current.setChatBgLock(lock);
                     /* QR 会话 scope 绑定档(chat_metadata.quickReply)同车取 ——
-                       不再为 QR 面单发一次 getChat。 */
-                    setQrChatCfg(qrChatConfigFromHeader(d.header));
+                       不再为 QR 面单发一次 getChat;prime() keeps any
+                       pending link edits by rebasing them on the fresh doc. */
+                    const curChat = s.chat;
+                    if (curChat && !curChat.groupId) {
+                        qrChatCfgs.prime(
+                            qrChatKey(curChat.charDir, curChat.chatName),
+                            qrChatConfigFromHeader(d.header) ?? {},
+                        );
+                    }
                     const wi = meta?.world_info;
                     setChatBound(Array.isArray(wi) ? wi.filter((x): x is string => typeof x === 'string' && !!x)
                         : (typeof wi === 'string' && wi ? [wi] : []));
@@ -1123,8 +1153,7 @@ export function StageFrame({ children }: { children: ReactNode }) {
            mock 楼层种子已撤(假数据令:离线不编台词,发送被 status.stub 拦下)。 */
         setMsgs([]);
         s.setChatBgLock(null);
-        setQrNames([]); setQrSel(''); setQrDoc(null);
-        setQrSettings(null); setQrChatCfg(null); setQrPick(false);
+        setQrNames([]); setQrSel(''); setQrDoc(null); setQrPick(false);
         setChatBound([]);
         setCtxLen(null);
     }, [chatKey, s.live]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1140,20 +1169,16 @@ export function StageFrame({ children }: { children: ReactNode }) {
         return () => { dead = true; };
     }, [s.live]);
 
-    /* ——— QR 条(TASK-063):会话级一拉全册名录 + quickReplyV2 绑定档;
-           选中册(qrSel)单独拉文档。选中优先「本会话已启用的册」→ 兜底
-           首册 —— 进会话即见可用 chip,不是永远 names[0]。空档整条不渲染 ——— */
+    /* ——— QR 条(TASK-063):会话级一拉全册名录;quickReplyV2 绑定档来自
+           shared qrSettings store(subscribed above — no per-surface
+           snapshot). 选中优先「本会话已启用的册」→ 兜底首册 —— 进会话
+           即见可用 chip,不是永远 names[0]。空档整条不渲染 ——— */
     useEffect(() => {
         if (!s.live || !s.chat) return;
         let dead = false;
-        void (async () => {
-            try {
-                const [names, qr] = await Promise.all([listQrSets(), getQrSettingsDoc()]);
-                if (dead) return;
-                setQrNames(names);
-                setQrSettings(qr);
-            } catch { if (!dead) { setQrNames([]); setQrSettings(null); } }
-        })();
+        void listQrSets()
+            .then((names) => { if (!dead) setQrNames(names); })
+            .catch(() => { if (!dead) setQrNames([]); });
         return () => { dead = true; };
     }, [s.live, s.chat?.id]);
 
@@ -1189,21 +1214,21 @@ export function StageFrame({ children }: { children: ReactNode }) {
         .map((q) => ({ label: (q.label ?? '').trim() || q.message!.trim().slice(0, 18), message: q.message!.trim() }));
 
     /* 册启停(钮行内开关):on → 全局 scope 补/翻真 link;off → 全局+本卡
-       link 翻假 + 本会话 link 同翻假(link 留,是「绑定但隐藏」)。 */
+       link 翻假 + 本会话 link 同翻假(link 留,是「绑定但隐藏」)。
+       All writes go through the shared stores — the transform applies
+       onto the optimistic doc, so a toggle from automation/studio that
+       landed after this strip loaded is merged, not reverted. */
     const toggleQrSet = async (name: string, on: boolean) => {
-        const next = qrv2WithSetVisible(qrSettings, qrCharKey, name, on);
         try {
-            await patchQrSettingsDoc(next);
-            setQrSettings(next);
+            mutateQrSettings((base) => qrv2WithSetVisible(base, qrCharKey, name, on));
+            await flushQrSettings();
         } catch { return; }
         /* 群会话无 QR 卡域写面(quickReply chat-scope PATCH 是卡路由)
            —— chat-bound link 不动,全局 scope 兜底生效。 */
         if (!on && s.chat && !s.chat.groupId && qrBound(qrChatCfg, name)) {
-            const cfg = qrConfigWithLink(qrChatCfg, name, 'off');
-            try {
-                await patchChatQrConfig(s.chat.charDir, s.chat.chatName, cfg);
-                setQrChatCfg(cfg);
-            } catch { /* chat 侧失败不翻 settings 回 —— 下次刷新对账 */ }
+            mutateQrChatCfg(s.chat.charDir, s.chat.chatName, (base) => qrConfigWithLink(base, name, 'off'));
+            try { await flushQrChatCfg(s.chat.charDir, s.chat.chatName); }
+            catch { /* chat 侧失败不翻 settings 回 —— 下次刷新对账 */ }
         }
     };
 
@@ -1743,6 +1768,10 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 }
             }
             if (!navigated) await reload();
+            /* Scripts can write shared docs server-side (preset-scope
+               regex via TH, QR links, variables) — re-pull every live
+               store entry so edit surfaces converge on the truth. */
+            invalidateSharedDocs();
             void refreshPanels();
         } catch (e) {
             /* 挂起中被打断(interact 404/网络)→ 卸弹层,resolve 已随

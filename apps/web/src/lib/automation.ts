@@ -68,6 +68,14 @@ const flatItem = (kind: string, owner: string, target: RegexScopeTarget, sc: Reg
     return { key: `${kind}:${owner}:${idOrIdx}:${idx}`, target, idOrIdx, script: sc };
 };
 
+/** Flat items for a preset group rendered from the shared doc store
+    (not the server full view) — identical shape to flattenRegexView's
+    preset items so rows/ops are interchangeable. */
+export function flatItemsForPreset(apiId: string, name: string, scripts: RegexScriptData[]): RegexFlatItem[] {
+    const target: RegexScopeTarget = { scope: 'preset', apiId, preset: name };
+    return scripts.map((sc, i) => flatItem('preset', `${apiId}:${name}`, target, sc, i));
+}
+
 /** GET /regex 全量视图 → 三组(global → char → preset)渲染模型。
  *  空组不产出 —— 面板按组渲染,空 scope 直接缺席。 */
 export function flattenRegexView(full: RegexFullViewResponse): RegexGroupView[] {
@@ -126,17 +134,22 @@ export interface RegexEditDraft {
     maxDepth: string;
 }
 
-/** 现有脚本 → 编辑稿(新稿给 ST 常用默认:AI_OUTPUT,md-only,runOnEdit)。 */
+/** 现有脚本 → 编辑稿(新稿给 ST 常用默认:AI_OUTPUT,md-only,runOnEdit)。
+ *  Existing scripts keep their runtime truth — an absent flag is falsy at
+ *  runtime, so drafting `true` would silently enable it on save (a rename
+ *  must never change when a script fires). Placement: absent → engine
+ *  skips; `[]` → never matches — same result, so existing scripts draft
+ *  an empty set (explicit, no execution change); only NEW drafts get [2]. */
 export function regexDraftOf(sc?: RegexScriptData): RegexEditDraft {
     return {
         scriptName: sc?.scriptName ?? '',
         findRegex: sc?.findRegex ?? '',
         replaceString: sc?.replaceString ?? '',
         disabled: sc?.disabled === true,
-        markdownOnly: sc?.markdownOnly ?? true,
+        markdownOnly: sc ? sc.markdownOnly === true : true,
         promptOnly: sc?.promptOnly === true,
-        runOnEdit: sc?.runOnEdit ?? true,
-        placement: new Set(Array.isArray(sc?.placement) ? sc.placement : [2]),
+        runOnEdit: sc ? sc.runOnEdit === true : true,
+        placement: new Set(Array.isArray(sc?.placement) ? sc.placement : sc ? [] : [2]),
         minDepth: sc?.minDepth == null ? '' : String(sc.minDepth),
         maxDepth: sc?.maxDepth == null ? '' : String(sc.maxDepth),
     };

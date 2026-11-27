@@ -8,8 +8,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-    addPresetRegex, newPresetRegexScript, patchPresetRegex, presetExtBag,
-    presetRegexScripts, removePresetRegex, togglePresetRegex, withPresetRegexScripts,
+    addPresetRegex, findPresetRegexIndex, newPresetRegexScript, patchPresetRegex,
+    patchPresetRegexByKey, presetExtBag, presetRegexKeyOf, presetRegexScripts,
+    removePresetRegex, removePresetRegexByKey, togglePresetRegex, togglePresetRegexByKey,
+    withPresetRegexScripts,
 } from '../src/components/panels/presetRegex.ts';
 
 const docWith = (scripts, extra = {}) => ({
@@ -99,4 +101,67 @@ test('addPresetRegex — 追加尾位,先写后进生成链可放行', () => {
     /* 空档起步:extensions 缺省也能落成 {regex_scripts:[…]} */
     const fromEmpty = addPresetRegex({}, newPresetRegexScript('rx-0'));
     assert.equal(presetRegexScripts(fromEmpty).length, 1);
+});
+
+/* ---------- Stable (non-index) addressing — the wrong-target class ---------- */
+
+test('key ops — delete/toggle by id survives list reorder (the reported bug)', () => {
+    /* Reported failure: right rail deletes A; studio's stale list still
+       shows [A,B]; the write lands on fresh doc [B] — index 0 deleted B.
+       Key addressing makes the captured target follow the script, not
+       the slot: deleting A on a doc that no longer has A is a no-op. */
+    const a = { id: 'a', scriptName: 'A', findRegex: '/a/' };
+    const bSc = { id: 'b', scriptName: 'B', findRegex: '/b/' };
+    const rendered = docWith([a, bSc]);
+    const keyA = presetRegexKeyOf(presetRegexScripts(rendered)[0]);
+    const current = docWith([bSc]); // A already gone on the server
+    const after = removePresetRegexByKey(current, keyA);
+    assert.equal(presetRegexScripts(after).length, 1, 'stale key → no-op, B preserved');
+    assert.equal(presetRegexScripts(after)[0].id, 'b');
+
+    /* Reorder between capture and apply — the key still hits A. */
+    const reordered = docWith([bSc, a]);
+    const del = removePresetRegexByKey(reordered, keyA);
+    assert.deepEqual(presetRegexScripts(del).map((s) => s.id), ['b']);
+
+    /* Toggle by id through the same reorder. */
+    const tog = togglePresetRegexByKey(reordered, keyA);
+    assert.equal(presetRegexScripts(tog)[1].disabled, true);
+    assert.equal(presetRegexScripts(tog)[0].disabled, undefined, 'only the keyed entry flips');
+});
+
+test('findPresetRegexIndex — id first, deep-equal ref, `at` last resort', () => {
+    const a = { scriptName: 'A', findRegex: '/a/' };
+    const bSc = { scriptName: 'B', findRegex: '/b/' };
+    const d = docWith([a, bSc]);
+    assert.equal(findPresetRegexIndex(d, { ref: bSc }), 1);
+    assert.equal(findPresetRegexIndex(d, { ref: { scriptName: 'Z' } }), -1);
+    assert.equal(findPresetRegexIndex(d, { ref: { scriptName: 'Z' }, at: 1 }), 1, 'at fills the ref-miss');
+    assert.equal(findPresetRegexIndex(d, { at: 9 }), -1, 'out-of-range at → -1');
+    assert.equal(findPresetRegexIndex(d, { id: 'none' }), -1);
+});
+
+test('patchPresetRegexByKey — ref fallback mints an id so later edits stay keyed', () => {
+    const legacy = { scriptName: 'old', findRegex: '/x/' };
+    const d = docWith([legacy]);
+    const next = patchPresetRegexByKey(d, presetRegexKeyOf(legacy), { scriptName: 'new' }, () => 'rx-minted');
+    const sc = presetRegexScripts(next)[0];
+    assert.equal(sc.scriptName, 'new');
+    assert.equal(sc.id, 'rx-minted', 'id-less script gains a stable id on first patch');
+    /* Subsequent writes address the minted id — ref staleness no longer matters. */
+    const again = patchPresetRegexByKey(next, { id: 'rx-minted' }, { findRegex: '/y/' });
+    assert.equal(presetRegexScripts(again)[0].findRegex, '/y/');
+});
+
+test('patchPresetRegexByKey — rapid typing race: stale ref still lands via `at`', () => {
+    /* Keystroke 1 patched the ref'd script (id minted + name changed);
+       keystroke 2 arrives with the PRE-patch closure — ref no longer
+       deep-equals, `at` resolves the same slot. */
+    const legacy = { scriptName: '', findRegex: '/x/' };
+    const d = docWith([legacy]);
+    const after1 = patchPresetRegexByKey(d, { ref: legacy, at: 0 }, { scriptName: 'a' }, () => 'rx-1');
+    const after2 = patchPresetRegexByKey(after1, { ref: legacy, at: 0 }, { scriptName: 'ab' }, () => 'rx-2');
+    const sc = presetRegexScripts(after2)[0];
+    assert.equal(sc.scriptName, 'ab', 'second keystroke landed, not dropped');
+    assert.equal(sc.id, 'rx-1', 'minted id persists — subsequent writes stay id-keyed');
 });

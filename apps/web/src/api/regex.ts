@@ -92,3 +92,38 @@ export async function deleteRegexScript(
     await assertOk(res);
     return (await res.json()) as { ok: true; id: string; scope: string; remaining: number };
 }
+
+/** GET /api/utopinn/regex?scope=… —— script list for a single scope
+    (global/char/preset all answer {scripts} — preset scope included so a
+    serialized read-modify-write has a typed fetcher; preset writes still
+    belong to the shared preset-doc lane, not putRegexScope). */
+export async function getRegexScope(target: RegexScopeTarget): Promise<RegexScriptData[]> {
+    const res = await apiGet<{ scripts?: unknown }>(`/api/utopinn/regex${scopeQuery(target)}`);
+    const arr = res?.scripts;
+    return Array.isArray(arr)
+        ? arr.filter((x): x is RegexScriptData => !!x && typeof x === 'object' && !Array.isArray(x))
+        : [];
+}
+
+/* Whole-array writes (scripts:[…]) are blind replaces server-side, so a
+   caller that built its array from a stale snapshot silently drops rows
+   added elsewhere. mutateRegexScope serializes a GET → fn → PUT per
+   scope key: the transform always runs on the freshest array and two
+   callers can never interleave. PATCH/DELETE stay preferred for
+   single-script ops — this is for ops the API only exposes whole-array
+   (add). */
+const scopeChains = new Map<string, Promise<unknown>>();
+
+export function mutateRegexScope(
+    target: RegexScopeTarget,
+    fn: (scripts: RegexScriptData[]) => RegexScriptData[],
+): Promise<{ ok: true; count?: number }> {
+    const key = JSON.stringify(scopeBody(target));
+    const prev = scopeChains.get(key) ?? Promise.resolve();
+    const next = prev.then(async () => {
+        const cur = await getRegexScope(target);
+        return putRegexScope(target, { scripts: fn(cur) });
+    });
+    scopeChains.set(key, next.catch(() => undefined));
+    return next.then((r) => ({ ok: true as const, count: r.count }));
+}

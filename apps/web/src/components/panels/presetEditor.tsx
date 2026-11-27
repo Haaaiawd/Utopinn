@@ -28,8 +28,8 @@ import { useRemote } from './panelShared';
 import type { PresetDocument } from '../../api/presets';
 import { getRegexPresetScope, putRegexScope, type RegexScriptData } from '../../api/regex';
 import {
-    addPresetRegex, newPresetRegexScript, patchPresetRegex, presetRegexScripts,
-    removePresetRegex, togglePresetRegex,
+    addPresetRegex, newPresetRegexScript, patchPresetRegexByKey,
+    presetRegexKeyOf, presetRegexScripts, removePresetRegexByKey, togglePresetRegexByKey,
 } from './presetRegex';
 
 const numOr = (v: unknown, fallback: number): number =>
@@ -250,13 +250,17 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
             .catch((e) => s.hint(`${t('stage.patch.failed')}: ${e instanceof Error ? e.message : String(e)}`, true))
             .finally(() => setAllowBusy(false));
     };
-    /* 写穿 mutate fn 内现取 d —— 与在途调参改动同通道串行,恒以最新档为准。 */
+    /* Writes capture a stable key (id, or the rendered object for legacy
+       id-less scripts) — never a bare index — so a list that changed since
+       render can never shift a write onto the wrong entry. First patch on
+       an id-less script stamps a fresh id; later edits stay id-keyed. */
+    const mintId = () => `rx-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     const delScript = (i: number) => {
         const sc = scripts[i];
         const label = sc?.scriptName || `#${i}`;
         if (!window.confirm(`${t('studio.regex.delConfirm')}\n${label}`)) return;
         if (sc && openKey === keyOf(sc, i)) setOpenKey(null);
-        onMutate((d) => removePresetRegex(d, i));
+        if (sc) onMutate((d) => removePresetRegexByKey(d, presetRegexKeyOf(sc)));
     };
     const addScript = () => {
         const sc = newPresetRegexScript(`rx-${Date.now().toString(36)}`);
@@ -323,7 +327,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                             <span className="mt-0.5 block truncate font-mono-ui text-[9.5px] text-[color:var(--fg-faint)]">{sc.findRegex}</span>
                                         )}
                                     </span>
-                                    <MiniSwitch on={on} disabled={disabled} onToggle={() => onMutate((d) => togglePresetRegex(d, i))} />
+                                    <MiniSwitch on={on} disabled={disabled} onToggle={() => onMutate((d) => togglePresetRegexByKey(d, presetRegexKeyOf(sc)))} />
                                     <button
                                         type="button" className="ghost-btn h-6 w-6 shrink-0" disabled={disabled}
                                         title={t('studio.persona.delete')} style={{ color: 'var(--status-danger)' }}
@@ -339,7 +343,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                             <input
                                                 className={`${inputCls} h-7 text-[12px]`} value={typeof sc.scriptName === 'string' ? sc.scriptName : ''}
                                                 disabled={disabled} placeholder={t('studio.regex.namePh')}
-                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { scriptName: e.target.value }))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { scriptName: e.target.value }, mintId))}
                                             />
                                         </label>
                                         <label className="block">
@@ -347,7 +351,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                             <input
                                                 className={`${inputCls} h-7 font-mono-ui text-[11.5px]`} value={typeof sc.findRegex === 'string' ? sc.findRegex : ''}
                                                 disabled={disabled} placeholder="/pattern/g"
-                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { findRegex: e.target.value }))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { findRegex: e.target.value }, mintId))}
                                             />
                                         </label>
                                         <label className="block">
@@ -356,7 +360,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                                 className="min-h-[60px] w-full select-text resize-y rounded-lg border border-[color:var(--border-hairline)] bg-[color:var(--bg-canvas)] p-2 font-mono-ui text-[11.5px] leading-relaxed text-[color:var(--fg-primary)] outline-none transition-colors focus:border-[color:var(--border-strong)] disabled:opacity-50"
                                                 value={typeof sc.replaceString === 'string' ? sc.replaceString : ''}
                                                 disabled={disabled} placeholder={t('studio.regex.replacePh')}
-                                                onChange={(e) => onMutate((d) => patchPresetRegex(d, i, { replaceString: e.target.value }))}
+                                                onChange={(e) => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { replaceString: e.target.value }, mintId))}
                                             />
                                         </label>
                                         <div className="flex flex-wrap gap-1.5 pt-0.5">
@@ -369,7 +373,7 @@ function PresetRegexSection({ apiId, presetName, doc, onMutate, disabled }: {
                                                         style={on
                                                             ? { borderColor: 'var(--border-strong)', background: 'var(--bg-active)', color: 'var(--fg-primary)' }
                                                             : { borderColor: 'var(--border-hairline)', color: 'var(--fg-faint)' }}
-                                                        onClick={() => onMutate((d) => patchPresetRegex(d, i, { [f.key]: !on }))}
+                                                        onClick={() => onMutate((d) => patchPresetRegexByKey(d, { ...presetRegexKeyOf(sc), at: i }, { [f.key]: !on }, mintId))}
                                                     >
                                                         {t(f.label)}
                                                     </button>
