@@ -275,6 +275,14 @@
 .ghost-btn:hover { background: var(--bg-active); color: var(--fg-primary); }
 .ghost-btn:active { transform: scale(0.96); }
 
+/* Form-factor presence helpers — same truth as ctx.isMobile (App.tsx writes
+   html[data-vp]). Plain `{!isMobile && …}` render-gates hide chrome elements;
+   these classes express the same thing declaratively so an element keeps a
+   single mount point. Unlayered on purpose: must beat spec classes that set
+   their own display (.ghost-btn inline-flex, .inset-row flex…). */
+html[data-vp="mobile"] .desk-only { display: none; }
+html:not([data-vp="mobile"]) .mob-only { display: none; }
+
 .composer-shell {
     background: var(--bg-input);
     border: 2px solid var(--border-bold);

@@ -779,11 +779,7 @@ function PresetPop({ onClose }: { onClose: () => void }) {
     return (
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
-                className={
-                    s.isMobile
-                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[72dvh] flex-col overflow-hidden rounded-2xl'
-                        : 'pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-6 z-40 flex max-h-[72vh] w-[352px] flex-col overflow-hidden rounded-2xl'
-                }
+                className="pop-in absolute bottom-[var(--composer-pop-bottom,92px)] right-6 z-40 flex max-h-[72vh] w-[352px] flex-col overflow-hidden rounded-2xl mob:inset-x-3 mob:w-auto mob:max-h-[72dvh] mob:bottom-[var(--composer-pop-bottom,88px)]"
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom right' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -915,11 +911,7 @@ function QrSetPop({ names, sel, enabled, qr, chatCfg, charKey, onPick, onToggle,
     return (
         <div className="absolute inset-0 z-30" onClick={onClose}>
             <div
-                className={
-                    s.isMobile
-                        ? 'pop-in absolute inset-x-3 bottom-[var(--composer-pop-bottom,88px)] z-40 flex max-h-[56dvh] flex-col overflow-hidden rounded-2xl'
-                        : 'pop-in absolute bottom-[var(--composer-pop-bottom,92px)] left-1/2 z-40 flex max-h-[56vh] w-[360px] -translate-x-1/2 flex-col overflow-hidden rounded-2xl'
-                }
+                className="pop-in absolute bottom-[var(--composer-pop-bottom,92px)] left-1/2 z-40 flex max-h-[56vh] w-[360px] -translate-x-1/2 flex-col overflow-hidden rounded-2xl mob:inset-x-3 mob:w-auto mob:max-h-[56dvh] mob:translate-x-0 mob:bottom-[var(--composer-pop-bottom,88px)]"
                 style={{ background: 'var(--bg-elevated)', boxShadow: 'var(--shadow-pop)', transformOrigin: 'bottom center' }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -2175,11 +2167,9 @@ export function StageFrame({ children }: { children: ReactNode }) {
                 <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-[color:var(--border-hairline)] px-4">
                     <div className="flex min-w-0 items-center gap-1.5">
                         {/* 规范稿移动端 stage-header 左侧 ≡ → mob drawer */}
-                        {s.isMobile && (
-                            <button className="ghost-btn h-8 w-8 shrink-0" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
-                                <Icon name="menu" size={20} active={s.mobileDrawer} />
-                            </button>
-                        )}
+                        <button className="ghost-btn h-8 w-8 shrink-0 mob-only" onClick={() => s.setMobileDrawer(true)} title={t('mob.menu')}>
+                            <Icon name="menu" size={20} active={s.mobileDrawer} />
+                        </button>
                         {/* 标题钮 → 会话信息弹层(改名/元信息);群会话 → 群名册/编排弹层。 */}
                         <button
                             className="heading-tight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[14px] font-medium transition-colors hover:bg-[color:var(--bg-surface)]"
@@ -2272,23 +2262,22 @@ export function StageFrame({ children }: { children: ReactNode }) {
                                 <Icon name="upload" size={16} />
                             </button>
                         )}
-                        {s.isMobile ? (
-                            <button
-                                className="ghost-btn h-8 gap-1.5 border px-3 text-[12px] text-[color:var(--fg-primary)]"
-                                style={{
-                                    borderRadius: 999,
-                                    background: s.sheetSnap !== 'closed' ? 'var(--bg-active)' : 'var(--bg-surface)',
-                                    borderColor: s.sheetSnap !== 'closed' ? 'var(--border-bold)' : 'var(--border-hairline)',
-                                }}
-                                onClick={() => s.setSheetSnap(s.sheetSnap === 'closed' ? sheetOpenSnap : 'closed')}
-                            >
-                                <Icon name="panelRight" size={15} active={s.sheetSnap !== 'closed'} /><span>{t('mob.panel')}</span>
-                            </button>
-                        ) : (
-                            <button className="ghost-btn h-8 w-8" onClick={s.toggleWorkbench} title={t('chrome.workbench')}>
-                                <Icon name="panelRight" size={20} active={s.workbenchOpen} />
-                            </button>
-                        )}
+                        {/* 面板开关双形态:移动 sheet 药丸(含标签),桌面 wb 图标钮。
+                            各挂 mob-only/desk-only —— 同一挂载点,不 remount。 */}
+                        <button
+                            className="ghost-btn h-8 gap-1.5 border px-3 text-[12px] text-[color:var(--fg-primary)] mob-only"
+                            style={{
+                                borderRadius: 999,
+                                background: s.sheetSnap !== 'closed' ? 'var(--bg-active)' : 'var(--bg-surface)',
+                                borderColor: s.sheetSnap !== 'closed' ? 'var(--border-bold)' : 'var(--border-hairline)',
+                            }}
+                            onClick={() => s.setSheetSnap(s.sheetSnap === 'closed' ? sheetOpenSnap : 'closed')}
+                        >
+                            <Icon name="panelRight" size={15} active={s.sheetSnap !== 'closed'} /><span>{t('mob.panel')}</span>
+                        </button>
+                        <button className="ghost-btn h-8 w-8 desk-only" onClick={s.toggleWorkbench} title={t('chrome.workbench')}>
+                            <Icon name="panelRight" size={20} active={s.workbenchOpen} />
+                        </button>
                     </div>
                 </header>
                 {/* 规范稿离线 banner L1324-1332 */}

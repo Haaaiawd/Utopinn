@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Form-factor variant — `mob:` is the CSS twin of ctx.isMobile.
+   The single source of truth stays JS (App.tsx writes html[data-vp] from
+   vpMode/?vp=/width), so `mob:` matches ?vp=mobile forced shells too —
+   a width media query would not. Size/density differences belong here;
+   pure presence differences use .desk-only/.mob-only (spec.css).
+   Real functional forks stay in JS and are declared in
+   lib/mobileParity.ts — the contract test scans for undeclared ones. */
+@custom-variant mob (&:where([data-vp="mobile"] *));
+
 /* Design tokens — U馆 flagship 规范(u_ui_codex_linear_shadcn_ui.html)直译。
    规范 :root 暗色全套原样落 [data-theme="dark"];亮色系(羊皮象牙白)
    落 [data-theme="light"]。命名沿用规范稿:canvas-bg、surface-1..3、
