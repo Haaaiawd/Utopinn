@@ -72,13 +72,14 @@ const BUILTIN_CONTRIB = {
         { slot: 'panel.type', contribution: { type: 'cardapp', icon: 'layout', wired: true, badge: 'panel.badge.cardapp', category: 'cardapp', desc: 'panel.desc.cardapp' } },
     ],
     // notes=library state/chat(ns='notes')面;preset=library /presets 面。
+    // preset 归 pinned:一方核心功能常驻推荐位(与前端 panels feature 同词)。
     'utopinn-library': [
         { slot: 'panel.type', contribution: { type: 'notes', icon: 'note', wired: true, category: 'system', desc: 'panel.desc.notes' } },
-        { slot: 'panel.type', contribution: { type: 'preset', icon: 'sliders', wired: true, category: 'system', desc: 'panel.desc.preset' } },
+        { slot: 'panel.type', contribution: { type: 'preset', icon: 'sliders', wired: true, category: 'pinned', desc: 'panel.desc.preset' } },
     ],
-    // izumi=utopinn-izumi /state|/put 面(IzumiEdit 信息库查看/开关)。
+    // izumi=utopinn-izumi /state|/put 面(IzumiEdit 信息库查看/开关),归 pinned。
     'utopinn-izumi': [
-        { slot: 'panel.type', contribution: { type: 'izumi', icon: 'brain', wired: true, category: 'system', desc: 'panel.desc.izumi' } },
+        { slot: 'panel.type', contribution: { type: 'izumi', icon: 'brain', wired: true, category: 'pinned', desc: 'panel.desc.izumi' } },
     ],
 };
 

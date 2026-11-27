@@ -14,7 +14,8 @@ import type { PanelType, PanelTypeContribution } from '../../kernel/contribution
 import { cardAppInfo, type CardAppInfo } from '../../api/cardRuntime';
 import { charImageUrl } from '../../api/characters';
 import { builtinCoverSrc } from '../../api/personas';
-import { readPanelFreq, panelFreqScore } from './panelFreq';
+import { readPanelFreq } from './panelFreq';
+import { bucketLauncherPanels } from './launcherBuckets';
 
 /** 按类型解析板块体(panel.type 贡献点;未注册 → 诚实占位)。 */
 export function PanelBody({ type }: { type: string }) {
@@ -63,16 +64,16 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
     const q = shell.launcherSearch.trim().toLowerCase();
     const match = (c: PanelTypeContribution) =>
         !q || panelTitle(t, c).toLowerCase().includes(q) || c.type.includes(q) || (c.desc ? t(c.desc).toLowerCase().includes(q) : false);
-    const cardItems = appInfo?.has ? contribs.filter((c) => c.category === 'cardapp' && match(c)) : [];
-    /* 活跃 launcher:系统区按使用频度重排 —— score = count + 近因加成
-       (openPanel 打点 'utopinn.wb.freq');无记录 -1 殿后保注册序。 */
-    const freqMap = readPanelFreq();
-    const sysItems = contribs
-        .filter((c) => (c.category ?? 'system') === 'system' && match(c))
-        .map((c, i) => ({ c, i, s: panelFreqScore(freqMap[c.type]) }))
-        .sort((a, b) => (b.s - a.s) || (a.i - b.i))
-        .map((x) => x.c);
-    const suggested = contribs.filter((c) => c.category === 'suggested' && match(c));
+    /* Bucket assignment is a pure decision (launcherBuckets.ts): cardapp
+       gated by the current card's manifest; pinned = first-party core
+       panels in editorial (registration) order; system re-sorted by
+       usage freq ('utopinn.wb.freq', no record → -1 sinks to the back);
+       suggested = third-party escape hatch; hidden joins nothing. */
+    const { cardItems, pinnedItems, sysItems, suggested } = bucketLauncherPanels(contribs, {
+        hasCardApp: appInfo?.has === true,
+        match,
+        freqMap: readPanelFreq(),
+    });
     const sect = 'px-0.5 text-[11px] font-medium text-[color:var(--fg-muted)]';
     /* 当前会话情境行:launcher 顶对齐后首部用「你在开谁的面板」压住场,
        不空顶(群会话无卡头像 → 只列会话名)。 */
@@ -155,6 +156,36 @@ function Launcher({ isMobile = false }: { isMobile?: boolean }) {
                         <div className="px-0.5 text-[11.5px] leading-relaxed text-[color:var(--fg-faint)]">
                             {appInfo === null ? '…' : t('wb.launcher.nocardapp')}
                         </div>
+                    </div>
+                )}
+                {pinnedItems.length > 0 && (
+                    /* Pinned recommendation slot — first-party core panels,
+                       always on regardless of the current card. Visually a
+                       half-step under cardapp (1px vs 1.5px bold border, no
+                       iframe badge): rows stay card-level prominent so the
+                       recommendation is unmissable, with the contrib desc
+                       line for discoverability. */
+                    <div className="space-y-2">
+                        <div className={sect}>{t('wb.launcher.pinned')}</div>
+                        {pinnedItems.map((c) => (
+                            <button
+                                key={c.type}
+                                className="flex w-full items-center justify-between gap-3 rounded-[10px] p-3.5 text-left transition-colors hover:bg-[color:var(--bg-surface-hover)]"
+                                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-bold)', boxShadow: 'var(--shadow-card)' }}
+                                onClick={() => shell.openPanel(c.type)}
+                            >
+                                <span className="flex min-w-0 items-center gap-3">
+                                    <span className="shrink-0 text-[color:var(--fg-primary)]"><Icon name={c.icon} size={18} /></span>
+                                    <span className="min-w-0">
+                                        <span className="block truncate text-[13px] font-medium text-[color:var(--fg-primary)]">{panelTitle(t, c)}</span>
+                                        {c.desc && (
+                                            <span className="mt-0.5 block truncate text-[10.5px] leading-tight text-[color:var(--fg-faint)]">{t(c.desc)}</span>
+                                        )}
+                                    </span>
+                                </span>
+                                {isOpen(c.type) && openTag}
+                            </button>
+                        ))}
                     </div>
                 )}
                 {sysItems.length > 0 && (
