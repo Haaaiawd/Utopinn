@@ -14,6 +14,7 @@
 // landing paints its own background from tokens + this public asset instead
 // of growing a third ambience tier (see PR #62's two-layer model).
 
+import { useEffect, useRef } from 'react';
 import { useI18n } from '../../i18n';
 import { postLoginTarget } from '../../lib/postLoginTarget';
 import { LogoU } from '../LogoU';
@@ -21,8 +22,35 @@ import { LoginGate } from './LoginGate';
 
 export function LoginLanding() {
     const { t } = useI18n();
+    const landingRef = useRef<HTMLDivElement>(null);
+
+    // iOS Safari resizes only the VISUAL viewport for the virtual keyboard —
+    // layout (and therefore 100dvh + height media queries) never sees it, and
+    // interactive-widget=resizes-content is Chromium-only. While the keyboard
+    // is up, pin the landing to the visual viewport so the form's scroller
+    // keeps the submit button reachable, and flag .kb-open so the brand
+    // field collapses (spec.css).
+    useEffect(() => {
+        const vv = window.visualViewport;
+        const el = landingRef.current;
+        if (!vv || !el) return;
+        const apply = () => {
+            const kb = vv.height < window.innerHeight * 0.72;
+            el.classList.toggle('kb-open', kb);
+            el.style.top = kb ? `${vv.offsetTop}px` : '';
+            el.style.height = kb ? `${vv.height}px` : '';
+        };
+        apply();
+        vv.addEventListener('resize', apply);
+        vv.addEventListener('scroll', apply);
+        return () => {
+            vv.removeEventListener('resize', apply);
+            vv.removeEventListener('scroll', apply);
+        };
+    }, []);
+
     return (
-        <div className="login-landing">
+        <div className="login-landing" ref={landingRef}>
             <aside className="login-brand">
                 <div className="login-brand-art" aria-hidden="true" />
                 <div className="login-brand-scrim" aria-hidden="true" />

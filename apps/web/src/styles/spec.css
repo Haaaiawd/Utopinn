@@ -701,6 +701,18 @@ input[type="range"] { accent-color: var(--brand); }
     .login-panel { border-top: none; border-left: 1px solid var(--border-hairline); }
 }
 
+/* Cramped heights — landscape phones, or a virtual keyboard on a browser
+   honoring interactive-widget=resizes-content: the brand field is pure
+   decoration and its clamp() floor can otherwise eat the whole shrunken
+   viewport, pushing the form's own scroller below the fold. Collapse it.
+   iOS Safari never shrinks the LAYOUT viewport for the keyboard, so the
+   same collapse also hangs off the .kb-open flag LoginLanding sets from
+   visualViewport.height. */
+@media (max-width: 899px) and (max-height: 480px) {
+    .login-brand { display: none; }
+}
+.login-landing.kb-open .login-brand { display: none; }
+
 /* 第一方登录面 —— LoginLanding 表单侧的内嵌滚动容器(旧全屏蒙层已拆,
    壳不再垫在底下)。.login-gate 只负责排布;卡片视觉沿用
    --bg-elevated + --shadow-pop + popIn。 */

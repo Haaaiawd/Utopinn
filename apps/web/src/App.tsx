@@ -11,6 +11,7 @@ import {
     type GlobalLoreItem, type ModelItem, type PresetItem,
 } from './api/mock';
 import { getMe, probeAuthState, type CurrentUser } from './api/account';
+import { consumeOAuthReturnTo } from './lib/postLoginTarget';
 import { invalidateCharDocs, listCharacters, type CardItem } from './api/characters';
 import { listProfiles, type ActiveModelPointer, type ConnectionProfile } from './api/connection';
 import { fileToDraft, MAX_IMPORT_BYTES, type ImportDraft } from './api/import';
@@ -1277,7 +1278,20 @@ function AuthGate() {
         const onExpired = () => setPhase('guest');
         window.addEventListener('utopinn:auth-expired', onExpired);
         void probeAuthState().then((p) => {
-            if (!dead) setPhase(p === 'authed' ? 'authed' : 'guest');
+            if (dead) return;
+            // The OAuth callback's server-side redirect always lands on '/'.
+            // If the guest arrived on a deep link, LoginGate stashed it in
+            // sessionStorage before the hop — restore it by re-targeting this
+            // boot (full reload, same as the password flow's assign()).
+            if (p === 'authed') {
+                const back = consumeOAuthReturnTo();
+                const here = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+                if (back && back !== here) {
+                    window.location.replace(back);
+                    return;
+                }
+            }
+            setPhase(p === 'authed' ? 'authed' : 'guest');
         });
         return () => { dead = true; window.removeEventListener('utopinn:auth-expired', onExpired); };
     }, []);
