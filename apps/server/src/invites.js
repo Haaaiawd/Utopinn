@@ -78,6 +78,11 @@ function generateCode() {
 }
 
 function normalizeMaxUses(value) {
+    // Use-limit contract: absent/null/'' or exactly 0 mean "unlimited"
+    // (the stored canonical value is 0). Every other accepted value must be
+    // a positive integer — negative and fractional inputs are rejected
+    // rather than silently clamped/floored: `0 < x < 1` used to normalize
+    // to 0, i.e. a "5 uses" typo could mint an unlimited code.
     if (value === undefined || value === null || value === '') {
         return 0;
     }
@@ -85,8 +90,13 @@ function normalizeMaxUses(value) {
     if (!Number.isFinite(parsed)) {
         throw new ValidationError(`Invalid maxUses: ${String(value)}. Must be a number.`);
     }
-    // Any non-positive value collapses to 0, the canonical "unlimited".
-    return parsed <= 0 ? 0 : Math.floor(parsed);
+    if (parsed === 0) {
+        return 0;
+    }
+    if (!Number.isInteger(parsed) || parsed < 0) {
+        throw new ValidationError(`Invalid maxUses: ${String(value)}. Must be a positive integer, or 0/empty for unlimited.`);
+    }
+    return parsed;
 }
 
 function normalizeExpiresAt(value) {
@@ -222,13 +232,17 @@ export async function revokeInvite({ code, store = defaultStorage() }) {
  * @param {{ code: string, handle: string, store?: StorageLike, now?: number }} input
  * @returns {Promise<{ ok: true } | { ok: false, code: 'invalid_invite_code' | 'invite_code_revoked' | 'invite_code_expired' | 'invite_code_exhausted' }>}
  */
-export async function consumeInvite({ code, handle, store = defaultStorage(), now = Date.now() }) {
+export async function consumeInvite({ code, handle, store = defaultStorage(), now }) {
     const cleanCode = String(code || '').trim();
     if (!cleanCode) {
         return { ok: false, code: 'invalid_invite_code' };
     }
 
     return enqueueWrite(async () => {
+        // Expiry is judged inside the critical section: a consume can wait
+        // in the write queue behind another mutation, and a code that was
+        // still valid when the call arrived may expire during the wait.
+        const at = now ?? Date.now();
         const invite = normalizeStoredInvite(await store.getItem(inviteKey(cleanCode)));
         if (!invite) {
             return { ok: false, code: 'invalid_invite_code' };
@@ -236,7 +250,7 @@ export async function consumeInvite({ code, handle, store = defaultStorage(), no
         if (invite.revoked) {
             return { ok: false, code: 'invite_code_revoked' };
         }
-        if (invite.expiresAt !== null && now > invite.expiresAt) {
+        if (invite.expiresAt !== null && at > invite.expiresAt) {
             return { ok: false, code: 'invite_code_expired' };
         }
         if (invite.maxUses > 0 && invite.usedCount >= invite.maxUses) {

@@ -343,6 +343,32 @@ describe('POST /api/users/register — invite gate', () => {
         expect(retry.status).toBe(200);
     });
 
+    test('a code expiring while a consume waits in the write queue is rejected', async () => {
+        const blocker = await invites.createInvite({ createdBy: 'admin-user' });
+        const expiring = await invites.createInvite({ expiresAt: Date.now() + 40, createdBy: 'admin-user' });
+
+        // Hold the write queue: the first consume parks on a gated setItem,
+        // so the second consume's expiry check only runs after expiresAt has
+        // passed. If `now` were captured at call time (the old bug), the
+        // queued consume would redeem a code that expired during the wait.
+        let release;
+        const gate = new Promise((r) => { release = r; });
+        const gatedStore = {
+            getItem: (key) => storage.getItem(key),
+            setItem: async (key, value) => { await gate; return storage.setItem(key, value); },
+            values: (filter) => storage.values(filter),
+        };
+        const first = invites.consumeInvite({ code: blocker.code, handle: 'a', store: gatedStore });
+        const second = invites.consumeInvite({ code: expiring.code, handle: 'b' });
+        await new Promise((r) => setTimeout(r, 90));
+        release();
+
+        const [firstRes, secondRes] = await Promise.all([first, second]);
+        expect(firstRes.ok).toBe(true);
+        expect(secondRes).toEqual({ ok: false, code: 'invite_code_expired' });
+        expect((await getInvite(expiring.code)).usedCount).toBe(0);
+    });
+
     test('two racers on the last use -> exactly one wins', async () => {
         await enableRegistration(true);
         const invite = await invites.createInvite({ maxUses: 1, createdBy: 'admin-user' });
@@ -430,6 +456,26 @@ describe('admin invite endpoints', () => {
         const stored = await getInvite(item.code);
         expect(stored.revoked).toBe(true);
         expect(stored.revokedAt).toBeGreaterThan(0);
+    });
+
+    test('fractional or negative maxUses are rejected instead of silently clamped', async () => {
+        const app = makeApp();
+        for (const bad of [0.5, 0.01, -1, -3, 2.5, 'abc']) {
+            const res = await request(app).post('/api/users/invites/create').send({ maxUses: bad });
+            expect(res.status).toBe(400);
+            expect(res.body.code).toBe('invalid_invite_payload');
+        }
+        // Direct calls reject the same way (JSON cannot carry NaN/Infinity).
+        for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, 0.5, -2]) {
+            await expect(invites.createInvite({ maxUses: bad, createdBy: 'admin-user' }))
+                .rejects.toThrow(/maxUses/);
+        }
+        // The unlimited sentinel stays intact: 0 and omitted both mint fine.
+        for (const body of [{ maxUses: 0 }, {}]) {
+            const res = await request(app).post('/api/users/invites/create').send(body);
+            expect(res.status).toBe(200);
+            expect(res.body.item.maxUses).toBe(0);
+        }
     });
 
     test('invites never leak into the account handle list', async () => {
