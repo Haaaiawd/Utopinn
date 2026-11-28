@@ -9,20 +9,118 @@ import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { getConfigValue, color, setPermissionsSync, isValidUrl } from '../util.js';
+import { getConfigValue, color, setPermissionsSync, isValidUrl, isPathUnderParent } from '../util.js';
 import { write } from '../character-card-parser.js';
 import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
 import { getWorldInfoRepo, getPresetRepo, getNamedDocRepo, getSettingsRepo } from '../storage/index.js';
 
-const contentDirectory = path.join(serverDirectory, 'default/content');
-const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
-const contentIndexPath = path.join(contentDirectory, 'index.json');
-const scaffoldIndexPath = path.join(scaffoldDirectory, 'index.json');
-
 const WHITELIST_GENERIC_URL_DOWNLOAD_SOURCES = getConfigValue('whitelistImportDomains', []);
 const USER_AGENT = 'Utopinn';
+
+const DEFAULT_CONTENT_INDEX = 'index.json';
+
+/**
+ * Built-in content sources in declaration order (lowest precedence first):
+ * `default/content` is the upstream asset list, `default/scaffold` is the
+ * operator-owned release namespace. Operators append additional sources via
+ * the `contentSources` key in config.yaml — each entry is `{ path, index? }`
+ * (a bare string is accepted as shorthand for `{ path }`):
+ *
+ *   contentSources:
+ *     - path: ./default/content-pack     # resolved against the server dir
+ *       index: index.json                # optional; defaults to index.json
+ *
+ * `path` may be absolute, but the resolved directory must stay inside the
+ * server directory or the data root — entries escaping both are skipped
+ * with a warning. `index` is a plain file name inside the source directory.
+ *
+ * Precedence: later-declared sources override earlier ones. Seeding copies
+ * the first matching index entry and skips same-filename duplicates, so the
+ * merged index lists the highest-precedence source first — configured
+ * sources win over `default/scaffold`, which wins over `default/content`.
+ */
+const BUILTIN_CONTENT_SOURCES = [
+    { path: 'default/content' },
+    { path: 'default/scaffold' },
+];
+
+/**
+ * Source keys that already produced a warning in this process. Content
+ * source problems are logged once per source, not once per call.
+ * @type {Set<string>}
+ */
+const reportedContentSources = new Set();
+
+function warnContentSource(key, ...args) {
+    if (reportedContentSources.has(key)) {
+        return;
+    }
+    reportedContentSources.add(key);
+    console.warn(...args);
+}
+
+/**
+ * Resolves one `contentSources` config entry to a source descriptor.
+ * @param {any} entry Config entry: `{ path, index? }` or a bare path string
+ * @returns {{dir: string, indexPath: string} | null} Source descriptor, or null when the entry is invalid
+ */
+function resolveContentSourceEntry(entry) {
+    const record = typeof entry === 'string' ? { path: entry } : entry;
+    const key = `entry:${JSON.stringify(record)}`;
+
+    const relPath = typeof record?.path === 'string' ? record.path.trim() : '';
+    if (!relPath) {
+        warnContentSource(key, `contentSources entry ${JSON.stringify(record)} has no 'path'; skipping`);
+        return null;
+    }
+
+    const dir = path.resolve(serverDirectory, relPath);
+    const dataRoot = typeof globalThis.DATA_ROOT === 'string' ? path.resolve(globalThis.DATA_ROOT) : null;
+    const contained = isPathUnderParent(serverDirectory, dir) || (dataRoot !== null && isPathUnderParent(dataRoot, dir));
+    if (!contained) {
+        warnContentSource(key, `contentSources path '${relPath}' resolves outside the server directory and data root; skipping`);
+        return null;
+    }
+
+    const index = typeof record.index === 'string' && record.index.trim() ? record.index.trim() : DEFAULT_CONTENT_INDEX;
+    if (index === '..' || path.basename(index) !== index) {
+        warnContentSource(key, `contentSources entry for '${relPath}' has an invalid index name '${index}'; skipping`);
+        return null;
+    }
+
+    return { dir, indexPath: path.join(dir, index) };
+}
+
+/**
+ * Lists the active content sources in declaration order: the built-ins,
+ * then the configured `contentSources` entries. Invalid configured entries
+ * are skipped with a warning.
+ * @returns {{dir: string, indexPath: string}[]} Resolved content sources
+ */
+function resolveContentSources() {
+    const sources = BUILTIN_CONTENT_SOURCES.map((source) => ({
+        dir: path.resolve(serverDirectory, source.path),
+        indexPath: path.resolve(serverDirectory, source.path, DEFAULT_CONTENT_INDEX),
+    }));
+
+    const configured = getConfigValue('contentSources', []);
+    if (configured == null) {
+        return sources;
+    }
+    if (!Array.isArray(configured)) {
+        warnContentSource('config-shape', 'contentSources must be a list of { path, index? } entries; ignoring it');
+        return sources;
+    }
+    for (const entry of configured) {
+        const source = resolveContentSourceEntry(entry);
+        if (source) {
+            sources.push(source);
+        }
+    }
+    return sources;
+}
 
 /**
  * @typedef {Object} ContentItem
@@ -106,24 +204,30 @@ export function getDefaultPresets(directories) {
 }
 
 /**
- * Gets a default JSON file from the content directory.
+ * Gets a default JSON file from the content sources.
+ * Sources are searched highest-precedence first so a scaffolded or
+ * configured file shadows the upstream copy, matching the seed order.
  * @param {string} filename Name of the file to get
  * @returns {object | null} JSON object or null if the file doesn't exist
  */
 export function getDefaultPresetFile(filename) {
-    try {
-        const contentPath = path.join(contentDirectory, filename);
+    const sources = resolveContentSources();
+    for (let i = sources.length - 1; i >= 0; i--) {
+        try {
+            const contentPath = path.join(sources[i].dir, filename);
 
-        if (!fs.existsSync(contentPath)) {
+            if (!fs.existsSync(contentPath)) {
+                continue;
+            }
+
+            const fileContent = fs.readFileSync(contentPath, 'utf8');
+            return JSON.parse(fileContent);
+        } catch (err) {
+            console.warn(`Failed to get default file ${filename}`, err);
             return null;
         }
-
-        const fileContent = fs.readFileSync(contentPath, 'utf8');
-        return JSON.parse(fileContent);
-    } catch (err) {
-        console.warn(`Failed to get default file ${filename}`, err);
-        return null;
     }
+    return null;
 }
 
 /**
@@ -448,34 +552,51 @@ export async function checkForNewContent(directoriesList, forceCategories = []) 
 }
 
 /**
- * Gets combined content index from the content and scaffold directories.
+ * Gets the merged content index across all content sources. Sources are
+ * declared lowest-precedence first (`default/content`, `default/scaffold`,
+ * then configured `contentSources` entries) and the merged index lists
+ * highest precedence first: seeding copies the first matching entry and
+ * skips same-filename duplicates, so a later-declared source overrides
+ * earlier ones. A missing or malformed source index is skipped with a
+ * warning and never aborts the merge.
  * @param {CONTENT_SCOPE} scope Scope of content to get
  * @returns {ContentItem[]} Array of content index
  */
 function getContentIndex(scope = CONTENT_SCOPE.USER) {
     const result = [];
+    const sources = resolveContentSources();
 
-    if (fs.existsSync(scaffoldIndexPath)) {
-        const scaffoldIndexText = fs.readFileSync(scaffoldIndexPath, 'utf8');
-        const scaffoldIndex = JSON.parse(scaffoldIndexText);
-        if (Array.isArray(scaffoldIndex)) {
-            scaffoldIndex.forEach((item) => {
-                item.folder = scaffoldDirectory;
-                item.scope = getScopeByType(item.type);
-            });
-            result.push(...scaffoldIndex);
+    for (let i = sources.length - 1; i >= 0; i--) {
+        const { dir, indexPath } = sources[i];
+
+        let index;
+        try {
+            if (!fs.existsSync(indexPath)) {
+                warnContentSource(`missing:${indexPath}`, `Content source index ${indexPath} does not exist; skipping`);
+                continue;
+            }
+            index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        } catch (err) {
+            warnContentSource(`parse:${indexPath}`, `Content source index ${indexPath} is not valid JSON; skipping`, err);
+            continue;
         }
-    }
+        if (!Array.isArray(index)) {
+            warnContentSource(`shape:${indexPath}`, `Content source index ${indexPath} is not an array; skipping`);
+            continue;
+        }
 
-    if (fs.existsSync(contentIndexPath)) {
-        const contentIndexText = fs.readFileSync(contentIndexPath, 'utf8');
-        const contentIndex = JSON.parse(contentIndexText);
-        if (Array.isArray(contentIndex)) {
-            contentIndex.forEach((item) => {
-                item.folder = contentDirectory;
-                item.scope = getScopeByType(item.type);
-            });
-            result.push(...contentIndex);
+        let skipped = 0;
+        for (const item of index) {
+            if (item === null || typeof item !== 'object' || typeof item.filename !== 'string' || typeof item.type !== 'string') {
+                skipped++;
+                continue;
+            }
+            item.folder = dir;
+            item.scope = getScopeByType(item.type);
+            result.push(item);
+        }
+        if (skipped > 0) {
+            warnContentSource(`items:${indexPath}`, `Content source index ${indexPath}: skipped ${skipped} malformed entr${skipped === 1 ? 'y' : 'ies'} (entries need filename and type strings)`);
         }
     }
 
