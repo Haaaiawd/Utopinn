@@ -130,8 +130,11 @@ test('a bare string entry is shorthand for { path } and a relative path resolves
     withSources(['default/scaffold'], () => {
         const { lines } = captureWarn(() => {
             const characters = contentManager.getContentOfType('character', 'raw');
-            assert.equal(characters.length, 2, 'the scaffold index is merged once per declaring source');
-            assert.ok(characters[0].equals(characters[1]));
+            // Both declarations merge the same index, but the same-named
+            // starter card is a single logical item — the second copy is
+            // shadowed, not duplicated.
+            assert.equal(characters.length, 1, 'the scaffold index merges via the shorthand declaration');
+            assert.ok(characters[0].equals(fs.readFileSync(path.join(serverDir, 'default/scaffold/characters/我没想当掌门啊.png'))));
         });
         assert.deepEqual(lines, []);
     });
@@ -154,11 +157,11 @@ test('precedence: a later-declared source sorts ahead of earlier ones (first mat
 
     withSources([{ path: older }, { path: newer }, { path: shadow }], () => {
         const worlds = contentManager.getContentOfType('world', 'json');
-        assert.deepEqual(worlds, [{ from: 'newer' }, { from: 'older' }],
-            'the last-declared source must come first — the seed pipeline copies the first match');
+        assert.deepEqual(worlds, [{ from: 'newer' }],
+            'the last-declared source shadows the same-named entry — the loser is never returned');
 
         const characters = contentManager.getContentOfType('character', 'string');
-        assert.equal(characters[0], 'SHADOW-PNG', 'a configured source shadows even the scaffold card');
+        assert.deepEqual(characters, ['SHADOW-PNG'], 'a configured source shadows even the scaffold card');
     });
 });
 
@@ -170,9 +173,61 @@ test('getDefaultPresetFile searches all sources in precedence order', () => {
 
     withSources([{ path: pack }], () => {
         assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Pack.json'), { from: 'pack' });
-        // Upstream file still resolves through the built-in source.
-        assert.ok(contentManager.getDefaultPresetFile('settings.json'));
+        // The upstream declared preset still resolves through the built-in source.
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream);
         assert.equal(contentManager.getDefaultPresetFile('presets/openai/Does-Not-Exist.json'), null);
+    });
+});
+
+test('getDefaultPresetFile does not serve a same-named file the source index never declared', () => {
+    // The pack ships the file on disk but its index only declares an
+    // unrelated world — the undeclared copy must not win the reset; the
+    // declared upstream copy is restored instead.
+    const pack = makeSource('undeclared', {
+        entries: [{ filename: 'worlds/atlas.json', type: 'world' }],
+        files: {
+            'worlds/atlas.json': '{"entries":{"atlas":{"uid":1}}}',
+            'presets/openai/Default.json': '{"from":"undeclared-pack"}',
+        },
+    });
+
+    withSources([{ path: pack }], () => {
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream,
+            'a same-named file with no index entry must not shadow the declared default');
+    });
+});
+
+test('getDefaultPresetFile falls through a malformed higher-precedence declared copy', () => {
+    const pack = makeSource('malformed-preset', {
+        entries: [{ filename: 'presets/openai/Default.json', type: 'openai_preset' }],
+        files: { 'presets/openai/Default.json': 'not json{' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream,
+            'the malformed declared copy must fall through to the next valid declared copy');
+    });
+});
+
+test('a same-named system prompt from a higher-precedence source shadows the upstream copy', () => {
+    // Upstream ships presets/sysprompt/Actor.json; the pack's Actor.json is
+    // the same logical prompt (same basename) and must replace it — the
+    // shadowed copy must not come back at all.
+    const pack = makeSource('sysprompt-shadow', {
+        entries: [{ filename: 'Actor.json', type: 'sysprompt' }],
+        files: { 'Actor.json': '{"name":"Actor","content":"PACK-SHADOW"}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const prompts = contentManager.getContentOfType('sysprompt', 'json');
+        const actors = prompts.filter(p => p && p.name === 'Actor');
+        assert.equal(actors.length, 1, 'the same-named prompt must appear exactly once');
+        assert.equal(actors[0].content, 'PACK-SHADOW', 'the highest-precedence copy must win');
+        assert.ok(prompts.some(p => p && p.name === 'Blank'),
+            'shadowing is per logical name — unrelated prompts are unaffected');
     });
 });
 
@@ -232,6 +287,41 @@ test('a path escaping the server dir and dataRoot is rejected with a warning', (
     });
 });
 
+test('an index entry whose filename escapes the source directory is refused and never served', () => {
+    // secret.json sits NEXT to the pack (inside the data root, outside the
+    // pack dir) — only reachable through a ".." filename in the index.
+    fs.writeFileSync(path.join(dataRoot, 'packs', 'secret.json'), '{"secret":"do-not-leak"}');
+    const pack = makeSource('escape', {
+        entries: [
+            { filename: '../secret.json', type: 'world' },
+            { filename: 'worlds/ok.json', type: 'world' },
+        ],
+        files: { 'worlds/ok.json': '{"ok":true}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, [{ ok: true }]);
+        assert.ok(!JSON.stringify(result).includes('do-not-leak'), 'the escaping entry must never be read');
+        assert.ok(lines.some(l => l.includes('outside the source directory')),
+            `expected an escape warning naming the entry, got: ${lines}`);
+    });
+});
+
+test('an escaping preset index entry is never served through the default-file path', () => {
+    const pack = makeSource('escape-preset', {
+        entries: [{ filename: '../secret.json', type: 'openai_preset' }],
+        files: {},
+    });
+
+    withSources([{ path: pack }], () => {
+        captureWarn(() => {
+            assert.equal(contentManager.getDefaultPresetFile('../secret.json'), null,
+                'the /restore path must not follow an index entry outside its pack');
+        });
+    });
+});
+
 test('an index name that is not a plain file name is rejected with a warning', () => {
     const pack = makeSource('index-escape', { entries: [] });
     withSources([{ path: pack, index: '../outside.json' }], () => {
@@ -247,6 +337,25 @@ test('a non-list contentSources value warns and falls back to the built-ins', ()
         const { lines, result } = captureWarn(() => contentManager.getContentOfType('settings', 'json'));
         assert.ok(result.length >= 1, 'built-in content must still merge');
         assert.ok(lines.some(l => l.includes('must be a list')), `expected a shape warning, got: ${lines}`);
+    } finally {
+        if (prev === undefined) {
+            delete process.env[ENV_KEY];
+        } else {
+            process.env[ENV_KEY] = prev;
+        }
+    }
+});
+
+test('a malformed env override warns and names the env key instead of silently skipping packs', () => {
+    // getConfigValue falls back to the default on unparseable env JSON,
+    // which would also discard the YAML-configured packs without a word.
+    const prev = process.env[ENV_KEY];
+    process.env[ENV_KEY] = 'not json{';
+    try {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('settings', 'json'));
+        assert.ok(result.length >= 1, 'built-in content must still merge');
+        assert.ok(lines.some(l => l.includes(ENV_KEY) && l.includes('not valid JSON')),
+            `expected a warning naming ${ENV_KEY}, got: ${lines}`);
     } finally {
         if (prev === undefined) {
             delete process.env[ENV_KEY];

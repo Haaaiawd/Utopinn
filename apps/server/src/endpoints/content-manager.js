@@ -9,7 +9,7 @@ import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { getConfigValue, color, setPermissionsSync, isValidUrl, isPathUnderParent } from '../util.js';
+import { getConfigValue, getConfigEnvKeys, tryParse, color, setPermissionsSync, isValidUrl, isPathUnderParent, resolvePathWithinParent, confineRealPath } from '../util.js';
 import { write } from '../character-card-parser.js';
 import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
@@ -105,6 +105,20 @@ function resolveContentSources() {
         indexPath: path.resolve(serverDirectory, source.path, DEFAULT_CONTENT_INDEX),
     }));
 
+    // An object-typed env override is JSON.parse'd inside getConfigValue,
+    // which silently falls back to the default when the value is malformed —
+    // that would hide why the configured packs went missing, so the first
+    // env key actually consulted gets checked here and named in the warning.
+    for (const envKey of getConfigEnvKeys('contentSources')) {
+        if (!(envKey in process.env)) {
+            continue;
+        }
+        if (tryParse(process.env[envKey]) == null) {
+            warnContentSource(`env:${envKey}`, `${envKey} is set but its value is not valid JSON; ignoring it`);
+        }
+        break;
+    }
+
     const configured = getConfigValue('contentSources', []);
     if (configured == null) {
         return sources;
@@ -179,6 +193,16 @@ function getScopeByType(type) {
 }
 
 /**
+ * Whether a content type is one of the resettable preset types — the same
+ * set `getDefaultPresets` collects for the /api/presets/restore flow.
+ * @param {string} type Content type
+ * @returns {boolean}
+ */
+function isDefaultPresetType(type) {
+    return type.endsWith('_preset') || ['instruct', 'context', 'sysprompt', 'reasoning'].includes(type);
+}
+
+/**
  * Gets the default presets from the content directory.
  * @param {import('../users.js').UserDirectoryList} directories User directories
  * @returns {object[]} Array of default presets
@@ -189,7 +213,7 @@ export function getDefaultPresets(directories) {
         const presets = [];
 
         for (const contentItem of contentIndex) {
-            if (contentItem.type.endsWith('_preset') || ['instruct', 'context', 'sysprompt', 'reasoning'].includes(contentItem.type)) {
+            if (isDefaultPresetType(contentItem.type)) {
                 contentItem.name = path.parse(contentItem.filename).name;
                 contentItem.folder = getUserTargetByType(contentItem.type, directories);
                 presets.push(contentItem);
@@ -205,26 +229,29 @@ export function getDefaultPresets(directories) {
 
 /**
  * Gets a default JSON file from the content sources.
- * Sources are searched highest-precedence first so a scaffolded or
- * configured file shadows the upstream copy, matching the seed order.
+ * Only files the merged index declares under a preset type are served — a
+ * same-named file sitting in a source directory without an index entry can
+ * never win the reset. Declared copies are tried highest-precedence first;
+ * a missing, escaping, or malformed copy falls through to the next
+ * lower-precedence declared copy instead of aborting the restore.
  * @param {string} filename Name of the file to get
- * @returns {object | null} JSON object or null if the file doesn't exist
+ * @returns {object | null} JSON object or null if no declared readable copy exists
  */
 export function getDefaultPresetFile(filename) {
-    const sources = resolveContentSources();
-    for (let i = sources.length - 1; i >= 0; i--) {
+    const contentIndex = getContentIndex(CONTENT_SCOPE.USER);
+    for (const item of contentIndex) {
+        if (item.filename !== filename || !isDefaultPresetType(item.type)) {
+            continue;
+        }
         try {
-            const contentPath = path.join(sources[i].dir, filename);
-
-            if (!fs.existsSync(contentPath)) {
+            const contentPath = path.join(item.folder, item.filename);
+            const realPath = confineRealPath(item.folder, contentPath);
+            if (!realPath) {
                 continue;
             }
-
-            const fileContent = fs.readFileSync(contentPath, 'utf8');
-            return JSON.parse(fileContent);
+            return JSON.parse(fs.readFileSync(realPath, 'utf8'));
         } catch (err) {
             console.warn(`Failed to get default file ${filename}`, err);
-            return null;
         }
     }
     return null;
@@ -398,6 +425,15 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
             continue;
         }
 
+        // Index validation already rejects lexically escaping filenames;
+        // this confines the canonical path too so an in-pack symlink cannot
+        // seed out-of-pack content into a user directory.
+        const realPath = confineRealPath(contentItem.folder, contentPath);
+        if (!realPath) {
+            console.warn(`Content file ${contentItem.filename} resolves outside its content source; skipping`);
+            continue;
+        }
+
         const sink = resolveSink(contentItem);
 
         if (sink.kind === 'none') {
@@ -420,7 +456,7 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
             }
             let json;
             try {
-                const raw = fs.readFileSync(contentPath, 'utf8');
+                const raw = fs.readFileSync(realPath, 'utf8');
                 json = JSON.parse(raw);
             } catch (parseErr) {
                 console.warn(`Content file ${contentItem.filename} is not valid JSON; skipping`, parseErr);
@@ -455,7 +491,7 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
         }
 
         fs.mkdirSync(contentTarget, { recursive: true });
-        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        fs.cpSync(realPath, targetPath, { recursive: true, force: false });
         setPermissionsSync(targetPath);
         console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
         anyContentAdded = true;
@@ -586,9 +622,17 @@ function getContentIndex(scope = CONTENT_SCOPE.USER) {
         }
 
         let skipped = 0;
+        let escaped = 0;
         for (const item of index) {
             if (item === null || typeof item !== 'object' || typeof item.filename !== 'string' || typeof item.type !== 'string') {
                 skipped++;
+                continue;
+            }
+            // An index entry must stay inside its own source directory —
+            // path.join does not neutralise '..', so without this check an
+            // entry like "../../secret.json" would read outside the pack.
+            if (resolvePathWithinParent(dir, item.filename) === null) {
+                escaped++;
                 continue;
             }
             item.folder = dir;
@@ -597,6 +641,9 @@ function getContentIndex(scope = CONTENT_SCOPE.USER) {
         }
         if (skipped > 0) {
             warnContentSource(`items:${indexPath}`, `Content source index ${indexPath}: skipped ${skipped} malformed entr${skipped === 1 ? 'y' : 'ies'} (entries need filename and type strings)`);
+        }
+        if (escaped > 0) {
+            warnContentSource(`escape:${indexPath}`, `Content source index ${indexPath}: skipped ${escaped} entr${escaped === 1 ? 'y' : 'ies'} whose filename resolves outside the source directory`);
         }
     }
 
@@ -614,13 +661,24 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
     const contentIndex = getContentIndex(scope);
     const indexItems = contentIndex.filter((item) => item.type === type && item.folder);
     const files = [];
+    // The merged index is ordered highest-precedence first; same-named items
+    // from lower-precedence sources are shadowed by the first readable copy.
+    // The logical name is the file basename — the identity the fs sink
+    // flattens to and the repo stem keys on downstream. A winner that is
+    // missing or unreadable does not shadow: the next declared copy is
+    // tried, so a broken pack cannot erase the content it replaced.
+    const seen = new Set();
     for (const item of indexItems) {
-        if (!item.folder) {
+        const logicalName = path.basename(item.filename);
+        if (seen.has(logicalName)) {
             continue;
         }
         try {
-            const filePath = path.join(item.folder, item.filename);
-            const fileContent = fs.readFileSync(filePath);
+            const realPath = confineRealPath(item.folder, path.join(item.folder, item.filename));
+            if (!realPath) {
+                continue;
+            }
+            const fileContent = fs.readFileSync(realPath);
             switch (format) {
                 case 'json':
                     files.push(JSON.parse(fileContent.toString()));
@@ -632,6 +690,7 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
                     files.push(fileContent);
                     break;
             }
+            seen.add(logicalName);
         } catch {
             // Ignore errors
         }
