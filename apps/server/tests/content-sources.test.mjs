@@ -1,0 +1,841 @@
+/**
+ * Configurable content sources (node:test).
+ *
+ * content-manager.js used to hard-code exactly two source roots
+ * (default/content + default/scaffold); adding a release content root meant
+ * editing server source. The `contentSources` config key now lists
+ * additional roots as data:
+ *
+ *   - A configured source is picked up and its index entries are merged
+ *     (and actually seeded into a new account).
+ *   - Precedence is declaration order — a later-declared source overrides
+ *     same-named entries from earlier ones: configured sources > scaffold >
+ *     upstream content. The merged index puts the highest-precedence source
+ *     first because the seed pipeline copies the first match and skips
+ *     same-filename duplicates.
+ *   - A missing dir, malformed index, escaping path, or bad config shape is
+ *     skipped with a warning — never a crash, never silently swallowed.
+ *
+ * The in-process tests inject sources through LUKER_CONTENT_SOURCES (env
+ * overrides config.yaml in getConfigValue and is read per call, so each
+ * case gets its own source list without re-seeding the cached config).
+ * The e2e spawns a real `node server.js` whose config.yaml sets the key —
+ * the operator-facing path.
+ *
+ * Run: node --test apps/server/tests/content-sources.test.mjs
+ */
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
+
+const serverDir = path.resolve(import.meta.dirname, '..');
+const WEB_INDEX = path.join(serverDir, '..', 'web', 'dist', 'index.html');
+const hasSpa = fs.existsSync(WEB_INDEX);
+const SKIP_NO_SPA = hasSpa ? false : 'apps/web/dist not built — run pnpm --filter @utopinn/web build first';
+
+const scratchRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'utopinn-content-sources-'));
+const dataRoot = path.join(scratchRoot, 'data');
+fs.mkdirSync(dataRoot, { recursive: true });
+const configPath = path.join(scratchRoot, 'config.yaml');
+fs.writeFileSync(configPath, 'enableUserAccounts: false\n');
+
+globalThis.DATA_ROOT = dataRoot;
+const { setConfigFilePath } = await import('../src/util.js');
+setConfigFilePath(configPath);
+const contentManager = await import('../src/endpoints/content-manager.js');
+
+const ENV_KEY = 'LUKER_CONTENT_SOURCES';
+
+// ---------------------------------------------------------------------------
+// Fixtures + helpers
+// ---------------------------------------------------------------------------
+
+/** Run fn with LUKER_CONTENT_SOURCES set; restore the prior value after. */
+function withSources(sources, fn) {
+    const prev = process.env[ENV_KEY];
+    if (sources === undefined) {
+        delete process.env[ENV_KEY];
+    } else {
+        process.env[ENV_KEY] = JSON.stringify(sources);
+    }
+    try {
+        return fn();
+    } finally {
+        if (prev === undefined) {
+            delete process.env[ENV_KEY];
+        } else {
+            process.env[ENV_KEY] = prev;
+        }
+    }
+}
+
+/** Capture console.warn lines produced while fn runs. */
+function captureWarn(fn) {
+    const lines = [];
+    const orig = console.warn;
+    console.warn = (...args) => { lines.push(args.map(String).join(' ')); };
+    try {
+        return { lines, result: fn() };
+    } finally {
+        console.warn = orig;
+    }
+}
+
+/** Create a content source dir under the scratch data root with an index + files. */
+function makeSource(name, { entries, files = {}, indexName = 'index.json', rawIndex = null }) {
+    const dir = path.join(dataRoot, 'packs', name);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, indexName), rawIndex ?? JSON.stringify(entries));
+    for (const [rel, content] of Object.entries(files)) {
+        const file = path.join(dir, rel);
+        fs.mkdirSync(path.dirname(file), { recursive: true });
+        fs.writeFileSync(file, content);
+    }
+    return dir;
+}
+
+// ---------------------------------------------------------------------------
+// Source resolution
+// ---------------------------------------------------------------------------
+
+test('built-ins work with no configured sources: upstream index entries and the scaffold card are merged', () => {
+    withSources(undefined, () => {
+        const settings = contentManager.getContentOfType('settings', 'json');
+        assert.ok(settings.length >= 1, 'default/content settings.json must still merge');
+
+        const characters = contentManager.getContentOfType('character', 'raw');
+        assert.equal(characters.length, 1, 'default/scaffold still supplies the starter card');
+    });
+});
+
+test('a configured source under dataRoot is picked up and its entries are returned', () => {
+    const pack = makeSource('atlas', {
+        entries: [{ filename: 'worlds/atlas.json', type: 'world' }],
+        files: { 'worlds/atlas.json': '{"entries":{"atlas":{"uid":1}}}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const worlds = contentManager.getContentOfType('world', 'json');
+        assert.deepEqual(worlds, [{ entries: { atlas: { uid: 1 } } }]);
+    });
+});
+
+test('a bare string entry is shorthand for { path } and a relative path resolves against the server dir', () => {
+    // default/scaffold is a real source under the server dir — declaring it
+    // again exercises relative resolution without writing into the repo.
+    withSources(['default/scaffold'], () => {
+        const { lines } = captureWarn(() => {
+            const characters = contentManager.getContentOfType('character', 'raw');
+            // Both declarations merge the same index, but the same-named
+            // starter card is a single logical item — the second copy is
+            // shadowed, not duplicated.
+            assert.equal(characters.length, 1, 'the scaffold index merges via the shorthand declaration');
+            assert.ok(characters[0].equals(fs.readFileSync(path.join(serverDir, 'default/scaffold/characters/我没想当掌门啊.png'))));
+        });
+        assert.deepEqual(lines, []);
+    });
+});
+
+test('precedence: a later-declared source sorts ahead of earlier ones (first match wins at seed time)', () => {
+    const older = makeSource('older', {
+        entries: [{ filename: 'worlds/dup.json', type: 'world' }],
+        files: { 'worlds/dup.json': '{"from":"older"}' },
+    });
+    const newer = makeSource('newer', {
+        entries: [{ filename: 'worlds/dup.json', type: 'world' }],
+        files: { 'worlds/dup.json': '{"from":"newer"}' },
+    });
+    // A source that shadows the scaffold starter card, declared last.
+    const shadow = makeSource('shadow', {
+        entries: [{ filename: 'characters/我没想当掌门啊.png', type: 'character' }],
+        files: { 'characters/我没想当掌门啊.png': 'SHADOW-PNG' },
+    });
+
+    withSources([{ path: older }, { path: newer }, { path: shadow }], () => {
+        const worlds = contentManager.getContentOfType('world', 'json');
+        assert.deepEqual(worlds, [{ from: 'newer' }],
+            'the last-declared source shadows the same-named entry — the loser is never returned');
+
+        const characters = contentManager.getContentOfType('character', 'string');
+        assert.deepEqual(characters, ['SHADOW-PNG'], 'a configured source shadows even the scaffold card');
+    });
+});
+
+test('getDefaultPresetFile searches all sources in precedence order', () => {
+    const pack = makeSource('presets', {
+        entries: [{ filename: 'presets/openai/Pack.json', type: 'openai_preset' }],
+        files: { 'presets/openai/Pack.json': '{"from":"pack"}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Pack.json'), { from: 'pack' });
+        // The upstream declared preset still resolves through the built-in source.
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream);
+        assert.equal(contentManager.getDefaultPresetFile('presets/openai/Does-Not-Exist.json'), null);
+    });
+});
+
+test('getDefaultPresetFile does not serve a same-named file the source index never declared', () => {
+    // The pack ships the file on disk but its index only declares an
+    // unrelated world — the undeclared copy must not win the reset; the
+    // declared upstream copy is restored instead.
+    const pack = makeSource('undeclared', {
+        entries: [{ filename: 'worlds/atlas.json', type: 'world' }],
+        files: {
+            'worlds/atlas.json': '{"entries":{"atlas":{"uid":1}}}',
+            'presets/openai/Default.json': '{"from":"undeclared-pack"}',
+        },
+    });
+
+    withSources([{ path: pack }], () => {
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream,
+            'a same-named file with no index entry must not shadow the declared default');
+    });
+});
+
+test('getDefaultPresetFile falls through a malformed higher-precedence declared copy', () => {
+    const pack = makeSource('malformed-preset', {
+        entries: [{ filename: 'presets/openai/Default.json', type: 'openai_preset' }],
+        files: { 'presets/openai/Default.json': 'not json{' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const upstream = JSON.parse(fs.readFileSync(path.join(serverDir, 'default/content/presets/openai/Default.json'), 'utf8'));
+        assert.deepEqual(contentManager.getDefaultPresetFile('presets/openai/Default.json'), upstream,
+            'the malformed declared copy must fall through to the next valid declared copy');
+    });
+});
+
+test('a same-named system prompt from a higher-precedence source shadows the upstream copy', () => {
+    // Upstream ships presets/sysprompt/Actor.json; the pack's Actor.json is
+    // the same logical prompt (same basename) and must replace it — the
+    // shadowed copy must not come back at all.
+    const pack = makeSource('sysprompt-shadow', {
+        entries: [{ filename: 'Actor.json', type: 'sysprompt' }],
+        files: { 'Actor.json': '{"name":"Actor","content":"PACK-SHADOW"}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const prompts = contentManager.getContentOfType('sysprompt', 'json');
+        const actors = prompts.filter(p => p && p.name === 'Actor');
+        assert.equal(actors.length, 1, 'the same-named prompt must appear exactly once');
+        assert.equal(actors[0].content, 'PACK-SHADOW', 'the highest-precedence copy must win');
+        assert.ok(prompts.some(p => p && p.name === 'Blank'),
+            'shadowing is per logical name — unrelated prompts are unaffected');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Failure handling: warn + skip, never crash
+// ---------------------------------------------------------------------------
+
+test('a missing source directory warns and is skipped', () => {
+    const missing = path.join(dataRoot, 'packs', 'not-there');
+    withSources([{ path: missing }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, [], 'the merge continues with the remaining sources');
+        assert.ok(lines.some(l => l.includes('does not exist')), `expected a missing-index warning, got: ${lines}`);
+    });
+});
+
+test('a malformed index.json warns and is skipped', () => {
+    const pack = makeSource('broken', { entries: [], rawIndex: 'not json{' });
+    withSources([{ path: pack }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, []);
+        assert.ok(lines.some(l => l.includes('not valid JSON')), `expected a parse warning, got: ${lines}`);
+    });
+});
+
+test('a non-array index warns and is skipped', () => {
+    const pack = makeSource('object-index', { entries: [], rawIndex: '{"entries":{}}' });
+    withSources([{ path: pack }], () => {
+        const { lines } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.ok(lines.some(l => l.includes('not an array')), `expected a shape warning, got: ${lines}`);
+    });
+});
+
+test('malformed index entries are skipped and counted, valid siblings still merge', () => {
+    const pack = makeSource('mixed', {
+        entries: [
+            'junk-string-entry',
+            { filename: 'worlds/ok.json', type: 'world' },
+            { filename: 42, type: 'world' },
+            { filename: 'worlds/no-type.json' },
+        ],
+        files: { 'worlds/ok.json': '{"ok":true}' },
+    });
+    withSources([{ path: pack }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, [{ ok: true }]);
+        assert.ok(lines.some(l => l.includes('skipped 3 malformed')), `expected a count warning, got: ${lines}`);
+    });
+});
+
+test('a path escaping the server dir and dataRoot is rejected with a warning', () => {
+    withSources([{ path: '/etc' }, { path: '../../../../usr/share' }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, []);
+        const escapes = lines.filter(l => l.includes('resolves outside'));
+        assert.equal(escapes.length, 2, `each escaping path must warn once, got: ${lines}`);
+    });
+});
+
+test('an index entry whose filename escapes the source directory is refused and never served', () => {
+    // secret.json sits NEXT to the pack (inside the data root, outside the
+    // pack dir) — only reachable through a ".." filename in the index.
+    fs.writeFileSync(path.join(dataRoot, 'packs', 'secret.json'), '{"secret":"do-not-leak"}');
+    const pack = makeSource('escape', {
+        entries: [
+            { filename: '../secret.json', type: 'world' },
+            { filename: 'worlds/ok.json', type: 'world' },
+        ],
+        files: { 'worlds/ok.json': '{"ok":true}' },
+    });
+
+    withSources([{ path: pack }], () => {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.deepEqual(result, [{ ok: true }]);
+        assert.ok(!JSON.stringify(result).includes('do-not-leak'), 'the escaping entry must never be read');
+        assert.ok(lines.some(l => l.includes('outside the source directory')),
+            `expected an escape warning naming the entry, got: ${lines}`);
+    });
+});
+
+test('an escaping preset index entry is never served through the default-file path', () => {
+    const pack = makeSource('escape-preset', {
+        entries: [{ filename: '../secret.json', type: 'openai_preset' }],
+        files: {},
+    });
+
+    withSources([{ path: pack }], () => {
+        captureWarn(() => {
+            assert.equal(contentManager.getDefaultPresetFile('../secret.json'), null,
+                'the /restore path must not follow an index entry outside its pack');
+        });
+    });
+});
+
+test('an index name that is not a plain file name is rejected with a warning', () => {
+    const pack = makeSource('index-escape', { entries: [] });
+    withSources([{ path: pack, index: '../outside.json' }], () => {
+        const { lines } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+        assert.ok(lines.some(l => l.includes('invalid index name')), `expected an index-name warning, got: ${lines}`);
+    });
+});
+
+test('a non-list contentSources value warns and falls back to the built-ins', () => {
+    const prev = process.env[ENV_KEY];
+    process.env[ENV_KEY] = '{"path":"/tmp/x"}';
+    try {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('settings', 'json'));
+        assert.ok(result.length >= 1, 'built-in content must still merge');
+        assert.ok(lines.some(l => l.includes('must be a list')), `expected a shape warning, got: ${lines}`);
+    } finally {
+        if (prev === undefined) {
+            delete process.env[ENV_KEY];
+        } else {
+            process.env[ENV_KEY] = prev;
+        }
+    }
+});
+
+test('a malformed env override warns and names the env key instead of silently skipping packs', () => {
+    // getConfigValue falls back to the default on unparseable env JSON,
+    // which would also discard the YAML-configured packs without a word.
+    const prev = process.env[ENV_KEY];
+    process.env[ENV_KEY] = 'not json{';
+    try {
+        const { lines, result } = captureWarn(() => contentManager.getContentOfType('settings', 'json'));
+        assert.ok(result.length >= 1, 'built-in content must still merge');
+        assert.ok(lines.some(l => l.includes(ENV_KEY) && l.includes('not valid JSON')),
+            `expected a warning naming ${ENV_KEY}, got: ${lines}`);
+    } finally {
+        if (prev === undefined) {
+            delete process.env[ENV_KEY];
+        } else {
+            process.env[ENV_KEY] = prev;
+        }
+    }
+});
+
+// ---------------------------------------------------------------------------
+// End-to-end: a config.yaml entry delivers files into a new account
+// ---------------------------------------------------------------------------
+
+/** node-persist record: one file named sha256(key), JSON {key, value}. */
+function seedStoredItem(dataRootDir, key, value) {
+    const storageDir = path.join(dataRootDir, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+    const file = crypto.createHash('sha256').update(key).digest('hex');
+    fs.writeFileSync(path.join(storageDir, file), JSON.stringify({ key, value }));
+}
+
+async function reservePort() {
+    const net = await import('node:net');
+    return new Promise((resolve, reject) => {
+        const srv = net.createServer();
+        srv.on('error', reject);
+        srv.listen(0, '127.0.0.1', () => {
+            const { port } = srv.address();
+            srv.close(() => resolve(port));
+        });
+    });
+}
+
+async function waitReady(base, child, timeoutMs = 60_000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (child.exitCode !== null) {
+            throw new Error(`server exited early with code ${child.exitCode}`);
+        }
+        try {
+            const res = await fetch(`${base}/csrf-token`);
+            if (res.ok) return;
+        } catch { /* not up yet */ }
+        await new Promise(r => setTimeout(r, 300));
+    }
+    throw new Error('server did not become ready');
+}
+
+test('e2e: a config.yaml contentSources entry seeds files into a new account and shadows the scaffold card', { skip: SKIP_NO_SPA }, async () => {
+    const port = await reservePort();
+    const dir = path.join(scratchRoot, `run-${port}`);
+    const runDataRoot = path.join(dir, 'data');
+    const runConfigPath = path.join(dir, 'config.yaml');
+
+    // The pack lives inside the data root — the allowed location for packs
+    // that are not shipped with the server tree. It declares a new card and
+    // a same-named shadow of the scaffold starter card.
+    const pack = path.join(runDataRoot, 'content-pack');
+    fs.mkdirSync(path.join(pack, 'characters'), { recursive: true });
+    fs.writeFileSync(path.join(pack, 'index.json'), JSON.stringify([
+        { filename: 'characters/pack-card.png', type: 'character' },
+        { filename: 'characters/我没想当掌门啊.png', type: 'character' },
+    ]));
+    fs.writeFileSync(path.join(pack, 'characters', 'pack-card.png'), 'PACK-CARD-BYTES');
+    fs.writeFileSync(path.join(pack, 'characters', '我没想当掌门啊.png'), 'SHADOW-WINS');
+
+    fs.writeFileSync(runConfigPath, [
+        'enableUserAccounts: true',
+        'contentSources:',
+        `  - path: ${JSON.stringify(pack)}`,
+        '',
+    ].join('\n'));
+    seedStoredItem(runDataRoot, 'luker:admin-settings:v1', {
+        accountRegistration: { enabled: true, requireInviteCode: false },
+    });
+
+    const env = { ...process.env, LUKER_SKIP_WEBPACK: '1' };
+    for (const key of Object.keys(env)) {
+        if (/^(SILLYTAVERN_|LUKER_)/.test(key) && key !== 'LUKER_SKIP_WEBPACK') {
+            delete env[key];
+        }
+    }
+
+    const child = spawn(process.execPath, [
+        'server.js', '--dataRoot', runDataRoot, '--port', String(port), '--configPath', runConfigPath,
+    ], { cwd: serverDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let log = '';
+    child.stdout.on('data', d => { log += d.toString(); });
+    child.stderr.on('data', d => { log += d.toString(); });
+
+    const base = `http://127.0.0.1:${port}`;
+    try {
+        await waitReady(base, child);
+
+        const jar = new Map();
+        const request = async (url, init = {}) => {
+            const headers = { ...(init.headers || {}), cookie: [...jar].map(([k, v]) => `${k}=${v}`).join('; ') };
+            const res = await fetch(`${base}${url}`, { ...init, headers, redirect: 'manual' });
+            for (const c of res.headers.getSetCookie()) {
+                const [pair] = c.split(';');
+                const eq = pair.indexOf('=');
+                if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1));
+            }
+            return res;
+        };
+        const tokenRes = await request('/csrf-token');
+        const { token } = await tokenRes.json();
+        const res = await request('/api/users/register', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+            body: JSON.stringify({ handle: 'packuser', name: 'packuser', password: 'test-pass-1234' }),
+        });
+        assert.equal(res.status, 200, `registration failed\n${await res.text()}`);
+
+        const chars = path.join(runDataRoot, 'packuser', 'characters');
+        assert.equal(fs.readFileSync(path.join(chars, 'pack-card.png'), 'utf8'), 'PACK-CARD-BYTES',
+            'the configured source must seed its declared file');
+        assert.equal(fs.readFileSync(path.join(chars, '我没想当掌门啊.png'), 'utf8'), 'SHADOW-WINS',
+            'the later-declared source must shadow the scaffold same-named entry');
+    } catch (err) {
+        err.message += `\n--- server log ---\n${log.slice(-2000)}`;
+        throw err;
+    } finally {
+        child.kill('SIGTERM');
+        await new Promise(r => setTimeout(r, 500));
+        if (child.exitCode === null) child.kill('SIGKILL');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Seeding quota: an over-quota declared entry is skipped, never fatal
+// ---------------------------------------------------------------------------
+
+test('seedContentForUser skips an over-quota declared entry, reports it, and keeps the account under quota', async () => {
+    // Registration provisions account content through this same seam —
+    // /api/users/register → checkForNewContent → seedContentForUser →
+    // seedContent(checkQuota: buildContentQuotaGuard(directories)). A
+    // server-default entry that would push the account over its quota must
+    // be skipped whole — never partially copied, kept off content.log so a
+    // later pass retries it — while the entries that fit still land.
+    // Seeding must never fail registration or leave the account over quota.
+    const handle = 'quotauser';
+    const quota = 60_000;
+    const testRoot = path.join(scratchRoot, 'seed-quota');
+    const storageDir = path.join(testRoot, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+
+    // node-persist is a process-wide singleton; nothing else in this file
+    // initializes it, so init it on this test's own store and write the
+    // same record shape registration persists (users-public.js) — the
+    // profile carries the effective quota, no admin-settings row needed.
+    const { default: storage } = await import('node-persist');
+    await storage.init({ dir: storageDir, ttl: false, expiredInterval: 0 });
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota,
+    });
+
+    const pack = makeSource('quota-pack', {
+        entries: [
+            { filename: 'characters/fit.png', type: 'character' },
+            { filename: 'characters/too-big.png', type: 'character' },
+        ],
+        files: {
+            'characters/fit.png': crypto.randomBytes(2_000),
+            'characters/too-big.png': crypto.randomBytes(quota + 4_000),
+        },
+    });
+    // Same ContentItem shape getContentIndex emits: { filename, type, folder }.
+    const contentIndex = [
+        { filename: 'characters/fit.png', type: 'character', folder: pack },
+        { filename: 'characters/too-big.png', type: 'character', folder: pack },
+    ];
+    const accountRoot = path.join(testRoot, handle);
+    const directories = { root: accountRoot, characters: path.join(accountRoot, 'characters') };
+
+    // console.warn is the signal a skip is reported on at this layer —
+    // seedContent returns a bare boolean, so there is nothing else to assert.
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+    let added;
+    try {
+        added = await contentManager.seedContentForUser(contentIndex, directories, []);
+    } finally {
+        console.warn = origWarn;
+    }
+
+    assert.equal(added, true, 'seeding must succeed — an over-quota entry must never fail registration');
+    assert.ok(fs.existsSync(path.join(directories.characters, 'fit.png')),
+        'the entry that fits must be copied — the guard skips per-entry, not the whole run');
+    assert.ok(!fs.existsSync(path.join(directories.characters, 'too-big.png')),
+        'the over-quota entry must not be copied at all');
+    const { getDirectorySizeBytes } = await import('../src/admin-settings.js');
+    assert.ok(await getDirectorySizeBytes(accountRoot) <= quota,
+        'the account must not end up over its quota after seeding');
+    assert.ok(
+        warnings.some(l => l.includes('characters/too-big.png') && l.includes('not delivered') && /quota/i.test(l)),
+        `the skip must be reported on console.warn, got: ${warnings.join(' | ')}`,
+    );
+    const contentLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(contentLog.includes('characters/fit.png'), 'the delivered entry lands on content.log');
+    assert.ok(!contentLog.includes('too-big.png'),
+        'the skipped entry must stay off content.log so a later pass retries it');
+});
+
+// ---------------------------------------------------------------------------
+// Architecture seam: explicit precedence rank + the content type registry
+// ---------------------------------------------------------------------------
+
+test('resolveContentSources exposes who declared each source and an explicit precedence rank', () => {
+    const pack = makeSource('ranked', { entries: [], files: {} });
+    withSources([{ path: pack }], () => {
+        const sources = contentManager.resolveContentSources();
+        assert.deepEqual(sources.map(s => s.rank), sources.map((_, i) => i),
+            'rank is assigned once, in declaration order');
+        const builtins = sources.filter(s => s.origin === 'builtin');
+        const configured = sources.filter(s => s.origin === 'config');
+        assert.equal(builtins.length, 2, 'default/content + default/scaffold are the shipped built-ins');
+        assert.equal(configured.length, 1);
+        assert.ok(configured[0].rank > Math.max(...builtins.map(s => s.rank)),
+            'a configured pack always outranks the built-ins — precedence is a descriptor value, not iteration order');
+    });
+});
+
+test('every declared content type routes through one registry row; undeclared types route to nothing', () => {
+    // The registry is the single lockstep point: each CONTENT_TYPES value
+    // must resolve either a per-user target or a global target — both are
+    // read back through the exported lookups, never from the table itself.
+    const dirs = Object.fromEntries([
+        'root', 'characters', 'backgrounds', 'worlds', 'avatars', 'themes',
+        'comfyWorkflows', 'koboldAI_Settings', 'openAI_Settings', 'novelAI_Settings',
+        'textGen_Settings', 'instruct', 'context', 'movingUI', 'quickreplies',
+        'sysprompt', 'reasoning',
+    ].map(k => [k, `/u/${k}`]));
+    for (const type of Object.values(contentManager.CONTENT_TYPES)) {
+        const userTarget = contentManager.getUserTargetByType(type, dirs);
+        const globalTarget = contentManager.getGlobalTargetByType(type);
+        assert.ok((userTarget != null) !== (globalTarget != null),
+            `type '${type}' must route to exactly one of a user or global target`);
+        if (globalTarget) {
+            assert.ok(globalTarget.startsWith(dataRoot), `global target for '${type}' stays under dataRoot`);
+        }
+    }
+    assert.equal(contentManager.getUserTargetByType('a-type-nobody-declared', dirs), null,
+        'an undeclared type has no fs target — the registry is the single source of truth');
+});
+
+// ---------------------------------------------------------------------------
+// Preset restore is family-aware: same-named files across preset families
+// ---------------------------------------------------------------------------
+
+test('getDefaultPresetFile honors the family pin — a same-named file from another family cannot shadow the restore', () => {
+    // Two preset families can declare the same relative filename. Filename-
+    // only matching returns whichever family's source ranks higher — the
+    // bug the /restore caller now avoids by pinning the family (type) it
+    // already selected via getDefaultPresets.
+    const openaiPack = makeSource('family-openai', {
+        entries: [{ filename: 'Default.json', type: 'openai_preset' }],
+        files: { 'Default.json': '{"family":"openai"}' },
+    });
+    const koboldPack = makeSource('family-kobold', {
+        entries: [{ filename: 'Default.json', type: 'kobold_preset' }],
+        files: { 'Default.json': '{"family":"kobold"}' },
+    });
+
+    // koboldPack declared last = higher precedence = wins filename-only matching.
+    withSources([{ path: openaiPack }, { path: koboldPack }], () => {
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json'), { family: 'kobold' },
+            'unpinned matching returns the higher-ranked family — the trap the pin exists for');
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json', 'openai_preset'), { family: 'openai' },
+            'the family pin restores the caller\'s family, not the rank winner');
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json', 'kobold_preset'), { family: 'kobold' });
+        assert.equal(contentManager.getDefaultPresetFile('Default.json', 'novel_preset'), null,
+            'a family that never declared the file gets nothing, not another family\'s copy');
+    });
+});
+
+test('the /restore selection path (family folder match + type pin) restores the matching family\'s file', () => {
+    // Mirror presets.js /restore: apiId resolves to a per-family target
+    // folder via getUserTargetByType (PRESET_FOLDER_BY_API_ID maps openai →
+    // openAI_Settings); the default preset found there is then loaded with
+    // the family pin — so a higher-ranked same-named file from another
+    // family can never leak into the restore.
+    const openaiPack = makeSource('restore-openai', {
+        entries: [{ filename: 'Default.json', type: 'openai_preset' }],
+        files: { 'Default.json': '{"family":"openai"}' },
+    });
+    const koboldPack = makeSource('restore-kobold', {
+        entries: [{ filename: 'Default.json', type: 'kobold_preset' }],
+        files: { 'Default.json': '{"family":"kobold"}' },
+    });
+
+    withSources([{ path: openaiPack }, { path: koboldPack }], () => {
+        const directories = {
+            root: '/u',
+            openAI_Settings: '/u/openAI_Settings',
+            koboldAI_Settings: '/u/koboldAI_Settings',
+        };
+        const defaults = contentManager.getDefaultPresets(directories);
+        // Same selection /restore makes for apiId 'openai'.
+        const defaultPreset = defaults.find(p => p.name === 'Default' && p.folder === directories.openAI_Settings);
+        assert.ok(defaultPreset, 'the openai family entry must be selectable by its target folder');
+        assert.equal(defaultPreset.type, 'openai_preset');
+        assert.deepEqual(
+            contentManager.getDefaultPresetFile(defaultPreset.filename, defaultPreset.type),
+            { family: 'openai' },
+            'restoring the openai preset must yield the openai file, not the higher-ranked kobold one',
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Quota must not downgrade precedence: a skipped winner blocks shadows
+// ---------------------------------------------------------------------------
+
+test('seedContentForUser: a quota-skipped winner blocks same-name and same-target lower copies for the run, then delivers once quota allows', async () => {
+    // The precedence trap: the highest-precedence entry for a logical name
+    // is skipped because it would exceed quota. Installing the next
+    // lower-precedence copy would hand the user the wrong file AND log it
+    // as delivered — the content.log entry then shadows the real winner
+    // forever, even after the quota is raised. The fix blocks the name and
+    // its flattened fs target for the rest of the run.
+    const handle = 'shadowuser';
+    const quota = 60_000;
+    const testRoot = path.join(scratchRoot, 'seed-shadow');
+    const storageDir = path.join(testRoot, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+
+    // node-persist is a process-wide singleton; this test re-inits it on
+    // its own store (re-init is supported in-process) and writes the same
+    // account record shape registration persists — the profile carries the
+    // effective quota, no admin-settings row needed.
+    const { default: storage } = await import('node-persist');
+    await storage.init({ dir: storageDir, ttl: false, expiredInterval: 0 });
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota,
+    });
+
+    const winnerPack = makeSource('winner-pack', {
+        entries: [{ filename: 'workflows/x.json', type: 'workflow' }],
+        files: { 'workflows/x.json': crypto.randomBytes(quota + 10_000) },
+    });
+    const loserPack = makeSource('loser-pack', {
+        entries: [{ filename: 'workflows/x.json', type: 'workflow' }],
+        files: { 'workflows/x.json': 'LOSER-BYTES' },
+    });
+    const flatPack = makeSource('flat-pack', {
+        entries: [{ filename: 'nested/x.json', type: 'workflow' }],
+        files: { 'nested/x.json': 'FLAT-LOSER-BYTES' },
+    });
+    // Merged index order is precedence-first: the winner, then two shadows —
+    // one shares the filename (the content.log identity), one only shares
+    // the flattened fs target (basename x.json lands on the same file).
+    const contentIndex = [
+        { filename: 'workflows/x.json', type: 'workflow', folder: winnerPack },
+        { filename: 'workflows/x.json', type: 'workflow', folder: loserPack },
+        { filename: 'nested/x.json', type: 'workflow', folder: flatPack },
+    ];
+    const accountRoot = path.join(testRoot, handle);
+    const directories = { root: accountRoot, comfyWorkflows: path.join(accountRoot, 'workflows') };
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+    let first;
+    try {
+        first = await contentManager.seedContentForUser(contentIndex, directories, []);
+    } finally {
+        console.warn = origWarn;
+    }
+
+    assert.equal(first, false, 'nothing may be installed when the winner does not fit');
+    const target = path.join(directories.comfyWorkflows, 'x.json');
+    assert.ok(!fs.existsSync(target),
+        'no lower-precedence copy may shadow the quota-skipped winner');
+    assert.ok(
+        warnings.some(l => l.includes('workflows/x.json') && l.includes('not delivered') && /quota/i.test(l)),
+        `the winner's skip must be reported, got: ${warnings.join(' | ')}`,
+    );
+    assert.equal(
+        warnings.filter(l => l.includes('higher-precedence')).length, 2,
+        `both shadows must be reported as blocked, got: ${warnings.join(' | ')}`,
+    );
+    const contentLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(!contentLog.includes('x.json'),
+        'blocked entries must stay off content.log so a later pass retries them');
+
+    // Quota raised → the WINNER is delivered on the next run, not a shadow.
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota * 4,
+    });
+    const second = await contentManager.seedContentForUser(contentIndex, directories, []);
+    assert.equal(second, true, 'the winner must be delivered once quota allows');
+    assert.equal(fs.statSync(target).size, quota + 10_000,
+        'the on-disk file is the winner\'s bytes, not a shadow\'s');
+    const secondLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(secondLog.includes('workflows/x.json'), 'the delivered winner lands on content.log');
+});
+
+// ---------------------------------------------------------------------------
+// contentSourcesAllowlist: operator-named roots outside the built-in roots
+// ---------------------------------------------------------------------------
+
+test('a contentSourcesAllowlist root accepts a pack outside the built-in roots; without it the same path is rejected', () => {
+    // The Docker bind-mount case: a pack directory outside BOTH the server
+    // directory and the data root is legitimate only when the operator
+    // names its root. scratchRoot is a sibling of dataRoot — packs built
+    // here are outside both built-in roots.
+    const outsideRoot = path.join(scratchRoot, 'outside-packs');
+    const pack = path.join(outsideRoot, 'srv-pack');
+    fs.mkdirSync(path.join(pack, 'worlds'), { recursive: true });
+    fs.writeFileSync(path.join(pack, 'index.json'), JSON.stringify([
+        { filename: 'worlds/srv.json', type: 'world' },
+    ]));
+    fs.writeFileSync(path.join(pack, 'worlds', 'srv.json'), '{"entries":{"srv":{"uid":1}}}');
+
+    const ALLOWLIST_ENV = 'LUKER_CONTENT_SOURCES_ALLOWLIST';
+    const prevAllow = process.env[ALLOWLIST_ENV];
+    try {
+        // Rejected without an allowlist entry — the containment gate is intact.
+        delete process.env[ALLOWLIST_ENV];
+        withSources([{ path: pack }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, []);
+            assert.ok(lines.some(l => l.includes('resolves outside')),
+                `expected a containment warning, got: ${lines}`);
+        });
+
+        // Accepted once the operator names the root — env form of the
+        // contentSourcesAllowlist config key (same getConfigValue path).
+        process.env[ALLOWLIST_ENV] = JSON.stringify([outsideRoot]);
+        withSources([{ path: pack }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, [{ entries: { srv: { uid: 1 } } }],
+                'an allowlisted outside root must deliver its declared content');
+            assert.deepEqual(lines, [], 'the allowlisted source must not warn');
+        });
+
+        // A sibling of the allowlisted root is still outside the gate —
+        // the allowlist is per-root, not a blanket outside-path permit.
+        const stray = path.join(scratchRoot, 'stray-pack');
+        fs.mkdirSync(stray, { recursive: true });
+        fs.writeFileSync(path.join(stray, 'index.json'), JSON.stringify([
+            { filename: 'worlds/stray.json', type: 'world' },
+        ]));
+        withSources([{ path: stray }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, []);
+            assert.ok(lines.some(l => l.includes('resolves outside')),
+                `the gate must still reject non-allowlisted roots, got: ${lines}`);
+        });
+    } finally {
+        if (prevAllow === undefined) {
+            delete process.env[ALLOWLIST_ENV];
+        } else {
+            process.env[ALLOWLIST_ENV] = prevAllow;
+        }
+    }
+});
+
+test('a non-list contentSourcesAllowlist warns and keeps the containment gate closed', () => {
+    const ALLOWLIST_ENV = 'LUKER_CONTENT_SOURCES_ALLOWLIST';
+    const prevAllow = process.env[ALLOWLIST_ENV];
+    process.env[ALLOWLIST_ENV] = '"just-a-string"';
+    // A unique outside path — source-entry warnings dedupe per key per
+    // process, so a path an earlier test already warned on would be
+    // silently suppressed here.
+    const outside = path.join(os.tmpdir(), `utopinn-not-allowlisted-${process.pid}`);
+    try {
+        const { lines } = captureWarn(() =>
+            withSources([{ path: outside }], () => contentManager.getContentOfType('world', 'json')));
+        assert.ok(lines.some(l => l.includes('must be a list')),
+            `expected a shape warning, got: ${lines}`);
+        assert.ok(lines.some(l => l.includes('resolves outside')),
+            `a malformed allowlist must not open the gate, got: ${lines}`);
+    } finally {
+        if (prevAllow === undefined) {
+            delete process.env[ALLOWLIST_ENV];
+        } else {
+            process.env[ALLOWLIST_ENV] = prevAllow;
+        }
+    }
+});

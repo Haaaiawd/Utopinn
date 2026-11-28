@@ -13,7 +13,7 @@ import {
     getEffectiveUserQuotaBytes,
     getDirectorySizeBytes,
 } from '../admin-settings.js';
-import { checkForNewContent, CONTENT_TYPES } from './content-manager.js';
+import { provisionNewAccount } from '../services/account-provisioning.js';
 import {
     KEY_PREFIX,
     toKey,
@@ -931,7 +931,10 @@ router.post('/create', requireAdminMiddleware, async (request, response) => {
         console.info('Creating data directories for', newUser.handle);
         await ensurePublicDirectoriesExist();
         const directories = getUserDirectories(newUser.handle);
-        await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
+        // Same starter payload registration delivers: the scaffold content
+        // pass AND the _seed pool pass — an admin-created account must reach
+        // a working card-apps/ tree just like a registered one.
+        await provisionNewAccount(directories, { profile: newUser });
         // passwordSet tells the admin UI the account cannot sign in via the
         // password path yet (empty stored password is rejected at login) —
         // it needs SSO or a password through change-password/recover.

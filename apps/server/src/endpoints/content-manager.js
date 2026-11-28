@@ -9,20 +9,207 @@ import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { getConfigValue, color, setPermissionsSync, isValidUrl } from '../util.js';
+import { getConfigValue, getConfigEnvKeys, getConfigFilePath, tryParse, color, setPermissionsSync, isValidUrl, isPathUnderParent, resolvePathWithinParent, confineRealPath } from '../util.js';
 import { write } from '../character-card-parser.js';
 import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
 import { getWorldInfoRepo, getPresetRepo, getNamedDocRepo, getSettingsRepo } from '../storage/index.js';
-
-const contentDirectory = path.join(serverDirectory, 'default/content');
-const scaffoldDirectory = path.join(serverDirectory, 'default/scaffold');
-const contentIndexPath = path.join(contentDirectory, 'index.json');
-const scaffoldIndexPath = path.join(scaffoldDirectory, 'index.json');
+import { estimateSeedEntryBytes } from '../services/seed-content.js';
 
 const WHITELIST_GENERIC_URL_DOWNLOAD_SOURCES = getConfigValue('whitelistImportDomains', []);
 const USER_AGENT = 'Utopinn';
+
+const DEFAULT_CONTENT_INDEX = 'index.json';
+
+/**
+ * Built-in content sources in declaration order (lowest precedence first):
+ * `default/content` is the upstream asset list, `default/scaffold` is the
+ * operator-owned release namespace. Operators append additional sources via
+ * the `contentSources` key in config.yaml — each entry is `{ path, index? }`
+ * (a bare string is accepted as shorthand for `{ path }`):
+ *
+ *   contentSources:
+ *     - path: ./default/content-pack     # resolved against the server dir
+ *       index: index.json                # optional; defaults to index.json
+ *
+ * `path` may be absolute, but the resolved directory must stay inside the
+ * server directory, the data root, or a `contentSourcesAllowlist` root —
+ * entries escaping all three are skipped with a warning. `index` is a
+ * plain file name inside the source directory.
+ *
+ * Precedence: later-declared sources override earlier ones. Seeding copies
+ * the first matching index entry and skips same-filename duplicates, so the
+ * merged index lists the highest-precedence source first — configured
+ * sources win over `default/scaffold`, which wins over `default/content`.
+ */
+const BUILTIN_CONTENT_SOURCES = [
+    { path: 'default/content' },
+    { path: 'default/scaffold' },
+];
+
+/**
+ * Source keys that already produced a warning in this process. Content
+ * source problems are logged once per source, not once per call.
+ * @type {Set<string>}
+ */
+const reportedContentSources = new Set();
+
+function warnContentSource(key, ...args) {
+    if (reportedContentSources.has(key)) {
+        return;
+    }
+    reportedContentSources.add(key);
+    console.warn(...args);
+}
+
+/**
+ * Resolves the `contentSourcesAllowlist` config key to absolute roots.
+ * Operator-named directories a `contentSources` entry may live under — the
+ * escape hatch for bind-mounted pack directories (e.g. a Docker volume like
+ * `/srv/utopinn-content`) that sit outside both the server directory and
+ * the data root. Default empty keeps the old containment gate intact: an
+ * outside path stays rejected. Relative roots resolve against the config
+ * file's own directory — the operator's anchor, wherever the config was
+ * carried (a bind-mounted /data volume, /etc, …) — falling back to the
+ * server directory when no config path is set.
+ * @returns {string[]} Absolute allowlist roots
+ */
+function resolveContentSourceAllowlist() {
+    // Same malformed-env guard as contentSources: getConfigValue silently
+    // falls back to the default on unparseable env JSON, which would hide
+    // why allowlisted packs went missing.
+    for (const envKey of getConfigEnvKeys('contentSourcesAllowlist')) {
+        if (!(envKey in process.env)) {
+            continue;
+        }
+        if (tryParse(process.env[envKey]) == null) {
+            warnContentSource(`env:${envKey}`, `${envKey} is set but its value is not valid JSON; ignoring it`);
+        }
+        break;
+    }
+
+    const allowlist = getConfigValue('contentSourcesAllowlist', []);
+    if (allowlist == null) {
+        return [];
+    }
+    if (!Array.isArray(allowlist)) {
+        warnContentSource('allowlist-shape', 'contentSourcesAllowlist must be a list of directory paths; ignoring it');
+        return [];
+    }
+
+    const configPath = getConfigFilePath();
+    const baseDir = configPath ? path.dirname(configPath) : serverDirectory;
+    const roots = [];
+    for (const entry of allowlist) {
+        const raw = typeof entry === 'string' ? entry.trim() : '';
+        if (!raw) {
+            warnContentSource(`allowlist-entry:${JSON.stringify(entry)}`, `contentSourcesAllowlist entry ${JSON.stringify(entry)} is not a non-empty path string; skipping`);
+            continue;
+        }
+        roots.push(path.resolve(baseDir, raw));
+    }
+    return roots;
+}
+
+/**
+ * Resolves one `contentSources` config entry to a source descriptor.
+ * @param {any} entry Config entry: `{ path, index? }` or a bare path string
+ * @param {string[]} [allowlistRoots] Extra containment roots from
+ *   `contentSourcesAllowlist` — an entry inside one is accepted even when
+ *   it sits outside the server directory and the data root
+ * @returns {{dir: string, indexPath: string} | null} Source descriptor, or null when the entry is invalid
+ */
+function resolveContentSourceEntry(entry, allowlistRoots = []) {
+    const record = typeof entry === 'string' ? { path: entry } : entry;
+    const key = `entry:${JSON.stringify(record)}`;
+
+    const relPath = typeof record?.path === 'string' ? record.path.trim() : '';
+    if (!relPath) {
+        warnContentSource(key, `contentSources entry ${JSON.stringify(record)} has no 'path'; skipping`);
+        return null;
+    }
+
+    const dir = path.resolve(serverDirectory, relPath);
+    const dataRoot = typeof globalThis.DATA_ROOT === 'string' ? path.resolve(globalThis.DATA_ROOT) : null;
+    const contained = isPathUnderParent(serverDirectory, dir)
+        || (dataRoot !== null && isPathUnderParent(dataRoot, dir))
+        || allowlistRoots.some(root => isPathUnderParent(root, dir));
+    if (!contained) {
+        warnContentSource(key, `contentSources path '${relPath}' resolves outside the server directory, the data root, and every contentSourcesAllowlist root; skipping`);
+        return null;
+    }
+
+    const index = typeof record.index === 'string' && record.index.trim() ? record.index.trim() : DEFAULT_CONTENT_INDEX;
+    if (index === '..' || path.basename(index) !== index) {
+        warnContentSource(key, `contentSources entry for '${relPath}' has an invalid index name '${index}'; skipping`);
+        return null;
+    }
+
+    return { dir, indexPath: path.join(dir, index) };
+}
+
+/**
+ * A resolved content source — the only shape downstream code may see.
+ * `origin` records who declared the pack; `rank` is the explicit precedence:
+ * a higher-ranked source shadows same-named index entries from every
+ * lower-ranked one. Rank is assigned once, here at resolution time, so
+ * precedence is a value on the descriptor — not an emergent property of
+ * which direction a consumer happens to iterate the array.
+ * @typedef {Object} ContentSource
+ * @property {string} dir Absolute pack root — every pack-derived path stays under it
+ * @property {string} indexPath Absolute path of the pack's index file
+ * @property {'builtin'|'config'} origin Who declared the pack
+ * @property {number} rank Explicit precedence — higher shadows lower
+ */
+
+/**
+ * Lists the active content sources in declaration order (lowest precedence
+ * first): the built-ins, then the configured `contentSources` entries.
+ * Invalid configured entries are skipped with a warning.
+ * @returns {ContentSource[]} Resolved content sources, rank ascending
+ */
+export function resolveContentSources() {
+    const sources = BUILTIN_CONTENT_SOURCES.map((source, rank) => ({
+        dir: path.resolve(serverDirectory, source.path),
+        indexPath: path.resolve(serverDirectory, source.path, DEFAULT_CONTENT_INDEX),
+        origin: 'builtin',
+        rank,
+    }));
+
+    // An object-typed env override is JSON.parse'd inside getConfigValue,
+    // which silently falls back to the default when the value is malformed —
+    // that would hide why the configured packs went missing, so the first
+    // env key actually consulted gets checked here and named in the warning.
+    for (const envKey of getConfigEnvKeys('contentSources')) {
+        if (!(envKey in process.env)) {
+            continue;
+        }
+        if (tryParse(process.env[envKey]) == null) {
+            warnContentSource(`env:${envKey}`, `${envKey} is set but its value is not valid JSON; ignoring it`);
+        }
+        break;
+    }
+
+    const configured = getConfigValue('contentSources', []);
+    if (configured == null) {
+        return sources;
+    }
+    if (!Array.isArray(configured)) {
+        warnContentSource('config-shape', 'contentSources must be a list of { path, index? } entries; ignoring it');
+        return sources;
+    }
+    const allowlistRoots = resolveContentSourceAllowlist();
+    for (const entry of configured) {
+        const source = resolveContentSourceEntry(entry, allowlistRoots);
+        if (source) {
+            source.origin = 'config';
+            source.rank = sources.length;
+            sources.push(source);
+        }
+    }
+    return sources;
+}
 
 /**
  * @typedef {Object} ContentItem
@@ -68,16 +255,110 @@ export const CONTENT_SCOPE = {
 };
 
 /**
+ * Repo adapter — the exists/save pair a repo-backed type hands to the
+ * seeder. The probe keeps a force-reseed from clobbering a user-edited doc
+ * with the default. `handle` is the user handle, `name` the file basename.
+ * @typedef {Object} ContentRepoAdapter
+ * @property {string} label Repo descriptor used in log messages
+ * @property {(handle: string, name: string) => Promise<boolean>} exists
+ * @property {(handle: string, name: string, json: object) => Promise<void>} save
+ */
+
+const presetRepoAdapter = (apiId) => ({
+    label: `PresetRepo[${apiId}]`,
+    exists: (handle, name) => getPresetRepo().exists(handle, apiId, name),
+    save: (handle, name, json) => getPresetRepo().save(handle, apiId, name, json),
+});
+
+const namedDocRepoAdapter = (family) => ({
+    label: `NamedDocRepo[${family}]`,
+    exists: async (handle, name) => (await getNamedDocRepo().get(handle, family, name)) != null,
+    save: (handle, name, json) => getNamedDocRepo().save(handle, family, name, json),
+});
+
+/**
+ * Content type registry — the single place a type's routing is declared.
+ * Adding a type is one CONTENT_TYPES entry plus one row here; scope, user
+ * target, global target, and the seed sink all follow from the row instead
+ * of being edited into four separate switches.
+ *
+ *   dir       UserDirectoryList key the per-user fs target resolves through
+ *   globalDir directory name under DATA_ROOT (global-scope types)
+ *   scope     CONTENT_SCOPE — defaults to USER when omitted
+ *   repo      ContentRepoAdapter — its presence picks the repo sink over fs
+ *   preset    marks a resettable preset type for /api/presets/restore
+ */
+const CONTENT_TYPE_TABLE = {
+    [CONTENT_TYPES.SETTINGS]: {
+        dir: 'root',
+        repo: {
+            label: 'SettingsRepo',
+            // The settings handler returns null on missing file/row in
+            // every engine (see fs-engine-transaction.js:288-307,
+            // sqlite-engine-transaction.js:210-228, and the equivalent
+            // mysql/postgres handlers), so probing get() is enough; the
+            // engines don't bootstrap an empty settings doc on first read.
+            exists: async (handle) => (await getSettingsRepo().get(handle)) != null,
+            save: (handle, _name, json) => getSettingsRepo().save(handle, json),
+        },
+    },
+    [CONTENT_TYPES.CHARACTER]: { dir: 'characters' },
+    [CONTENT_TYPES.SPRITES]: { dir: 'characters' },
+    [CONTENT_TYPES.BACKGROUND]: { dir: 'backgrounds' },
+    [CONTENT_TYPES.WORLD]: {
+        dir: 'worlds',
+        repo: {
+            label: 'WorldInfoRepo',
+            exists: async (handle, name) => (await getWorldInfoRepo().get(handle, name)) != null,
+            save: (handle, name, json) => getWorldInfoRepo().save(handle, name, json),
+        },
+    },
+    [CONTENT_TYPES.AVATAR]: { dir: 'avatars' },
+    [CONTENT_TYPES.THEME]: { dir: 'themes', repo: namedDocRepoAdapter('themes') },
+    [CONTENT_TYPES.WORKFLOW]: { dir: 'comfyWorkflows' },
+    [CONTENT_TYPES.KOBOLD_PRESET]: { dir: 'koboldAI_Settings', repo: presetRepoAdapter('kobold'), preset: true },
+    [CONTENT_TYPES.OPENAI_PRESET]: { dir: 'openAI_Settings', repo: presetRepoAdapter('openai'), preset: true },
+    [CONTENT_TYPES.NOVEL_PRESET]: { dir: 'novelAI_Settings', repo: presetRepoAdapter('novel'), preset: true },
+    [CONTENT_TYPES.TEXTGEN_PRESET]: { dir: 'textGen_Settings', repo: presetRepoAdapter('textgenerationwebui'), preset: true },
+    [CONTENT_TYPES.INSTRUCT]: { dir: 'instruct', repo: presetRepoAdapter('instruct'), preset: true },
+    [CONTENT_TYPES.CONTEXT]: { dir: 'context', repo: presetRepoAdapter('context'), preset: true },
+    [CONTENT_TYPES.MOVING_UI]: { dir: 'movingUI', repo: namedDocRepoAdapter('movingUI') },
+    [CONTENT_TYPES.QUICK_REPLIES]: { dir: 'quickreplies', repo: namedDocRepoAdapter('quickReplies') },
+    [CONTENT_TYPES.SYSPROMPT]: { dir: 'sysprompt', repo: presetRepoAdapter('sysprompt'), preset: true },
+    [CONTENT_TYPES.REASONING]: { dir: 'reasoning', repo: presetRepoAdapter('reasoning'), preset: true },
+    [CONTENT_TYPES.ERROR_PAGE]: { scope: CONTENT_SCOPE.GLOBAL, globalDir: '_errors' },
+    [CONTENT_TYPES.STYLESHEET]: { scope: CONTENT_SCOPE.GLOBAL, globalDir: '_css' },
+};
+
+// Registry invariant: every declared type needs a routing row, so an enum
+// entry added without its row fails at module load, not silently at seed.
+for (const type of Object.values(CONTENT_TYPES)) {
+    if (!CONTENT_TYPE_TABLE[type]) {
+        throw new Error(`content type '${type}' has no CONTENT_TYPE_TABLE row`);
+    }
+}
+
+/**
  * Gets the scope of a content type.
  * @param {CONTENT_TYPES} type Content type
  * @returns {CONTENT_SCOPE} Resolved content scope
  */
 function getScopeByType(type) {
-    const globalTypes = [
-        CONTENT_TYPES.ERROR_PAGE,
-        CONTENT_TYPES.STYLESHEET,
-    ];
-    return globalTypes.includes(type) ? CONTENT_SCOPE.GLOBAL : CONTENT_SCOPE.USER;
+    // A type name the registry doesn't know still merges as USER-scope —
+    // the seed sink later reports it as unknown instead of misrouting it.
+    return CONTENT_TYPE_TABLE[type]?.scope ?? CONTENT_SCOPE.USER;
+}
+
+/**
+ * Whether a content type is one of the resettable preset types — the same
+ * set `getDefaultPresets` collects for the /api/presets/restore flow. The
+ * `*_preset` suffix covers preset types a pack declares ahead of the
+ * registry; the row flag covers the non-suffixed preset families.
+ * @param {string} type Content type
+ * @returns {boolean}
+ */
+function isDefaultPresetType(type) {
+    return type.endsWith('_preset') || CONTENT_TYPE_TABLE[type]?.preset === true;
 }
 
 /**
@@ -91,7 +372,7 @@ export function getDefaultPresets(directories) {
         const presets = [];
 
         for (const contentItem of contentIndex) {
-            if (contentItem.type.endsWith('_preset') || ['instruct', 'context', 'sysprompt', 'reasoning'].includes(contentItem.type)) {
+            if (isDefaultPresetType(contentItem.type)) {
                 contentItem.name = path.parse(contentItem.filename).name;
                 contentItem.folder = getUserTargetByType(contentItem.type, directories);
                 presets.push(contentItem);
@@ -106,24 +387,40 @@ export function getDefaultPresets(directories) {
 }
 
 /**
- * Gets a default JSON file from the content directory.
+ * Gets a default JSON file from the content sources.
+ * Only files the merged index declares under a preset type are served — a
+ * same-named file sitting in a source directory without an index entry can
+ * never win the reset. Declared copies are tried highest-precedence first;
+ * a missing, escaping, or malformed copy falls through to the next
+ * lower-precedence declared copy instead of aborting the restore.
  * @param {string} filename Name of the file to get
- * @returns {object | null} JSON object or null if the file doesn't exist
+ * @param {string} [type] Restrict the match to one preset family's content
+ *   type. Two families can ship the same relative filename (both declare
+ *   `Default.json`); without the family pin the restore would return
+ *   whichever family's copy ranks higher.
+ * @returns {object | null} JSON object or null if no declared readable copy exists
  */
-export function getDefaultPresetFile(filename) {
-    try {
-        const contentPath = path.join(contentDirectory, filename);
-
-        if (!fs.existsSync(contentPath)) {
-            return null;
+export function getDefaultPresetFile(filename, type = null) {
+    const contentIndex = getContentIndex(CONTENT_SCOPE.USER);
+    for (const item of contentIndex) {
+        if (item.filename !== filename || !isDefaultPresetType(item.type)) {
+            continue;
         }
-
-        const fileContent = fs.readFileSync(contentPath, 'utf8');
-        return JSON.parse(fileContent);
-    } catch (err) {
-        console.warn(`Failed to get default file ${filename}`, err);
-        return null;
+        if (type !== null && item.type !== type) {
+            continue;
+        }
+        try {
+            const contentPath = path.join(item.folder, item.filename);
+            const realPath = confineRealPath(item.folder, contentPath);
+            if (!realPath) {
+                continue;
+            }
+            return JSON.parse(fs.readFileSync(realPath, 'utf8'));
+        } catch (err) {
+            console.warn(`Failed to get default file ${filename}`, err);
+        }
     }
+    return null;
 }
 
 /**
@@ -160,109 +457,20 @@ export function getDefaultPresetFile(filename) {
  * @returns {ContentSink}
  */
 function resolveContentSink(type, basename, directories, handle) {
-    switch (type) {
-        case CONTENT_TYPES.SETTINGS:
-            return {
-                kind: 'repo',
-                label: 'SettingsRepo',
-                // The settings handler returns null on missing file/row in
-                // every engine (see fs-engine-transaction.js:288-307,
-                // sqlite-engine-transaction.js:210-228, and the equivalent
-                // mysql/postgres handlers), so probing get() is enough; the
-                // engines don't bootstrap an empty settings doc on first read.
-                exists: async () => (await getSettingsRepo().get(handle)) != null,
-                save: async (json) => getSettingsRepo().save(handle, json),
-            };
-        case CONTENT_TYPES.WORLD:
-            return {
-                kind: 'repo',
-                label: 'WorldInfoRepo',
-                exists: async () => (await getWorldInfoRepo().get(handle, basename)) != null,
-                save: async (json, name) => getWorldInfoRepo().save(handle, name, json),
-            };
-        case CONTENT_TYPES.THEME:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[themes]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'themes', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'themes', name, json),
-            };
-        case CONTENT_TYPES.MOVING_UI:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[movingUI]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'movingUI', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'movingUI', name, json),
-            };
-        case CONTENT_TYPES.QUICK_REPLIES:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[quickReplies]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'quickReplies', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'quickReplies', name, json),
-            };
-        case CONTENT_TYPES.KOBOLD_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[kobold]',
-                exists: async () => getPresetRepo().exists(handle, 'kobold', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'kobold', name, json),
-            };
-        case CONTENT_TYPES.OPENAI_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[openai]',
-                exists: async () => getPresetRepo().exists(handle, 'openai', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'openai', name, json),
-            };
-        case CONTENT_TYPES.NOVEL_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[novel]',
-                exists: async () => getPresetRepo().exists(handle, 'novel', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'novel', name, json),
-            };
-        case CONTENT_TYPES.TEXTGEN_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[textgenerationwebui]',
-                exists: async () => getPresetRepo().exists(handle, 'textgenerationwebui', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'textgenerationwebui', name, json),
-            };
-        case CONTENT_TYPES.INSTRUCT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[instruct]',
-                exists: async () => getPresetRepo().exists(handle, 'instruct', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'instruct', name, json),
-            };
-        case CONTENT_TYPES.CONTEXT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[context]',
-                exists: async () => getPresetRepo().exists(handle, 'context', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'context', name, json),
-            };
-        case CONTENT_TYPES.SYSPROMPT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[sysprompt]',
-                exists: async () => getPresetRepo().exists(handle, 'sysprompt', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'sysprompt', name, json),
-            };
-        case CONTENT_TYPES.REASONING:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[reasoning]',
-                exists: async () => getPresetRepo().exists(handle, 'reasoning', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'reasoning', name, json),
-            };
-        default: {
-            const target = getUserTargetByType(type, directories);
-            if (!target) return { kind: 'none' };
-            return { kind: 'fs', target };
-        }
+    // Lookup order: repo adapter first, then the fs target — a type with no
+    // registry row at all is 'none', the unknown-type sentinel.
+    const repo = CONTENT_TYPE_TABLE[type]?.repo;
+    if (repo) {
+        return {
+            kind: 'repo',
+            label: repo.label,
+            exists: () => repo.exists(handle, basename),
+            save: (json, name) => repo.save(handle, name, json),
+        };
     }
+    const target = getUserTargetByType(type, directories);
+    if (!target) return { kind: 'none' };
+    return { kind: 'fs', target };
 }
 
 /**
@@ -271,14 +479,39 @@ function resolveContentSink(type, basename, directories, handle) {
  * @param {string} contentLogPath Path to the content log file
  * @param {(contentItem: ContentItem) => ContentSink} resolveSink Sink resolver
  * @param {string[]} [forceCategories] List of categories to force check (even if content check is skipped)
+ * @param {object} [options]
+ * @param {(bytes: number) => Promise<{usageBytes:number, quotaBytes:number, message:string}|null>} [options.checkQuota]
+ *   Optional pre-copy reservation for fs-sink entries — called with the
+ *   estimated entry size and must resolve to a violation descriptor when
+ *   the write would overflow the account quota (the same accounting
+ *   shared-card installation and the `_seed` pool apply via
+ *   checkUserStorageQuota). A violating entry is skipped wholesale and
+ *   NOT written to the content log, so a later pass retries it after the
+ *   user frees space or the quota is raised. Repo-sink saves are not
+ *   metered here (small JSON docs; in db modes they never touch the
+ *   measured directory tree).
  * @returns {Promise<boolean>} Whether any content was added
  */
-async function seedContent(contentIndex, contentLogPath, resolveSink, forceCategories) {
+async function seedContent(contentIndex, contentLogPath, resolveSink, forceCategories, { checkQuota = null } = {}) {
     let anyContentAdded = false;
     const contentLog = getContentLog(contentLogPath);
+    // Logical names and fs targets whose highest-precedence entry was skipped
+    // by quota this run. A quota skip must not silently downgrade precedence:
+    // installing the next lower-precedence copy would hand the user the wrong
+    // (older/built-in) file AND log it as delivered, which then shadows the
+    // real winner forever — even after the quota is raised. The block covers
+    // both the index filename (the content.log identity) and the flattened fs
+    // target path (the on-disk collision identity: two index entries sharing
+    // a basename land on the same file).
+    const quotaBlocked = new Set();
 
     for (const contentItem of contentIndex) {
         if (contentLog.includes(contentItem.filename) && !forceCategories?.includes(contentItem.type)) {
+            continue;
+        }
+
+        if (quotaBlocked.has(contentItem.filename)) {
+            console.warn(`Content file ${contentItem.filename} not delivered: a higher-precedence copy of it was skipped by quota this run`);
             continue;
         }
 
@@ -291,6 +524,15 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
 
         if (!fs.existsSync(contentPath)) {
             console.warn(`Content file ${contentItem.filename} is missing`);
+            continue;
+        }
+
+        // Index validation already rejects lexically escaping filenames;
+        // this confines the canonical path too so an in-pack symlink cannot
+        // seed out-of-pack content into a user directory.
+        const realPath = confineRealPath(contentItem.folder, contentPath);
+        if (!realPath) {
+            console.warn(`Content file ${contentItem.filename} resolves outside its content source; skipping`);
             continue;
         }
 
@@ -316,7 +558,7 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
             }
             let json;
             try {
-                const raw = fs.readFileSync(contentPath, 'utf8');
+                const raw = fs.readFileSync(realPath, 'utf8');
                 json = JSON.parse(raw);
             } catch (parseErr) {
                 console.warn(`Content file ${contentItem.filename} is not valid JSON; skipping`, parseErr);
@@ -343,16 +585,39 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
         const contentTarget = sink.target;
         const basePath = path.parse(contentItem.filename).base;
         const targetPath = path.join(contentTarget, basePath);
-        contentLog.push(contentItem.filename);
 
-        if (fs.existsSync(targetPath)) {
-            console.warn(`Content file ${contentItem.filename} already exists in ${contentTarget}`);
+        if (quotaBlocked.has(targetPath)) {
+            // A different-named entry that flattens to the same file — the
+            // quota-skipped winner still owns this target for this run.
+            console.warn(`Content file ${contentItem.filename} not delivered to ${contentTarget}: a higher-precedence file for the same target was skipped by quota this run`);
             continue;
         }
 
+        if (fs.existsSync(targetPath)) {
+            console.warn(`Content file ${contentItem.filename} already exists in ${contentTarget}`);
+            contentLog.push(contentItem.filename);
+            continue;
+        }
+
+        if (checkQuota) {
+            const estimate = await estimateSeedEntryBytes(realPath);
+            const violation = await checkQuota(estimate);
+            if (violation) {
+                // Skipped whole, never partially copied, and kept OFF the
+                // content log so a later pass retries the delivery. The name
+                // and its fs target are blocked for this run so no
+                // lower-precedence copy can shadow the winner.
+                quotaBlocked.add(contentItem.filename);
+                quotaBlocked.add(targetPath);
+                console.warn(`Content file ${contentItem.filename} not delivered to ${contentTarget}: ${violation.message}`);
+                continue;
+            }
+        }
+
         fs.mkdirSync(contentTarget, { recursive: true });
-        fs.cpSync(contentPath, targetPath, { recursive: true, force: false });
+        fs.cpSync(realPath, targetPath, { recursive: true, force: false });
         setPermissionsSync(targetPath);
+        contentLog.push(contentItem.filename);
         console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
         anyContentAdded = true;
     }
@@ -362,10 +627,59 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
 }
 
 /**
+ * Builds the quota reservation for fs-sink content copies — the same
+ * accounting the `_seed` pool and shared-card installation apply
+ * (checkUserStorageQuota with { fresh: true }, so consecutive copies in
+ * one pass see the bytes the earlier ones just wrote).
+ *
+ * The profile is looked up here rather than handed in by callers: the
+ * boot-time all-users pass only holds a directory list, and enforcement
+ * must not depend on each caller remembering to opt in. Guard
+ * construction is fail-open — an unreachable profile store degrades to
+ * no accounting instead of blocking content delivery, matching the
+ * content check's own log-and-continue posture; once built, each entry's
+ * reservation is fail-closed (a violation skips the entry whole).
+ * @param {import('../users.js').UserDirectoryList} directories User directories
+ * @returns {Promise<((bytes: number) => Promise<{usageBytes:number, quotaBytes:number, message:string}|null>)|null>}
+ */
+async function buildContentQuotaGuard(directories) {
+    const handle = path.basename(directories.root);
+    try {
+        // Lazy: users.js statically imports this module, so a static
+        // reverse edge would make the cycle eval-order sensitive.
+        const [{ default: storage }, { toKey, checkUserStorageQuota }] = await Promise.all([
+            import('node-persist'),
+            import('../users.js'),
+        ]);
+        const profile = await storage.getItem(toKey(handle));
+        // No account record (e.g. an orphaned directory tree) means no
+        // quota identity — no accounting, not a null-profile crash inside
+        // checkUserStorageQuota.
+        if (!profile) {
+            return null;
+        }
+        return async (bytes) => {
+            try {
+                return await checkUserStorageQuota({ profile, directories }, bytes, { fresh: true });
+            } catch (error) {
+                console.warn(`Content quota check failed for ${handle}; delivering anyway:`, error?.message ?? error);
+                return null;
+            }
+        };
+    } catch (error) {
+        console.warn(`Content quota accounting unavailable for ${handle}; seeding without it:`, error?.message ?? error);
+        return null;
+    }
+}
+
+/**
  * Seeds content for a user. Repo-backed types route through their Repo so
  * db-mode users actually see seeded presets / worlds / themes / etc.;
  * binary types (CHARACTER, SPRITES, AVATAR, BACKGROUND, WORKFLOW) keep
- * the disk path.
+ * the disk path and reserve space through the account quota — an entry
+ * that would push the account over is skipped and reported, never
+ * partially copied, so server defaults can never leave an account over
+ * quota.
  * @param {ContentItem[]} contentIndex Content index
  * @param {import('../users.js').UserDirectoryList} directories User directories
  * @param {string[]} forceCategories List of categories to force check (even if content check is skipped)
@@ -386,6 +700,7 @@ export async function seedContentForUser(contentIndex, directories, forceCategor
         contentLogPath,
         (item) => resolveContentSink(item.type, path.parse(item.filename).name, directories, handle),
         forceCategories,
+        { checkQuota: await buildContentQuotaGuard(directories) },
     );
 }
 
@@ -448,34 +763,62 @@ export async function checkForNewContent(directoriesList, forceCategories = []) 
 }
 
 /**
- * Gets combined content index from the content and scaffold directories.
+ * Gets the merged content index across all content sources. Sources are
+ * declared lowest-precedence first (`default/content`, `default/scaffold`,
+ * then configured `contentSources` entries) and the merged index lists
+ * highest precedence first: seeding copies the first matching entry and
+ * skips same-filename duplicates, so a later-declared source overrides
+ * earlier ones. A missing or malformed source index is skipped with a
+ * warning and never aborts the merge.
  * @param {CONTENT_SCOPE} scope Scope of content to get
  * @returns {ContentItem[]} Array of content index
  */
 function getContentIndex(scope = CONTENT_SCOPE.USER) {
     const result = [];
+    // Rank-descending: the highest-precedence source merges first, so its
+    // entries land ahead of same-named entries from every lower rank.
+    const sources = resolveContentSources().sort((a, b) => b.rank - a.rank);
 
-    if (fs.existsSync(scaffoldIndexPath)) {
-        const scaffoldIndexText = fs.readFileSync(scaffoldIndexPath, 'utf8');
-        const scaffoldIndex = JSON.parse(scaffoldIndexText);
-        if (Array.isArray(scaffoldIndex)) {
-            scaffoldIndex.forEach((item) => {
-                item.folder = scaffoldDirectory;
-                item.scope = getScopeByType(item.type);
-            });
-            result.push(...scaffoldIndex);
+    for (const { dir, indexPath } of sources) {
+        let index;
+        try {
+            if (!fs.existsSync(indexPath)) {
+                warnContentSource(`missing:${indexPath}`, `Content source index ${indexPath} does not exist; skipping`);
+                continue;
+            }
+            index = JSON.parse(fs.readFileSync(indexPath, 'utf8'));
+        } catch (err) {
+            warnContentSource(`parse:${indexPath}`, `Content source index ${indexPath} is not valid JSON; skipping`, err);
+            continue;
         }
-    }
+        if (!Array.isArray(index)) {
+            warnContentSource(`shape:${indexPath}`, `Content source index ${indexPath} is not an array; skipping`);
+            continue;
+        }
 
-    if (fs.existsSync(contentIndexPath)) {
-        const contentIndexText = fs.readFileSync(contentIndexPath, 'utf8');
-        const contentIndex = JSON.parse(contentIndexText);
-        if (Array.isArray(contentIndex)) {
-            contentIndex.forEach((item) => {
-                item.folder = contentDirectory;
-                item.scope = getScopeByType(item.type);
-            });
-            result.push(...contentIndex);
+        let skipped = 0;
+        let escaped = 0;
+        for (const item of index) {
+            if (item === null || typeof item !== 'object' || typeof item.filename !== 'string' || typeof item.type !== 'string') {
+                skipped++;
+                continue;
+            }
+            // An index entry must stay inside its own source directory —
+            // path.join does not neutralise '..', so without this check an
+            // entry like "../../secret.json" would read outside the pack.
+            if (resolvePathWithinParent(dir, item.filename) === null) {
+                escaped++;
+                continue;
+            }
+            item.folder = dir;
+            item.scope = getScopeByType(item.type);
+            result.push(item);
+        }
+        if (skipped > 0) {
+            warnContentSource(`items:${indexPath}`, `Content source index ${indexPath}: skipped ${skipped} malformed entr${skipped === 1 ? 'y' : 'ies'} (entries need filename and type strings)`);
+        }
+        if (escaped > 0) {
+            warnContentSource(`escape:${indexPath}`, `Content source index ${indexPath}: skipped ${escaped} entr${escaped === 1 ? 'y' : 'ies'} whose filename resolves outside the source directory`);
         }
     }
 
@@ -493,13 +836,24 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
     const contentIndex = getContentIndex(scope);
     const indexItems = contentIndex.filter((item) => item.type === type && item.folder);
     const files = [];
+    // The merged index is ordered highest-precedence first; same-named items
+    // from lower-precedence sources are shadowed by the first readable copy.
+    // The logical name is the file basename — the identity the fs sink
+    // flattens to and the repo stem keys on downstream. A winner that is
+    // missing or unreadable does not shadow: the next declared copy is
+    // tried, so a broken pack cannot erase the content it replaced.
+    const seen = new Set();
     for (const item of indexItems) {
-        if (!item.folder) {
+        const logicalName = path.basename(item.filename);
+        if (seen.has(logicalName)) {
             continue;
         }
         try {
-            const filePath = path.join(item.folder, item.filename);
-            const fileContent = fs.readFileSync(filePath);
+            const realPath = confineRealPath(item.folder, path.join(item.folder, item.filename));
+            if (!realPath) {
+                continue;
+            }
+            const fileContent = fs.readFileSync(realPath);
             switch (format) {
                 case 'json':
                     files.push(JSON.parse(fileContent.toString()));
@@ -511,6 +865,7 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
                     files.push(fileContent);
                     break;
             }
+            seen.add(logicalName);
         } catch {
             // Ignore errors
         }
@@ -525,46 +880,8 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
  * @returns {string | null} Target directory
  */
 export function getUserTargetByType(type, directories) {
-    switch (type) {
-        case CONTENT_TYPES.SETTINGS:
-            return directories.root;
-        case CONTENT_TYPES.CHARACTER:
-            return directories.characters;
-        case CONTENT_TYPES.SPRITES:
-            return directories.characters;
-        case CONTENT_TYPES.BACKGROUND:
-            return directories.backgrounds;
-        case CONTENT_TYPES.WORLD:
-            return directories.worlds;
-        case CONTENT_TYPES.AVATAR:
-            return directories.avatars;
-        case CONTENT_TYPES.THEME:
-            return directories.themes;
-        case CONTENT_TYPES.WORKFLOW:
-            return directories.comfyWorkflows;
-        case CONTENT_TYPES.KOBOLD_PRESET:
-            return directories.koboldAI_Settings;
-        case CONTENT_TYPES.OPENAI_PRESET:
-            return directories.openAI_Settings;
-        case CONTENT_TYPES.NOVEL_PRESET:
-            return directories.novelAI_Settings;
-        case CONTENT_TYPES.TEXTGEN_PRESET:
-            return directories.textGen_Settings;
-        case CONTENT_TYPES.INSTRUCT:
-            return directories.instruct;
-        case CONTENT_TYPES.CONTEXT:
-            return directories.context;
-        case CONTENT_TYPES.MOVING_UI:
-            return directories.movingUI;
-        case CONTENT_TYPES.QUICK_REPLIES:
-            return directories.quickreplies;
-        case CONTENT_TYPES.SYSPROMPT:
-            return directories.sysprompt;
-        case CONTENT_TYPES.REASONING:
-            return directories.reasoning;
-        default:
-            return null;
-    }
+    const dirKey = CONTENT_TYPE_TABLE[type]?.dir;
+    return dirKey ? directories[dirKey] : null;
 }
 
 /**
@@ -573,14 +890,8 @@ export function getUserTargetByType(type, directories) {
  * @returns {string | null} Target directory
  */
 export function getGlobalTargetByType(type) {
-    switch (type) {
-        case CONTENT_TYPES.ERROR_PAGE:
-            return path.join(globalThis.DATA_ROOT, '_errors');
-        case CONTENT_TYPES.STYLESHEET:
-            return path.join(globalThis.DATA_ROOT, '_css');
-        default:
-            return null;
-    }
+    const globalDir = CONTENT_TYPE_TABLE[type]?.globalDir;
+    return globalDir ? path.join(globalThis.DATA_ROOT, globalDir) : null;
 }
 
 /**

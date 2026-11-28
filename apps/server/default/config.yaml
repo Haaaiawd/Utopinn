@@ -319,6 +319,34 @@ cacheBuster:
 allowKeysExposure: false
 # Skip new default content checks
 skipContentCheck: false
+# Additional content sources for account seeding. The built-in sources are
+# default/content (the upstream asset list) and default/scaffold (the
+# operator-owned release namespace); entries here are appended after them.
+# Sources are applied in declaration order and a later-declared source
+# overrides same-named entries from earlier ones — sources listed here can
+# shadow scaffold and upstream content.
+# Each entry resolves relative to the server directory (absolute paths are
+# allowed) and must stay inside the server directory, dataRoot, or a root
+# listed in contentSourcesAllowlist below; entries that escape all three
+# are skipped with a warning.
+# Each entry: { path: <dir>, index: <index file name> } — `index` is
+# optional and defaults to index.json. A bare string is shorthand for
+# { path: <dir> }.
+# Example:
+# contentSources:
+#   - path: ./default/content-pack
+#   - path: /srv/utopinn-content   # needs the allowlist entry below
+#     index: index.json
+contentSources: []
+# Operator-named roots a contentSources entry may live under — the escape
+# hatch for pack directories bind-mounted outside both the server directory
+# and dataRoot (e.g. a Docker volume). Roots are read from, never written
+# to. Default empty: paths outside the built-in roots stay rejected.
+# Relative entries resolve against this file's directory.
+# Example:
+# contentSourcesAllowlist:
+#   - /srv/utopinn-content
+contentSourcesAllowlist: []
 # Allowed hosts for card downloads
 whitelistImportDomains:
   - localhost

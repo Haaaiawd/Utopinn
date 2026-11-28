@@ -355,11 +355,7 @@
             "color": "rgba(108, 32, 32, 1)"
         }
     ],
-    "tag_map": {
-        "default_我没想当掌门啊.png": [
-            "1345561466591"
-        ]
-    },
+    "tag_map": {},
     "nai_settings": {
         "temperature": 1.5,
         "repetition_penalty": 2.25,

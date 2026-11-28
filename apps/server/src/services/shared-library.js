@@ -31,6 +31,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { read as readCharacterCard } from '../character-card-parser.js';
+import { confineRealPath } from '../util.js';
 import { InvalidArgumentError, NotFoundError } from '../storage/errors.js';
 import {
     CHARACTER_FILE_EXTS,
@@ -70,30 +71,6 @@ export function isSafeSharedStem(charDir) {
     const stem = String(charDir ?? '').trim();
     if (!stem || stem === '.' || stem === '..' || /[/\\\x00]/.test(stem)) return false;
     return stem.toLowerCase() !== SHARED_LIBRARY_DIRNAME;
-}
-
-/**
- * Symlink confinement: resolve both paths through realpath and require the
- * target to stay inside the base dir. Returns the canonical target path or
- * null (missing file, escape attempt, or broken link). A symlink in the
- * pool pointing outside would otherwise let read surfaces (static route,
- * thumbnails, doc loaders) serve arbitrary filesystem content — CWE-59.
- * Windows junctions resolve through realpath the same way.
- * @param {string} dir base directory the target must stay under
- * @param {string} candidate already-existence-checked absolute path
- * @returns {string|null} canonical absolute path inside dir
- */
-function confineRealPath(dir, candidate) {
-    try {
-        const realRoot = fs.realpathSync(dir);
-        const realTarget = fs.realpathSync(candidate);
-        if (realTarget === realRoot || realTarget.startsWith(realRoot + path.sep)) {
-            return realTarget;
-        }
-        return null;
-    } catch {
-        return null;
-    }
 }
 
 /**
