@@ -112,6 +112,7 @@ import {
     verifySecuritySettings,
     loginPageMiddleware,
     loginAutoLoginMiddleware,
+    tryAutoLogin,
     migratePublicOverrides,
     isRequestAdmin,
 } from './users.js';
@@ -367,7 +368,7 @@ const WEB_INDEX = path.join(WEB_DIST, 'index.html');
 const serveWebSpa = process.env.LUKER_SERVE_LEGACY !== '1' && fs.existsSync(WEB_INDEX);
 
 // Host index page
-app.get('/', cacheBuster.middleware, (request, response) => {
+app.get('/', cacheBuster.middleware, async (request, response) => {
     // SPA mode serves the shell to guests too: AuthGate is the auth
     // boundary and renders LoginLanding for anyone without a session —
     // the same contract every history-fallback route below already
@@ -383,6 +384,21 @@ app.get('/', cacheBuster.middleware, (request, response) => {
     }
 
     if (serveWebSpa) {
+        // The SPA route is also where the auto-login attempt must run: the
+        // legacy flow reached it through the /login page, but the SPA's
+        // /login redirects to '/' on success — so if '/' never attempted,
+        // a lone passwordless account (single-operator instance) could
+        // never establish a session at all. The cookie-session middleware
+        // emits the session cookie on this same response. tryAutoLogin
+        // itself honours the ?noauto opt-out and the registration-enabled
+        // guard inside singleUserLogin; every failure still ends in the
+        // shell, exactly like the login page's own fallback.
+        try {
+            const { basicAuthMode } = globalThis.COMMAND_LINE_ARGS;
+            await tryAutoLogin(request, basicAuthMode);
+        } catch (error) {
+            console.error('Error during auto-login:', error);
+        }
         return response.sendFile(WEB_INDEX);
     }
     if (process.env.LUKER_SERVE_LEGACY === '1') {

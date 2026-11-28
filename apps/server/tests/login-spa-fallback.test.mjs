@@ -385,6 +385,89 @@ test('default mode: GET /login auto-logs in and the session cookie authenticates
     });
 });
 
+test('default mode: GET / auto-logs in a lone passwordless account', { skip: SKIP_NO_SPA }, async () => {
+    // Regression cover for the auto-login drop: when '/' started serving the
+    // SPA shell directly it bypassed tryAutoLogin entirely, and since the
+    // SPA's /login bounces to '/' on success, a single-operator instance
+    // (registration off, one passwordless account) could never establish a
+    // session. The shell and the session cookie must arrive on the SAME
+    // response — no redirect round-trip.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200, 'GET / serves the SPA shell');
+        assert.ok(isHtml(res));
+        const cookie = sessionCookieOf(res);
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 200, 'session established by GET / must authenticate API calls');
+        const profile = await me.json();
+        assert.equal(profile.handle, 'default-user');
+    });
+});
+
+test('default mode: GET / with registration enabled does not auto-login', { skip: SKIP_NO_SPA }, async () => {
+    // The singleUserLogin registration guard applies on '/' too: an
+    // open-registration instance must leave visitors on the shell (LoginLanding
+    // renders the register form) rather than signing them into the bootstrap
+    // account. Whatever cookie the response sets must not authenticate.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, 'registration-enabled instance must not auto-login on /');
+    }, {
+        seed: (dataRoot) => seedAdminSettings(dataRoot, {
+            accountRegistration: { enabled: true, requireInviteCode: false },
+        }),
+    });
+});
+
+test('default mode: GET /?noauto does not auto-login', { skip: SKIP_NO_SPA }, async () => {
+    // The operator opt-out is honoured on the SPA root the same as on the
+    // login page: ?noauto must leave the visitor without a session.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/?noauto=1`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, '?noauto must suppress auto-login on /');
+    });
+});
+
+test('default mode: GET / does not auto-login when the lone account has a password', { skip: SKIP_NO_SPA }, async () => {
+    // singleUserLogin only fires for a PASSWORDLESS lone account — a
+    // password-protected default-user must get the shell (LoginGate) with
+    // no session, exactly like the legacy login page behaved.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, 'a passworded account must not auto-login on /');
+    }, {
+        seed: (dataRoot) => {
+            // Pre-seed the account store so initUserStorage does not create a
+            // passwordless bootstrap record — same node-persist record shape
+            // as seedAdminSettings ({key, value} JSON under sha256(key)).
+            const storageDir = path.join(dataRoot, '_storage');
+            fs.mkdirSync(storageDir, { recursive: true });
+            const key = 'user:default-user';
+            const file = crypto.createHash('sha256').update(key).digest('hex');
+            fs.writeFileSync(path.join(storageDir, file), JSON.stringify({
+                key,
+                value: { handle: 'default-user', name: 'User', created: 1, password: 'hashed', salt: 's', admin: false, enabled: true },
+            }));
+        },
+    });
+});
+
 test('default mode: POST /api/users/oauth/providers answers for anonymous clients', { skip: SKIP_NO_SPA }, async () => {
     // LoginGate renders OAuth buttons from this endpoint — it must be reachable
     // pre-auth (it is mounted ahead of the login gate). Test config enables no
