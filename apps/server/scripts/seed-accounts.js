@@ -17,6 +17,7 @@
 // card only fills what is missing.
 
 import process from 'node:process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -71,10 +72,23 @@ Behavior:
 // ---------------------------------------------------------------------------
 
 async function bootstrap(args) {
-    const { initConfig } = await import('../src/config-init.js');
-    initConfig(args.configPath);
+    const { getConfigValue, getConfigEnvKeys, setConfigFilePath } = await import('../src/util.js');
 
-    const { getConfigValue, getConfigEnvKeys } = await import('../src/util.js');
+    if (args.dryRun) {
+        // Read-only bootstrap. Backfill needs no startup provisioning, so a
+        // dry run must not write anything: the config resolves from the
+        // existing file — or the bundled defaults when it is absent —
+        // without creating or migrating it, and the account store is only
+        // enumerated when already present (no `_storage` dir is created and
+        // no bootstrap `default-user` is inserted into an empty one).
+        const readableConfig = fs.existsSync(args.configPath)
+            ? args.configPath
+            : path.join(SERVER_ROOT, 'default', 'config.yaml');
+        setConfigFilePath(readableConfig);
+    } else {
+        const { initConfig } = await import('../src/config-init.js');
+        initConfig(args.configPath);
+    }
 
     // server.js precedence: --dataRoot flag > LUKER_/SILLYTAVERN_ env vars >
     // config.yaml dataRoot. Env presence (not truthiness) counts, same as
@@ -103,10 +117,23 @@ async function bootstrap(args) {
     globalThis.DATA_ROOT = resolvedDataRoot;
 
     const { initUserStorage, getAllUserHandles, getUserDirectories } = await import('../src/users.js');
-    await initUserStorage(resolvedDataRoot);
-
     const { seedUserDirectories, getSeedRoot } = await import('../src/services/seed-content.js');
-    return { dataRoot: resolvedDataRoot, getAllUserHandles, getUserDirectories, seedUserDirectories, getSeedRoot };
+
+    if (args.dryRun) {
+        const storageDir = path.join(resolvedDataRoot, '_storage');
+        if (fs.existsSync(storageDir)) {
+            // node-persist init only mkdir()s the store dir — on an existing
+            // store it is read-only in effect (ttl/expiry off, no queued
+            // writes). A missing store means no accounts to enumerate.
+            const { default: storage } = await import('node-persist');
+            await storage.init({ dir: storageDir, ttl: false, expiredInterval: 0 });
+            return { dataRoot: resolvedDataRoot, listHandles: getAllUserHandles, getUserDirectories, seedUserDirectories, getSeedRoot };
+        }
+        return { dataRoot: resolvedDataRoot, listHandles: async () => [], getUserDirectories, seedUserDirectories, getSeedRoot };
+    }
+
+    await initUserStorage(resolvedDataRoot);
+    return { dataRoot: resolvedDataRoot, listHandles: getAllUserHandles, getUserDirectories, seedUserDirectories, getSeedRoot };
 }
 
 // ---------------------------------------------------------------------------
@@ -128,9 +155,9 @@ async function main() {
         process.exit(0);
     }
 
-    const { dataRoot, getAllUserHandles, getUserDirectories, seedUserDirectories, getSeedRoot } = await bootstrap(args);
+    const { dataRoot, listHandles, getUserDirectories, seedUserDirectories, getSeedRoot } = await bootstrap(args);
 
-    const allHandles = await getAllUserHandles();
+    const allHandles = await listHandles();
     if (args.handle && !allHandles.includes(args.handle)) {
         console.error(`Handle "${args.handle}" not found. Known handles: ${allHandles.join(', ') || '(none)'}`);
         process.exit(2);
@@ -151,9 +178,12 @@ async function main() {
     for (const handle of handles) {
         const report = await seedUserDirectories(getUserDirectories(handle), { dryRun: args.dryRun });
         const rel = (p) => path.relative(dataRoot, p);
-        console.log(`${handle}: ${report.copied.length} copied, ${report.skipped.length} already present, ${report.errors.length} failed`);
+        console.log(`${handle}: ${report.copied.length} copied, ${report.skipped.length} already present, ${report.quotaSkipped.length} over quota, ${report.errors.length} failed`);
         for (const dest of report.copied) {
             console.log(`  ${args.dryRun ? 'would copy' : 'copied'}  ${rel(dest)}`);
+        }
+        for (const skipped of report.quotaSkipped) {
+            console.log(`  quota-skip  ${rel(skipped.destination)} (${skipped.bytes} B)`);
         }
         for (const failure of report.errors) {
             errorCount++;
