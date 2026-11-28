@@ -403,6 +403,56 @@ async function scenarioC() {
     return dead;
 }
 
+/**
+ * E — duplicate user-floor announcement kills the armed flag (PR review
+ * finding 1). The wire host can announce the same appended floor twice:
+ *   - a background pollChat() mid-generation diffs prev→next and emits
+ *     user_message_rendered[2] (its chatDoc advances to the 3-floor doc);
+ *   - the send handler's own diffAndEmitChat still compares its PRE-SEND
+ *     snapshot (2 floors) against the final doc (4 floors) and re-emits
+ *     user_message_rendered[2] alongside char_message_rendered[3].
+ * The first delivery consumes pendingAdvanceOwnMsg and confirms the '度过今日'
+ * marker; the second falls into the blanket clear and kills the flag before
+ * the no-day-set reply lands.
+ * This scenario drives both deliveries through the REAL host: pollChat() is
+ * invoked mid-flight, and ctx.sendMessage's diff runs unmodified — nothing
+ * is injected. Control = same flow without the mid-flight poll (one
+ * announcement) — must bump the day in every version of the card.
+ */
+async function scenarioE() {
+    console.log('\n===== E: duplicate user_message_rendered (poll + send-handler diff) =====');
+    async function run({ midFlightPoll }) {
+        const client = makeClient({ messages: SEED_MSGS, variables: SEED_VARS });
+        client._setReply(REPLY_NO_DAY_SET);          // model forgot the day set — fallback's whole job
+        const mounted = await mountCard({ client, writableNamespaces: manifest.permissions.stateNamespaces });
+        const { evalInCard, host, pushes } = mounted;
+        evalInCard(`document.querySelector('.zb-daybtn[data-act="advance"]').click()`);
+        await sleep(20);
+        evalInCard(`document.querySelector('.rv-go').click()`);   // arms flag, sendMessage in-flight
+        await sleep(250);                          // user floor appended; job still running
+        if (midFlightPoll) await host.pollChat();  // the reported trigger: real background poll
+        await sleep(400);                          // shim refresh→dispatch settles
+        client._finishJob();
+        await sleep(1600);                         // jobGet 800ms tick → reply persists → send-handler diff
+        await mounted.flush(400);
+        const seen = pushes.filter(p => p.event === 'host.event' && p.payload?.name === 'user_message_rendered')
+            .map(p => p.payload.args?.[0]);
+        const sd = evalInCard(`window.__CARDAPP_CTX__.getVariable('stat_data')`);
+        console.log(`[midFlightPoll=${midFlightPoll}] userMsg pushes=${JSON.stringify(seen)} → day=${sd?.day} 灵石=${sd?.['资源']?.['灵石']}`);
+        mounted.dispose();
+        return { day: sd?.day, announcements: seen.length };
+    }
+    const control = await run({ midFlightPoll: false });
+    const dup = await run({ midFlightPoll: true });
+    // The day must bump in BOTH runs: a same-floor re-announcement is not a
+    // new user turn and must not clear the armed flag. (On the pre-C-fix
+    // card the control fails too — the unconditional chat_changed clear is
+    // the other killer; both belong to the same flag-kill family.)
+    const bad = control.day !== 6 || dup.day !== 6;
+    verdict('E', bad, `control=${control.day} dup=${dup.day} (announcements=${dup.announcements}) — day must bump to 6 in both; the [2,2] push order is the poll-then-send-handler double announcement`);
+    return bad;
+}
+
 async function scenarioB() {
     console.log('\n===== B: zongmen_ui writes vs manifest stateNamespaces =====');
     async function run(writable) {
@@ -449,6 +499,7 @@ async function scenarioD(day = 5, arcs = null) {
 const summary = {};
 summary.A = await scenarioA();
 summary.C = await scenarioC();
+summary.E = await scenarioE();
 summary.B = await scenarioB();
 const d1 = await scenarioD(1);
 const d5 = await scenarioD(5, { '断灵夜': '进行中' });
@@ -456,5 +507,6 @@ summary['D'] = d1.emitted;   // host consumer absent ⇔ emit reached the log-on
 console.log('\n===== summary =====');
 console.log(`A: ${summary.A ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`C: ${summary.C ? 'REPRODUCED' : 'not reproduced'}`);
+console.log(`E: ${summary.E ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`B: ${summary.B ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`D: emit fired=${d1.emitted} → ${d1.hostLog ?? '(no emit)'}; arc-seeded run emitted=${d5.emitted}`);
