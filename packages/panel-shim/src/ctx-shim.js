@@ -112,10 +112,13 @@
         }, delay == null ? 250 : delay);
     }
 
-    // 楼层语义事件：线宿主(diffAndEmitChat)先推 *_rendered/chat_changed 再推
-    // chat.updated——同步直发会让 handler 读到 diff 前的 chatCache（末位还是旧
-    // 楼层 → 回复按错楼重打或整体丢账）。对齐 ST 语义（chat[] 先于事件落地）：
-    // 这类事件先合流刷新再派发；刷新超时/失败时退回即时派发（旧行为兜底，不饿事件）。
+    // Floor-semantic events: the wire host (diffAndEmitChat) pushes
+    // *_rendered / chat_changed BEFORE chat.updated — dispatching them
+    // synchronously lets handlers read the pre-diff chatCache (tail still the
+    // old floor → a reply is replayed against the wrong floor or its ledger
+    // dropped whole). Match ST semantics (chat[] lands before the event):
+    // coalesce a refresh, then dispatch. On refresh timeout/failure fall back
+    // to immediate dispatch (previous behaviour — never starve an event).
     var CHAT_FLOOR_EVENTS = {
         char_message_rendered: 1, user_message_rendered: 1,
         message_sent: 1, message_received: 1, message_edited: 1, message_updated: 1,

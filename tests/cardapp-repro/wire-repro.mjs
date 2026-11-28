@@ -327,7 +327,8 @@ async function scenarioA() {
  *   - onChatChanged clears the flag unconditionally; the wire host emits
  *     chat_changed on EVERY dirty floor diff (incl. a mid-gen user-append diff
  *     that lands before the reply) — ST's semantics only fire it on chat switch.
- *   - onUserMsg reads a stale chatCache → lastUser misses 度过今日 → clears.
+ *   - onUserMsg reads a stale chatCache → lastUser misses the '度过今日'
+ *     marker → clears.
  * All pushes during sendMessage are suppressed, then each variant replays ONE
  * controlled sequence before a fresh-snapshot charMsg probe (day bump ⇔ flag
  * survived).
@@ -409,7 +410,7 @@ async function scenarioB() {
         client._setReply(REPLY_NO_DAY_SET); client._finishJob();
         const m = await mountCard({ client, writableNamespaces: writable });
         await sleep(60);
-        // roster render → rosterDiff marks 林小满 'new' → saveUiPrefs → ctx.updateChatState
+        // roster render → rosterDiff marks the seeded '林小满' entry 'new' → saveUiPrefs → ctx.updateChatState
         m.evalInCard(`document.querySelector('[data-tab="1"]').click()`);
         await sleep(30);
         m.evalInCard(`document.querySelector('[data-ssub="roster"]')?.click()`);

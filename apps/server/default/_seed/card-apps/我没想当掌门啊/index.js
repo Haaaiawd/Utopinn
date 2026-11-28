@@ -3204,8 +3204,11 @@ export async function init(ctx) {
         ctx.eventSource.on(EV.genStart, arm);
         ctx.eventSource.on(EV.wiFinal, onWiFinal);
         // 过日旗与弹窗草稿预缓存跨聊天必须清零，新局不串上局的账与未发草稿
-        // 线宿主把每个楼层 diff 的兜底信号也发成 chat_changed（同局推送，参数仍是本局
-        // chatFileName）——那不是换局，旗不能清；真换局才清（参数缺席时按旧语义保守清）
+        // The wire host also reports every floor diff's fallback signal as
+        // chat_changed (same-chat push, arg still carries this chat's
+        // chatFileName) — that is not a switch, the flag must survive it.
+        // Only a real switch clears (missing arg → keep the old
+        // conservative-clear semantics).
         const onChatChanged = (chatId) => {
             const cur = String(ctx.getChatId?.() ?? ctx.lukerContext?.chatId ?? '').replace(/\.jsonl$/i, '');
             const nxt = String(chatId ?? '').replace(/\.jsonl$/i, '');
