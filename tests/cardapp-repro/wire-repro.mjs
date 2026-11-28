@@ -334,14 +334,16 @@ async function scenarioA() {
  */
 async function scenarioC() {
     console.log('\n===== C: end-day fallback (pendingAdvanceDay) kill-path isolation =====');
+    const CHAT_FILE = `${CHAT_NAME}.jsonl`;   // wire host always passes the current chatFileName
     const variants = {
         'control (no events)':            { fresh: true,  seq: [] },
-        'chat_changed only':              { fresh: true,  seq: [['chat_changed', 'x.jsonl']] },
+        'chat_changed same-chat only':    { fresh: true,  seq: [['chat_changed', CHAT_FILE]] },
+        'chat_changed real-switch only':  { fresh: true,  seq: [['chat_changed', 'other-chat.jsonl']] },
         'user_rendered @ stale cache':    { fresh: false, seq: [['user_message_rendered', 2]] },
         'user_rendered @ fresh cache':    { fresh: true,  seq: [['user_message_rendered', 2]] },
         'char_rendered only @ stale':     { fresh: false, seq: [['char_message_rendered', 3]] },
-        'real order @ fresh cache':       { fresh: true,  seq: [['user_message_rendered', 2], ['char_message_rendered', 3], ['chat_changed', 'x.jsonl']] },
-        'real order @ stale cache':       { fresh: false, seq: [['user_message_rendered', 2], ['char_message_rendered', 3], ['chat_changed', 'x.jsonl']] },
+        'real order @ fresh cache':       { fresh: true,  seq: [['user_message_rendered', 2], ['char_message_rendered', 3], ['chat_changed', CHAT_FILE]] },
+        'real order @ stale cache':       { fresh: false, seq: [['user_message_rendered', 2], ['char_message_rendered', 3], ['chat_changed', CHAT_FILE]] },
     };
     const results = {};
     for (const [label, v] of Object.entries(variants)) {
@@ -390,12 +392,13 @@ async function scenarioC() {
         mounted.dispose();
     }
     const controlOk = results['control (no events)'].day === 6;
-    const killers = ['chat_changed only', 'user_rendered @ stale cache', 'real order @ stale cache']
+    const switchStillClears = results['chat_changed real-switch only'].day !== 6;
+    const killers = ['chat_changed same-chat only', 'user_rendered @ stale cache', 'real order @ stale cache']
         .filter(l => results[l].day !== 6);
     const survivors = ['user_rendered @ fresh cache', 'real order @ fresh cache']
         .filter(l => results[l].day === 6);
-    const dead = controlOk && killers.length === 3 && survivors.length === 2;
-    verdict('C', dead, `flag dies on chat_changed / stale-cache userMsg (day stays 5, sets still land); survives the same events when the snapshot is fresh (day→6)`);
+    const dead = controlOk && switchStillClears && killers.length === 3 && survivors.length === 2;
+    verdict('C', dead, `same-chat chat_changed + stale-cache userMsg kill the flag (day 5); fresh snapshot / real-switch semantics behave (control 6, real-switch still clears)`);
     return dead;
 }
 
