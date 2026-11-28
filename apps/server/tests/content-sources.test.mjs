@@ -484,3 +484,45 @@ test('e2e: a config.yaml contentSources entry seeds files into a new account and
         if (child.exitCode === null) child.kill('SIGKILL');
     }
 });
+
+// ---------------------------------------------------------------------------
+// Architecture seam: explicit precedence rank + the content type registry
+// ---------------------------------------------------------------------------
+
+test('resolveContentSources exposes who declared each source and an explicit precedence rank', () => {
+    const pack = makeSource('ranked', { entries: [], files: {} });
+    withSources([{ path: pack }], () => {
+        const sources = contentManager.resolveContentSources();
+        assert.deepEqual(sources.map(s => s.rank), sources.map((_, i) => i),
+            'rank is assigned once, in declaration order');
+        const builtins = sources.filter(s => s.origin === 'builtin');
+        const configured = sources.filter(s => s.origin === 'config');
+        assert.equal(builtins.length, 2, 'default/content + default/scaffold are the shipped built-ins');
+        assert.equal(configured.length, 1);
+        assert.ok(configured[0].rank > Math.max(...builtins.map(s => s.rank)),
+            'a configured pack always outranks the built-ins — precedence is a descriptor value, not iteration order');
+    });
+});
+
+test('every declared content type routes through one registry row; undeclared types route to nothing', () => {
+    // The registry is the single lockstep point: each CONTENT_TYPES value
+    // must resolve either a per-user target or a global target — both are
+    // read back through the exported lookups, never from the table itself.
+    const dirs = Object.fromEntries([
+        'root', 'characters', 'backgrounds', 'worlds', 'avatars', 'themes',
+        'comfyWorkflows', 'koboldAI_Settings', 'openAI_Settings', 'novelAI_Settings',
+        'textGen_Settings', 'instruct', 'context', 'movingUI', 'quickreplies',
+        'sysprompt', 'reasoning',
+    ].map(k => [k, `/u/${k}`]));
+    for (const type of Object.values(contentManager.CONTENT_TYPES)) {
+        const userTarget = contentManager.getUserTargetByType(type, dirs);
+        const globalTarget = contentManager.getGlobalTargetByType(type);
+        assert.ok((userTarget != null) !== (globalTarget != null),
+            `type '${type}' must route to exactly one of a user or global target`);
+        if (globalTarget) {
+            assert.ok(globalTarget.startsWith(dataRoot), `global target for '${type}' stays under dataRoot`);
+        }
+    }
+    assert.equal(contentManager.getUserTargetByType('a-type-nobody-declared', dirs), null,
+        'an undeclared type has no fs target — the registry is the single source of truth');
+});

@@ -94,15 +94,31 @@ function resolveContentSourceEntry(entry) {
 }
 
 /**
- * Lists the active content sources in declaration order: the built-ins,
- * then the configured `contentSources` entries. Invalid configured entries
- * are skipped with a warning.
- * @returns {{dir: string, indexPath: string}[]} Resolved content sources
+ * A resolved content source — the only shape downstream code may see.
+ * `origin` records who declared the pack; `rank` is the explicit precedence:
+ * a higher-ranked source shadows same-named index entries from every
+ * lower-ranked one. Rank is assigned once, here at resolution time, so
+ * precedence is a value on the descriptor — not an emergent property of
+ * which direction a consumer happens to iterate the array.
+ * @typedef {Object} ContentSource
+ * @property {string} dir Absolute pack root — every pack-derived path stays under it
+ * @property {string} indexPath Absolute path of the pack's index file
+ * @property {'builtin'|'config'} origin Who declared the pack
+ * @property {number} rank Explicit precedence — higher shadows lower
  */
-function resolveContentSources() {
-    const sources = BUILTIN_CONTENT_SOURCES.map((source) => ({
+
+/**
+ * Lists the active content sources in declaration order (lowest precedence
+ * first): the built-ins, then the configured `contentSources` entries.
+ * Invalid configured entries are skipped with a warning.
+ * @returns {ContentSource[]} Resolved content sources, rank ascending
+ */
+export function resolveContentSources() {
+    const sources = BUILTIN_CONTENT_SOURCES.map((source, rank) => ({
         dir: path.resolve(serverDirectory, source.path),
         indexPath: path.resolve(serverDirectory, source.path, DEFAULT_CONTENT_INDEX),
+        origin: 'builtin',
+        rank,
     }));
 
     // An object-typed env override is JSON.parse'd inside getConfigValue,
@@ -130,6 +146,8 @@ function resolveContentSources() {
     for (const entry of configured) {
         const source = resolveContentSourceEntry(entry);
         if (source) {
+            source.origin = 'config';
+            source.rank = sources.length;
             sources.push(source);
         }
     }
@@ -180,26 +198,110 @@ export const CONTENT_SCOPE = {
 };
 
 /**
+ * Repo adapter — the exists/save pair a repo-backed type hands to the
+ * seeder. The probe keeps a force-reseed from clobbering a user-edited doc
+ * with the default. `handle` is the user handle, `name` the file basename.
+ * @typedef {Object} ContentRepoAdapter
+ * @property {string} label Repo descriptor used in log messages
+ * @property {(handle: string, name: string) => Promise<boolean>} exists
+ * @property {(handle: string, name: string, json: object) => Promise<void>} save
+ */
+
+const presetRepoAdapter = (apiId) => ({
+    label: `PresetRepo[${apiId}]`,
+    exists: (handle, name) => getPresetRepo().exists(handle, apiId, name),
+    save: (handle, name, json) => getPresetRepo().save(handle, apiId, name, json),
+});
+
+const namedDocRepoAdapter = (family) => ({
+    label: `NamedDocRepo[${family}]`,
+    exists: async (handle, name) => (await getNamedDocRepo().get(handle, family, name)) != null,
+    save: (handle, name, json) => getNamedDocRepo().save(handle, family, name, json),
+});
+
+/**
+ * Content type registry — the single place a type's routing is declared.
+ * Adding a type is one CONTENT_TYPES entry plus one row here; scope, user
+ * target, global target, and the seed sink all follow from the row instead
+ * of being edited into four separate switches.
+ *
+ *   dir       UserDirectoryList key the per-user fs target resolves through
+ *   globalDir directory name under DATA_ROOT (global-scope types)
+ *   scope     CONTENT_SCOPE — defaults to USER when omitted
+ *   repo      ContentRepoAdapter — its presence picks the repo sink over fs
+ *   preset    marks a resettable preset type for /api/presets/restore
+ */
+const CONTENT_TYPE_TABLE = {
+    [CONTENT_TYPES.SETTINGS]: {
+        dir: 'root',
+        repo: {
+            label: 'SettingsRepo',
+            // The settings handler returns null on missing file/row in
+            // every engine (see fs-engine-transaction.js:288-307,
+            // sqlite-engine-transaction.js:210-228, and the equivalent
+            // mysql/postgres handlers), so probing get() is enough; the
+            // engines don't bootstrap an empty settings doc on first read.
+            exists: async (handle) => (await getSettingsRepo().get(handle)) != null,
+            save: (handle, _name, json) => getSettingsRepo().save(handle, json),
+        },
+    },
+    [CONTENT_TYPES.CHARACTER]: { dir: 'characters' },
+    [CONTENT_TYPES.SPRITES]: { dir: 'characters' },
+    [CONTENT_TYPES.BACKGROUND]: { dir: 'backgrounds' },
+    [CONTENT_TYPES.WORLD]: {
+        dir: 'worlds',
+        repo: {
+            label: 'WorldInfoRepo',
+            exists: async (handle, name) => (await getWorldInfoRepo().get(handle, name)) != null,
+            save: (handle, name, json) => getWorldInfoRepo().save(handle, name, json),
+        },
+    },
+    [CONTENT_TYPES.AVATAR]: { dir: 'avatars' },
+    [CONTENT_TYPES.THEME]: { dir: 'themes', repo: namedDocRepoAdapter('themes') },
+    [CONTENT_TYPES.WORKFLOW]: { dir: 'comfyWorkflows' },
+    [CONTENT_TYPES.KOBOLD_PRESET]: { dir: 'koboldAI_Settings', repo: presetRepoAdapter('kobold'), preset: true },
+    [CONTENT_TYPES.OPENAI_PRESET]: { dir: 'openAI_Settings', repo: presetRepoAdapter('openai'), preset: true },
+    [CONTENT_TYPES.NOVEL_PRESET]: { dir: 'novelAI_Settings', repo: presetRepoAdapter('novel'), preset: true },
+    [CONTENT_TYPES.TEXTGEN_PRESET]: { dir: 'textGen_Settings', repo: presetRepoAdapter('textgenerationwebui'), preset: true },
+    [CONTENT_TYPES.INSTRUCT]: { dir: 'instruct', repo: presetRepoAdapter('instruct'), preset: true },
+    [CONTENT_TYPES.CONTEXT]: { dir: 'context', repo: presetRepoAdapter('context'), preset: true },
+    [CONTENT_TYPES.MOVING_UI]: { dir: 'movingUI', repo: namedDocRepoAdapter('movingUI') },
+    [CONTENT_TYPES.QUICK_REPLIES]: { dir: 'quickreplies', repo: namedDocRepoAdapter('quickReplies') },
+    [CONTENT_TYPES.SYSPROMPT]: { dir: 'sysprompt', repo: presetRepoAdapter('sysprompt'), preset: true },
+    [CONTENT_TYPES.REASONING]: { dir: 'reasoning', repo: presetRepoAdapter('reasoning'), preset: true },
+    [CONTENT_TYPES.ERROR_PAGE]: { scope: CONTENT_SCOPE.GLOBAL, globalDir: '_errors' },
+    [CONTENT_TYPES.STYLESHEET]: { scope: CONTENT_SCOPE.GLOBAL, globalDir: '_css' },
+};
+
+// Registry invariant: every declared type needs a routing row, so an enum
+// entry added without its row fails at module load, not silently at seed.
+for (const type of Object.values(CONTENT_TYPES)) {
+    if (!CONTENT_TYPE_TABLE[type]) {
+        throw new Error(`content type '${type}' has no CONTENT_TYPE_TABLE row`);
+    }
+}
+
+/**
  * Gets the scope of a content type.
  * @param {CONTENT_TYPES} type Content type
  * @returns {CONTENT_SCOPE} Resolved content scope
  */
 function getScopeByType(type) {
-    const globalTypes = [
-        CONTENT_TYPES.ERROR_PAGE,
-        CONTENT_TYPES.STYLESHEET,
-    ];
-    return globalTypes.includes(type) ? CONTENT_SCOPE.GLOBAL : CONTENT_SCOPE.USER;
+    // A type name the registry doesn't know still merges as USER-scope —
+    // the seed sink later reports it as unknown instead of misrouting it.
+    return CONTENT_TYPE_TABLE[type]?.scope ?? CONTENT_SCOPE.USER;
 }
 
 /**
  * Whether a content type is one of the resettable preset types — the same
- * set `getDefaultPresets` collects for the /api/presets/restore flow.
+ * set `getDefaultPresets` collects for the /api/presets/restore flow. The
+ * `*_preset` suffix covers preset types a pack declares ahead of the
+ * registry; the row flag covers the non-suffixed preset families.
  * @param {string} type Content type
  * @returns {boolean}
  */
 function isDefaultPresetType(type) {
-    return type.endsWith('_preset') || ['instruct', 'context', 'sysprompt', 'reasoning'].includes(type);
+    return type.endsWith('_preset') || CONTENT_TYPE_TABLE[type]?.preset === true;
 }
 
 /**
@@ -291,109 +393,20 @@ export function getDefaultPresetFile(filename) {
  * @returns {ContentSink}
  */
 function resolveContentSink(type, basename, directories, handle) {
-    switch (type) {
-        case CONTENT_TYPES.SETTINGS:
-            return {
-                kind: 'repo',
-                label: 'SettingsRepo',
-                // The settings handler returns null on missing file/row in
-                // every engine (see fs-engine-transaction.js:288-307,
-                // sqlite-engine-transaction.js:210-228, and the equivalent
-                // mysql/postgres handlers), so probing get() is enough; the
-                // engines don't bootstrap an empty settings doc on first read.
-                exists: async () => (await getSettingsRepo().get(handle)) != null,
-                save: async (json) => getSettingsRepo().save(handle, json),
-            };
-        case CONTENT_TYPES.WORLD:
-            return {
-                kind: 'repo',
-                label: 'WorldInfoRepo',
-                exists: async () => (await getWorldInfoRepo().get(handle, basename)) != null,
-                save: async (json, name) => getWorldInfoRepo().save(handle, name, json),
-            };
-        case CONTENT_TYPES.THEME:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[themes]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'themes', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'themes', name, json),
-            };
-        case CONTENT_TYPES.MOVING_UI:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[movingUI]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'movingUI', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'movingUI', name, json),
-            };
-        case CONTENT_TYPES.QUICK_REPLIES:
-            return {
-                kind: 'repo',
-                label: 'NamedDocRepo[quickReplies]',
-                exists: async () => (await getNamedDocRepo().get(handle, 'quickReplies', basename)) != null,
-                save: async (json, name) => getNamedDocRepo().save(handle, 'quickReplies', name, json),
-            };
-        case CONTENT_TYPES.KOBOLD_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[kobold]',
-                exists: async () => getPresetRepo().exists(handle, 'kobold', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'kobold', name, json),
-            };
-        case CONTENT_TYPES.OPENAI_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[openai]',
-                exists: async () => getPresetRepo().exists(handle, 'openai', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'openai', name, json),
-            };
-        case CONTENT_TYPES.NOVEL_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[novel]',
-                exists: async () => getPresetRepo().exists(handle, 'novel', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'novel', name, json),
-            };
-        case CONTENT_TYPES.TEXTGEN_PRESET:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[textgenerationwebui]',
-                exists: async () => getPresetRepo().exists(handle, 'textgenerationwebui', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'textgenerationwebui', name, json),
-            };
-        case CONTENT_TYPES.INSTRUCT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[instruct]',
-                exists: async () => getPresetRepo().exists(handle, 'instruct', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'instruct', name, json),
-            };
-        case CONTENT_TYPES.CONTEXT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[context]',
-                exists: async () => getPresetRepo().exists(handle, 'context', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'context', name, json),
-            };
-        case CONTENT_TYPES.SYSPROMPT:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[sysprompt]',
-                exists: async () => getPresetRepo().exists(handle, 'sysprompt', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'sysprompt', name, json),
-            };
-        case CONTENT_TYPES.REASONING:
-            return {
-                kind: 'repo',
-                label: 'PresetRepo[reasoning]',
-                exists: async () => getPresetRepo().exists(handle, 'reasoning', basename),
-                save: async (json, name) => getPresetRepo().save(handle, 'reasoning', name, json),
-            };
-        default: {
-            const target = getUserTargetByType(type, directories);
-            if (!target) return { kind: 'none' };
-            return { kind: 'fs', target };
-        }
+    // Lookup order: repo adapter first, then the fs target — a type with no
+    // registry row at all is 'none', the unknown-type sentinel.
+    const repo = CONTENT_TYPE_TABLE[type]?.repo;
+    if (repo) {
+        return {
+            kind: 'repo',
+            label: repo.label,
+            exists: () => repo.exists(handle, basename),
+            save: (json, name) => repo.save(handle, name, json),
+        };
     }
+    const target = getUserTargetByType(type, directories);
+    if (!target) return { kind: 'none' };
+    return { kind: 'fs', target };
 }
 
 /**
@@ -600,10 +613,11 @@ export async function checkForNewContent(directoriesList, forceCategories = []) 
  */
 function getContentIndex(scope = CONTENT_SCOPE.USER) {
     const result = [];
-    const sources = resolveContentSources();
+    // Rank-descending: the highest-precedence source merges first, so its
+    // entries land ahead of same-named entries from every lower rank.
+    const sources = resolveContentSources().sort((a, b) => b.rank - a.rank);
 
-    for (let i = sources.length - 1; i >= 0; i--) {
-        const { dir, indexPath } = sources[i];
+    for (const { dir, indexPath } of sources) {
 
         let index;
         try {
@@ -705,46 +719,8 @@ export function getContentOfType(type, format, scope = CONTENT_SCOPE.USER) {
  * @returns {string | null} Target directory
  */
 export function getUserTargetByType(type, directories) {
-    switch (type) {
-        case CONTENT_TYPES.SETTINGS:
-            return directories.root;
-        case CONTENT_TYPES.CHARACTER:
-            return directories.characters;
-        case CONTENT_TYPES.SPRITES:
-            return directories.characters;
-        case CONTENT_TYPES.BACKGROUND:
-            return directories.backgrounds;
-        case CONTENT_TYPES.WORLD:
-            return directories.worlds;
-        case CONTENT_TYPES.AVATAR:
-            return directories.avatars;
-        case CONTENT_TYPES.THEME:
-            return directories.themes;
-        case CONTENT_TYPES.WORKFLOW:
-            return directories.comfyWorkflows;
-        case CONTENT_TYPES.KOBOLD_PRESET:
-            return directories.koboldAI_Settings;
-        case CONTENT_TYPES.OPENAI_PRESET:
-            return directories.openAI_Settings;
-        case CONTENT_TYPES.NOVEL_PRESET:
-            return directories.novelAI_Settings;
-        case CONTENT_TYPES.TEXTGEN_PRESET:
-            return directories.textGen_Settings;
-        case CONTENT_TYPES.INSTRUCT:
-            return directories.instruct;
-        case CONTENT_TYPES.CONTEXT:
-            return directories.context;
-        case CONTENT_TYPES.MOVING_UI:
-            return directories.movingUI;
-        case CONTENT_TYPES.QUICK_REPLIES:
-            return directories.quickreplies;
-        case CONTENT_TYPES.SYSPROMPT:
-            return directories.sysprompt;
-        case CONTENT_TYPES.REASONING:
-            return directories.reasoning;
-        default:
-            return null;
-    }
+    const dirKey = CONTENT_TYPE_TABLE[type]?.dir;
+    return dirKey ? directories[dirKey] : null;
 }
 
 /**
@@ -753,14 +729,8 @@ export function getUserTargetByType(type, directories) {
  * @returns {string | null} Target directory
  */
 export function getGlobalTargetByType(type) {
-    switch (type) {
-        case CONTENT_TYPES.ERROR_PAGE:
-            return path.join(globalThis.DATA_ROOT, '_errors');
-        case CONTENT_TYPES.STYLESHEET:
-            return path.join(globalThis.DATA_ROOT, '_css');
-        default:
-            return null;
-    }
+    const globalDir = CONTENT_TYPE_TABLE[type]?.globalDir;
+    return globalDir ? path.join(globalThis.DATA_ROOT, globalDir) : null;
 }
 
 /**
