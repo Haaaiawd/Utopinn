@@ -117,7 +117,6 @@ import {
     migratePublicOverrides,
     isRequestAdmin,
     toKey,
-    checkUserStorageQuota,
 } from './users.js';
 import { initStorage, getStorageEngine } from './storage/index.js';
 import { maybeFailFast } from './storage/fail-fast.js';
@@ -168,7 +167,8 @@ import { cardRuntimePublicRouter } from './card-runtime/index.js';
 import { createRendererCaptureRouter } from './endpoints/renderer-capture.js';
 import { init as statsInit, onExit as statsOnExit } from './endpoints/stats.js';
 import { checkForNewContent } from './endpoints/content-manager.js';
-import { provisionSeedPool, seedUserDirectories } from './services/seed-content.js';
+import { provisionSeedPool } from './services/seed-content.js';
+import { provisionNewAccount } from './services/account-provisioning.js';
 import { init as settingsInit } from './endpoints/settings.js';
 import { ServerStartup, setupPrivateEndpoints } from './server-startup.js';
 import { webServer, shutdownKernelFibers } from './kernel-boot.js';
@@ -1118,8 +1118,10 @@ function setDnsResolutionOrder() {
 }
 
 // User storage module needs to be initialized before starting the server
+let createdDefaultUser = false;
 initUserStorage(globalThis.DATA_ROOT)
-    .then(async ({ createdDefaultUser }) => {
+    .then(async (result) => {
+        ({ createdDefaultUser } = result);
         await setDnsResolutionOrder();
         await ensurePublicDirectoriesExist();
         // <dataRoot>/_seed is operator-owned once it exists: the shipped
@@ -1137,30 +1139,6 @@ initUserStorage(globalThis.DATA_ROOT)
             }
         } catch (error) {
             console.warn('_seed pool provisioning failed (starter card companions may be missing):', error);
-        }
-        if (createdDefaultUser) {
-            // initUserStorage just created the bootstrap account — that IS
-            // account creation, so the pool applies to it exactly like a
-            // registration (skel semantics; same quota reservation as
-            // users-public). Only NEW accounts: an existing default-user is
-            // never backfilled at boot — scripts/seed-accounts.js stays the
-            // deliberate backfill path. A copy failure warns and continues,
-            // matching the registration block.
-            try {
-                const directories = getUserDirectories(DEFAULT_USER.handle);
-                const profile = await storage.getItem(toKey(DEFAULT_USER.handle));
-                const seedReport = await seedUserDirectories(directories, {
-                    checkQuota: profile ? (bytes) => checkUserStorageQuota({ profile, directories }, bytes, { fresh: true }) : null,
-                });
-                for (const skipped of seedReport.quotaSkipped) {
-                    console.warn(`Seed entry skipped for ${DEFAULT_USER.handle} (over quota, ${skipped.bytes} B): ${skipped.destination}`);
-                }
-                for (const failure of seedReport.errors) {
-                    console.error(`Seed content copy failed for ${DEFAULT_USER.handle}: ${failure.source}:`, failure.error);
-                }
-            } catch (error) {
-                console.error(`Seed content copy failed for ${DEFAULT_USER.handle}:`, error);
-            }
         }
     })
     .then(migrateUserData)
@@ -1197,6 +1175,31 @@ initUserStorage(globalThis.DATA_ROOT)
             .catch((err) => {
                 console.warn('[gc-scratch] sweep failed (non-fatal):', err?.message || err);
             });
+    })
+    .then(async () => {
+        if (!createdDefaultUser) {
+            return;
+        }
+        // initUserStorage just created the bootstrap account — that IS
+        // account creation, so the starter payload applies to it exactly
+        // like a registration (skel semantics; same quota reservation as
+        // users-public). Only NEW accounts: an existing default-user is
+        // never backfilled at boot — scripts/seed-accounts.js stays the
+        // deliberate backfill path. A copy failure warns and continues,
+        // matching the registration block.
+        //
+        // This must run AFTER initStorage: the scaffold/content pass routes
+        // repo-backed types (settings, presets, worlds) through the storage
+        // engine — before init it cannot deliver them at all. It still runs
+        // BEFORE preSetupTasks' all-users content sweep, which then finds
+        // this account already current (its content.log says so).
+        try {
+            const directories = getUserDirectories(DEFAULT_USER.handle);
+            const profile = await storage.getItem(toKey(DEFAULT_USER.handle));
+            await provisionNewAccount(directories, { profile });
+        } catch (error) {
+            console.error(`Seed content copy failed for ${DEFAULT_USER.handle}:`, error);
+        }
     })
     .then(preSetupTasks)
     .then(apply404Middleware)

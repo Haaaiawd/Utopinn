@@ -7,11 +7,10 @@ import { RateLimiterMemory, RateLimiterRes } from 'rate-limiter-flexible';
 import { getIpAddress, retryAfter } from '../express-common.js';
 import { color, Cache, getConfigValue } from '../util.js';
 import { getAdminSettings } from '../admin-settings.js';
-import { checkForNewContent, CONTENT_TYPES } from './content-manager.js';
-import { KEY_PREFIX, getUserAvatar, toKey, toAvatarKey, getPasswordHash, getPasswordSalt, getAccountVersion, getAllUserHandles, getUserDirectories, ensurePublicDirectoriesExist, createBackupArchive, checkUserStorageQuota } from '../users.js';
+import { KEY_PREFIX, getUserAvatar, toKey, toAvatarKey, getPasswordHash, getPasswordSalt, getAccountVersion, getAllUserHandles, getUserDirectories, ensurePublicDirectoriesExist, createBackupArchive } from '../users.js';
 import { consumeInvite, refundInvite } from '../invites.js';
 import { consumeLanMigrationOffer } from '../lan-migration.js';
-import { seedUserDirectories } from '../services/seed-content.js';
+import { provisionNewAccount } from '../services/account-provisioning.js';
 
 const DISCREET_LOGIN = getConfigValue('enableDiscreetLogin', false, 'boolean');
 const PREFER_REAL_IP_HEADER = getConfigValue('rateLimiting.preferRealIpHeader', false, 'boolean');
@@ -150,7 +149,10 @@ async function fetchAvatarAsDataUrl(url) {
     }
 }
 
-async function createUserFromOAuth(provider, profile, adminSettings) {
+// Exported for tests: the OAuth callback drives this through real provider
+// fetches that a hermetic suite cannot reach, so coverage of the account
+// provisioning seam goes through a direct call.
+export async function createUserFromOAuth(provider, profile, adminSettings) {
     const handles = await getAllUserHandles();
     const seed = provider === 'github'
         ? (profile?.login || profile?.name || profile?.email || 'github-user')
@@ -195,7 +197,7 @@ async function createUserFromOAuth(provider, profile, adminSettings) {
     await storage.setItem(toKey(handle), newUser);
     await ensurePublicDirectoriesExist();
     const directories = getUserDirectories(handle);
-    await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
+    await provisionNewAccount(directories, { profile: newUser });
 
     // Seed the account with the provider profile picture so OAuth users
     // don't render as a broken default on the login page. Best-effort:
@@ -433,11 +435,11 @@ router.post('/register', parseAccountBody, async (request, response) => {
             storageQuotaBytes: Number.isFinite(defaultQuotaBytes) && defaultQuotaBytes >= 0 ? Math.floor(defaultQuotaBytes) : undefined,
         };
 
+        let directories;
         try {
             await storage.setItem(toKey(handle), newUser);
             await ensurePublicDirectoriesExist();
-            const directories = getUserDirectories(handle);
-            await checkForNewContent([directories], [CONTENT_TYPES.SETTINGS]);
+            directories = getUserDirectories(handle);
         } catch (error) {
             // Roll the account record back before refunding the invite: a
             // half-provisioned account left enabled can sign in while the
@@ -456,27 +458,14 @@ router.post('/register', parseAccountBody, async (request, response) => {
             throw error;
         }
 
-        // The seed-pool copy is deliberately outside the provisioning block
-        // above: a card copy failure must NOT roll the account back — the
-        // user can still sign in and an admin can backfill the card later
-        // (scripts/seed-accounts.js). Starter entries reserve space through
-        // the same accounting shared-card installation uses — an entry that
-        // would push the account over quota is skipped, never partially
-        // copied, so seeding can never leave the account over quota.
-        try {
-            const directories = getUserDirectories(handle);
-            const seedReport = await seedUserDirectories(directories, {
-                checkQuota: (bytes) => checkUserStorageQuota({ profile: newUser, directories }, bytes, { fresh: true }),
-            });
-            for (const skipped of seedReport.quotaSkipped) {
-                console.warn(`Seed entry skipped for ${handle} (over quota, ${skipped.bytes} B): ${skipped.destination}`);
-            }
-            for (const failure of seedReport.errors) {
-                console.error(`Seed content copy failed for ${handle}: ${failure.source}:`, failure.error);
-            }
-        } catch (seedError) {
-            console.error(`Seed content copy failed for ${handle}:`, seedError);
-        }
+        // The starter payload is deliberately outside the rollback block
+        // above: a content/card copy failure must NOT roll the account back
+        // — the user can still sign in and an admin can backfill the card
+        // later (scripts/seed-accounts.js). Starter entries reserve space
+        // through the same accounting shared-card installation uses — an
+        // entry that would push the account over quota is skipped, never
+        // partially copied, so seeding can never leave the account over quota.
+        await provisionNewAccount(directories, { profile: newUser });
 
         await registerLimiter.delete(ip);
         request.session.handle = newUser.handle;

@@ -299,6 +299,58 @@ test('file entries publish whole via link and never clobber user content; dryRun
     assert.ok(!fs.existsSync(freshDirs.root), 'dryRun must not create the account tree');
 });
 
+test('service: createUserFromOAuth provisions the full starter payload — scaffold card + pool tree + mountable CardApp', async () => {
+    // The OAuth callback is not hermetic — it exchanges codes with
+    // github/discord — so coverage drives createUserFromOAuth (the real
+    // seam, exported for tests) with a synthetic profile. Before the fix
+    // this path ran checkForNewContent only: the scaffold PNG landed but
+    // the _seed pool (card-apps/<name>/) never did, so mounting the
+    // starter card failed with card_app_assets_missing.
+    const dataRoot = path.join(scratchRoot, 'svc-oauth');
+    fs.mkdirSync(dataRoot, { recursive: true });
+    fs.writeFileSync(path.join(dataRoot, 'config.yaml'), 'enableUserAccounts: true\n');
+
+    // Config path is process-wide: an earlier test may have set it already
+    // (its config also enables user accounts, so it is equivalent). Only
+    // set ours when nothing is set — getConfig() exits on an unset path.
+    const { setConfigFilePath, getConfigFilePath } = await import('../src/util.js');
+    if (!getConfigFilePath()) {
+        setConfigFilePath(path.join(dataRoot, 'config.yaml'));
+    }
+    const { default: storage } = await import('node-persist');
+    await storage.init({ dir: path.join(dataRoot, '_storage'), ttl: false, expiredInterval: 0 });
+
+    globalThis.DATA_ROOT = dataRoot;
+    const { getUserDirectories } = await import('../src/users.js');
+    // Repo sinks (settings/presets/worlds seeded by the content pass)
+    // resolve through the storage engine — same fs mode the server uses.
+    const { initStorage } = await import('../src/storage/index.js');
+    await initStorage({ mode: 'fs', directoriesByHandle: getUserDirectories });
+
+    // Materialize the pool the way first boot does (provisionSeedPool
+    // copies default/_seed → <dataRoot>/_seed).
+    const { provisionSeedPool } = await import('../src/services/seed-content.js');
+    await provisionSeedPool();
+    const { createUserFromOAuth } = await import('../src/endpoints/users-public.js');
+    const { createMount, entryFileExists } = await import('../src/card-runtime/mounts.js');
+
+    // No avatar fields — the profile-picture fetch is skipped, keeping the
+    // call hermetic.
+    const user = await createUserFromOAuth('github',
+        { id: '7', login: 'octo', name: 'Octo', email: 'octo@example.test' }, {});
+
+    const directories = getUserDirectories(user.handle);
+    assert.ok(fs.existsSync(path.join(directories.characters, '我没想当掌门啊.png')),
+        'the scaffold starter card must land in characters/');
+    assert.ok(fs.existsSync(path.join(directories.cardApps, '我没想当掌门啊', 'index.js')),
+        'the _seed pool must deliver the CardApp tree — the gap OAuth accounts hit');
+
+    // The mount that used to return card_app_assets_missing now succeeds.
+    const mount = await createMount({ handle: user.handle, directories, charId: '我没想当掌门啊' });
+    assert.ok(mount.id, 'the starter card must mint a mount, not fail card_app_assets_missing');
+    assert.ok(entryFileExists(mount), 'the manifest entry file must exist on disk');
+});
+
 // ---------------------------------------------------------------------------
 // Script-level tests: --dry-run honesty
 // ---------------------------------------------------------------------------
@@ -573,6 +625,67 @@ test('e2e: a newly registered user sees the starter card in the library and can 
             const seedChars = path.join(dataRoot, '_seed', 'characters');
             fs.mkdirSync(seedChars, { recursive: true });
             fs.writeFileSync(path.join(seedChars, '我没想当掌门啊.png'), 'STALE-SEED-PNG');
+        },
+    });
+});
+
+test('e2e: an admin-created account gets the full starter payload and the starter card mounts', { skip: SKIP_NO_SPA }, async () => {
+    // /api/users/create previously ran only checkForNewContent — the
+    // scaffold PNG landed but the _seed pool (card-apps/<name>/) never did,
+    // so mounting the starter card failed with card_app_assets_missing.
+    // provisionNewAccount now runs both passes for every creation path.
+    const adminPassword = 'admin-pass-1234';
+    const adminSalt = crypto.randomBytes(16).toString('base64');
+    const adminHash = crypto.scryptSync(adminPassword.normalize(), adminSalt, 64).toString('base64');
+
+    await withRealServer(async (base, ctx) => {
+        const postJson = (token, body) => ({
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': token },
+            body: JSON.stringify(body),
+        });
+        const csrfToken = async (session) =>
+            (await (await session.request(base, '/csrf-token')).json()).token;
+
+        // Sign in as the seeded admin and create the account through the
+        // admin endpoint — not registration, not bootstrap.
+        const admin = new Session();
+        const adminToken = await csrfToken(admin);
+        const login = await admin.request(base, '/api/users/login',
+            postJson(adminToken, { handle: 'admin', password: adminPassword }));
+        assert.equal(login.status, 200, `admin login failed\n${await login.text()}`);
+
+        const create = await admin.request(base, '/api/users/create',
+            postJson(adminToken, { handle: 'newbie', name: 'Newbie', password: 'newbie-pass-1234' }));
+        assert.equal(create.status, 200, `admin create failed\n${await create.text()}`);
+
+        const accountRoot = path.join(ctx.dataRoot, 'newbie');
+        assert.ok(fs.existsSync(path.join(accountRoot, 'characters', '我没想当掌门啊.png')),
+            'the scaffold starter card must land in characters/');
+        assert.ok(fs.existsSync(path.join(accountRoot, 'card-apps', '我没想当掌门啊', 'index.js')),
+            'the _seed pool must deliver the CardApp tree — the gap admin-created accounts hit');
+
+        // The mount that used to return card_app_assets_missing now succeeds.
+        const newbie = new Session();
+        const newbieToken = await csrfToken(newbie);
+        const newbieLogin = await newbie.request(base, '/api/users/login',
+            postJson(newbieToken, { handle: 'newbie', password: 'newbie-pass-1234' }));
+        assert.equal(newbieLogin.status, 200, `newbie login failed\n${await newbieLogin.text()}`);
+
+        const mount = await newbie.request(base, '/api/card-runtime/mounts',
+            postJson(newbieToken, { charId: '我没想当掌门啊' }));
+        const mountBody = await mount.text();
+        assert.equal(mount.status, 201, `mount must succeed now that the pool is delivered\n${mountBody}`);
+        assert.ok(JSON.parse(mountBody).mountId, 'the mount bundle carries a mountId');
+    }, {
+        seed: (dataRoot) => {
+            // A store with one admin account: the bootstrap default-user is
+            // not created (keys.length > 0), so this exercises only the
+            // admin creation path.
+            seedStoredItem(dataRoot, 'user:admin', {
+                handle: 'admin', name: 'Admin', created: Date.now(),
+                password: adminHash, salt: adminSalt, admin: true, enabled: true,
+            });
         },
     });
 });

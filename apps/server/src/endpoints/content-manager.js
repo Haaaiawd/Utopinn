@@ -9,7 +9,7 @@ import fetch from 'node-fetch';
 import sanitize from 'sanitize-filename';
 import { sync as writeFileAtomicSync } from 'write-file-atomic';
 
-import { getConfigValue, getConfigEnvKeys, tryParse, color, setPermissionsSync, isValidUrl, isPathUnderParent, resolvePathWithinParent, confineRealPath } from '../util.js';
+import { getConfigValue, getConfigEnvKeys, getConfigFilePath, tryParse, color, setPermissionsSync, isValidUrl, isPathUnderParent, resolvePathWithinParent, confineRealPath } from '../util.js';
 import { write } from '../character-card-parser.js';
 import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
@@ -34,8 +34,9 @@ const DEFAULT_CONTENT_INDEX = 'index.json';
  *       index: index.json                # optional; defaults to index.json
  *
  * `path` may be absolute, but the resolved directory must stay inside the
- * server directory or the data root — entries escaping both are skipped
- * with a warning. `index` is a plain file name inside the source directory.
+ * server directory, the data root, or a `contentSourcesAllowlist` root —
+ * entries escaping all three are skipped with a warning. `index` is a
+ * plain file name inside the source directory.
  *
  * Precedence: later-declared sources override earlier ones. Seeding copies
  * the first matching index entry and skips same-filename duplicates, so the
@@ -63,11 +64,63 @@ function warnContentSource(key, ...args) {
 }
 
 /**
+ * Resolves the `contentSourcesAllowlist` config key to absolute roots.
+ * Operator-named directories a `contentSources` entry may live under — the
+ * escape hatch for bind-mounted pack directories (e.g. a Docker volume like
+ * `/srv/utopinn-content`) that sit outside both the server directory and
+ * the data root. Default empty keeps the old containment gate intact: an
+ * outside path stays rejected. Relative roots resolve against the config
+ * file's own directory — the operator's anchor, wherever the config was
+ * carried (a bind-mounted /data volume, /etc, …) — falling back to the
+ * server directory when no config path is set.
+ * @returns {string[]} Absolute allowlist roots
+ */
+function resolveContentSourceAllowlist() {
+    // Same malformed-env guard as contentSources: getConfigValue silently
+    // falls back to the default on unparseable env JSON, which would hide
+    // why allowlisted packs went missing.
+    for (const envKey of getConfigEnvKeys('contentSourcesAllowlist')) {
+        if (!(envKey in process.env)) {
+            continue;
+        }
+        if (tryParse(process.env[envKey]) == null) {
+            warnContentSource(`env:${envKey}`, `${envKey} is set but its value is not valid JSON; ignoring it`);
+        }
+        break;
+    }
+
+    const allowlist = getConfigValue('contentSourcesAllowlist', []);
+    if (allowlist == null) {
+        return [];
+    }
+    if (!Array.isArray(allowlist)) {
+        warnContentSource('allowlist-shape', 'contentSourcesAllowlist must be a list of directory paths; ignoring it');
+        return [];
+    }
+
+    const configPath = getConfigFilePath();
+    const baseDir = configPath ? path.dirname(configPath) : serverDirectory;
+    const roots = [];
+    for (const entry of allowlist) {
+        const raw = typeof entry === 'string' ? entry.trim() : '';
+        if (!raw) {
+            warnContentSource(`allowlist-entry:${JSON.stringify(entry)}`, `contentSourcesAllowlist entry ${JSON.stringify(entry)} is not a non-empty path string; skipping`);
+            continue;
+        }
+        roots.push(path.resolve(baseDir, raw));
+    }
+    return roots;
+}
+
+/**
  * Resolves one `contentSources` config entry to a source descriptor.
  * @param {any} entry Config entry: `{ path, index? }` or a bare path string
+ * @param {string[]} [allowlistRoots] Extra containment roots from
+ *   `contentSourcesAllowlist` — an entry inside one is accepted even when
+ *   it sits outside the server directory and the data root
  * @returns {{dir: string, indexPath: string} | null} Source descriptor, or null when the entry is invalid
  */
-function resolveContentSourceEntry(entry) {
+function resolveContentSourceEntry(entry, allowlistRoots = []) {
     const record = typeof entry === 'string' ? { path: entry } : entry;
     const key = `entry:${JSON.stringify(record)}`;
 
@@ -79,9 +132,11 @@ function resolveContentSourceEntry(entry) {
 
     const dir = path.resolve(serverDirectory, relPath);
     const dataRoot = typeof globalThis.DATA_ROOT === 'string' ? path.resolve(globalThis.DATA_ROOT) : null;
-    const contained = isPathUnderParent(serverDirectory, dir) || (dataRoot !== null && isPathUnderParent(dataRoot, dir));
+    const contained = isPathUnderParent(serverDirectory, dir)
+        || (dataRoot !== null && isPathUnderParent(dataRoot, dir))
+        || allowlistRoots.some(root => isPathUnderParent(root, dir));
     if (!contained) {
-        warnContentSource(key, `contentSources path '${relPath}' resolves outside the server directory and data root; skipping`);
+        warnContentSource(key, `contentSources path '${relPath}' resolves outside the server directory, the data root, and every contentSourcesAllowlist root; skipping`);
         return null;
     }
 
@@ -144,8 +199,9 @@ export function resolveContentSources() {
         warnContentSource('config-shape', 'contentSources must be a list of { path, index? } entries; ignoring it');
         return sources;
     }
+    const allowlistRoots = resolveContentSourceAllowlist();
     for (const entry of configured) {
-        const source = resolveContentSourceEntry(entry);
+        const source = resolveContentSourceEntry(entry, allowlistRoots);
         if (source) {
             source.origin = 'config';
             source.rank = sources.length;
@@ -338,12 +394,19 @@ export function getDefaultPresets(directories) {
  * a missing, escaping, or malformed copy falls through to the next
  * lower-precedence declared copy instead of aborting the restore.
  * @param {string} filename Name of the file to get
+ * @param {string} [type] Restrict the match to one preset family's content
+ *   type. Two families can ship the same relative filename (both declare
+ *   `Default.json`); without the family pin the restore would return
+ *   whichever family's copy ranks higher.
  * @returns {object | null} JSON object or null if no declared readable copy exists
  */
-export function getDefaultPresetFile(filename) {
+export function getDefaultPresetFile(filename, type = null) {
     const contentIndex = getContentIndex(CONTENT_SCOPE.USER);
     for (const item of contentIndex) {
         if (item.filename !== filename || !isDefaultPresetType(item.type)) {
+            continue;
+        }
+        if (type !== null && item.type !== type) {
             continue;
         }
         try {
@@ -432,9 +495,23 @@ function resolveContentSink(type, basename, directories, handle) {
 async function seedContent(contentIndex, contentLogPath, resolveSink, forceCategories, { checkQuota = null } = {}) {
     let anyContentAdded = false;
     const contentLog = getContentLog(contentLogPath);
+    // Logical names and fs targets whose highest-precedence entry was skipped
+    // by quota this run. A quota skip must not silently downgrade precedence:
+    // installing the next lower-precedence copy would hand the user the wrong
+    // (older/built-in) file AND log it as delivered, which then shadows the
+    // real winner forever — even after the quota is raised. The block covers
+    // both the index filename (the content.log identity) and the flattened fs
+    // target path (the on-disk collision identity: two index entries sharing
+    // a basename land on the same file).
+    const quotaBlocked = new Set();
 
     for (const contentItem of contentIndex) {
         if (contentLog.includes(contentItem.filename) && !forceCategories?.includes(contentItem.type)) {
+            continue;
+        }
+
+        if (quotaBlocked.has(contentItem.filename)) {
+            console.warn(`Content file ${contentItem.filename} not delivered: a higher-precedence copy of it was skipped by quota this run`);
             continue;
         }
 
@@ -509,6 +586,13 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
         const basePath = path.parse(contentItem.filename).base;
         const targetPath = path.join(contentTarget, basePath);
 
+        if (quotaBlocked.has(targetPath)) {
+            // A different-named entry that flattens to the same file — the
+            // quota-skipped winner still owns this target for this run.
+            console.warn(`Content file ${contentItem.filename} not delivered to ${contentTarget}: a higher-precedence file for the same target was skipped by quota this run`);
+            continue;
+        }
+
         if (fs.existsSync(targetPath)) {
             console.warn(`Content file ${contentItem.filename} already exists in ${contentTarget}`);
             contentLog.push(contentItem.filename);
@@ -520,7 +604,11 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
             const violation = await checkQuota(estimate);
             if (violation) {
                 // Skipped whole, never partially copied, and kept OFF the
-                // content log so a later pass retries the delivery.
+                // content log so a later pass retries the delivery. The name
+                // and its fs target are blocked for this run so no
+                // lower-precedence copy can shadow the winner.
+                quotaBlocked.add(contentItem.filename);
+                quotaBlocked.add(targetPath);
                 console.warn(`Content file ${contentItem.filename} not delivered to ${contentTarget}: ${violation.message}`);
                 continue;
             }

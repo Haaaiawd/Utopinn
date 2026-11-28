@@ -461,7 +461,10 @@ router.post('/restore', function (request, response) {
 
         if (defaultPreset) {
             result.isDefault = true;
-            result.preset = getDefaultPresetFile(defaultPreset.filename) || {};
+            // The family pin matters: another preset family can declare the
+            // same relative filename, and filename-only matching would
+            // restore the higher-ranked family's JSON here.
+            result.preset = getDefaultPresetFile(defaultPreset.filename, defaultPreset.type) || {};
         }
 
         return response.send(result);

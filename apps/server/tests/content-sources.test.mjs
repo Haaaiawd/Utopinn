@@ -602,3 +602,240 @@ test('every declared content type routes through one registry row; undeclared ty
     assert.equal(contentManager.getUserTargetByType('a-type-nobody-declared', dirs), null,
         'an undeclared type has no fs target — the registry is the single source of truth');
 });
+
+// ---------------------------------------------------------------------------
+// Preset restore is family-aware: same-named files across preset families
+// ---------------------------------------------------------------------------
+
+test('getDefaultPresetFile honors the family pin — a same-named file from another family cannot shadow the restore', () => {
+    // Two preset families can declare the same relative filename. Filename-
+    // only matching returns whichever family's source ranks higher — the
+    // bug the /restore caller now avoids by pinning the family (type) it
+    // already selected via getDefaultPresets.
+    const openaiPack = makeSource('family-openai', {
+        entries: [{ filename: 'Default.json', type: 'openai_preset' }],
+        files: { 'Default.json': '{"family":"openai"}' },
+    });
+    const koboldPack = makeSource('family-kobold', {
+        entries: [{ filename: 'Default.json', type: 'kobold_preset' }],
+        files: { 'Default.json': '{"family":"kobold"}' },
+    });
+
+    // koboldPack declared last = higher precedence = wins filename-only matching.
+    withSources([{ path: openaiPack }, { path: koboldPack }], () => {
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json'), { family: 'kobold' },
+            'unpinned matching returns the higher-ranked family — the trap the pin exists for');
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json', 'openai_preset'), { family: 'openai' },
+            'the family pin restores the caller\'s family, not the rank winner');
+        assert.deepEqual(contentManager.getDefaultPresetFile('Default.json', 'kobold_preset'), { family: 'kobold' });
+        assert.equal(contentManager.getDefaultPresetFile('Default.json', 'novel_preset'), null,
+            'a family that never declared the file gets nothing, not another family\'s copy');
+    });
+});
+
+test('the /restore selection path (family folder match + type pin) restores the matching family\'s file', () => {
+    // Mirror presets.js /restore: apiId resolves to a per-family target
+    // folder via getUserTargetByType (PRESET_FOLDER_BY_API_ID maps openai →
+    // openAI_Settings); the default preset found there is then loaded with
+    // the family pin — so a higher-ranked same-named file from another
+    // family can never leak into the restore.
+    const openaiPack = makeSource('restore-openai', {
+        entries: [{ filename: 'Default.json', type: 'openai_preset' }],
+        files: { 'Default.json': '{"family":"openai"}' },
+    });
+    const koboldPack = makeSource('restore-kobold', {
+        entries: [{ filename: 'Default.json', type: 'kobold_preset' }],
+        files: { 'Default.json': '{"family":"kobold"}' },
+    });
+
+    withSources([{ path: openaiPack }, { path: koboldPack }], () => {
+        const directories = {
+            root: '/u',
+            openAI_Settings: '/u/openAI_Settings',
+            koboldAI_Settings: '/u/koboldAI_Settings',
+        };
+        const defaults = contentManager.getDefaultPresets(directories);
+        // Same selection /restore makes for apiId 'openai'.
+        const defaultPreset = defaults.find(p => p.name === 'Default' && p.folder === directories.openAI_Settings);
+        assert.ok(defaultPreset, 'the openai family entry must be selectable by its target folder');
+        assert.equal(defaultPreset.type, 'openai_preset');
+        assert.deepEqual(
+            contentManager.getDefaultPresetFile(defaultPreset.filename, defaultPreset.type),
+            { family: 'openai' },
+            'restoring the openai preset must yield the openai file, not the higher-ranked kobold one',
+        );
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Quota must not downgrade precedence: a skipped winner blocks shadows
+// ---------------------------------------------------------------------------
+
+test('seedContentForUser: a quota-skipped winner blocks same-name and same-target lower copies for the run, then delivers once quota allows', async () => {
+    // The precedence trap: the highest-precedence entry for a logical name
+    // is skipped because it would exceed quota. Installing the next
+    // lower-precedence copy would hand the user the wrong file AND log it
+    // as delivered — the content.log entry then shadows the real winner
+    // forever, even after the quota is raised. The fix blocks the name and
+    // its flattened fs target for the rest of the run.
+    const handle = 'shadowuser';
+    const quota = 60_000;
+    const testRoot = path.join(scratchRoot, 'seed-shadow');
+    const storageDir = path.join(testRoot, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+
+    // node-persist is a process-wide singleton; this test re-inits it on
+    // its own store (re-init is supported in-process) and writes the same
+    // account record shape registration persists — the profile carries the
+    // effective quota, no admin-settings row needed.
+    const { default: storage } = await import('node-persist');
+    await storage.init({ dir: storageDir, ttl: false, expiredInterval: 0 });
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota,
+    });
+
+    const winnerPack = makeSource('winner-pack', {
+        entries: [{ filename: 'workflows/x.json', type: 'workflow' }],
+        files: { 'workflows/x.json': crypto.randomBytes(quota + 10_000) },
+    });
+    const loserPack = makeSource('loser-pack', {
+        entries: [{ filename: 'workflows/x.json', type: 'workflow' }],
+        files: { 'workflows/x.json': 'LOSER-BYTES' },
+    });
+    const flatPack = makeSource('flat-pack', {
+        entries: [{ filename: 'nested/x.json', type: 'workflow' }],
+        files: { 'nested/x.json': 'FLAT-LOSER-BYTES' },
+    });
+    // Merged index order is precedence-first: the winner, then two shadows —
+    // one shares the filename (the content.log identity), one only shares
+    // the flattened fs target (basename x.json lands on the same file).
+    const contentIndex = [
+        { filename: 'workflows/x.json', type: 'workflow', folder: winnerPack },
+        { filename: 'workflows/x.json', type: 'workflow', folder: loserPack },
+        { filename: 'nested/x.json', type: 'workflow', folder: flatPack },
+    ];
+    const accountRoot = path.join(testRoot, handle);
+    const directories = { root: accountRoot, comfyWorkflows: path.join(accountRoot, 'workflows') };
+
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+    let first;
+    try {
+        first = await contentManager.seedContentForUser(contentIndex, directories, []);
+    } finally {
+        console.warn = origWarn;
+    }
+
+    assert.equal(first, false, 'nothing may be installed when the winner does not fit');
+    const target = path.join(directories.comfyWorkflows, 'x.json');
+    assert.ok(!fs.existsSync(target),
+        'no lower-precedence copy may shadow the quota-skipped winner');
+    assert.ok(
+        warnings.some(l => l.includes('workflows/x.json') && l.includes('not delivered') && /quota/i.test(l)),
+        `the winner's skip must be reported, got: ${warnings.join(' | ')}`,
+    );
+    assert.equal(
+        warnings.filter(l => l.includes('higher-precedence')).length, 2,
+        `both shadows must be reported as blocked, got: ${warnings.join(' | ')}`,
+    );
+    const contentLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(!contentLog.includes('x.json'),
+        'blocked entries must stay off content.log so a later pass retries them');
+
+    // Quota raised → the WINNER is delivered on the next run, not a shadow.
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota * 4,
+    });
+    const second = await contentManager.seedContentForUser(contentIndex, directories, []);
+    assert.equal(second, true, 'the winner must be delivered once quota allows');
+    assert.equal(fs.statSync(target).size, quota + 10_000,
+        'the on-disk file is the winner\'s bytes, not a shadow\'s');
+    const secondLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(secondLog.includes('workflows/x.json'), 'the delivered winner lands on content.log');
+});
+
+// ---------------------------------------------------------------------------
+// contentSourcesAllowlist: operator-named roots outside the built-in roots
+// ---------------------------------------------------------------------------
+
+test('a contentSourcesAllowlist root accepts a pack outside the built-in roots; without it the same path is rejected', () => {
+    // The Docker bind-mount case: a pack directory outside BOTH the server
+    // directory and the data root is legitimate only when the operator
+    // names its root. scratchRoot is a sibling of dataRoot — packs built
+    // here are outside both built-in roots.
+    const outsideRoot = path.join(scratchRoot, 'outside-packs');
+    const pack = path.join(outsideRoot, 'srv-pack');
+    fs.mkdirSync(path.join(pack, 'worlds'), { recursive: true });
+    fs.writeFileSync(path.join(pack, 'index.json'), JSON.stringify([
+        { filename: 'worlds/srv.json', type: 'world' },
+    ]));
+    fs.writeFileSync(path.join(pack, 'worlds', 'srv.json'), '{"entries":{"srv":{"uid":1}}}');
+
+    const ALLOWLIST_ENV = 'LUKER_CONTENT_SOURCES_ALLOWLIST';
+    const prevAllow = process.env[ALLOWLIST_ENV];
+    try {
+        // Rejected without an allowlist entry — the containment gate is intact.
+        delete process.env[ALLOWLIST_ENV];
+        withSources([{ path: pack }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, []);
+            assert.ok(lines.some(l => l.includes('resolves outside')),
+                `expected a containment warning, got: ${lines}`);
+        });
+
+        // Accepted once the operator names the root — env form of the
+        // contentSourcesAllowlist config key (same getConfigValue path).
+        process.env[ALLOWLIST_ENV] = JSON.stringify([outsideRoot]);
+        withSources([{ path: pack }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, [{ entries: { srv: { uid: 1 } } }],
+                'an allowlisted outside root must deliver its declared content');
+            assert.deepEqual(lines, [], 'the allowlisted source must not warn');
+        });
+
+        // A sibling of the allowlisted root is still outside the gate —
+        // the allowlist is per-root, not a blanket outside-path permit.
+        const stray = path.join(scratchRoot, 'stray-pack');
+        fs.mkdirSync(stray, { recursive: true });
+        fs.writeFileSync(path.join(stray, 'index.json'), JSON.stringify([
+            { filename: 'worlds/stray.json', type: 'world' },
+        ]));
+        withSources([{ path: stray }], () => {
+            const { lines, result } = captureWarn(() => contentManager.getContentOfType('world', 'json'));
+            assert.deepEqual(result, []);
+            assert.ok(lines.some(l => l.includes('resolves outside')),
+                `the gate must still reject non-allowlisted roots, got: ${lines}`);
+        });
+    } finally {
+        if (prevAllow === undefined) {
+            delete process.env[ALLOWLIST_ENV];
+        } else {
+            process.env[ALLOWLIST_ENV] = prevAllow;
+        }
+    }
+});
+
+test('a non-list contentSourcesAllowlist warns and keeps the containment gate closed', () => {
+    const ALLOWLIST_ENV = 'LUKER_CONTENT_SOURCES_ALLOWLIST';
+    const prevAllow = process.env[ALLOWLIST_ENV];
+    process.env[ALLOWLIST_ENV] = '"just-a-string"';
+    // A unique outside path — source-entry warnings dedupe per key per
+    // process, so a path an earlier test already warned on would be
+    // silently suppressed here.
+    const outside = path.join(os.tmpdir(), `utopinn-not-allowlisted-${process.pid}`);
+    try {
+        const { lines } = captureWarn(() =>
+            withSources([{ path: outside }], () => contentManager.getContentOfType('world', 'json')));
+        assert.ok(lines.some(l => l.includes('must be a list')),
+            `expected a shape warning, got: ${lines}`);
+        assert.ok(lines.some(l => l.includes('resolves outside')),
+            `a malformed allowlist must not open the gate, got: ${lines}`);
+    } finally {
+        if (prevAllow === undefined) {
+            delete process.env[ALLOWLIST_ENV];
+        } else {
+            process.env[ALLOWLIST_ENV] = prevAllow;
+        }
+    }
+});
