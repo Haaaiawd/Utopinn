@@ -1,10 +1,14 @@
 /**
  * seed-content — instance-level seed pool materialized into accounts.
  *
- * `<dataRoot>/_seed/` is an operator-provisioned skeleton user home: each
- * subdirectory is named after a USER_DIRECTORY_TEMPLATE value and holds
- * entries copied into the matching per-account directory when a new
- * account registers. Example: `_seed/card-apps/我没想当掌门啊/` lands at
+ * `<dataRoot>/_seed/` is a skeleton user home: each subdirectory is named
+ * after a USER_DIRECTORY_TEMPLATE value and holds entries copied into the
+ * matching per-account directory when a new account is created — a
+ * registration, or the bootstrap default-user record that initUserStorage
+ * creates on a fresh data root. `default/_seed/` ships release payloads so
+ * a clean install has a pool (provisionSeedPool); an existing
+ * `<dataRoot>/_seed/` is operator-owned and always wins. Example:
+ * `_seed/card-apps/我没想当掌门啊/` lands at
  * `<dataRoot>/<handle>/card-apps/我没想当掌门啊/`.
  *
  * Semantics:
@@ -35,10 +39,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { USER_DIRECTORY_TEMPLATE } from '../constants.js';
+import { serverDirectory } from '../server-directory.js';
 import { setPermissionsSync } from '../util.js';
 
 /** Seed pool root directory name (instance-level, not per-user). */
 export const SEED_ROOT_DIRNAME = '_seed';
+
+/**
+ * Shipped seed payload — `<server>/default/_seed/`. scaffold can only
+ * carry single index-declared files, so release directory payloads
+ * (CardApp tree, world book) live here and provisionSeedPool materializes
+ * them into `<dataRoot>/_seed/` on a fresh install.
+ */
+export const DEFAULT_SEED_SOURCE_DIR = path.join(serverDirectory, 'default', SEED_ROOT_DIRNAME);
 
 /** Entry names that are never copied out of the pool. */
 const SEED_ENTRY_EXCLUSIONS = new Set(['.git']);
@@ -71,7 +84,7 @@ export function getSeedRoot(directories) {
  * @param {string} source Pool entry absolute path
  * @returns {Promise<number>} bytes (0 when unreadable — the copy will fail on its own)
  */
-async function estimateSeedEntryBytes(source) {
+export async function estimateSeedEntryBytes(source) {
     let stat;
     try {
         stat = await fs.promises.stat(source);
@@ -116,7 +129,70 @@ async function estimateSeedEntryBytes(source) {
 }
 
 /**
- * Copies every pool entry into the matching user directory.
+ * Copies `source` into a `.seed-*` staging sibling of `destination` and
+ * publishes it atomically: directories claim their name with mkdir
+ * (EEXIST = someone else owns it — existing content always wins), files
+ * with link(2). fs.cp materializes a directory before copying its
+ * children, so copying into staging keeps a nested read failure
+ * invisible; the target only ever sees complete payloads. A failure
+ * after the claim unwinds only its own partial destination, so the next
+ * pass retries clean.
+ * @param {string} source Payload absolute path (file or directory)
+ * @param {string} destination Target absolute path (must not exist yet)
+ * @returns {Promise<'copied'|'skipped'>} 'skipped' when the destination name was taken
+ * @throws {Error} copy/publish failures (destination left un-claimed or unwound)
+ */
+async function publishSeedCopy(source, destination) {
+    const parent = path.dirname(destination);
+    // Same-filesystem staging sibling — publish is rename/link, never a
+    // second copy. `.seed-*` is inert to every reader of the target
+    // directory (card libraries address named entries).
+    const staging = path.join(parent, `.seed-${path.basename(destination)}-${crypto.randomBytes(6).toString('hex')}`);
+    // True once the destination name is ours to unwind on failure.
+    let claimed = false;
+    try {
+        await fs.promises.mkdir(parent, { recursive: true });
+        await fs.promises.cp(source, staging, { recursive: true, force: false, errorOnExist: false, filter: seedCopyFilter });
+        // Pool files may be read-only; the copies must stay writable
+        // (same convention as content-manager).
+        setPermissionsSync(staging);
+        const stagedStat = await fs.promises.stat(staging);
+        if (stagedStat.isDirectory()) {
+            // mkdir is the atomic claim: EEXIST means the name was taken
+            // after the caller's existence check — existing content wins.
+            await fs.promises.mkdir(destination);
+            claimed = true;
+            for (const child of await fs.promises.readdir(staging)) {
+                await fs.promises.rename(path.join(staging, child), path.join(destination, child));
+            }
+        } else {
+            // link(2) is the atomic no-clobber publish for files.
+            await fs.promises.link(staging, destination);
+            claimed = true;
+        }
+        return 'copied';
+    } catch (error) {
+        if (error?.code === 'EEXIST') {
+            // Lost the race for the name — whoever owns it wins.
+            return 'skipped';
+        }
+        if (claimed) {
+            // A mid-publish failure leaves our own partial claim behind —
+            // unwind it so the next pass retries clean.
+            await fs.promises.rm(destination, { recursive: true, force: true }).catch(() => {});
+        }
+        throw error;
+    } finally {
+        await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {});
+    }
+}
+
+/**
+ * Copies every pool entry into the matching user directory. Call sites are
+ * account-creation points only (registration, the initUserStorage-created
+ * bootstrap account) plus the deliberate scripts/seed-accounts.js backfill —
+ * existing accounts are never re-seeded at boot, matching /etc/skel: the
+ * skeleton applies to a NEW home, never re-pours into lived-in ones.
  * @param {import('../users.js').UserDirectoryList} directories Target user directories
  * @param {object} [options]
  * @param {boolean} [options.dryRun] Report what would be copied without writing
@@ -190,56 +266,68 @@ export async function seedUserDirectories(directories, { dryRun = false, checkQu
                 }
             }
 
-            const parent = path.dirname(destination);
-            // Same-filesystem staging sibling — publish is rename/link,
-            // never a second copy. `.seed-*` is inert to every reader of
-            // the target directory (card libraries address named entries).
-            const staging = path.join(parent, `.seed-${entry.name}-${crypto.randomBytes(6).toString('hex')}`);
-            // True once the destination name is ours to unwind on failure.
-            let claimed = false;
             try {
-                await fs.promises.mkdir(parent, { recursive: true });
-                // fs.cp materializes the destination before copying its
-                // children, so a nested read error would leave a partial
-                // directory that the existsSync check above then preserves
-                // forever. Copying into staging keeps the failure invisible;
-                // the account only ever sees complete entries.
-                await fs.promises.cp(source, staging, { recursive: true, force: false, errorOnExist: false, filter: seedCopyFilter });
-                // Pool files may be read-only; the account's copies must
-                // stay user-writable (same convention as content-manager).
-                setPermissionsSync(staging);
-                const stagedStat = await fs.promises.stat(staging);
-                if (stagedStat.isDirectory()) {
-                    // mkdir is the atomic claim: EEXIST means the name was
-                    // taken after the check above — user content always wins.
-                    await fs.promises.mkdir(destination);
-                    claimed = true;
-                    for (const child of await fs.promises.readdir(staging)) {
-                        await fs.promises.rename(path.join(staging, child), path.join(destination, child));
-                    }
-                } else {
-                    // link(2) is the atomic no-clobber publish for files.
-                    await fs.promises.link(staging, destination);
-                    claimed = true;
-                }
-                report.copied.push(destination);
-            } catch (error) {
-                if (error?.code === 'EEXIST') {
-                    // Lost the race for the name — whoever owns it wins.
+                const outcome = await publishSeedCopy(source, destination);
+                if (outcome === 'skipped') {
                     report.skipped.push(destination);
                 } else {
-                    if (claimed) {
-                        // A mid-publish failure leaves our own partial claim
-                        // behind — unwind it so the next pass retries clean.
-                        await fs.promises.rm(destination, { recursive: true, force: true }).catch(() => {});
-                    }
-                    report.errors.push({ source, error });
+                    report.copied.push(destination);
                 }
-            } finally {
-                await fs.promises.rm(staging, { recursive: true, force: true }).catch(() => {});
+            } catch (error) {
+                report.errors.push({ source, error });
             }
         }
     }
 
+    return report;
+}
+
+/**
+ * First-boot pool provisioning — materializes `<dataRoot>/_seed/` from
+ * the shipped `default/_seed/` payload when the data root has no pool.
+ *
+ * `default/scaffold/` can only declare single files (CONTENT_TYPES), so
+ * release directory payloads (the starter card's CardApp tree, its world
+ * book) ship as `default/_seed/` and land here:
+ *
+ *   - fresh install → the payload becomes the pool, and the starter
+ *     card's companions reach the first registered account;
+ *   - an already-existing `<dataRoot>/_seed` → skipped wholesale —
+ *     an operator-provisioned pool always wins, never merged, never
+ *     overwritten. Idempotent: the existence gate means the copy does
+ *     not re-run on subsequent boots.
+ *
+ * The whole tree publishes through the same staged `.seed-*` copy +
+ * mkdir-claim used per account: a failure either unwinds the claimed
+ * `_seed` entirely (so the next boot retries a clean provision instead
+ * of pinning a half-written pool behind the existence gate) or lands
+ * nothing at all. Failures are collected on `errors` — the caller warns
+ * and continues; a broken starter card must not stop the server.
+ * @param {object} [options]
+ * @param {string} [options.sourceDir] Payload root (default: <server>/default/_seed)
+ * @returns {Promise<{provisioned: boolean, reason: 'provisioned'|'exists'|'no-payload'|'no-data-root'|'failed', errors: {source: string, error: Error}[]}>}
+ */
+export async function provisionSeedPool({ sourceDir = DEFAULT_SEED_SOURCE_DIR } = {}) {
+    const report = { provisioned: false, reason: 'no-data-root', errors: [] };
+    const seedRoot = getSeedRoot();
+    if (!seedRoot) {
+        return report;
+    }
+    if (!sourceDir || !fs.existsSync(sourceDir)) {
+        report.reason = 'no-payload';
+        return report;
+    }
+    if (fs.existsSync(seedRoot)) {
+        report.reason = 'exists';
+        return report;
+    }
+    try {
+        const outcome = await publishSeedCopy(sourceDir, seedRoot);
+        report.provisioned = outcome === 'copied';
+        report.reason = outcome === 'copied' ? 'provisioned' : 'exists';
+    } catch (error) {
+        report.reason = 'failed';
+        report.errors.push({ source: sourceDir, error });
+    }
     return report;
 }

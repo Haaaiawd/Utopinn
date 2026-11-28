@@ -1,0 +1,997 @@
+/* 《{{宗门名}}总簿》案头 v1 — 账房美学
+   说明：CardApp loader 会把选择器自动作用域到 #card-app-container。
+   配色与组件见 03_docs/前端资产与面板规格_v1.md §五。 */
+:root{
+  --paper:#f3eddd; --ink:#302c25; --ink2:#625a4d; --faint:#766d5e;
+  --zhu:#943f30; --qing:#445f5a; --line:rgba(71,57,36,.24);
+}
+.zb-root{
+  display:flex; height:100%; min-height:0;
+  font-family:'LXGW WenKai','KaiTi','STKaiti','楷体',serif;
+  background:var(--paper); color:var(--ink);
+}
+.zb-desk{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--paper)}
+/* ---------- 顶栏：标题 + 揭页按钮（时间推进，永远一拇指之遥） ---------- */
+.zb-topbar{
+  padding:10px 14px 8px;border-bottom:1.5px solid var(--line);
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+}
+.zb-tt{font-size:17px;font-weight:700;letter-spacing:3px;display:flex;align-items:center;gap:8px}
+.zb-mewrap{display:inline-flex}
+.zb-face.me,.zb-sealph.me{width:26px;height:26px;font-size:13px;border-radius:3px}
+.zb-face{object-fit:cover;border:1.5px solid var(--line);border-radius:3px;background:#fff;display:block}
+.zb-sealph{
+  width:74px;height:74px;border:2px solid var(--zhu);border-radius:4px;color:var(--zhu);
+  display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700;
+  transform:rotate(-3deg);background:#fbf6e9;flex:none;
+}
+.zb-kline{display:flex;gap:9px;align-items:flex-start}
+.zb-kline .zb-face,.zb-kline .zb-sealph{width:44px;height:44px;font-size:20px}
+.zb-kline>span{flex:1}
+.zb-daybtn{
+  border:1.5px solid var(--zhu);background:var(--paper);color:var(--zhu);
+  border-radius:3px;padding:4px 10px;cursor:pointer;font-family:inherit;
+  display:flex;align-items:baseline;gap:8px;transform:rotate(-1deg);
+  box-shadow:1.5px 1.5px 0 rgba(163,63,43,.25);
+}
+.zb-daybtn:active{transform:rotate(-1deg) translate(1px,1px);box-shadow:none}
+.zb-day{font-size:12px}
+.zb-day b{font-size:15px}
+.zb-flip{font-size:11px;font-weight:700;letter-spacing:1px}
+/* ---------- 状态条 ---------- */
+.zb-statbar{display:flex;border-bottom:1.5px solid var(--line);font-size:12px}
+.zb-statbar>div{flex:1;text-align:center;padding:7px 0 5px;border-right:1px dashed var(--line)}
+.zb-statbar>div:last-child{border-right:0}
+.zb-statbar .k{font-size:16px;color:var(--faint);display:block}
+.zb-statbar .v{font-size:24px;font-weight:700}
+.zb-statbar .v.zhu{color:var(--zhu)}
+/* ---------- 页体 ---------- */
+.zb-page{flex:1;overflow-y:auto;padding:10px 12px;scrollbar-width:none;min-height:0}
+.zb-page::-webkit-scrollbar{display:none}
+.zb-pane{display:none;animation:zbFade .25s ease}
+.zb-pane.on{display:block}
+@keyframes zbFade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+.zb-empty{padding:60px 20px;text-align:center;color:var(--faint);font-size:14px;line-height:2}
+.zb-empty-mini{padding:14px;text-align:center;color:var(--faint);font-size:12px}
+/* ---------- 大按钮：揭过此页 ---------- */
+.zb-bigbtn{
+  display:block;width:100%;margin:12px 0 2px;padding:13px 0;
+  background:var(--zhu);color:var(--paper);border:0;border-radius:4px;
+  font-family:inherit;font-size:16px;letter-spacing:6px;font-weight:700;
+  cursor:pointer;transform:rotate(-.5deg);
+  box-shadow:2px 2px 0 rgba(43,38,32,.3), inset 0 0 0 1.5px rgba(244,236,216,.35);
+}
+.zb-bigbtn:active{transform:rotate(-.5deg) translate(1px,2px);box-shadow:inset 0 0 0 1.5px rgba(244,236,216,.35)}
+/* ---------- 卡 ---------- */
+.zb-card{
+  background:#fbf6e9;border:1.5px solid var(--line);border-radius:4px;
+  padding:10px 11px;margin-bottom:10px;position:relative;
+  box-shadow:2px 2px 0 rgba(43,38,32,.08);
+}
+.zb-card .hd{font-size:11px;color:var(--faint);letter-spacing:2px;margin-bottom:4px;display:flex;justify-content:space-between}
+.zb-card .bd{font-size:13px;line-height:1.7}
+.zb-card.knock{border-color:var(--zhu);border-width:2px}
+.knock-acts{display:flex;gap:8px;margin-top:9px;align-items:stretch}
+.knock-acts .btn-seal{margin-top:0;flex:none}
+.zb-pend{display:flex;align-items:center;gap:8px;width:100%;margin-bottom:10px;padding:9px 12px;
+ background:#f2e3c4;border:1.5px solid var(--zhu);border-left-width:5px;border-radius:4px;
+ font-family:inherit;font-size:13px;color:var(--ink);cursor:pointer;text-align:left}
+.zb-pend .pz{flex:1}
+.zb-pend:active{transform:translateY(1px)}
+.zb-lrow{display:flex;align-items:center;gap:7px;padding:5px 2px;border-bottom:1px dotted var(--line,#c9b98f);font-size:12px}
+.zb-lrow:last-child{border-bottom:none}
+.zb-lrow .lk{flex:none;font-size:10px;color:var(--qing);border:1px solid var(--qing);border-radius:2px;padding:0 4px}
+.zb-lrow .lwho{flex:none;font-weight:700}
+.zb-lrow .lwhat{flex:1;color:var(--ink2);font-size:12.5px;line-height:1.45}
+.zb-lrow .lday{flex:none;font-size:10.5px;color:var(--faint)}
+.stamp{
+  display:inline-block;background:var(--zhu);color:var(--paper);font-size:10px;
+  padding:1px 6px;border-radius:2px;letter-spacing:2px;transform:rotate(-2deg);
+}
+.stamp.grey{background:#8a8578;transform:rotate(1deg)}
+.stamp.qing{background:var(--qing);transform:rotate(-1deg)}
+.btn-seal{
+  display:inline-block;margin-top:8px;background:var(--zhu);color:var(--paper);
+  font-size:13px;letter-spacing:3px;padding:7px 18px;border-radius:3px;border:0;
+  transform:rotate(-1.5deg);box-shadow:2px 2px 0 rgba(43,38,32,.25);cursor:pointer;font-family:inherit;
+}
+.btn-seal:active{transform:rotate(-1.5deg) translate(1px,1px);box-shadow:1px 1px 0 rgba(43,38,32,.25)}
+/* ---------- 报纸版式：青州日报 / 宗门周志 ---------- */
+.zb-news{border:1.5px solid var(--line);background:#faf4e3;padding:8px 12px 10px;
+  font-family:Georgia,'Times New Roman',STSong,SimSun,serif}
+.zb-news .mast{text-align:center;border-bottom:3px double var(--ink);padding:2px 0 6px;margin-bottom:4px}
+.zb-news .mast .t{font-family:STKaiti,KaiTi,'Noto Serif SC',serif;font-size:21px;font-weight:700;letter-spacing:7px}
+.zb-news .mast .d{font-size:10px;color:var(--ink2);letter-spacing:1px;margin-top:3px}
+.zb-news .art{padding:6px 0;border-bottom:1px solid var(--line);text-align:justify;font-size:12.5px;line-height:1.75}
+.zb-news .art:last-child{border-bottom:0}
+.zb-news .art p{margin:0}
+.zb-news .art:first-of-type p::first-letter{float:left;font-size:2.4em;line-height:.9;
+  padding:2px 6px 0 0;font-weight:700;color:var(--ink)}
+.zb-news .art .dt{font-size:10px;color:var(--ink2);letter-spacing:1px;margin-bottom:1px}
+.zb-news .art .src{float:right;font-size:9px;padding:0 4px;border:1px solid var(--line);
+  border-radius:2px;color:var(--faint);margin-left:5px}
+.zb-news.zm{background:#f7f0da}
+.zb-news.zm .mast .t{letter-spacing:5px;font-size:18px}
+.zb-news.zm .art{font-family:STKaiti,KaiTi,serif;font-size:13px}
+.zb-news .none{text-align:center;color:var(--faint);font-size:11px;padding:14px 0}
+/* ---------- 暗线密件 ---------- */
+.zb-doss{border:1.5px solid #1c1916;background:#26211a;color:#cfc4ac;
+  padding:0 12px 10px;position:relative}
+.zb-doss::before,.zb-doss::after{content:'';display:block;height:7px;margin:0 -12px;
+  background:#151210}
+.zb-doss::after{margin-top:10px}
+.zb-doss .mast{display:flex;align-items:center;justify-content:space-between;
+  padding:8px 0 6px;border-bottom:1px dashed #5a5245;margin-bottom:6px}
+.zb-doss .mast .t{font-family:STKaiti,KaiTi,serif;font-size:15px;letter-spacing:4px;color:#b8ab8d}
+.zb-doss .mast .seal{font-size:11px;border:1.5px solid var(--zhu);color:#e0705a;
+  padding:1px 5px;transform:rotate(-4deg)}
+.zb-doss .art{padding:6px 0;border-bottom:1px dashed #4a4335;font-size:12.5px;line-height:1.7;
+  color:#cfc4ac;font-family:STKaiti,KaiTi,serif}
+.zb-doss .art:last-child{border-bottom:0}
+.zb-doss .art .dt{font-size:10px;color:#8a7f68;margin-bottom:1px}
+.zb-doss .art .bl{display:inline-block;background:#151210;color:#151210;border-radius:1px;
+  padding:0 5px;user-select:none}
+.zb-doss .hint{font-size:10px;color:#8a7f68;padding:6px 0 2px}
+.zb-doss .none{text-align:center;color:#6d6350;padding:12px 0;font-size:11px}
+/* ---------- 底栏中钮：揭页方印 ---------- */
+.zb-tabbar button.zb-mid{display:flex;justify-content:center;align-items:center;padding:0}
+.zb-tabbar .zb-mid .midseal{position:relative;display:flex;align-items:center;justify-content:center;
+  width:56px;height:56px;border-radius:2px;background:var(--zhu);color:var(--paper);
+  border:1px solid var(--zhu)}
+.zb-tabbar .zb-mid .midseal::after{content:'';position:absolute;inset:4px;pointer-events:none;
+  border:3px double var(--paper);border-radius:1px}
+.zb-tabbar .zb-mid .midseal .zb-ico{display:none}
+.zb-tabbar .zb-mid .midseal b{font-size:18px;font-weight:700;letter-spacing:2px;line-height:1;margin-right:-2px}
+/* ---------- 古风小图标（mask 随 currentColor 变色） ---------- */
+.zb-ico{display:inline-block;width:1em;height:1em;vertical-align:-.12em;background:currentColor;
+  -webkit-mask-image:var(--i);mask-image:var(--i);-webkit-mask-size:contain;mask-size:contain;
+  -webkit-mask-position:center;mask-position:center;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat}
+.zg .zb-ico{width:22px;height:22px}
+.zb-bigbtn .zb-ico,.btn-seal .zb-ico{margin-right:4px}
+.zb-tray-tt .zb-ico{margin-right:3px}
+.zb-icard .hd .zb-ico{width:15px;height:15px;margin-right:2px}
+/* ---------- 地图 ---------- */
+.zb-mapbox{border:1.5px solid var(--line);border-radius:4px;overflow:hidden;background:#efe7d0;position:relative;aspect-ratio:4/3}
+.zb-mapbox img{display:block;width:100%;height:100%;object-fit:fill}
+/* 纵横比跟随当前底图：SVG 占位图为 4:3；生成的 1536×1024(3:2) 换入时改为 3/2 并校准热区 % */
+/* 成品图 1536×1024 = 3:2；换回 SVG 底图时改回 4/3 */
+.zb-sectmap{aspect-ratio:3/2}
+.zb-qnmap{aspect-ratio:3/2}
+.zb-pin{
+  position:absolute;transform:translate(-50%,-100%);
+  font-size:10px;background:var(--ink);color:var(--paper);padding:2px 7px;border-radius:2px;
+  white-space:nowrap;box-shadow:1px 1px 0 rgba(0,0,0,.2);
+}
+.zb-pin.me{background:var(--zhu);font-weight:700;animation:zbPulse 2.2s ease-in-out infinite}
+@keyframes zbPulse{0%,100%{opacity:1}50%{opacity:.55}}
+.zb-pin::after{content:'';position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);
+  border:4px solid transparent;border-top-color:inherit}
+/* ---------- 青州郡区点击层 ---------- */
+.zb-region{
+  position:absolute;cursor:pointer;border-radius:3px;
+  border:1.2px dashed transparent;transition:border-color .15s,background .15s;
+}
+.zb-region:hover,.zb-region.sel{border-color:rgba(166,63,43,.75);background:rgba(166,63,43,.06)}
+.zb-rlabel{
+  position:absolute;left:4px;top:4px;font-size:10px;line-height:1.4;
+  background:rgba(244,236,216,.88);color:var(--ink2);padding:0 5px;border-radius:2px;
+  border:1px solid var(--line);pointer-events:none;
+}
+.zb-region:hover .zb-rlabel,.zb-region.sel .zb-rlabel{color:var(--zhu);border-color:rgba(166,63,43,.6)}
+.zb-rdot{
+  position:absolute;right:4px;top:4px;min-width:16px;height:16px;border-radius:8px;
+  background:var(--zhu);color:var(--paper);font-size:10px;line-height:16px;text-align:center;
+  padding:0 3px;animation:zbPulse 2.2s ease-in-out infinite;
+}
+.zb-rarc{
+  position:absolute;right:4px;bottom:4px;font-size:9px;letter-spacing:1px;
+  background:var(--ink);color:var(--paper);padding:1px 6px;border-radius:2px;
+}
+/* ---------- 弟子卡 ---------- */
+.zb-dcard{margin-top:10px}
+/* ---------- 账本 ---------- */
+.zb-none{font-size:11px;color:var(--faint);padding:4px}
+/* ---------- 底栏五印（含中位揭页方印） ---------- */
+.zb-tabbar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));align-items:stretch;
+  border-top:1.5px solid var(--line);background:#efe6cf}
+.zb-tabbar button{
+  min-width:0;margin:0;background:none;border:0;padding:9px 0 11px;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;color:var(--ink2);
+}
+.zb-tabbar .seal{
+  width:26px;height:26px;border-radius:3px;background:transparent;border:1.5px solid var(--ink2);
+  display:flex;align-items:center;justify-content:center;font-size:13px;
+}
+.zb-tabbar button.on{color:var(--zhu)}
+.zb-tabbar button.on .seal{background:var(--zhu);border-color:var(--zhu);color:var(--paper);transform:rotate(-4deg)}
+.zb-tabbar .lb{font-size:16px;letter-spacing:2px}
+@media(min-width:900px){/* 宽屏：案头吃满桌面成一册宽账——居中留白案面，内部按栏分配 */
+.zb-root{background:#2a231b}
+.zb-desk{
+    max-width:min(1180px,94vw);margin:0 auto;
+    border-left:1.5px solid var(--line);border-right:1.5px solid var(--line);
+    box-shadow:0 0 48px rgba(0,0,0,.42);
+  }}
+/* ---------- 中屏：桌子摊开（山门页牌列+图并排） ---------- */
+/* 地图吃满面板宽——3:2 高随宽走，面板滚动即可，不再用 max-height 卡宽 */
+/* ==================== v2 追加 ==================== */
+/* ---------- 日报三 tab ---------- */
+.zb-subbar{display:flex;gap:6px;margin:4px 0 10px}
+.zb-subbar button{
+  flex:1;border:1.5px solid var(--line);background:#efe6cf;color:var(--ink2);
+  font-family:inherit;font-size:12px;letter-spacing:1px;padding:7px 4px;border-radius:3px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;
+}
+.zb-subbar button.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.zb-subbar button i{
+  font-style:normal;background:var(--zhu);color:var(--paper);font-size:10px;
+  min-width:15px;height:15px;line-height:15px;border-radius:8px;padding:0 3px;
+}
+/* ---------- 拟办托盘 ---------- */
+.zb-tray{
+  border-top:1.5px solid var(--zhu);background:#f0e2c8;
+  padding:6px 10px 7px;animation:zbFade .2s ease;
+}
+.zb-tray-hd{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.zb-tray-tt{font-size:12px;font-weight:700;letter-spacing:2px;color:var(--zhu)}
+.zb-tray-tt b{font-size:13px}
+.zb-tray-btns{display:flex;gap:5px}
+.zb-tray-btns button{
+  border:1px solid var(--line);background:var(--paper);color:var(--ink2);
+  font-family:inherit;font-size:11px;padding:3px 8px;border-radius:2px;cursor:pointer;
+}
+.zb-tray-btns [data-tray="send"]{background:var(--zhu);color:var(--paper);border-color:var(--zhu)}
+.zb-tray-btns [data-tray="pour"]{border-color:var(--qing);color:var(--qing)}
+.zb-tray-items{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.zb-chip{
+  display:inline-flex;align-items:center;gap:5px;font-size:11px;
+  background:#fbf6e9;border:1px solid var(--line);border-radius:2px;padding:2px 4px 2px 8px;
+}
+.zb-chip b{color:var(--zhu);cursor:pointer;padding:0 4px;font-weight:400}
+.zb-chip b:hover{font-weight:700}
+.zb-sev{border-top:1px dashed var(--line);padding-top:8px;margin-top:8px}
+.zb-sev:first-child{border-top:0;padding-top:0;margin-top:0}
+.btn-seal.sm{font-size:12px;padding:5px 12px;letter-spacing:1px}
+/* ---------- 青州区域活动 ---------- */
+.zb-rlog{font-size:11px;letter-spacing:3px;color:var(--faint);border-top:1px dashed var(--line);padding-top:6px;margin-bottom:2px}
+.zb-racts{display:flex;gap:6px;margin-top:10px}
+.zb-racts .btn-seal{margin-top:0}
+/* ---------- 背包 ---------- */
+.zb-secthead{font-size:11px;letter-spacing:3px;color:var(--faint);margin:2px 2px 8px}
+.zb-secthead .zhu{color:var(--zhu);letter-spacing:0}
+.zb-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:7px;margin-bottom:10px}
+.zb-item{
+  position:relative;border:1.5px solid var(--line);border-radius:4px;background:#fbf6e9;
+  font-family:inherit;cursor:pointer;padding:8px 6px 7px;text-align:center;color:var(--ink);
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-height:64px;justify-content:center;
+  box-shadow:1.5px 1.5px 0 rgba(43,38,32,.08);
+}
+.zb-item:active{transform:translate(1px,1px);box-shadow:none}
+.zb-item.sel{border-color:var(--zhu);background:#f6ead0}
+.zb-item .zg{
+  width:26px;height:26px;border-radius:3px;border:1.5px solid var(--ink);
+  display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+  transform:rotate(-4deg);
+}
+.zb-item .zg.zhu{border-color:var(--zhu);color:var(--zhu)}
+.zb-item .zg.qing{border-color:var(--qing);color:var(--qing)}
+.zb-item .zg.grey{border-color:var(--faint);color:var(--faint)}
+.zb-item .zg.ink{border-color:var(--ink);color:var(--ink)}
+.zb-item .zn{font-size:12px;line-height:1.3;word-break:break-all}
+/* 他账凭据：不是物，是没人认领的账——虚框凭据卡混在格尾 */
+.zb-item.zb-otherled{border-style:dashed;border-color:var(--qing);background:transparent;box-shadow:none}
+.zb-item .zsub{font-size:10.5px;line-height:1;color:var(--faint)}
+.zb-item.unread{border-color:var(--zhu)}
+.zb-item .znew{
+  position:absolute;top:-5px;right:-4px;font-style:normal;font-size:9px;
+  background:var(--zhu);color:var(--paper);border-radius:2px;padding:0 4px;transform:rotate(6deg);
+}
+.zb-done{font-size:10px;color:var(--faint);margin:-4px 0 8px}
+.zb-icard .bd{font-size:13px;line-height:1.7}
+/* ==================== 开局 · 受托登记 ==================== */
+.zb-init{ display:flex; justify-content:center; padding:26px 14px; flex:1; }
+.ini-paper{
+    width:100%; max-width:340px; background:#f7efdc;
+    border:1.5px solid #c9b98f; border-radius:4px; padding:22px 20px;
+    box-shadow:0 2px 0 #b8a87e inset, 0 8px 24px rgba(60,45,20,.18);
+    font-family:"Noto Serif SC","Songti SC",serif;
+}
+.ini-head{ text-align:center; color:#a63f2b; font-size:26px; margin-bottom:2px; }
+.ini-title{ text-align:center; font-size:22px; letter-spacing:.4em; color:#2b2620; font-weight:700; text-indent:.4em; }
+.ini-sub{ text-align:center; font-size:11px; color:#8a7a58; margin:6px 0 18px; letter-spacing:.1em; }
+.ini-row{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.ini-k{ flex:none; width:34px; font-size:13px; color:#6d5f42; letter-spacing:.15em; }
+.ini-row input{
+    flex:1; background:transparent; border:none; border-bottom:1.5px solid #b3a280;
+    font:inherit; font-size:16px; color:#2b2620; padding:4px 2px; outline:none; letter-spacing:.05em;
+}
+.ini-row input:focus{ border-bottom-color:#a63f2b; }
+.ini-sex{ display:flex; gap:12px; flex:1; }
+.ini-face{
+    flex:1; background:#efe4c8; border:1.5px solid #c9b98f; border-radius:4px;
+    padding:8px 6px 6px; cursor:pointer; display:flex; flex-direction:column; align-items:center; gap:5px;
+    font-family:inherit;
+}
+.ini-face .zb-face{ width:56px; height:56px; border-radius:50%; object-fit:cover; object-position:top; }
+.ini-face .zb-sealph{ width:56px; height:56px; border-radius:50%; }
+.ini-face i{ font-style:normal; font-size:12px; color:#6d5f42; }
+.ini-face.on{ border-color:#a63f2b; background:#f2e3c4; box-shadow:0 0 0 1px #a63f2b inset; }
+.ini-face.on i{ color:#a63f2b; font-weight:700; }
+.ini-note{ font-size:11px; color:#9a8a64; margin:2px 0 16px; text-align:center; }
+.ini-seal{
+    display:block; width:100%; padding:11px 0; background:#a63f2b; color:#f4ecd8;
+    border:none; border-radius:4px; font-family:inherit; font-size:16px; letter-spacing:.3em; text-indent:.3em;
+    cursor:pointer; box-shadow:0 2px 0 #7d2d1e;
+}
+.ini-seal:active{ transform:translateY(1px); box-shadow:none; }
+.ini-seal .zb-ico{ width:16px; height:16px; margin-right:8px; vertical-align:-2px; }
+/* ==================== 开卷页 · 剧本速览 ==================== */
+.ini-book{ max-width:360px; }
+.ini-script{
+    border-left:3px solid #a63f2b; padding:4px 0 4px 14px; margin:14px 0 14px;
+    font-size:13.5px; line-height:1.75; color:#3a3226;
+}
+.ini-script p{ margin:0 0 9px; }
+.ini-script strong{ color:#a63f2b; font-weight:700; }
+.sc-twist{ font-weight:700; color:#2b2620; }
+.ini-foot{ text-align:right; font-size:11px; color:#9a8a64; margin:14px 0 16px; }
+/* ==================== 交割凭票 · 公文装帧 ==================== */
+.ini-doc{
+    position:relative; max-width:380px; padding:26px 24px 22px;
+    border:2px solid #8a2f1f;
+    background:
+      repeating-linear-gradient(0deg,transparent,transparent 4px,rgba(120,100,60,.018) 4px,rgba(120,100,60,.018) 5px),
+      #f7efdc;
+}
+.ini-doc::before{
+    content:''; position:absolute; inset:6px;
+    border:1px solid #cbb98f; pointer-events:none;
+}
+.ini-dochd{
+    display:flex; justify-content:space-between; align-items:baseline; gap:8px;
+    border-bottom:2px solid #8a2f1f; padding-bottom:9px; margin-bottom:12px;
+    font-size:10px; color:#8a7a58; letter-spacing:.08em;
+}
+.ini-org{ color:#a63f2b; font-weight:700; font-size:11px; }
+.ini-no{ font-size:9px; letter-spacing:.05em; opacity:.85; }
+.ini-doc .ini-title{ font-size:19px; letter-spacing:.18em; text-indent:.18em; margin-bottom:2px; }
+.ini-stamp{
+    position:relative; z-index:2; margin:2px auto 10px;
+    width:60px; height:60px; border:2.5px solid #b03a28; border-radius:50%;
+    color:#b03a28; display:flex; align-items:center; justify-content:center;
+    font-size:13px; font-weight:700; line-height:1.25; letter-spacing:.1em;
+    transform:rotate(-14deg); opacity:.72; text-align:center;
+    mask-image:radial-gradient(circle,#000 62%,rgba(0,0,0,.55) 100%);
+}
+.ini-stamp::after{
+    content:''; position:absolute; right:-2px; bottom:-3px;
+    width:15px; height:15px; border-radius:50%;
+    box-shadow:-4px -4px 0 1px rgba(74,32,16,.5);
+    transform:rotate(30deg);
+}
+.ini-foot del{ color:#a63f2b; text-decoration-color:#a63f2b; }
+/* ==================== 登记表选项组 ==================== */
+.ini-opts{ display:flex; flex-wrap:wrap; gap:7px; flex:1; }
+.ini-opts button{
+    flex:1 1 40%; background:#efe4c8; border:1.5px solid #c9b98f; border-radius:4px;
+    padding:6px 4px 5px; cursor:pointer; font-family:inherit; font-size:13px; color:#2b2620;
+    display:flex; flex-direction:column; align-items:center; gap:2px; line-height:1.3;
+    transition:border-color .15s, background .15s, transform .1s;
+}
+.ini-opts button:active{ transform:scale(.97); }
+.ini-opts button i{ font-style:normal; font-size:10px; color:#8a7a58; }
+.ini-opts button.on{ border-color:#a63f2b; background:#f2e3c4; box-shadow:0 0 0 1px #a63f2b inset; }
+.ini-opts button.on i{ color:#a63f2b; }
+.ini-opts .ini-cus{
+    display:none; flex:1 1 100%; background:transparent; border:none;
+    border-bottom:1.5px solid #b3a280; font:inherit; font-size:13px;
+    color:#2b2620; padding:5px 2px 3px; outline:none; letter-spacing:.05em;
+}
+.ini-opts .ini-cus:focus{ border-bottom-color:#a63f2b; }
+/* ==================== 弟子册 ==================== */
+.zb-rhead{ font-size:11px; color:#8a7a58; padding:4px 6px 8px; }
+.zb-rrow{
+    display:flex; align-items:center; gap:10px; padding:7px 8px; margin-bottom:6px;
+    background:#f0e6cd; border:1px solid #d8c9a3; border-radius:4px; cursor:pointer;
+    transition:border-color .15s;
+}
+.zb-rrow:hover{ border-color:#a63f2b88; }
+.zb-rrow.sel{ border-color:#a63f2b; background:#f4ead0; }
+.rstar{ flex:none; width:24px; height:24px; border:none; background:none; color:#c0b28c;
+    font-size:16px; cursor:pointer; padding:0; }
+.rstar.on{ color:#a63f2b; }
+.rface{ width:38px; height:38px; border-radius:50%; object-fit:cover; object-position:top; flex:none; }
+.zb-sealph.rface{ width:38px; height:38px; border-radius:50%; font-size:15px; }
+.rinfo{ flex:1; min-width:0; display:flex; flex-direction:column; gap:1px; }
+.rinfo b{ font-size:14px; color:#2b2620; }
+.rinfo span{ font-size:11px; color:#8a7a58; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* ==================== 轻量动效（仅 transform/opacity，无滤镜无 layout 抖动） ==================== */
+@keyframes iniRise{ from { transform:translateY(14px); opacity:0 } to { transform:none; opacity:1 } }
+.zb-init .ini-paper{ animation:iniRise .45s ease-out both; position:relative; }
+@keyframes sealSlam{
+    0% { transform:scale(3.2) rotate(-16deg); opacity:0 }
+    55% { transform:scale(.92) rotate(-7deg); opacity:1 }
+    75% { transform:scale(1.06) rotate(-8deg) }
+    100% { transform:scale(1) rotate(-8deg); opacity:1 }
+}
+@keyframes paperShake{
+    0%,100% { transform:none } 40% { transform:translateY(3px) rotate(.4deg) } 70% { transform:translateY(-1px) }
+}
+.ini-stampfx{
+    position:absolute; right:22px; bottom:64px; z-index:3; pointer-events:none;
+    width:72px; height:72px; border:3px double #a63f2b; border-radius:6px;
+    color:#a63f2b; font-size:26px; font-weight:700; font-family:"Noto Serif SC",serif;
+    display:flex; align-items:center; justify-content:center; letter-spacing:.1em;
+    transform:rotate(-8deg); animation:sealSlam .5s cubic-bezier(.2,.9,.3,1.2) both;
+    background:rgba(244,236,216,.55);
+}
+.ini-paper.stamped{ animation:iniRise .45s ease-out both, paperShake .35s .12s ease-in-out; }
+@media (prefers-reduced-motion: reduce){.zb-init .ini-paper, .ini-paper.stamped, .ini-stampfx{ animation:none !important; }}
+/* ---------- 「要做什么」输入行：玩家自己的话入拟办 ---------- */
+/* ---------- 山门建筑热区：透明区点击，有事的挂「!」 ---------- */
+.zb-bz{position:absolute;width:16%;height:11%;cursor:pointer;border-radius:4px;
+  border:1.5px dashed transparent;transition:border-color .15s,background .15s}
+.zb-bz:hover,.zb-bz.sel{border-color:rgba(166,63,43,.7);background:rgba(166,63,43,.05)}
+/* ---------- 字号抬升：正文放大可读，辅注仍小——信息靠版式分主次 ---------- */
+.zb-tt{font-size:19px}
+.zb-day{font-size:14px}
+.zb-day b{font-size:17px}
+.zb-statbar .k{font-size:16px}
+.zb-statbar .v{font-size:24px}
+.zb-card .hd{font-size:12px}
+.zb-card .bd{font-size:14.5px}
+.zb-news .art{font-size:14px}
+.zb-news .art .dt{font-size:11px}
+.zb-news .art .src{font-size:10px}
+.zb-news.zm .art{font-size:14.5px}
+.zb-doss .art{font-size:14px}
+.zb-doss .mast .t{font-size:16px}
+.zb-doss .hint{font-size:11px}
+.zb-rrow{font-size:13.5px}
+.zb-rlabel{font-size:11px}
+.zb-rlog{font-size:12px}
+.zb-empty-mini{font-size:13px}
+.btn-seal{font-size:14px;padding:8px 20px}
+.btn-seal.sm{font-size:13px;padding:6px 14px}
+.zb-subbar button{font-size:13.5px}
+/* ---------- 青州日报 v3：报眼/头条跨栏/两栏流/栏目牌/行情表/招贴栏 ---------- */
+.zb-news .mast{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:3px double var(--ink);padding-bottom:6px}
+.zb-news .ear{font-size:10px;color:var(--ink2);line-height:1.7;text-align:center;border:1px solid var(--line);padding:4px 8px;flex:0 0 auto}
+.zb-news.qz .lead{padding:10px 0 9px;border-bottom:1.5px solid var(--line)}
+.zb-news.qz .lead .dt{float:right}
+.zb-news.qz .lead .hl{font-size:21px;font-weight:800;letter-spacing:1px;line-height:1.4;margin:4px 0 6px}
+.zb-news.qz .lead p{font-size:14.5px;line-height:1.8;text-align:justify;margin:0}
+.zb-news.qz .lead p::first-letter{float:left;font-size:2.4em;line-height:.9;font-weight:800;padding:2px 6px 0 0}
+.coltag{display:inline-block;border:1.2px solid var(--ink);font-size:10px;padding:0 5px;letter-spacing:2px;vertical-align:2px;margin-right:5px;font-weight:700}
+.coltag.sm{font-size:9.5px;letter-spacing:1px;margin-right:4px}
+.zb-news.qz .sect{margin:11px 0 7px;text-align:center;font-size:12px;letter-spacing:8px;font-weight:700;border-top:1px solid var(--ink);border-bottom:1px solid var(--ink);padding:2px 0;background:#efe6cd}
+.zb-news.qz .cols{column-count:2;column-gap:18px;column-rule:1px solid var(--line)}
+.zb-news.qz .cols .art{break-inside:avoid;font-size:13px;line-height:1.75;text-align:justify;padding:5px 0;border-bottom:1px dotted var(--line)}
+.zb-news.qz .cols .art b{font-size:14px;margin-right:3px}
+.zb-news.qz .cols .art .dt{font-size:10px;color:var(--ink2);text-align:right}
+.zb-news.qz .quote{border:1.5px solid var(--ink)}
+.zb-news.qz .quote .qr{display:flex;gap:10px;padding:5px 10px;border-bottom:1px dashed var(--line);font-size:12.5px;line-height:1.6}
+.zb-news.qz .quote .qr:last-child{border-bottom:0}
+.zb-news.qz .quote .qn{flex:0 0 auto;font-weight:700}
+.zb-news.qz .ads{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.zb-news.qz .ads .ad{border:1.5px solid var(--ink);padding:9px 8px;font-size:11.5px;line-height:1.65;text-align:justify;background:#f4ecd6}
+@media(max-width:560px){.zb-news.qz .cols{column-count:1}
+.zb-news.qz .ads{grid-template-columns:repeat(2,1fr)}}
+/* 超宽屏：案头过 1100px 后报纸三栏、周志两栏——宽度真被吃掉 */
+@media(min-width:1400px){.zb-news.qz .cols{column-count:3}
+.zb-news.zm{columns:2;column-gap:18px;column-rule:1px solid var(--line)}
+.zb-news.zm .art{break-inside:avoid}}
+/* ---------- 竖排版 v4：民国报纸 writing-mode vertical-rl，从右往左翻 ---------- */
+/* 宗门周志：邸报楷体抄手感，列间虚线 */
+/* 底部电报框：行情行表+招贴格（横排小字，老报纸电讯栏） */
+/* ---------- 回响章：玩家行为登报溯源 ---------- */
+.echostamp{display:inline-block;vertical-align:2px;margin-right:5px;padding:0 5px;
+  font-size:9.5px;letter-spacing:1px;color:var(--zhu);border:1.2px solid var(--zhu);
+  border-radius:2px;transform:rotate(-2deg);cursor:help}
+/* ---------- 揭页总览浮层：发出前过目全部拟办 ---------- */
+.zb-review{position:absolute;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+  background:rgba(30,25,15,.55);backdrop-filter:blur(2px)}
+.rv-paper{width:88%;max-width:400px;max-height:82%;overflow:auto;background:var(--paper,#f5eeda);
+  border:1.5px solid var(--ink2,#4a4033);border-radius:4px;padding:14px 16px;
+  box-shadow:3px 4px 0 rgba(0,0,0,.35)}
+.rv-hd{font-weight:700;font-size:15px;letter-spacing:3px;border-bottom:2px double var(--ink2,#4a4033);
+  padding-bottom:7px;margin-bottom:9px;text-align:center}
+.rv-item{display:flex;gap:8px;align-items:baseline;font-size:13px;line-height:1.6;padding:5px 0;
+  border-bottom:1px dashed rgba(0,0,0,.15)}
+.rv-item i{font-style:normal;color:var(--zhu);font-weight:700;flex:none}
+.rv-item span{flex:1}
+.rv-item b{color:var(--zhu);cursor:pointer;font-weight:400;font-size:11px;flex:none}
+.rv-none{text-align:center;color:#8a7f6a;font-size:13px;padding:14px 0}
+.rv-tail{margin:10px 0 4px;font-size:12px;color:#7a6f5a;font-style:italic;text-align:center}
+.rv-btns{display:flex;gap:10px;margin-top:10px}
+.rv-go{flex:1;padding:8px 0;background:var(--zhu);color:#f8f2e2;border:none;border-radius:3px;
+  font-size:14px;letter-spacing:2px;cursor:pointer;font-weight:700}
+.rv-back{padding:8px 14px;background:none;border:1px solid var(--ink2,#4a4033);border-radius:3px;
+  font-size:13px;cursor:pointer;color:inherit}
+/* 通用弹窗（明细条）：「先放着」收成整张底栏，弹窗内件复用页内样式 */
+.rv-paper>.rv-back{display:block;width:100%;margin-top:12px}
+.rv-paper .zb-sev{margin-top:0}
+.rv-paper .zb-rev{font-size:13px;line-height:1.7;padding:4px 0;border-bottom:1px dashed var(--line)}
+.rv-paper .zb-rev .when{color:var(--faint);font-size:10px}
+.rv-paper .zb-racts{margin-top:10px}
+.rv-paper .aptline{padding:4px 0}
+.sh-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:7px}
+.sh-who{font-size:12.5px;color:var(--ink2);margin-bottom:7px;line-height:1.6}
+.sh-meta{display:flex;align-items:center;gap:10px;font-size:11px;color:var(--faint);margin-bottom:8px}
+.sh-mi{font-size:11px}
+.sh-desc{font-size:13.5px;line-height:1.75;margin-bottom:8px}
+/* ---------- 弟子册动态徽记 ---------- */
+.zb-rrow{position:relative}
+.rleft{display:block;font-size:10.5px;color:#8a6d5f;margin-top:2px}
+/* ---------- 设施状态徽记（山门图热区） ---------- */
+@keyframes zb-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.18)}}
+.zb-bz.st-废{filter:grayscale(.5)}
+/* ---------- 献物修缮（废置建筑卡） ---------- */
+.fixline{margin:8px 0 5px;font-size:11.5px;color:#7a6a4a;letter-spacing:.5px}
+.fixchips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:4px}
+.fixchip{padding:3px 9px;font-size:12px;background:#efe6cf;border:1px solid #a89468;
+  border-radius:12px;cursor:pointer;color:#4a3f2d}
+.fixchip:hover{background:var(--zhu);color:#f8f2e2;border-color:var(--zhu)}
+.fixchip:disabled{background:#d8cdb0;color:#9a8d72;cursor:default;text-decoration:line-through}
+.fixnone{font-size:11.5px;color:#8a7f6a}
+.zb-sev .ev{margin-top:6px;padding-top:6px;border-top:1px dashed rgba(0,0,0,.15);color:#6b4f3a}
+/* ---- 「眼下」条：常驻批条位（案头有件全桌可见），无事隐去 ---- */
+.zb-hints{display:block;padding:0}
+.zb-hints:empty{display:none}
+.zb-hints .zb-pend{
+  margin:0;width:100%;border:0;border-radius:0;padding:10px 14px;
+  border-left:5px solid var(--zhu);border-bottom:1.5px solid var(--line);
+}
+.zb-hint-line{
+  display:block;padding:6px 14px;font-size:11.5px;line-height:1.7;letter-spacing:.5px;
+  color:var(--ink2);background:#efe6cf;border-bottom:1.5px solid var(--line);
+}
+.zb-hint-pre{color:var(--qing);font-weight:700;letter-spacing:2px;margin-right:8px;font-size:10.5px}
+/* ---- 仙盟宗门榜 ---- */
+.zb-rank{padding:0 0 6px}
+.zb-rk{display:flex;align-items:center;gap:8px;padding:5px 10px;border-top:1px dashed rgba(120,90,40,.25)}
+.zb-rk .pos{flex:none;width:20px;height:20px;line-height:20px;text-align:center;font-style:normal;font-weight:700;font-size:11px;border-radius:50%;background:#8a7a5a;color:#f3e9d2}
+.zb-rk .pos.p1{background:#a8852a;color:#fff}
+.zb-rk .pos.p2{background:#9a9285;color:#fff}
+.zb-rk .pos.p3{background:#8a5f3c;color:#fff}
+.zb-rk .rkbd{flex:1;min-width:0}
+.zb-rk .rkbd b{font-size:12.5px;font-weight:600;color:var(--ink)}
+.zb-rk .rkbd .bar{height:4px;margin:3px 0 2px;background:rgba(120,90,40,.18);border-radius:2px;overflow:hidden}
+.zb-rk .rkbd .bar i{display:block;height:100%;background:linear-gradient(90deg,#b3924e,#8a5f3c);border-radius:2px}
+.zb-rk .rkbd em{display:block;font-style:normal;font-size:11.5px;color:var(--ink2);opacity:.85}
+.zb-rk .chg{flex:none;font-size:11px;font-weight:700;color:var(--ink2)}
+.zb-rk .chg.up{color:#9a2f24}
+.zb-rk .chg.dn{color:#3e6b4f}
+.zb-rk.me{background:rgba(154,47,36,.07);border-left:3px solid var(--zhu)}
+.zb-rk.me .rkbd .bar i{background:linear-gradient(90deg,#c05a4a,#9a2f24)}
+/* ---- 三榜分设 tab ---- */
+.zb-btabs{display:flex;gap:4px;padding:4px 10px 6px}
+.zb-btabs .bt{flex:1;padding:3px 0;font-size:11px;text-align:center;background:transparent;border:1px solid rgba(120,90,40,.3);border-radius:2px;color:var(--ink2);cursor:pointer}
+.zb-btabs .bt.on{background:rgba(154,47,36,.12);border-color:var(--zhu);color:var(--zhu);font-weight:700}
+/* ---- 资质行/效用注 ---- */
+.aptline{padding:4px 10px;font-size:11.5px;color:var(--ink2)}
+.aptline.greyed{color:#9a8d72;font-style:italic}
+.apt{font-weight:800;padding:0 3px;border-radius:2px}
+.apt.a天{color:#fff;background:#a8852a}
+.apt.a优{color:#fff;background:#9a2f24}
+.apt.a良{color:#fff;background:#3e6b4f}
+.apt.a凡{color:#f3e9d2;background:#8a7a5a}
+.fxnote{font-size:11px;color:#6b4f3a}
+.zb-root,.zb-root *,.zb-review,.zb-review *{box-sizing:border-box}
+#card-app-container.zb-ovl.open>#zb-launch,#zb-wrap.open~#zb-launch{display:none}
+/* ---------- JSR 宿主悬浮壳：#zb-wrap/#zb-overlay 由 shim 挂 body；无定位则沉到文档流底看不见 ---------- */
+#zb-wrap{position:fixed;inset:0;z-index:30001;pointer-events:none}
+#zb-overlay{position:fixed;inset:4% 4% 6% 4%;display:none;flex-direction:column;pointer-events:auto;
+ background:#efe7d0;border:1.5px solid var(--ink,#302c25);border-radius:8px;
+ box-shadow:0 12px 48px rgba(0,0,0,.5);overflow:hidden}
+#zb-wrap.open #zb-overlay{display:flex}
+#zb-drag{flex:none;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));text-align:center;
+ letter-spacing:6px;font-size:13px;color:#e8dcc0;background:#2b2620;
+ cursor:grab;touch-action:none;user-select:none}
+#zb-drag:active{cursor:grabbing}
+#zb-desk{flex:1;min-height:0;overflow:auto}
+#zb-close{position:absolute;top:8px;top:calc(8px + env(safe-area-inset-top,0px));right:12px;z-index:5;
+ color:#e8dcc0;background:#2b2620;border:1px solid #5a4a35;border-radius:6px;padding:8px 16px;
+ cursor:pointer;font:13px serif;user-select:none;-webkit-tap-highlight-color:transparent}
+@media(max-width:699px){
+ #zb-overlay{inset:0;border-radius:0;border-left:0;border-right:0}
+ #zb-drag{display:none}
+ /* 收起挪右下浮丸——顶栏「揭页」和酒馆三条杠都在上面那条车道，下面干净 */
+ #zb-close{top:auto;right:16px;bottom:84px;bottom:calc(84px + env(safe-area-inset-bottom,0px))}
+}
+/* ---------- 「总簿」浮钮：透明底线装书（皮是 ZB_BOOK_SVG，dressLaunch 换上） ---------- */
+#zb-launch{position:fixed;left:50%;transform:translateX(-50%);
+ bottom:72px;bottom:calc(72px + env(safe-area-inset-bottom,0px));z-index:30001;
+ width:78px;height:78px;padding:0;background:transparent;border:0;border-radius:0;
+ box-shadow:none;color:var(--ink,#302c25);opacity:.95;cursor:grab;user-select:none;
+ touch-action:none;-webkit-tap-highlight-color:transparent}
+#zb-launch svg,#zb-launch img{width:76px;height:76px;display:block;object-fit:contain;transition:transform .15s ease;
+ filter:drop-shadow(0 2px 6px rgba(0,0,0,.45))}
+#zb-launch:hover{opacity:1}
+#zb-launch:hover svg,#zb-launch:hover img{transform:scale(1.05)}
+@media(min-width:700px){#zb-launch{left:auto;right:max(18px,4vw);transform:none;bottom:96px;bottom:calc(96px + env(safe-area-inset-bottom,0px))}}
+.zb-root{container:zb-layout / inline-size;position:relative;background:#28241e;font-size:16px;line-height:1.65}
+.zb-root .zb-desk{width:100%;max-width:min(1180px,94vw);margin:0 auto;border:1px solid #b8a788;border-top:0;box-shadow:none}
+
+.zb-root button,.zb-review button{font-family:inherit;cursor:pointer}
+.zb-root button:focus-visible,.zb-root input:focus-visible,.zb-review button:focus-visible,.zb-review input:focus-visible{outline:2px solid var(--qing);outline-offset:3px}
+.zb-root button:disabled,.zb-review button:disabled{opacity:.6;cursor:default}
+.zb-root .zb-topbar{padding:20px 30px 18px;gap:16px;border-bottom:2px solid var(--ink)}
+.zb-root .zb-tt{font-size:26px;letter-spacing:2px;gap:14px;line-height:1.3;min-width:0}
+.zb-titleblock{display:flex;flex-direction:column;gap:5px;min-width:0;overflow-wrap:anywhere}
+.zb-titleblock small{font-size:11px;letter-spacing:4px;font-weight:400;color:var(--ink2)}
+.zb-root .zb-face.me,.zb-root .zb-sealph.me{width:46px;height:56px;border-radius:0;object-position:top}
+.zb-root .zb-daybtn{min-height:48px;padding:8px 14px;flex:none;transform:none;box-shadow:none;border-radius:0}
+.zb-root .zb-day{font-size:13px}
+.zb-root .zb-day b{font-size:23px;font-variant-numeric:tabular-nums}
+.zb-root .zb-flip{font-size:12px}
+.zb-root .zb-statbar{padding:0 30px;border-bottom:1px solid var(--line);flex:none}
+.zb-root .zb-statbar>div{padding:10px 16px;display:flex;align-items:baseline;justify-content:center;gap:12px;border-right:1px solid var(--line)}
+.zb-root .zb-statbar>div:first-child{padding-left:0}
+.zb-root .zb-statbar .k{font-size:16px;letter-spacing:2px}
+.zb-root .zb-statbar .v{font-size:24px;font-weight:500;font-variant-numeric:tabular-nums;color:var(--ink)}
+.zb-root .zb-hints .zb-pend{padding:13px 30px;border-left-width:4px;background:#eae1cb;gap:14px;min-height:70px}
+.zb-pend .pz{min-width:0;display:flex;flex-direction:column;gap:3px}
+.zb-pend .pz small{font-size:14px;color:var(--ink2);font-weight:400;letter-spacing:.5px}
+.zb-pend .pz strong{font-size:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zb-root .zb-pend.is-urgent{background:#efe0d1;border-left-color:var(--zhu)}
+.zb-pend.is-urgent .pz small{color:var(--zhu)}
+.zb-root .zb-hint-line{padding:12px 30px;font-size:14px}
+.zb-root .zb-page{padding:20px 30px 28px;scrollbar-width:thin;scrollbar-color:#b9a88b transparent;overscroll-behavior:contain;scroll-padding:16px;container:zb-page / inline-size}
+.zb-pagehead{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-bottom:10px;margin-bottom:14px;border-bottom:1px solid var(--line);font-size:16px;color:var(--ink2);letter-spacing:1px}
+.zb-root .zb-card{padding:16px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:transparent;box-shadow:none;margin-bottom:16px}
+.zb-root .zb-card .hd{font-size:12px;letter-spacing:2px;color:var(--ink2);margin-bottom:8px}
+.zb-root .zb-card .bd{font-size:16px;line-height:1.85}
+.zb-root .zb-card.knock{display:grid;grid-template-columns:1fr auto;gap:0 20px;padding:14px 18px;background:#faf6eb;border:1px solid #b59177;border-left:4px solid var(--zhu);margin-bottom:18px}
+.zb-root .knock>.hd,.zb-root .knock>.bd{grid-column:1}
+.zb-root .knock .knock-acts{grid-column:2;grid-row:1/3;align-items:center;margin:0}
+.zb-root .knock .zb-kline .zb-face,.zb-root .knock .zb-kline .zb-sealph{display:none}
+.zb-root .knock .hd{color:var(--zhu);font-weight:700}
+.zb-root .zb-kline{gap:14px}
+.zb-root .zb-kline strong{font-size:20px;font-weight:600}
+.zb-root .zb-kline .zb-face,.zb-root .zb-kline .zb-sealph{width:48px;height:56px;border-radius:0}
+.zb-root .knock-acts{gap:12px;flex-wrap:wrap;margin-top:14px}
+.zb-root .knock-acts>.btn-seal{min-width:132px}
+.zb-root .zb-subbar{gap:0;border-bottom:1px solid var(--ink);margin:0 0 20px}
+.zb-root .zb-subbar button{min-height:48px;border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;color:var(--ink2);font-size:15px;gap:8px;letter-spacing:1px;padding:10px}
+.zb-root .zb-subbar button.on{border-bottom-color:var(--zhu);background:transparent;color:var(--zhu);font-weight:700}
+.zb-root .zb-subbar button i{font-size:10px;border-radius:0;background:transparent;color:inherit;border:1px solid var(--line);line-height:18px;height:20px;min-width:20px}
+.zb-root .zb-news{padding:22px 24px;background:#faf7ed;border:1px solid #b9aa8d;border-radius:0;box-shadow:none}
+.zb-root .zb-news .mast{padding:0 0 17px;margin-bottom:0;gap:12px;column-span:all}
+.zb-root .zb-news .mast .t{font-size:clamp(28px,4.5cqi,46px);font-weight:800;letter-spacing:.18em;color:var(--ink);white-space:normal;text-align:center;line-height:1.35}
+.zb-root .zb-news .ear{border:0;padding:0;font-size:11px;line-height:1.8;color:var(--ink2);letter-spacing:1px;max-width:26%}
+.zb-root .zb-news.qz .lead{padding:20px 0 22px}
+.zb-root .zb-news.qz .lead .hl{font-size:30px;line-height:1.45;letter-spacing:1px;margin:10px 0}
+.zb-root .zb-news.qz .lead p{font-size:17px;line-height:1.95;max-width:64ch;text-align:justify}
+.zb-root .zb-news.qz .lead p::first-letter{float:none;font-size:inherit;line-height:inherit;padding:0;font-weight:inherit}
+.zb-root .zb-news .dt{font-size:11px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.zb-root .coltag{font-size:11px;letter-spacing:1px;padding:1px 6px;border-color:var(--ink2)}
+.zb-root .echostamp{font-size:11px;transform:none}
+.zb-root .zb-news.qz .sect{background:none;text-align:left;letter-spacing:4px;border-top:0;border-bottom:1px solid var(--ink);padding:4px 0 8px;margin:18px 0 12px;font-size:13px}
+.zb-root .zb-news.qz .cols{column-count:2;column-gap:30px;column-rule:1px solid var(--line)}
+.zb-root .zb-news.qz .cols .art{font-size:15px;line-height:1.95;padding:0 0 14px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.zb-root .zb-news.qz .cols .art b{display:block;font-size:19px;line-height:1.6;margin:7px 0;color:var(--ink)}
+.zb-root .zb-news.qz .cols .art .dt{font-size:11px;margin-top:7px;text-align:left}
+.zb-root .zb-news.qz .quote{border:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.zb-root .zb-news.qz .quote .qr{padding:12px 0;gap:18px;font-size:15px;line-height:1.9;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.zb-root .zb-news.qz .quote .qn{min-width:9em}
+.zb-root .zb-news.qz .ads{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px}
+.zb-root .zb-news.qz .ads .ad{font-size:14px;line-height:1.9;padding:14px;background:transparent;border:1px solid var(--line)}
+.zb-news-foot{border-top:1px solid var(--line);padding-top:12px;margin-top:22px;font-size:11px;line-height:1.8;letter-spacing:1px;color:var(--ink2)}
+.zb-root .zb-news.zm{columns:1}
+.zb-root .zb-news.zm .art{font-size:16px;line-height:1.95;padding:18px 0;border-bottom:1px solid var(--line)}
+.zb-root .zb-doss{border-radius:0;padding:22px;background:#34372f;color:#efe9d8;border:1px solid #34372f}
+.zb-root .zb-doss .art{font-size:16px;line-height:1.9;padding:18px 0}
+.zb-root .zb-doss .hint{font-size:12px;line-height:1.8;color:#d1c9b3}
+.zb-root .zb-bigbtn{min-height:52px;font-size:16px;letter-spacing:3px;border-radius:0;box-shadow:none;transform:none;margin:0}
+.zb-root .zb-bigbtn:active{transform:translateY(1px)}
+.zb-root .zb-tabbar{padding:0 22px;background:var(--paper);flex:none;border-top:2px solid var(--ink)}
+.zb-root .zb-tabbar button{min-height:78px;padding:10px 4px;flex-direction:row;gap:10px}
+.zb-root .zb-tabbar .seal{width:28px;height:30px;border-radius:0;font-size:15px}
+.zb-root .zb-tabbar .lb{font-size:16px}
+.zb-root .zb-tray{padding:12px 22px;background:#e8ddc3;flex:none;max-height:30%;overflow:auto;border-top:2px solid var(--zhu)}
+.zb-root .zb-tray[hidden]{display:none}
+.zb-root .zb-tray-hd{flex-wrap:wrap}
+.zb-root .zb-tray-btns button{min-height:44px;padding:6px 12px;font-size:13px;border-radius:0}
+.zb-root .zb-chip{font-size:12px;display:inline-flex;align-items:center;max-width:100%;overflow-wrap:anywhere}
+.zb-root .zb-chip b{display:inline-flex;justify-content:center;align-items:center;min-width:44px;min-height:44px}
+.zb-review{position:absolute;inset:0;z-index:60;padding:24px;background:rgba(29,26,20,.62);backdrop-filter:none;font-family:'LXGW WenKai','KaiTi','STKaiti','楷体',serif;color:var(--ink)}
+.zb-review .rv-paper{position:relative;width:min(680px,100%);max-width:680px;max-height:100%;padding:26px 30px;background:var(--paper);border:1px solid #9d8967;border-top:4px solid var(--zhu);border-radius:0;box-shadow:0 12px 48px #0003;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;container:zb-sheet / inline-size}
+.zb-review .rv-hd{font-size:23px;line-height:1.5;text-align:left;letter-spacing:2px;padding-bottom:16px;margin:0 0 10px;border-bottom:1px solid var(--ink)}
+.zb-sheet .rv-paper{display:flex;flex-direction:column;overflow:hidden}
+.zb-sheet .rv-hd{flex:none}
+.sh-content{font-size:16px;line-height:1.85;overflow-wrap:anywhere;overflow-y:auto;min-height:0;scrollbar-width:thin;overscroll-behavior:contain;padding-right:4px}
+.sh-footer{display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-top:22px;padding-top:14px;border-top:1px solid var(--line)}
+.zb-sheet .sh-footer{flex:none}
+.zb-review .rv-back{min-height:44px;min-width:104px;padding:8px 14px;border-radius:0;background:transparent;color:var(--ink2);border:1px solid var(--line);font-size:14px}
+.zb-review .rv-btns{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:12px;margin-top:18px}
+.zb-review .rv-go{min-height:48px;padding:10px 14px;border-radius:0;border:1px solid var(--zhu);background:var(--zhu);color:var(--paper);font-size:15px}
+.zb-review .rv-stay{min-height:48px;padding:10px 14px;border-radius:0;border:1px solid var(--ink2);background:transparent;color:var(--ink2);font-size:15px}
+.zb-review .rv-item{font-size:15px;line-height:1.85;padding:14px 0}
+.zb-review .rv-item b{display:flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;font-size:13px}
+.zb-review .rv-tail{font-size:13px;line-height:1.8;margin-top:20px}
+.zb-entry{padding:18px 0;border-bottom:1px solid var(--line)}
+.zb-entry-meta{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:16px;color:var(--ink2);line-height:1.6}
+.zb-entry.is-urgent .zb-entry-meta{color:var(--zhu)}
+.zb-entry h3{font-size:19px;line-height:1.7;font-weight:600;margin:8px 0}
+.zb-entry p{font-size:16px;line-height:1.9;color:var(--ink2);margin:6px 0 14px}
+.zb-choices,.zb-root .ini-opts,.zb-review .fixchips{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:12px;min-width:0;margin-top:12px}
+.zb-root .btn-seal,.zb-review .btn-seal,.zb-review .fixchip{min-height:44px;padding:10px 16px;margin:0;border:1px solid var(--zhu);border-radius:0;background:transparent;color:var(--zhu);font-size:15px;line-height:1.65;box-shadow:none;transform:none;white-space:normal;overflow-wrap:anywhere}
+.zb-choices>.btn-seal{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;width:100%}
+.zb-choices>.btn-seal strong{font-size:16px;font-weight:600}
+.zb-choices>.btn-seal span{font-size:12px;color:var(--ink2);line-height:1.8;margin-top:6px}
+.zb-root .btn-seal:hover,.zb-review .btn-seal:hover,.zb-review .fixchip:hover{background:#e8ddc7}
+.sh-label{display:block;color:var(--zhu);font-size:12px;letter-spacing:2px;margin-bottom:6px}
+.sh-intent{border-left:3px solid var(--qing);padding:12px 16px;background:#e9e5d6;font-size:15px;line-height:1.9;margin:16px 0}
+.zb-review .fixroutes{display:block;border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:16px 0}
+.fixroutes>div{display:grid;grid-template-columns:5.5em 1fr;gap:14px;padding:12px 0;font-size:14px;line-height:1.85}
+.fixroutes>div+div{border-top:1px dashed var(--line)}
+.fixroutes b{color:var(--zhu);font-size:14px}
+.zb-review .fixline{font-size:13px;line-height:1.8;margin-top:20px}
+.zb-review .fixnone{font-size:13px;grid-column:1/-1}
+.zb-review .sh-who,.zb-review .sh-desc,.zb-review .zb-rev{font-size:15px;line-height:1.9}
+.zb-review .sh-meta{flex-wrap:wrap}
+/* 条子里的挂账区——「这笔账还牵着」/他账凭据：正文号账行，处置钮右钉 */
+.zb-itemled{margin:16px 0 4px;padding-top:10px;border-top:1px dashed var(--line)}
+.zb-review .zb-lrow{align-items:center;gap:14px;padding:13px 0;font-size:16px;border-bottom:1px solid var(--line)}
+.zb-review .zb-lrow .lk{font-size:13px;padding:2px 7px}
+.zb-review .zb-lrow .lwho{font-size:16px}
+.zb-review .zb-lrow .lwhat{font-size:15px;line-height:1.75}
+.zb-review .zb-lrow .lday{font-size:13px}
+.zb-review .zb-lrow .btn-seal{flex:none;margin:0}
+.zb-root .zb-mapbox{border:1px solid #aa9778;border-radius:0;margin-bottom:12px;box-shadow:none}
+.zb-root .zb-mapbox img{display:block;width:100%}
+.zb-root .zb-bz,.zb-root .zb-region{font-family:inherit;background:transparent;padding:0;min-height:44px;min-width:44px;color:var(--ink);border:1px dashed transparent;appearance:none}
+.zb-root .zb-bz:hover,.zb-root .zb-bz:focus-visible,.zb-root .zb-region:hover,.zb-root .zb-region:focus-visible{border-color:var(--zhu);background:#f3eddd26}
+.zb-root .zb-rarc{display:none}
+.zb-region-index{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:0 24px;margin-bottom:24px}
+.zb-region-index button{display:grid;grid-template-columns:1fr auto;gap:3px 12px;align-items:center;text-align:left;min-height:70px;padding:12px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;color:var(--ink);font-size:17px}
+.zb-region-index small{grid-column:1;font-size:12px;color:var(--ink2)}
+.zb-region-index i{grid-column:2;grid-row:1/3;font-style:normal;font-size:12px;color:var(--zhu)}
+.zb-root .zb-rank{padding:14px 0;border-top:2px solid var(--ink)}
+.zb-root .zb-rk{padding:14px 0;gap:14px}
+.zb-root .zb-rk .rkbd b{font-size:16px}
+.zb-root .zb-rk .rkbd em{font-size:13px;line-height:1.8;margin-top:4px}
+.zb-root .zb-rk .rkbd .bar i{background:#867651}
+.zb-root .zb-rk.me .rkbd .bar i{background:var(--zhu)}
+.zb-root .zb-rk.me{padding-left:12px}
+.zb-root .zb-btabs{gap:12px;padding:6px 0 14px}
+.zb-root .zb-btabs .bt{min-height:44px;font-size:14px;border-radius:0}
+.zb-root .zb-rlabel{font-size:12px;background:#f7efdfed;border:1px solid #bca787;border-radius:0;line-height:1.6;padding:1px 6px}
+{margin:0;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:14px 0;background:none;gap:16px;min-height:78px}
+.zb-root .rstar{min-width:44px;min-height:44px}
+.zb-root .rinfo b{font-size:20px}
+.zb-root .rinfo span{font-size:16px;margin-top:4px}
+.zb-root .zb-rhead{font-size:13px;padding:4px 0 16px}
+.zb-root .zb-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,145px),1fr));gap:16px;margin:18px 0 26px}
+.zb-root .zb-item{border:1px solid var(--line);border-radius:0;background:#f9f5e9;min-height:130px;padding:18px 12px;gap:12px;box-shadow:none}
+.zb-root .zb-item .zn{font-size:15px;line-height:1.7}
+.zb-root .zb-item .zg{border-radius:0;background:none}
+.zb-root .zb-item.zb-otherled{border-style:dashed;border-color:var(--qing);background:transparent}
+.zb-root .zb-item .zsub{font-size:13px}
+.zb-root .zb-secthead{font-size:19px;border-bottom:1px solid var(--ink);padding-bottom:12px}
+.zb-root .zb-empty-mini{font-size:13px;line-height:1.9;padding:8px 0;text-align:left}
+.zb-root .zb-init{align-items:flex-start;overflow-y:auto;padding:36px 24px}
+.zb-root .ini-paper{width:100%;max-width:760px;padding:34px 40px;background:#f6efde;border-radius:0;border:1px solid #a88d68;box-shadow:none}
+.zb-root .ini-doc{max-width:640px;border:2px solid var(--zhu)}
+.zb-root .ini-title{font-size:28px;line-height:1.6;letter-spacing:.18em}
+.zb-root .ini-doc .ini-title{font-size:25px}
+.zb-root .ini-sub{font-size:12px;line-height:1.9;margin:8px 0 26px}
+.zb-root .ini-script{font-size:18px;line-height:2;padding-left:22px;margin:24px 0}
+.zb-root .ini-script p{margin-bottom:16px}
+.zb-root .ini-org{font-size:12px}
+.zb-root .ini-no{font-size:10px}
+.zb-root .ini-row{display:grid;grid-template-columns:52px minmax(0,1fr);align-items:start;gap:16px;border-top:1px solid var(--line);padding-top:20px;margin:0 0 22px}
+.zb-root .ini-k{width:auto;font-size:15px;line-height:46px;color:var(--ink2)}
+.zb-root .ini-row>input{width:100%;min-width:0;min-height:46px;font-size:18px;border-bottom:1px solid #a88d68}
+.zb-root .ini-sex{gap:14px}
+.zb-root .ini-face{flex-direction:row;justify-content:center;gap:12px;padding:12px;min-height:88px;border-radius:0;background:transparent;box-shadow:none}
+.zb-root .ini-face .zb-face,.zb-root .ini-face .zb-sealph{border-radius:0;width:44px;height:58px}
+.zb-root .ini-face i{font-size:14px}
+.zb-root .ini-opts{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}
+.zb-root .ini-opts button{min-height:46px;font-size:15px;padding:10px;border-radius:0;background:transparent;box-shadow:none}
+.zb-root .ini-opts button:last-of-type{grid-column:1/-1}
+.zb-root .ini-opts button.on,.zb-root .ini-face.on{border-color:var(--zhu);background:#eadcc2;box-shadow:inset 3px 0 var(--zhu)}
+.zb-root .ini-opts .ini-cus{grid-column:1/-1;min-width:0;width:100%;min-height:46px;font-size:16px;margin-top:2px}
+.zb-root .ini-note{font-size:13px;line-height:1.8;margin:22px 0}
+.zb-root .ini-seal{min-height:54px;font-size:17px;border-radius:0;box-shadow:none}
+.zb-intent-context{padding:12px 14px;border-left:3px solid var(--qing);background:#e9e5d6;font-size:14px;line-height:1.9;margin:12px 0 20px}
+.zb-intent-question{display:block;font-size:19px;line-height:1.7;margin:14px 0 10px}
+.zb-intent-text{display:block;width:100%;min-height:140px;resize:vertical;padding:14px;border:1px solid #a88d68;border-radius:0;background:#faf7ed;color:var(--ink);font:16px/1.9 inherit;font-family:inherit;font-size:16px;line-height:1.9}
+.zb-intent-text:focus-visible{outline:2px solid var(--qing);outline-offset:2px}
+.zb-intent-preview{display:none;border-top:1px solid var(--line);margin-top:20px;padding-top:14px}
+.zb-intent-preview.on{display:block}
+.zb-intent-preview.done{background:#f1e9d5;margin-top:14px;padding:12px 14px;border:0;border-left:3px solid var(--qing)}
+.zb-pv-h{display:block;color:var(--zhu);font-size:17px;letter-spacing:2px;margin-bottom:6px}
+.zb-intent-preview p{white-space:pre-wrap;font-size:16px;line-height:1.9;margin:6px 0;overflow-wrap:anywhere}
+.zb-root .zb-hit-map{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.zb-root .zb-hit-map .zb-bz{position:static;width:auto;height:auto;min-width:0;min-height:0;filter:none;outline:none}
+/* 命中圈放大：透明粗描边当热区（non-scaling-stroke 恒定 30px），视觉描边各态显式回到 2px */
+.zb-hit-map .zb-bz polygon{fill:transparent;stroke:transparent;stroke-width:30;vector-effect:non-scaling-stroke;pointer-events:all;cursor:pointer}
+.zb-hit-map .zb-bz:hover polygon,.zb-hit-map .zb-bz:focus-visible polygon,.zb-hit-map .zb-bz.sel polygon{fill:#943f301a;stroke:var(--zhu);stroke-width:2}
+.zb-place-index{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:0 18px;margin:18px 0}
+.zb-place-index button{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;text-align:left;min-height:64px;padding:10px 0;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;color:var(--ink)}
+.zb-place-index strong{font-size:16px;font-weight:500}
+.zb-place-index span{font-size:12px;color:var(--ink2);grid-column:1}
+.zb-place-index i{grid-column:2;grid-row:1/3;font-size:12px;color:var(--zhu);font-style:normal}
+@container zb-layout (min-width:1400px){.zb-root .zb-news.qz .cols{column-count:3}}
+@container zb-layout (max-width:760px){.zb-root .zb-desk{max-width:100%;border:0}
+.zb-root .zb-topbar{padding:16px 20px}
+.zb-root .zb-tt{font-size:22px}
+.zb-root .zb-statbar{padding:0 20px}
+.zb-root .zb-statbar>div{gap:8px;padding:10px}
+.zb-root .zb-hints .zb-pend,.zb-root .zb-hint-line{padding:12px 20px}
+.zb-root .zb-page{padding:16px 20px 24px}
+.zb-root .zb-news{padding:18px}
+.zb-root .zb-news.qz .lead .hl{font-size:26px}
+.zb-root .zb-news.qz .cols{column-count:2;column-gap:22px}
+.zb-root .ini-paper{padding:26px}
+.zb-root .zb-init{padding:24px 20px}}
+@container zb-layout (max-width:560px){.zb-root .zb-topbar{padding:13px 16px;gap:10px}
+.zb-root .zb-tt{font-size:20px;gap:10px;letter-spacing:1px}
+.zb-titleblock small{font-size:10px;letter-spacing:2px}
+.zb-root .zb-face.me,.zb-root .zb-sealph.me{width:32px;height:44px}
+.zb-root .zb-daybtn{padding:7px 9px}
+.zb-root .zb-day{font-size:11px}
+.zb-root .zb-day b{font-size:20px}
+.zb-root .zb-flip{display:none}
+.zb-root .zb-statbar{padding:0 12px}
+.zb-root .zb-statbar>div{display:block;padding:9px 4px}
+.zb-root .zb-statbar .k{font-size:16px;letter-spacing:1px}
+.zb-root .zb-statbar .v{font-size:24px}
+.zb-root .zb-hints .zb-pend,.zb-root .zb-hint-line{padding:12px 16px;gap:10px}
+.zb-pend .pz strong{font-size:16px}
+.zb-pend .pz small{font-size:14px}
+.zb-root .zb-page{padding:14px 16px 22px}
+.zb-pagehead{font-size:16px;letter-spacing:0}
+.zb-root .zb-card.knock{padding:14px}
+.zb-root .knock .knock-acts{grid-column:1/-1;grid-row:auto;margin-top:12px}
+.zb-root .zb-kline strong{font-size:18px}
+.zb-root .zb-kline .zb-face{display:none}
+.zb-root .zb-subbar button{font-size:13px;padding:10px 2px;gap:5px;letter-spacing:0}
+.zb-root .zb-news{padding:16px}
+.zb-root .zb-news .mast .t{font-size:29px;letter-spacing:.12em}
+.zb-root .zb-news .ear{font-size:9px;letter-spacing:0}
+.zb-root .zb-news.qz .lead .hl{font-size:24px;margin:12px 0}
+.zb-root .zb-news.qz .lead p{font-size:16px;line-height:1.95}
+.zb-root .zb-news.qz .cols{column-count:1}
+.zb-root .zb-news.qz .cols .art{font-size:15px}
+.zb-root .zb-news.qz .ads{grid-template-columns:1fr}
+.zb-root .zb-tabbar{padding:0 8px}
+.zb-root .zb-tabbar button{flex-direction:column;min-height:70px;gap:2px;padding:8px 0}
+.zb-root .zb-tabbar .seal{border:0;width:auto;height:20px;font-size:15px;background:none;color:inherit;transform:none}
+.zb-root .zb-tabbar .lb{font-size:16px;letter-spacing:1px}
+.zb-root .zb-tabbar .midseal{width:52px;height:52px}
+.zb-root .zb-tray{padding:10px 14px}
+.zb-root .zb-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.zb-root .ini-paper{padding:24px 20px}
+.zb-root .zb-init{padding:20px 12px}
+.zb-root .ini-title{font-size:24px}
+.zb-root .ini-doc .ini-title{font-size:21px;letter-spacing:.08em}
+.zb-root .ini-script{font-size:16px;padding-left:14px}
+.zb-root .ini-dochd{flex-wrap:wrap}
+.zb-root .ini-row{grid-template-columns:1fr;gap:8px;padding-top:16px;margin-bottom:20px}
+.zb-root .ini-k{line-height:1.5;font-size:14px}
+.zb-root .ini-opts{grid-template-columns:1fr}
+.zb-root .ini-face{min-width:0;padding:10px}
+.zb-root .ini-face .zb-face,.zb-root .ini-face .zb-sealph{width:36px;height:46px}}
+@media(max-width:560px){.zb-review{padding:12px}
+.zb-review .rv-paper{padding:20px;max-height:100%}
+.zb-review .rv-hd{font-size:21px}
+.sh-footer{flex-wrap:wrap}}
+@media(prefers-reduced-motion:reduce){.zb-root *,.zb-review *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+/* ── 案头改版补：布局即信息 ─────────────────────────────── */
+/* 页一隐藏全局提示条——议程本身就在这一页 */
+.zb-desk[data-page="0"] .zb-hints{display:none}
+/* 案头两看：办事 / 读报——标题走真 h1，切换钉在同一个位置 */
+.zb-desk-h1{font-size:28px;font-weight:700;letter-spacing:5px;margin:2px 0 6px;color:var(--ink)}
+.zb-desk-ctx{font-size:16px;color:var(--ink2);margin-bottom:16px}
+.zb-viewbar{display:flex;gap:4px;border-bottom:2px solid var(--ink);margin-bottom:22px}
+.zb-viewbar button{min-height:48px;padding:10px 26px;margin-bottom:-2px;border:0;border-bottom:3px solid transparent;background:none;color:var(--ink2);font-family:inherit;font-size:18px;letter-spacing:4px;cursor:pointer}
+.zb-viewbar button:hover{color:var(--zhu)}
+.zb-viewbar button.on{color:var(--zhu);font-weight:700;border-bottom-color:var(--zhu)}
+.zb-viewbar button:focus-visible{outline:2px solid var(--qing);outline-offset:2px}
+.zb-ubadge{display:inline-block;min-width:20px;margin-left:6px;padding:1px 6px;background:var(--zhu);color:var(--paper);border-radius:10px;font-size:13px;font-style:normal;letter-spacing:0;vertical-align:2px}
+/* 办事视图：左议程右报栏——页面内容宽 ≥900px 才双栏，窄了自然单栏 */
+.zb-homegrid{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.zb-agenda-col{min-width:0}
+@container zb-page (min-width:900px){.zb-homegrid{grid-template-columns:minmax(0,2fr) minmax(280px,1fr);gap:30px}}
+/* 报刊速览栏：一页有行线的纸，不是卡墙；窄版整栏让位，「读报」钮仍在顶上 */
+.zb-paper-preview{display:none}
+@container zb-page (min-width:900px){.zb-paper-preview{display:block;align-self:start;padding:18px 22px 10px;background:#f6f0dd;
+    background-image:repeating-linear-gradient(transparent,transparent 37px,#e0d4b8 37px,#e0d4b8 38px);
+    border:1px solid #b3a284;box-shadow:2px 3px 0 #d8ccae}}
+.zb-paper-preview h2{font-size:26px;font-weight:700;letter-spacing:4px;margin:0 0 6px;padding-bottom:12px;border-bottom:2px solid var(--ink)}
+.zb-pp{display:block;width:100%;position:relative;text-align:left;padding:14px 0 13px;border:0;border-bottom:1px solid var(--line);background:none;font-family:inherit;color:var(--ink);cursor:pointer}
+.zb-pp:last-of-type{border-bottom:0}
+.zb-pp .pp-src{display:block;font-size:18px;font-weight:600;letter-spacing:2px}
+.zb-pp .pp-hl{display:block;font-size:16px;font-weight:500;line-height:1.8;margin-top:4px}
+.zb-pp .pp-day{display:block;font-size:16px;color:var(--ink2);margin-top:3px}
+.zb-pp .pp-none{display:block;font-size:16px;color:var(--ink2);margin-top:4px}
+.zb-pp .pp-go{position:absolute;right:0;top:16px;font-size:15px;color:var(--zhu)}
+.zb-pp:hover .pp-src,.zb-pp:focus-visible .pp-src{color:var(--zhu)}
+.zb-pp:focus-visible{outline:2px solid var(--qing);outline-offset:2px}
+/* 建筑条子三段 */
+.sh-sec{padding:14px 0;border-bottom:1px solid var(--line)}
+.sh-sec:last-of-type{border-bottom:0}
+.sh-sec-hd{font-size:18px;font-weight:600;margin-bottom:8px}
+.sh-sec-bd{font-size:16px;line-height:1.9}
+.sh-sec-bd .fxnote{color:var(--ink2)}
+/* 弟子条子：真人立绘 + 实底 */
+.zb-person{display:flex;gap:18px;align-items:flex-start;padding:6px 0 14px;border-bottom:1px solid var(--line)}
+.zb-person .pface{width:120px;height:168px;object-fit:cover;object-position:top;flex:none;border:1px solid var(--line);background:#e5d9bd}
+.zb-person .pfacts{flex:1;min-width:0}
+.zb-person .pnm{font-size:26px;font-weight:600;line-height:1.4;margin-bottom:8px}
+.zb-person .pfact{display:flex;gap:14px;font-size:16px;line-height:2}
+.zb-person .pk{flex:none;width:44px;color:var(--ink2)}
+.zb-person .pv{flex:1;min-width:0;overflow-wrap:anywhere}
+/* 名册行：真实立绘放大 */
+.zb-root .zb-rrow .rface,.zb-root .zb-rrow .zb-sealph.rface{width:64px;height:86px;border-radius:0;object-fit:cover;object-position:top}
+.zb-root .zb-rrow .zb-sealph.rface{font-size:26px;line-height:86px}
+.rmark{margin-left:10px;font-size:14px;font-weight:400;color:var(--zhu)}
+/* 建筑目录：名字即按钮，状态随行 */
+.zb-place-index strong{font-size:18px}
+.zb-place-index span{font-size:16px}
+.zb-place-index button.has-ev strong{color:var(--zhu)}
+.zb-place-index button.not-open strong{color:var(--ink2)}
+.zb-place-index button:hover strong,.zb-place-index button:focus-visible strong,.zb-place-index button.sel strong{color:var(--zhu)}
+.zb-place-index button.sel{box-shadow:inset 3px 0 0 var(--zhu);padding-left:12px}
+/* 目录悬停 → 图上多边形亮（.hot 与 :hover 同效） */
+.zb-hit-map .zb-bz.hot polygon{fill:#943f301a;stroke:var(--zhu);stroke-width:2}
+/* 弹层内意图表单留足呼吸 */
+.sh-content .zb-intent{margin-top:6px}
+/* 案头回话条目 */
+.zb-reply{padding:18px 0;border-bottom:1px solid var(--line)}
+.zb-reply-hd{display:flex;gap:16px;align-items:flex-start}
+.zb-reply-hd .kface,.zb-reply-hd .zb-sealph{width:80px;height:110px;object-fit:cover;object-position:top;flex:none;border:1px solid var(--line);background:#e5d9bd}
+.zb-reply-hd .zb-sealph{line-height:110px;font-size:34px}
+.zb-reply-tt{flex:1;min-width:0}
+.zb-reply .zb-entry-meta{display:flex;gap:14px;font-size:16px;color:var(--ink2);margin-bottom:4px}
+.zb-reply h3{font-size:20px;line-height:1.6;margin:0 0 4px}
+.zb-reply .zb-intent{margin-top:10px}
+.zb-dueline{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+.zb-dueline-t{flex:1;min-width:0}
+.zb-dueline-t h3{display:inline;font-size:17px;margin-right:12px}
+.zb-dueline .btn-seal{flex:none}
+.zb-deskclear{padding:20px 0;font-size:17px;line-height:1.9}
+.zb-deskclear .zb-choices{margin-top:10px}
+/* ---------- 差分层：世界在动，一瞥看得见 ---------- */
+/* 山门图：有事=朱晕+!徽，废墟=墨罩塌陷，修缮中=朱虚线 */
+.zb-hit-map .zb-bz.has polygon{fill:#943f3014;stroke:rgba(148,63,48,.5);stroke-width:2}
+.zb-hit-map .zb-bz.st-废 polygon{fill:rgba(48,44,37,.28)}
+.zb-hit-map .zb-bz.st-修 polygon{stroke:var(--zhu);stroke-dasharray:8 5;fill:#943f3008;stroke-width:2}
+.zb-hit-map .zb-bz.st-升 polygon{stroke:var(--qing);stroke-dasharray:8 5;fill:#2c6e6814;stroke-width:2}
+.zb-hit-map .zb-bevd{fill:var(--zhu);pointer-events:none;animation:zbPulse 1.8s ease-in-out infinite}
+.zb-hit-map .zb-bevt{fill:var(--paper);font-size:26px;font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+/* 榜/势力差分：上一版底上有变的行淡朱衬底 */
+.zb-rk.moved{background:#943f300d}
+.zb-card.moved{background:#943f300d}
+/* 名册在外：差事在外的行淡墨 */
+.zb-rrow.away{opacity:.62}
+.zb-rrow.away .rinfo span{color:var(--ink2)}
+/* 案头近来日务预告行 */
+.zb-soon{margin:16px 0 2px;font-size:12px;color:var(--faint);letter-spacing:1px}
+/* 报章新到：未读条左朱线 */
+.zb-news .art.fresh,.zb-doss .art.fresh,.zb-news .lead.fresh{border-left:3px solid rgba(148,63,48,.5);padding-left:10px}
+.zb-doss .art.fresh{border-left-color:rgba(224,112,90,.55)}
+.pp-new{color:var(--zhu);font-weight:600}
+/* 已了账档案 */
+.zb-donled{border:0;background:none;color:var(--qing);font:inherit;font-size:11px;cursor:pointer;text-decoration:underline dotted}
+.zb-donled:hover{color:var(--zhu)}
+.zb-lrow.done{opacity:.6}
+.zb-ddl-big{font-size:17px;color:var(--ink2)}
+.is-urgent .zb-ddl-big{color:var(--zhu);font-weight:600}
+
+.zb-ftags{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.zb-ftag{display:inline-block;padding:2px 7px;font-size:11px;line-height:1.4;border-radius:2px;background:#2c6e6814;color:var(--qing);border:1px solid #2c6e6844}
+.zb-ftag.sm{padding:1px 5px;font-size:10px}
+.zb-fbadge{display:inline-block;margin-left:5px;padding:1px 5px;font-size:10px;border-radius:2px;font-weight:700;vertical-align:middle}
+.zb-fbadge.unlock{background:var(--zhu);color:var(--paper)}
+.zb-fbadge.up{background:var(--qing);color:var(--paper)}
+.zb-fbadge.cnt{background:#302c2514;color:var(--ink2);font-weight:600}
+.zb-fcelebrate{margin-bottom:8px;padding:7px 10px;border-radius:3px;font-size:12px;font-weight:700;background:#943f3014;color:var(--zhu);border-left:3px solid var(--zhu)}
+.zb-fcelebrate.up{background:#2c6e6814;color:var(--qing);border-left-color:var(--qing)}
+
+.rv-mode{display:flex;gap:6px;margin:8px 0 4px}
+.rv-mode button{flex:1;padding:5px 8px;border:1px solid var(--line);background:var(--paper);color:var(--ink2);font-family:inherit;font-size:12px;border-radius:3px;cursor:pointer}
+.rv-mode button.on{border-color:var(--zhu);background:#943f3014;color:var(--zhu);font-weight:700}

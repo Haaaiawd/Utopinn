@@ -151,11 +151,14 @@ test.describe('#13c — recent-chats index', () => {
         await sendMessageAndAwaitReply(page, '我没想当掌门啊 turn 3: returning to the chart.');
 
         const recentAfterZhangmen = await fetchRecent(page);
+        // The starter card seeds unprefixed from default/scaffold — the
+        // retired upstream entry used to land as `default_我没想当掌门啊`.
         expect(recentAfterZhangmen[0].avatar,
             `expected 我没想当掌门啊 back at the top; got ${JSON.stringify(recentAfterZhangmen.map(r => r.avatar))}`)
-            .toMatch(/default_我没想当掌门啊/i);
+            .toMatch(/^我没想当掌门啊/);
         const avatars = recentAfterZhangmen.map(r => r.avatar);
-        expect(avatars.some(a => /default_我没想当掌门啊/i.test(a))).toBe(true);
+        expect(avatars.some(a => /^我没想当掌门啊/.test(a))).toBe(true);
+        expect(avatars.some(a => /default_/.test(a))).toBe(false);
         expect(avatars.some(a => /iyana-the-watchwoman/.test(a))).toBe(true);
     });
 });

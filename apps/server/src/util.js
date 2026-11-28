@@ -1844,6 +1844,30 @@ export function resolvePathWithinParent(parentPath, requestedPath) {
 }
 
 /**
+ * Symlink confinement: resolve both paths through realpath and require the
+ * target to stay inside the base dir. Returns the canonical target path or
+ * null (missing file, escape attempt, or broken link). A symlink inside the
+ * base pointing outside would otherwise let read surfaces serve arbitrary
+ * filesystem content — CWE-59. Windows junctions resolve through realpath
+ * the same way.
+ * @param {string} dir Base directory the target must stay under
+ * @param {string} candidate Already-existence-checked absolute path
+ * @returns {string | null} Canonical absolute path inside dir
+ */
+export function confineRealPath(dir, candidate) {
+    try {
+        const realRoot = fs.realpathSync(dir);
+        const realTarget = fs.realpathSync(candidate);
+        if (realTarget === realRoot || realTarget.startsWith(realRoot + path.sep)) {
+            return realTarget;
+        }
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Checks if the given request is a file URL.
  * @param {string | URL | Request} request The request to check
  * @return {boolean} Returns true if the request is a file URL, false otherwise
