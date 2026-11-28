@@ -78,6 +78,8 @@ android-app/app/.externalNativeBuild/
 !/plugins/package.json
 !/data/.gitkeep
 !/default/scaffold/README.md
+!/default/scaffold/index.json
+!/default/scaffold/characters/
 !/public/scripts/extensions/third-party/.gitkeep
 tests/skills-ui/playwright/_local-*.spec.js
 tests/.e2e-scratch/

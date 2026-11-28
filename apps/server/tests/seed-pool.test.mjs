@@ -40,6 +40,7 @@ const serverDir = path.resolve(import.meta.dirname, '..');
 const WEB_INDEX = path.join(serverDir, '..', 'web', 'dist', 'index.html');
 const SEED_ACCOUNTS_SCRIPT = path.join(serverDir, 'scripts', 'seed-accounts.js');
 const DEFAULT_CONTENT_DIR = path.join(serverDir, 'default', 'content');
+const DEFAULT_SCAFFOLD_DIR = path.join(serverDir, 'default', 'scaffold');
 
 const hasSpa = fs.existsSync(WEB_INDEX);
 const SKIP_NO_SPA = hasSpa ? false : 'apps/web/dist not built — run pnpm --filter @utopinn/web build first';
@@ -120,6 +121,22 @@ function dirSizeBytes(dir) {
                 total += fs.statSync(full).size;
             }
         }
+    }
+    return total;
+}
+
+/**
+ * Byte total of the files a content index actually declares — what
+ * checkForNewContent can seed into an account. Summing declared entries
+ * (not dirSizeBytes of the source dir) keeps the quota budget honest when
+ * a directory ships undeclared fixtures, e.g. default/content/ still
+ * carries the retired default_* card PNG for the test corpus.
+ */
+function declaredIndexBytes(dir) {
+    const index = JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8'));
+    let total = 0;
+    for (const entry of index) {
+        total += fs.statSync(path.join(dir, entry.filename)).size;
     }
     return total;
 }
@@ -464,11 +481,10 @@ async function registerUser(base, handle, password = 'test-pass-1234') {
 
 test('e2e: registration skips an over-quota seed entry, reports it, and keeps the account under quota', { skip: SKIP_NO_SPA }, async () => {
     // defaultUserQuotaBytes leaves ~512KB of headroom over the content the
-    // registration flow itself provisions (default/content minus index.json,
-    // plus a slack allowance for settings/content.log). The 200KB card fits;
-    // the 2MB one does not.
-    const indexSize = fs.statSync(path.join(DEFAULT_CONTENT_DIR, 'index.json')).size;
-    const contentBytes = dirSizeBytes(DEFAULT_CONTENT_DIR) - indexSize;
+    // registration flow itself provisions (the merged default/scaffold +
+    // default/content indexes, plus a slack allowance for
+    // settings/content.log). The 200KB card fits; the 2MB one does not.
+    const contentBytes = declaredIndexBytes(DEFAULT_CONTENT_DIR) + declaredIndexBytes(DEFAULT_SCAFFOLD_DIR);
     const quota = contentBytes + 512_000;
 
     await withRealServer(async (base, ctx) => {
@@ -496,16 +512,19 @@ test('e2e: registration skips an over-quota seed entry, reports it, and keeps th
 });
 
 test('e2e: a newly registered user sees the starter card in the library and can open it', { skip: SKIP_NO_SPA }, async () => {
-    // The release seed pool pairs `_seed/card-apps/<name>/` (the CardApp
-    // assets, copied by seedUserDirectories at registration) with a matching
-    // character document shipped via default/content/. Assert the pool really
-    // supplies that document — if this check fails it is a product decision,
-    // not something a test may silently paper over.
-    const index = JSON.parse(fs.readFileSync(path.join(DEFAULT_CONTENT_DIR, 'index.json'), 'utf8'));
-    const charEntry = index.find(e => e.type === 'character');
-    assert.ok(charEntry, 'default/content must ship a character document for the starter card');
-    assert.ok(fs.existsSync(path.join(DEFAULT_CONTENT_DIR, charEntry.filename)),
-        `the character document ${charEntry.filename} must exist in default/content`);
+    // The release starter card ships via default/scaffold/ (the operator-owned
+    // release namespace — see default/scaffold/README.md): checkForNewContent
+    // copies `characters/我没想当掌门啊.png` into every new account, and the
+    // _seed pool pairs it with `card-apps/<name>/` (the CardApp assets scaffold
+    // cannot carry). Assert the scaffold index really supplies that document —
+    // if this check fails it is a product decision, not something a test may
+    // silently paper over.
+    const index = JSON.parse(fs.readFileSync(path.join(DEFAULT_SCAFFOLD_DIR, 'index.json'), 'utf8'));
+    const charEntries = index.filter(e => e.type === 'character');
+    assert.equal(charEntries.length, 1, 'default/scaffold must declare exactly one starter character');
+    const [charEntry] = charEntries;
+    assert.ok(fs.existsSync(path.join(DEFAULT_SCAFFOLD_DIR, charEntry.filename)),
+        `the character document ${charEntry.filename} must exist in default/scaffold`);
     const charDir = path.basename(charEntry.filename, path.extname(charEntry.filename));
 
     await withRealServer(async (base) => {
@@ -520,6 +539,15 @@ test('e2e: a newly registered user sees the starter card in the library and can 
         const card = items.find(i => i.charDir === charDir);
         assert.ok(card, `${charDir} must appear in the new user's character list`);
         assert.equal(card.readable, true, 'the card must parse, not just be listed');
+
+        // Regression for the duplicate-starter-card bug: the account must end
+        // up with exactly one card carrying the starter name — no second copy
+        // from the retired upstream `default_*` content entry, and no double
+        // delivery when the _seed pool also ships a same-named character PNG.
+        const sameName = items.filter(i => i.name === charDir || i.charDir === charDir);
+        assert.equal(sameName.length, 1, `exactly one ${charDir} card expected, got: ${sameName.map(i => i.charDir).join(', ')}`);
+        assert.ok(!items.some(i => i.charDir.startsWith('default_')),
+            `no legacy default_-prefixed card may be seeded: ${items.map(i => i.charDir).join(', ')}`);
 
         const detail = await session.request(base, `/api/utopinn/characters/${encodeURIComponent(charDir)}`);
         const detailBody = await detail.text();
@@ -538,6 +566,13 @@ test('e2e: a newly registered user sees the starter card in the library and can 
                 'style.css': 'body{margin:0}',
                 'assets/立绘/掌门.webp': crypto.randomBytes(64),
             });
+            // The live pool also carries a same-named character PNG. It must
+            // lose to the scaffold card (seedUserDirectories never overwrites)
+            // instead of producing a second library entry — this fixture keeps
+            // the original duplicate-delivery shape pinned.
+            const seedChars = path.join(dataRoot, '_seed', 'characters');
+            fs.mkdirSync(seedChars, { recursive: true });
+            fs.writeFileSync(path.join(seedChars, '我没想当掌门啊.png'), 'STALE-SEED-PNG');
         },
     });
 });

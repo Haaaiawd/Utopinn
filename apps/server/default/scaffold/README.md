@@ -24,3 +24,24 @@ Content files in this folder will be copied for all users (old and new) on the s
     }
 ]
 ```
+
+## Utopinn release content
+
+This directory is the operator-owned namespace for release content —
+`default/content/` is the upstream SillyTavern asset list and should not
+gain operator entries again (that path is how the stale `default_*` card
+leaked into new accounts).
+
+Current declarations:
+
+- `characters/我没想当掌门啊.png` (`type: character`) — the release starter
+  card, seeded into every account's `characters/` by `checkForNewContent`.
+
+Scaffold can only carry what `CONTENT_TYPES` maps to a single file target
+(characters, backgrounds, themes, presets, worlds, ...). It **cannot**
+carry a CardApp asset tree — `card-apps/<name>/` is a directory payload
+with no content type, so the `_seed/` pool (`<dataRoot>/_seed/`, see
+`src/services/seed-content.js`) keeps owning the CardApp tree and the
+world-book JSON. To swap the starter card: replace the PNG here (and in
+`_seed/` for its companion assets); never re-add a `default_*` entry to
+`default/content/index.json`.
