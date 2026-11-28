@@ -128,7 +128,7 @@ describe('getSeedRoot', () => {
 describe('seedUserDirectories', () => {
     test('missing pool resolves to an empty report', async () => {
         const report = await seedUserDirectories(getUserDirectories('tester'));
-        expect(report).toEqual({ copied: [], skipped: [], errors: [] });
+        expect(report).toEqual({ copied: [], skipped: [], quotaSkipped: [], errors: [] });
     });
 
     test('copies a card tree completely, including nested dirs and Chinese names', async () => {
