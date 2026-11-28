@@ -295,3 +295,15 @@ Current truth belongs in PROJECT.md and linked design documents. This file prese
 - Changed: .skeinn/DECISIONS.md, apps/server/src/plugins/utopinn-library.js, apps/server/tests/utopinn-library.test.mjs, apps/web/src/api/chats.ts, apps/web/src/kernel/context.tsx, apps/web/src/App.tsx, apps/web/src/components/stage/StageFrame.tsx, apps/web/src/components/stage/CenterStage.tsx, apps/web/src/features/shell.ts, apps/web/src/styles/spec.css
 - Affected tasks: TASK-065
 - At: 2026-11-22T12:18:07.221Z
+
+## D-2026-11-27-mecf: TASK-075 (anon / <-> /login redirect loop + seed-card wrap-up) verified and committed as fda11dc+0f73219. The flagged design-surface drift (import-export-center, legacy-convergence, multi-user, task037-group-textgen-surface, web-rp-form, web-v3-frontier) predates this lane — none of those files were touched by this work; the loop fix touches users.js/server-main.js only and lands under multi-user.md semantics rather than altering them. Covering close rather than running a full checkpoint review over unrelated lanes' drift.
+
+- Changed: apps/server/src/users.js, apps/server/src/server-main.js, apps/server/tests/login-spa-fallback.test.mjs, apps/server/src/services/seed-content.js, apps/server/scripts/seed-accounts.js, apps/server/src/endpoints/users-public.js, apps/server/tests/seed-content.test.js
+- Affected tasks: TASK-075
+- At: 2026-11-27T12:02:47.199Z
+
+## D-2026-11-28-7i3a: PR #75 review fixes landed as 9d2693a+06bbd03+07794ba+78f10e2+6bd7144 on feat/server-seed-card-on-register (worktree Utopinn-work-seedcard). Five findings fixed: SPA / route now attempts tryAutoLogin so a lone passwordless account gets a session on the shell response (noauto + the singleUserLogin registration guard preserved; legacy mode untouched); starter-content seeding stages into .seed-* siblings and publishes via mkdir+rename/link so a failed copy never leaves a partial dir that skip-on-exists would preserve; registration passes checkQuota=checkUserStorageQuota({fresh:true}) so an over-quota seed entry is skipped+reported instead of landing; seed-accounts.js --dry-run is now truly read-only (no config create/migrate, no _storage init, no bootstrap default-user). Evidence: node --test login-spa-fallback 16/16, seed-pool.test.mjs 9/9 (new suite: staged publish, quota, dry-run honesty, register->list->open card e2e), plus live curl runs of all five behavior-table rows.
+
+- Changed: apps/server/src/server-main.js, apps/server/tests/login-spa-fallback.test.mjs, apps/server/src/services/seed-content.js, apps/server/src/endpoints/users-public.js, apps/server/scripts/seed-accounts.js, apps/server/tests/seed-content.test.js, apps/server/tests/seed-pool.test.mjs
+- Affected tasks: TASK-075
+- At: 2026-11-28T01:23:01.078Z

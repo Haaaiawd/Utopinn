@@ -28,6 +28,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 
 const serverDir = path.resolve(import.meta.dirname, '..');
@@ -77,18 +78,40 @@ function sessionCookieOf(res) {
 }
 
 /**
+ * Write an admin-settings document into a not-yet-booted dataRoot's
+ * node-persist store — each record is one file named by the sha256 of its
+ * key, JSON {key, value} (same trick as multi-account-isolation's
+ * seedStoredItem). Must run before the server spawns: initUserStorage
+ * loads the store once at boot.
+ * @param {string} dataRoot Scratch data root (must already exist)
+ * @param {object} settings Document stored under the admin-settings key
+ */
+function seedAdminSettings(dataRoot, settings) {
+    const storageDir = path.join(dataRoot, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+    const key = 'luker:admin-settings:v1';
+    const file = crypto.createHash('sha256').update(key).digest('hex');
+    fs.writeFileSync(path.join(storageDir, file), JSON.stringify({ key, value: settings }));
+}
+
+/**
  * Boot a real server in default (SPA) mode against a throwaway dataRoot and a
  * throwaway --configPath (never the checkout's own ./config.yaml). The config
  * pins enableUserAccounts: true — the accounts-on behaviour under test.
  * fn receives (base, ctx); ctx.log() returns the child's combined output.
+ * options.seed(dataRoot) runs after the dataRoot exists but before the
+ * server spawns — e.g. to pre-seed admin settings.
  */
-async function withRealServer(fn) {
+async function withRealServer(fn, { seed } = {}) {
     const port = await reservePort();
     const dir = path.join(scratchRoot, `run-${port}`);
     const dataRoot = path.join(dir, 'data');
     const configPath = path.join(dir, 'config.yaml');
     fs.mkdirSync(dataRoot, { recursive: true });
     fs.writeFileSync(configPath, 'enableUserAccounts: true\n');
+    if (seed) {
+        await seed(dataRoot);
+    }
 
     // Deliberately NOT setting LUKER_SERVE_LEGACY — that is the whole point.
     // SILLYTAVERN_/LUKER_* env vars would override config.yaml values
@@ -272,28 +295,76 @@ test('default mode: the legacy 785KB index.html is not exposed', { skip: SKIP_NO
     });
 });
 
-test('default mode: unauthenticated / redirects to /login', { skip: SKIP_NO_SPA }, async () => {
+test('default mode: unauthenticated / serves the SPA shell, not a /login bounce', { skip: SKIP_NO_SPA }, async () => {
+    // Regression cover for the anonymous redirect loop: GET / used to 302 to
+    // /login while GET /login auto-logged in the passwordless bootstrap user
+    // and 302'd back to /. A cookie-less client looped forever; a browser
+    // silently signed every visitor in as default-user, so no guest could
+    // ever reach the login/register form. In SPA mode the shell IS the auth
+    // boundary — AuthGate renders LoginLanding for a guest — so / serves
+    // index.html directly, exactly like every history-fallback route.
     await withRealServer(async (base, ctx) => {
         const res = await fetch(`${base}/`, { redirect: 'manual' });
-        assert.equal(res.status, 302);
-        assert.equal(res.headers.get('location'), '/login');
-        // The redirect only happens when the test-controlled config was actually
-        // read — enableUserAccounts: false (the default config, or an ignored
-        // --configPath) would have served the SPA directly with 200.
+        assert.equal(res.status, 200, 'anonymous / must serve the SPA directly, not redirect');
+        assert.ok(isHtml(res));
+        const body = await res.text();
+        assert.match(body, /assets\/index-/, 'must be the SPA shell with a bundled entry');
+
+        // Accounts mode must actually be on for this run, or a 200 here would
+        // just mean "accounts disabled → open shell". The anonymous /me 403
+        // proves it (accounts-off mode answers 200 with the default profile).
+        const me = await fetch(`${base}/api/users/me`);
+        assert.equal(me.status, 403, 'anonymous /api/users/me must be 403 in accounts mode');
         // Belt-and-suspenders: the child also announces the config path it used.
         assert.match(ctx.log(), new RegExp(`Using config path:.*${ctx.configPath.replace(/[/\\]/g, '[\\\\/]')}`),
             'child must report reading the test-controlled config');
-        // and that target must actually render when auto-login is suppressed
-        const login = await fetch(`${base}${res.headers.get('location')}?noauto=1`);
-        const body = await login.text();
-        assert.doesNotMatch(body, /Welcome to Luker/);
+    });
+});
+
+test('default mode: registration-enabled instance does not auto-login the bootstrap user', { skip: SKIP_NO_SPA }, async () => {
+    // The public-release posture: enableUserAccounts + open registration on a
+    // fresh dataRoot whose only account is the passwordless bootstrap
+    // default-user. Auto-entering it would sign every visitor into that
+    // account — and singleUserLogin stops firing anyway the moment a second
+    // account registers — so the gate keeps /login on the form instead.
+    await withRealServer(async (base) => {
+        const login = await fetch(`${base}/login`, { redirect: 'manual' });
+        assert.equal(login.status, 200, '/login must serve the SPA, not bounce via auto-login');
+        assert.ok(isHtml(login));
+        const loginBody = await login.text();
+        assert.match(loginBody, /assets\/index-/, 'must be the SPA shell with a bundled entry');
+
+        const home = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(home.status, 200, '/ must serve the SPA for a guest');
+        assert.ok(isHtml(home));
+
+        // Registration must actually be enabled in this run (otherwise the
+        // assertion above would also pass with the gate untested).
+        const tokenRes = await fetch(`${base}/csrf-token`);
+        const { token } = await tokenRes.json();
+        const cookie = tokenRes.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+        const infoRes = await fetch(`${base}/api/users/registration/info`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-csrf-token': token, cookie },
+            body: '{}',
+        });
+        assert.equal(infoRes.status, 200);
+        const info = await infoRes.json();
+        assert.equal(info.enabled, true, 'seeded admin settings must have registration enabled');
+    }, {
+        seed: (dataRoot) => seedAdminSettings(dataRoot, {
+            accountRegistration: { enabled: true, requireInviteCode: false },
+        }),
     });
 });
 
 test('default mode: GET /login auto-logs in and the session cookie authenticates', { skip: SKIP_NO_SPA }, async () => {
     // Review comment #4: the SPA branch bypassed tryAutoLogin entirely, so a
     // fresh dataRoot (single passwordless default-user) could not establish a
-    // session from /login the way the legacy page could.
+    // session from /login the way the legacy page could. The single-user
+    // auto-login is a deliberate feature and must keep working while
+    // registration stays disabled (this instance has no admin-settings doc,
+    // so accountRegistration.enabled resolves to its default: false).
     await withRealServer(async base => {
         const res = await fetch(`${base}/login`, { redirect: 'manual' });
         assert.equal(res.status, 302, 'auto-login should redirect home');
@@ -304,6 +375,96 @@ test('default mode: GET /login auto-logs in and the session cookie authenticates
         assert.equal(home.status, 200, 'session from auto-login must authenticate /');
         const body = await home.text();
         assert.match(body, /assets\/index-/, 'authenticated / must serve the SPA shell');
+
+        // / now serves the SPA to guests too, so a 200 alone no longer proves
+        // the session took — /api/users/me is the authentication oracle.
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 200, 'auto-login session must authenticate API calls');
+        const profile = await me.json();
+        assert.equal(profile.handle, 'default-user');
+    });
+});
+
+test('default mode: GET / auto-logs in a lone passwordless account', { skip: SKIP_NO_SPA }, async () => {
+    // Regression cover for the auto-login drop: when '/' started serving the
+    // SPA shell directly it bypassed tryAutoLogin entirely, and since the
+    // SPA's /login bounces to '/' on success, a single-operator instance
+    // (registration off, one passwordless account) could never establish a
+    // session. The shell and the session cookie must arrive on the SAME
+    // response — no redirect round-trip.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200, 'GET / serves the SPA shell');
+        assert.ok(isHtml(res));
+        const cookie = sessionCookieOf(res);
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 200, 'session established by GET / must authenticate API calls');
+        const profile = await me.json();
+        assert.equal(profile.handle, 'default-user');
+    });
+});
+
+test('default mode: GET / with registration enabled does not auto-login', { skip: SKIP_NO_SPA }, async () => {
+    // The singleUserLogin registration guard applies on '/' too: an
+    // open-registration instance must leave visitors on the shell (LoginLanding
+    // renders the register form) rather than signing them into the bootstrap
+    // account. Whatever cookie the response sets must not authenticate.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, 'registration-enabled instance must not auto-login on /');
+    }, {
+        seed: (dataRoot) => seedAdminSettings(dataRoot, {
+            accountRegistration: { enabled: true, requireInviteCode: false },
+        }),
+    });
+});
+
+test('default mode: GET /?noauto does not auto-login', { skip: SKIP_NO_SPA }, async () => {
+    // The operator opt-out is honoured on the SPA root the same as on the
+    // login page: ?noauto must leave the visitor without a session.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/?noauto=1`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, '?noauto must suppress auto-login on /');
+    });
+});
+
+test('default mode: GET / does not auto-login when the lone account has a password', { skip: SKIP_NO_SPA }, async () => {
+    // singleUserLogin only fires for a PASSWORDLESS lone account — a
+    // password-protected default-user must get the shell (LoginGate) with
+    // no session, exactly like the legacy login page behaved.
+    await withRealServer(async base => {
+        const res = await fetch(`${base}/`, { redirect: 'manual' });
+        assert.equal(res.status, 200);
+        assert.ok(isHtml(res));
+        const cookie = res.headers.getSetCookie().map(c => c.split(';')[0]).join('; ');
+
+        const me = await fetch(`${base}/api/users/me`, { headers: { cookie } });
+        assert.equal(me.status, 403, 'a passworded account must not auto-login on /');
+    }, {
+        seed: (dataRoot) => {
+            // Pre-seed the account store so initUserStorage does not create a
+            // passwordless bootstrap record — same node-persist record shape
+            // as seedAdminSettings ({key, value} JSON under sha256(key)).
+            const storageDir = path.join(dataRoot, '_storage');
+            fs.mkdirSync(storageDir, { recursive: true });
+            const key = 'user:default-user';
+            const file = crypto.createHash('sha256').update(key).digest('hex');
+            fs.writeFileSync(path.join(storageDir, file), JSON.stringify({
+                key,
+                value: { handle: 'default-user', name: 'User', created: 1, password: 'hashed', salt: 's', admin: false, enabled: true },
+            }));
+        },
     });
 });
 
