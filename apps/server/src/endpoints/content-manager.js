@@ -15,6 +15,7 @@ import { serverDirectory } from '../server-directory.js';
 import { Jimp, JimpMime } from '../jimp.js';
 import { DEFAULT_AVATAR_PATH } from '../constants.js';
 import { getWorldInfoRepo, getPresetRepo, getNamedDocRepo, getSettingsRepo } from '../storage/index.js';
+import { estimateSeedEntryBytes } from '../services/seed-content.js';
 
 const WHITELIST_GENERIC_URL_DOWNLOAD_SOURCES = getConfigValue('whitelistImportDomains', []);
 const USER_AGENT = 'Utopinn';
@@ -415,9 +416,20 @@ function resolveContentSink(type, basename, directories, handle) {
  * @param {string} contentLogPath Path to the content log file
  * @param {(contentItem: ContentItem) => ContentSink} resolveSink Sink resolver
  * @param {string[]} [forceCategories] List of categories to force check (even if content check is skipped)
+ * @param {object} [options]
+ * @param {(bytes: number) => Promise<{usageBytes:number, quotaBytes:number, message:string}|null>} [options.checkQuota]
+ *   Optional pre-copy reservation for fs-sink entries — called with the
+ *   estimated entry size and must resolve to a violation descriptor when
+ *   the write would overflow the account quota (the same accounting
+ *   shared-card installation and the `_seed` pool apply via
+ *   checkUserStorageQuota). A violating entry is skipped wholesale and
+ *   NOT written to the content log, so a later pass retries it after the
+ *   user frees space or the quota is raised. Repo-sink saves are not
+ *   metered here (small JSON docs; in db modes they never touch the
+ *   measured directory tree).
  * @returns {Promise<boolean>} Whether any content was added
  */
-async function seedContent(contentIndex, contentLogPath, resolveSink, forceCategories) {
+async function seedContent(contentIndex, contentLogPath, resolveSink, forceCategories, { checkQuota = null } = {}) {
     let anyContentAdded = false;
     const contentLog = getContentLog(contentLogPath);
 
@@ -496,16 +508,28 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
         const contentTarget = sink.target;
         const basePath = path.parse(contentItem.filename).base;
         const targetPath = path.join(contentTarget, basePath);
-        contentLog.push(contentItem.filename);
 
         if (fs.existsSync(targetPath)) {
             console.warn(`Content file ${contentItem.filename} already exists in ${contentTarget}`);
+            contentLog.push(contentItem.filename);
             continue;
+        }
+
+        if (checkQuota) {
+            const estimate = await estimateSeedEntryBytes(realPath);
+            const violation = await checkQuota(estimate);
+            if (violation) {
+                // Skipped whole, never partially copied, and kept OFF the
+                // content log so a later pass retries the delivery.
+                console.warn(`Content file ${contentItem.filename} not delivered to ${contentTarget}: ${violation.message}`);
+                continue;
+            }
         }
 
         fs.mkdirSync(contentTarget, { recursive: true });
         fs.cpSync(realPath, targetPath, { recursive: true, force: false });
         setPermissionsSync(targetPath);
+        contentLog.push(contentItem.filename);
         console.info(`Content file ${contentItem.filename} copied to ${contentTarget}`);
         anyContentAdded = true;
     }
@@ -515,10 +539,59 @@ async function seedContent(contentIndex, contentLogPath, resolveSink, forceCateg
 }
 
 /**
+ * Builds the quota reservation for fs-sink content copies — the same
+ * accounting the `_seed` pool and shared-card installation apply
+ * (checkUserStorageQuota with { fresh: true }, so consecutive copies in
+ * one pass see the bytes the earlier ones just wrote).
+ *
+ * The profile is looked up here rather than handed in by callers: the
+ * boot-time all-users pass only holds a directory list, and enforcement
+ * must not depend on each caller remembering to opt in. Guard
+ * construction is fail-open — an unreachable profile store degrades to
+ * no accounting instead of blocking content delivery, matching the
+ * content check's own log-and-continue posture; once built, each entry's
+ * reservation is fail-closed (a violation skips the entry whole).
+ * @param {import('../users.js').UserDirectoryList} directories User directories
+ * @returns {Promise<((bytes: number) => Promise<{usageBytes:number, quotaBytes:number, message:string}|null>)|null>}
+ */
+async function buildContentQuotaGuard(directories) {
+    const handle = path.basename(directories.root);
+    try {
+        // Lazy: users.js statically imports this module, so a static
+        // reverse edge would make the cycle eval-order sensitive.
+        const [{ default: storage }, { toKey, checkUserStorageQuota }] = await Promise.all([
+            import('node-persist'),
+            import('../users.js'),
+        ]);
+        const profile = await storage.getItem(toKey(handle));
+        // No account record (e.g. an orphaned directory tree) means no
+        // quota identity — no accounting, not a null-profile crash inside
+        // checkUserStorageQuota.
+        if (!profile) {
+            return null;
+        }
+        return async (bytes) => {
+            try {
+                return await checkUserStorageQuota({ profile, directories }, bytes, { fresh: true });
+            } catch (error) {
+                console.warn(`Content quota check failed for ${handle}; delivering anyway:`, error?.message ?? error);
+                return null;
+            }
+        };
+    } catch (error) {
+        console.warn(`Content quota accounting unavailable for ${handle}; seeding without it:`, error?.message ?? error);
+        return null;
+    }
+}
+
+/**
  * Seeds content for a user. Repo-backed types route through their Repo so
  * db-mode users actually see seeded presets / worlds / themes / etc.;
  * binary types (CHARACTER, SPRITES, AVATAR, BACKGROUND, WORKFLOW) keep
- * the disk path.
+ * the disk path and reserve space through the account quota — an entry
+ * that would push the account over is skipped and reported, never
+ * partially copied, so server defaults can never leave an account over
+ * quota.
  * @param {ContentItem[]} contentIndex Content index
  * @param {import('../users.js').UserDirectoryList} directories User directories
  * @param {string[]} forceCategories List of categories to force check (even if content check is skipped)
@@ -539,6 +612,7 @@ export async function seedContentForUser(contentIndex, directories, forceCategor
         contentLogPath,
         (item) => resolveContentSink(item.type, path.parse(item.filename).name, directories, handle),
         forceCategories,
+        { checkQuota: await buildContentQuotaGuard(directories) },
     );
 }
 
@@ -618,7 +692,6 @@ function getContentIndex(scope = CONTENT_SCOPE.USER) {
     const sources = resolveContentSources().sort((a, b) => b.rank - a.rank);
 
     for (const { dir, indexPath } of sources) {
-
         let index;
         try {
             if (!fs.existsSync(indexPath)) {

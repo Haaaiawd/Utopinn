@@ -769,7 +769,7 @@ export function toAvatarKey(handle) {
 /**
  * Initializes the user storage.
  * @param {string} dataRoot The root directory for user data
- * @returns {Promise<void>}
+ * @returns {Promise<{createdDefaultUser: boolean}>} Whether the bootstrap default-user record was created this call
  */
 export async function initUserStorage(dataRoot) {
     console.log('Using data root:', color.green(dataRoot));
@@ -782,9 +782,12 @@ export async function initUserStorage(dataRoot) {
     const keys = await getAllUserHandles();
 
     // If there are no users, create the default user
+    let createdDefaultUser = false;
     if (keys.length === 0) {
         await storage.setItem(toKey(DEFAULT_USER.handle), DEFAULT_USER);
+        createdDefaultUser = true;
     }
+    return { createdDefaultUser };
 }
 
 /**
