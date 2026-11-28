@@ -3204,8 +3204,21 @@ export async function init(ctx) {
         ctx.eventSource.on(EV.genStart, arm);
         ctx.eventSource.on(EV.wiFinal, onWiFinal);
         // 过日旗与弹窗草稿预缓存跨聊天必须清零，新局不串上局的账与未发草稿
-        const onChatChanged = () => {
+        // The wire host also reports every floor diff's fallback signal as
+        // chat_changed (same-chat push, arg still carries this chat's
+        // chatFileName) — that is not a switch, the flag must survive it.
+        // Only a real switch clears (missing arg → keep the old
+        // conservative-clear semantics).
+        // A floor index is the only identity a *_message_rendered push
+        // carries; a real switch restarts numbering, so the judged set is
+        // dropped together with the flag.
+        const judgedUserFloors = new Set();
+        const onChatChanged = (chatId) => {
+            const cur = String(ctx.getChatId?.() ?? ctx.lukerContext?.chatId ?? '').replace(/\.jsonl$/i, '');
+            const nxt = String(chatId ?? '').replace(/\.jsonl$/i, '');
+            if (nxt && cur && nxt === cur) return;
             pendingAdvanceDay = null; pendingAdvanceOwnMsg = false;
+            judgedUserFloors.clear();
             if (ctx.container) ctx.container.__intentDrafts = Object.create(null);
         };
         ctx.eventSource.on(EV.chatChanged, onChatChanged);
@@ -3216,18 +3229,31 @@ export async function init(ctx) {
         if (!ctx.parentDoc) ctx.eventSource.on(EV.charMsg, onCharMsgThenRefresh);
         else ctx._afterCharMsg = refresh;
         // 过日旗只在"下一条玩家消息落地"时收——若玩家「填进聊天框·度过今日」后又反悔删掉了度过今日，则立即撤销过日旗防误拨
-        const onUserMsg = () => {
+        // The wire host can announce the SAME appended floor twice — a
+        // mid-generation poll diff and the send handler's pre-send snapshot
+        // diff overlap on it. The first delivery already judged that floor;
+        // a re-delivery must not fall into the blanket clear and kill the
+        // flag its own first delivery just confirmed. A genuinely new user
+        // floor still clears.
+        const onUserMsg = (mesId) => {
+            const arg = Number(mesId);
+            const chat = ctx.lukerContext?.chat || [];
+            let lastUserIdx = -1;
+            for (let k = chat.length - 1; k >= 0; k--) if (chat[k]?.is_user) { lastUserIdx = k; break; }
+            const floor = Number.isInteger(arg) && arg >= 0 ? arg : lastUserIdx;
             if (pendingAdvanceOwnMsg) {
                 pendingAdvanceOwnMsg = false;
+                if (floor >= 0) judgedUserFloors.add(floor);
                 try {
-                    const chat = ctx.lukerContext?.chat || [];
-                    const lastUser = [...chat].reverse().find(m => m?.is_user);
+                    const lastUser = lastUserIdx >= 0 ? chat[lastUserIdx] : null;
                     const msgText = String(lastUser?.mes ?? lastUser?.message ?? '');
                     if (msgText && !/度过今日/.test(msgText)) pendingAdvanceDay = null;
                 } catch { }
                 refresh();   // 撤销过日旗后顺手重渲，托盘/门线与新状态对齐
                 return;
             }
+            if (floor >= 0 && judgedUserFloors.has(floor)) { refresh(); return; }
+            if (floor >= 0) judgedUserFloors.add(floor);
             pendingAdvanceDay = null;
             refresh();
         };

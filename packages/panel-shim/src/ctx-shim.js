@@ -112,6 +112,31 @@
         }, delay == null ? 250 : delay);
     }
 
+    // Floor-semantic events: the wire host (diffAndEmitChat) pushes
+    // *_rendered / chat_changed BEFORE chat.updated — dispatching them
+    // synchronously lets handlers read the pre-diff chatCache (tail still the
+    // old floor → a reply is replayed against the wrong floor or its ledger
+    // dropped whole). Match ST semantics (chat[] lands before the event):
+    // coalesce a refresh, then dispatch. On refresh timeout/failure fall back
+    // to immediate dispatch (previous behaviour — never starve an event), but
+    // replay the event once the late snapshot lands so the floor is still
+    // judged on the post-diff cache. Re-dispatch is safe only because floor
+    // handlers are re-entrant per floor (the card's ledgerEntry / judged-set
+    // guards no-op an already-processed floor).
+    var CHAT_FLOOR_EVENTS = {
+        char_message_rendered: 1, user_message_rendered: 1,
+        message_sent: 1, message_received: 1, message_edited: 1, message_updated: 1,
+        message_deleted: 1, message_swiped: 1, chat_changed: 1,
+    };
+    var refreshInflight = null;
+    function refreshChatNow() {
+        if (!refreshInflight) {
+            refreshInflight = Promise.resolve(refreshChat()).catch(function () { })
+                .then(function () { refreshInflight = null; });
+        }
+        return refreshInflight;
+    }
+
     function refreshChat() {
         return request('ctx.getChat', {}).then(function (res) {
             if (res && typeof res === 'object') {
@@ -148,7 +173,21 @@
         if (msg.event === 'host.event' || msg.event === 'th.event' || msg.event === 'ctx.event') {
             var name = String(msg.payload.name || '');
             var args = Array.isArray(msg.payload.args) ? msg.payload.args : [];
-            if (name) dispatchLocal(name, args);
+            if (!name) return;
+            if (CHAT_FLOOR_EVENTS[name]) {
+                var refresh = refreshChatNow();
+                var timedOut = false;
+                Promise.race([refresh, new Promise(function (r) { setTimeout(function () { timedOut = true; r(); }, 300); })])
+                    .then(function () { dispatchLocal(name, args); });
+                // Only a timed-out dispatch replays: when the refresh won the
+                // race the first dispatch already saw the fresh snapshot, and
+                // a refresh that rejects resolves the same way (refreshChatNow
+                // swallows) — the replay then hits the same stale cache and the
+                // per-floor guards make it a no-op.
+                refresh.then(function () { if (timedOut) dispatchLocal(name, args); });
+            } else {
+                dispatchLocal(name, args);
+            }
         }
     }
 
