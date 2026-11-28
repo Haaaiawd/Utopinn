@@ -118,7 +118,11 @@
     // old floor → a reply is replayed against the wrong floor or its ledger
     // dropped whole). Match ST semantics (chat[] lands before the event):
     // coalesce a refresh, then dispatch. On refresh timeout/failure fall back
-    // to immediate dispatch (previous behaviour — never starve an event).
+    // to immediate dispatch (previous behaviour — never starve an event), but
+    // replay the event once the late snapshot lands so the floor is still
+    // judged on the post-diff cache. Re-dispatch is safe only because floor
+    // handlers are re-entrant per floor (the card's ledgerEntry / judged-set
+    // guards no-op an already-processed floor).
     var CHAT_FLOOR_EVENTS = {
         char_message_rendered: 1, user_message_rendered: 1,
         message_sent: 1, message_received: 1, message_edited: 1, message_updated: 1,
@@ -171,8 +175,16 @@
             var args = Array.isArray(msg.payload.args) ? msg.payload.args : [];
             if (!name) return;
             if (CHAT_FLOOR_EVENTS[name]) {
-                Promise.race([refreshChatNow(), new Promise(function (r) { setTimeout(r, 300); })])
+                var refresh = refreshChatNow();
+                var timedOut = false;
+                Promise.race([refresh, new Promise(function (r) { setTimeout(function () { timedOut = true; r(); }, 300); })])
                     .then(function () { dispatchLocal(name, args); });
+                // Only a timed-out dispatch replays: when the refresh won the
+                // race the first dispatch already saw the fresh snapshot, and
+                // a refresh that rejects resolves the same way (refreshChatNow
+                // swallows) — the replay then hits the same stale cache and the
+                // per-floor guards make it a no-op.
+                refresh.then(function () { if (timedOut) dispatchLocal(name, args); });
             } else {
                 dispatchLocal(name, args);
             }

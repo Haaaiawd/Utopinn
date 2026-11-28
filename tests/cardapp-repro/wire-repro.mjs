@@ -88,9 +88,10 @@ function makeClient({ messages, variables }) {
 
     let jobReplyText = null;
     let jobPending = true;   // harness controls when the scripted reply persists
+    let chatGetDelay = 0;    // harness controls snapshot latency (finding-2 window)
     const client = {
         library: {
-            chatGet: async () => jsonClone(doc),
+            chatGet: async () => { if (chatGetDelay) await sleep(chatGetDelay); return jsonClone(doc); },
             appendMessages: async (_c, _n, msgs) => { for (const m of msgs) doc.messages.push(jsonClone(m)); },
             patchChat: async (_c, _n, ops) => { applyOps(doc, ops); },
             settings: async () => ({}),
@@ -138,6 +139,7 @@ function makeClient({ messages, variables }) {
         _doc: doc, _chatState: chatState, _calls: calls,
         _setReply(text) { jobReplyText = text; doc.__replyAppended = false; },
         _finishJob() { jobPending = false; },
+        _setChatGetDelay(ms) { chatGetDelay = ms; },
         _vars() { return doc.header.chat_metadata.variables; },
     };
     return client;
@@ -453,6 +455,68 @@ async function scenarioE() {
     return bad;
 }
 
+/**
+ * F — the 300 ms floor-event fallback window (PR review finding 2).
+ * The shim races refreshChatNow() against a 300 ms timer before dispatching
+ * floor events. If the live snapshot loses, the event dispatches against the
+ * pre-diff chatCache. Without a post-refresh replay, char_message_rendered
+ * reads the previous tail and the reply's _.set lines are never applied.
+ * Three runs over the SAME reply floor must land identically:
+ *   early — event pushed while the floor is still invisible to chatCache
+ *           (the window itself; stale tail is a user floor → pure no-op);
+ *   late  — cache refreshed first, then the event with getChat still slow:
+ *           the timed-out dispatch already processed the floor, so the
+ *           post-refresh replay must no-op through the card's ledgerEntry
+ *           guard — this is the double-apply check;
+ *   ctrl  — healthy refresh wins the race → single dispatch.
+ * The mid-window probe in 'early' (灵石 still 100 right after the 300 ms
+ * dispatch) documents that the window exists.
+ */
+async function scenarioF() {
+    console.log('\n===== F: 300ms floor-event fallback — late-refresh replay =====');
+    const SEED_F = [...SEED_MSGS,
+        { name: 'User', is_user: true, is_system: false, send_date: '2026-01-01T00:00:20Z', mes: '先记一笔账。' }];
+    // reply floor lands at idx 3 — appended straight to the doc (poll-raced)
+    const REPLY_F = { name: CHAR_DIR, is_user: false, is_system: false, send_date: '2026-01-01T00:00:30Z', mes: REPLY_WITH_SETS };
+    async function run(mode) {
+        const client = makeClient({ messages: SEED_F, variables: SEED_VARS });
+        const mounted = await mountCard({ client, writableNamespaces: manifest.permissions.stateNamespaces });
+        const { evalInCard } = mounted;
+        client._doc.messages.push(jsonClone(REPLY_F));
+        if (mode !== 'ctrl') client._setChatGetDelay(600);   // snapshot loses the 300 ms race
+        let mid = null;
+        if (mode === 'early') {
+            mounted.pushToCard('host.event', { name: 'char_message_rendered', args: [3] });
+            await sleep(360);            // 300 ms timer won → dispatched on stale cache
+            const sd = evalInCard(`window.__CARDAPP_CTX__.getVariable('stat_data')`);
+            mid = { cache: mounted.chatCacheInfo(), ls: sd?.['资源']?.['灵石'] };
+            await sleep(1500);           // refresh lands ~600 ms → replay must apply the floor
+        } else {
+            mounted.pushToCard('chat.updated', {});
+            await mounted.flush(mode === 'ctrl' ? 150 : 900);   // cache sees floor 3 first
+            mounted.pushToCard('host.event', { name: 'char_message_rendered', args: [3] });
+            await sleep(mode === 'ctrl' ? 500 : 1600);          // dispatch (+ replay) settles
+        }
+        await mounted.flush(300);
+        const sd = evalInCard(`window.__CARDAPP_CTX__.getVariable('stat_data')`);
+        const prevFor = evalInCard(`window.__CARDAPP_CTX__.getVariable('stat_data_prev_for')`);
+        const tail = client._doc.messages.at(-1).mes;
+        const out = { day: sd?.day, ls: sd?.['资源']?.['灵石'], roster: sd?.['名册']?.[0]?.['状态'], prevFor, tailStripped: !tail.includes('_.set'), mid };
+        console.log(`[${mode}]`, JSON.stringify(out));
+        mounted.dispose();
+        return out;
+    }
+    const early = await run('early');
+    const late = await run('late');
+    const ctrl = await run('ctrl');
+    const finals = [early, late, ctrl].map(r => JSON.stringify({ ls: r.ls, roster: r.roster, prevFor: r.prevFor, tailStripped: r.tailStripped }));
+    const identical = finals[0] === finals[1] && finals[1] === finals[2];
+    const applied = early.ls === 4242 && early.roster === '领了月例' && early.tailStripped;
+    const bad = !(identical && applied);
+    verdict('F', bad, `early=${early.ls} late=${late.ls} ctrl=${ctrl.ls} (roster=${early.roster}, prevFor=${early.prevFor}, identical=${identical}) — mid-window probe ${JSON.stringify(early.mid)}: the event must still land once the late snapshot arrives, and the replay must not double-apply`);
+    return bad;
+}
+
 async function scenarioB() {
     console.log('\n===== B: zongmen_ui writes vs manifest stateNamespaces =====');
     async function run(writable) {
@@ -500,6 +564,7 @@ const summary = {};
 summary.A = await scenarioA();
 summary.C = await scenarioC();
 summary.E = await scenarioE();
+summary.F = await scenarioF();
 summary.B = await scenarioB();
 const d1 = await scenarioD(1);
 const d5 = await scenarioD(5, { '断灵夜': '进行中' });
@@ -508,5 +573,6 @@ console.log('\n===== summary =====');
 console.log(`A: ${summary.A ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`C: ${summary.C ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`E: ${summary.E ? 'REPRODUCED' : 'not reproduced'}`);
+console.log(`F: ${summary.F ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`B: ${summary.B ? 'REPRODUCED' : 'not reproduced'}`);
 console.log(`D: emit fired=${d1.emitted} → ${d1.hostLog ?? '(no emit)'}; arc-seeded run emitted=${d5.emitted}`);
