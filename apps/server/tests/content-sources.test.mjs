@@ -486,6 +486,82 @@ test('e2e: a config.yaml contentSources entry seeds files into a new account and
 });
 
 // ---------------------------------------------------------------------------
+// Seeding quota: an over-quota declared entry is skipped, never fatal
+// ---------------------------------------------------------------------------
+
+test('seedContentForUser skips an over-quota declared entry, reports it, and keeps the account under quota', async () => {
+    // Registration provisions account content through this same seam —
+    // /api/users/register → checkForNewContent → seedContentForUser →
+    // seedContent(checkQuota: buildContentQuotaGuard(directories)). A
+    // server-default entry that would push the account over its quota must
+    // be skipped whole — never partially copied, kept off content.log so a
+    // later pass retries it — while the entries that fit still land.
+    // Seeding must never fail registration or leave the account over quota.
+    const handle = 'quotauser';
+    const quota = 60_000;
+    const testRoot = path.join(scratchRoot, 'seed-quota');
+    const storageDir = path.join(testRoot, '_storage');
+    fs.mkdirSync(storageDir, { recursive: true });
+
+    // node-persist is a process-wide singleton; nothing else in this file
+    // initializes it, so init it on this test's own store and write the
+    // same record shape registration persists (users-public.js) — the
+    // profile carries the effective quota, no admin-settings row needed.
+    const { default: storage } = await import('node-persist');
+    await storage.init({ dir: storageDir, ttl: false, expiredInterval: 0 });
+    await storage.setItem(`user:${handle}`, {
+        handle, name: handle, admin: false, enabled: true, storageQuotaBytes: quota,
+    });
+
+    const pack = makeSource('quota-pack', {
+        entries: [
+            { filename: 'characters/fit.png', type: 'character' },
+            { filename: 'characters/too-big.png', type: 'character' },
+        ],
+        files: {
+            'characters/fit.png': crypto.randomBytes(2_000),
+            'characters/too-big.png': crypto.randomBytes(quota + 4_000),
+        },
+    });
+    // Same ContentItem shape getContentIndex emits: { filename, type, folder }.
+    const contentIndex = [
+        { filename: 'characters/fit.png', type: 'character', folder: pack },
+        { filename: 'characters/too-big.png', type: 'character', folder: pack },
+    ];
+    const accountRoot = path.join(testRoot, handle);
+    const directories = { root: accountRoot, characters: path.join(accountRoot, 'characters') };
+
+    // console.warn is the signal a skip is reported on at this layer —
+    // seedContent returns a bare boolean, so there is nothing else to assert.
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => { warnings.push(args.map(String).join(' ')); };
+    let added;
+    try {
+        added = await contentManager.seedContentForUser(contentIndex, directories, []);
+    } finally {
+        console.warn = origWarn;
+    }
+
+    assert.equal(added, true, 'seeding must succeed — an over-quota entry must never fail registration');
+    assert.ok(fs.existsSync(path.join(directories.characters, 'fit.png')),
+        'the entry that fits must be copied — the guard skips per-entry, not the whole run');
+    assert.ok(!fs.existsSync(path.join(directories.characters, 'too-big.png')),
+        'the over-quota entry must not be copied at all');
+    const { getDirectorySizeBytes } = await import('../src/admin-settings.js');
+    assert.ok(await getDirectorySizeBytes(accountRoot) <= quota,
+        'the account must not end up over its quota after seeding');
+    assert.ok(
+        warnings.some(l => l.includes('characters/too-big.png') && l.includes('not delivered') && /quota/i.test(l)),
+        `the skip must be reported on console.warn, got: ${warnings.join(' | ')}`,
+    );
+    const contentLog = fs.readFileSync(path.join(accountRoot, 'content.log'), 'utf8');
+    assert.ok(contentLog.includes('characters/fit.png'), 'the delivered entry lands on content.log');
+    assert.ok(!contentLog.includes('too-big.png'),
+        'the skipped entry must stay off content.log so a later pass retries it');
+});
+
+// ---------------------------------------------------------------------------
 // Architecture seam: explicit precedence rank + the content type registry
 // ---------------------------------------------------------------------------
 
